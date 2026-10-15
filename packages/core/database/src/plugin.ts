@@ -1,4 +1,9 @@
-/** DatabaseService — Cordis Service that owns the DB lifecycle. */
+/**
+ * DatabasePlugin — provides ctx.database (DatabaseService).
+ * This is the entry point that apps compose via ctx.plugin().
+ *
+ * @module @ygl/core-database/plugin
+ */
 import { Context, Service } from "cordis";
 import { DB } from "./db";
 
@@ -21,6 +26,6 @@ export interface DatabaseConfig {
   file: string;
 }
 
-export function DatabasePlugin(ctx: Context, config: DatabaseConfig) {
+export function apply(ctx: Context, config: DatabaseConfig) {
   new DatabaseService(ctx, config.file);
 }

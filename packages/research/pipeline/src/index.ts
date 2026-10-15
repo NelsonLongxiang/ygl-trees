@@ -1,8 +1,8 @@
 /**
  * @module @ygl/research-pipeline
+ * Research pipeline: query/source/evidence/claim entities, reads, writes, and Cordis ResearchService.
  */
-/** @ygl/research-pipeline — query→source→evidence→claim reads, writes, entities. */
 export * from "./entities";
 export { Store, deriveL1 } from "./reads";
 export * as writes from "./writes";
-export { ResearchService, ResearchPlugin } from "./service";
+export { ResearchService, apply } from "./plugin";

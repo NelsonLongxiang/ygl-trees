@@ -1,4 +1,9 @@
-/** ResearchService — Cordis Service for the research domain. */
+/**
+ * ResearchPlugin — provides ctx.research (ResearchService).
+ * Injects: database.
+ *
+ * @module @ygl/research-pipeline/plugin
+ */
 import { Context, Service } from "cordis";
 import { Store } from "./reads";
 
@@ -9,6 +14,8 @@ declare module "cordis" {
 }
 
 export class ResearchService extends Service {
+  static readonly inject = ["database"] as const;
+
   readonly store: Store;
 
   constructor(ctx: Context) {
@@ -17,6 +24,8 @@ export class ResearchService extends Service {
   }
 }
 
-export function ResearchPlugin(ctx: Context) {
+export const inject = ["database"];
+
+export function apply(ctx: Context) {
   new ResearchService(ctx);
 }

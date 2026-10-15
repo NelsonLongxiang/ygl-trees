@@ -11,9 +11,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   switch (action) {
     case "init": {
       fs.mkdirSync(home, { recursive: true });
-      const d = new (require("../core/db").DB)(file);
+      const d = new (require("../../../core/database/src/db").DB)(file);
       d.metaSet("created", new Date().toISOString());
-      d.metaSet("schema_version", String(require("../core/db").SCHEMA_VERSION));
+      d.metaSet("schema_version", String(require("../../../core/database/src/db").SCHEMA_VERSION));
       d.close();
       ok(ctx, `workspace ready: ${home}`);
       ok(ctx, `database:        ${file}`);
