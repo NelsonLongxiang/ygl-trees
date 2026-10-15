@@ -82,9 +82,25 @@
 **依赖**：M3 全部依赖 M1/M2 完成；M3-1 独立于 M3-2/3。
 **风险**：真实网页正文提取无依赖条件下质量有限——spec 已限定"非 JS 渲染站点"，提取失败时保存原始前 N KB 并标记 `needs_review` tag，不假装成功。
 
+## M5 — Gate 决策模型布尔评估（0.14.0，spec R8，2026-10-16 立项）
+
+背景：必检条件的 quest/expr 类语义门槛现静默 false；引入评估模型 boolean 模式（TypeSafe jev via Vercel AI Gateway，材料 `F:\Users\Administrator\Downloads\vercel-ai-gateway-eval-api.md`）补上下文判定能力。
+
+| # | 任务 | 涉及 | 规模 | 验收 |
+|---|---|---|---|---|
+| M5-1 | src/eval.ts 评估客户端（v4 协议四头、token 双源解析、429/529 退避 ≤3、400/401 不重试、60s 超时、全局 fetch） | src/eval.ts | S | 无 token → 明确 pending 错误态；协议错误不重试 |
+| M5-2 | `--op eval` 条件：cond 命令放开该 op 的 value 校验（回落 name）；validate 对 eval 必检不要求 value | cmds/tree.ts, treeWrites/tree.ts | S | R8.7 校验路径 |
+| M5-3 | 上下文包组装器：node 元数据 + 直接父 + 祖先链（closure）+ 条件组 + 解锁集 + state 袋 | tree.ts（canUnlock 扩展） | M | state JSON 含全部供料源，问题措辞与 state 字面对齐 |
+| M5-4 | `node can --eval` 三态映射（≥0.7 通过 / ≤0.4 未通过 / 灰带 pending）+ evaluated 输出字段 + eval.gate 留痕 + offline pending | cmds/tree.ts, tree.ts | M | 离线 pending 断言进 demo；rc=0 |
+| M5-5 | README gate 章节补决策模型段（含灰带纪律与 token 配置） | README.md | S | 命令面一致 |
+
+**依赖**：M5-1 → M5-4；M5-2/M5-3 并行。
+**风险**：① 评估延迟 1-2s/条件——批量树评估不做（非目标）；② 灰带语义与现有 tri-state 输出的组合展示需在 M5-4 定稿（pending 不进 missing_required）；③ token 无则全部 pending——demo 必须断言 offline 路径而非依赖网络。
+
 ## 明确推迟（不进本计划）
 
-- claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁、npm 实际发布、单测框架——待 0.4.0 复盘再立项
+- ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）
+- npm 实际发布（外部动作需用户确认 registry）、单测框架（规模触发未到）、`node ready --eval` 批量评估、choice/score 题型接入
 
 ## 完成定义（DoD，每里程碑通用）
 

@@ -3,7 +3,7 @@
 面向 AI Agent 的命令行工作台：**研究 → 产出 → 知识应用**，外加一套完整的**科技树节点数据模型**。
 
 - 单一 SQLite 文件就是全部状态，没有 sidecar JSON，没有"用 git 当数据库"
-- 零运行时依赖（除 `node-sqlite3-wasm`，纯 WASM，免编译）
+- 依赖面（0.8.0 起引入 TypeORM 查询层）：`node-sqlite3-wasm`（纯 WASM 免编译）+ `typeorm` / `better-sqlite3` / `reflect-metadata`（TypeORM 栈，better-sqlite3 走 prebuild 免编译）+ 可选 `pg`（仅用 PostgreSQL 镜像/迁移时）
 - 全部命令支持 `--json`，方便 Agent 直接解析
 
 ```bash
@@ -161,7 +161,7 @@ agent brief               状态 + 建议动作 + 健康度（脏索引、存量
 
 CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 token。这里在写入时把中文按字切二元组（`科技树` → `科技 技树`），再逐 token 匹配并按命中数排序，长句也能召回。
 
-### 数据安全（v3）
+### 数据安全（schema v5）
 
 - **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
 - **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
@@ -201,7 +201,19 @@ ygl-trees agent log        # 审计事件流
 - `YGL_HOME`：工作区根目录，默认 `~/.ygl-trees`
 - 数据库：`$YGL_HOME/ygl-trees.db`
 - `--db <file>` 可指定其他库；`--json` 全局机器输出
+- `YGL_PG_URL`：PostgreSQL 连接串（`db sync pg` / `db migrate pg` 可用，凭证不进 shell 历史）
+- `AI_GATEWAY_API_KEY`（或 `~/.vercel.ai-gateway.env`）：Gate 决策模型布尔评估的凭证（**规划中**，0.14.0 / spec R8——op=eval 的必检条件经评估模型判定 P(true)，灰带 0.4–0.7 为 pending；未配置时该类条件安全回落 pending）
 
-## 七、许可
+## 七、文档地图
+
+| 文档 | 内容 |
+|---|---|
+| [docs/research.md](docs/research.md) | 初始调研与差距分析 |
+| [docs/spec.md](docs/spec.md) | 需求规格与验收标准（R1–R8） |
+| [docs/plan.md](docs/plan.md) | 开发计划与逐版本执行记录 |
+| [docs/conventions.md](docs/conventions.md) | 数据模型应用规范（加表九触点、幂等决策树、FTS 纪律、TypeORM 边界、tmp/ 规范） |
+| [docs/pg-compat.md](docs/pg-compat.md) | PostgreSQL 兼容方案（镜像/迁移；L2 双后端已取消） |
+
+## 八、许可
 
 MIT

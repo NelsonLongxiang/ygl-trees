@@ -66,6 +66,20 @@
 - **R7.2** package.json 补 `files` 白名单（bin/dist/README/docs）与 `prepublishOnly: pnpm test`；不实际发布，只把面准备好
 - **R7.3** 单元测试框架**本阶段不引入**（CLI 快照式回归已覆盖主路径；引入 vitest 等留待规模再判断）
 
+### R8 Gate 决策模型布尔评估（2026-10-16 立项，0.14.0；依据 vercel-ai-gateway-eval-api.md 调查）
+
+**动机**：必检条件中 `quest`/`expr` 类语义门槛（"任务完成了吗"）无法用状态袋数值比较判定——现 `evalCond` 在状态袋无对应键时**静默判 false**。评估模型（TypeSafe jev，经 Vercel AI Gateway）提供**确定性布尔判定 P(true)**（同题方差≈0、1-2s/次、中文原生、证据不足时概率塌缩而非硬答），恰好补上这块，且与 ygl-trees 三态输出天然契合。
+
+- **R8.1 新 op**：`node cond <key> --name <c> --op eval --value "<判定问题>"`——value 为问题措辞（材料 §5 纪律：**问题与 state 字面对齐**，不脑补）
+- **R8.2 上下文包**（关联+索引供料）：`node can <key> --eval` 组装 state = 节点元数据（key/name/kind/tier/cost）+ 直接父（node_edges 关联）+ 祖先链（node_closure 索引）+ 该节点全部条件 + 已解锁集 + `--state` 袋——**state 必带上下文包**（裸消息判路由 6/8 落灰带的教训）
+- **R8.3 评估客户端**（src/eval.ts）：Gateway v4 协议四头缺一不可；token 解析 `AI_GATEWAY_API_KEY` → 回退 `~/.vercel.ai-gateway.env`（`token=...`）；429/529 指数退避 ≤3 次、400/401 不重试；超时 60s；零新依赖（全局 fetch，与 source fetch 同模式）
+- **R8.4 三态映射**：P≥0.7 → 通过；P≤0.4 → 未通过；**0.4<P<0.7 → pending 灰带**（过程态禁作终态）；必检聚合中 pending 单列（既非通过也非 missing_required）
+- **R8.5 Offline-safe**：无 token / 网络失败 → 该条件 `pending (no evaluator)`，rc=0——评估器是增强不是依赖；确定性 op（>=/==/has…）行为不变
+- **R8.6 留痕与输出**：events 记 `eval.gate`（条件名/P/outcome）；`node can --json` 新增 `evaluated: [{name, question, p, outcome}]`（加法字段，契约兼容）
+- **R8.7 验收**：离线（无 token）`node can` 对 op=eval 条件输出 pending、demo 断言此路径（demo 保持离线可跑）；有 token 环境手动冒烟结果记入提交说明；`node validate` 对 op=eval 的必检条件不再要求 value 非空（value 是问题措辞，缺省回落用 name）
+
+**非目标**：不接 choice/score 题型（gate 只需布尔）；评估结果不写回数据库（每次 `can` 现评，保持无状态）；`node ready --eval` 与批量评估留后续批次。
+
 ## 2. 数据模型变更（schema v2 → v3）
 
 | 表 | 变更 | 迁移 |
