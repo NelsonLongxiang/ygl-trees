@@ -203,6 +203,7 @@ export async function main(argv: string[]): Promise<number> {
     skill: "../../packages/knowledge/skills/src/skill-cmds",
     kb: "../../packages/knowledge/skills/src/cmds",
     webui: "../../packages/ops/tools/src/webui",
+    doctor: "../../packages/ops/tools/src/doctor",
   };
   const dispatch = async (): Promise<number> => {
     const route = DOMAIN_ROUTES[group];

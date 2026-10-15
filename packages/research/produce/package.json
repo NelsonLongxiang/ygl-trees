@@ -1,6 +1,6 @@
 {
   "name": "@ygl/research-produce",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Report production: outline, sections, report assembly, project management",
   "type": "commonjs",
   "main": "lib/index.js",

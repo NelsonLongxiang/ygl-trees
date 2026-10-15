@@ -1,6 +1,6 @@
 {
   "name": "@ygl/core-database",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "DB connection, schema, migration, ORM, entities, types, container",
   "type": "commonjs",
   "main": "lib/index.js",

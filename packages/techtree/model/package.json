@@ -1,6 +1,6 @@
 {
   "name": "@ygl/techtree-model",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Tech tree node model: nodes, edges, conditions, closure, topological order",
   "type": "commonjs",
   "main": "lib/index.js",

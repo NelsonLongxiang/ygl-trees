@@ -538,17 +538,24 @@ export class TreeStore {
     };
   }
 
-  /** Full-text search over nodes. */
+  /** Full-text search over nodes. Title/key substring hits outrank same-hit
+   *  rows (same ranking semantics as kb/skill/source search). */
   nodeSearch(treeId: string, q: string, limit = 20): Row[] {
     const tokens: string[] = Array.from(
-      new Set(String(require("./text").ngram(q) || "").split(/\s+/).filter(Boolean))
+      new Set(String(require("../../../core/text/src/text").ngram(q) || "").split(/\s+/).filter(Boolean))
     );
     if (!tokens.length) return [];
-    const agg = new Map<string, { row: Row; hits: number; score: number }>();
+    const agg = new Map<string, { row: Row; hits: number; score: number; boost: number }>();
     const st = this.db.db.prepare(
       `SELECT n.id,n.key,n.name,n.tier, bm25(nodes_fts) AS score
          FROM nodes_fts f JOIN nodes n ON n.id=f.id
         WHERE nodes_fts MATCH ? AND n.tree_id=? ORDER BY score LIMIT ?`
+    );
+    // Title/key boost: nodes whose key or name contains the token rank higher
+    const stBoost = this.db.db.prepare(
+      `SELECT f.id AS __id FROM nodes_fts f
+        JOIN nodes n ON n.id=f.id
+       WHERE n.tree_id=? AND (lower(n.key) LIKE ? OR lower(n.name) LIKE ?) LIMIT ?`
     );
     try {
       for (const t of tokens) {
@@ -557,16 +564,22 @@ export class TreeStore {
           if (prev) {
             prev.hits++;
             prev.score += r.score;
-          } else agg.set(r.id, { row: r, hits: 1, score: r.score });
+          } else agg.set(r.id, { row: r, hits: 1, score: r.score, boost: 0 });
+        }
+        const like = `%${t.toLowerCase()}%`;
+        for (const h of stBoost.all([treeId, like, like, limit]) as Row[]) {
+          const prev = agg.get(String(h.__id));
+          if (prev) prev.boost += 1;
         }
       }
     } finally {
       st.finalize();
+      stBoost.finalize();
     }
     return [...agg.values()]
-      .sort((a, b) => b.hits - a.hits || a.score - b.score)
+      .sort((a, b) => b.hits - a.hits || b.boost - a.boost || a.score - b.score)
       .slice(0, limit)
-      .map((a) => ({ key: a.row.key, name: a.row.name, tier: a.row.tier, matched: a.hits }));
+      .map((a) => ({ key: a.row.key, name: a.row.name, tier: a.row.tier, matched: a.hits, title_matched: a.boost }));
   }
 
   /** Sanity checks: cycles, orphan gating edges, unknown refs. */

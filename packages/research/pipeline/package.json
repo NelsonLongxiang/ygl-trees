@@ -1,6 +1,6 @@
 {
   "name": "@ygl/research-pipeline",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Research pipeline: query, source, evidence, claim reads and writes",
   "type": "commonjs",
   "main": "lib/index.js",
