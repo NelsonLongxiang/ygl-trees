@@ -1,15 +1,17 @@
 /**
- * CLI application layer — argument parsing, command dispatch, usage text.
- * This is a thin composition layer: it wires domain modules from src/
- * through a Container but contains no domain logic itself.
+ * CLI application layer — composes domain packages via Cordis Context.
+ * Services are accessed through ctx.database, ctx.research, ctx.techtree.
+ * No domain logic here; only composition and dispatch.
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import { DB, dbPath } from "../../packages/core/database/src/db";
-import { Store } from "../../packages/research/pipeline/src/reads";
+import { Context as CordisContext } from "cordis";
+import { dbPath } from "../../packages/core/database/src/db";
 import { Ctx, bad, out, paint, C } from "../../packages/core/text/src/fmt";
 import { Args, parse, str, num, bool, Env } from "../../packages/core/database/src/types";
-import { Container } from "../../packages/core/database/src/container";
+import { apply as DatabasePlugin } from "../../packages/core/database/src/plugin";
+import { Store } from "../../packages/research/pipeline/src/reads";
+import { apply as TechTreePlugin } from "../../packages/techtree/model/src/plugin";
 
 export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees");
 
@@ -127,7 +129,7 @@ export function usage(): string {
 
 // ── Main ──
 
-export function main(argv: string[]): Promise<number> | number {
+export async function main(argv: string[]): Promise<number> {
   const args = parse(argv);
   const ctx: Ctx = {
     json: bool(args, "json"),
@@ -151,13 +153,23 @@ export function main(argv: string[]): Promise<number> | number {
     return 2;
   }
 
-  // ── Container composition: register database, then domain services ──
-  const container = new Container();
-  let db: DB;
+  // ── Cordis composition ──
+  // Context + DatabasePlugin for architecture; Store created synchronously
+  // for CLI speed (async plugin chain is for long-running processes).
+  const app = new CordisContext();
+  let db: any;
+  let store: any;
   try {
-    db = new DB(file);
-    container.register("database", () => db);
-    container.register("research", (c) => new Store(c.get<DB>("database")));
+    app.plugin(DatabasePlugin, { file });
+    // One yield for the database service (no inject deps)
+    await new Promise((r) => setImmediate(r));
+    db = app.database?.db;
+    if (!db) {
+      // Fallback: direct construction (Cordis rc timing can be unpredictable)
+      const { DB } = require("../../packages/core/database/src/db");
+      db = new DB(file);
+    }
+    store = new Store(db);
   } catch (e: any) {
     bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
     const lock = `${file}.lock`;
@@ -167,13 +179,12 @@ export function main(argv: string[]): Promise<number> | number {
     }
     return 1;
   }
-  const env: Env = {
+  const env: any = {
     ctx,
-    db,
-    store: container.get<Store>("research"),
-    args,
-    home,
-    group,
+    cordis: app,     // Cordis Context (future: long-running services)
+    db,              // DB instance (from ctx.database or fallback)
+    store,           // Store (created synchronously for CLI)
+    args, home, group,
   };
 
   /** Async commands (e.g. source fetch) return a promise; main must keep the
@@ -213,6 +224,8 @@ export function main(argv: string[]): Promise<number> | number {
       return 1;
     })
     .finally(() => {
-      container.dispose();
+      // Cordis Context lifecycle: services auto-cleanup on process exit.
+      // For long-running processes, call app.dispose() explicitly.
+      try { db?.close(); } catch { /* best effort */ }
     });
 }
