@@ -333,3 +333,121 @@ export async function jobAdd(
     };
   });
 }
+
+// ================================================================ artifacts (versioned appends, batch 2)
+
+export async function artifactAdd(
+  ds: DataSource,
+  projectId: string,
+  kind: string,
+  title: string,
+  content: string,
+  format = "markdown"
+): Promise<{ row: Record<string, any>; version: number }> {
+  return ds.transaction(async (mgr) => {
+    // version numbering inside the transaction — no duplicate versions under concurrency
+    const max = (await mgr.query(
+      `SELECT COALESCE(MAX(version),0) AS m FROM artifacts WHERE project_id=? AND kind=? AND title=?`,
+      [projectId, kind, title]
+    )) as any[];
+    const ver = Number(max?.[0]?.m ?? 0) + 1;
+    const id = shortId(["art", projectId, kind, title, String(ver)], 10);
+    const created = nowIso();
+    await mgr.query(
+      `INSERT INTO artifacts(id,project_id,kind,title,format,content,version,created) VALUES(?,?,?,?,?,?,?,?)`,
+      [id, projectId, kind, title, format, content, ver, created]
+    );
+    await logEvent(mgr, "artifact.add", "artifact", id, `${kind}:${title} v${ver}`);
+    return {
+      row: { id, project_id: projectId, kind, title, format, content, version: ver, created },
+      version: ver,
+    };
+  });
+}
+
+// ================================================================ skills (batch 2)
+
+export async function skillUpsert(
+  ds: DataSource,
+  o: { name: string; description?: string; body?: string; tags?: string; version?: string; origin?: string }
+): Promise<Record<string, any>> {
+  return ds.transaction(async (mgr) => {
+    const now = nowIso();
+    await mgr.query(
+      `INSERT INTO skills(id,name,version,description,body,tags,origin,created,updated)
+       VALUES(?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(name) DO UPDATE SET
+         version=excluded.version, description=excluded.description, body=excluded.body,
+         tags=excluded.tags, origin=excluded.origin, updated=excluded.updated`,
+      [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", now, now]
+    );
+    const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
+    const s = rows[0];
+    // FTS shadow refresh in the SAME transaction (delete+reinsert, Store-era discipline)
+    await mgr.query(`DELETE FROM skills_fts WHERE id=?`, [s.id]);
+    await mgr.query(`INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
+      s.id, s.name, s.description, s.tags, ngram(`${s.name} ${s.description} ${s.tags} ${s.body}`),
+    ]);
+    await logEvent(mgr, "skill.upsert", "skill", s.id, s.name);
+    return s;
+  });
+}
+
+export async function skillDel(ds: DataSource, name: string): Promise<void> {
+  return ds.transaction(async (mgr) => {
+    const rows = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [name])) as any[];
+    if (!rows.length) throw new Error(`skill not found: ${name}`);
+    await mgr.query(`DELETE FROM skills_fts WHERE id=?`, [rows[0].id]);
+    await mgr.query(`DELETE FROM skills WHERE id=?`, [rows[0].id]);
+  });
+}
+
+export async function skillEnabled(ds: DataSource, name: string, on: boolean): Promise<boolean> {
+  return ds.transaction(async (mgr) => {
+    const rows = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [name])) as any[];
+    if (!rows.length) return false;
+    await mgr.query(`UPDATE skills SET enabled=?, updated=? WHERE id=?`, [on ? 1 : 0, nowIso(), rows[0].id]);
+    return true;
+  });
+}
+
+export async function skillRefAdd(
+  ds: DataSource,
+  skillName: string,
+  refPath: string,
+  content: string
+): Promise<Record<string, any>> {
+  return ds.transaction(async (mgr) => {
+    const s = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [skillName])) as any[];
+    if (!s.length) throw new Error(`skill not found: ${skillName}`);
+    const id = shortId(["ref", s[0].id, refPath], 10);
+    await mgr.query(
+      `INSERT INTO skill_refs(id,skill_id,path,content) VALUES(?,?,?,?)
+       ON CONFLICT(skill_id,path) DO UPDATE SET content=excluded.content`,
+      [id, s[0].id, refPath, content]
+    );
+    const rows = (await mgr.query(`SELECT * FROM skill_refs WHERE skill_id=? AND path=?`, [s[0].id, refPath])) as any[];
+    return rows[0];
+  });
+}
+
+// ================================================================ projects (batch 2)
+
+export async function projectCreate(ds: DataSource, name: string, question = ""): Promise<Record<string, any>> {
+  return ds.transaction(async (mgr) => {
+    const now = nowIso();
+    const id = shortId(["proj", name], 10);
+    await mgr.query(
+      `INSERT INTO projects(id,name,question,status,created,updated) VALUES(?,?,?,'active',?,?)`,
+      [id, name, question, now, now]
+    );
+    // selecting the new project is part of the create — same transaction
+    await mgr.query(
+      `INSERT INTO meta(key,value) VALUES('current_project',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      [name]
+    );
+    await logEvent(mgr, "project.create", "project", id, name);
+    const rows = (await mgr.query(`SELECT * FROM projects WHERE id=?`, [id])) as any[];
+    return rows[0];
+  });
+}

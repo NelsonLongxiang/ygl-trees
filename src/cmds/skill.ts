@@ -1,9 +1,14 @@
-/** skill group — the L1/L2/L3 registry agents query before acting. */
+/** skill group — the L1/L2/L3 registry agents query before acting.
+ *  Writes run on the TypeORM write service (src/writes.ts). */
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { Env } from "../cli";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
+import { parseFrontmatter } from "../text";
+import { getOrm } from "../orm";
+import * as writes from "../writes";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
   const name = rest[0];
 
@@ -18,13 +23,30 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   switch (action) {
     case "import": {
       if (!need(name, "file")) return 2;
-      const row = store.skillImport(name);
-      if (ctx.json) console.log(JSON.stringify(row, null, 2));
-      else {
-        ok(ctx, `imported skill: ${row.name} (${row.version})`);
-        out(ctx, paint(C.dim, `  L1: ${row.description.slice(0, 120)}`, ctx.color));
-      }
-      return 0;
+      const raw = fs.readFileSync(name, "utf8");
+      const { meta, body } = parseFrontmatter(raw);
+      const spec = {
+        name: meta.name || path.basename(name, ".md"),
+        description: meta.description || "",
+        body,
+        tags: (meta.tags || "").toString(),
+        version: meta.version || "0.1.0",
+        origin: name,
+      };
+      return getOrm(env.db.path)
+        .then((ds) => writes.skillUpsert(ds, spec))
+        .then((row): number => {
+          if (ctx.json) console.log(JSON.stringify(row, null, 2));
+          else {
+            ok(ctx, `imported skill: ${row.name} (${row.version})`);
+            out(ctx, paint(C.dim, `  L1: ${String(row.description).slice(0, 120)}`, ctx.color));
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "add": {
       const n = args.flags.name ? String(args.flags.name) : "";
@@ -36,15 +58,23 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         : args.flags["body-file"]
         ? fs.readFileSync(String(args.flags["body-file"]), "utf8")
         : "";
-      const row = store.skillUpsert({
+      const spec = {
         name: n,
         description: String(args.flags.description || ""),
         body,
         tags: String(args.flags.tags || ""),
         version: String(args.flags.version || "0.1.0"),
-      });
-      ack(ctx, row, `skill saved: ${row.name}`);
-      return 0;
+      };
+      return getOrm(env.db.path)
+        .then((ds) => writes.skillUpsert(ds, spec))
+        .then((row): number => {
+          ack(ctx, row, `skill saved: ${row.name}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "list":
       table(ctx, store.skillList(), ["name", "ver", "on", "hits", "tags", "updated"], [
@@ -101,32 +131,39 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "rm":
-      try {
-        store.skillDel(name);
-      } catch (e: any) {
-        bad(ctx, e?.message || String(e));
-        return 1;
-      }
-      ack(ctx, { removed: name }, `removed skill: ${name}`);
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) => writes.skillDel(ds, name))
+        .then((): number => {
+          ack(ctx, { removed: name }, `removed skill: ${name}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     case "enable":
     case "disable": {
       const on = action === "enable";
-      if (!store.skillEnabled(name, on)) {
-        bad(ctx, `skill not found: ${name}`);
-        return 1;
-      }
-      ack(ctx, { name, enabled: on }, `${on ? "enabled" : "disabled"} ${name}`);
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) => writes.skillEnabled(ds, name, on))
+        .then((hit): number => {
+          if (!hit) {
+            bad(ctx, `skill not found: ${name}`);
+            return 1;
+          }
+          ack(ctx, { name, enabled: on }, `${on ? "enabled" : "disabled"} ${name}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "refs": {
       const sub = rest[0];
       if (sub === "add") {
-        const skill = store.skillGet(rest[1]);
-        if (!skill) {
-          bad(ctx, `skill not found: ${rest[1]}`);
-          return 1;
-        }
+        const skillName = rest[1];
+        if (!need(skillName || "", "skill name")) return 2;
         const p = rest[2];
         if (!need(p || "", "ref path")) return 2;
         const content = args.flags.body
@@ -134,9 +171,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           : args.flags.f
           ? fs.readFileSync(String(args.flags.f), "utf8")
           : "";
-        store.skillRefAdd(skill.id, p, content);
-        ok(ctx, `ref saved: ${skill.name}/${p}`);
-        return 0;
+        return getOrm(env.db.path)
+          .then((ds) => writes.skillRefAdd(ds, skillName, p, content))
+          .then((): number => {
+            ok(ctx, `ref saved: ${skillName}/${p}`);
+            return 0;
+          })
+          .catch((e: any): number => {
+            bad(ctx, e?.message || String(e));
+            return 1;
+          });
       }
       if (sub === "show") {
         const skill = store.skillGet(rest[1]);

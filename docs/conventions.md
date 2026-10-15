@@ -64,7 +64,7 @@
 
 **迁移读命令的固定动作**：`getOrm(env.db.path)` → repo.find（relations 取派生计数）→ 显式映射输出形状（含历史 clip 怪癖）→ catch 返回 rc=1 → demo 即回归。
 
-**尚未迁移的写面**（后续批次）：produce 组（outline/section/report → artifactAdd）、skill 组（add/import/refs/promote）、tree/node 域、project new/use。迁移规则同上：副作用三件套进事务 + 黄金对账。
+**尚未迁移的写面**（后续批次）：tree/node 域全部写命令（add/link/unlink/cond/index/unlock/lock/rm/import）。`project use` 有意留在 Store.metaSet（配置面非域数据）。迁移规则同上：副作用三件套进事务 + 黄金对账。produce 三命令（outline/section/report）自 0.11.0 起 JSON 纯净（此前 ok 文本污染 --json 输出——契约改进，非破坏：demo 不解析其 JSON）。
 
 ## 六、输出契约（Agent API）
 

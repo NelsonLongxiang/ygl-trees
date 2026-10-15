@@ -4,6 +4,7 @@
 import { Env } from "../cli";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 import { getOrm } from "../orm";
+import * as writes from "../writes";
 import { Project } from "../entities/research";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -16,9 +17,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing project name");
         return 2;
       }
-      const p = store.projectCreate(name, String(args.flags.q || args.flags.question || ""));
-      ack(ctx, p, `project created and selected: ${p.name}`);
-      return 0;
+      const question = String(args.flags.q || args.flags.question || "");
+      return getOrm(env.db.path)
+        .then((ds) => writes.projectCreate(ds, name, question))
+        .then((p): number => {
+          ack(ctx, p, `project created and selected: ${p.name}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "list": {
       const rows = store.projectList();

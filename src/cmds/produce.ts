@@ -1,10 +1,14 @@
-/** produce group — evidence-backed outline → sections → report. */
+/** produce group — evidence-backed outline → sections → report.
+ *  Writes run on the TypeORM write service (src/writes.ts); reads stay on
+ *  Store until their own migration batch. */
 import * as fs from "node:fs";
 import { Env } from "../cli";
 import { ok, bad, out, head, table, paint, C } from "../fmt";
 import { clip } from "../text";
+import { getOrm } from "../orm";
+import * as writes from "../writes";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
   let project: any;
   try {
@@ -36,10 +40,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const ev = store.evidenceList(pid);
       if (!ev.length) lines.push("_（尚无 evidence）_", "");
       ev.forEach((e: any, i: number) => lines.push(`- [${i + 1}] ${e.source}：${clip(e.quote, 80)}`));
-      const a = store.artifactAdd(pid, "outline", `${project.name} outline`, lines.join("\n"));
-      ok(ctx, `outline generated: ${a.id} (v${a.version})`);
-      if (!ctx.json) out(ctx, lines.join("\n"));
-      return 0;
+      const content = lines.join("\n");
+      return getOrm(env.db.path)
+        .then((ds) => writes.artifactAdd(ds, pid, "outline", `${project.name} outline`, content))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          else {
+            ok(ctx, `outline generated: ${r.row.id} (v${r.version})`);
+            out(ctx, content);
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
 
     case "section": {
@@ -49,9 +64,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: produce section <title> --body|-f <file>");
         return 2;
       }
-      const a = store.artifactAdd(pid, "section", title, body);
-      ok(ctx, `section saved: ${a.id} (v${a.version})`);
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) => writes.artifactAdd(ds, pid, "section", title, body))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          else ok(ctx, `section saved: ${r.row.id} (v${r.version})`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
 
     case "report": {
@@ -109,13 +132,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       else for (const c of weak) L.push(`- 待补证据：${c.text}`);
 
       const content = L.join("\n");
-      const a = store.artifactAdd(pid, "report", `${project.name} report`, content);
-      ok(ctx, `report generated: ${a.id} (v${a.version})`);
-      if (!ctx.json) {
-        out(ctx, content);
-        out(ctx, paint(C.dim, `\n  hint: ygl-trees produce export ${a.id} report.md`, ctx.color));
-      }
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) => writes.artifactAdd(ds, pid, "report", `${project.name} report`, content))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          else {
+            ok(ctx, `report generated: ${r.row.id} (v${r.version})`);
+            out(ctx, content);
+            out(ctx, paint(C.dim, `\n  hint: ygl-trees produce export ${r.row.id} report.md`, ctx.color));
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
 
     case "list":

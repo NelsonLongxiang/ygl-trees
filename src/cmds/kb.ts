@@ -7,6 +7,7 @@ import { ok, bad, out, head, table, show, paint, C, writeResult } from "../fmt";
 import { clip, parseFrontmatter } from "../text";
 import { getOrm } from "../orm";
 import * as writes from "../writes";
+import { deriveL1 } from "../store";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -124,10 +125,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "promote": {
-      const s = store.kbPromote(rest[0], args.flags.name ? String(args.flags.name) : undefined);
-      ok(ctx, `promoted to skill: ${s.name}`);
-      out(ctx, paint(C.dim, `  L1: ${clip(s.description, 100)}`, ctx.color));
-      return 0;
+      if (!rest[0]) {
+        bad(ctx, "usage: kb promote <noteId> [--name <skill>]");
+        return 2;
+      }
+      const note = store.kbGet(rest[0]);
+      if (!note) {
+        bad(ctx, `kb note not found: ${rest[0]}`);
+        return 1;
+      }
+      const name = args.flags.name ? String(args.flags.name) : note.title;
+      return getOrm(env.db.path)
+        .then((ds) =>
+          writes.skillUpsert(ds, {
+            name,
+            description: deriveL1(note.body || "", note.title),
+            body: note.body,
+            tags: note.tags,
+            origin: `kb:${note.id}`,
+          })
+        )
+        .then((s): number => {
+          ok(ctx, `promoted to skill: ${s.name}`);
+          out(ctx, paint(C.dim, `  L1: ${clip(String(s.description), 100)}`, ctx.color));
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "import": {
       const target = rest[0];

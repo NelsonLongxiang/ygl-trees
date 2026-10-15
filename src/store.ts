@@ -697,11 +697,9 @@ function str(v: any): string {
 
 /**
  * Derive an L1 description (what + when) from a note body, for kb promote.
- * Preference order: the first list item near the top, else the first
- * meaningful line (skipping headings and boilerplate like the generated
- * stamp); a provenance tail keeps the source greppable for agent matching.
+ * Exported: the kb promote command composes it with the TypeORM skillUpsert.
  */
-function deriveL1(body: string, title: string): string {
+export function deriveL1(body: string, title: string): string {
   const lines = body
     .split("\n")
     .map((l) => l.replace(/\*\*/g, "").trim())
