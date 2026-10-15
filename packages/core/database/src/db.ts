@@ -358,6 +358,10 @@ export class DB {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new Database(file);
     this.db.exec("PRAGMA journal_mode=WAL");
+    // WAL + NORMAL (sqlite.org recommended pairing): commits skip the per-tx
+    // fsync (~14ms on Windows) and sync at WAL checkpoints instead. A power
+    // loss may roll back the last transactions; the database cannot corrupt.
+    this.db.exec("PRAGMA synchronous=NORMAL");
     this.db.exec("PRAGMA foreign_keys=ON");
     this.migrate();
   }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.0（2026-10-16）WebUI 三视图交互 + WAL+NORMAL + fts boost 限候选集
+- **WebUI 交互收尾（设计稿三视图齐了）**：科技树节点可点击 → 右侧详情面板（`/api/node?tree=&key=` 端点：node/parents/children/conditions/can 确定性判定，eval 门槛以问题文本呈现在 missing_required）；claims 按状态分组、点击展开证据链接与原文摘录（/api/data 扩展 claim_evidence + evidence 索引）；节点面板独立于轮询重渲染（选中/展开状态跨 10s 刷新保持）
+- **UI 规范**（ui-ux-pro-max 技能指导）：键盘可达（tabindex + Enter/Space + :focus-visible 焦点环）、aria-expanded/aria-live、加载/静态导出双态反馈、prefers-reduced-motion 降级、HTML 转义防注入（esc() 全覆盖用户文本）
+- **fts() boost 限候选集**：`lower(title) LIKE` 从全表扫描改为仅扫 MATCH 候选 id 集（计数语义逐位一致——boost 本来只落给候选行）
+- **WAL + synchronous=NORMAL**（sqlite.org 推荐组合，双连接设置）：commit 免逐事务 fsync；claim-write 39.9→28.1ms/op（−29%）；持久性语义=断电回滚末几笔、不损坏（docs/conventions.md §五连接策略）
+- **kb-search 25ms 剖析定案**：per-token MATCH ~3ms + reuse 回写 ~10ms（VFS 锁目录 mkdir/rmdir + WAL 追加）为地板；"读路径去写"记为已知机会（需 Store 生命周期改造，超出便宜优化范围）
+- 单测 22→56 例（webui 12 新例：脚本语法编译护栏/注入转义/三路由/404/400）；ops/tools 声明 @ygl/techtree-model 依赖
+
 ## 0.23.0（2026-10-16）dogfood 深化批 + benchmarks + Bun 决策 + kbSearch 修复
 - **benchmarks/ 基准套件**：零依赖七席（startup 子进程 / claim-write / claim-dedupe / kb-import-batch / kb-search / node-index median-of-3 / node-search），`pnpm bench`，结果落 tmp/bench-results.json（含 node/平台/git 哈希）；README 记方法论与 Windows Defender 方差注意
 - **kbSearch 写放大修复（基准首跑战果）**：top-20 逐行 `UPDATE reuse=reuse+1`（20 次隐式事务 = 20 次 VFS fsync）→ 单语句 `IN (...)` 批更新；500 行语料 p50 326ms→25.6ms、p95 2039ms→49.9ms（12.7×/40×）

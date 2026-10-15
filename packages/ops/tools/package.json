@@ -12,6 +12,7 @@
   "dependencies": {
     "@ygl/core-database": "workspace:~",
     "@ygl/core-text": "workspace:~",
+    "@ygl/techtree-model": "workspace:~",
     "cordis": "workspace:~"
   }
 }

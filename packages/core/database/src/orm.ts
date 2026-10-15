@@ -28,6 +28,10 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
     entities: [...RESEARCH_ENTITIES, ...CORE_ENTITIES],
   });
   await ds.initialize();
+  // synchronous is per-connection (WAL is sticky in the file, this is not):
+  // keep the ORM's better-sqlite3 connection on the same WAL+NORMAL policy
+  // as the wasm DB — per-commit fsync otherwise dominates write latency.
+  await ds.query("PRAGMA synchronous=NORMAL");
   cached = { file: dbFile, ds };
   return ds;
 }

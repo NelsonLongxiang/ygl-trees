@@ -9,12 +9,17 @@
  */
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
+import { TreeStore } from "../../../techtree/model/src/reads";
 
 interface DashboardData {
   brief: any;
   tree: any;
   claims: any[];
   sources: any[];
+  /** evidence index: id -> {quote, locator, source_id} (for claim expand) */
+  evidence: any[];
+  /** claim↔evidence links (for claim expand) */
+  claim_evidence: any[];
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -39,7 +44,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 export function gatherData(env: Env): DashboardData {
   const { db, store } = env;
 
-  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [] };
+  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [] };
 
   const cur = db.metaGet("current_project");
   data.brief = { current_project: cur || null, counts: store.stats(), next_actions: [] };
@@ -49,6 +54,23 @@ export function gatherData(env: Env): DashboardData {
     if (project) {
       data.claims = store.claimList(project.id);
       data.sources = store.sourceList(project.id).slice(0, 20);
+      if (data.claims.length) {
+        const ids = data.claims.map((c: any) => c.id);
+        const ph = ids.map(() => "?").join(",");
+        data.claim_evidence = db.all(
+          `SELECT ce.claim_id, ce.evidence_id, ce.stance
+             FROM claim_evidence ce WHERE ce.claim_id IN (${ph})`,
+          ids
+        );
+        const evIds = [...new Set(data.claim_evidence.map((l: any) => l.evidence_id))];
+        if (evIds.length) {
+          const ph2 = evIds.map(() => "?").join(",");
+          data.evidence = db.all(
+            `SELECT id, quote, locator, source_id FROM evidence WHERE id IN (${ph2})`,
+            evIds
+          );
+        }
+      }
     }
   }
 
@@ -97,7 +119,9 @@ h2 { font-size: 1.1em; color: #79c0ff; margin: 20px 0 10px; border-bottom: 1px s
 .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; text-align: center; }
 .card .num { font-size: 1.6em; font-weight: bold; color: #58a6ff; }
 .card .label { font-size: 0.75em; color: #8b949e; margin-top: 4px; }
-.claim { background: #161b22; border-left: 3px solid #30363d; border-radius: 4px; padding: 10px 14px; margin: 6px 0; }
+.claim { background: #161b22; border-left: 3px solid #30363d; border-radius: 4px; padding: 10px 14px; margin: 6px 0; cursor: pointer; transition: background .15s ease; }
+.claim:hover, .claim:focus-visible { background: #1c2129; }
+.claim:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
 .claim.supported { border-left-color: #3fb950; }
 .claim.refuted { border-left-color: #f85149; }
 .claim.contested { border-left-color: #d29922; }
@@ -108,6 +132,35 @@ h2 { font-size: 1.1em; color: #79c0ff; margin: 20px 0 10px; border-bottom: 1px s
 .claim.contested .status { color: #d29922; }
 .claim.unverified .status { color: #8b949e; }
 .claim .text { margin-top: 4px; font-size: 0.9em; }
+.claim .meta { font-size: 0.75em; color: #8b949e; margin-top: 4px; }
+.group-h { font-size: 0.78em; text-transform: uppercase; letter-spacing: .05em; color: #8b949e; margin: 14px 0 4px; }
+.group-h b { color: #c9d1d9; }
+.ev-list { margin-top: 8px; border-top: 1px dashed #21262d; padding-top: 8px; }
+.ev { font-size: 0.82em; color: #8b949e; margin: 5px 0; line-height: 1.5; }
+.ev .stance { display: inline-block; font-size: 0.85em; padding: 0 7px; border-radius: 8px; border: 1px solid #30363d; margin-right: 6px; }
+.ev .stance.supports { color: #3fb950; border-color: rgba(63,185,80,.4); }
+.ev .stance.refutes { color: #f85149; border-color: rgba(248,81,73,.4); }
+.chip { display: inline-block; padding: 1px 9px; margin: 2px 4px 2px 0; border: 1px solid #30363d; border-radius: 10px; font-size: 0.75em; color: #c9d1d9; background: #0d1117; }
+a.chip, .chip.click { cursor: pointer; text-decoration: none; }
+.chip.click:hover, .chip.click:focus-visible { border-color: #58a6ff; color: #58a6ff; outline: none; }
+#node-panel { position: fixed; right: 20px; top: 20px; bottom: 20px; width: 330px; max-width: calc(100vw - 40px); background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; overflow-y: auto; display: none; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+#node-panel h3 { color: #58a6ff; margin-bottom: 8px; padding-right: 26px; font-size: 1.05em; }
+.panel-close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #8b949e; background: none; border: none; font-size: 15px; line-height: 1; padding: 4px; }
+.panel-close:hover, .panel-close:focus-visible { color: #c9d1d9; outline: none; }
+.panel-sec { font-size: 0.78em; text-transform: uppercase; letter-spacing: .05em; color: #8b949e; margin: 14px 0 4px; }
+.can-badge { font-weight: bold; font-size: 0.9em; }
+.can-badge.ok { color: #3fb950; }
+.can-badge.bad { color: #f85149; }
+.cond-table { width: 100%; border-collapse: collapse; font-size: 0.78em; margin: 6px 0; }
+.cond-table th, .cond-table td { border: 1px solid #21262d; padding: 3px 6px; text-align: left; color: #c9d1d9; }
+.cond-table th { color: #8b949e; font-weight: normal; }
+.dim { color: #8b949e; font-size: 0.82em; }
+.node-box { cursor: pointer; }
+.node-box:hover rect, .node-box:focus-visible rect { stroke: #58a6ff; }
+.node-box:focus-visible rect { outline: none; }
+.node-box.selected rect { stroke: #58a6ff; stroke-width: 2.5; }
+.node-box:focus { outline: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 svg { max-width: 100%; height: auto; }
 .node { fill: #161b22; stroke: #30363d; stroke-width: 1.5; rx: 4; }
 .node text { fill: #c9d1d9; font-size: 11px; text-anchor: middle; }
@@ -133,12 +186,26 @@ svg { max-width: 100%; height: auto; }
 <h2>📚 Sources</h2>
 <div id="sources" style="font-size:0.85em;color:#8b949e;"></div>
 
+<aside id="node-panel" aria-live="polite" aria-label="node detail"></aside>
+
 <div class="footer">generated by ygl-trees webui · ${footer}</div>
 
 <script>
 const FALLBACK = ${json};
 
+var LAST = null;
+var uiState = { expanded: {}, selectedNode: null };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function jq(s) { return String(s == null ? '' : s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"); }
+
 function render(DATA) {
+  LAST = DATA;
+
   // ── Stats cards ──
   const statsEl = document.getElementById('stats');
   const counts = DATA.brief.counts || {};
@@ -147,36 +214,77 @@ function render(DATA) {
     ['evidence', 'Evidence'], ['claims', 'Claims'], ['artifacts', 'Artifacts'],
     ['trees', 'Trees'], ['nodes', 'Nodes'],
   ];
-  statsEl.innerHTML = cards.map(([k, label]) =>
-    '<div class="card"><div class="num">' + (counts[k] ?? 0) + '</div><div class="label">' + label + '</div></div>'
-  ).join('');
+  statsEl.innerHTML = cards.map(function (card) {
+    return '<div class="card"><div class="num">' + (counts[card[0]] ?? 0) + '</div><div class="label">' + card[1] + '</div></div>';
+  }).join('');
 
-  // ── Claims ──
-  const claimsEl = document.getElementById('claims');
-  if (DATA.claims && DATA.claims.length) {
-    claimsEl.innerHTML = DATA.claims.map(c =>
-      '<div class="claim ' + c.status + '">' +
-      '<span class="status">' + c.status + '</span> ' +
-      '<span class="text">' + c.text.slice(0, 120) + '</span>' +
-      ' <small style="color:#8b949e">sup=' + c.sup + ' ref=' + c.ref + '</small></div>'
-    ).join('');
-  } else {
-    claimsEl.innerHTML = '<p style="color:#484f58">No claims yet (select a project first)</p>';
+  renderClaims(DATA);
+  renderSources(DATA);
+  renderTree(DATA);
+}
+
+// ── Claims: grouped by status, click to expand evidence ──
+function renderClaims(DATA) {
+  const el = document.getElementById('claims');
+  const claims = DATA.claims || [];
+  if (!claims.length) {
+    el.innerHTML = '<p class="dim">No claims yet (select a project first)</p>';
+    return;
   }
+  const evIdx = {};
+  (DATA.evidence || []).forEach(function (e) { evIdx[e.id] = e; });
+  const byClaim = {};
+  (DATA.claim_evidence || []).forEach(function (l) { (byClaim[l.claim_id] = byClaim[l.claim_id] || []).push(l); });
 
-  // ── Sources ──
-  const sourcesEl = document.getElementById('sources');
+  const order = ['supported', 'contested', 'refuted', 'unverified'];
+  const groups = {};
+  claims.forEach(function (c) { (groups[c.status] = groups[c.status] || []).push(c); });
+  el.innerHTML = order.slice()
+    .concat(Object.keys(groups).filter(function (s) { return order.indexOf(s) < 0; }))
+    .filter(function (s) { return groups[s] && groups[s].length; })
+    .map(function (s) {
+      return '<div class="group-h">' + esc(s) + ' · <b>' + groups[s].length + '</b></div>' +
+        groups[s].map(function (c) { return claimHtml(c, byClaim[c.id] || [], evIdx); }).join('');
+    }).join('');
+}
+
+function claimHtml(c, links, evIdx) {
+  const open = !!uiState.expanded[c.id];
+  const evid = links.map(function (l) {
+    const e = evIdx[l.evidence_id];
+    const quote = e ? esc(String(e.quote).slice(0, 160)) : '<i>(evidence ' + esc(l.evidence_id) + ')</i>';
+    const loc = e && e.locator ? ' <i>§' + esc(e.locator) + '</i>' : '';
+    return '<div class="ev"><span class="stance ' + esc(l.stance) + '">' + esc(l.stance) + '</span>' + quote + loc + '</div>';
+  }).join('');
+  return '<div class="claim ' + esc(c.status) + '" role="button" tabindex="0" aria-expanded="' + open + '"' +
+    ' onclick="toggleClaim(\\'' + jq(c.id) + '\\')"' +
+    ' onkeydown="keyToggle(event, \\'' + jq(c.id) + '\\')">' +
+    '<span class="status">' + esc(c.status) + '</span>' +
+    '<span class="text">' + esc(String(c.text).slice(0, 140)) + '</span>' +
+    '<div class="meta">sup=' + (c.sup ?? 0) + ' ref=' + (c.ref ?? 0) + ' evidence=' + links.length + (open ? ' ▴' : ' ▾') + '</div>' +
+    (open && evid ? '<div class="ev-list">' + evid + '</div>' : '') +
+    '</div>';
+}
+
+function toggleClaim(id) { uiState.expanded[id] = !uiState.expanded[id]; renderClaims(LAST); }
+function keyToggle(ev, id) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleClaim(id); } }
+
+// ── Sources ──
+function renderSources(DATA) {
+  const el = document.getElementById('sources');
   if (DATA.sources && DATA.sources.length) {
-    sourcesEl.innerHTML = DATA.sources.map(s =>
-      '• <strong>' + (s.title || 'untitled') + '</strong>' +
-      (s.url ? ' — <a href="' + s.url + '" style="color:#58a6ff">' + s.url.slice(0, 50) + '</a>' : '') +
-      ' (relevance: ' + s.relevance + ')'
-    ).join('<br>');
+    el.innerHTML = DATA.sources.map(function (s) {
+      return '• <strong>' + esc(s.title || 'untitled') + '</strong>' +
+        (s.url ? ' — <a href="' + esc(s.url) + '" style="color:#58a6ff">' + esc(String(s.url).slice(0, 50)) + '</a>' : '') +
+        ' (relevance: ' + esc(s.relevance) + ')';
+    }).join('<br>');
   } else {
-    sourcesEl.innerHTML = '<p style="color:#484f58">No sources</p>';
+    el.innerHTML = '<p class="dim">No sources</p>';
   }
+}
 
-  // ── Tech Tree (SVG DAG) ──
+// ── Tech Tree (SVG DAG, clickable nodes) ──
+function renderTree(DATA) {
   const treeEl = document.getElementById('tree-container');
   const treeNameEl = document.getElementById('tree-name');
   if (DATA.tree && DATA.tree.nodes && DATA.tree.nodes.length) {
@@ -184,20 +292,19 @@ function render(DATA) {
     const nodes = DATA.tree.nodes;
     const edges = DATA.tree.edges || [];
 
-    // Layout: tier-based vertical positioning
     const W = 900, nodeW = 120, nodeH = 36, vGap = 70, hGap = 140;
     const tiers = {};
-    nodes.forEach(n => { const t = n.tier || 0; (tiers[t] = tiers[t] || []).push(n); });
-    const tierKeys = Object.keys(tiers).map(Number).sort((a,b)=>a-b);
-    const maxPerTier = Math.max(...tierKeys.map(t => tiers[t].length));
+    nodes.forEach(function (n) { const t = n.tier || 0; (tiers[t] = tiers[t] || []).push(n); });
+    const tierKeys = Object.keys(tiers).map(Number).sort(function (a, b) { return a - b; });
+    const maxPerTier = Math.max.apply(null, tierKeys.map(function (t) { return tiers[t].length; }));
 
     const svgH = tierKeys.length * vGap + 80;
     const svgW = Math.max(W, maxPerTier * hGap + 100);
 
     const pos = {};
-    tierKeys.forEach((t, ti) => {
+    tierKeys.forEach(function (t, ti) {
       const row = tiers[t];
-      row.forEach((n, ni) => {
+      row.forEach(function (n, ni) {
         pos[n.key] = {
           x: svgW / 2 + (ni - (row.length - 1) / 2) * hGap,
           y: 40 + ti * vGap,
@@ -208,27 +315,108 @@ function render(DATA) {
     let svg = '<svg width="' + svgW + '" height="' + svgH + '" xmlns="http://www.w3.org/2000/svg">';
     svg += '<defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#30363d"/></marker></defs>';
 
-    edges.forEach(e => {
+    edges.forEach(function (e) {
       const from = pos[e.parent], to = pos[e.child];
       if (!from || !to) return;
       const cls = e.required ? '' : ' optional';
       const color = e.rel === 'excludes' ? ' excludes' : e.rel === 'unlock' ? ' unlock' : '';
-      svg += '<line class="edge' + cls + color + '" x1="' + (from.x + nodeW/2) + '" y1="' + (from.y + nodeH/2) + '" x2="' + (to.x - nodeW/2 + nodeW) + '" y2="' + (to.y - nodeH/2 + nodeH) + '"/>';
+      svg += '<line class="edge' + cls + color + '" x1="' + (from.x + nodeW / 2) + '" y1="' + (from.y + nodeH / 2) + '" x2="' + (to.x - nodeW / 2 + nodeW) + '" y2="' + (to.y - nodeH / 2 + nodeH) + '"/>';
     });
 
-    nodes.forEach(n => {
+    nodes.forEach(function (n) {
       const p = pos[n.key];
       if (!p) return;
-      svg += '<rect class="node" x="' + (p.x - nodeW/2) + '" y="' + p.y + '" width="' + nodeW + '" height="' + nodeH + '" rx="4"/>';
-      svg += '<text x="' + p.x + '" y="' + (p.y + nodeH/2 + 4) + '">' + n.key.slice(0, 14) + '</text>';
+      svg += '<g class="node-box' + (uiState.selectedNode === n.key ? ' selected' : '') + '" role="button" tabindex="0"' +
+        ' data-key="' + esc(n.key) + '"' +
+        ' onclick="nodeClick(\\'' + jq(n.key) + '\\')"' +
+        ' onkeydown="keyNode(event, \\'' + jq(n.key) + '\\')">' +
+        '<rect class="node" x="' + (p.x - nodeW / 2) + '" y="' + p.y + '" width="' + nodeW + '" height="' + nodeH + '" rx="4"/>' +
+        '<text x="' + p.x + '" y="' + (p.y + nodeH / 2 + 4) + '">' + esc(String(n.key).slice(0, 14)) + '</text></g>';
     });
 
     svg += '</svg>';
     treeEl.innerHTML = svg;
   } else {
     treeNameEl.textContent = '(none selected)';
-    treeEl.innerHTML = '<p style="color:#484f58">No tree selected (run: ygl-trees tree use &lt;name&gt;)</p>';
+    treeEl.innerHTML = '<p class="dim">No tree selected (run: ygl-trees tree use &lt;name&gt;)</p>';
   }
+}
+
+// ── Node detail panel (live fetch; static export shows a hint) ──
+function nodeClick(key) {
+  uiState.selectedNode = key;
+  document.querySelectorAll('.node-box').forEach(function (g) {
+    g.classList.toggle('selected', g.getAttribute('data-key') === key);
+  });
+  const panel = document.getElementById('node-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '<button class="panel-close" onclick="closePanel()" aria-label="close">✕</button>' +
+    '<h3>' + esc(key) + '</h3><p class="dim">loading…</p>';
+  const tree = LAST.tree ? LAST.tree.name : '';
+  fetch('api/node?tree=' + encodeURIComponent(tree) + '&key=' + encodeURIComponent(key))
+    .then(function (r) { if (r.ok) return r.json(); throw new Error('http ' + r.status); })
+    .then(renderNodePanel)
+    .catch(function () {
+      panel.innerHTML = '<button class="panel-close" onclick="closePanel()" aria-label="close">✕</button>' +
+        '<h3>' + esc(key) + '</h3>' +
+        '<p class="dim">节点详情需要 live 模式：<br>ygl-trees webui serve</p>';
+    });
+}
+function keyNode(ev, key) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); nodeClick(key); } }
+function closePanel() {
+  const panel = document.getElementById('node-panel');
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+  uiState.selectedNode = null;
+  document.querySelectorAll('.node-box.selected').forEach(function (g) { g.classList.remove('selected'); });
+}
+
+function renderNodePanel(d) {
+  const panel = document.getElementById('node-panel');
+  const n = d.node || {};
+  const can = d.can || {};
+  let html = '<button class="panel-close" onclick="closePanel()" aria-label="close">✕</button>' +
+    '<h3>' + esc(n.key) + (n.name && n.name !== n.key ? ' · ' + esc(n.name) : '') + '</h3>' +
+    '<div class="dim">' + esc(n.kind || 'tech') + ' · tier ' + (n.tier ?? 0) + ' · cost ' + (n.cost ?? 0) +
+    (Number(can.cost_multiplier) !== 1 ? ' ×' + can.cost_multiplier : '') + '</div>';
+
+  html += '<div class="panel-sec">unlock status</div>';
+  if (can.ok) {
+    html += '<div class="can-badge ok">✓ 可解锁</div>';
+  } else {
+    html += '<div class="can-badge bad">✗ 未满足</div>';
+  }
+  const list = function (title, arr) {
+    if (arr && arr.length) return '<div class="panel-sec">' + esc(title) + ' (' + arr.length + ')</div>' +
+      '<div>' + arr.map(function (m) { return '<span class="chip">' + esc(m) + '</span>'; }).join('') + '</div>';
+    return '';
+  };
+  html += list('missing required', can.missing_required);
+  html += list('missing optional', can.missing_optional);
+  html += list('blocked by', can.blocked_by);
+
+  if ((d.conditions || []).length) {
+    html += '<div class="panel-sec">conditions (' + d.conditions.length + ')</div><table class="cond-table">' +
+      '<tr><th>name</th><th>kind</th><th>op</th><th>value</th><th>req</th><th>effect</th></tr>' +
+      d.conditions.map(function (c) {
+        return '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.kind) + '</td><td>' + esc(c.op) + '</td><td>' +
+          esc(String(c.value).slice(0, 30)) + '</td><td>' + (c.required ? '✓' : '-') + '</td><td>' + esc(c.effect || '') + '</td></tr>';
+      }).join('') + '</table>';
+  }
+
+  const rel = function (title, arr) {
+    if (arr && arr.length) return '<div class="panel-sec">' + esc(title) + ' (' + arr.length + ')</div><div>' +
+      arr.map(function (r) {
+        return '<span class="chip click" role="button" tabindex="0" onclick="nodeClick(\\'' + jq(r.key) + '\\')"' +
+          ' onkeydown="keyNode(event, \\'' + jq(r.key) + '\\')">' + esc(r.key) +
+          (r.required === 0 ? ' <i>(opt)</i>' : '') + '</span>';
+      }).join('') + '</div>';
+    return '';
+  };
+  html += rel('parents', d.parents);
+  html += rel('children', d.children);
+
+  panel.innerHTML = html;
 }
 
 // ── Bootstrap: paint embedded snapshot immediately; upgrade to live data ──
@@ -247,17 +435,55 @@ if (location.protocol.startsWith('http')) {
 </html>`;
 }
 
-/** node:http dashboard server. Routes: / and /index.html → live HTML; /api/data → JSON. */
+/** node detail payload for /api/node — deterministic evaluation only
+ *  (op=eval gates surface as missing entries, like `node can` without --eval). */
+export function nodeDetail(env: Env, treeName: string, key: string): Record<string, any> | null {
+  const { db } = env;
+  const trees = db.all("SELECT * FROM trees WHERE name=? OR id=?", [treeName, treeName]);
+  if (!trees.length) return null;
+  const ts = new TreeStore(db);
+  const tid = trees[0].id;
+  const node = ts.nodeGet(tid, key);
+  if (!node) return null;
+  return {
+    node,
+    parents: ts.parents(tid, key),
+    children: ts.children(tid, key),
+    conditions: ts.condList(tid, key),
+    can: ts.canUnlock(tid, key),
+  };
+}
+
+/** node:http dashboard server. Routes:
+ *  / and /index.html → live HTML; /api/data → dashboard JSON;
+ *  /api/node?tree=<name>&key=<key> → node detail (deterministic can). */
 export function createDashboardServer(env: Env) {
   const http = require("node:http");
   return http.createServer((req: any, res: any) => {
-    const url = (req.url || "/").split("?")[0];
+    const u = new URL(req.url || "/", "http://127.0.0.1");
+    const url = u.pathname;
     if (url === "/" || url === "/index.html") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(generateHTML(gatherData(env), true));
     } else if (url === "/api/data") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(gatherData(env)));
+    } else if (url === "/api/node") {
+      const tree = u.searchParams.get("tree") || env.db.metaGet("current_tree") || "";
+      const key = u.searchParams.get("key") || "";
+      if (!tree || !key) {
+        res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        res.end("usage: /api/node?tree=<name>&key=<key>");
+        return;
+      }
+      const detail = nodeDetail(env, tree, key);
+      if (!detail) {
+        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+        res.end(`node not found: ${tree}/${key}`);
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(detail));
     } else {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");

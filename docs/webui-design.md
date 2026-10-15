@@ -1,6 +1,6 @@
 # WebUI 可视化方案
 
-日期：2026-10-16 ｜ 状态：**已实施（0.19.0 export / 0.22.0 serve）** ｜ 原则：零新依赖
+日期：2026-10-16 ｜ 状态：**已实施（0.19.0 export / 0.22.0 serve / 0.24.0 三视图交互）** ｜ 原则：零新依赖
 
 ## 路线
 
@@ -22,13 +22,13 @@
 ### 2. 科技树可视化
 - 数据源：`node export --json` 输出
 - 渲染：SVG DAG（节点=矩形 tier 分层，边=箭头 rel 着色：prereq 黑/unlock 蓝/excludes 红/enables 绿，虚线=可选）
-- 交互：点击节点展开 can/conditions 面板
+- 交互：点击节点展开 can/conditions 面板 ✅（0.24.0：`/api/node` 端点 + 右侧详情面板，确定性 can 判定）
 - 布局：Kahn 拓扑序已存 node_index，直接映射 Y 轴
 
 ### 3. 研究管线视图
 - 数据源：`research claim list --json` + `research evidence list --json`
-- 渲染：claim 卡片（状态色：supported 绿/refuted 红/contested 黄/unverified 灰），点击展开证据链接列表
-- 布局：按状态分组的水流式
+- 渲染：claim 卡片（状态色：supported 绿/refuted 红/contested 黄/unverified 灰），点击展开证据链接列表 ✅（0.24.0：状态分组 + 展开证据原文/stance/locator）
+- 布局：按状态分组的水流式 ✅
 
 ## 技术约束
 

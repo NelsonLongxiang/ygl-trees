@@ -262,13 +262,6 @@ export class Store {
            FROM ${o.table} f JOIN ${o.join}
           WHERE ${cond} ORDER BY score LIMIT ?`
       );
-      const stBoost = o.boostExpr
-        ? this.db.db.prepare(
-            `SELECT f.id AS __id
-               FROM ${o.table} f JOIN ${o.join}
-              WHERE ${[o.where, `lower(${o.boostExpr}) LIKE ?`].filter(Boolean).join(" AND ")} LIMIT ?`
-          )
-        : null;
       try {
         for (const t of tokens) {
           const phrase = `"${t.replace(/"/g, "")}"`;
@@ -281,17 +274,40 @@ export class Store {
               prev.score += r.score;
             } else agg.set(id, { row: r, hits: 1, score: r.score, boost: 0 });
           }
-          if (stBoost) {
-            const hits = stBoost.all([...(o.params || []), `%${t.toLowerCase()}%`, o.limit]) as Row[];
-            for (const h of hits) {
-              const prev = agg.get(String(h.__id));
-              if (prev) prev.boost += 1;
+        }
+        // boost: LIKE-scan restricted to the MATCH candidate set — identical
+        // counts (only candidates ever receive boost), no full-table scan.
+        if (o.boostExpr && agg.size) {
+          const ids = Array.from(agg.keys());
+          const stBoost = this.db.db.prepare(
+            `SELECT f.id AS __id
+               FROM ${o.table} f JOIN ${o.join}
+              WHERE ${[
+                o.where,
+                `lower(${o.boostExpr}) LIKE ?`,
+                `f.id IN (${ids.map(() => "?").join(",")})`,
+              ]
+                .filter(Boolean)
+                .join(" AND ")}`
+          );
+          try {
+            for (const t of tokens) {
+              const hits = stBoost.all([
+                ...(o.params || []),
+                `%${t.toLowerCase()}%`,
+                ...ids,
+              ]) as Row[];
+              for (const h of hits) {
+                const prev = agg.get(String(h.__id));
+                if (prev) prev.boost += 1;
+              }
             }
+          } finally {
+            stBoost.finalize();
           }
         }
       } finally {
         st.finalize();
-        if (stBoost) stBoost.finalize();
       }
     } catch {
       return o.fallback();
