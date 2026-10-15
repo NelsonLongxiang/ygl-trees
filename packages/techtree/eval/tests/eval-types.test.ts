@@ -6,9 +6,11 @@ import {
   packEvalScoreSpec,
   mapChoiceOutcome,
   mapScoreOutcome,
+  mapOutcome,
   evalChoice,
   evalScore,
   evalBoolean,
+  evalMixed,
 } from "../src/eval";
 
 // ── local stub gateway: records request bodies, answers canned shapes ──
@@ -75,6 +77,41 @@ describe("stub gateway：协议形状与真实 HTTP 路径", () => {
     expect(r.error).toContain("no evaluator configured");
     const s = await evalScore({}, "q", ["a", "b"], "");
     expect(s.ok).toBe(false);
+  });
+  it("evalMixed 单请求混三题型：请求体含三种 question 定义，结果可走各自映射器", async () => {
+    const url = await stubUrl();
+    const before = lastBodies.length;
+    const r = await evalMixed(
+      { ctx: 1 },
+      [
+        { type: "boolean", question: "完成了吗" },
+        { type: "choice", question: "派哪个团队", options: { proc: "采购", ops: "物流" }, answer: "proc" },
+        { type: "score", question: "成熟度", levels: ["原型", "可用", "成熟"], min: 2 },
+      ],
+      "t",
+      url
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // ONE request carried all three typed questions
+    expect(lastBodies.length).toBe(before + 1);
+    const qs = lastBodies.at(-1).questions;
+    expect(Object.keys(qs).sort()).toEqual(["q0", "q1", "q2"]);
+    expect(qs.q0.type).toBe("boolean");
+    expect(qs.q1.type).toBe("choice");
+    expect(qs.q1.criteria).toEqual({ proc: "采购", ops: "物流" });
+    expect(qs.q2.type).toBe("score");
+    expect(qs.q2.criteria).toEqual(["原型", "可用", "成熟"]);
+    // per-type mappers apply directly
+    expect(mapOutcome(r.results[0] as any).outcome).toBe("pass");
+    expect(mapChoiceOutcome(r.results[1] as any, "proc").outcome).toBe("pass");
+    expect(mapChoiceOutcome(r.results[1] as any, "ops").outcome).toBe("fail");
+    expect(mapScoreOutcome(r.results[2] as any, 2).outcome).toBe("pass");
+    expect(mapScoreOutcome(r.results[2] as any, 3).outcome).toBe("pending");
+  });
+  it("evalMixed 无 token → 整批 pending（离线安全）", async () => {
+    const r = await evalMixed({}, [{ type: "boolean", question: "q" }], "");
+    expect(r.ok).toBe(false);
   });
 });
 

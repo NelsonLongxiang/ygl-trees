@@ -263,6 +263,60 @@ export async function evalBooleanMany(
   return { ok: true, ps };
 }
 
+// ================================================================
+// mixed batch (0.27.0) — the protocol evaluates boolean/choice/score
+// questions against ONE state in a single request. Results are shaped
+// exactly like the single-question functions so the existing tri-state
+// mappers (mapOutcome / mapChoiceOutcome / mapScoreOutcome) apply directly.
+
+export type MixedQuestion =
+  | { type: "boolean"; question: string }
+  | { type: "choice"; question: string; options: Record<string, string>; answer: string }
+  | { type: "score"; question: string; levels: string[]; min: number };
+
+export type MixedResult =
+  | { ok: false; error: string }
+  | { ok: true; type: "boolean"; p: number }
+  | { ok: true; type: "choice"; choice: string; probabilities: Record<string, number> }
+  | { ok: true; type: "score"; score: number; probabilities: Record<string, number> };
+
+export async function evalMixed(
+  state: unknown,
+  questions: MixedQuestion[],
+  token: string,
+  endpoint = GATEWAY_URL
+): Promise<{ ok: true; results: MixedResult[] } | { ok: false; error: string }> {
+  if (!questions.length) return { ok: true, results: [] };
+  if (!token) return { ok: false, error: NO_TOKEN };
+  const qmap: Record<string, any> = {};
+  questions.forEach((q, i) => {
+    if (q.type === "boolean") qmap[`q${i}`] = { type: "boolean", instructions: q.question };
+    else if (q.type === "choice") {
+      const criteria: Record<string, any> = {};
+      for (const [k, v] of Object.entries(q.options)) criteria[k] = v || null;
+      qmap[`q${i}`] = { type: "choice", instructions: q.question, criteria };
+    } else qmap[`q${i}`] = { type: "score", instructions: q.question, criteria: q.levels };
+  });
+  const r = await postEval(state, qmap, token, endpoint);
+  if (!r.ok) return { ok: false, error: r.error };
+  const results: MixedResult[] = [];
+  for (let i = 0; i < questions.length; i++) {
+    const a = r.answers[`q${i}`] ?? {};
+    const t = questions[i].type;
+    if (t === "boolean") {
+      if (typeof a.probability !== "number") return { ok: false, error: `malformed answer q${i}: no boolean probability` };
+      results.push({ ok: true, type: "boolean", p: a.probability });
+    } else if (t === "choice") {
+      if (typeof a.choice !== "string" || !a.probabilities) return { ok: false, error: `malformed answer q${i}: no choice/probabilities` };
+      results.push({ ok: true, type: "choice", choice: a.choice, probabilities: a.probabilities });
+    } else {
+      if (typeof a.score !== "number" || !a.probabilities) return { ok: false, error: `malformed answer q${i}: no score/probabilities` };
+      results.push({ ok: true, type: "score", score: a.score, probabilities: a.probabilities });
+    }
+  }
+  return { ok: true, results };
+}
+
 /** R8.4 tri-state mapping. Thresholds come from config (eval.pass_threshold
  *  / eval.fail_threshold) so callers pass the resolved values. */
 export function mapOutcome(

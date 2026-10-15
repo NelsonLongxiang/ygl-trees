@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.0（2026-10-16）ready --eval 混合题型批量 + npm 发布预检
+- **`node ready --eval` 三题型混批**：evalMixed 单请求携带 boolean/choice/score（协议原生多题型）——evalCandidates 返回带 op+信封的条件，聚合按各自映射器判三态；CLI stub 冒烟：choice+score 单节点 **1 个请求**双 pass → promoted
+- **npm 发布预检**（不碰 registry）：tarball 面 57 文件健康（bin/dist/docs/README/CHANGELOG，vendor/tmp 无泄漏）；**关键裁决：必须 `pnpm publish`**——实测 pnpm pack 把 `workspace:~` 重写为 `~4.0.0-rc.11`/`~1.8.1`，npm publish 不重写（消费者装不上）
+- 单测 30 例（+3：混批单请求形状/三映射器直用/离线整批 pending）；demo 组 6a2 扩 ready 级断言（三题型单节点聚合 pending）
+- obelisk 记忆更新至 v4（mem-ff6b2eb8，英文 summary 含 0.19–0.26 全部裁决）
+
 ## 0.26.0（2026-10-16）决策模型 choice/score 题型
 - **`--op eval-choice`（多选一）**：`--options "k=desc,..."` + `--answer k`；判 **P(期望答案)**，阈值与布尔同源（eval.pass/fail_threshold），全概率分布返回
 - **`--op eval-score`（等级评分）**：`--levels "级0,..."`（2-10 级，描述须编码价值排序）+ `--min-score n`；score∈[0,N-1] 概率加权均值，三态 = ≥min pass / ≤min−1 fail / [min−1,min) 灰带

@@ -80,7 +80,7 @@
 
 - **R8.8 choice/score 题型（2026-10-16 立项，0.26.0）**：op 家族扩为 `eval`（布尔 P(true)）/ `eval-choice`（多选一，`--options "k=desc,..."` + `--answer k`）/ `eval-score`（等级评分，`--levels "级0,..."` 2-10 级 + `--min-score n`）；**零 schema 变更**——问题与选项打包为 value 内 JSON 信封 `{"q", "options"/"levels", "answer"/"min"}`（parseEvalSpec 对 plain 字符串向后兼容）；三态映射：choice 判 **P(期望答案)**（阈值与布尔同源 eval.pass/fail_threshold）、score 判 **score∈[0,N-1]**（≥min pass / ≤min−1 fail / [min−1,min) 灰带）；missing_required 显示问题措辞而非 JSON；离线安全与凭证优先级链同 R8.5；题面纪律：选项/等级描述必须编码业务价值排序（材料 ρ=0.25 教训）
 
-**非目标**：评估结果不写回数据库（每次 `can` 现评，保持无状态）；`node ready --eval` 批量评估目前仅聚合布尔 op（choice/score 经 `node can --eval` 逐节点判，混合题型批量留后续）。
+**非目标**：评估结果不写回数据库（每次 `can` 现评，保持无状态）。~~`node ready --eval` 批量评估留后续批次~~（0.16.0 落地；0.27.0 扩为三题型混批）。
 
 ## 2. 数据模型变更（schema v2 → v3）
 

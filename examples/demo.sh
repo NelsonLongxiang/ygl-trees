@@ -130,6 +130,10 @@ case "$CD" in
   *team_pick*eval-choice*该派哪个团队处理*) echo "  ✓ missing_required 显示问题措辞而非 JSON 信封";;
   *) echo "  ✗ 信封显示泄漏"; exit 1;;
 esac
+$Y node cond quest-gate --name pick2 --kind quest --op eval-choice --value "选哪条路径" --options "a=路径甲, b=路径乙" --answer a >/dev/null
+$Y node cond quest-gate --name score2 --kind quest --op eval-score --value "质量如何" --levels "低:返工, 高:可交付" --min-score 1 >/dev/null
+RM=$(YGL_EVAL_OFFLINE=1 $Y node ready --eval --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const q=j.eval_pending.find(p=>p.key==='quest-gate');console.log(q&&q.results.length===3&&q.results.every(r=>r.outcome==='pending')?'ok':JSON.stringify(q))})")
+if [ "$RM" = "ok" ]; then echo "  ✓ ready --eval 混批：quest-gate 三题型（boolean+choice+score）单节点聚合 pending"; else echo "  ✗ ready mixed: $RM"; exit 1; fi
 
 echo "── 6b. export → import round-trip"
 $Y node export --out "$YGL_HOME/demo-tree.json" >/dev/null

@@ -20,7 +20,7 @@ import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/te
 import { getOrm } from "../../../core/database/src/orm";
 import * as treeWrites from "./writes";
 import {
-  DEFAULT_ENDPOINT, evalBoolean, evalBooleanMany, evalChoice, evalScore, evalToken,
+  DEFAULT_ENDPOINT, evalBoolean, evalChoice, evalMixed, evalScore, evalToken,
   mapChoiceOutcome, mapOutcome, mapScoreOutcome, packEvalChoiceSpec, packEvalScoreSpec, parseEvalSpec,
 } from "../../eval/src/eval";
 import { configGet, configGetBool, configGetNumber } from "../../../ops/tools/src/config";
@@ -414,9 +414,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const evalPending: any[] = [];
         for (const cand of candidates) {
           const ctxPkg = trees.evalContext(tid, cand.key, state, ctxName);
-          const res = await evalBooleanMany(
+          // 0.27: mixed question types ride ONE request per node (protocol native)
+          const res = await evalMixed(
             ctxPkg,
-            cand.conds.map((c: any) => c.question),
+            cand.conds.map((c: any) => {
+              if (c.op === "eval-choice") return { type: "choice", question: c.question, options: c.options || {}, answer: c.answer || "" };
+              if (c.op === "eval-score") return { type: "score", question: c.question, levels: c.levels || [], min: c.min ?? 0 };
+              return { type: "boolean", question: c.question };
+            }),
             token,
             endpoint
           );
@@ -425,9 +430,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             continue;
           }
           const results = cand.conds.map((c: any, i: number) => {
-            const p = res.ps![i];
-            const outcome = p >= passT ? "pass" : p <= failT ? "fail" : "pending";
-            return { name: c.name, p, outcome };
+            const r = res.results[i];
+            if (c.op === "eval-choice") {
+              const m = mapChoiceOutcome(r as any, c.answer || "", passT, failT);
+              return { name: c.name, ...m };
+            }
+            if (c.op === "eval-score") {
+              const m = mapScoreOutcome(r as any, c.min ?? 0);
+              return { name: c.name, ...m };
+            }
+            const m = mapOutcome(r as any, passT, failT);
+            return { name: c.name, ...m };
           });
           if (results.every((r: any) => r.outcome === "pass")) {
             promoted.push({ key: cand.key, name: cand.name, tier: cand.tier, cost: cand.cost, eval_verified: true });
@@ -452,7 +465,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (evalPending.length) {
           out(ctx, paint(C.bold, `  eval pending（灰带/未配置，非终态，${evalPending.length} 节点）`, ctx.color));
           for (const p of evalPending)
-            out(ctx, paint(C.dim, `    - ${p.key}: ${p.results.map((r: any) => `${r.name}=${r.outcome}${r.p !== undefined ? `(P=${r.p})` : ""}`).join(" ")}`, ctx.color));
+            out(ctx, paint(C.dim, `    - ${p.key}: ${p.results.map((r: any) => `${r.name}=${r.outcome}${r.p !== undefined ? `(P=${r.p})` : r.score !== undefined ? `(score=${r.score})` : ""}`).join(" ")}`, ctx.color));
         }
         return 0;
       })().catch((e: any): number => {

@@ -478,7 +478,7 @@ export class TreeStore {
       if (unlocked.has(n.id)) continue;
       const r = this.canUnlock(treeId, n.key, context, state);
       if (r.ok || r.blocked_by.length) continue;
-      const evalConds = this.condList(treeId, n.key).filter((c: Row) => String(c.op) === "eval");
+      const evalConds = this.condList(treeId, n.key).filter((c: Row) => /^eval(-choice|-score)?$/.test(String(c.op)));
       if (!evalConds.length) continue;
       // every remaining missing_required entry must belong to an eval cond
       const onlyEval = r.missing_required.every((m: string) =>
@@ -490,7 +490,19 @@ export class TreeStore {
         name: n.name,
         tier: n.tier,
         cost: Number(n.cost),
-        conds: evalConds.map((c: Row) => ({ name: String(c.name), question: String(c.value || c.name) })),
+        // 0.27: mixed question types — op + parsed envelope per condition
+        conds: evalConds.map((c: Row) => {
+          const spec = parseEvalSpec(c.value);
+          return {
+            name: String(c.name),
+            op: String(c.op),
+            question: spec.q || String(c.name),
+            options: spec.options,
+            answer: spec.answer,
+            levels: spec.levels,
+            min: spec.min,
+          };
+        }),
       });
     }
     return out;
