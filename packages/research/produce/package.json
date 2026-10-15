@@ -1,6 +1,6 @@
 {
   "name": "@ygl/research-produce",
-  "version": "0.18.0",
+  "version": "0.20.0",
   "description": "Report production: outline, sections, report assembly, project management",
   "type": "commonjs",
   "main": "lib/index.js",
@@ -8,5 +8,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@ygl/core-database": "workspace:~",
+    "@ygl/core-text": "workspace:~",
+    "@ygl/research-pipeline": "workspace:~"
   }
 }

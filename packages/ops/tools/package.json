@@ -1,6 +1,6 @@
 {
   "name": "@ygl/ops-tools",
-  "version": "0.18.0",
+  "version": "0.20.0",
   "description": "Operational tools: config registry, PG sync/migrate, db/job/agent handlers",
   "type": "commonjs",
   "main": "lib/index.js",
@@ -8,5 +8,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@ygl/core-database": "workspace:~",
+    "@ygl/core-text": "workspace:~",
+    "cordis": "workspace:~"
   }
 }

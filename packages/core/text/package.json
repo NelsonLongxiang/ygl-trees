@@ -1,6 +1,6 @@
 {
   "name": "@ygl/core-text",
-  "version": "0.18.0",
+  "version": "0.20.0",
   "description": "Pure text utilities and output formatting helpers",
   "type": "commonjs",
   "main": "lib/index.js",
@@ -8,5 +8,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run"
-  }
+  },
+  "dependencies": {}
 }
