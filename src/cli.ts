@@ -90,6 +90,7 @@ ${paint(C.bold, "db", true)}
   stats                      row counts per table
   path                       print the database file path
   export <file.sql> [--lean] dump ALL data tables (+ summary); --lean skips derived
+  sync pg <url>              one-way full mirror to PostgreSQL (L1, see docs/pg-compat.md)
   dups                       list duplicate-content rows
   reset                      delete the database (asks nothing, be careful)
   sql "<sql>"                ad-hoc statement (can mutate — power tool, no guardrails)

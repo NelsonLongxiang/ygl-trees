@@ -1,0 +1,89 @@
+# ygl-trees PostgreSQL 兼容方案
+
+日期：2026-10-15 ｜ 状态：**L1 已实现并验证（0.6.0），L2 待评估** ｜ 关联：[research.md](research.md) · [spec.md](spec.md) · [plan.md](plan.md)
+
+## 0. 决策上下文
+
+项目身份是"单一 SQLite 文件就是全部状态、零运行时依赖"。PG 兼容有三种层级，代价差一个数量级。本文档是 L0（方案层）：盘点真实依赖面、给出分层路线与设计，**不动代码**；批准后按 L1 → L2 逐层实施。
+
+| 层级 | 内容 | 工作量 | 零依赖哲学 |
+|---|---|---|---|
+| **L1 同步目标** | SQLite 仍是唯一事实源；新增 `db sync pg <url>` 单向全量镜像，供 SQL 工具/团队分析 | M（一会话） | 保持（pg 驱动为可选依赖，按需引入） |
+| **L2 双后端** | `--db pg://…` 可作为唯一事实源；FTS/迁移/内省/锁全部双轨 | L（多会话） | 放弃（用 pg:// 时 pg 驱动必选） |
+| L3 双向同步/多主 | — | 不做（明确非目标） | — |
+
+## 1. 目标与非目标
+
+**目标**：让 ygl-trees 的数据能被 PG 生态消费（L1），并在需要协作/集中管理时能整体切换到 PG 而不丢失任何现有命令语义（L2）。
+
+**非目标**：不改默认体验（无 PG 时一切如旧）；不做双向同步；不引入 ORM（保持手写 SQL + 薄适配层）；不追求 SQLite 与 PG 逐字节一致的 dump。
+
+## 2. SQLite 依赖面盘点（全部触点，含代码位置）
+
+| # | 触点 | 位置 | 现状 | PG 对应 | 代价 |
+|---|---|---|---|---|---|
+| 1 | FTS5 虚表 ×5（skills/sources/evidence/kb/nodes_fts） | db.ts SCHEMA_SQL | 写入路径维护影子表 | **不迁移结构**：ngram 已是预分词文本列，PG 侧用 `tsvector` 生成列 + GIN 索引（`to_tsvector('simple', ngram)`） | S |
+| 2 | `MATCH` + `bm25()` 逐 token 循环 | store.ts fts()、tree.ts nodeSearch | 逐 token OR + hits 计数排序，LIKE 兜底 | 同算法换谓词：`ngram_tsv @@ to_tsquery('simple', $t)`；hits 计数仍在 JS 聚合，**排序语义完全保留** | M |
+| 3 | `PRAGMA user_version` 迁移版本 | db.ts migrate() | 整数版本号触发升级 | `schema_migrations(version, applied_at)` 表 | S |
+| 4 | `PRAGMA table_info` 列存在检查 | db.ts upgrade2to3 | ALTER 前探测 | `information_schema.columns` | S |
+| 5 | `sqlite_master` DDL 提取 | cmds/db.ts export、db.ts tablesPreExist | dump 自带建表语句 | `pg_catalog`/`information_schema`；L2 下 dump 改为方言中立 INSERT 格式（两边一致） | M |
+| 6 | `INSERT OR REPLACE`（dump） | cmds/db.ts | 重放幂等 | `ON CONFLICT DO UPDATE`（PG 语法） | S |
+| 7 | `rowid` ×2 | events 排序（store.ts:28）、迁移回填（db.ts:386） | 隐式行号 | events 加显式 `seq INTEGER GENERATED ALWAYS AS IDENTITY`（排序改 seq）；回填改 PK 定位 | S |
+| 8 | `PRAGMA journal_mode=WAL` / `foreign_keys` | db.ts 构造器 | 每次打开设置 | no-op（PG 服务端自管；FK 声明即可） | S |
+| 9 | WASM VFS mkdir 锁（tick.lock、`<db>.lock`） | job.ts、cli.ts | 进程互斥 | L2 用 `pg_try_advisory_lock()`；并发本身由 MVCC 解决 | S |
+| 10 | 类型 | 全部 schema | TEXT/INTEGER/REAL | text/integer/double precision，**逐一同形**（布尔语义保持 integer 不转 boolean，避免翻译层） | S |
+| 11 | 驱动 | package.json | node-sqlite3-wasm（唯一依赖） | `pg`（node-postgres）作 optionalDependencies + 动态 require，缺失时给出安装提示 | S |
+| 12 | 多语句 exec | db.ts exec（SCHEMA_SQL 整段） | sqlite3_exec 天然支持 | node-postgres 简单查询协议同样支持多语句（无参数占位时） | S |
+| 13 | `--db <file>` 参数 | cli.ts | 文件路径 | 前缀 `pg://`/`postgres://` 时切 PgBackend | S |
+
+**关键结论**：最硬的 CJK 检索问题已被现有架构化解——ngram 列在**写入时**完成分词，PG 侧用 `simple` 词典的 tsvector 即可获得等价召回，**不依赖 zhparser/pg_jieba 等中文扩展**（多数托管 PG 装不了）。排序语义（hits 优先）由查询算法而非数据库特性决定，跨方言可复用。
+
+## 3. L1 设计与实现：`db sync pg <url>`（已交付，0.6.0）
+
+```
+ygl-trees db sync pg <url> [--tables a,b] [--json]
+  url 也可来自环境变量 YGL_PG_URL（避免凭证进 shell 历史）
+```
+
+**实现与原设计的两处偏差（更优）**：
+
+- **镜像 DDL 不再手写**，改为运行时由 `PRAGMA table_info` 驱动生成（类型映射 + PK），源 schema 演进自动跟随——原方案"双 DDL 漂移"风险在 L1 层面直接消失。镜像表仅保留 PK，不带 FK/UNIQUE（约束活在事实源 SQLite 侧，镜像是分析面）
+- **中文检索**：5 张可检索基表（skills/sources/evidence/kb_notes/nodes）在镜像侧用**同一份 ngram 分词器**（text.ts）重算 ngram 列 + `tsvector GENERATED ... ('simple')` + GIN 索引（PG ≥ 12；更低版本退化为 ngram-only 列表，LIKE 可查）
+
+**同步算法**：全量刷新——逐表 DELETE（子表先）+ 批量 INSERT 500/批（父表先），事务内；FTS 虚表不同步。幂等，重复执行结果一致。
+
+**实测验收（docker postgres:16-alpine @ 127.0.0.1:15432）**：
+
+- demo 库 23 表同步成功；`db stats`（已补齐树表口径）与 PG `count(*)` 逐表严格一致（18 张统计表全对齐）
+- 中文检索等价：SQLite `kb search "科技树"` 与 PG `ngram_tsv @@ to_tsquery('simple','科技')` 命中同一行；英文 token 同验
+- 幂等重跑 ✓、`--tables` 白名单 + 未知表 rc=1 ✓、坏 URL rc=1 ✓、`--json` 纯净 ✓
+- `pg` 为 optionalDependencies（8.23.1），无 PG 场景零影响；驱动缺失时给出安装提示
+
+**测试容器**（本机已建，可复用）：`docker run -d --name ygl-pg-test -e POSTGRES_USER=ygl -e POSTGRES_PASSWORD=ygl -e POSTGRES_DB=ygltest -p 15432:5432 postgres:16-alpine`，连接串 `postgres://ygl:ygl@127.0.0.1:15432/ygltest`。
+
+## 4. L2 设计要点：`--db pg://`（L1 落地并稳定一个版本后再启）
+
+1. **DBBackend 接口**：现有 `DB` 类已是从一入口（Store/TreeStore 只经 all/get/run/exec/tx），仅 3 处裸 `db.db.prepare`（fts 循环、closure 批插、nodeSearch）需收编为接口方法。SQLite/Pg 双实现，构造器按 `--db` 前缀分派。
+2. **方言分叉清单即 §2 表**——每行都有对应物，无不可解项。
+3. **迁移双轨**：`schema_migrations` 表统一两侧版本语义；PG 的 DDL 单独维护一份（不翻译 SQLite DDL，避免 subtle 差异）。
+4. **tick 并发**：PG 模式改 `pg_try_advisory_lock`，语义与 mkdir 锁一致（活锁跳过）。
+5. **预研问题（L2 开工前必须回答）**：
+   - 检索等价性：对 demo + 真实语料跑双后端召回对比（同一算法不同谓词，预期一致，需实测留证）
+   - 驱动选型：`pg`（连接池成熟）vs `postgres.js`（更轻）；倾向 `pg`
+   - CI：GitHub Actions services 起 PG 跑双后端 demo
+
+## 5. 风险
+
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| 生成列 STORED 在旧 PG（<12）不可用 | 低 | README 标注 PG ≥ 12；探测版本，旧版跳过 tsv 列（镜像仍可用，检索退化为 LIKE） |
+| tsvector 与 ngram 的召回差异（simple 词典停用词） | 中 | simple 词典基本不停用 CJK bigram；验收用例覆盖；必要时改 `''::tsvector` 手工拼接 |
+| 全量同步在数据增长后变慢 | 低 | 已预留增量方案（updated 游标）；量级触发再实施 |
+| L2 双 DDL 漂移（schema 改动漏改一侧） | 高 | schema 版本变更时强制双侧 e2e（demo 双跑）纳入 DoD；这是 L2 最大的持续成本，也是推迟它的理由 |
+| optionalDependencies 在 pnpm install 默认装上 pg | 低 | 接受（体积小、无传递依赖）；或改 peerDependencies + 手动装 |
+
+## 6. 建议与下一步
+
+1. **批准 L1**：一次会话可交付，默认体验零变化，立即获得"PG 生态可查"能力
+2. L1 稳定一个版本（含真实使用）后再评估 L2 的必要性——若协作场景未出现，L1 可能就够了
+3. L2 开工条件：§4 预研三问有答案 + 接受"双 DDL 漂移"的长期维护成本

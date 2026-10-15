@@ -687,6 +687,10 @@ export class Store {
       jobs: t("jobs"),
       runs: t("runs"),
       events: t("events"),
+      trees: t("trees"),
+      nodes: t("nodes"),
+      node_edges: t("node_edges"),
+      node_conditions: t("node_conditions"),
     };
   }
 }

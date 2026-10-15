@@ -1,9 +1,10 @@
 import * as fs from "node:fs";
 import { Env } from "../cli";
-import { ok, out, head, table, paint, C, show } from "../fmt";
+import { ok, bad, out, head, table, paint, C, show } from "../fmt";
 import { dbPath } from "../db";
+import { syncToPg } from "../pgsync";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db, home } = env;
   const file = args.flags.db ? String(args.flags.db) : dbPath(home);
 
@@ -122,8 +123,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       table(ctx, found, ["table", "count", "content"], ["table", "count", "content"]);
       return 1;
     }
+    case "sync": {
+      if (rest[0] !== "pg") {
+        bad(ctx, 'usage: db sync pg <url> [--tables a,b]   (url or env YGL_PG_URL)');
+        return 2;
+      }
+      const url = rest[1] || process.env.YGL_PG_URL || "";
+      if (!url) {
+        bad(ctx, "missing postgres url — pass it or set YGL_PG_URL (keeps credentials out of shell history)");
+        return 2;
+      }
+      const only = args.flags.tables ? String(args.flags.tables).split(",").map((s: string) => s.trim()).filter(Boolean) : undefined;
+      return syncToPg(db, url, only)
+        .then((r): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify(r, null, 2));
+            return 0;
+          }
+          ok(ctx, `mirrored ${r.tables.length} table(s) to PostgreSQL (${r.fulltext})`);
+          out(ctx, paint(C.dim, `  ${r.server_version.split(" (")[0]}`, ctx.color));
+          out(ctx, paint(C.dim, `  ${r.tables.map((t) => `${t.table}:${t.rows}`).join("  ")}`, ctx.color));
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `sync failed: ${e?.message || e}`);
+          return 1;
+        });
+    }
     case "":
-      out(ctx, paint(C.dim, "  db: init | stats | path | export <file> [--lean] | dups | reset | sql \"<sql>\"", ctx.color));
+      out(ctx, paint(C.dim, "  db: init | stats | path | export [--lean] | sync pg <url> | dups | reset | sql \"<sql>\"", ctx.color));
       return 0;
     default:
       out(ctx, paint(C.red, `  unknown db action: ${action}`, ctx.color));

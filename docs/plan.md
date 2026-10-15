@@ -11,7 +11,9 @@
 >
 > **执行记录 · 0.5.0（2026-10-15，推迟项首批）**：job tick 并发锁（mkdir 锁 + 陈旧抢占）+ 悬空 run 回收（>30min → rc=126）；schema v4 `query_sources`（纯增量，无需特殊迁移）+ `query attach` / `source add --query` / query list 召回数；`claim resolve` 人工仲裁出口（事件留痕，新证据重新推导）；`kb import` 批量 markdown（frontmatter，内容 hash 幂等）。
 > 计划外：发现并修复 README"全部命令支持 --json"的承诺缺口——写命令（add/ingest/import/fetch）在 `--json` 下现在只输出单个 JSON 对象（重复带 `duplicate: true`），此前会混入人类文本污染 Agent 解析。
-> 仍推迟：node 组写命令的 --json 对齐、npm 实际发布（外部动作，需用户确认）、单测框架。
+> 仍推迟：node 组写命令的 --json 对齐（0.5.1 已补齐）、npm 实际发布（外部动作，需用户确认）、单测框架。
+>
+> **执行记录 · 0.5.1 / 0.6.0（2026-10-15）**：0.5.1 = tree/node/skill/project 组写命令 --json 对齐（README"全部命令支持 --json"承诺兑现；project list 不再污染 name 字段；skill enable/disable 补 404）。0.6.0 = PG 兼容 L1 落地（docs/pg-compat.md 方案 → `db sync pg` 实现）：镜像 DDL 由 PRAGMA table_info 运行时推导（双 DDL 漂移风险在 L1 消失）、ngram 同分词器重算 + tsvector/GIN 中文等价召回、pg 作 optionalDependencies；docker postgres:16 容器实测 18 表计数严格对齐 + 中英文检索等价。顺手修正 `db stats` 从不统计树表的历史口径缺陷。
 
 ## 里程碑总览
 
