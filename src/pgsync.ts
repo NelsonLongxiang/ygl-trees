@@ -110,9 +110,17 @@ export async function syncToPg(db: DB, url: string, only?: string[]): Promise<Sy
       const pk = pkCols.length ? `, PRIMARY KEY (${pkCols.map((c) => `"${c}"`).join(",")})` : "";
       await client.query(`CREATE TABLE IF NOT EXISTS "${t}" (${defs.join(", ")}${pk})`);
       if (NGRAM_INPUT[t] && verNum >= 120000) {
+        // Punctuation normalization BEFORE tsvector: slash/dot/colon-joined
+        // latin runs (docker/mongo, bin/bash, hosts) parse as compound
+        // tokens (url/host) in PG and would NOT match their parts — SQLite
+        // unicode61 splits on any non-alphanumeric. Normalize both sides
+        // to space-separated parts (found via real-data trial: docker
+        // token 27 vs 24 rows). DROP first so existing mirrors self-heal
+        // (full refresh rewrites every row anyway).
+        await client.query(`ALTER TABLE "${t}" DROP COLUMN IF EXISTS "ngram_tsv"`);
         await client.query(
-          `ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS "ngram_tsv" tsvector
-             GENERATED ALWAYS AS (to_tsvector('simple', coalesce("ngram", ''))) STORED`
+          `ALTER TABLE "${t}" ADD COLUMN "ngram_tsv" tsvector
+             GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(coalesce("ngram",''), '[/\\._:,&+()]+', ' ', 'g'))) STORED`
         );
         await client.query(`CREATE INDEX IF NOT EXISTS "${t}_tsv" ON "${t}" USING GIN ("ngram_tsv")`);
       }
@@ -327,7 +335,7 @@ export async function migrateToPg(db: DB, url: string, fresh = false): Promise<M
         if (verNum >= 120000) {
           await client.query(
             `ALTER TABLE "${t}" ADD COLUMN IF NOT EXISTS ngram_tsv tsvector
-               GENERATED ALWAYS AS (to_tsvector('simple', coalesce(ngram, ''))) STORED`
+               GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(coalesce(ngram,''), '[/\\._:,&+()]+', ' ', 'g'))) STORED`
           );
           await client.query(`CREATE INDEX IF NOT EXISTS "${t}_tsv" ON "${t}" USING GIN (ngram_tsv)`);
         }
