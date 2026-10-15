@@ -179,27 +179,32 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       files.sort();
-      let added = 0;
-      let dups = 0;
-      for (const f of files) {
+      // parse everything first, then ONE bulk transaction (writes.kbImportBulk)
+      const items: writes.KbImportItem[] = files.map((f) => {
         const raw = fs.readFileSync(f, "utf8");
         const { meta, body } = parseFrontmatter(raw);
         const heading = /^#\s+(.+)\s*$/m.exec(body)?.[1]?.trim();
         const title = meta.title || meta.name || heading || path.basename(f, ".md");
-        const r = store.kbAdd({
+        return {
           title,
           body,
           tags: meta.tags || String(args.flags.tags || ""),
           source_url: meta.url || "",
           confidence: meta.confidence || "B",
           origin: `import:${f}`,
+        };
+      });
+      return getOrm(env.db.path)
+        .then((ds) => writes.kbImportBulk(ds, items))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify({ added: r.added, duplicates: r.dups, files: files.length, target }, null, 2));
+          else ok(ctx, `kb import: ${r.added} added, ${r.dups} duplicate(s) kept — ${files.length} file(s) from ${target}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
         });
-        if (r.dup) dups++;
-        else added++;
-      }
-      if (ctx.json) console.log(JSON.stringify({ added, duplicates: dups, files: files.length, target }, null, 2));
-      else ok(ctx, `kb import: ${added} added, ${dups} duplicate(s) kept — ${files.length} file(s) from ${target}`);
-      return 0;
     }
     case "":
       out(ctx, paint(C.dim, "  kb: add | import <dir|file> | search | list | show | link | ingest <artifactId> | promote <noteId>", ctx.color));

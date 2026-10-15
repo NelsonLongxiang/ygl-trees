@@ -301,6 +301,48 @@ export async function kbIngestArtifact(ds: DataSource, artifactId: string, force
   });
 }
 
+/**
+ * Bulk kb import — ONE transaction for the whole batch. Per-note commits
+ * (WAL fsync each) measured ~20ms/note on the real-data trial (2189 notes
+ * = 44s); in-transaction row work is memory-bound until the single COMMIT.
+ */
+export interface KbImportItem {
+  title: string;
+  body: string;
+  tags?: string;
+  source_url?: string;
+  origin?: string;
+  confidence?: string;
+}
+
+export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promise<{ added: number; dups: number }> {
+  return ds.transaction(async (mgr) => {
+    let added = 0;
+    let dups = 0;
+    for (const o of items) {
+      const hash = contentHash(`${o.title}\n${o.body}`, false);
+      const ex = (await mgr.query(`SELECT id FROM kb_notes WHERE content_hash=?`, [hash])) as any[];
+      if (ex.length) {
+        dups++;
+        continue;
+      }
+      const id = shortId(["kb", o.title], 10);
+      const now = nowIso();
+      await mgr.query(
+        `INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,reuse,content_hash,created,updated)
+         VALUES(?,?,?,?,?,?,?,0,?,?,?)`,
+        [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, now, now]
+      );
+      await mgr.query(`INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
+        id, o.title, o.tags || "", ngram(`${o.title} ${o.tags || ""} ${o.body}`),
+      ]);
+      await logEvent(mgr, "kb.add", "kb_note", id, o.title);
+      added++;
+    }
+    return { added, dups };
+  });
+}
+
 // ================================================================ jobs
 
 export async function jobAdd(

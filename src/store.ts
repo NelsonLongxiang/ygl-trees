@@ -444,6 +444,7 @@ export class Store {
       params: [],
       q,
       limit,
+      boostExpr: "k.title", // title substring hits outrank same-hit rows (see fts doc)
       fallback: () =>
         this.db.all("SELECT id,title,tags,confidence FROM kb_notes WHERE title LIKE ? LIMIT ?", [`%${q}%`, limit]),
     });
@@ -489,6 +490,13 @@ export class Store {
    * tokens each row hits, and rank by (hits desc, bm25 asc). Rows matching any
    * single token still show up, so recall survives noisy phrasing while rows
    * matching more tokens float to the top.
+   *
+   * `boostExpr` (e.g. "k.title"): rows whose boosted column contains a
+   * token as a SUBSTRING outrank same-hit rows (hits desc, boost desc,
+   * bm25 asc). Substring LIKE instead of an FTS5 column filter because
+   * unicode61 indexes whole CJK title runs as single tokens — `title:监督`
+   * never matches (real-data finding); LIKE bypasses the tokenizer and
+   * works for CJK and latin alike.
    */
   private fts(o: {
     table: string;
@@ -499,33 +507,50 @@ export class Store {
     params?: any[];
     q: string;
     limit: number;
+    boostExpr?: string;
     fallback: () => Row[];
   }): Row[] {
     const tokens = Array.from(new Set(ngram(o.q).split(/\s+/).filter(Boolean)));
     if (!tokens.length) return o.fallback();
 
     const cond = [o.where, `${o.table} MATCH ?`].filter(Boolean).join(" AND ");
-    const agg = new Map<string, { row: Row; hits: number; score: number }>();
+    const agg = new Map<string, { row: Row; hits: number; score: number; boost: number }>();
     try {
       const st = this.db.db.prepare(
         `SELECT ${o.cols.join(",")}, bm25(${o.table}) AS score
            FROM ${o.table} f JOIN ${o.join}
           WHERE ${cond} ORDER BY score LIMIT ?`
       );
+      const stBoost = o.boostExpr
+        ? this.db.db.prepare(
+            `SELECT f.id AS __id
+               FROM ${o.table} f JOIN ${o.join}
+              WHERE ${[o.where, `lower(${o.boostExpr}) LIKE ?`].filter(Boolean).join(" AND ")} LIMIT ?`
+          )
+        : null;
       try {
         for (const t of tokens) {
-          const rows = st.all([...(o.params || []), `"${t.replace(/"/g, "")}"`, o.limit]) as Row[];
+          const phrase = `"${t.replace(/"/g, "")}"`;
+          const rows = st.all([...(o.params || []), phrase, o.limit]) as Row[];
           for (const r of rows) {
             const id = String(r[o.idCol]);
             const prev = agg.get(id);
             if (prev) {
               prev.hits += 1;
               prev.score += r.score;
-            } else agg.set(id, { row: r, hits: 1, score: r.score });
+            } else agg.set(id, { row: r, hits: 1, score: r.score, boost: 0 });
+          }
+          if (stBoost) {
+            const hits = stBoost.all([...(o.params || []), `%${t.toLowerCase()}%`, o.limit]) as Row[];
+            for (const h of hits) {
+              const prev = agg.get(String(h.__id));
+              if (prev) prev.boost += 1;
+            }
           }
         }
       } finally {
         st.finalize();
+        if (stBoost) stBoost.finalize();
       }
     } catch {
       return o.fallback();
@@ -533,9 +558,9 @@ export class Store {
 
     if (!agg.size) return o.fallback();
     return [...agg.values()]
-      .sort((a, b) => b.hits - a.hits || a.score - b.score)
+      .sort((a, b) => b.hits - a.hits || b.boost - a.boost || a.score - b.score)
       .slice(0, o.limit)
-      .map((a) => ({ ...a.row, score: -a.hits, bm25: a.score, matched: a.hits }));
+      .map((a) => ({ ...a.row, score: -a.hits, bm25: a.score, matched: a.hits, title_matched: a.boost }));
   }
 
   /** Knowledge reuse: turn a note (or artifact) into a reusable skill. */
