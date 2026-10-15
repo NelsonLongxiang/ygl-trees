@@ -14,6 +14,8 @@
 > 仍推迟：node 组写命令的 --json 对齐（0.5.1 已补齐）、npm 实际发布（外部动作，需用户确认）、单测框架。
 >
 > **执行记录 · 0.5.1 / 0.6.0（2026-10-15）**：0.5.1 = tree/node/skill/project 组写命令 --json 对齐（README"全部命令支持 --json"承诺兑现；project list 不再污染 name 字段；skill enable/disable 补 404）。0.6.0 = PG 兼容 L1 落地（docs/pg-compat.md 方案 → `db sync pg` 实现）：镜像 DDL 由 PRAGMA table_info 运行时推导（双 DDL 漂移风险在 L1 消失）、ngram 同分词器重算 + tsvector/GIN 中文等价召回、pg 作 optionalDependencies；docker postgres:16 容器实测 18 表计数严格对齐 + 中英文检索等价。顺手修正 `db stats` 从不统计树表的历史口径缺陷。
+>
+> **执行记录 · 0.7.0（2026-10-15，PG 兼容收口）**：架构裁定——不做双后端同写，L2 取消（依据：用户决策 + 技术再评估——Store 全同步架构 vs pg 驱动纯异步的阻抗失配是 L2 主导成本）。新增 `db migrate pg [--fresh]`：一次性完整保真迁移（24 表 DDL 手写全约束 + 单事务原子 + 列集漂移守卫 + 非空目标拒绝）。修复：query_sources 表自 schema v4 起漏出 `db export` dataTables / sync MIRROR_TABLES / stats()（备份与镜像静默丢 query↔source 关联）；`skill refs add` 的 ON CONFLICT(skill_id,path) 自 v1 起缺唯一索引（一用即错），schema v5 补 uq_skill_refs。docker postgres:16 实测：24 表迁移计数严格对齐、约束活体（23505/23503）、中文 tsv 检索等价。
 
 ## 里程碑总览
 

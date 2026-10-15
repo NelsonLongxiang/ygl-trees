@@ -165,7 +165,7 @@ CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 tok
 
 - **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
 - **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
-- **PostgreSQL 镜像**：`db sync pg <url>`（url 或环境变量 `YGL_PG_URL`）把整库单向全量镜像到 PG，供 SQL 工具/团队分析；镜像 DDL 由源 schema 自动推导，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。`pg` 为可选依赖，不用 PG 则零影响
+- **PostgreSQL 镜像/迁移**：`db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
 - **重复可见**：`db dups` 列出同内容多行（含迁移前存量重复）
 - **自动迁移**：v2 老库首次打开自动升级 schema v3（补 content_hash 列 + 回填 + 唯一索引），无人工介入
 

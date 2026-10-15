@@ -1,6 +1,6 @@
 # ygl-trees PostgreSQL 兼容方案
 
-日期：2026-10-15 ｜ 状态：**L1 已实现并验证（0.6.0），L2 待评估** ｜ 关联：[research.md](research.md) · [spec.md](spec.md) · [plan.md](plan.md)
+日期：2026-10-15 ｜ 状态：**L1 同步 + L1.5 迁移已交付（0.6.0/0.7.0）；L2 双后端已取消（架构决策：不做双后端同写）** ｜ 关联：[research.md](research.md) · [spec.md](spec.md) · [plan.md](plan.md)
 
 ## 0. 决策上下文
 
@@ -61,29 +61,37 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 
 **测试容器**（本机已建，可复用）：`docker run -d --name ygl-pg-test -e POSTGRES_USER=ygl -e POSTGRES_PASSWORD=ygl -e POSTGRES_DB=ygltest -p 15432:5432 postgres:16-alpine`，连接串 `postgres://ygl:ygl@127.0.0.1:15432/ygltest`。
 
-## 4. L2 设计要点：`--db pg://`（L1 落地并稳定一个版本后再启）
+## 4. L1.5：`db migrate pg <url>`（已交付，0.7.0）
 
-1. **DBBackend 接口**：现有 `DB` 类已是从一入口（Store/TreeStore 只经 all/get/run/exec/tx），仅 3 处裸 `db.db.prepare`（fts 循环、closure 批插、nodeSearch）需收编为接口方法。SQLite/Pg 双实现，构造器按 `--db` 前缀分派。
-2. **方言分叉清单即 §2 表**——每行都有对应物，无不可解项。
-3. **迁移双轨**：`schema_migrations` 表统一两侧版本语义；PG 的 DDL 单独维护一份（不翻译 SQLite DDL，避免 subtle 差异）。
-4. **tick 并发**：PG 模式改 `pg_try_advisory_lock`，语义与 mkdir 锁一致（活锁跳过）。
-5. **预研问题（L2 开工前必须回答）**：
-   - 检索等价性：对 demo + 真实语料跑双后端召回对比（同一算法不同谓词，预期一致，需实测留证）
-   - 驱动选型：`pg`（连接池成熟）vs `postgres.js`（更轻）；倾向 `pg`
-   - CI：GitHub Actions services 起 PG 跑双后端 demo
+**与 sync 的分工**：sync 是可刷新的 PK-only 镜像（SQLite 始终是事实源）；migrate 是**一次性完整保真毕业**——目标库自带全部 FK / UNIQUE / 索引约束，是自描述、可独立持有的 PG 数据库，迁移完成后 ygl-trees 不再写它（无双后端同写）。
 
-## 5. 风险
+- **原子性**：DDL + 数据 + 逐表计数校验在**单事务**内，任何一步失败整体回滚
+- **安全门**：目标非空（我们的表里有数据）默认拒绝并提示 `--fresh`（drop 重建）或改用 `db sync pg`
+- **防漂移守卫**：手写全量 DDL 与源库 `PRAGMA table_info` 列集逐一比对，不一致即中止——手写 DDL 腐化在迁移期暴露而不是静默错库
+- **检索就绪**：5 张可检索基表同样带 ngram + tsvector('simple') + GIN
+- **实测**（docker postgres:16）：demo 库 24 表迁移，FK 25 / UNIQUE 60 约束落库且**活体验证**（插入重复 content_hash → 23505；孤儿 FK → 23503）；20 张统计表计数严格对齐；中文 tsv 检索命中与 SQLite 一致
+
+## 5. L2 双后端：已取消（2026-10-15 决策）
+
+原方案的 L2（`--db pg://` 作唯一事实源）取消，两个独立理由：
+
+1. **架构决策（用户裁定）**：避免双后端同写。单事实源 + 单向导出（sync/migrate）覆盖了全部实际场景，双写只会引入分裂脑与一致性税
+2. **技术发现（成本再评估）**：Store/TreeStore 全栈同步架构 vs pg 驱动纯异步。实现 PG 写后端要么全栈 async 化（60+ 方法、所有命令层），要么 worker+Atomics 同步桥（脆弱）。原方案文档低估了这层阻抗失配——它才是 L2 的主导成本，比方言分叉大得多
+
+后续若真出现"必须以 PG 为唯一事实源"的场景，应作为**独立工具**重新立项（复用本项目的 schema 设计与 ngram 检索策略），而不是给 ygl-trees 加第二写入面。
+
+## 6. 风险表（更新后）
 
 | 风险 | 等级 | 缓解 |
 |---|---|---|
-| 生成列 STORED 在旧 PG（<12）不可用 | 低 | README 标注 PG ≥ 12；探测版本，旧版跳过 tsv 列（镜像仍可用，检索退化为 LIKE） |
-| tsvector 与 ngram 的召回差异（simple 词典停用词） | 中 | simple 词典基本不停用 CJK bigram；验收用例覆盖；必要时改 `''::tsvector` 手工拼接 |
-| 全量同步在数据增长后变慢 | 低 | 已预留增量方案（updated 游标）；量级触发再实施 |
-| L2 双 DDL 漂移（schema 改动漏改一侧） | 高 | schema 版本变更时强制双侧 e2e（demo 双跑）纳入 DoD；这是 L2 最大的持续成本，也是推迟它的理由 |
-| optionalDependencies 在 pnpm install 默认装上 pg | 低 | 接受（体积小、无传递依赖）；或改 peerDependencies + 手动装 |
+| 生成列 STORED 在旧 PG（<12）不可用 | 低 | 运行时探测 server_version_num，旧版自动降级为 ngram-only（LIKE 仍可查） |
+| tsvector 与 ngram 的召回差异（simple 词典停用词） | 中 | simple 词典基本不停用 CJK bigram；实测中英文 token 命中一致；如现差异可改手工 tsvector 拼接 |
+| 全量同步/迁移在数据增长后变慢 | 低 | 已预留增量方案（updated 游标）；量级触发再实施 |
+| 手写 MIGRATE_DDL 与源 schema 漂移 | 中 | 迁移期列集守卫强制中止（已实测拦截路径存在）；每次 schema 版本变更须跑一次迁移验证 |
+| optionalDependencies 在 pnpm install 默认装上 pg | 低 | 接受（体积小、无传递依赖） |
 
-## 6. 建议与下一步
+## 7. 建议与下一步
 
-1. **批准 L1**：一次会话可交付，默认体验零变化，立即获得"PG 生态可查"能力
-2. L1 稳定一个版本（含真实使用）后再评估 L2 的必要性——若协作场景未出现，L1 可能就够了
-3. L2 开工条件：§4 预研三问有答案 + 接受"双 DDL 漂移"的长期维护成本
+1. ~~批准 L1~~（已交付）——sync（可刷新镜像）与 migrate（一次性毕业）覆盖单向导出全部场景
+2. 定时镜像一行即达：`job add pg-mirror -- "ygl-trees db sync pg \$YGL_PG_URL" --every 60`（tick 锁已防双跑）
+3. L2 已取消（§5）；若未来需要"PG 为唯一事实源"，作为独立工具重新立项

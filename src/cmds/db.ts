@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import { Env } from "../cli";
 import { ok, bad, out, head, table, paint, C, show } from "../fmt";
 import { dbPath } from "../db";
-import { syncToPg } from "../pgsync";
+import { syncToPg, migrateToPg } from "../pgsync";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db, home } = env;
@@ -40,7 +40,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const skip = lean ? new Set(["node_closure", "node_index"]) : new Set<string>();
       // Order respects FK dependencies so the dump replays into a fresh db.
       const dataTables = [
-        "meta", "skills", "skill_refs", "projects", "queries", "sources", "evidence",
+        "meta", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
         "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
         "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
         "relations", "jobs", "runs", "events",
@@ -150,8 +150,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
+    case "migrate": {
+      if (rest[0] !== "pg") {
+        bad(ctx, "usage: db migrate pg <url> [--fresh]   (url or env YGL_PG_URL)");
+        return 2;
+      }
+      const url = rest[1] || process.env.YGL_PG_URL || "";
+      if (!url) {
+        bad(ctx, "missing postgres url — pass it or set YGL_PG_URL");
+        return 2;
+      }
+      const fresh = args.flags.fresh === true || args.flags.fresh === "true";
+      return migrateToPg(db, url, fresh)
+        .then((r): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify(r, null, 2));
+            return 0;
+          }
+          ok(ctx, `migrated ${r.tables.length} table(s) into PostgreSQL — one-time, full fidelity`);
+          out(ctx, paint(C.dim, `  ${r.server_version.split(" (")[0]} · FK ${r.constraints.fk} · UNIQUE ${r.constraints.unique} · ${r.fulltext}`, ctx.color));
+          out(ctx, paint(C.dim, `  ${r.tables.map((t) => `${t.table}:${t.rows}`).join("  ")}`, ctx.color));
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `migrate failed: ${e?.message || e}`);
+          return 1;
+        });
+    }
     case "":
-      out(ctx, paint(C.dim, "  db: init | stats | path | export [--lean] | sync pg <url> | dups | reset | sql \"<sql>\"", ctx.color));
+      out(ctx, paint(C.dim, "  db: init | stats | path | export [--lean] | sync pg <url> | migrate pg <url> [--fresh] | dups | reset | sql \"<sql>\"", ctx.color));
       return 0;
     default:
       out(ctx, paint(C.red, `  unknown db action: ${action}`, ctx.color));

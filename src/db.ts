@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1 } from "./text";
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -331,6 +331,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_queries_content  ON queries(project_id, con
 CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_content ON evidence(source_id, content_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_claims_content   ON claims(project_id, content_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_content       ON kb_notes(content_hash);
+
+-- v5: skill refs add upserts ON CONFLICT(skill_id, path) — the unique index
+-- it depends on was missing since v1 (the command errored on first use)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_refs ON skill_refs(skill_id, path);
 `;
 
 export class DB {
