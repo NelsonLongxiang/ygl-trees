@@ -79,6 +79,26 @@ else
   echo "  ✗ path order wrong: $P"; exit 1
 fi
 
+echo "── 6b. export → import round-trip"
+$Y node export --out "$YGL_HOME/demo-tree.json" >/dev/null
+$Y node import --file "$YGL_HOME/demo-tree.json" --tree demo-copy >/dev/null
+$Y node export --out "$YGL_HOME/demo-copy.json" >/dev/null
+node - "$YGL_HOME/demo-tree.json" "$YGL_HOME/demo-copy.json" <<'EOF'
+const fs = require("fs");
+const sig = (d) => JSON.stringify({
+  nodes: d.nodes.map((n) => [n.key, n.name, n.kind, n.tier, n.cost]),
+  edges: d.edges.map((e) => [e.parent, e.child, e.rel, e.mode, e.required]),
+  conditions: d.conditions.map((c) => [c.node, c.name, c.kind, c.op, c.value, c.required, c.effect]),
+});
+const a = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const b = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+if (sig(a) === sig(b)) console.log("  ✓ export → import round-trip semantically equal");
+else {
+  console.log("  ✗ round-trip mismatch");
+  process.exit(1);
+}
+EOF
+
 echo "── 7. scheduling"
 $Y job add "nightly" -- "echo hello" --every 1440
 D=$($Y job add "nightly" -- "echo hello" --every 1440 2>&1)

@@ -421,7 +421,12 @@ export class DB {
     this.db.exec(sql);
   }
 
+  txDepth = 0;
+  /** Re-entrant: a tx opened inside another tx joins it (no nested BEGIN),
+   *  so a helper with its own tx stays composable inside a larger unit. */
   tx<T>(fn: () => T): T {
+    if (this.txDepth > 0) return fn();
+    this.txDepth++;
     this.exec("BEGIN");
     try {
       const r = fn();
@@ -430,6 +435,8 @@ export class DB {
     } catch (e) {
       this.exec("ROLLBACK");
       throw e;
+    } finally {
+      this.txDepth--;
     }
   }
 

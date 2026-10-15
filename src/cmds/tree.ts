@@ -354,6 +354,31 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
 
+    if (sub === "import") {
+      const file = flagStr("file");
+      if (!file) {
+        bad(ctx, "usage: node import --file <tree.json> [--tree <name>] [--merge]");
+        return 2;
+      }
+      let spec: any;
+      try {
+        spec = JSON.parse(fs.readFileSync(file, "utf8"));
+      } catch (e: any) {
+        bad(ctx, `cannot parse ${file}: ${e?.message || e}`);
+        return 1;
+      }
+      try {
+        const r = trees.importTree(spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") });
+        ok(ctx, `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`);
+        db.metaSet("current_tree", r.tree.name);
+        out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
+      } catch (e: any) {
+        bad(ctx, e?.message || String(e));
+        return 1;
+      }
+      return 0;
+    }
+
     if (sub === "rm") {
       try {
         trees.nodeDel(tid, key);

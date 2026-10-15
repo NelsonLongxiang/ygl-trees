@@ -68,14 +68,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       for (const j of due) execute(env, j);
       return 0;
     }
-    case "disable":
-      store.db.run("UPDATE jobs SET enabled=0 WHERE id=? OR title=?", [rest[0], rest[0]]);
+    case "disable": {
+      const r = store.db.run("UPDATE jobs SET enabled=0 WHERE id=? OR title=?", [rest[0], rest[0]]);
+      if (!r.changes) {
+        bad(ctx, `job not found: ${rest[0]}`);
+        return 1;
+      }
       ok(ctx, `job disabled: ${rest[0]}`);
       return 0;
-    case "enable":
-      store.db.run("UPDATE jobs SET enabled=1 WHERE id=? OR title=?", [rest[0], rest[0]]);
+    }
+    case "enable": {
+      const r = store.db.run("UPDATE jobs SET enabled=1 WHERE id=? OR title=?", [rest[0], rest[0]]);
+      if (!r.changes) {
+        bad(ctx, `job not found: ${rest[0]}`);
+        return 1;
+      }
       ok(ctx, `job enabled: ${rest[0]}`);
       return 0;
+    }
     case "logs":
       table(ctx, store.runsList(Number(args.flags.limit || 10)), ["id", "job", "started", "rc", "output"], [
         "id",

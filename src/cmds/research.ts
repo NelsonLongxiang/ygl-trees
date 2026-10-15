@@ -48,6 +48,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (subAction === "done") {
+      if (!rest[1] || !store.db.get("SELECT 1 AS hit FROM queries WHERE id=?", [rest[1]])) {
+        bad(ctx, `query not found: ${rest[1]}`);
+        return 1;
+      }
       store.queryDone(rest[1]);
       ok(ctx, `query marked done: ${rest[1]}`);
       return 0;
@@ -119,6 +123,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (subAction === "rm") {
+      if (!rest[1] || !store.sourceGet(rest[1])) {
+        bad(ctx, `source not found: ${rest[1]}`);
+        return 1;
+      }
       store.sourceDel(rest[1]);
       ok(ctx, `source removed: ${rest[1]}`);
       return 0;

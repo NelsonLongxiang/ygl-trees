@@ -67,7 +67,7 @@ ygl-trees node cond steel --name has_engineer --kind flag --op has \
 
 ```bash
 ygl-trees node index        # 重建闭包 + 拓扑序
-ygl-trees node validate     # 环、悬空边、自环、脏索引、缺阈值的必检条件
+ygl-trees node validate     # 环（含可选边）、悬空边、自环、脏索引、缺阈值的必检条件
 ```
 
 ### 完整一组命令
@@ -84,9 +84,14 @@ ygl-trees node ready                                # 当前可解锁集合
 ygl-trees node path advanced-alloy                  # 到目标的最省顺序 + 累计成本
 ygl-trees node ancestors bronze                     # 闭包索引，直接父 depth=1
 ygl-trees node export --out tree.json               # 可移植 JSON
+ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导入
 ```
 
+`node import` 校验失败（引用缺失、枚举非法、必检条件缺阈值、门控环）即整体拒绝、零副作用；同名树默认拒绝，`--merge` 按 (tree, key) upsert。
+
 `node can` 的输出把三类失败分开列：**必检未满足 / 被排斥 / 可选未满足（不阻塞）**，外加成本系数。
+
+**退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 
 ---
 

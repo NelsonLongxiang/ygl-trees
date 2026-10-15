@@ -19,6 +19,8 @@ export function parse(argv: string[]): Args {
   const flags: Record<string, string | boolean> = {};
   let rest = false;
   const takesValue = (name: string) => !BOOLEAN_FLAGS.has(name);
+  /** `-1` looks like a flag but is a negative number — accept it as a value. */
+  const isValue = (s: string) => !s.startsWith("-") || /^-\d+(\.\d+)?$/.test(s);
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -35,7 +37,7 @@ export function parse(argv: string[]): Args {
       const next = argv[i + 1];
       if (inlineVal !== undefined) {
         flags[k] = inlineVal;
-      } else if (takesValue(k) && next !== undefined && !next.startsWith("-")) {
+      } else if (takesValue(k) && next !== undefined && isValue(next)) {
         flags[k] = next;
         i++;
       } else {
@@ -44,7 +46,7 @@ export function parse(argv: string[]): Args {
     } else if (/^-[A-Za-z]$/.test(a)) {
       const k = a.slice(1);
       const next = argv[i + 1];
-      if (takesValue(k) && next !== undefined && !next.startsWith("-")) {
+      if (takesValue(k) && next !== undefined && isValue(next)) {
         flags[k] = next;
         i++;
       } else flags[k] = true;
@@ -87,8 +89,10 @@ ${paint(C.bold, "db", true)}
   init                       create the workspace + schema
   stats                      row counts per table
   path                       print the database file path
-  export <file.sql>          dump SQL to a file
+  export <file.sql> [--lean] dump ALL data tables (+ summary); --lean skips derived
+  dups                       list duplicate-content rows
   reset                      delete the database (asks nothing, be careful)
+  sql "<sql>"                ad-hoc statement (can mutate — power tool, no guardrails)
 
 ${paint(C.bold, "skill", true)}        L1 description / L2 body / L3 references
   import <file.md>           import a SKILL.md (frontmatter = L1, body = L2)
@@ -127,7 +131,7 @@ ${paint(C.bold, "kb", true)}          long-term knowledge
 
 ${paint(C.bold, "job", true)}         batch + schedule (drive with cron: job tick)
   add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]
-  list | run <id> | tick | disable <id> | logs
+  list | run <id> | tick | enable <id> | disable <id> | logs
 
 ${paint(C.bold, "tree / node", true)}   tech-tree node model
   tree new <name> [--project p]      create a tree (nodes live in it)
@@ -149,7 +153,11 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
   node ancestors|descendants <key>   transitive, via closure index
   node list | show <key> | search "<q>" | unlock|lock <key>
   node validate                      cycles, dangling edges, dirty index
-  node export [--out file.json]
+  node export [--out file.json]      portable JSON
+  node import --file <file.json>     [--tree name] [--merge] — strict, transactional
+
+  Writes are idempotent (claim/evidence/query/kb/job dedupe by content
+  hash); pass --force to keep a deliberate duplicate.
 
 ${paint(C.bold, "agent", true)}       agent-facing views
   brief                      current project state + next actions (start here)
