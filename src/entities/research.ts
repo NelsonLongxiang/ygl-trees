@@ -194,6 +194,9 @@ export class Evidence {
   @ManyToOne(() => Source, undefined, { createForeignKeyConstraints: false })
   @JoinColumn({ name: "source_id" })
   source?: Source;
+
+  @OneToMany(() => ClaimEvidence, (ce) => ce.evidence, { createForeignKeyConstraints: false })
+  claimEvidence?: ClaimEvidence[];
 }
 
 @Entity({ name: "claims" })

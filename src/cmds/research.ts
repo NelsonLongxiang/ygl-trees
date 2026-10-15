@@ -1,9 +1,13 @@
 /** research group — collect → screen → extract → claim.
- *  `source fetch` is async (Node 18+ global fetch) and returns a promise. */
+ *  `source fetch` is async (Node 18+ global fetch) and returns a promise.
+ *  List commands run on TypeORM (src/orm.ts); search stays raw SQL (FTS5). */
 import * as fs from "node:fs";
+import { MoreThanOrEqual } from "typeorm";
 import { Env } from "../cli";
 import { ok, bad, out, head, table, paint, C, writeResult } from "../fmt";
 import { clip } from "../text";
+import { getOrm } from "../orm";
+import { Claim, Evidence, Query, Source } from "../entities/research";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -53,15 +57,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
     }
     if (subAction === "list" || subAction === undefined) {
-      table(ctx, store.queryList(project.id), ["id", "query", "engine", "status", "sources", "created"], [
-        "id",
-        "text",
-        "engine",
-        "status",
-        "sources",
-        "created",
-      ]);
-      return 0;
+      return getOrm(env.db.path)
+        .then(async (ds): Promise<number> => {
+          const qs = await ds.getRepository(Query).find({
+            where: { projectId: project.id },
+            relations: { querySources: true },
+            order: { created: "ASC" },
+          });
+          const rows = qs.map((q) => ({
+            id: q.id,
+            text: q.text,
+            engine: q.engine,
+            status: q.status,
+            created: q.created,
+            sources: q.querySources?.length ?? 0,
+          }));
+          table(ctx, rows, ["id", "query", "engine", "status", "sources", "created"], [
+            "id",
+            "text",
+            "engine",
+            "status",
+            "sources",
+            "created",
+          ]);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `orm query failed: ${e?.message || e}`);
+          return 1;
+        });
     }
     if (subAction === "done") {
       if (!rest[1] || !store.db.get("SELECT 1 AS hit FROM queries WHERE id=?", [rest[1]])) {
@@ -181,15 +205,36 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     if (subAction === "list") {
-      table(ctx, store.sourceList(project.id, Number(args.flags.min || -1)), [
-        "id",
-        "title",
-        "engine",
-        "rel",
-        "conf",
-        "retrieved",
-      ], ["id", "title", "engine", "relevance", "confidence", "retrieved_at"]);
-      return 0;
+      const min = Number(args.flags.min || -1);
+      return getOrm(env.db.path)
+        .then(async (ds): Promise<number> => {
+          const srcs = await ds.getRepository(Source).find({
+            where: { projectId: project.id, relevance: MoreThanOrEqual(Number.isFinite(min) ? min : -1) },
+            order: { relevance: "DESC", retrievedAt: "DESC" },
+          });
+          const rows = srcs.map((s) => ({
+            id: s.id,
+            title: s.title,
+            url: s.url,
+            engine: s.engine,
+            relevance: s.relevance,
+            confidence: s.confidence,
+            retrieved_at: s.retrievedAt,
+          }));
+          table(ctx, rows, ["id", "title", "engine", "rel", "conf", "retrieved"], [
+            "id",
+            "title",
+            "engine",
+            "relevance",
+            "confidence",
+            "retrieved_at",
+          ]);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `orm query failed: ${e?.message || e}`);
+          return 1;
+        });
     }
     if (subAction === "search") {
       const q = rest.slice(1).join(" ");
@@ -257,9 +302,27 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (subAction === "list" || subAction === undefined) {
-      const rows = store.evidenceList(project.id).map((r: any) => ({ ...r, quote: clip(r.quote, 60) }));
-      table(ctx, rows, ["id", "source", "locator", "quote", "used_by"], ["id", "source", "locator", "quote", "used_by"]);
-      return 0;
+      return getOrm(env.db.path)
+        .then(async (ds): Promise<number> => {
+          const evs = await ds.getRepository(Evidence).find({
+            where: { projectId: project.id },
+            relations: { source: true, claimEvidence: true },
+            order: { created: "ASC" },
+          });
+          const rows = evs.map((e) => ({
+            id: e.id,
+            source: e.source?.title ?? "",
+            locator: e.locator,
+            quote: clip(e.quote, 60),
+            used_by: e.claimEvidence?.length ?? 0,
+          }));
+          table(ctx, rows, ["id", "source", "locator", "quote", "used_by"], ["id", "source", "locator", "quote", "used_by"]);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `orm query failed: ${e?.message || e}`);
+          return 1;
+        });
     }
   }
 
@@ -304,9 +367,28 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (subAction === "list" || subAction === undefined) {
-      const rows = store.claimList(project.id).map((r: any) => ({ ...r, text: clip(r.text, 60) }));
-      table(ctx, rows, ["id", "text", "status", "conf", "sup", "ref"], ["id", "text", "status", "confidence", "sup", "ref"]);
-      return 0;
+      return getOrm(env.db.path)
+        .then(async (ds): Promise<number> => {
+          const cls = await ds.getRepository(Claim).find({
+            where: { projectId: project.id },
+            relations: { claimEvidence: true },
+            order: { created: "ASC" },
+          });
+          const rows = cls.map((c) => ({
+            id: c.id,
+            text: clip(c.text, 60),
+            status: c.status,
+            confidence: c.confidence,
+            sup: (c.claimEvidence ?? []).filter((ce) => ce.stance === "supports").length,
+            ref: (c.claimEvidence ?? []).filter((ce) => ce.stance === "refutes").length,
+          }));
+          table(ctx, rows, ["id", "text", "status", "conf", "sup", "ref"], ["id", "text", "status", "confidence", "sup", "ref"]);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `orm query failed: ${e?.message || e}`);
+          return 1;
+        });
     }
   }
 
