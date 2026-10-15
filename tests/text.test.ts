@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ngram, clip, contentHash, slug, parseFrontmatter, splitTags } from "../packages/core/text";
+import { ngram, clip, contentHash, slug, parseFrontmatter, splitTags } from "../packages/core/text/src/text";
 
 describe("ngram (CJK 二元组切分)", () => {
   it("中文串切二元组", () => {

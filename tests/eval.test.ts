@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveEndpoint, mapOutcome } from "../packages/techtree/eval";
+import { resolveEndpoint, mapOutcome } from "../packages/techtree/eval/src/eval";
 
 describe("resolveEndpoint (decision_model_llm_api_base 归一化)", () => {
   it("空值回落默认网关", () => {

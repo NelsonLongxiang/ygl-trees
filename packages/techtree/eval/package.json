@@ -1,0 +1,12 @@
+{
+  "name": "@ygl/techtree-eval",
+  "version": "0.18.0",
+  "description": "Decision model boolean evaluation client (Vercel AI Gateway)",
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  }
+}

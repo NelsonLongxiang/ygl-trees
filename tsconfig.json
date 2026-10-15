@@ -37,7 +37,7 @@
     }
   },
   "include": [
-    "packages/**/*.ts",
+    "packages/*/*/src/**/*.ts",
     "apps/**/*.ts"
   ],
   "exclude": [

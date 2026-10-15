@@ -1,0 +1,12 @@
+{
+  "name": "@ygl/ops-tools",
+  "version": "0.18.0",
+  "description": "Operational tools: config registry, PG sync/migrate, db/job/agent handlers",
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  }
+}

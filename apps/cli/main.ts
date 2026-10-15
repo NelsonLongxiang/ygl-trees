@@ -5,11 +5,11 @@
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import { DB, dbPath } from "../../packages/core/db";
-import { Store } from "../../packages/research/reads";
-import { Ctx, bad, out, paint, C } from "../../packages/core/fmt";
-import { Args, parse, str, num, bool, Env } from "../../packages/core/types";
-import { Container } from "../../packages/container";
+import { DB, dbPath } from "../../packages/core/database/src/db";
+import { Store } from "../../packages/research/pipeline/src/reads";
+import { Ctx, bad, out, paint, C } from "../../packages/core/text/src/fmt";
+import { Args, parse, str, num, bool, Env } from "../../packages/core/database/src/types";
+import { Container } from "../../packages/core/database/src/container";
 
 export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees");
 
@@ -177,17 +177,17 @@ export function main(argv: string[]): Promise<number> | number {
    *  db open until it settles — hence the awaited dispatch below.
    *  Domain routing: each group maps to its owning domain module. */
   const DOMAIN_ROUTES: Record<string, string> = {
-    db: "../../packages/ops/db-cmds",
-    config: "../../packages/ops/config-cmds",
-    job: "../../packages/ops/job-cmds",
-    agent: "../../packages/ops/agent-cmds",
-    research: "../../packages/research/cmds",
-    project: "../../packages/research/project-cmds",
-    produce: "../../packages/research/produce-cmds",
-    tree: "../../packages/techtree/cmds",
-    node: "../../packages/techtree/cmds",
-    skill: "../../packages/knowledge/skill-cmds",
-    kb: "../../packages/knowledge/cmds",
+    db: "../../packages/ops/tools/src/db-cmds",
+    config: "../../packages/ops/tools/src/config-cmds",
+    job: "../../packages/ops/tools/src/job-cmds",
+    agent: "../../packages/ops/tools/src/agent-cmds",
+    research: "../../packages/research/pipeline/src/cmds",
+    project: "../../packages/research/produce/src/project-cmds",
+    produce: "../../packages/research/produce/src/produce-cmds",
+    tree: "../../packages/techtree/model/src/cmds",
+    node: "../../packages/techtree/model/src/cmds",
+    skill: "../../packages/knowledge/skills/src/skill-cmds",
+    kb: "../../packages/knowledge/skills/src/cmds",
   };
   const dispatch = async (): Promise<number> => {
     const route = DOMAIN_ROUTES[group];
