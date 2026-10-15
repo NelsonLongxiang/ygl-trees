@@ -9,6 +9,8 @@ rm -rf "$YGL_HOME"
 echo "── 1. workspace"
 $Y db init
 $Y project new techtree -q "科技树数据模型如何建模与索引"
+S=$($Y project show --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(Object.keys(JSON.parse(s)).join(',')))")
+if [ "$S" = "project,queries,claims" ]; then echo "  ✓ project show (TypeORM pilot) shape ok"; else echo "  ✗ project show shape: $S"; exit 1; fi
 
 echo "── 2. skill registry (L1/L2/L3)"
 mkdir -p "$YGL_HOME/skills"
