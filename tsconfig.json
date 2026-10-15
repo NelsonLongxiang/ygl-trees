@@ -6,7 +6,7 @@
       "ES2022"
     ],
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "strict": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
@@ -16,10 +16,29 @@
     "skipLibCheck": true,
     "declaration": false,
     "sourceMap": false,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": [
+        "packages/core/*"
+      ],
+      "@research/*": [
+        "packages/research/*"
+      ],
+      "@techtree/*": [
+        "packages/techtree/*"
+      ],
+      "@knowledge/*": [
+        "packages/knowledge/*"
+      ],
+      "@ops/*": [
+        "packages/ops/*"
+      ]
+    }
   },
   "include": [
-    "src/**/*.ts"
+    "packages/**/*.ts",
+    "apps/**/*.ts"
   ],
   "exclude": [
     "node_modules",

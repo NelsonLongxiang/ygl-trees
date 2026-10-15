@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { DB } from "../src/db";
-import { CONFIG_REGISTRY, configAll, configGet, configReset, configSet } from "../src/config";
+import { DB } from "../packages/core/db";
+import { CONFIG_REGISTRY, configAll, configGet, configReset, configSet } from "../packages/ops/config";
 
 let db: DB;
 beforeAll(() => {

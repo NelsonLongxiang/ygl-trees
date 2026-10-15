@@ -1,6 +1,13 @@
 # Changelog
 
-本文件按版本聚合变更，细节证据见 [docs/plan.md](docs/plan.md) 执行记录与 git log。
+## 0.18.0（2026-10-16）架构重构：Cordis + packages/apps/vendor 分层
+- **目录重构**：`src/` → `packages/`（core/research/techtree/knowledge/ops 五域，每域 index.ts 显式导出面）+ `apps/cli/`（应用入口，与域解耦）+ `vendor/`（上游 cordis/cosmokit，pnpm workspace 管理）
+- **Cordis 框架集成**：vendor `cordis@4.0.0-rc.11` + `cosmokit@1.8.1` 从 cordiverse/cordis 上游获取（非 DSH fork）；`packages/context.ts` 定义 DatabaseService/ResearchService（Service 子类）+ createApp() 组合；为运行时服务发现、多服务生命周期、事件驱动组合、动态插件加载、时空可组合性奠定基础
+- **AGENTS.md**：Agent 常驻守则（仓库布局图、命令面板、Agent API 契约冻结表、Cordis 架构、七条开发规则、决策链链接）
+- **docs/layout.md**：目录层级规划（当前结构 + 依赖方向单向图 + 未来扩展位 + 与 DSH 对齐差异表）
+- **docs/webui-design.md**：WebUI 零依赖方案（三视图设计稿，待实施）
+- **Dogfood 验证**：以「AI Agent 开发中的架构决策模式」为题完成 query→source→evidence→claim→report→kb→skill 全闭环；agent match 双查询 top1 命中
+- **文档全面更新**：README（文档地图 + Skills 表 + config/env vars）、AGENTS.md、layout.md、webui-design.md
 
 ## 0.17.0（2026-10-16）巩固批
 - vitest 单测落地（37 用例：ngram CJK 切分、contentHash 幂等/加盐、resolveEndpoint 归一化、mapOutcome 三态边界、config 注册表不变量与校验）；`pnpm test` 升级为 unit + build + demo 三段

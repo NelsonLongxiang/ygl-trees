@@ -234,12 +234,16 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 
 | 文档 | 内容 |
 |---|---|
-| [docs/research.md](docs/research.md) | 初始调研与差距分析 |
+| [AGENTS.md](AGENTS.md) | **Agent 常驻守则**（仓库布局、命令、契约、开发规则——入口文件） |
+| [CHANGELOG.md](CHANGELOG.md) | 逐版本聚合 |
+| [docs/research.md](docs/research.md) | 初始调研与差距分析（历史归档） |
 | [docs/spec.md](docs/spec.md) | 需求规格与验收标准（R1–R8） |
 | [docs/plan.md](docs/plan.md) | 开发计划与逐版本执行记录 |
 | [docs/conventions.md](docs/conventions.md) | 数据模型应用规范（加表九触点、幂等决策树、FTS 纪律、TypeORM 边界、tmp/ 规范） |
 | [docs/pg-compat.md](docs/pg-compat.md) | PostgreSQL 兼容方案（镜像/迁移；L2 双后端已取消） |
+| [docs/layout.md](docs/layout.md) | 项目目录层级规划与设计 |
+| [docs/webui-design.md](docs/webui-design.md) | WebUI 可视化方案（零依赖静态 HTML 导出，待实施） |
 
-## 八、许可
+## 九、许可
 
 MIT
