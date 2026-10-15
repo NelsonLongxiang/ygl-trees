@@ -42,10 +42,17 @@ function env() {
 }
 
 describe("webui gatherData", () => {
-  it("brief 带 counts，claim-evidence 关联与证据索引已填充", () => {
+  it("brief 为 buildBrief 富载荷：next_actions/top_skills/进度齐备", () => {
     const d = gatherData(env());
-    expect(typeof d.brief.counts).toBe("object");
+    expect(d.brief.current_project).toBe("webui-unit");
+    expect(Array.isArray(d.brief.next_actions)).toBe(true);
+    expect(d.brief.next_actions.length).toBeGreaterThan(0);
+    expect(d.brief.project).toMatchObject({ sources: 1, evidence: 1, claims: 1 });
+    expect(Array.isArray(d.brief.top_skills)).toBe(true);
     expect(d.tree).toBeTruthy();
+  });
+  it("claim-evidence 关联与证据索引已填充", () => {
+    const d = gatherData(env());
     expect(d.claims.length).toBe(1);
     expect(d.claim_evidence.length).toBe(1);
     expect(d.claim_evidence[0]).toMatchObject({ stance: "supports" });
@@ -101,12 +108,13 @@ describe("webui live server", () => {
     const html = await res.text();
     expect(html).toContain("ygl-trees dashboard");
   });
-  it("/api/data 返回 JSON（live 收集）", async () => {
+  it("/api/data 返回 JSON（live 收集，brief 含 next_actions）", async () => {
     const res = await fetch(base + "/api/data");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/json");
     const d = await res.json();
     expect(d).toHaveProperty("brief.counts");
+    expect(d.brief.next_actions.length).toBeGreaterThan(0);
     expect(d).toHaveProperty("claim_evidence");
     expect(d).toHaveProperty("evidence");
   });

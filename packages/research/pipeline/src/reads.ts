@@ -151,7 +151,12 @@ export class Store {
           [`%${q}%`, `%${q}%`, limit]
         ),
     });
-    for (const r of rows) this.db.run("UPDATE skills SET hits=hits+1 WHERE id=?", [r.id]);
+    // single-statement hits bump (per-row UPDATEs = N implicit txns = N VFS
+    // fsyncs — same write-amp class kbSearch had before 0.23.0)
+    if (rows.length) {
+      const ids: string[] = rows.map((r) => r.id);
+      this.db.run(`UPDATE skills SET hits=hits+1 WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+    }
     return rows;
   }
 

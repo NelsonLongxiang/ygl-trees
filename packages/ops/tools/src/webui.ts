@@ -10,6 +10,7 @@
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
 import { TreeStore } from "../../../techtree/model/src/reads";
+import { buildBrief } from "./agent-cmds";
 
 interface DashboardData {
   brief: any;
@@ -46,9 +47,11 @@ export function gatherData(env: Env): DashboardData {
 
   const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [] };
 
-  const cur = db.metaGet("current_project");
-  data.brief = { current_project: cur || null, counts: store.stats(), next_actions: [] };
+  // full brief payload (next_actions / top_skills / project progress) — same
+  // builder the `agent brief` command uses
+  data.brief = buildBrief(env);
 
+  const cur = db.metaGet("current_project");
   if (cur) {
     const project = store.projectByName(cur);
     if (project) {
@@ -133,6 +136,9 @@ h2 { font-size: 1.1em; color: #79c0ff; margin: 20px 0 10px; border-bottom: 1px s
 .claim.unverified .status { color: #8b949e; }
 .claim .text { margin-top: 4px; font-size: 0.9em; }
 .claim .meta { font-size: 0.75em; color: #8b949e; margin-top: 4px; }
+.progress { margin: 10px 0 4px; color: #c9d1d9; font-size: 0.88em; }
+.progress .dim { margin-top: 2px; }
+.action { font-family: ui-monospace, Consolas, monospace; font-size: 0.78em; color: #79c0ff; margin: 3px 0; overflow-wrap: anywhere; }
 .group-h { font-size: 0.78em; text-transform: uppercase; letter-spacing: .05em; color: #8b949e; margin: 14px 0 4px; }
 .group-h b { color: #c9d1d9; }
 .ev-list { margin-top: 8px; border-top: 1px dashed #21262d; padding-top: 8px; }
@@ -176,6 +182,7 @@ svg { max-width: 100%; height: auto; }
 
 <h2>📊 Overview</h2>
 <div class="grid" id="stats"></div>
+<div id="brief-extra"></div>
 
 <h2>🌳 Tech Tree: <span id="tree-name"></span></h2>
 <div id="tree-container"></div>
@@ -217,6 +224,28 @@ function render(DATA) {
   statsEl.innerHTML = cards.map(function (card) {
     return '<div class="card"><div class="num">' + (counts[card[0]] ?? 0) + '</div><div class="label">' + card[1] + '</div></div>';
   }).join('');
+
+  // ── brief extras: project progress + next actions + top skills ──
+  const extraEl = document.getElementById('brief-extra');
+  let extra = '';
+  const p = DATA.brief.project;
+  if (p) {
+    extra += '<div class="progress">project <b>' + esc(p.name) + '</b>' +
+      ' · sources ' + p.sources + ' · evidence ' + p.evidence +
+      ' · claims ' + p.verified_claims + '/' + p.claims + ' verified · artifacts ' + p.artifacts +
+      (p.question ? '<div class="dim">' + esc(p.question) + '</div>' : '') + '</div>';
+  }
+  const na = DATA.brief.next_actions || [];
+  if (na.length) {
+    extra += '<div class="panel-sec">next actions</div>' +
+      na.map(function (a) { return '<div class="action">→ ' + esc(a) + '</div>'; }).join('');
+  }
+  const ts = DATA.brief.top_skills || [];
+  if (ts.length) {
+    extra += '<div class="panel-sec">top skills</div><div>' +
+      ts.map(function (s) { return '<span class="chip">' + esc(s.name) + '</span>'; }).join('') + '</div>';
+  }
+  extraEl.innerHTML = extra;
 
   renderClaims(DATA);
   renderSources(DATA);

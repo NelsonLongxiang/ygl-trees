@@ -8,69 +8,80 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { clip } from "../../../core/text/src/text";
 
+/** Build the brief payload (where am I / what exists / what next).
+ *  Shared by the `agent brief` command and the WebUI dashboard. */
+export function buildBrief(env: Env): any {
+  const { store } = env;
+  const cur = store.db.metaGet("current_project");
+  const stats = store.stats();
+  const skills = store.skillList().slice(0, 5);
+  const notes = store.kbList().slice(0, 5);
+
+  const payload: any = {
+    workspace: env.home,
+    current_project: cur || null,
+    counts: stats,
+    top_skills: skills.map((s: any) => ({ name: s.name, description: clip(s.description, 120) })),
+    recent_notes: notes.map((n: any) => ({ id: n.id, title: n.title, reuse: n.reuse })),
+    next_actions: [] as string[],
+  };
+
+  let project: any = null;
+  if (cur) project = store.projectByName(cur);
+  if (project) {
+    const claims = store.claimList(project.id);
+    const ev = store.evidenceList(project.id);
+    const src = store.sourceList(project.id);
+    const arts = store.artifactList(project.id);
+    payload.project = {
+      name: project.name,
+      question: project.question || null,
+      sources: src.length,
+      evidence: ev.length,
+      claims: claims.length,
+      verified_claims: claims.filter((c: any) => c.status === "supported").length,
+      artifacts: arts.length,
+    };
+    payload.unverified_claims = claims
+      .filter((c: any) => c.status !== "supported")
+      .map((c: any) => ({ id: c.id, text: clip(c.text, 80), status: c.status }));
+
+    if (!src.length) payload.next_actions.push(`ygl-trees research source add --title "..." --url "..."`);
+    if (src.length && !ev.length) payload.next_actions.push(`ygl-trees research evidence add <sourceId> --quote "..." `);
+    if (ev.length && !claims.length) payload.next_actions.push(`ygl-trees research claim add "<断言>"`);
+    if (claims.length) payload.next_actions.push(`ygl-trees research claim link <claimId> <evidenceId>`);
+    if (claims.some((c: any) => c.status === "supported") && !arts.length)
+      payload.next_actions.push(`ygl-trees produce report`);
+    if (arts.some((a: any) => a.kind === "report"))
+      payload.next_actions.push(`ygl-trees kb ingest <artifactId>   # 沉淀为长期知识`);
+    if (!stats.skills) payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
+  } else {
+    payload.next_actions.push(`ygl-trees project new <name> -q "<研究问题>"`);
+    payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
+  }
+
+  // Health: surface data problems an agent should fix first.
+  const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
+  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index   # tree '${t.name}' index is stale`);
+  const dupGroups = store.db.all(
+    `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
+     UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
+     UNION ALL SELECT 'evidence', COUNT(*) FROM (SELECT 1 FROM evidence GROUP BY source_id, quote HAVING COUNT(*)>1)
+     UNION ALL SELECT 'kb_notes', COUNT(*) FROM (SELECT 1 FROM kb_notes GROUP BY title, body HAVING COUNT(*)>1)`
+  );
+  if (dupGroups.some((g: any) => g.c > 0)) payload.next_actions.push(`ygl-trees db dups   # duplicate content rows exist`);
+  return payload;
+}
+
 export function run(env: Env, action: string, rest: string[], args: any): number {
   const { ctx, store } = env;
 
   switch (action) {
     case "brief": {
-      const cur = store.db.metaGet("current_project");
-      const stats = store.stats();
+      const payload = buildBrief(env);
+      const cur = payload.current_project;
+      const stats = payload.counts;
       const skills = store.skillList().slice(0, 5);
-      const notes = store.kbList().slice(0, 5);
-
-      const payload: any = {
-        workspace: env.home,
-        current_project: cur || null,
-        counts: stats,
-        top_skills: skills.map((s: any) => ({ name: s.name, description: clip(s.description, 120) })),
-        recent_notes: notes.map((n: any) => ({ id: n.id, title: n.title, reuse: n.reuse })),
-        next_actions: [] as string[],
-      };
-
-      let project: any = null;
-      if (cur) project = store.projectByName(cur);
-      if (project) {
-        const claims = store.claimList(project.id);
-        const ev = store.evidenceList(project.id);
-        const src = store.sourceList(project.id);
-        const arts = store.artifactList(project.id);
-        payload.project = {
-          name: project.name,
-          question: project.question || null,
-          sources: src.length,
-          evidence: ev.length,
-          claims: claims.length,
-          verified_claims: claims.filter((c: any) => c.status === "supported").length,
-          artifacts: arts.length,
-        };
-        payload.unverified_claims = claims
-          .filter((c: any) => c.status !== "supported")
-          .map((c: any) => ({ id: c.id, text: clip(c.text, 80), status: c.status }));
-
-        if (!src.length) payload.next_actions.push(`ygl-trees research source add --title "..." --url "..."`);
-        if (src.length && !ev.length) payload.next_actions.push(`ygl-trees research evidence add <sourceId> --quote "..." `);
-        if (ev.length && !claims.length) payload.next_actions.push(`ygl-trees research claim add "<断言>"`);
-        if (claims.length) payload.next_actions.push(`ygl-trees research claim link <claimId> <evidenceId>`);
-        if (claims.some((c: any) => c.status === "supported") && !arts.length)
-          payload.next_actions.push(`ygl-trees produce report`);
-        if (arts.some((a: any) => a.kind === "report"))
-          payload.next_actions.push(`ygl-trees kb ingest <artifactId>   # 沉淀为长期知识`);
-        if (!stats.skills) payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
-      } else {
-        payload.next_actions.push(`ygl-trees project new <name> -q "<研究问题>"`);
-        payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
-      }
-
-      // Health: surface data problems an agent should fix first.
-      const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
-      for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index   # tree '${t.name}' index is stale`);
-      const dupGroups = store.db.all(
-        `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
-         UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
-         UNION ALL SELECT 'evidence', COUNT(*) FROM (SELECT 1 FROM evidence GROUP BY source_id, quote HAVING COUNT(*)>1)
-         UNION ALL SELECT 'kb_notes', COUNT(*) FROM (SELECT 1 FROM kb_notes GROUP BY title, body HAVING COUNT(*)>1)`
-      );
-      if (dupGroups.some((g: any) => g.c > 0)) payload.next_actions.push(`ygl-trees db dups   # duplicate content rows exist`);
 
       if (ctx.json) {
         console.log(JSON.stringify(payload, null, 2));

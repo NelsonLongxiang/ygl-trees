@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.25.0（2026-10-16）读路径写放大清剿 + dashboard 接 agent brief
+- **skillMatch 批量化**：逐行 `UPDATE hits=hits+1`（N 结果 = N 次隐式事务 = N 次 VFS fsync，与 0.23.0 kbSearch 同类缺陷）→ 单语句 `IN (...)`；功能验证 hits 递增正常
+- **dashboard 接 buildBrief**：`agent brief` 的 payload 构建抽为 `buildBrief()` 双端复用——webui Overview 区新增项目进度行（sources/evidence/claims verified/artifacts）、**next_actions 可执行命令列表**（原来硬编码 []）、top_skills 徽章
+- **deferred usage 裁决：不做**（0.24.0 已知机会的结论）——CLI 单命令场景关闭时仍需 1 次刷盘（无收益）、serve 10s 轮询负载可忽略，代价是 Store 生命周期改造 + 计数崩溃丢失窗口；kbSearch 单语句批量已是最优形态
+- 单测 56→57 例（brief 富载荷断言：next_actions 非空/project 进度/top_skills）
+
 ## 0.24.0（2026-10-16）WebUI 三视图交互 + WAL+NORMAL + fts boost 限候选集
 - **WebUI 交互收尾（设计稿三视图齐了）**：科技树节点可点击 → 右侧详情面板（`/api/node?tree=&key=` 端点：node/parents/children/conditions/can 确定性判定，eval 门槛以问题文本呈现在 missing_required）；claims 按状态分组、点击展开证据链接与原文摘录（/api/data 扩展 claim_evidence + evidence 索引）；节点面板独立于轮询重渲染（选中/展开状态跨 10s 刷新保持）
 - **UI 规范**（ui-ux-pro-max 技能指导）：键盘可达（tabindex + Enter/Space + :focus-visible 焦点环）、aria-expanded/aria-live、加载/静态导出双态反馈、prefers-reduced-motion 降级、HTML 转义防注入（esc() 全覆盖用户文本）
