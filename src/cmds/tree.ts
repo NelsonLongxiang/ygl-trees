@@ -17,8 +17,10 @@ import * as fs from "node:fs";
 import { Env } from "../cli";
 import { TreeStore } from "../tree";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
+import { getOrm } from "../orm";
+import * as treeWrites from "../treeWrites";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db } = env;
   const trees = new TreeStore(db);
 
@@ -29,6 +31,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   };
   const flagStr = (k: string, d = "") => (args.flags[k] === undefined || args.flags[k] === true ? d : String(args.flags[k]));
   const flagBool = (k: string) => args.flags[k] === true || args.flags[k] === "true" || args.flags[k] === "1";
+
+  /** tree-domain write through the transactional service (async command). */
+  function runTreeWrite<T>(fn: (ds: any) => Promise<T>, print: (r: T) => number): Promise<number> {
+    return getOrm(env.db.path)
+      .then(fn)
+      .then(print)
+      .catch((e: any): number => {
+        bad(ctx, e?.message || String(e));
+        return 1;
+      });
+  }
 
   // ---------------------------------------------------------------- tree group
   if (env.group === "tree") {
@@ -41,10 +54,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const pid = flagStr("project");
       const proj = pid ? db.get("SELECT id FROM projects WHERE name=?", [pid]) : null;
-      const t = trees.treeCreate(name, proj?.id || "");
-      db.metaSet("current_tree", name);
-      ack(ctx, t, `tree created and selected: ${name}`);
-      return 0;
+      return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), (t): number => {
+        db.metaSet("current_tree", t.name);
+        ack(ctx, t, `tree created and selected: ${t.name}`);
+        return 0;
+      });
     }
     if (sub === "list") {
       table(ctx, trees.treeList(), ["tree", "note", "nodes", "edges", "dirty", "created"], [
@@ -87,7 +101,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: node add <key> [--name ..] [--tier n] [--cost n] [--kind tech|skill|..] [--tags ..]");
         return 2;
       }
-      const r = trees.nodeAdd(tid, {
+      const spec = {
         key,
         name: flagStr("name") || undefined,
         kind: flagStr("kind", "tech"),
@@ -96,11 +110,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         cost_unit: flagStr("cost_unit"),
         payload: flagStr("payload"),
         tags: flagStr("tags"),
+      };
+      return runTreeWrite((ds) => treeWrites.nodeAdd(ds, tid, spec), (r): number => {
+        if (ctx.json) console.log(JSON.stringify(r.created ? r.row : { ...r.row, duplicate: true }, null, 2));
+        else if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
+        else ok(ctx, `node added: ${key}${r.row.name !== key ? `  (${r.row.name})` : ""}`);
+        return 0;
       });
-      if (ctx.json) console.log(JSON.stringify(r.created ? r.row : { ...r.row, duplicate: true }, null, 2));
-      else if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
-      else ok(ctx, `node added: ${key}${r.row.name !== key ? `  (${r.row.name})` : ""}`);
-      return 0;
     }
 
     if (sub === "link") {
@@ -109,27 +125,33 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: node link <parent> <child> [--rel prereq|unlock|excludes|enables] [--mode AND|OR|XOR|NOT] [--optional] [--min-level n] [--weight n]");
         return 2;
       }
-      try {
-        const r = trees.link(tid, key, child, {
-          rel: flagStr("rel", "prereq") as any,
-          mode: flagStr("mode", "AND") as any,
-          required: !flagBool("optional"),
-          min_level: flagNum("min-level", 1),
-          weight: flagNum("weight", 1),
-          note: flagStr("note"),
-        });
-        ack(ctx, r.row, `linked ${key} → ${child}  [${r.row.rel}/${r.row.mode}/${r.row.required ? "必检" : "可选"}]`);
-      } catch (e: any) {
-        bad(ctx, e.message);
-        return 1;
-      }
-      return 0;
+      return runTreeWrite(
+        (ds) =>
+          treeWrites.link(ds, tid, key, child, {
+            rel: flagStr("rel", "prereq"),
+            mode: flagStr("mode", "AND"),
+            required: !flagBool("optional"),
+            min_level: flagNum("min-level", 1),
+            weight: flagNum("weight", 1),
+            note: flagStr("note"),
+          }),
+        (row): number => {
+          ack(ctx, row, `linked ${key} → ${child}  [${row.rel}/${row.mode}/${row.required ? "必检" : "可选"}]`);
+          return 0;
+        }
+      );
     }
 
     if (sub === "unlink") {
-      trees.unlink(tid, key, rest[1], flagStr("rel", "prereq") as any);
-      ack(ctx, { unlinked: `${key} -> ${rest[1]}` }, `unlinked ${key} → ${rest[1]}`);
-      return 0;
+      if (!key || !rest[1]) {
+        bad(ctx, "usage: node unlink <parent> <child> [--rel prereq]");
+        return 2;
+      }
+      const relU = flagStr("rel", "prereq");
+      return runTreeWrite((ds) => treeWrites.unlink(ds, tid, key, rest[1], relU), (): number => {
+        ack(ctx, { unlinked: `${key} -> ${rest[1]}` }, `unlinked ${key} → ${rest[1]}`);
+        return 0;
+      });
     }
 
     if (sub === "cond") {
@@ -150,38 +172,37 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         ]);
         return 0;
       }
-      try {
-        const c = trees.condAdd(tid, key, {
-          name,
-          kind: flagStr("kind", "flag") as any,
-          expr: flagStr("expr") || undefined,
-          op: flagStr("op", ">="),
-          value: flagStr("value"),
-          required: !flagBool("optional"),
-          effect: flagStr("effect", "gate"),
-          weight: flagNum("weight", 1),
-        });
-        ack(ctx, c, `condition added: ${key} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
-      } catch (e: any) {
-        bad(ctx, e.message);
-        return 1;
-      }
-      return 0;
+      return runTreeWrite(
+        (ds) =>
+          treeWrites.condAdd(ds, tid, key, {
+            name,
+            kind: flagStr("kind", "flag"),
+            expr: flagStr("expr") || undefined,
+            op: flagStr("op", ">="),
+            value: flagStr("value"),
+            required: !flagBool("optional"),
+            effect: flagStr("effect", "gate"),
+            weight: flagNum("weight", 1),
+          }),
+        (c): number => {
+          ack(ctx, c, `condition added: ${key} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
+          return 0;
+        }
+      );
     }
 
     if (sub === "index") {
-      const clos = trees.rebuildClosure(tid);
-      try {
-        const built = trees.buildIndex(tid);
-        ack(ctx, { nodes: built.topo.length, closure_rows: clos }, `index rebuilt: ${built.topo.length} nodes, closure ${clos} rows`);
+      return runTreeWrite((ds) => treeWrites.rebuildIndex(ds, tid), (r): number => {
+        ack(ctx, { nodes: r.nodes, closure_rows: r.closureRows }, `index rebuilt: ${r.nodes} nodes, closure ${r.closureRows} rows`);
         if (!ctx.json) {
-          out(ctx, paint(C.dim, `  tiers: ${Object.keys(built.tiers).map((t) => `t${t}(${built.tiers[t].length})`).join(" ")}`, ctx.color));
+          const st = db.get("SELECT tiers FROM node_index WHERE tree_id=?", [tid]);
+          if (st?.tiers) {
+            const tiers = JSON.parse(st.tiers);
+            out(ctx, paint(C.dim, `  tiers: ${Object.keys(tiers).map((t) => `t${t}(${tiers[t].length})`).join(" ")}`, ctx.color));
+          }
         }
-      } catch (e: any) {
-        bad(ctx, e.message);
-        return 1;
-      }
-      return 0;
+        return 0;
+      });
     }
 
     if (sub === "can") {
@@ -323,10 +344,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "unlock" || sub === "lock") {
+      if (!key) {
+        bad(ctx, `usage: node ${sub} <key> [--context ctx] [--level n]`);
+        return 2;
+      }
       const status = sub === "unlock" ? "unlocked" : "locked";
-      trees.stateSet(tid, key, status, flagStr("context", "default"), flagNum("level", 1));
-      ack(ctx, { key, status, context: flagStr("context", "default") }, `marked ${status}: ${key}`);
-      return 0;
+      const ctxName = flagStr("context", "default");
+      return runTreeWrite((ds) => treeWrites.stateSet(ds, tid, key, status, ctxName, flagNum("level", 1)), (): number => {
+        ack(ctx, { key, status, context: ctxName }, `marked ${status}: ${key}`);
+        return 0;
+      });
     }
 
     if (sub === "validate") {
@@ -367,31 +394,30 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `cannot parse ${file}: ${e?.message || e}`);
         return 1;
       }
-      try {
-        const r = trees.importTree(spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") });
-        ack(
-          ctx,
-          { tree: r.tree.name, nodes: r.nodes, edges: r.edges, conditions: r.conditions },
-          `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`
-        );
-        db.metaSet("current_tree", r.tree.name);
-        if (!ctx.json) out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
-      } catch (e: any) {
-        bad(ctx, e?.message || String(e));
-        return 1;
-      }
-      return 0;
+      return runTreeWrite(
+        (ds) => treeWrites.importTree(ds, spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") }),
+        (r): number => {
+          ack(
+            ctx,
+            { tree: r.tree.name, nodes: r.nodes, edges: r.edges, conditions: r.conditions },
+            `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`
+          );
+          db.metaSet("current_tree", r.tree.name);
+          if (!ctx.json) out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
+          return 0;
+        }
+      );
     }
 
     if (sub === "rm") {
-      try {
-        trees.nodeDel(tid, key);
-      } catch (e: any) {
-        bad(ctx, e.message);
-        return 1;
+      if (!key) {
+        bad(ctx, "usage: node rm <key>");
+        return 2;
       }
-      ack(ctx, { removed: key }, `node removed: ${key}`);
-      return 0;
+      return runTreeWrite((ds) => treeWrites.nodeDel(ds, tid, key), (): number => {
+        ack(ctx, { removed: key }, `node removed: ${key}`);
+        return 0;
+      });
     }
   }
 
