@@ -1,6 +1,6 @@
 /** project group — one project = one research thread. */
 import { Env } from "../cli";
-import { ok, bad, out, head, table, show, paint, C } from "../fmt";
+import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
   const { ctx, store } = env;
@@ -13,13 +13,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const p = store.projectCreate(name, String(args.flags.q || args.flags.question || ""));
-      ok(ctx, `project created and selected: ${p.name}`);
+      ack(ctx, p, `project created and selected: ${p.name}`);
       return 0;
     }
     case "list": {
       const rows = store.projectList();
       const cur = store.db.metaGet("current_project");
-      const marked = rows.map((r: any) => ({ ...r, name: r.name === cur ? `* ${r.name}` : r.name }));
+      // keep `name` clean for --json consumers; mark the current project separately
+      const marked = rows.map((r: any) => ({ ...r, current: r.name === cur }));
       table(ctx, marked, ["project", "status", "src", "claims", "artifacts", "updated"], [
         "name",
         "status",
@@ -40,7 +41,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       store.db.metaSet("current_project", name);
-      ok(ctx, `now using: ${name}`);
+      ack(ctx, { project: name }, `now using: ${name}`);
       return 0;
     }
     case "show": {

@@ -16,7 +16,7 @@
 import * as fs from "node:fs";
 import { Env } from "../cli";
 import { TreeStore } from "../tree";
-import { ok, bad, out, head, table, show, paint, C } from "../fmt";
+import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
   const { ctx, db } = env;
@@ -41,9 +41,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const pid = flagStr("project");
       const proj = pid ? db.get("SELECT id FROM projects WHERE name=?", [pid]) : null;
-      trees.treeCreate(name, proj?.id || "");
+      const t = trees.treeCreate(name, proj?.id || "");
       db.metaSet("current_tree", name);
-      ok(ctx, `tree created and selected: ${name}`);
+      ack(ctx, t, `tree created and selected: ${name}`);
       return 0;
     }
     if (sub === "list") {
@@ -63,7 +63,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       db.metaSet("current_tree", name);
-      ok(ctx, `now using tree: ${name}`);
+      ack(ctx, { tree: name }, `now using tree: ${name}`);
       return 0;
     }
   }
@@ -97,7 +97,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         payload: flagStr("payload"),
         tags: flagStr("tags"),
       });
-      if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
+      if (ctx.json) console.log(JSON.stringify(r.created ? r.row : { ...r.row, duplicate: true }, null, 2));
+      else if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
       else ok(ctx, `node added: ${key}${r.row.name !== key ? `  (${r.row.name})` : ""}`);
       return 0;
     }
@@ -117,7 +118,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           weight: flagNum("weight", 1),
           note: flagStr("note"),
         });
-        ok(ctx, `linked ${key} → ${child}  [${r.row.rel}/${r.row.mode}/${r.row.required ? "必检" : "可选"}]`);
+        ack(ctx, r.row, `linked ${key} → ${child}  [${r.row.rel}/${r.row.mode}/${r.row.required ? "必检" : "可选"}]`);
       } catch (e: any) {
         bad(ctx, e.message);
         return 1;
@@ -127,7 +128,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     if (sub === "unlink") {
       trees.unlink(tid, key, rest[1], flagStr("rel", "prereq") as any);
-      ok(ctx, `unlinked ${key} → ${rest[1]}`);
+      ack(ctx, { unlinked: `${key} -> ${rest[1]}` }, `unlinked ${key} → ${rest[1]}`);
       return 0;
     }
 
@@ -160,7 +161,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           effect: flagStr("effect", "gate"),
           weight: flagNum("weight", 1),
         });
-        ok(ctx, `condition added: ${key} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
+        ack(ctx, c, `condition added: ${key} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
       } catch (e: any) {
         bad(ctx, e.message);
         return 1;
@@ -172,7 +173,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const clos = trees.rebuildClosure(tid);
       try {
         const built = trees.buildIndex(tid);
-        ok(ctx, `index rebuilt: ${built.topo.length} nodes, closure ${clos} rows`);
+        ack(ctx, { nodes: built.topo.length, closure_rows: clos }, `index rebuilt: ${built.topo.length} nodes, closure ${clos} rows`);
         if (!ctx.json) {
           out(ctx, paint(C.dim, `  tiers: ${Object.keys(built.tiers).map((t) => `t${t}(${built.tiers[t].length})`).join(" ")}`, ctx.color));
         }
@@ -321,20 +322,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
 
-    if (sub === "unlock") {
-      trees.stateSet(tid, key, "unlocked", flagStr("context", "default"), flagNum("level", 1));
-      ok(ctx, `marked unlocked: ${key}`);
-      return 0;
-    }
-
-    if (sub === "lock") {
-      trees.stateSet(tid, key, "locked", flagStr("context", "default"));
-      ok(ctx, `marked locked: ${key}`);
+    if (sub === "unlock" || sub === "lock") {
+      const status = sub === "unlock" ? "unlocked" : "locked";
+      trees.stateSet(tid, key, status, flagStr("context", "default"), flagNum("level", 1));
+      ack(ctx, { key, status, context: flagStr("context", "default") }, `marked ${status}: ${key}`);
       return 0;
     }
 
     if (sub === "validate") {
       const issues = trees.validate(tid);
+      if (ctx.json) {
+        console.log(JSON.stringify({ issues }, null, 2));
+        return issues.length ? 1 : 0;
+      }
       if (!issues.length) {
         ok(ctx, "no issues");
         return 0;
@@ -349,7 +349,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const dest = flagStr("out");
       if (dest) {
         fs.writeFileSync(dest, JSON.stringify(data, null, 2), "utf8");
-        ok(ctx, `exported to ${dest}`);
+        ack(ctx, { written: dest, nodes: data.nodes.length, edges: data.edges.length }, `exported to ${dest}`);
       } else console.log(JSON.stringify(data, null, 2));
       return 0;
     }
@@ -369,9 +369,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       try {
         const r = trees.importTree(spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") });
-        ok(ctx, `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`);
+        ack(
+          ctx,
+          { tree: r.tree.name, nodes: r.nodes, edges: r.edges, conditions: r.conditions },
+          `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`
+        );
         db.metaSet("current_tree", r.tree.name);
-        out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
+        if (!ctx.json) out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
       } catch (e: any) {
         bad(ctx, e?.message || String(e));
         return 1;
@@ -382,11 +386,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     if (sub === "rm") {
       try {
         trees.nodeDel(tid, key);
-        ok(ctx, `node removed: ${key}`);
       } catch (e: any) {
         bad(ctx, e.message);
         return 1;
       }
+      ack(ctx, { removed: key }, `node removed: ${key}`);
       return 0;
     }
   }

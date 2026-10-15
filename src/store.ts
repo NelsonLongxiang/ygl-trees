@@ -382,8 +382,10 @@ export class Store {
     return rows;
   }
 
-  skillEnabled(name: string, on: boolean): void {
-    this.db.run("UPDATE skills SET enabled=?, updated=? WHERE name=?", [on ? 1 : 0, nowIso(), name]);
+  skillEnabled(name: string, on: boolean): boolean {
+    return (
+      this.db.run("UPDATE skills SET enabled=?, updated=? WHERE name=?", [on ? 1 : 0, nowIso(), name]).changes > 0
+    );
   }
 
   skillDel(name: string): void {

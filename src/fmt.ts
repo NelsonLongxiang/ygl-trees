@@ -113,3 +113,10 @@ export function writeResult(ctx: Ctx, o: { row: any; dup: boolean }, human: (row
   if (o.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${o.row.id}`, ctx.color));
   else ok(ctx, human(o.row));
 }
+
+/** Ack for mutating commands without a meaningful row: --json prints the
+ *  payload object; tty prints a ✓ line. Keeps stdout JSON-pure. */
+export function ack(ctx: Ctx, payload: any, msg: string): void {
+  if (ctx.json) console.log(JSON.stringify(payload, null, 2));
+  else ok(ctx, msg);
+}

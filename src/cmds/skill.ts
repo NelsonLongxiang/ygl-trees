@@ -1,7 +1,7 @@
 /** skill group — the L1/L2/L3 registry agents query before acting. */
 import * as fs from "node:fs";
 import { Env } from "../cli";
-import { ok, bad, out, head, table, show, paint, C } from "../fmt";
+import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
   const { ctx, store } = env;
@@ -19,8 +19,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "import": {
       if (!need(name, "file")) return 2;
       const row = store.skillImport(name);
-      ok(ctx, `imported skill: ${row.name} (${row.version})`);
-      out(ctx, paint(C.dim, `  L1: ${row.description.slice(0, 120)}`, ctx.color));
+      if (ctx.json) console.log(JSON.stringify(row, null, 2));
+      else {
+        ok(ctx, `imported skill: ${row.name} (${row.version})`);
+        out(ctx, paint(C.dim, `  L1: ${row.description.slice(0, 120)}`, ctx.color));
+      }
       return 0;
     }
     case "add": {
@@ -40,7 +43,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         tags: String(args.flags.tags || ""),
         version: String(args.flags.version || "0.1.0"),
       });
-      ok(ctx, `skill saved: ${row.name}`);
+      ack(ctx, row, `skill saved: ${row.name}`);
       return 0;
     }
     case "list":
@@ -98,17 +101,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "rm":
-      store.skillDel(name);
-      ok(ctx, `removed skill: ${name}`);
+      try {
+        store.skillDel(name);
+      } catch (e: any) {
+        bad(ctx, e?.message || String(e));
+        return 1;
+      }
+      ack(ctx, { removed: name }, `removed skill: ${name}`);
       return 0;
     case "enable":
-      store.skillEnabled(name, true);
-      ok(ctx, `enabled ${name}`);
+    case "disable": {
+      const on = action === "enable";
+      if (!store.skillEnabled(name, on)) {
+        bad(ctx, `skill not found: ${name}`);
+        return 1;
+      }
+      ack(ctx, { name, enabled: on }, `${on ? "enabled" : "disabled"} ${name}`);
       return 0;
-    case "disable":
-      store.skillEnabled(name, false);
-      ok(ctx, `disabled ${name}`);
-      return 0;
+    }
     case "refs": {
       const sub = rest[0];
       if (sub === "add") {
