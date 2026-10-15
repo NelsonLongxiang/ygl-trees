@@ -389,7 +389,10 @@ export async function importTree(
   for (const c of conds) {
     if (!keys.has(c.node)) errs.push(`condition references unknown node: ${c.node}`);
     if (!(COND_KINDS as readonly string[]).includes(c.kind)) errs.push(`bad condition kind '${c.kind}': ${c.node} · ${c.name}`);
-    if (c.required && c.kind !== "flag" && (c.value === undefined || c.value === "")) errs.push(`required condition without value: ${c.node} · ${c.name}`);
+    // op=eval: value is question wording and may legitimately be empty
+    // (falls back to the condition name) — R8.7
+    const evalOp = String(c.op || "") === "eval";
+    if (c.required && c.kind !== "flag" && !evalOp && (c.value === undefined || c.value === "")) errs.push(`required condition without value: ${c.node} · ${c.name}`);
   }
   if (errs.length) throw new Error(`import rejected — ${errs.length} issue(s):\n  ${errs.slice(0, 10).join("\n  ")}`);
 

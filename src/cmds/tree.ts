@@ -19,6 +19,8 @@ import { TreeStore } from "../tree";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 import { getOrm } from "../orm";
 import * as treeWrites from "../treeWrites";
+import { evalBoolean, evalToken, mapOutcome } from "../eval";
+import { nowIso, shortId } from "../text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db } = env;
@@ -207,31 +209,100 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     if (sub === "can") {
       if (!key) {
-        bad(ctx, "usage: node can <key> [--context ctx] [--state k=v]");
+        bad(ctx, "usage: node can <key> [--context ctx] [--state k=v] [--eval]");
         return 2;
       }
       const state = parseState(args);
-      const r = trees.canUnlock(tid, key, flagStr("context", "default"), state);
-      if (ctx.json) {
-        console.log(JSON.stringify(r, null, 2));
+      const ctxName = flagStr("context", "default");
+      const r = trees.canUnlock(tid, key, ctxName, state);
+      const evalConds = flagBool("eval")
+        ? trees.condList(tid, key).filter((c: any) => String(c.op) === "eval")
+        : [];
+      if (!evalConds.length) {
+        if (ctx.json) {
+          console.log(JSON.stringify(r, null, 2));
+          return 0;
+        }
+        head(ctx, `can unlock: ${r.key}`);
+        out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
+        if (r.missing_required.length) {
+          out(ctx, paint(C.bold, "  必检未满足", ctx.color));
+          for (const m of r.missing_required) out(ctx, `    - ${m}`);
+        }
+        if (r.blocked_by.length) {
+          out(ctx, paint(C.bold, "  被排斥", ctx.color));
+          for (const b of r.blocked_by) out(ctx, `    - ${b}`);
+        }
+        if (r.missing_optional.length) {
+          out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
+          for (const m of r.missing_optional) out(ctx, `    - ${m}`);
+        }
+        if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
         return 0;
       }
-      head(ctx, `can unlock: ${r.key}`);
-      out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
-      if (r.missing_required.length) {
-        out(ctx, paint(C.bold, "  必检未满足", ctx.color));
-        for (const m of r.missing_required) out(ctx, `    - ${m}`);
-      }
-      if (r.blocked_by.length) {
-        out(ctx, paint(C.bold, "  被排斥", ctx.color));
-        for (const b of r.blocked_by) out(ctx, `    - ${b}`);
-      }
-      if (r.missing_optional.length) {
-        out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
-        for (const m of r.missing_optional) out(ctx, `    - ${m}`);
-      }
-      if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
-      return 0;
+      // R8: decision-model boolean evaluation for op=eval conditions.
+      // Offline-safe: no token / network failure → pending (rc=0).
+      const token = evalToken();
+      const contextPkg = trees.evalContext(tid, key, state, ctxName);
+      return (async (): Promise<number> => {
+        const evaluated: any[] = [];
+        for (const c of evalConds) {
+          const question = String(c.value || c.name); // R8.7 wording fallback
+          const m = mapOutcome(await evalBoolean(contextPkg, question, token));
+          evaluated.push({ name: c.name, question, ...m });
+        }
+        const pendingList: string[] = [];
+        for (const e of evaluated) {
+          if (e.outcome === "pass") {
+            r.missing_required = (r.missing_required as string[]).filter((m) => !m.startsWith(e.name));
+          } else if (e.outcome === "fail") {
+            if (!(r.missing_required as string[]).some((m) => m.startsWith(e.name)))
+              (r.missing_required as string[]).push(`${e.name} (eval P=${e.p} fail)`);
+          } else {
+            // pending: neither satisfied nor failed — its own lane
+            (r.missing_required as string[]) = (r.missing_required as string[]).filter((m) => !m.startsWith(e.name));
+            pendingList.push(`${e.name} (P=${e.p ?? "-"}${e.reason ? ` · ${e.reason}` : ""})`);
+          }
+        }
+        r.pending = pendingList;
+        r.evaluated = evaluated;
+        r.ok = (r.missing_required as string[]).length === 0 && (r.blocked_by as string[]).length === 0 && pendingList.length === 0;
+        try {
+          db.run(
+            "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
+            [shortId(["eval.gate", "node", key], 12), nowIso(), "cli", "eval.gate", "node", key,
+             JSON.stringify(evaluated.map((e) => ({ name: e.name, outcome: e.outcome, p: e.p ?? null })))]
+          );
+        } catch { /* audit best-effort */ }
+        if (ctx.json) {
+          console.log(JSON.stringify(r, null, 2));
+          return 0;
+        }
+        head(ctx, `can unlock: ${r.key}`);
+        out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : pendingList.length ? paint(C.yellow, "… 待判定（决策模型 pending）", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
+        if (r.missing_required.length) {
+          out(ctx, paint(C.bold, "  必检未满足", ctx.color));
+          for (const m of r.missing_required) out(ctx, `    - ${m}`);
+        }
+        if (pendingList.length) {
+          out(ctx, paint(C.bold, "  决策模型 pending（灰带/未配置，非终态）", ctx.color));
+          for (const p of pendingList) out(ctx, `    - ${p}`);
+        }
+        if (r.blocked_by.length) {
+          out(ctx, paint(C.bold, "  被排斥", ctx.color));
+          for (const b of r.blocked_by) out(ctx, `    - ${b}`);
+        }
+        if (r.missing_optional.length) {
+          out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
+          for (const m of r.missing_optional) out(ctx, `    - ${m}`);
+        }
+        for (const e of evaluated) out(ctx, paint(C.dim, `  eval ${e.name}: P=${e.p ?? "-"} → ${e.outcome}${e.reason ? ` (${e.reason})` : ""}`, ctx.color));
+        if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
+        return 0;
+      })().catch((e: any): number => {
+        bad(ctx, e?.message || String(e));
+        return 1;
+      });
     }
 
     if (sub === "ready") {

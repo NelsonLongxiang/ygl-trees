@@ -463,6 +463,9 @@ export class TreeStore {
     missing_optional: string[];
     blocked_by: string[];
     cost_multiplier: number;
+    /** R8: present only under `node can --eval` (decision-model outcomes) */
+    pending?: string[];
+    evaluated?: any[];
   } {
     const n = this.nodeGet(treeId, keyOrId);
     if (!n) throw new Error(`node not found: ${keyOrId}`);
@@ -524,6 +527,35 @@ export class TreeStore {
       missing_optional: missingOptional,
       blocked_by: blocked,
       cost_multiplier: costMul,
+    };
+  }
+
+  /**
+   * R8.2 decision-model context package: node metadata + direct parents
+   * (node_edges) + ancestor chain (node_closure) + the node's condition set
+   * + unlocked set + the caller's state bag. The eval API demands a context
+   * package — bare state fell into the gray band 6/8 in the material's
+   * routing test, so we ship everything the tree knows about this node.
+   */
+  evalContext(treeId: string, keyOrId: string, stateBag: Record<string, any>, context = "default"): Row {
+    const n = this.nodeGet(treeId, keyOrId);
+    if (!n) throw new Error(`node not found: ${keyOrId}`);
+    const idToKey = new Map<string, string>(
+      this.db.all("SELECT id,key FROM nodes WHERE tree_id=?", [treeId]).map((r: Row) => [r.id as string, r.key as string])
+    );
+    const parents = this.parents(treeId, keyOrId).map((p) => ({ key: p.key, rel: p.rel, required: !!p.required }));
+    const ancestors = this.ancestors(treeId, keyOrId).map((a) => ({ key: a.key, depth: a.depth }));
+    const conditions = this.condList(treeId, keyOrId).map((c) => ({
+      name: c.name, kind: c.kind, op: c.op, value: c.value, required: !!c.required, effect: c.effect,
+    }));
+    const unlocked = [...this.unlockedSet(treeId, context)].map((id) => idToKey.get(id) || id);
+    return {
+      node: { key: n.key, name: n.name, kind: n.kind, tier: n.tier, cost: n.cost },
+      parents,
+      ancestors,
+      conditions,
+      unlocked,
+      state: stateBag,
     };
   }
 
@@ -662,7 +694,7 @@ export class TreeStore {
     const st = this.indexStatus(treeId);
     if (st.dirty) issues.push("index is dirty; run: ygl-trees node index");
     const noCondValue = this.db.all(
-      "SELECT id,name FROM node_conditions c WHERE c.node_id IN (SELECT id FROM nodes WHERE tree_id=?) AND c.required=1 AND c.value='' AND c.kind<>'flag'",
+      "SELECT id,name FROM node_conditions c WHERE c.node_id IN (SELECT id FROM nodes WHERE tree_id=?) AND c.required=1 AND c.value='' AND c.kind<>'flag' AND c.op<>'eval'",
       [treeId]
     );
     if (noCondValue.length) issues.push(`${noCondValue.length} required condition(s) without a threshold`);

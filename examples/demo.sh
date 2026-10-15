@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ygl-trees end-to-end demo: research -> production -> knowledge reuse,
 # plus the tech-tree node model (parent/child, required vs optional, indexes).
+# Uses its OWN scratch workspace (YGL_DEMO_HOME, default /tmp/ygl-demo) and
+# wipes it — never point it at a workspace you care about.
 set -euo pipefail
-export YGL_HOME="${YGL_HOME:-/tmp/ygl-demo}"
+export YGL_HOME="${YGL_DEMO_HOME:-/tmp/ygl-demo}"
 Y="node $(cd "$(dirname "$0")/.." && pwd)/bin/ygl-trees.js --no-color"
 rm -rf "$YGL_HOME"
 
@@ -95,6 +97,13 @@ if [ "$P" = "mining,smelting,bronze,steel" ]; then
 else
   echo "  ✗ path order wrong: $P"; exit 1
 fi
+
+echo "── 6a. gate decision-model boolean eval (offline → pending)"
+$Y node cond steel --name quest_ready --kind quest --op eval --value "研究任务已完成且满足解锁门槛吗" >/dev/null
+EV=$(YGL_EVAL_OFFLINE=1 $Y node can steel --state "research_lab_level=3" --eval --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.pending&&j.pending.length&&j.evaluated[0].name)})")
+if [ "$EV" = "quest_ready" ]; then echo "  ✓ op=eval gate offline → pending (gray/no-evaluator)"; else echo "  ✗ eval gate unexpected: $EV"; exit 1; fi
+YGL_EVAL_OFFLINE=1 $Y node can steel --eval >/dev/null 2>&1
+if [ "$?" = "0" ]; then echo "  ✓ offline rc=0"; else echo "  ✗ offline rc nonzero"; exit 1; fi
 
 echo "── 6b. export → import round-trip"
 $Y node export --out "$YGL_HOME/demo-tree.json" >/dev/null

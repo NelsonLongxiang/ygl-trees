@@ -149,6 +149,8 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
                                      [--effect gate|cost_mul] [--weight n]
   node index                         rebuild closure (ancestor/descendant) + topo order
   node can <key> [--state k=v]       evaluate required vs optional gates
+                                     (--eval: op=eval gates via decision model;
+                                      P>=0.7 pass / P<=0.4 fail / gray pending)
   node ready [--state k=v]           currently unlockable set
   node path <key>                    cheapest unlock order to a target
   node parents|children <key>        direct relations

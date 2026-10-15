@@ -91,6 +91,12 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 
 `node can` 的输出把三类失败分开列：**必检未满足 / 被排斥 / 可选未满足（不阻塞）**，外加成本系数。
 
+**决策模型布尔判定（0.14.0，spec R8）**：语义型必检条件（"任务完成了吗"）可用 `--op eval` 声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）做确定性布尔判定 P(true)：
+
+- P≥0.7 通过 · P≤0.4 未通过 · **0.4<P<0.7 灰带 pending**（过程态，禁作终态，单列不阻塞也不放行）
+- **离线安全**：未配置凭证（`AI_GATEWAY_API_KEY` 或 `~/.vercel.ai-gateway.env`）时该条件回落 pending、rc=0——评估器是增强不是依赖；`YGL_EVAL_OFFLINE=1` 可强制离线（测试用）
+- 判定留痕 events（`eval.gate`），`--json` 输出附加 `evaluated[]` 与 `pending[]` 字段
+
 **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 
 ---
@@ -202,7 +208,7 @@ ygl-trees agent log        # 审计事件流
 - 数据库：`$YGL_HOME/ygl-trees.db`
 - `--db <file>` 可指定其他库；`--json` 全局机器输出
 - `YGL_PG_URL`：PostgreSQL 连接串（`db sync pg` / `db migrate pg` 可用，凭证不进 shell 历史）
-- `AI_GATEWAY_API_KEY`（或 `~/.vercel.ai-gateway.env`）：Gate 决策模型布尔评估的凭证（**规划中**，0.14.0 / spec R8——op=eval 的必检条件经评估模型判定 P(true)，灰带 0.4–0.7 为 pending；未配置时该类条件安全回落 pending）
+- `AI_GATEWAY_API_KEY`（或 `~/.vercel.ai-gateway.env`）：Gate 决策模型布尔评估的凭证（0.14.0 / spec R8——op=eval 的必检条件经评估模型判定 P(true)，灰带 0.4–0.7 为 pending；未配置时该类条件安全回落 pending）；`YGL_EVAL_OFFLINE=1` 强制离线
 
 ## 七、文档地图
 
