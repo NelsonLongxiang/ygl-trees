@@ -110,6 +110,9 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
   Writes are idempotent (claim/evidence/query/kb/job dedupe by content
   hash); pass --force to keep a deliberate duplicate.
 
+${paint(C.bold, "webui", true)}            export static HTML dashboard
+  export [--out <file>]     single-file dashboard.html (open in browser)
+
 ${paint(C.bold, "agent", true)}       agent-facing views
   brief                      current project state + next actions (start here)
   match "<task>"             which skill should handle this task
@@ -188,6 +191,7 @@ export function main(argv: string[]): Promise<number> | number {
     node: "../../packages/techtree/model/src/cmds",
     skill: "../../packages/knowledge/skills/src/skill-cmds",
     kb: "../../packages/knowledge/skills/src/cmds",
+    webui: "../../packages/ops/tools/src/webui",
   };
   const dispatch = async (): Promise<number> => {
     const route = DOMAIN_ROUTES[group];

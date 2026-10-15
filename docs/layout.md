@@ -102,7 +102,7 @@ apps/cli ───────────→ packages/*（通过 DOMAIN_ROUTES 
 
 | 目录 | 何时创建 | 内容 |
 |---|---|---|
-| `apps/webui/` | WebUI 落地时 | 静态 HTML 生成器 |
+| `apps/web/` | WebUI 落地时 | 静态 HTML 生成器 |
 | `packages/core/architecture.md` | 代码量 >8000 行时 | 架构图：模块关系、数据流 |
 | `packages/*/README.md` | 域模块需要独立文档时 | per-domain 契约（配置/语义/边界） |
 | `docs/cookbook/` | 出现重复操作模式时 | 步骤化指南 |
