@@ -210,7 +210,25 @@ ygl-trees agent log        # 审计事件流
 - `YGL_PG_URL`：PostgreSQL 连接串（`db sync pg` / `db migrate pg` 可用，凭证不进 shell 历史）
 - `AI_GATEWAY_API_KEY`（或 `~/.vercel.ai-gateway.env`）：Gate 决策模型布尔评估的凭证（0.14.0 / spec R8——op=eval 的必检条件经评估模型判定 P(true)，灰带 0.4–0.7 为 pending；未配置时该类条件安全回落 pending）；`YGL_EVAL_OFFLINE=1` 强制离线
 
-## 七、文档地图
+## 七、专属 Skills（Agent 学习/使用入口）
+
+五个技能覆盖工具全域，位于 `skills/<name>/SKILL.md`（frontmatter L1 + 正文 L2，可被本工具 `skill import` 直接导入，也可被宿主 Agent 的技能系统发现）：
+
+| 技能 | 覆盖 |
+|---|---|
+| `ygl-trees-quickstart` | 冷启动、退出码/--json 契约、备份、PG 镜像/迁移、调度、tmp/ 规范 |
+| `ygl-trees-research` | 证据先行研究管线（query/source/evidence/claim/produce） |
+| `ygl-trees-knowledge` | 知识复用闭环（kb/skill/promote/agent match） |
+| `ygl-trees-techtree` | 科技树建模（rel×mode、必检/可选、索引、can/ready/path） |
+| `ygl-trees-eval-gates` | 决策模型布尔门槛（op=eval、三态、灰带、离线安全） |
+
+`.agents/skills/` 下为指向 `skills/` 的目录联接（Windows junction，不入库）。克隆到新机器后一行重建：
+
+```bash
+node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",{recursive:true});for(const s of fs.readdirSync("skills"))fs.symlinkSync(p.resolve("skills",s),p.join(".agents/skills",s),"junction")'
+```
+
+## 八、文档地图
 
 | 文档 | 内容 |
 |---|---|
