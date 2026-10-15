@@ -96,6 +96,7 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 - P≥0.7 通过 · P≤0.4 未通过 · **0.4<P<0.7 灰带 pending**（过程态，禁作终态，单列不阻塞也不放行）
 - **离线安全**：未配置凭证（`AI_GATEWAY_API_KEY` 或 `~/.vercel.ai-gateway.env`）时该条件回落 pending、rc=0——评估器是增强不是依赖；`YGL_EVAL_OFFLINE=1` 可强制离线（测试用）
 - 判定留痕 events（`eval.gate`），`--json` 输出附加 `evaluated[]` 与 `pending[]` 字段
+- **`node ready --eval`（0.16.0）**：仅被 eval 门槛阻塞的节点每节点**一次多题请求**（协议原生批量）批量判定——全过者提升进 ready 列表（标 `eval_verified`），其余进 `eval_pending` 单列（逐题带 P）；离线全部 pending、rc=0；留痕 `eval.ready`
 
 **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 

@@ -104,10 +104,14 @@ fi
 
 echo "── 6a. gate decision-model boolean eval (offline → pending)"
 $Y node cond steel --name quest_ready --kind quest --op eval --value "研究任务已完成且满足解锁门槛吗" >/dev/null
+$Y node add quest-gate >/dev/null
+$Y node cond quest-gate --name quest_only --kind quest --op eval --value "独立任务完成了吗" >/dev/null
 EV=$(YGL_EVAL_OFFLINE=1 $Y node can steel --state "research_lab_level=3" --eval --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.pending&&j.pending.length&&j.evaluated[0].name)})")
 if [ "$EV" = "quest_ready" ]; then echo "  ✓ op=eval gate offline → pending (gray/no-evaluator)"; else echo "  ✗ eval gate unexpected: $EV"; exit 1; fi
 YGL_EVAL_OFFLINE=1 $Y node can steel --eval >/dev/null 2>&1
 if [ "$?" = "0" ]; then echo "  ✓ offline rc=0"; else echo "  ✗ offline rc nonzero"; exit 1; fi
+RD=$(YGL_EVAL_OFFLINE=1 $Y node ready --eval --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.eval_pending.length&&j.eval_pending[0].key)})")
+if [ "$RD" = "quest-gate" ]; then echo "  ✓ ready --eval offline → 仅 eval 阻塞的 quest-gate 进 eval_pending（steel 因父链未满不入候选）"; else echo "  ✗ ready --eval: $RD"; exit 1; fi
 
 echo "── 6b. export → import round-trip"
 $Y node export --out "$YGL_HOME/demo-tree.json" >/dev/null

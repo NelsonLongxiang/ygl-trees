@@ -104,6 +104,61 @@ export async function evalBoolean(state: unknown, question: string, token: strin
 
 export type EvalOutcome = "pass" | "fail" | "pending";
 
+/** Multi-question variant — the protocol natively evaluates many questions
+ *  against ONE state in a single request (~same latency as one question).
+ *  Used by `node ready --eval` to judge all of a node's eval gates at once. */
+export async function evalBooleanMany(
+  state: unknown,
+  questions: string[],
+  token: string,
+  endpoint = GATEWAY_URL
+): Promise<{ ok: boolean; ps?: number[]; error?: string }> {
+  if (!questions.length) return { ok: true, ps: [] };
+  if (!token) return { ok: false, error: "no evaluator configured (set config decision_model_llm_token, or AI_GATEWAY_API_KEY / ~/.vercel.ai-gateway.env)" };
+  const url = resolveEndpoint(endpoint);
+  const qmap: Record<string, any> = {};
+  questions.forEach((q, i) => (qmap[`q${i}`] = { type: "boolean", instructions: q }));
+  const body = JSON.stringify({ state, questions: qmap });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "ai-model-id": MODEL_ID,
+          "ai-evaluation-model-specification-version": "4",
+          "ai-gateway-protocol-version": "0.0.1",
+          "ai-gateway-auth-method": "api-key",
+        },
+        body,
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.status === 429 || res.status === 529) {
+        if (attempt >= 3) return { ok: false, error: `HTTP ${res.status} after ${attempt + 1} attempts` };
+        await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+        continue;
+      }
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status} (protocol/auth error — no retry)` };
+      const j: any = await res.json();
+      const ps: number[] = [];
+      for (let i = 0; i < questions.length; i++) {
+        const p = j?.answers?.[`q${i}`]?.probability;
+        if (typeof p !== "number") return { ok: false, error: `malformed answer q${i}: no probability` };
+        ps.push(p);
+      }
+      return { ok: true, ps };
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (attempt < 3 && /timeout|abort|network|fetch failed|ECONN/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+        continue;
+      }
+      return { ok: false, error: msg };
+    }
+  }
+}
+
 /** R8.4 tri-state mapping. Thresholds come from config (eval.pass_threshold
  *  / eval.fail_threshold) so callers pass the resolved values. */
 export function mapOutcome(

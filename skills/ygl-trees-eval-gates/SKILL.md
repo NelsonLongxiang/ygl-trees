@@ -55,7 +55,11 @@ ygl-trees node can gate-node --eval --json     # evaluated[] + pending[] 字段
 - `YGL_EVAL_OFFLINE=1` 强制离线（测试/demo 确定性；优先于 config 的 eval.offline）
 - 网关协议：v4 端点 + 四个协议头（缺一 400/404）；429/529 自动退避重试≤3，400/401 不重试
 
-## 6. 判定留痕
+## 6. 批量判定与留痕
 
-每次 `--eval` 记 events（kind=`eval.gate`，含各条件 P 与 outcome），`agent log` 可审计。
-结果不落库——每次 can 现评，保持无状态。
+`node ready --eval`（0.16.0）：仅被 eval 门槛阻塞的节点逐节点**一次多题请求**（协议原生
+批量，同延迟）判定——全过提升进 ready（`eval_verified` 标记），其余进 `eval_pending`
+（逐题带 P）；离线全 pending、rc=0。
+
+每次 `--eval` 记 events：单节点 `eval.gate`（各条件 P/outcome）、批量 `eval.ready`
+（promoted/pending 键集），`agent log` 可审计。结果不落库——现评现判，保持无状态。

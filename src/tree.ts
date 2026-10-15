@@ -580,6 +580,38 @@ export class TreeStore {
   }
 
   /**
+   * Nodes blocked ONLY by op=eval conditions (nothing else missing, not
+   * excluded, parents satisfied) — the candidate set for `node ready
+   * --eval`: one decision-model request per node can flip them to ready.
+   * Returns {key, name, tier, cost, conds: [{name, question}]}.
+   */
+  evalCandidates(treeId: string, context = "default", state: Record<string, any> = {}): Row[] {
+    const nodes = this.db.all("SELECT id,key,name,tier,cost FROM nodes WHERE tree_id=?", [treeId]);
+    const unlocked = this.unlockedSet(treeId, context);
+    const out: Row[] = [];
+    for (const n of nodes) {
+      if (unlocked.has(n.id)) continue;
+      const r = this.canUnlock(treeId, n.key, context, state);
+      if (r.ok || r.blocked_by.length) continue;
+      const evalConds = this.condList(treeId, n.key).filter((c: Row) => String(c.op) === "eval");
+      if (!evalConds.length) continue;
+      // every remaining missing_required entry must belong to an eval cond
+      const onlyEval = r.missing_required.every((m: string) =>
+        evalConds.some((c: Row) => m.startsWith(String(c.name)))
+      );
+      if (!onlyEval) continue;
+      out.push({
+        key: n.key,
+        name: n.name,
+        tier: n.tier,
+        cost: Number(n.cost),
+        conds: evalConds.map((c: Row) => ({ name: String(c.name), question: String(c.value || c.name) })),
+      });
+    }
+    return out;
+  }
+
+  /**
    * Unlock order to a target: every prerequisite precedes its dependent.
    *
    * Walks `node_edges` (prereq|unlock, required or optional) directly — the

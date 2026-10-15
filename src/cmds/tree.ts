@@ -19,7 +19,7 @@ import { TreeStore } from "../tree";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 import { getOrm } from "../orm";
 import * as treeWrites from "../treeWrites";
-import { DEFAULT_ENDPOINT, evalBoolean, evalToken, mapOutcome } from "../eval";
+import { DEFAULT_ENDPOINT, evalBoolean, evalBooleanMany, evalToken, mapOutcome } from "../eval";
 import { configGet, configGetBool, configGetNumber } from "../config";
 import { nowIso, shortId } from "../text";
 
@@ -317,14 +317,88 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "ready") {
-      const rows = trees.ready(tid, flagStr("context", "default"), parseState(args));
-      if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
+      const state = parseState(args);
+      const ctxName = flagStr("context", "default");
+      if (!flagBool("eval")) {
+        const rows = trees.ready(tid, ctxName, state);
+        if (ctx.json) {
+          console.log(JSON.stringify(rows, null, 2));
+          return 0;
+        }
+        head(ctx, `Ready to unlock (${rows.length})`);
+        table(ctx, rows, ["key", "name", "tier", "cost"], ["key", "name", "tier", "cost"]);
         return 0;
       }
-      head(ctx, `Ready to unlock (${rows.length})`);
-      table(ctx, rows, ["key", "name", "tier", "cost"], ["key", "name", "tier", "cost"]);
-      return 0;
+      // --eval: nodes blocked ONLY by eval gates get one multi-question
+      // decision-model request each (protocol-native batching). Offline or
+      // gray answers land in eval_pending — never a failure.
+      const rows = trees.ready(tid, ctxName, state);
+      const candidates = trees.evalCandidates(tid, ctxName, state);
+      if (!candidates.length) {
+        if (ctx.json) console.log(JSON.stringify({ ready: rows, eval_pending: [] }, null, 2));
+        else {
+          head(ctx, `Ready to unlock (${rows.length})`);
+          table(ctx, rows, ["key", "name", "tier", "cost"], ["key", "name", "tier", "cost"]);
+          out(ctx, paint(C.dim, "  (无仅被 eval 门槛阻塞的节点)", ctx.color));
+        }
+        return 0;
+      }
+      const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
+      const cfgToken = configGet(env.db, "decision_model_llm_token").trim();
+      const token = offline ? "" : cfgToken || evalToken();
+      const endpoint = configGet(env.db, "decision_model_llm_api_base").trim() || DEFAULT_ENDPOINT;
+      const passT = configGetNumber(env.db, "eval.pass_threshold");
+      const failT = configGetNumber(env.db, "eval.fail_threshold");
+      return (async (): Promise<number> => {
+        const promoted: any[] = [];
+        const evalPending: any[] = [];
+        for (const cand of candidates) {
+          const ctxPkg = trees.evalContext(tid, cand.key, state, ctxName);
+          const res = await evalBooleanMany(
+            ctxPkg,
+            cand.conds.map((c: any) => c.question),
+            token,
+            endpoint
+          );
+          if (!res.ok) {
+            evalPending.push({ key: cand.key, results: cand.conds.map((c: any) => ({ name: c.name, outcome: "pending", reason: res.error })) });
+            continue;
+          }
+          const results = cand.conds.map((c: any, i: number) => {
+            const p = res.ps![i];
+            const outcome = p >= passT ? "pass" : p <= failT ? "fail" : "pending";
+            return { name: c.name, p, outcome };
+          });
+          if (results.every((r: any) => r.outcome === "pass")) {
+            promoted.push({ key: cand.key, name: cand.name, tier: cand.tier, cost: cand.cost, eval_verified: true });
+          } else {
+            evalPending.push({ key: cand.key, results });
+          }
+        }
+        const all = [...rows, ...promoted];
+        try {
+          db.run(
+            "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
+            [shortId(["eval.ready", "tree", tid], 12), nowIso(), "cli", "eval.ready", "tree", tid,
+             JSON.stringify({ promoted: promoted.map((p) => p.key), pending: evalPending.map((p) => p.key) })]
+          );
+        } catch { /* audit best-effort */ }
+        if (ctx.json) {
+          console.log(JSON.stringify({ ready: all, eval_pending: evalPending }, null, 2));
+          return 0;
+        }
+        head(ctx, `Ready to unlock (${all.length}${promoted.length ? `，含 ${promoted.length} 个经决策模型放行` : ""})`);
+        table(ctx, all, ["key", "name", "tier", "cost"], ["key", "name", "tier", "cost"]);
+        if (evalPending.length) {
+          out(ctx, paint(C.bold, `  eval pending（灰带/未配置，非终态，${evalPending.length} 节点）`, ctx.color));
+          for (const p of evalPending)
+            out(ctx, paint(C.dim, `    - ${p.key}: ${p.results.map((r: any) => `${r.name}=${r.outcome}${r.p !== undefined ? `(P=${r.p})` : ""}`).join(" ")}`, ctx.color));
+        }
+        return 0;
+      })().catch((e: any): number => {
+        bad(ctx, e?.message || String(e));
+        return 1;
+      });
     }
 
     if (sub === "path") {

@@ -364,6 +364,7 @@ export class Store {
       cols: ["s.id", "s.name", "s.description", "s.version"],
       where: "s.enabled=1",
       params: [],
+      boostExpr: "s.name", // name hits outrank same-hit rows (see fts doc)
       q,
       limit,
       fallback: () =>
