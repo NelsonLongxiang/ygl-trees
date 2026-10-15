@@ -1,0 +1,28 @@
+{
+  "name": "ygl-trees",
+  "version": "0.1.0",
+  "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
+  "type": "commonjs",
+  "main": "dist/cli.js",
+  "bin": {
+    "ygl-trees": "bin/ygl-trees.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node bin/ygl-trees.js",
+    "demo": "bash examples/demo.sh",
+    "test": "node bin/ygl-trees.js --help"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "node-sqlite3-wasm": "^0.8.60"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^20.0.0"
+  },
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.9"
+}

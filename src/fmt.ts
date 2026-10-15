@@ -1,0 +1,100 @@
+/** Output helpers: colourised text tables and --json mode. */
+
+export interface Ctx {
+  json: boolean;
+  color: boolean;
+  quiet: boolean;
+}
+
+export const C = {
+  reset: "[0m",
+  bold: "[1m",
+  dim: "[2m",
+  red: "[31m",
+  green: "[32m",
+  yellow: "[33m",
+  cyan: "[36m",
+};
+
+export function paint(code: string, s: string, on: boolean): string {
+  return on ? `${code}${s}${C.reset}` : s;
+}
+
+export function out(ctx: Ctx, msg = ""): void {
+  if (!ctx.quiet) console.log(msg);
+}
+
+export function ok(ctx: Ctx, msg: string): void {
+  out(ctx, paint(C.green, `  ✓ ${msg}`, ctx.color));
+}
+export function warn(ctx: Ctx, msg: string): void {
+  out(ctx, paint(C.yellow, `  ! ${msg}`, ctx.color));
+}
+export function bad(ctx: Ctx, msg: string): void {
+  out(ctx, paint(C.red, `  ✗ ${msg}`, ctx.color));
+}
+export function head(ctx: Ctx, msg: string): void {
+  out(ctx, paint(C.bold + C.cyan, `\n${msg}`, ctx.color));
+}
+
+/** Display width: CJK/fullwidth glyphs occupy two terminal columns. */
+function dispWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) {
+    const c = ch.codePointAt(0)!;
+    const wide =
+      (c >= 0x1100 && c <= 0x115f) ||
+      (c >= 0x2e80 && c <= 0xa4cf) ||
+      (c >= 0xac00 && c <= 0xd7a3) ||
+      (c >= 0xf900 && c <= 0xfaff) ||
+      (c >= 0xfe30 && c <= 0xfe6f) ||
+      (c >= 0xff00 && c <= 0xff60) ||
+      (c >= 0xffe0 && c <= 0xffe6) ||
+      (c >= 0x1f300 && c <= 0x1f9ff);
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
+
+function padEnd(s: string, width: number): string {
+  const gap = width - dispWidth(s);
+  return gap > 0 ? s + " ".repeat(gap) : s;
+}
+
+/** Render rows as an aligned table (falls back to JSON when ctx.json). */
+export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[]): void {
+  if (ctx.json) {
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+  if (!rows.length) {
+    out(ctx, paint(C.dim, "  (empty)", ctx.color));
+    return;
+  }
+  const cols = keys || Object.keys(rows[0]).filter((k) => !k.startsWith("_"));
+  const hs = headers || cols;
+  const widthOf = (k: string) => Math.max(...rows.map((r) => dispWidth(String(r[k] ?? ""))));
+  const w = cols.map((k, i) => Math.max(dispWidth(hs[i] ?? ""), widthOf(k)));
+  const line = (cells: string[]) => cells.map((c, i) => padEnd(String(c), w[i])).join("  ");
+  out(ctx, paint(C.bold, "  " + line(hs), ctx.color));
+  out(ctx, paint(C.dim, "  " + w.map((n) => "-".repeat(n)).join("  "), ctx.color));
+  for (const r of rows) out(ctx, "  " + line(cols.map((k) => String(r[k] ?? ""))));
+}
+
+export function show(ctx: Ctx, obj: any, title?: string): void {
+  if (ctx.json) {
+    console.log(JSON.stringify(obj, null, 2));
+    return;
+  }
+  if (title) head(ctx, title);
+  const width = Math.max(...Object.keys(obj).map((k) => k.length));
+  for (const [k, v] of Object.entries(obj)) {
+    const val = v === null || v === undefined ? "" : String(v);
+    out(ctx, `  ${paint(C.dim, k.padEnd(width), ctx.color)}  ${val}`);
+  }
+}
+
+export function dump(ctx: Ctx, data: any): void {
+  if (ctx.json) console.log(JSON.stringify(data, null, 2));
+  else console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2));
+}
