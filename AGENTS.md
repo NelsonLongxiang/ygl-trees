@@ -23,7 +23,7 @@ packages/         领域模块（库代码，可被 apps 组合）
 
 apps/             应用入口（组装 packages，跑产品）
   cli/              CLI 应用（参数解析/命令分发/usage）
-  webui/            未来 WebUI 应用
+  web/              未来 WebUI 应用（webui serve 内嵌在 ops/tools，本目录预留）
 
 bin/              可执行入口
 tests/            vitest 单测
@@ -42,7 +42,7 @@ pnpm test:unit            # vitest 单测
 pnpm test                 # 三段制：unit + build + demo
 ```
 
-**测试纪律**：提交前 `pnpm test` 全绿。demo 有 7 组断言。新功能必须有 demo 断言或单测。
+**测试纪律**：提交前 `pnpm test` 全绿。demo 有 8 组断言。新功能必须有 demo 断言或单测。
 
 ## 架构（Cordis 框架）
 
@@ -87,7 +87,7 @@ docs/plan.md           里程碑 + 逐版本执行记录（证据链）
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
 docs/layout.md         目录层级规划
-docs/webui-design.md   WebUI 方案（待实施）
+docs/webui-design.md   WebUI 方案（export + serve 已实施）
 CHANGELOG.md           逐版本聚合
 ```
 

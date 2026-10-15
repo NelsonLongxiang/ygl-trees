@@ -1,10 +1,16 @@
-# WebUI 可视化方案（0.18.0 设计稿，后续批次实施）
+# WebUI 可视化方案
 
-日期：2026-10-16 ｜ 状态：设计定稿，待实施 ｜ 原则：零新依赖
+日期：2026-10-16 ｜ 状态：**已实施（0.19.0 export / 0.22.0 serve）** ｜ 原则：零新依赖
 
 ## 路线
 
-**静态 HTML 导出**：`ygl-trees webui [--out <file>]` 生成单文件 `dashboard.html`，数据内嵌为 `<script>` JSON，浏览器直接打开——不需要服务器、不需要 npm 依赖、不需要网络。刷新 = 重跑命令。
+**静态 HTML 导出**：`ygl-trees webui export [--out <file>]` 生成单文件 `dashboard.html`，数据内嵌为 `<script>` JSON，浏览器直接打开——不需要服务器、不需要 npm 依赖、不需要网络。刷新 = 重跑命令。
+
+**活数据仪表盘（0.22.0）**：`ygl-trees webui serve [--port N]`（默认 8642）启动零依赖 `node:http` 服务器：
+- `/` / `/index.html` — 实时 HTML（内嵌快照立即渲染，`fetch('api/data')` 升级活数据，10s 轮询自动刷新）
+- `/api/data` — 每请求现取 `gatherData()` 的 JSON
+- Ctrl+C / SIGTERM 优雅停机；CLI `finally` 在 server 关闭后才关 db
+- 内嵌 JSON `<` 转 `\u003c` 防 `</script>` 注入
 
 ## 三个视图
 

@@ -242,7 +242,7 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 | [docs/conventions.md](docs/conventions.md) | 数据模型应用规范（加表九触点、幂等决策树、FTS 纪律、TypeORM 边界、tmp/ 规范） |
 | [docs/pg-compat.md](docs/pg-compat.md) | PostgreSQL 兼容方案（镜像/迁移；L2 双后端已取消） |
 | [docs/layout.md](docs/layout.md) | 项目目录层级规划与设计 |
-| [docs/webui-design.md](docs/webui-design.md) | WebUI 可视化方案（零依赖静态 HTML 导出，待实施） |
+| [docs/webui-design.md](docs/webui-design.md) | WebUI 可视化方案（零依赖：静态 HTML 导出 + `webui serve` 活数据仪表盘） |
 
 ## 九、许可
 

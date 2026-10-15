@@ -139,3 +139,11 @@ D=$($Y job add "nightly" -- "echo hello" --every 1440 2>&1)
 case "$D" in *duplicate*) echo "  ✓ job add idempotent";; *) echo "  ✗ job add NOT idempotent: $D"; exit 1;; esac
 $Y job run nightly
 $Y db stats
+
+echo "── 8. webui"
+$Y webui export --out "$YGL_HOME/dashboard.html" >/dev/null
+if grep -q "ygl-trees dashboard" "$YGL_HOME/dashboard.html" && grep -q "const FALLBACK" "$YGL_HOME/dashboard.html"; then
+  echo "  ✓ webui export: single-file dashboard.html with embedded data"
+else
+  echo "  ✗ webui export failed"; exit 1
+fi

@@ -112,8 +112,9 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
   Writes are idempotent (claim/evidence/query/kb/job dedupe by content
   hash); pass --force to keep a deliberate duplicate.
 
-${paint(C.bold, "webui", true)}            export static HTML dashboard
+${paint(C.bold, "webui", true)}            dashboard (zero-dependency)
   export [--out <file>]     single-file dashboard.html (open in browser)
+  serve [--port N]          live dashboard at http://127.0.0.1:N/ (Ctrl+C to stop)
 
 ${paint(C.bold, "agent", true)}       agent-facing views
   brief                      current project state + next actions (start here)

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.22.0（2026-10-17）WebUI 动态版：live dashboard
+- `ygl-trees webui serve [--port N]`：零依赖 `node:http` 活数据仪表盘——`/` 实时渲染、`/api/data` 每请求现取、10s 轮询自动刷新；Ctrl+C 优雅停机（db 在 CLI finally 关闭）
+- 重构：`gatherData()`/`generateHTML(data, live)`/`createDashboardServer()` 三出口；export 路径行为不变（单文件 + 内嵌快照兜底）
+- 安全：内嵌 JSON `<` 转 `\u003c`，杜绝 `</script>` 注入
+- 测试：webui 7 例（gatherData 形状 / HTML live 引导 / 注入转义 / 三路由端到端）；demo 断言组 8（export 单文件校验）
+
+## 0.21.0（2026-10-17）doctor 健康检查 + 检索全域统一
+- `ygl-trees doctor`：7 项健康检查（schema 版本 / 索引新鲜度 / FTS 同步 / 重复内容 / 孤儿数据 / config 有效性 / 残留锁），`--json` 纯净输出
+- 检索排序全域统一：kb（title 加权）、skill match（name 加权）、source search（title 加权）、node search（key/name 加权）——hits desc → boost desc → bm25 asc
+
 ## 0.20.0（2026-10-16）DSH 合规收官
 - 测试归位：全局 `tests/` → 各包 `tests/`（text→core/text、eval→techtree/eval、config→ops/tools）；vitest `packages/*/*/tests/**/*.test.ts`
 - 包依赖声明：8 包各声明 dependencies（workspace `@ygl/` + npm cordis/typeorm）；core/text 和 techtree/eval 零依赖（纯函数）
