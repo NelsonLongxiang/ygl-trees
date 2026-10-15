@@ -201,6 +201,16 @@ ygl-trees agent log        # 审计事件流
 
 `agent brief --json` 直接给出结构化状态和建议动作序列，Agent 可以照着执行。
 
+## 五b、开发与运维工具
+
+```bash
+pnpm test          # 三段制回归：unit (vitest) + build (tsc) + demo (8 组断言)
+pnpm bench         # 性能基准七席（startup/写路径/检索/索引重建），结果落 tmp/bench-results.json
+pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
+ygl-trees doctor   # 工作区健康检查（7 项：schema/索引/FTS/重复/孤儿/config/锁）
+ygl-trees webui serve  # 活数据仪表盘（http://127.0.0.1:8642/，Ctrl+C 停）
+```
+
 ---
 
 ## 六、环境变量、路径与配置
@@ -243,6 +253,7 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 | [docs/pg-compat.md](docs/pg-compat.md) | PostgreSQL 兼容方案（镜像/迁移；L2 双后端已取消） |
 | [docs/layout.md](docs/layout.md) | 项目目录层级规划与设计 |
 | [docs/webui-design.md](docs/webui-design.md) | WebUI 可视化方案（零依赖：静态 HTML 导出 + `webui serve` 活数据仪表盘） |
+| [docs/bun-compat.md](docs/bun-compat.md) | Bun 目标运行时兼容方案（Windows 受阻：fs.openSync O_CREAT 上游缺陷 + 迁移清单） |
 
 ## 九、许可
 

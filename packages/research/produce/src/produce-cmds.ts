@@ -88,7 +88,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const evIndex = new Map(evidence.map((e: any, i: number) => [e.id, i + 1]));
       const L: string[] = [];
       L.push(`# ${project.name}`, "");
-      L.push(`_generated ${new Date().toISOString().slice(0, 19).replace("T", " ")} by ygl-trees_`, "");
+      L.push(`_generated ${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC by ygl-trees_`, "");
       if (project.question) L.push(`**研究问题**：${project.question}`, "");
 
       L.push("## 摘要", "");

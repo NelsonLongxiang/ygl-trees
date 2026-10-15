@@ -181,7 +181,15 @@ export class Store {
       fallback: () =>
         this.db.all("SELECT id,title,tags,confidence FROM kb_notes WHERE title LIKE ? LIMIT ?", [`%${q}%`, limit]),
     });
-    for (const r of rows) this.db.run("UPDATE kb_notes SET reuse=reuse+1 WHERE id=?", [r.id]);
+    // single-statement reuse bump: N per-row UPDATEs would mean N implicit
+    // transactions (N VFS fsyncs) per search — benchmarked 20x slower (0.23.0)
+    if (rows.length) {
+      const ids: string[] = rows.map((r) => r.id);
+      this.db.run(
+        `UPDATE kb_notes SET reuse=reuse+1 WHERE id IN (${ids.map(() => "?").join(",")})`,
+        ids
+      );
+    }
     return rows;
   }
 

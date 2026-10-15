@@ -1,12 +1,20 @@
 # Changelog
 
-## 0.22.0（2026-10-17）WebUI 动态版：live dashboard
+## 0.23.0（2026-10-16）dogfood 深化批 + benchmarks + Bun 决策 + kbSearch 修复
+- **benchmarks/ 基准套件**：零依赖七席（startup 子进程 / claim-write / claim-dedupe / kb-import-batch / kb-search / node-index median-of-3 / node-search），`pnpm bench`，结果落 tmp/bench-results.json（含 node/平台/git 哈希）；README 记方法论与 Windows Defender 方差注意
+- **kbSearch 写放大修复（基准首跑战果）**：top-20 逐行 `UPDATE reuse=reuse+1`（20 次隐式事务 = 20 次 VFS fsync）→ 单语句 `IN (...)` 批更新；500 行语料 p50 326ms→25.6ms、p95 2039ms→49.9ms（12.7×/40×）
+- **Bun 运行时决策**：未来以 Bun 封装 CLI（用户指示）。本机实测 bun 1.3.0 (win32) `fs.openSync(path, O_CREAT)` 抛 ENOENT 不建文件 → node-sqlite3-wasm VFS 无法建库 → **Windows 上受阻**。docs/bun-compat.md 记录证据链与迁移清单；scripts/bun-smoke.sh 探针（pnpm smoke:bun，当前必红，不进 test）
+- **dogfood #2**：cordis-lifecycle 真实代码证据研究项目全闭环（3 检索式 → 6 源 → 6 证据 → 5 断言全 supported → 7 链接 → 大纲+章节+报告 → kb ingest → promote `cordis-lifecycle-cli`）；agent match 双查询 top-1 命中；doctor 7/7 护航
+- 报告 `_generated` 标记补 UTC 标注（原裸 UTC 时间在 UTC+8 环境易误读为前一天；demo 组 4 加断言锁定）
+- 修正 0.21.0/0.22.0 CHANGELOG 与 plan.md 执行记录日期（10-17 → 10-16，对齐 git 提交真实日期）
+
+## 0.22.0（2026-10-16）WebUI 动态版：live dashboard
 - `ygl-trees webui serve [--port N]`：零依赖 `node:http` 活数据仪表盘——`/` 实时渲染、`/api/data` 每请求现取、10s 轮询自动刷新；Ctrl+C 优雅停机（db 在 CLI finally 关闭）
 - 重构：`gatherData()`/`generateHTML(data, live)`/`createDashboardServer()` 三出口；export 路径行为不变（单文件 + 内嵌快照兜底）
 - 安全：内嵌 JSON `<` 转 `\u003c`，杜绝 `</script>` 注入
 - 测试：webui 7 例（gatherData 形状 / HTML live 引导 / 注入转义 / 三路由端到端）；demo 断言组 8（export 单文件校验）
 
-## 0.21.0（2026-10-17）doctor 健康检查 + 检索全域统一
+## 0.21.0（2026-10-16）doctor 健康检查 + 检索全域统一
 - `ygl-trees doctor`：7 项健康检查（schema 版本 / 索引新鲜度 / FTS 同步 / 重复内容 / 孤儿数据 / config 有效性 / 残留锁），`--json` 纯净输出
 - 检索排序全域统一：kb（title 加权）、skill match（name 加权）、source search（title 加权）、node search（key/name 加权）——hits desc → boost desc → bm25 asc
 

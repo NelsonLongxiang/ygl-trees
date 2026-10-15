@@ -26,6 +26,7 @@ apps/             应用入口（组装 packages，跑产品）
   web/              未来 WebUI 应用（webui serve 内嵌在 ops/tools，本目录预留）
 
 bin/              可执行入口
+benchmarks/       性能基准套件（bench.js 七席 + README，pnpm bench）
 tests/            vitest 单测
 skills/           专属 Agent Skills（junction 到 .agents/skills/）
 docs/             文档体系
@@ -40,6 +41,8 @@ pnpm install              # pnpm workspace（vendor/* + apps/*）
 pnpm build                # tsc -> dist/
 pnpm test:unit            # vitest 单测
 pnpm test                 # 三段制：unit + build + demo
+pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
+pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
 **测试纪律**：提交前 `pnpm test` 全绿。demo 有 8 组断言。新功能必须有 demo 断言或单测。
@@ -88,6 +91,7 @@ docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
 docs/layout.md         目录层级规划
 docs/webui-design.md   WebUI 方案（export + serve 已实施）
+docs/bun-compat.md     Bun 目标运行时兼容方案（Windows 受阻，含证据与迁移清单）
 CHANGELOG.md           逐版本聚合
 ```
 

@@ -53,7 +53,12 @@ echo "── 4. production"
 $Y produce section "落地建议" --body "1. 邻接表保真
 2. 读压力大时叠加闭包表
 3. 运行时维护拓扑序+双向邻接+BitSet+候选集"
-$Y produce report | head -20
+RPT=$($Y produce report)
+echo "$RPT" | head -12
+case "$RPT" in
+  *"UTC by ygl-trees"*) echo "  ✓ report _generated marker is UTC-labeled";;
+  *) echo "  ✗ report UTC marker missing"; exit 1;;
+esac
 
 echo "── 5. knowledge reuse"
 R=$($Y produce list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).find(x=>x.kind==='report').id))")
