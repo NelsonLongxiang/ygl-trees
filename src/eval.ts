@@ -17,8 +17,21 @@ import * as path from "node:path";
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model";
 const MODEL_ID = "typesafe-ai/jev";
 /** Gray band per the material's discipline: P in (0.4, 0.7) is a process
- *  state, never a terminal verdict. */
+ *  state, never a terminal verdict. Thresholds are config-tunable. */
 const GRAY = { low: 0.4, high: 0.7 };
+
+export const DEFAULT_ENDPOINT = GATEWAY_URL;
+
+/** Normalize a configured api_base: a bare host gets the standard v4
+ *  evaluation-model path appended; a full endpoint is used as-is.
+ *  Config priority is composed by the CALLER (cmds layer):
+ *  config(decision_model_llm_api_base) > this default. */
+export function resolveEndpoint(base: string): string {
+  const v = String(base || "").trim().replace(/\/+$/, "");
+  if (!v) return GATEWAY_URL;
+  if (/\/v4\/ai\/evaluation-model$/.test(v)) return v;
+  return `${v}/v4/ai/evaluation-model`;
+}
 
 /** Token resolution: env first, then ~/.vercel.ai-gateway.env (token=...).
  *  Set YGL_EVAL_OFFLINE=1 to force the offline path (tests/demos on
@@ -43,16 +56,19 @@ export interface EvalBooleanResult {
 
 /** One boolean question about a state. Retries 429/529 with exponential
  *  backoff (<=3); 400/401 and malformed answers return without retry;
- *  60s timeout per attempt. */
-export async function evalBoolean(state: unknown, question: string, token: string): Promise<EvalBooleanResult> {
-  if (!token) return { ok: false, error: "no evaluator configured (set AI_GATEWAY_API_KEY or ~/.vercel.ai-gateway.env)" };
+ *  60s timeout per attempt. `endpoint` defaults to the Vercel gateway —
+ *  callers pass the config-resolved value (decision_model_llm_api_base
+ *  has priority over the default). */
+export async function evalBoolean(state: unknown, question: string, token: string, endpoint = GATEWAY_URL): Promise<EvalBooleanResult> {
+  if (!token) return { ok: false, error: "no evaluator configured (set config decision_model_llm_token, or AI_GATEWAY_API_KEY / ~/.vercel.ai-gateway.env)" };
+  const url = resolveEndpoint(endpoint);
   const body = JSON.stringify({
     state,
     questions: { q: { type: "boolean", instructions: question } },
   });
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await fetch(GATEWAY_URL, {
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

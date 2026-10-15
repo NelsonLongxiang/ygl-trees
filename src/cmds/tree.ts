@@ -19,8 +19,8 @@ import { TreeStore } from "../tree";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 import { getOrm } from "../orm";
 import * as treeWrites from "../treeWrites";
-import { evalBoolean, evalToken, mapOutcome } from "../eval";
-import { configGetBool, configGetNumber } from "../config";
+import { DEFAULT_ENDPOINT, evalBoolean, evalToken, mapOutcome } from "../eval";
+import { configGet, configGetBool, configGetNumber } from "../config";
 import { nowIso, shortId } from "../text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -243,9 +243,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // R8: decision-model boolean evaluation for op=eval conditions.
       // Offline-safe: no token / network failure → pending (rc=0).
-      // Thresholds + offline are config-tunable (eval.*); env YGL_EVAL_OFFLINE wins.
+      // Credential/endpoint priority (user ruling): CONFIG first —
+      // decision_model_llm_token / decision_model_llm_api_base — then env
+      // AI_GATEWAY_API_KEY / ~/.vercel.ai-gateway.env, then the default
+      // Vercel gateway. Thresholds + offline are config-tunable too;
+      // env YGL_EVAL_OFFLINE still wins over config eval.offline.
       const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
-      const token = offline ? "" : evalToken();
+      const cfgToken = configGet(env.db, "decision_model_llm_token").trim();
+      const token = offline ? "" : cfgToken || evalToken();
+      const endpoint = configGet(env.db, "decision_model_llm_api_base").trim() || DEFAULT_ENDPOINT;
       const passT = configGetNumber(env.db, "eval.pass_threshold");
       const failT = configGetNumber(env.db, "eval.fail_threshold");
       const contextPkg = trees.evalContext(tid, key, state, ctxName);
@@ -253,7 +259,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const evaluated: any[] = [];
         for (const c of evalConds) {
           const question = String(c.value || c.name); // R8.7 wording fallback
-          const m = mapOutcome(await evalBoolean(contextPkg, question, token), passT, failT);
+          const m = mapOutcome(await evalBoolean(contextPkg, question, token, endpoint), passT, failT);
           evaluated.push({ name: c.name, question, ...m });
         }
         const pendingList: string[] = [];

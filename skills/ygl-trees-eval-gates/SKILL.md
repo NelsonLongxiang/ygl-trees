@@ -44,12 +44,15 @@ ygl-trees node can gate-node --eval --json     # evaluated[] + pending[] 字段
 节点元数据（key/name/kind/tier/cost）+ 直接父（node_edges）+ 祖先链（node_closure）+
 该节点全部条件 + 已解锁集 + `--state` 袋。**state 必带上下文包**——裸 state 大概率落灰带。
 
-## 5. 凭证与离线
+## 5. 凭证与端点（优先级：config > 环境变量/文件 > 默认网关）
 
-- token：环境变量 `AI_GATEWAY_API_KEY` → 回退 `~/.vercel.ai-gateway.env`（`token=...`，vck_ 前缀）
+- **config 优先**：`ygl-trees config set decision_model_llm_token <t>` 与
+  `config set decision_model_llm_api_base <url>`（api_base 给主机名自动补
+  `/v4/ai/evaluation-model`，也可给完整端点——代理/自托管网关用它接管）
+- 回落：环境变量 `AI_GATEWAY_API_KEY` → `~/.vercel.ai-gateway.env`（`token=...`，vck_ 前缀）
 - **离线安全**：无 token/网络失败 → 该条件 pending（`no evaluator configured`）、rc=0——
   评估器是增强不是依赖，别把 pending 当失败重试
-- `YGL_EVAL_OFFLINE=1` 强制离线（测试/demo 确定性）
+- `YGL_EVAL_OFFLINE=1` 强制离线（测试/demo 确定性；优先于 config 的 eval.offline）
 - 网关协议：v4 端点 + 四个协议头（缺一 400/404）；429/529 自动退避重试≤3，400/401 不重试
 
 ## 6. 判定留痕

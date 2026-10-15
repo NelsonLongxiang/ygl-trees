@@ -21,6 +21,8 @@ export const CONFIG_REGISTRY: ConfigSpec[] = [
   { key: "eval.pass_threshold", def: "0.7", type: "number", note: "P(true) ≥ 此值判定通过（决策模型门槛）" },
   { key: "eval.fail_threshold", def: "0.4", type: "number", note: "P(true) ≤ 此值判定未通过；两值之间为灰带 pending" },
   { key: "eval.offline", def: "false", type: "boolean", note: "强制决策模型离线（等价 YGL_EVAL_OFFLINE=1，环境变量优先）" },
+  { key: "decision_model_llm_token", def: "", type: "string", note: "决策模型凭证——优先于 AI_GATEWAY_API_KEY 与 ~/.vercel.ai-gateway.env；空=回落" },
+  { key: "decision_model_llm_api_base", def: "", type: "string", note: "决策模型端点——优先于默认 Vercel Gateway；给主机名自动补 /v4/ai/evaluation-model，空=默认" },
   { key: "fetch.timeout_ms", def: "15000", type: "number", note: "source fetch 超时（毫秒）" },
   { key: "fetch.user_agent", def: "ygl-trees/0.15 (+local research cli)", type: "string", note: "source fetch 的 User-Agent" },
   { key: "search.limit", def: "20", type: "number", note: "kb/skill 检索默认返回条数（--limit 覆盖）" },
