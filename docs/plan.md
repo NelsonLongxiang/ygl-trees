@@ -15,6 +15,8 @@
 >
 > **执行记录 · 0.5.1 / 0.6.0（2026-10-15）**：0.5.1 = tree/node/skill/project 组写命令 --json 对齐（README"全部命令支持 --json"承诺兑现；project list 不再污染 name 字段；skill enable/disable 补 404）。0.6.0 = PG 兼容 L1 落地（docs/pg-compat.md 方案 → `db sync pg` 实现）：镜像 DDL 由 PRAGMA table_info 运行时推导（双 DDL 漂移风险在 L1 消失）、ngram 同分词器重算 + tsvector/GIN 中文等价召回、pg 作 optionalDependencies；docker postgres:16 容器实测 18 表计数严格对齐 + 中英文检索等价。顺手修正 `db stats` 从不统计树表的历史口径缺陷。
 >
+> **执行记录 · 0.17.0（2026-10-16，巩固批：单测 + 死代码清理 + CHANGELOG）**：vitest 落地（37 用例：ngram CJK/拉丁/混合切分、contentHash 幂等与加盐、resolveEndpoint 四态归一化、mapOutcome 三态含 0.7/0.4 边界与自定义阈值、config 注册表不变量/五类校验/覆盖-重置/events 留痕）；`pnpm test` = unit + build + demo 三段。死代码清理（写迁移收官后的孤儿写路径，conventions 执行）：Store 13 方法（claimAdd/claimResolve/claimLink/queryAdd/queryAttach/sourceAdd/evidenceAdd/artifactAdd/skillUpsert/skillImport/skillDel/skillEnabled/skillRefAdd/kbAdd/kbIngestArtifact/kbPromote/projectCreate/jobAdd——逐方法 grep external=0 证据）、TreeStore 7 方法（treeCreate/nodeAdd/link/unlink/condAdd/stateSet/nodeDel/importTree）；**保留** rebuildClosure/buildIndex（validate 依赖）与全部读方法。store.ts 617→427 行、tree.ts 910→741 行。CHANGELOG.md 建立（0.1.0→0.17.0 逐版本聚合）。
+>
 > **执行记录 · 0.16.0（2026-10-16，ready --eval 批量判定 + 检索一致性）**：`node ready --eval`——`TreeStore.evalCandidates` 找出仅被 eval 条件阻塞的节点（排除非 eval 阻塞与被排斥者），每节点**一次多题请求**（`evalBooleanMany`，协议原生批量：同一 state 多 question 单请求同延迟）；全过 → 提升进 ready（`eval_verified` 标记），其余 → `eval_pending` 逐题带 P；凭证/端点/阈值沿用 config 优先级链；离线全 pending rc=0；留痕 `eval.ready`。skillMatch 接 boostExpr（s.name，与 kb search 同语义）。验证：离线 2 候选 pending 且每节点题数 1/2 正确、blocked 不入候选；本地 stub 证实 2 节点=2 请求、一次载 2 题、上下文按节点区分；P 映射（单题 0.95→promoted、混合 0.95/0.2→pending）。demo 6a 增 ready --eval 离线断言。
 >
 > **执行记录 · 0.15.1（2026-10-16，决策模型配置键）**：新增 `decision_model_llm_token` 与 `decision_model_llm_api_base`（用户裁定**配置项优先**）。优先级=config > env/文件回落 > 默认 Vercel 网关；api_base 归一化（bare host 自动补 /v4/ai/evaluation-model，完整端点直用——代理/自托管可整体接管）。eval.ts 保持纯净（token/endpoint 作参数 + resolveEndpoint 导出），优先级编排在命令层。四级验证：①注册表 10 键；②config 垃圾 token → 真网关 401 不重试 pending（证明覆盖本机文件 token）；③本地 stub 端点接管——四协议头/boolean 题型/上下文包（state.node.key）逐项核对，P=0.95→pass；④config 清空 → 文件 token 回落真网关 P=0.44 灰带。README/eval-gates skill 同步。
@@ -110,7 +112,8 @@
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）
-- npm 实际发布（外部动作需用户确认 registry）、单测框架（规模触发未到）、`node ready --eval` 批量评估、choice/score 题型接入
+- ~~单测框架~~（0.17.0 已交付：vitest 37 用例）
+- npm 实际发布（外部动作需用户确认 registry）、choice/score 题型接入
 
 ## 完成定义（DoD，每里程碑通用）
 

@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/cli.js",
@@ -11,14 +11,16 @@
     "build": "tsc -p tsconfig.json",
     "start": "node bin/ygl-trees.js",
     "demo": "bash examples/demo.sh",
-    "test": "pnpm build && bash examples/demo.sh",
-    "prepublishOnly": "pnpm test"
+    "test": "pnpm test:unit && pnpm build && bash examples/demo.sh",
+    "prepublishOnly": "pnpm test",
+    "test:unit": "vitest run"
   },
   "files": [
     "bin",
     "dist",
     "README.md",
-    "docs"
+    "docs",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=18"
@@ -31,11 +33,17 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.5"
   },
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "optionalDependencies": {
     "pg": "^8.13.0"
+  },
+  "vitest": {
+    "include": [
+      "tests/**/*.test.ts"
+    ]
   }
 }

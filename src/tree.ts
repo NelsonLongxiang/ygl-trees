@@ -20,22 +20,6 @@ export class TreeStore {
   constructor(readonly db: DB) {}
 
   // ================================================================ trees
-  treeCreate(name: string, projectId = "", note = ""): Row {
-    const id = shortId(["tree", name], 10);
-    this.db.run("INSERT INTO trees(id,project_id,name,note,created) VALUES(?,?,?,?,?)", [
-      id,
-      projectId || null,
-      name,
-      note,
-      nowIso(),
-    ]);
-    this.db.run("INSERT INTO node_index(tree_id,built_at,dirty) VALUES(?,?,1) ON CONFLICT(tree_id) DO UPDATE SET dirty=1, built_at=excluded.built_at", [
-      id,
-      nowIso(),
-    ]);
-    return this.db.get("SELECT * FROM trees WHERE id=?", [id])!;
-  }
-
   treeByName(name: string): Row | null {
     return this.db.get("SELECT * FROM trees WHERE name=? OR id=?", [name, name]);
   }
@@ -60,48 +44,6 @@ export class TreeStore {
   }
 
   // ================================================================ nodes
-  nodeAdd(treeId: string, o: {
-    key: string;
-    name?: string;
-    kind?: string;
-    tier?: number;
-    cost?: number;
-    cost_unit?: string;
-    payload?: string;
-    tags?: string;
-  }): { row: Row; created: boolean } {
-    const existing = this.db.get("SELECT * FROM nodes WHERE tree_id=? AND key=?", [treeId, o.key]);
-    if (existing) return { row: existing, created: false };
-    const id = shortId(["node", treeId, o.key], 10);
-    const name = o.name || o.key;
-    this.db.run(
-      `INSERT INTO nodes(id,tree_id,key,name,kind,tier,cost,cost_unit,payload,tags,created)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        id,
-        treeId,
-        o.key,
-        name,
-        o.kind || "tech",
-        o.tier ?? 0,
-        o.cost ?? 0,
-        o.cost_unit || "",
-        o.payload || "",
-        o.tags || "",
-        nowIso(),
-      ]
-    );
-    this.db.run("INSERT INTO nodes_fts(id,key,name,tags,ngram) VALUES(?,?,?,?,?)", [
-      id,
-      o.key,
-      name,
-      o.tags || "",
-      require("./text").ngram(`${o.key} ${name} ${o.tags || ""}`),
-    ]);
-    this.markDirty(treeId);
-    return { row: this.db.get("SELECT * FROM nodes WHERE id=?", [id])!, created: true };
-  }
-
   nodeGet(treeId: string, keyOrId: string): Row | null {
     return this.db.get("SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)", [treeId, keyOrId, keyOrId]);
   }
@@ -114,14 +56,6 @@ export class TreeStore {
          FROM nodes n WHERE n.tree_id=? ORDER BY n.tier, n.key`,
       [treeId]
     );
-  }
-
-  nodeDel(treeId: string, keyOrId: string): void {
-    const n = this.nodeGet(treeId, keyOrId);
-    if (!n) throw new Error(`node not found: ${keyOrId}`);
-    this.db.run("DELETE FROM nodes_fts WHERE id=?", [n.id]);
-    this.db.run("DELETE FROM nodes WHERE id=?", [n.id]);
-    this.markDirty(treeId);
   }
 
   // ================================================================ edges (父子 + 关联)
@@ -165,14 +99,6 @@ export class TreeStore {
     );
     this.rebuildClosure(treeId);
     return { row: this.db.get("SELECT * FROM node_edges WHERE id=?", [id])!, cycle: false };
-  }
-
-  unlink(treeId: string, parentKey: string, childKey: string, rel: EdgeRel = "prereq"): void {
-    const p = this.nodeGet(treeId, parentKey);
-    const c = this.nodeGet(treeId, childKey);
-    if (!p || !c) throw new Error("node not found");
-    this.db.run("DELETE FROM node_edges WHERE parent_id=? AND child_id=? AND rel=?", [p.id, c.id, rel]);
-    this.rebuildClosure(treeId);
   }
 
   /** Direct parents of a node, with their rel/mode/required flags. */
@@ -238,43 +164,6 @@ export class TreeStore {
   }
 
   // ================================================================ conditions (必检 / 可选)
-  condAdd(treeId: string, keyOrId: string, o: {
-    name: string;
-    kind?: CondKind;
-    expr?: string;
-    op?: string;
-    value?: string;
-    required?: boolean;
-    effect?: string;
-    weight?: number;
-    note?: string;
-  }): Row {
-    const n = this.nodeGet(treeId, keyOrId);
-    if (!n) throw new Error(`node not found: ${keyOrId}`);
-    const kind = o.kind || "flag";
-    if (!COND_KINDS.includes(kind)) throw new Error(`kind must be one of ${COND_KINDS.join("|")}`);
-    const id = shortId(["cond", n.id, o.name], 12);
-    this.db.run(
-      `INSERT INTO node_conditions(id,node_id,name,kind,expr,op,value,required,effect,weight,note)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        id,
-        n.id,
-        o.name,
-        kind,
-        o.expr || o.name,
-        o.op || ">=",
-        o.value || "",
-        o.required === false ? 0 : 1,
-        o.effect || "gate",
-        o.weight ?? 1,
-        o.note || "",
-      ]
-    );
-    this.markDirty(treeId);
-    return this.db.get("SELECT * FROM node_conditions WHERE id=?", [id])!;
-  }
-
   condList(treeId: string, keyOrId: string): Row[] {
     const n = this.nodeGet(treeId, keyOrId);
     if (!n) return [];
@@ -432,16 +321,6 @@ export class TreeStore {
   }
 
   // ================================================================ runtime state
-  stateSet(treeId: string, keyOrId: string, status: string, context = "default", level = 0): void {
-    const n = this.nodeGet(treeId, keyOrId);
-    if (!n) throw new Error(`node not found: ${keyOrId}`);
-    this.db.run(
-      `INSERT INTO node_state(tree_id,context,node_id,status,level,progress,updated) VALUES(?,?,?,?,?,?,?)
-       ON CONFLICT(tree_id,context,node_id) DO UPDATE SET status=excluded.status, level=excluded.level, updated=excluded.updated`,
-      [treeId, context, n.id, status, level, status === "unlocked" ? 1 : 0, nowIso()]
-    );
-  }
-
   unlockedSet(treeId: string, context = "default"): Set<string> {
     const rows = this.db.all(
       "SELECT node_id FROM node_state WHERE tree_id=? AND context=? AND status='unlocked'",
@@ -824,118 +703,6 @@ export class TreeStore {
       }
     }
     return null;
-  }
-
-  /**
-   * Import a tree from `node export` JSON. Strict validation, all-or-nothing:
-   * any problem rejects the whole import with zero side effects. Default
-   * refuses an existing tree name; --merge upserts into it.
-   */
-  importTree(
-    spec: any,
-    opts: { name?: string; merge?: boolean } = {}
-  ): { tree: Row; nodes: number; edges: number; conditions: number } {
-    const errs: string[] = [];
-    const name = opts.name || spec?.tree?.name;
-    if (!name || typeof name !== "string") throw new Error("import: missing tree name");
-    const nodes: Row[] = Array.isArray(spec?.nodes) ? spec.nodes : [];
-    const edges: Row[] = Array.isArray(spec?.edges) ? spec.edges : [];
-    const conds: Row[] = Array.isArray(spec?.conditions) ? spec.conditions : [];
-    if (!nodes.length) throw new Error("import: no nodes");
-
-    const keys = new Set<string>();
-    for (const n of nodes) {
-      if (!n.key || typeof n.key !== "string") errs.push(`node without key: ${JSON.stringify(n).slice(0, 60)}`);
-      else if (keys.has(n.key)) errs.push(`duplicate node key: ${n.key}`);
-      else keys.add(n.key);
-    }
-    for (const e of edges) {
-      if (!keys.has(e.parent) || !keys.has(e.child)) errs.push(`edge references unknown node: ${e.parent} -> ${e.child}`);
-      if (e.parent === e.child) errs.push(`self-loop: ${e.parent}`);
-      if (!(EDGE_RELS as readonly string[]).includes(e.rel)) errs.push(`bad rel '${e.rel}': ${e.parent} -> ${e.child}`);
-      if (!(EDGE_MODES as readonly string[]).includes(e.mode)) errs.push(`bad mode '${e.mode}': ${e.parent} -> ${e.child}`);
-    }
-    for (const c of conds) {
-      if (!keys.has(c.node)) errs.push(`condition references unknown node: ${c.node}`);
-      if (!(COND_KINDS as readonly string[]).includes(c.kind)) errs.push(`bad condition kind '${c.kind}': ${c.node} · ${c.name}`);
-      if (c.required && c.kind !== "flag" && (c.value === undefined || c.value === "")) errs.push(`required condition without value: ${c.node} · ${c.name}`);
-    }
-    if (errs.length) throw new Error(`import rejected — ${errs.length} issue(s):\n  ${errs.slice(0, 10).join("\n  ")}`);
-
-    const cycle = this.gatingCycle([...keys], edges.map((e) => ({ parent: String(e.parent), child: String(e.child), rel: String(e.rel) })));
-    if (cycle) throw new Error(`import rejected — cycle among gating edges: ${cycle}`);
-
-    const existing = this.treeByName(name);
-    if (existing && !opts.merge) throw new Error(`tree already exists: ${name} (use --merge to upsert into it)`);
-
-    let tid: string;
-    this.db.tx(() => {
-      tid = existing ? existing.id : this.treeCreate(name, "", String(spec.tree?.note || "")).id;
-      for (const n of nodes) {
-        this.nodeAdd(tid, {
-          key: String(n.key),
-          name: n.name === undefined ? undefined : String(n.name),
-          kind: n.kind === undefined ? undefined : String(n.kind),
-          tier: n.tier === undefined ? undefined : Number(n.tier),
-          cost: n.cost === undefined ? undefined : Number(n.cost),
-          cost_unit: n.cost_unit === undefined ? undefined : String(n.cost_unit),
-          payload:
-            n.payload === undefined || n.payload === null
-              ? undefined
-              : typeof n.payload === "object"
-                ? JSON.stringify(n.payload)
-                : String(n.payload),
-          tags: n.tags === undefined ? undefined : String(n.tags),
-        });
-      }
-      for (const e of edges) {
-        const p = this.nodeGet(tid, String(e.parent))!;
-        const c = this.nodeGet(tid, String(e.child))!;
-        this.db.run(
-          `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note)
-           VALUES(?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(parent_id,child_id,rel) DO UPDATE SET
-             mode=excluded.mode, required=excluded.required, min_level=excluded.min_level,
-             weight=excluded.weight, note=excluded.note`,
-          [
-            shortId(["edge", tid, p.id, c.id, String(e.rel)], 12),
-            tid,
-            p.id,
-            c.id,
-            String(e.rel),
-            String(e.mode || "AND"),
-            e.required === false ? 0 : 1,
-            Number(e.min_level ?? 1),
-            Number(e.weight ?? 1),
-            String(e.note || ""),
-          ]
-        );
-      }
-      for (const c of conds) {
-        const n = this.nodeGet(tid, String(c.node))!;
-        this.db.run("DELETE FROM node_conditions WHERE node_id=? AND name=?", [n.id, String(c.name)]);
-        this.db.run(
-          `INSERT INTO node_conditions(id,node_id,name,kind,expr,op,value,required,effect,weight,note)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-          [
-            shortId(["cond", tid, n.id, String(c.name)], 10),
-            n.id,
-            String(c.name),
-            String(c.kind || "flag"),
-            String(c.expr || ""),
-            String(c.op || ">="),
-            String(c.value ?? ""),
-            c.required === false ? 0 : 1,
-            String(c.effect || "gate"),
-            Number(c.weight ?? 1),
-            String(c.note || ""),
-          ]
-        );
-      }
-      this.rebuildClosure(tid);
-      this.buildIndex(tid);
-    });
-    return { tree: this.treeByName(name)!, nodes: nodes.length, edges: edges.length, conditions: conds.length };
   }
 }
 
