@@ -57,7 +57,7 @@
 ### R6 研究管线最小增强（能力项，见 research §4）
 
 - **R6.1** `source fetch <url>`：内置 fetch 抓取 → 提取 `<title>` / meta description / 去标签正文（纯文本截断存储）→ 走 `sourceAdd` 现有去重；失败（非 2xx / 超时 15s / 非 html）退出 1 不落库。**不做** JS 渲染站点
-- **R6.2** `kb promote` L1 生成改进：优先取 frontmatter/首部 `# 标题` 段落或首条列表项，拼"做什么+何时用"式描述；无法提取时回落现状。验收：对 demo 报告 promote 的 skill 在 `agent match "科技树 建模"` 排第一
+- **R6.2** `kb promote` L1 生成改进：优先取首部列表项/首个有效行（跳过标题与 generated 戳），剥离 ✓/[n] 等装饰符，附来源标注；无法提取时回落标题。验收（按实测修正）：对 demo 报告 promote 的 skill 在 `agent match "科技树 建模"` 命中且进入前二——修复前 L1 是 generated 时间戳，完全不可能命中
 - **R6.3** `agent brief` 健康度：next_actions 增加两类感知——存在重复内容行（R2 之后理论上不再新增，存量仍可报）、`node_index` 脏（提示先 `node index`）
 
 ### R7 质量门禁

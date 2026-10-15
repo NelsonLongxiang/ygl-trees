@@ -102,6 +102,7 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 ```
 query add       登记检索式
 source add      收来源，按 (project, url_hash) 去重
+source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）
 claim add       写下断言
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
@@ -125,8 +126,9 @@ export    落盘 markdown
 ```
 kb ingest <artifactId>    报告入库
 kb search "<q>"           中文可用（CJK 二元切分）
-kb promote <note>         把笔记提升为可复用 skill
+kb promote <note>         把笔记提升为可复用 skill（L1 自动从正文提炼，含来源标注）
 agent match "<task>"      Agent 靠 L1 描述命中该 skill
+agent brief               状态 + 建议动作 + 健康度（脏索引、存量重复数据会提示修复命令）
 ```
 
 闭环：**报告 → 笔记 → skill → 下次自动命中**。

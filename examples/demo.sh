@@ -58,6 +58,12 @@ case "$D2" in *duplicate*) echo "  ✓ claim add idempotent";; *) echo "  ✗ cl
 D=$($Y kb ingest "$R" 2>&1)
 case "$D" in *duplicate*) echo "  ✓ kb ingest idempotent";; *) echo "  ✗ kb ingest NOT idempotent: $D"; exit 1;; esac
 
+echo "── 5c. kb promote → agent match"
+K=$($Y kb list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).find(x=>x.tags==='report').id))")
+$Y kb promote "$K" --name techtree-report >/dev/null
+M=$($Y agent match "科技树 建模" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).matches.map(x=>x.name).join(',')))")
+case "$M" in *techtree-report*) echo "  ✓ promoted skill discoverable via agent match";; *) echo "  ✗ promoted skill NOT matched: $M"; exit 1;; esac
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done

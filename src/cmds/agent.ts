@@ -61,6 +61,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
       }
 
+      // Health: surface data problems an agent should fix first.
+      const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
+      for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index   # tree '${t.name}' index is stale`);
+      const dupGroups = store.db.all(
+        `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
+         UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
+         UNION ALL SELECT 'evidence', COUNT(*) FROM (SELECT 1 FROM evidence GROUP BY source_id, quote HAVING COUNT(*)>1)
+         UNION ALL SELECT 'kb_notes', COUNT(*) FROM (SELECT 1 FROM kb_notes GROUP BY title, body HAVING COUNT(*)>1)`
+      );
+      if (dupGroups.some((g: any) => g.c > 0)) payload.next_actions.push(`ygl-trees db dups   # duplicate content rows exist`);
+
       if (ctx.json) {
         console.log(JSON.stringify(payload, null, 2));
         return 0;

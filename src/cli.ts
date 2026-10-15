@@ -171,7 +171,7 @@ export function usage(): string {
   return USAGE;
 }
 
-export function main(argv: string[]): number {
+export function main(argv: string[]): Promise<number> | number {
   const args = parse(argv);
   const ctx: Ctx = {
     json: bool(args, "json"),
@@ -208,22 +208,28 @@ export function main(argv: string[]): number {
     return 1;
   }
   const env: Env = { ctx, db, store: new Store(db), args, home, group };
-  try {
+
+  /** Async commands (e.g. source fetch) return a promise; main must keep the
+   *  db open until it settles — hence the awaited dispatch below. */
+  const dispatch = async (): Promise<number> => {
     const mod = require(`./cmds/${safe(group)}`);
-    const rc = mod.run(env, action || "", args._.slice(2), args);
+    const rc = await mod.run(env, action || "", args._.slice(2), args);
     return typeof rc === "number" ? rc : 0;
-  } catch (e: any) {
-    if (e && e.code === "MODULE_NOT_FOUND") {
-      bad(ctx, `unknown group: ${group}`);
-      out(ctx, usage());
-      return 2;
-    }
-    bad(ctx, e?.message || String(e));
-    if (process.env.YGL_DEBUG) console.error(e);
-    return 1;
-  } finally {
-    db.close();
-  }
+  };
+
+  return dispatch()
+    .then((rc) => rc)
+    .catch((e: any) => {
+      if (e && e.code === "MODULE_NOT_FOUND") {
+        bad(ctx, `unknown group: ${group}`);
+        out(ctx, usage());
+        return 2;
+      }
+      bad(ctx, e?.message || String(e));
+      if (process.env.YGL_DEBUG) console.error(e);
+      return 1;
+    })
+    .finally(() => db.close());
 }
 
 function safe(s: string): string {

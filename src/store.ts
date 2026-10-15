@@ -3,7 +3,7 @@
  * Keeps FTS shadow tables in sync so search always matches reality.
  */
 import { DB } from "./db";
-import { ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "./text";
+import { clip, ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "./text";
 
 export type Row = Record<string, any>;
 
@@ -514,10 +514,9 @@ export class Store {
     const note = this.kbGet(idOrTitle);
     if (!note) throw new Error(`kb note not found: ${idOrTitle}`);
     const name = skillName || note.title;
-    const desc = (note.body || "").split("\n").find((l: string) => l.trim() && !l.startsWith("#")) || note.title;
     return this.skillUpsert({
       name,
-      description: desc.slice(0, 300),
+      description: deriveL1(note.body || "", note.title),
       body: note.body,
       tags: note.tags,
       origin: `kb:${note.id}`,
@@ -646,4 +645,27 @@ export class Store {
 
 function str(v: any): string {
   return typeof v === "string" ? v : JSON.stringify(v ?? "");
+}
+
+/**
+ * Derive an L1 description (what + when) from a note body, for kb promote.
+ * Preference order: the first list item near the top, else the first
+ * meaningful line (skipping headings and boilerplate like the generated
+ * stamp); a provenance tail keeps the source greppable for agent matching.
+ */
+function deriveL1(body: string, title: string): string {
+  const lines = body
+    .split("\n")
+    .map((l) => l.replace(/\*\*/g, "").trim())
+    .filter(Boolean)
+    .filter((l) => !/^#{1,6}\s/.test(l))
+    .filter((l) => !/^_generated/i.test(l) && !/^generated/i.test(l));
+  const listLine = lines.slice(0, 20).find((l) => /^[-*]\s+|^\d+[.)]\s+/.test(l));
+  const pick = (listLine || lines[0] || title)
+    .replace(/^[-*]\s+|^\d+[.)]\s+/, "")
+    .replace(/^[✓✗⚠?*☐☑]\s*/, "")
+    .replace(/\s*\[\d+\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${clip(pick, 200)}（提炼自《${clip(title, 60)}》）`;
 }

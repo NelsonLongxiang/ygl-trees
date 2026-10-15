@@ -1,10 +1,11 @@
-/** research group — collect → screen → extract → claim. */
+/** research group — collect → screen → extract → claim.
+ *  `source fetch` is async (Node 18+ global fetch) and returns a promise. */
 import * as fs from "node:fs";
 import { Env } from "../cli";
 import { ok, bad, out, head, table, paint, C } from "../fmt";
 import { clip } from "../text";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
   const sub = action;
   const subAction = rest[0];
@@ -79,6 +80,81 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (res.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${res.row.id}`, ctx.color));
       else ok(ctx, `source added: ${res.row.id}  ${clip(res.row.title, 60)}`);
       return 0;
+    }
+    if (subAction === "fetch") {
+      const url = rest[1];
+      if (!url || !/^https?:\/\//i.test(url)) {
+        bad(ctx, "usage: research source fetch <http(s)://url> [--tags ..] [--confidence A|B|C]");
+        return 2;
+      }
+      // Node 18+ global fetch; nothing is stored unless the whole pipeline
+      // succeeds, so a failed fetch leaves zero side effects. Returns a
+      // promise so main() keeps the db open until the fetch settles.
+      return fetch(url, {
+        redirect: "follow",
+        signal: AbortSignal.timeout(15_000),
+        headers: { "user-agent": "ygl-trees/0.4 (+local research cli)" },
+      })
+        .then(async (res): Promise<number> => {
+          if (!res.ok) {
+            bad(ctx, `fetch failed: HTTP ${res.status} ${url}`);
+            return 1;
+          }
+          const ct = res.headers.get("content-type") || "";
+          if (!/text\/html|application\/xhtml|text\/plain/i.test(ct)) {
+            bad(ctx, `unsupported content-type '${ct || "(none)"}' — fetch handles html/plain only (no JS rendering)`);
+            return 1;
+          }
+          const raw = await res.text();
+          const title = (/<title[^>]*>([^<]*)<\/title>/i.exec(raw)?.[1] || url).replace(/\s+/g, " ").trim().slice(0, 200);
+          const metaDesc =
+            (/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(raw)?.[1] ||
+              /<meta[^>]+content=["']([^"']*)["'][^>]*name=["']description["']/i.exec(raw)?.[1] ||
+              "").replace(/\s+/g, " ").trim();
+          const text = raw
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<!--[\s\S]*?-->/g, " ")
+            .replace(/<\/(p|div|li|h[1-6]|tr|section|article|blockquote)>/gi, "\n")
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/gi, " ")
+            .replace(/&amp;/gi, "&")
+            .replace(/&lt;/gi, "<")
+            .replace(/&gt;/gi, ">")
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/gi, "'")
+            .replace(/[ \t]+/g, " ")
+            .replace(/\n\s*\n+/g, "\n")
+            .trim()
+            .slice(0, 50_000);
+          const thin = text.replace(/\s/g, "").length < 500;
+          const r = store.sourceAdd(project.id, {
+            title,
+            url,
+            abstract: metaDesc.slice(0, 500),
+            content: text,
+            engine: "fetch",
+            relevance: 0,
+            confidence: String(args.flags.confidence || "B"),
+            tags: String(args.flags.tags || (thin ? "needs_review" : "")),
+          });
+          if (r.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${r.row.id}`, ctx.color));
+          else ok(ctx, `fetched: ${r.row.id}  ${clip(title, 60)}`);
+          out(
+            ctx,
+            paint(
+              C.dim,
+              `  ${(text.length / 1000).toFixed(1)}k chars text · ${metaDesc ? "meta description" : "no meta"}${thin ? " · thin content → tagged needs_review" : ""}`,
+              ctx.color
+            )
+          );
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, `fetch failed: ${e?.message || e} (15s timeout; JS-rendered sites unsupported)`);
+          return 1;
+        });
     }
     if (subAction === "list") {
       table(ctx, store.sourceList(project.id, Number(args.flags.min || -1)), [
