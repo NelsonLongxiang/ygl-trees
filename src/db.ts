@@ -7,8 +7,9 @@
 import { Database } from "node-sqlite3-wasm";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { sha1 } from "./text";
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -55,13 +56,14 @@ CREATE TABLE IF NOT EXISTS projects (
 
 -- ---------------------------------------------------------------- research: queries
 CREATE TABLE IF NOT EXISTS queries (
-  id         TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  text       TEXT NOT NULL,
-  engine     TEXT DEFAULT '',
-  status     TEXT NOT NULL DEFAULT 'pending',  -- pending|done
-  note       TEXT DEFAULT '',
-  created    TEXT NOT NULL
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  text         TEXT NOT NULL,
+  engine       TEXT DEFAULT '',
+  status       TEXT NOT NULL DEFAULT 'pending',  -- pending|done
+  note         TEXT DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',         -- sha1(text): idempotent writes
+  created      TEXT NOT NULL
 );
 
 -- ---------------------------------------------------------------- research: sources
@@ -87,13 +89,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS sources_fts USING fts5(
 
 -- ---------------------------------------------------------------- research: evidence
 CREATE TABLE IF NOT EXISTS evidence (
-  id         TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  source_id  TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-  quote      TEXT NOT NULL,
-  note       TEXT DEFAULT '',
-  locator    TEXT DEFAULT '',   -- page / section / offset
-  created    TEXT NOT NULL
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_id    TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  quote        TEXT NOT NULL,
+  note         TEXT DEFAULT '',
+  locator      TEXT DEFAULT '',   -- page / section / offset
+  content_hash TEXT NOT NULL DEFAULT '',  -- sha1(quote): idempotent writes
+  created      TEXT NOT NULL
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS evidence_fts USING fts5(
   id UNINDEXED, quote, ngram, tokenize='unicode61'
@@ -101,12 +104,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS evidence_fts USING fts5(
 
 -- ---------------------------------------------------------------- research: claims
 CREATE TABLE IF NOT EXISTS claims (
-  id          TEXT PRIMARY KEY,
-  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  text        TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'unverified', -- unverified|supported|refuted|contested
-  confidence  TEXT NOT NULL DEFAULT 'B',
-  created     TEXT NOT NULL
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  text         TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'unverified', -- unverified|supported|refuted|contested
+  confidence   TEXT NOT NULL DEFAULT 'B',
+  content_hash TEXT NOT NULL DEFAULT '',           -- sha1(text): idempotent writes
+  created      TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS claim_evidence (
   claim_id    TEXT NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
@@ -129,16 +133,17 @@ CREATE TABLE IF NOT EXISTS artifacts (
 
 -- ---------------------------------------------------------------- knowledge base
 CREATE TABLE IF NOT EXISTS kb_notes (
-  id         TEXT PRIMARY KEY,
-  title      TEXT NOT NULL,
-  body       TEXT NOT NULL DEFAULT '',
-  source_url TEXT DEFAULT '',
-  origin     TEXT DEFAULT '',       -- 'artifact:<id>' | 'note' | 'skill:<id>'
-  tags       TEXT DEFAULT '',
-  confidence TEXT NOT NULL DEFAULT 'B',
-  reuse      INTEGER NOT NULL DEFAULT 0,
-  created    TEXT NOT NULL,
-  updated    TEXT NOT NULL
+  id            TEXT PRIMARY KEY,
+  title         TEXT NOT NULL,
+  body          TEXT NOT NULL DEFAULT '',
+  source_url    TEXT DEFAULT '',
+  origin        TEXT DEFAULT '',       -- 'artifact:<id>' | 'note' | 'skill:<id>'
+  tags          TEXT DEFAULT '',
+  confidence    TEXT NOT NULL DEFAULT 'B',
+  reuse         INTEGER NOT NULL DEFAULT 0,
+  content_hash  TEXT NOT NULL DEFAULT '',  -- sha1(title+body): idempotent writes
+  created       TEXT NOT NULL,
+  updated       TEXT NOT NULL
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS kb_fts USING fts5(
   id UNINDEXED, title, tags, ngram, tokenize='unicode61'
@@ -309,6 +314,13 @@ CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_proj   ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts        ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_jobs_enabled     ON jobs(enabled);
+
+-- idempotent-write uniqueness (schema v3; named indexes serve both fresh
+-- installs and v2 upgrades — keep CREATE TABLEs free of inline UNIQUE)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_queries_content  ON queries(project_id, content_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_content ON evidence(source_id, content_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_claims_content   ON claims(project_id, content_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_content       ON kb_notes(content_hash);
 `;
 
 export class DB {
@@ -328,8 +340,51 @@ export class DB {
     const row = this.get<{ user_version: number }>("PRAGMA user_version");
     const v = row?.user_version ?? 0;
     if (v < SCHEMA_VERSION) {
+      // A replayed dump has user_version=0 but tables already exist — the
+      // version number alone cannot be trusted to mean "fresh install".
+      const tablesPreExist = !!this.get(
+        "SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='claims'"
+      );
+      // ALTER + backfill BEFORE SCHEMA_SQL creates its unique indexes
+      // (they would fail on empty-hash duplicates).
+      if (v > 0 || tablesPreExist) this.upgrade2to3();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
+    }
+  }
+
+  /**
+   * v2 -> v3: add content_hash to claims / evidence / queries / kb_notes and
+   * backfill it with sha1 of the content (MUST match runtime contentHash —
+   * plain sha1 of the content, no scope prefix; the unique index columns
+   * carry the scoping). Pre-existing duplicate rows get a salted hash
+   * ("#dup<n>") instead of being merged — no silent data changes; leftovers
+   * remain visible via `db dups`.
+   */
+  private upgrade2to3(): void {
+    for (const t of ["claims", "evidence", "queries", "kb_notes"]) {
+      const has = this.get(`SELECT 1 FROM pragma_table_info('${t}') WHERE name='content_hash'`);
+      if (!has) this.db.exec(`ALTER TABLE ${t} ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''`);
+    }
+    const specs = [
+      { t: "claims", scope: "project_id", pick: (r: any) => String(r.text) },
+      { t: "queries", scope: "project_id", pick: (r: any) => String(r.text) },
+      { t: "evidence", scope: "source_id", pick: (r: any) => String(r.quote) },
+      { t: "kb_notes", scope: "", pick: (r: any) => `${r.title}\n${r.body}` },
+    ];
+    for (const s of specs) {
+      const rows = this.all(`SELECT rowid AS __rid, * FROM ${s.t} WHERE content_hash=''`);
+      // group by (scope, content) to detect duplicates, but hash the bare
+      // content so the value matches what runtime writes produce
+      const seen = new Map<string, number>();
+      for (const r of rows) {
+        const content = s.pick(r);
+        const group = (s.scope ? `${r[s.scope]}|` : "") + content;
+        const n = (seen.get(group) || 0) + 1;
+        seen.set(group, n);
+        const h = n > 1 ? `${sha1(content)}#dup${n}` : sha1(content);
+        this.run(`UPDATE ${s.t} SET content_hash=? WHERE rowid=?`, [h, r.__rid]);
+      }
     }
   }
 

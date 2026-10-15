@@ -52,6 +52,12 @@ R=$($Y produce list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).
 $Y kb ingest "$R"
 $Y kb search "科技树怎么判断能不能研究"
 
+echo "── 5b. idempotency (retries must not duplicate)"
+D=$($Y research claim add "幂等性测试断言" 2>&1); D2=$($Y research claim add "幂等性测试断言" 2>&1)
+case "$D2" in *duplicate*) echo "  ✓ claim add idempotent";; *) echo "  ✗ claim add NOT idempotent: $D2"; exit 1;; esac
+D=$($Y kb ingest "$R" 2>&1)
+case "$D" in *duplicate*) echo "  ✓ kb ingest idempotent";; *) echo "  ✗ kb ingest NOT idempotent: $D"; exit 1;; esac
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done
@@ -75,5 +81,7 @@ fi
 
 echo "── 7. scheduling"
 $Y job add "nightly" -- "echo hello" --every 1440
+D=$($Y job add "nightly" -- "echo hello" --every 1440 2>&1)
+case "$D" in *duplicate*) echo "  ✓ job add idempotent";; *) echo "  ✗ job add NOT idempotent: $D"; exit 1;; esac
 $Y job run nightly
 $Y db stats

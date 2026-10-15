@@ -13,6 +13,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return "";
   };
 
+  const force = args.flags.force === true || args.flags.force === "true";
+
   switch (action) {
     case "add": {
       const title = String(args.flags.title || rest[0] || "");
@@ -27,8 +29,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         tags: String(args.flags.tags || ""),
         source_url: String(args.flags.url || ""),
         confidence: String(args.flags.confidence || "B"),
+        force,
       });
-      ok(ctx, `note stored: ${n.id}  ${clip(title, 50)}`);
+      if (n.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${n.row.id}`, ctx.color));
+      else ok(ctx, `note stored: ${n.row.id}  ${clip(title, 50)}`);
       return 0;
     }
     case "search": {
@@ -91,8 +95,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "ingest": {
-      const n = store.kbIngestArtifact(rest[0]);
-      ok(ctx, `artifact ingested into kb: ${n.id}  ${clip(n.title, 50)}`);
+      const n = store.kbIngestArtifact(rest[0], args.flags.force === true || args.flags.force === "true");
+      if (n.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${n.row.id}`, ctx.color));
+      else ok(ctx, `artifact ingested into kb: ${n.row.id}  ${clip(n.row.title, 50)}`);
       return 0;
     }
     case "promote": {

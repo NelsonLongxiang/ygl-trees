@@ -7,6 +7,12 @@ import { ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "./tex
 
 export type Row = Record<string, any>;
 
+/** Content hash for idempotent writes; --force salts it so a duplicate row
+ *  is explicitly distinct (queryable via `db dups`). */
+function contentHash(content: string, force: boolean): string {
+  return sha1(content) + (force ? `#f${Date.now()}${Math.random()}` : "");
+}
+
 export class Store {
   constructor(readonly db: DB) {}
 
@@ -60,17 +66,18 @@ export class Store {
   }
 
   // ================================================================ queries
-  queryAdd(projectId: string, text: string, engine = ""): Row {
+  /** Idempotent by (project, sha1(text)); force salts the hash. */
+  queryAdd(projectId: string, text: string, engine = "", force = false): { row: Row; dup: boolean } {
+    const hash = contentHash(text, force);
+    const ex = this.db.get("SELECT * FROM queries WHERE project_id=? AND content_hash=?", [projectId, hash]);
+    if (ex) return { row: ex, dup: true };
     const id = shortId(["q", projectId, text], 10);
-    this.db.run("INSERT INTO queries(id,project_id,text,engine,status,created) VALUES(?,?,?,?,'pending',?)", [
-      id,
-      projectId,
-      text,
-      engine,
-      nowIso(),
-    ]);
+    this.db.run(
+      "INSERT INTO queries(id,project_id,text,engine,status,content_hash,created) VALUES(?,?,?,?,'pending',?,?)",
+      [id, projectId, text, engine, hash, nowIso()]
+    );
     this.log("query.add", "query", id, text);
-    return this.db.get("SELECT * FROM queries WHERE id=?", [id])!;
+    return { row: this.db.get("SELECT * FROM queries WHERE id=?", [id])!, dup: false };
   }
 
   queryList(projectId: string): Row[] {
@@ -161,15 +168,19 @@ export class Store {
   }
 
   // ================================================================ evidence
-  evidenceAdd(projectId: string, sourceId: string, quote: string, note = "", locator = ""): Row {
+  /** Idempotent by (source, sha1(quote)); force salts the hash. */
+  evidenceAdd(projectId: string, sourceId: string, quote: string, note = "", locator = "", force = false): { row: Row; dup: boolean } {
+    const hash = contentHash(quote, force);
+    const ex = this.db.get("SELECT * FROM evidence WHERE source_id=? AND content_hash=?", [sourceId, hash]);
+    if (ex) return { row: ex, dup: true };
     const id = shortId(["ev", sourceId, quote], 10);
     this.db.run(
-      "INSERT INTO evidence(id,project_id,source_id,quote,note,locator,created) VALUES(?,?,?,?,?,?,?)",
-      [id, projectId, sourceId, quote, note, locator, nowIso()]
+      "INSERT INTO evidence(id,project_id,source_id,quote,note,locator,content_hash,created) VALUES(?,?,?,?,?,?,?,?)",
+      [id, projectId, sourceId, quote, note, locator, hash, nowIso()]
     );
     this.db.run("INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [id, quote, ngram(quote)]);
     this.log("evidence.add", "evidence", id, quote.slice(0, 60));
-    return this.db.get("SELECT * FROM evidence WHERE id=?", [id])!;
+    return { row: this.db.get("SELECT * FROM evidence WHERE id=?", [id])!, dup: false };
   }
 
   evidenceList(projectId: string): Row[] {
@@ -183,17 +194,18 @@ export class Store {
   }
 
   // ================================================================ claims
-  claimAdd(projectId: string, text: string, confidence = "B"): Row {
+  /** Idempotent by (project, sha1(text)); force salts the hash. */
+  claimAdd(projectId: string, text: string, confidence = "B", force = false): { row: Row; dup: boolean } {
+    const hash = contentHash(text, force);
+    const ex = this.db.get("SELECT * FROM claims WHERE project_id=? AND content_hash=?", [projectId, hash]);
+    if (ex) return { row: ex, dup: true };
     const id = shortId(["cl", projectId, text], 10);
-    this.db.run("INSERT INTO claims(id,project_id,text,status,confidence,created) VALUES(?,?,?,'unverified',?,?)", [
-      id,
-      projectId,
-      text,
-      confidence,
-      nowIso(),
-    ]);
+    this.db.run(
+      "INSERT INTO claims(id,project_id,text,status,confidence,content_hash,created) VALUES(?,?,?,'unverified',?,?,?)",
+      [id, projectId, text, confidence, hash, nowIso()]
+    );
     this.log("claim.add", "claim", id, text.slice(0, 60));
-    return this.db.get("SELECT * FROM claims WHERE id=?", [id])!;
+    return { row: this.db.get("SELECT * FROM claims WHERE id=?", [id])!, dup: false };
   }
 
   claimLink(claimId: string, evidenceId: string, stance: "supports" | "refutes" = "supports"): void {
@@ -364,6 +376,7 @@ export class Store {
   }
 
   // ================================================================ knowledge base
+  /** Idempotent by sha1(title+body); force salts the hash. */
   kbAdd(o: {
     title: string;
     body: string;
@@ -371,12 +384,16 @@ export class Store {
     source_url?: string;
     origin?: string;
     confidence?: string;
-  }): Row {
+    force?: boolean;
+  }): { row: Row; dup: boolean } {
+    const hash = contentHash(`${o.title}\n${o.body}`, !!o.force);
+    const ex = this.db.get("SELECT * FROM kb_notes WHERE content_hash=?", [hash]);
+    if (ex) return { row: ex, dup: true };
     const id = shortId(["kb", o.title], 10);
     const now = nowIso();
     this.db.run(
-      "INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,created,updated) VALUES(?,?,?,?,?,?,?,?,?)",
-      [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", now, now]
+      "INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,content_hash,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)",
+      [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, now, now]
     );
     this.db.run("INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)", [
       id,
@@ -385,7 +402,7 @@ export class Store {
       ngram(`${o.title} ${o.tags || ""} ${o.body}`),
     ]);
     this.log("kb.add", "kb_note", id, o.title);
-    return this.db.get("SELECT * FROM kb_notes WHERE id=?", [id])!;
+    return { row: this.db.get("SELECT * FROM kb_notes WHERE id=?", [id])!, dup: false };
   }
 
   kbSearch(q: string, limit = 20): Row[] {
@@ -508,7 +525,7 @@ export class Store {
   }
 
   /** Import a finished artifact into the knowledge base for long-term reuse. */
-  kbIngestArtifact(artifactId: string): Row {
+  kbIngestArtifact(artifactId: string, force = false): { row: Row; dup: boolean } {
     const a = this.artifactGet(artifactId);
     if (!a) throw new Error(`artifact not found: ${artifactId}`);
     return this.kbAdd({
@@ -517,6 +534,7 @@ export class Store {
       tags: a.kind,
       origin: `artifact:${a.id}`,
       confidence: "B",
+      force,
     });
   }
 
@@ -539,14 +557,24 @@ export class Store {
   }
 
   // ================================================================ jobs
-  jobAdd(o: { title: string; command: string; every?: number; at?: string }): Row {
-    const id = shortId(["job", o.title], 10);
+  /** Idempotent by title; force appends a numeric suffix (nightly-2, -3…). */
+  jobAdd(o: { title: string; command: string; every?: number; at?: string; force?: boolean }): { row: Row; dup: boolean } {
+    if (!o.force) {
+      const ex = this.db.get("SELECT * FROM jobs WHERE title=?", [o.title]);
+      if (ex) return { row: ex, dup: true };
+    }
+    let title = o.title;
+    if (o.force) {
+      let i = 2;
+      while (this.db.get("SELECT 1 FROM jobs WHERE title=?", [title])) title = `${o.title}-${i++}`;
+    }
+    const id = shortId(["job", title], 10);
     this.db.run(
       "INSERT INTO jobs(id,title,command,every_minutes,at,enabled,status,created) VALUES(?,?,?,?,?,1,'pending',?)",
-      [id, o.title, o.command, o.every ?? 0, o.at || "", nowIso()]
+      [id, title, o.command, o.every ?? 0, o.at || "", nowIso()]
     );
-    this.log("job.add", "job", id, o.title);
-    return this.db.get("SELECT * FROM jobs WHERE id=?", [id])!;
+    this.log("job.add", "job", id, title);
+    return { row: this.db.get("SELECT * FROM jobs WHERE id=?", [id])!, dup: false };
   }
 
   jobList(): Row[] {

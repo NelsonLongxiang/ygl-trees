@@ -74,7 +74,7 @@
 | evidence | + `content_hash TEXT` + `UNIQUE(source_id, content_hash)` | 回填 `sha1(quote)` |
 | queries | + `content_hash TEXT` + `UNIQUE(project_id, content_hash)` | 回填 `sha1(text)` |
 | kb_notes | + `content_hash TEXT` + `UNIQUE(content_hash)` | 回填 `sha1(title || '\|' || body)` |
-| jobs | + `UNIQUE(title)`（无新列） | 撞名存量行不合并，仅约束新增；`job add --force` 的重复语义 = title 自动加序号后缀（如 `nightly-2`），不走 hash 加盐 |
+| jobs | 无 schema 变更；应用层按 title 判重（存量撞名无法安全建唯一索引，故不加约束） | 撞名存量行不合并；`job add --force` 的重复语义 = title 自动加序号后缀（如 `nightly-2`），不走 hash 加盐 |
 
 - 迁移规则：`db.ts` migrate() 读 `user_version`，v<3 逐版执行 ALTER + 回填 + 索引 + 版本号推进；失败整体回滚
 - `--force` 语义实现取舍：不绕唯一索引（那是数据损坏入口），而是 `--force` 时 hash 加盐后插入——重复行显式可查（`--dups` 列出同 hash 行），不做静默分叉

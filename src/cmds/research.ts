@@ -23,6 +23,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     if (args.flags.f) return fs.readFileSync(String(args.flags.f), "utf8");
     return "";
   };
+  const force = args.flags.force === true || args.flags.force === "true";
 
   if (sub === "query") {
     if (subAction === "add") {
@@ -31,8 +32,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'missing query text: research query add "<text>"');
         return 2;
       }
-      const q = store.queryAdd(project.id, text, String(args.flags.engine || ""));
-      ok(ctx, `query registered: ${q.id}  ${clip(text, 60)}`);
+      const q = store.queryAdd(project.id, text, String(args.flags.engine || ""), force);
+      if (q.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${q.row.id}`, ctx.color));
+      else ok(ctx, `query registered: ${q.row.id}  ${clip(text, 60)}`);
       return 0;
     }
     if (subAction === "list" || subAction === undefined) {
@@ -135,8 +137,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `source not found: ${sourceId}`);
         return 1;
       }
-      const e = store.evidenceAdd(project.id, sourceId, quote, String(args.flags.note || ""), String(args.flags.locator || ""));
-      ok(ctx, `evidence added: ${e.id}  ${clip(quote, 50)}`);
+      const e = store.evidenceAdd(
+        project.id,
+        sourceId,
+        quote,
+        String(args.flags.note || ""),
+        String(args.flags.locator || ""),
+        force
+      );
+      if (e.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${e.row.id}`, ctx.color));
+      else ok(ctx, `evidence added: ${e.row.id}  ${clip(quote, 50)}`);
       return 0;
     }
     if (subAction === "list" || subAction === undefined) {
@@ -153,8 +163,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'missing claim text: research claim add "<text>"');
         return 2;
       }
-      const c = store.claimAdd(project.id, text, String(args.flags.confidence || "B"));
-      ok(ctx, `claim added: ${c.id}  ${clip(text, 60)}`);
+      const c = store.claimAdd(project.id, text, String(args.flags.confidence || "B"), force);
+      if (c.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${c.row.id}`, ctx.color));
+      else ok(ctx, `claim added: ${c.row.id}  ${clip(text, 60)}`);
       return 0;
     }
     if (subAction === "link") {

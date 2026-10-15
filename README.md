@@ -149,6 +149,13 @@ agent match "<task>"      Agent 靠 L1 描述命中该 skill
 
 CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 token。这里在写入时把中文按字切二元组（`科技树` → `科技 技树`），再逐 token 匹配并按命中数排序，长句也能召回。
 
+### 数据安全（v3）
+
+- **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
+- **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
+- **重复可见**：`db dups` 列出同内容多行（含迁移前存量重复）
+- **自动迁移**：v2 老库首次打开自动升级 schema v3（补 content_hash 列 + 回填 + 唯一索引），无人工介入
+
 ---
 
 ## 四、调度

@@ -30,10 +30,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'usage: job add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]');
         return 2;
       }
-      const j = store.jobAdd({ title, command, every, at });
-      ok(ctx, `job registered: ${j.id}  ${title}`);
-      out(ctx, paint(C.dim, `  command:  ${j.command}`, ctx.color));
-      out(ctx, paint(C.dim, `  schedule: ${j.every_minutes ? `every ${j.every_minutes} min` : j.at || "manual"}`, ctx.color));
+      const force = args.flags.force === true || args.flags.force === "true";
+      const j = store.jobAdd({ title, command, every, at, force });
+      if (j.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${j.row.id}  ${title}`, ctx.color));
+      else ok(ctx, `job registered: ${j.row.id}  ${j.row.title}`);
+      out(ctx, paint(C.dim, `  command:  ${j.row.command}`, ctx.color));
+      out(ctx, paint(C.dim, `  schedule: ${j.row.every_minutes ? `every ${j.row.every_minutes} min` : j.row.at || "manual"}`, ctx.color));
       return 0;
     }
     case "list":

@@ -187,7 +187,18 @@ export function main(argv: string[]): number {
     return 2;
   }
 
-  const db = new DB(file);
+  let db: DB;
+  try {
+    db = new DB(file);
+  } catch (e: any) {
+    bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
+    const lock = `${file}.lock`;
+    if (require("node:fs").existsSync(lock)) {
+      out(ctx, `  stale lock dir detected: ${lock}`);
+      out(ctx, `  if no other ygl-trees process is running, remove it:  rmdir "${lock}"`);
+    }
+    return 1;
+  }
   const env: Env = { ctx, db, store: new Store(db), args, home, group };
   try {
     const mod = require(`./cmds/${safe(group)}`);
