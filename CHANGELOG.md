@@ -1,7 +1,17 @@
 # Changelog
 
+## 0.20.0（2026-10-16）DSH 合规收官
+- 测试归位：全局 `tests/` → 各包 `tests/`（text→core/text、eval→techtree/eval、config→ops/tools）；vitest `packages/*/*/tests/**/*.test.ts`
+- 包依赖声明：8 包各声明 dependencies（workspace `@ygl/` + npm cordis/typeorm）；core/text 和 techtree/eval 零依赖（纯函数）
+- 跨包 import 审计：全部来自 `core/*` 共享层，零域间交叉引用
+
+## 0.19.0（2026-10-16）Cordis 迁移收官
+- CLI `main.ts` 创建 Cordis Context，加载 DatabasePlugin；Store 同步构造保证命令速度（Cordis rc 异步时序在 CLI 场景不可控，务实回退）
+- `apps/webui/` 重命名为 `apps/web/`（DSH 惯例）
+- WebUI：`ygl-trees webui [--out <file>]` 导出单文件 dashboard.html（9/9 HTML 结构检查通过）
+- 包结构 gate 检查：8 包 × 5 必存文件（package.json + tsconfig.json + README.md + src/index.ts + tests/）
+
 ## 0.18.0（2026-10-16）架构重构：Cordis + packages/apps/vendor 分层
-- **目录重构**：`src/` → `packages/`（core/research/techtree/knowledge/ops 五域，每域 index.ts 显式导出面）+ `apps/cli/`（应用入口，与域解耦）+ `vendor/`（上游 cordis/cosmokit，pnpm workspace 管理）
 - **Cordis 框架集成**：vendor `cordis@4.0.0-rc.11` + `cosmokit@1.8.1` 从 cordiverse/cordis 上游获取（非 DSH fork）；`packages/context.ts` 定义 DatabaseService/ResearchService（Service 子类）+ createApp() 组合；为运行时服务发现、多服务生命周期、事件驱动组合、动态插件加载、时空可组合性奠定基础
 - **AGENTS.md**：Agent 常驻守则（仓库布局图、命令面板、Agent API 契约冻结表、Cordis 架构、七条开发规则、决策链链接）
 - **docs/layout.md**：目录层级规划（当前结构 + 依赖方向单向图 + 未来扩展位 + 与 DSH 对齐差异表）

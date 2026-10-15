@@ -71,6 +71,7 @@ export class Store {
       params: [projectId],
       q,
       limit: 50,
+      boostExpr: "s.title", // title hits outrank same-hit rows (same as kb/skill)
       fallback: () =>
         this.db.all(
           "SELECT id,title,url,relevance,confidence FROM sources WHERE project_id=? AND (title LIKE ? OR abstract LIKE ?) LIMIT 50",
