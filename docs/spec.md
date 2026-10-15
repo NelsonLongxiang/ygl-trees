@@ -1,0 +1,99 @@
+# ygl-trees v0.2–v0.4 规格（spec）
+
+日期：2026-10-15 ｜ 依据：[research.md](research.md) ｜ 状态：已评审定稿（与用户对齐范围：项目整体下一阶段）
+
+## 0. 目标与非目标
+
+**目标**：把 ygl-trees 修到"AI Agent 敢把唯一事实源托付给它"的程度——数据不丢、重复写入安全、数据可搬，然后在干净地基上补最小能力增强。
+
+**非目标**（明确不做）：
+
+- 不做服务端/常驻进程/多用户
+- 不做 GUI
+- 不引入新的运行时依赖（保持 `node-sqlite3-wasm` 唯一依赖；`fetch` 用 Node 18+ 内置）
+- 不做并发安全的调度器（单进程 `job tick` 语义不变，只加悬空 run 检测）
+- 不做 claim 仲裁的完整决策流程（只补状态出口，见 R6）
+
+## 1. 需求与验收标准
+
+### R1 备份完整性（修 P0-1）
+
+`db export` 必须覆盖 schema 中全部**非虚拟**表的数据行，包括七张树表。
+
+- **R1.1** export 输出含 `trees/nodes/node_edges/node_closure/node_conditions/node_state/node_index` 的 INSERT 行
+- **R1.2** FTS5 虚表不导出数据（重建时由写入路径维护）；`node_closure/node_index` 属可重建派生数据，默认导出，`--lean` 可跳过
+- **R1.3** 验收：对含树的库执行 export → 删库 → 逐行执行 dump → `db stats` 各表计数与原库一致；`node validate` 无 issue
+- **R1.4** `db export` 末尾输出导出表清单与行数摘要（不再是静默操作）
+
+### R2 写入幂等（修 P0-2）
+
+同内容重复写入必须收敛到已存在行，且默认行为可被 `--force` 覆盖。
+
+- **R2.1** 覆盖命令：`claim add`、`evidence add`、`query add`、`kb add`、`kb ingest`、`job add`
+- **R2.2** 判重键：claim 按 `(project_id, sha1(text))`；evidence 按 `(source_id, sha1(quote))`；query 按 `(project_id, sha1(text))`；kb note 按 `sha1(title+body)`；job 按 `(title)`。实现方式：各表加 `content_hash` 列 + 唯一索引（schema v3 迁移，老库自动升级，存量行回填 hash）
+- **R2.3** 重复时输出 `! duplicate, kept existing: <id>`（与 `source add` 现有格式一致），退出码 0
+- **R2.4** `--force` 强制新建重复行（保留"同一引用录两条不同 locator 证据"类场景的逃生口）
+- **R2.5** 验收：demo 中每条写命令连跑两遍，第二遍全部 `! duplicate`，各表计数不翻倍
+
+### R3 树可移植闭环（修 P1-1）
+
+- **R3.1** 新增 `node import --file <tree.json> [--tree <name>] [--merge]`：解析 `node export` 格式，重建树
+- **R3.2** 默认语义：同名树已存在则报错退出（防覆盖）；`--merge` 按 `(tree, key)` upsert 节点、按 `(parent, child, rel)` upsert 边；导入后自动 `node index`
+- **R3.3** 导入侧校验：节点引用的 parent/child 不存在、rel/mode 枚举非法、必检条件缺阈值 → 逐条报错拒绝，不部分导入
+- **R3.4** 验收：`node export --out a.json` → 新库 `node import --file a.json` → 两个库分别 `node export` 输出 JSON 语义等价（忽略 id/时间戳/index 派生字段）
+
+### R4 校验与错误出口补全（修 P1-3 / P2-5）
+
+- **R4.1** `query done <id>` 对不存在的 id 报错退出 1；同规则适用于 `job enable/disable`、`research source rm`
+- **R4.2** `node validate` 增加可选边（prereq|unlock 且 required=0）成环检测：对门控边全集跑环检查，报 `cycle(optional edges): ...`
+- **R4.3** 验收：构造 a→b→a（可选边，经 `db sql` 直写）后 `node validate` 报 issue；不存在的 id 执行 `query done` 退出码非 0
+
+### R5 CLI 一致性（修 P2-1 / P2-3）
+
+- **R5.1** `--flag -1` 形式的负数值不再被吃掉：解析器对"下一参数是负数字面量"且 flag 非布尔时接受为值
+- **R5.2** usage 文档补 `db sql "<sql>"`、`job enable <id>`；`--json` 全局说明保持准确
+- **R5.3** `stateInit` 接线或删除（择一，倾向删除：`unlock/lock` 的 upsert 语义已覆盖；若保留则 `node unlock --init-tree` 调用）
+
+### R6 研究管线最小增强（能力项，见 research §4）
+
+- **R6.1** `source fetch <url>`：内置 fetch 抓取 → 提取 `<title>` / meta description / 去标签正文（纯文本截断存储）→ 走 `sourceAdd` 现有去重；失败（非 2xx / 超时 15s / 非 html）退出 1 不落库。**不做** JS 渲染站点
+- **R6.2** `kb promote` L1 生成改进：优先取 frontmatter/首部 `# 标题` 段落或首条列表项，拼"做什么+何时用"式描述；无法提取时回落现状。验收：对 demo 报告 promote 的 skill 在 `agent match "科技树 建模"` 排第一
+- **R6.3** `agent brief` 健康度：next_actions 增加两类感知——存在重复内容行（R2 之后理论上不再新增，存量仍可报）、`node_index` 脏（提示先 `node index`）
+
+### R7 质量门禁
+
+- **R7.1** `pnpm test` = `pnpm build` + demo 全量（`YGL_HOME` 指向临时目录）；demo 内新增断言：R2 幂等（§2.5 场景）、R3 round-trip、R4 错误退出码
+- **R7.2** package.json 补 `files` 白名单（bin/dist/README/docs）与 `prepublishOnly: pnpm test`；不实际发布，只把面准备好
+- **R7.3** 单元测试框架**本阶段不引入**（CLI 快照式回归已覆盖主路径；引入 vitest 等留待规模再判断）
+
+## 2. 数据模型变更（schema v2 → v3）
+
+| 表 | 变更 | 迁移 |
+|---|---|---|
+| claims | + `content_hash TEXT NOT NULL DEFAULT ''` + `UNIQUE(project_id, content_hash)` | 存量回填 `sha1(text)` |
+| evidence | + `content_hash TEXT` + `UNIQUE(source_id, content_hash)` | 回填 `sha1(quote)` |
+| queries | + `content_hash TEXT` + `UNIQUE(project_id, content_hash)` | 回填 `sha1(text)` |
+| kb_notes | + `content_hash TEXT` + `UNIQUE(content_hash)` | 回填 `sha1(title || '\|' || body)` |
+| jobs | + `UNIQUE(title)`（无新列） | 撞名存量行不合并，仅约束新增；`job add --force` 的重复语义 = title 自动加序号后缀（如 `nightly-2`），不走 hash 加盐 |
+
+- 迁移规则：`db.ts` migrate() 读 `user_version`，v<3 逐版执行 ALTER + 回填 + 索引 + 版本号推进；失败整体回滚
+- `--force` 语义实现取舍：不绕唯一索引（那是数据损坏入口），而是 `--force` 时 hash 加盐后插入——重复行显式可查（`--dups` 列出同 hash 行），不做静默分叉
+
+## 3. CLI 面变更清单
+
+```
+新增：node import --file <json> [--tree name] [--merge]
+新增：source fetch <url> [--tags ..] [--confidence A|B|C]
+新增：db export --lean（跳过派生表数据）
+修改：claim/evidence/query/kb/job 写命令 → 幂等 + --force
+修改：query done / job enable|disable / source rm → 404 语义
+修改：db export → 全表 + 摘要
+修改：agent brief → 健康度 next_actions
+文档：usage 补 db sql / job enable
+```
+
+## 4. 兼容性承诺
+
+- v2 老库首次被 v3 CLI 打开时自动迁移，无损、无需人工介入；迁移在事务内
+- JSON 输出结构只增字段不改字段名；退出码语义：0 成功（含"重复已存在"）、1 运行错误、2 用法错误
+- `node export` 格式不变；`node import` 按 R3.3 严格校验，坏文件零副作用
