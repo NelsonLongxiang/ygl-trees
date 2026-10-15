@@ -11,6 +11,10 @@ rm -rf "$YGL_HOME"
 echo "── 1. workspace"
 $Y db init
 $Y project new techtree -q "科技树数据模型如何建模与索引"
+$Y config set search.limit 5 >/dev/null
+CL=$($Y config get search.limit --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).value))")
+if [ "$CL" = "5" ]; then echo "  ✓ config set/get round-trip"; else echo "  ✗ config: $CL"; exit 1; fi
+$Y config reset search.limit >/dev/null
 S=$($Y project show --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(Object.keys(JSON.parse(s)).join(',')))")
 if [ "$S" = "project,queries,claims" ]; then echo "  ✓ project show (TypeORM pilot) shape ok"; else echo "  ✗ project show shape: $S"; exit 1; fi
 

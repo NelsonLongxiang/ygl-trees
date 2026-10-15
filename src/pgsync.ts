@@ -20,7 +20,7 @@ import { ngram } from "./text";
 
 /** Mirror targets, FK-dependency-safe order (same list as `db export`). */
 export const MIRROR_TABLES = [
-  "meta", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
+  "meta", "config", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
   "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
   "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
   "relations", "jobs", "runs", "events",
@@ -147,6 +147,9 @@ export async function syncToPg(db: DB, url: string, only?: string[]): Promise<Sy
 
 const MIGRATE_DDL = `
 CREATE TABLE meta (key text PRIMARY KEY, value text NOT NULL);
+CREATE TABLE config (
+  key text PRIMARY KEY, value text NOT NULL DEFAULT '',
+  note text DEFAULT '', updated text NOT NULL);
 CREATE TABLE skills (
   id text PRIMARY KEY, name text NOT NULL UNIQUE, version text DEFAULT '0.1.0',
   description text NOT NULL DEFAULT '', body text NOT NULL DEFAULT '',

@@ -85,6 +85,14 @@ ${paint(C.dim, "database-centric CLI: research → production → knowledge reus
 
   ygl-trees <group> <action> [args] [options]        add --json for machine output
 
+${paint(C.bold, "config", true)}      user-tunable settings (registry defaults + overrides)
+  list                       all keys: value + default + note
+  get <key>                  resolved value (config table > default)
+  set <key> <value>          validated against registry (type/range); events logged
+  reset <key>                drop override → back to default
+  keys: eval.pass/fail_threshold, eval.offline, fetch.timeout_ms/user_agent,
+        search.limit, default_confidence, job.stale_minutes
+
 ${paint(C.bold, "db", true)}
   init                       create the workspace + schema
   stats                      row counts per table

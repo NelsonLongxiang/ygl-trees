@@ -45,6 +45,17 @@ ygl-trees job add <title> -- "<cmd>" --every 60   # cron 每分钟跑 job tick�
 
 一切临时脚本/数据放 `<repo>/tmp/`（已 gitignore），**禁止**写系统临时目录（Git Bash 的 /tmp）。
 
+## 4b. 用户配置（config 表，schema v6）
+
+```bash
+ygl-trees config list                  # 全部键：当前值 + 默认 + 说明
+ygl-trees config set eval.pass_threshold 0.8   # 写入即校验（类型/范围）并留痕
+ygl-trees config reset eval.pass_threshold     # 回落默认
+```
+
+键（均真实接线）：`eval.pass_threshold/fail_threshold/offline`、`fetch.timeout_ms/user_agent`、
+`search.limit`、`default_confidence`、`job.stale_minutes`。环境变量 > config > 默认。
+
 ## 5. 常见坑
 
 - 数据库打不开报 "database is locked"：可能残留 `<db>.lock` 目录（外部进程崩了），确认无活动进程后 rmdir

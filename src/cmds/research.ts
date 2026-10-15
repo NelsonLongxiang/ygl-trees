@@ -8,6 +8,7 @@ import { ok, bad, out, head, table, paint, C, writeResult } from "../fmt";
 import { clip } from "../text";
 import { getOrm } from "../orm";
 import * as writes from "../writes";
+import { configGet, configGetNumber } from "../config";
 import { Claim, Evidence, Query, Source } from "../entities/research";
 
 /** Run a write through the TypeORM transactional write service and print
@@ -132,7 +133,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         content: readBody() || String(args.flags.content || ""),
         engine: String(args.flags.engine || ""),
         relevance: Number(args.flags.relevance || 0),
-        confidence: String(args.flags.confidence || "B"),
+        confidence: String(args.flags.confidence || configGet(env.db, "default_confidence")),
         tags: String(args.flags.tags || ""),
       };
       const qRef = String(args.flags.query || "");
@@ -162,8 +163,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // promise so main() keeps the db open until the fetch settles.
       return fetch(url, {
         redirect: "follow",
-        signal: AbortSignal.timeout(15_000),
-        headers: { "user-agent": "ygl-trees/0.4 (+local research cli)" },
+        signal: AbortSignal.timeout(configGetNumber(env.db, "fetch.timeout_ms")),
+        headers: { "user-agent": configGet(env.db, "fetch.user_agent") },
       })
         .then(async (res): Promise<number> => {
           if (!res.ok) {
@@ -207,7 +208,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             content: text,
             engine: "fetch",
             relevance: 0,
-            confidence: String(args.flags.confidence || "B"),
+            confidence: String(args.flags.confidence || configGet(env.db, "default_confidence")),
             tags: String(args.flags.tags || (thin ? "needs_review" : "")),
           });
           writeResult(ctx, r as any, (row) => `fetched: ${row.id}  ${clip(title, 60)}`);
@@ -349,7 +350,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'missing claim text: research claim add "<text>"');
         return 2;
       }
-      const confidence = String(args.flags.confidence || "B");
+      const confidence = String(args.flags.confidence || configGet(env.db, "default_confidence"));
       return runWrite(
         env,
         (ds) => writes.claimAdd(ds, project.id, text, confidence, force),

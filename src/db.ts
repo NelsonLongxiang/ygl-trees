@@ -9,13 +9,25 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1 } from "./text";
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
+-- runtime state the tool writes itself (current selections, bookkeeping);
+-- user-tunable settings live in config
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+-- ---------------------------------------------------------------- config (v6)
+-- user-tunable settings; registry (defaults/types/notes) in src/config.ts.
+-- Reads fall back to defaults — an empty table is a valid state.
+CREATE TABLE IF NOT EXISTS config (
+  key     TEXT PRIMARY KEY,
+  value   TEXT NOT NULL DEFAULT '',
+  note    TEXT DEFAULT '',
+  updated TEXT NOT NULL
 );
 
 -- ---------------------------------------------------------------- skills (L1/L2/L3)

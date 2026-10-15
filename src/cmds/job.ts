@@ -6,6 +6,7 @@ import { ok, bad, out, table, paint, C, writeResult } from "../fmt";
 import { nowIso } from "../text";
 import { getOrm } from "../orm";
 import * as writes from "../writes";
+import { configGetNumber } from "../config";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -72,8 +73,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "tick": {
       return withTickLock(env, () => {
-        const reaped = store.jobReapStuck(30);
-        if (reaped) out(ctx, paint(C.yellow, `  ! reaped ${reaped} stuck run(s) (killed mid-run, >30min)`, ctx.color));
+        const staleMin = configGetNumber(env.db, "job.stale_minutes");
+        const reaped = store.jobReapStuck(staleMin);
+        if (reaped) out(ctx, paint(C.yellow, `  ! reaped ${reaped} stuck run(s) (killed mid-run, >${staleMin}min)`, ctx.color));
         const due = store.jobDue();
         if (!due.length) {
           out(ctx, paint(C.dim, "  nothing due", ctx.color));

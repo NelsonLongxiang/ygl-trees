@@ -40,7 +40,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const skip = lean ? new Set(["node_closure", "node_index"]) : new Set<string>();
       // Order respects FK dependencies so the dump replays into a fresh db.
       const dataTables = [
-        "meta", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
+        "meta", "config", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
         "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
         "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
         "relations", "jobs", "runs", "events",

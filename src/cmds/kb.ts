@@ -8,6 +8,7 @@ import { clip, parseFrontmatter } from "../text";
 import { getOrm } from "../orm";
 import * as writes from "../writes";
 import { deriveL1 } from "../store";
+import { configGet, configGetNumber } from "../config";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -35,7 +36,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             body,
             tags: String(args.flags.tags || ""),
             source_url: String(args.flags.url || ""),
-            confidence: String(args.flags.confidence || "B"),
+            confidence: String(args.flags.confidence || configGet(env.db, "default_confidence")),
             force,
           })
         )
@@ -54,7 +55,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing query");
         return 2;
       }
-      const rows = store.kbSearch(q, Number(args.flags.limit || 20)).map((r: any) => ({
+      const rows = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit"))).map((r: any) => ({
         id: r.id,
         title: clip(r.title, 46),
         tags: r.tags || "-",

@@ -20,6 +20,7 @@ import { ok, bad, out, head, table, show, paint, C, ack } from "../fmt";
 import { getOrm } from "../orm";
 import * as treeWrites from "../treeWrites";
 import { evalBoolean, evalToken, mapOutcome } from "../eval";
+import { configGetBool, configGetNumber } from "../config";
 import { nowIso, shortId } from "../text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -242,13 +243,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // R8: decision-model boolean evaluation for op=eval conditions.
       // Offline-safe: no token / network failure → pending (rc=0).
-      const token = evalToken();
+      // Thresholds + offline are config-tunable (eval.*); env YGL_EVAL_OFFLINE wins.
+      const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
+      const token = offline ? "" : evalToken();
+      const passT = configGetNumber(env.db, "eval.pass_threshold");
+      const failT = configGetNumber(env.db, "eval.fail_threshold");
       const contextPkg = trees.evalContext(tid, key, state, ctxName);
       return (async (): Promise<number> => {
         const evaluated: any[] = [];
         for (const c of evalConds) {
           const question = String(c.value || c.name); // R8.7 wording fallback
-          const m = mapOutcome(await evalBoolean(contextPkg, question, token));
+          const m = mapOutcome(await evalBoolean(contextPkg, question, token), passT, failT);
           evaluated.push({ name: c.name, question, ...m });
         }
         const pendingList: string[] = [];

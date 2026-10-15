@@ -88,10 +88,15 @@ export async function evalBoolean(state: unknown, question: string, token: strin
 
 export type EvalOutcome = "pass" | "fail" | "pending";
 
-/** R8.4 tri-state mapping. */
-export function mapOutcome(r: EvalBooleanResult): { outcome: EvalOutcome; p?: number; reason?: string } {
+/** R8.4 tri-state mapping. Thresholds come from config (eval.pass_threshold
+ *  / eval.fail_threshold) so callers pass the resolved values. */
+export function mapOutcome(
+  r: EvalBooleanResult,
+  high = 0.7,
+  low = 0.4
+): { outcome: EvalOutcome; p?: number; reason?: string } {
   if (!r.ok || r.p === undefined) return { outcome: "pending", reason: r.error || "no probability" };
-  if (r.p >= GRAY.high) return { outcome: "pass", p: r.p };
-  if (r.p <= GRAY.low) return { outcome: "fail", p: r.p };
-  return { outcome: "pending", p: r.p, reason: "gray band 0.4<P<0.7 (process state)" };
+  if (r.p >= high) return { outcome: "pass", p: r.p };
+  if (r.p <= low) return { outcome: "fail", p: r.p };
+  return { outcome: "pending", p: r.p, reason: `gray band ${low}<P<${high} (process state)` };
 }

@@ -202,13 +202,14 @@ ygl-trees agent log        # 审计事件流
 
 ---
 
-## 六、环境变量与路径
+## 六、环境变量、路径与配置
 
 - `YGL_HOME`：工作区根目录，默认 `~/.ygl-trees`
 - 数据库：`$YGL_HOME/ygl-trees.db`
 - `--db <file>` 可指定其他库；`--json` 全局机器输出
+- `ygl-trees config list|get|set|reset`：**用户可调配置**（schema v6 `config` 表，注册表默认值 + 覆盖；写入即校验并留痕 events）。现有键：`eval.pass_threshold`/`eval.fail_threshold`/`eval.offline`、`fetch.timeout_ms`/`fetch.user_agent`、`search.limit`、`default_confidence`、`job.stale_minutes`——都真实接线到对应行为
 - `YGL_PG_URL`：PostgreSQL 连接串（`db sync pg` / `db migrate pg` 可用，凭证不进 shell 历史）
-- `AI_GATEWAY_API_KEY`（或 `~/.vercel.ai-gateway.env`）：Gate 决策模型布尔评估的凭证（0.14.0 / spec R8——op=eval 的必检条件经评估模型判定 P(true)，灰带 0.4–0.7 为 pending；未配置时该类条件安全回落 pending）；`YGL_EVAL_OFFLINE=1` 强制离线
+- `AI_GATEWAY_API_KEY`（或 `~/.vercel.ai-gateway.env`）：Gate 决策模型布尔评估的凭证（0.14.0 / spec R8——op=eval 的必检条件经评估模型判定 P(true)，灰带阈值可用 config 调整；未配置时该类条件安全回落 pending）；`YGL_EVAL_OFFLINE=1` 强制离线（优先于 config 的 eval.offline）
 
 ## 七、专属 Skills（Agent 学习/使用入口）
 
