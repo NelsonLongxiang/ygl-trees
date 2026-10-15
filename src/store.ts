@@ -3,15 +3,9 @@
  * Keeps FTS shadow tables in sync so search always matches reality.
  */
 import { DB } from "./db";
-import { clip, ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "./text";
+import { clip, contentHash, ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "./text";
 
 export type Row = Record<string, any>;
-
-/** Content hash for idempotent writes; --force salts it so a duplicate row
- *  is explicitly distinct (queryable via `db dups`). */
-function contentHash(content: string, force: boolean): string {
-  return sha1(content) + (force ? `#f${Date.now()}${Math.random()}` : "");
-}
 
 export class Store {
   constructor(readonly db: DB) {}

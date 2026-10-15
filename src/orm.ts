@@ -15,6 +15,7 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { RESEARCH_ENTITIES } from "./entities/research";
+import { CORE_ENTITIES } from "./entities/core";
 
 let cached: { file: string; ds: DataSource } | null = null;
 
@@ -24,7 +25,7 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
     type: "better-sqlite3",
     database: dbFile,
     synchronize: false, // NEVER — migrations live on the user_version track
-    entities: RESEARCH_ENTITIES,
+    entities: [...RESEARCH_ENTITIES, ...CORE_ENTITIES],
   });
   await ds.initialize();
   cached = { file: dbFile, ds };

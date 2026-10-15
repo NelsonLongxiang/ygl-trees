@@ -7,7 +7,24 @@ import { Env } from "../cli";
 import { ok, bad, out, head, table, paint, C, writeResult } from "../fmt";
 import { clip } from "../text";
 import { getOrm } from "../orm";
+import * as writes from "../writes";
 import { Claim, Evidence, Query, Source } from "../entities/research";
+
+/** Run a write through the TypeORM transactional write service and print
+ *  with JSON discipline. Keeps every write command 6 lines. */
+function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
+  const { ctx } = env;
+  return getOrm(env.db.path)
+    .then(fn)
+    .then((r) => {
+      writeResult(ctx, r as any, human);
+      return 0;
+    })
+    .catch((e: any) => {
+      bad(ctx, e?.message || String(e));
+      return 1;
+    });
+}
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -37,24 +54,26 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'missing query text: research query add "<text>"');
         return 2;
       }
-      const q = store.queryAdd(project.id, text, String(args.flags.engine || ""), force);
-      writeResult(ctx, q, (r) => `query registered: ${r.id}  ${clip(text, 60)}`);
-      return 0;
+      const engine = String(args.flags.engine || "");
+      return runWrite(env, (ds) => writes.queryAdd(ds, project.id, text, engine, force), (r) => `query registered: ${r.id}  ${clip(text, 60)}`);
     }
     if (subAction === "attach") {
       if (!rest[1] || !rest[2]) {
         bad(ctx, "usage: research query attach <queryId|text> <sourceId> [--note ..]");
         return 2;
       }
-      try {
-        const r = store.queryAttach(project.id, rest[1], rest[2], String(args.flags.note || ""));
-        if (r.dup) out(ctx, paint(C.yellow, `  ! already attached: ${r.source.id}`, ctx.color));
-        else ok(ctx, `attached: ${clip(r.source.title || r.source.id, 40)} → "${clip(r.query.text, 40)}"`);
-        return 0;
-      } catch (e: any) {
-        bad(ctx, e?.message || String(e));
-        return 1;
-      }
+      const note = String(args.flags.note || "");
+      return getOrm(env.db.path)
+        .then((ds) => writes.queryAttach(ds, project.id, rest[1], rest[2], note))
+        .then((r): number => {
+          if (r.dup) out(ctx, paint(C.yellow, `  ! already attached: ${r.sourceId}`, ctx.color));
+          else ok(ctx, `attached: ${clip(r.sourceTitle || r.sourceId, 40)} → "${clip(r.queryText, 40)}"`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
@@ -106,7 +125,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "need --title and/or --url");
         return 2;
       }
-      const res = store.sourceAdd(project.id, {
+      const spec = {
         title,
         url,
         abstract: String(args.flags.abstract || ""),
@@ -115,19 +134,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         relevance: Number(args.flags.relevance || 0),
         confidence: String(args.flags.confidence || "B"),
         tags: String(args.flags.tags || ""),
-      });
-      writeResult(ctx, res, (r) => `source added: ${r.id}  ${clip(r.title, 60)}`);
+      };
       const qRef = String(args.flags.query || "");
-      if (qRef) {
-        try {
-          const at = store.queryAttach(project.id, qRef, res.row.id);
-          if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.query.text, 40)}"`, ctx.color));
-        } catch (e: any) {
-          bad(ctx, `source saved, but attach failed: ${e?.message || e}`);
+      return getOrm(env.db.path)
+        .then(async (ds): Promise<number> => {
+          const r = await writes.sourceAdd(ds, project.id, spec);
+          writeResult(ctx, r as any, (row) => `source added: ${row.id}  ${clip(row.title, 60)}`);
+          if (qRef) {
+            const at = await writes.queryAttach(ds, project.id, qRef, r.row.id);
+            if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.queryText, 40)}"`, ctx.color));
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
           return 1;
-        }
-      }
-      return 0;
+        });
     }
     if (subAction === "fetch") {
       const url = rest[1];
@@ -177,7 +199,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             .trim()
             .slice(0, 50_000);
           const thin = text.replace(/\s/g, "").length < 500;
-          const r = store.sourceAdd(project.id, {
+          const ds = await getOrm(env.db.path);
+          const r = await writes.sourceAdd(ds, project.id, {
             title,
             url,
             abstract: metaDesc.slice(0, 500),
@@ -187,7 +210,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             confidence: String(args.flags.confidence || "B"),
             tags: String(args.flags.tags || (thin ? "needs_review" : "")),
           });
-          writeResult(ctx, r, (row) => `fetched: ${row.id}  ${clip(title, 60)}`);
+          writeResult(ctx, r as any, (row) => `fetched: ${row.id}  ${clip(title, 60)}`);
           if (!ctx.json)
             out(
               ctx,
@@ -286,20 +309,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: research evidence add <sourceId> --quote \"...\"");
         return 2;
       }
-      if (!store.sourceGet(sourceId)) {
-        bad(ctx, `source not found: ${sourceId}`);
-        return 1;
-      }
-      const e = store.evidenceAdd(
-        project.id,
-        sourceId,
-        quote,
-        String(args.flags.note || ""),
-        String(args.flags.locator || ""),
-        force
+      const note = String(args.flags.note || "");
+      const locator = String(args.flags.locator || "");
+      return runWrite(
+        env,
+        (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force),
+        (r) => `evidence added: ${r.id}  ${clip(quote, 50)}`
       );
-      writeResult(ctx, e, (r) => `evidence added: ${r.id}  ${clip(quote, 50)}`);
-      return 0;
     }
     if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
@@ -333,9 +349,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'missing claim text: research claim add "<text>"');
         return 2;
       }
-      const c = store.claimAdd(project.id, text, String(args.flags.confidence || "B"), force);
-      writeResult(ctx, c, (r) => `claim added: ${r.id}  ${clip(text, 60)}`);
-      return 0;
+      const confidence = String(args.flags.confidence || "B");
+      return runWrite(
+        env,
+        (ds) => writes.claimAdd(ds, project.id, text, confidence, force),
+        (r) => `claim added: ${r.id}  ${clip(text, 60)}`
+      );
     }
     if (subAction === "link") {
       if (!rest[1] || !rest[2]) {
@@ -343,10 +362,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const stance = String(args.flags.stance || "supports") as "supports" | "refutes";
-      store.claimLink(rest[1], rest[2], stance);
-      const c = store.db.get("SELECT status FROM claims WHERE id=?", [rest[1]]);
-      ok(ctx, `linked; claim status now: ${c?.status}`);
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
+        .then((r): number => {
+          ok(ctx, `linked; claim status now: ${r.status}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     if (subAction === "resolve") {
       const id = rest[1];
@@ -361,10 +386,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `claim not found: ${id}`);
         return 1;
       }
-      store.claimResolve(id, as, String(args.flags.note || ""));
-      if (ctx.json) console.log(JSON.stringify({ id, status: as, note: String(args.flags.note || "") }, null, 2));
-      else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
-      return 0;
+      const note = String(args.flags.note || "");
+      return getOrm(env.db.path)
+        .then((ds) => writes.claimResolve(ds, id, as, note))
+        .then((): number => {
+          if (ctx.json) console.log(JSON.stringify({ id, status: as, note }, null, 2));
+          else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)

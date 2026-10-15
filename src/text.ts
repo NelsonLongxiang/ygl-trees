@@ -59,6 +59,13 @@ export function sha1(text: string): string {
   return crypto.createHash("sha1").update(text || "").digest("hex");
 }
 
+/** Content hash for idempotent writes (single source: store writes and the
+ *  TypeORM write service must produce identical hashes); --force salts it
+ *  so a duplicate row is explicitly distinct (queryable via `db dups`). */
+export function contentHash(content: string, force: boolean): string {
+  return sha1(content) + (force ? `#f${Date.now()}${Math.random()}` : "");
+}
+
 export function shortId(parts: string[], n = 8): string {
   return sha1(parts.join("|") + Date.now() + Math.random()).slice(0, n);
 }

@@ -1,11 +1,14 @@
-/** kb group — long-term knowledge: store, retrieve, connect, promote to skill. */
+/** kb group — long-term knowledge: store, retrieve, connect, promote to skill.
+ *  Writes (add/ingest) run on the TypeORM write service (src/writes.ts). */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Env } from "../cli";
 import { ok, bad, out, head, table, show, paint, C, writeResult } from "../fmt";
 import { clip, parseFrontmatter } from "../text";
+import { getOrm } from "../orm";
+import * as writes from "../writes";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
 
   const readBody = (): string => {
@@ -24,16 +27,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb add --title \"...\" --body|-f <file>");
         return 2;
       }
-      const n = store.kbAdd({
-        title,
-        body,
-        tags: String(args.flags.tags || ""),
-        source_url: String(args.flags.url || ""),
-        confidence: String(args.flags.confidence || "B"),
-        force,
-      });
-      writeResult(ctx, n, (r) => `note stored: ${r.id}  ${clip(title, 50)}`);
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) =>
+          writes.kbAdd(ds, {
+            title,
+            body,
+            tags: String(args.flags.tags || ""),
+            source_url: String(args.flags.url || ""),
+            confidence: String(args.flags.confidence || "B"),
+            force,
+          })
+        )
+        .then((r): number => {
+          writeResult(ctx, r as any, (row) => `note stored: ${row.id}  ${clip(title, 50)}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "search": {
       const q = rest.join(" ");
@@ -95,9 +107,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "ingest": {
-      const n = store.kbIngestArtifact(rest[0], args.flags.force === true || args.flags.force === "true");
-      writeResult(ctx, n, (r) => `artifact ingested into kb: ${r.id}  ${clip(r.title, 50)}`);
-      return 0;
+      if (!rest[0]) {
+        bad(ctx, "usage: kb ingest <artifactId> [--force]");
+        return 2;
+      }
+      const forceKb = args.flags.force === true || args.flags.force === "true";
+      return getOrm(env.db.path)
+        .then((ds) => writes.kbIngestArtifact(ds, rest[0], forceKb))
+        .then((r): number => {
+          writeResult(ctx, r as any, (row) => `artifact ingested into kb: ${row.id}  ${clip(row.title, 50)}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "promote": {
       const s = store.kbPromote(rest[0], args.flags.name ? String(args.flags.name) : undefined);

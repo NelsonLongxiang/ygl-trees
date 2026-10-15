@@ -51,17 +51,20 @@
 3. **dump 重放陷阱**：`user_version=0` 不等于空库——迁移判定必须叠加 `sqlite_master` 表存在检查（`tablesPreExist`）
 4. 老 schema 的 dump 重放是验收必测项（`db export` → 删库 → 重放 → `db stats` 对账）
 
-## 五、TypeORM 边界（0.8.0 起）
+## 五、TypeORM 边界（0.8.0 起；写路径裁决 0.10.0）
 
-| 走 TypeORM（实体 + 仓库） | 保持裸 SQL（DB 类） |
+| 走 TypeORM | 保持裸 SQL（DB 类） |
 |---|---|
-| `project show`、`research query/source/evidence/claim list`（只读展示面，异步命令） | 一切**写路径**（Store 是唯一写入面：幂等、FTS 双写、事件留痕都在那里；TypeORM 写会绕开这套机器） |
-| 后续读命令按此模式渐进迁移（每迁一个跑黄金对账 + demo） | FTS5 检索（source/kb/node search、skill match）、PRAGMA、schema 迁移 |
+| **读命令**：`project show`、`research query/source/evidence/claim list`（异步命令 + relations 取派生计数） | FTS5 检索（source/kb/node search、skill match）——ORM 无 FTS5 概念 |
+| **写命令**（0.10.0 起）：research 组 add/link/resolve/attach、source add/fetch、kb add/ingest、job add —— 全部经 **src/writes.ts 事务化写服务**：幂等判定 + 基表写入 + FTS 双写 + events 留痕在**同一个 ds.transaction** 内（Store 时代是分离语句，FTS 失败会留孤儿行——事务关闭了该缺陷） | PRAGMA、schema 迁移（user_version 轨道） |
 | | PG sync/migrate（pgclient 直连） |
+| | Store/TreeStore 的**读方法**与未迁移写方法（produce、skill、tree 域）——渐进迁移中 |
 
-迁移读命令的固定动作：`getOrm(env.db.path)` → repo.find（relations 取派生计数）→ **显式映射输出形状**（含历史 clip 怪癖）→ catch 返回 rc=1 → demo 即回归。
+**async 裁决（2026-10-15）**：否决"全栈异步一步到位"——main() 已支持异步命令，传染面收敛在命令层 await + 写服务层，无需改造 Store 读方法。写命令统一经 `runWrite` 助手（6 行/命令），返回**显式 snake_case 映射对象**（输出契约冻结：实体 camelCase 属性绝不直接外泄）。事件 kind 字符串与 Store 时代逐字一致（`agent log` 历史同质）。
 
-**写路径迁移的前置裁决（未决）**：Store 全同步 vs TypeORM 异步 API——批量异步化是侵入性改造，须单独立项拍板，不允许逐个命令悄悄 async 化。
+**迁移读命令的固定动作**：`getOrm(env.db.path)` → repo.find（relations 取派生计数）→ 显式映射输出形状（含历史 clip 怪癖）→ catch 返回 rc=1 → demo 即回归。
+
+**尚未迁移的写面**（后续批次）：produce 组（outline/section/report → artifactAdd）、skill 组（add/import/refs/promote）、tree/node 域、project new/use。迁移规则同上：副作用三件套进事务 + 黄金对账。
 
 ## 六、输出契约（Agent API）
 

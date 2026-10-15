@@ -1,10 +1,13 @@
-/** job group — batch + schedule. `job tick` is what cron/systemctl drives. */
+/** job group — batch + schedule. `job tick` is what cron/systemctl drives.
+ *  Writes (add) run on the TypeORM write service (src/writes.ts). */
 import { execSync } from "node:child_process";
 import { Env } from "../cli";
 import { ok, bad, out, table, paint, C, writeResult } from "../fmt";
 import { nowIso } from "../text";
+import { getOrm } from "../orm";
+import * as writes from "../writes";
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
 
   switch (action) {
@@ -31,11 +34,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const force = args.flags.force === true || args.flags.force === "true";
-      const j = store.jobAdd({ title, command, every, at, force });
-      writeResult(ctx, j, (r) => `job registered: ${r.id}  ${r.title}`);
-      out(ctx, paint(C.dim, `  command:  ${j.row.command}`, ctx.color));
-      out(ctx, paint(C.dim, `  schedule: ${j.row.every_minutes ? `every ${j.row.every_minutes} min` : j.row.at || "manual"}`, ctx.color));
-      return 0;
+      return getOrm(env.db.path)
+        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force }))
+        .then((r): number => {
+          writeResult(ctx, r as any, (row) => `job registered: ${row.id}  ${row.title}`);
+          if (!ctx.json) {
+            out(ctx, paint(C.dim, `  command:  ${r.row.command}`, ctx.color));
+            out(ctx, paint(C.dim, `  schedule: ${r.row.every_minutes ? `every ${r.row.every_minutes} min` : r.row.at || "manual"}`, ctx.color));
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
     case "list":
       table(ctx, store.jobList(), ["id", "title", "every", "at", "on", "runs", "last_run", "status"], [
