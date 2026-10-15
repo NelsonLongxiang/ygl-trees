@@ -1,8 +1,9 @@
 /** kb group — long-term knowledge: store, retrieve, connect, promote to skill. */
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { Env } from "../cli";
-import { ok, bad, out, head, table, show, paint, C } from "../fmt";
-import { clip } from "../text";
+import { ok, bad, out, head, table, show, paint, C, writeResult } from "../fmt";
+import { clip, parseFrontmatter } from "../text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
   const { ctx, store } = env;
@@ -31,8 +32,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         confidence: String(args.flags.confidence || "B"),
         force,
       });
-      if (n.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${n.row.id}`, ctx.color));
-      else ok(ctx, `note stored: ${n.row.id}  ${clip(title, 50)}`);
+      writeResult(ctx, n, (r) => `note stored: ${r.id}  ${clip(title, 50)}`);
       return 0;
     }
     case "search": {
@@ -96,8 +96,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "ingest": {
       const n = store.kbIngestArtifact(rest[0], args.flags.force === true || args.flags.force === "true");
-      if (n.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${n.row.id}`, ctx.color));
-      else ok(ctx, `artifact ingested into kb: ${n.row.id}  ${clip(n.row.title, 50)}`);
+      writeResult(ctx, n, (r) => `artifact ingested into kb: ${r.id}  ${clip(r.title, 50)}`);
       return 0;
     }
     case "promote": {
@@ -106,8 +105,54 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       out(ctx, paint(C.dim, `  L1: ${clip(s.description, 100)}`, ctx.color));
       return 0;
     }
+    case "import": {
+      const target = rest[0];
+      if (!target) {
+        bad(ctx, "usage: kb import <dir|file.md> [--tags ..]");
+        return 2;
+      }
+      let st;
+      try {
+        st = fs.statSync(target);
+      } catch {
+        bad(ctx, `not found: ${target}`);
+        return 1;
+      }
+      const files: string[] = [];
+      if (st.isFile()) files.push(target);
+      else {
+        for (const f of fs.readdirSync(target, { recursive: true }) as string[])
+          if (String(f).toLowerCase().endsWith(".md")) files.push(path.join(target, String(f)));
+      }
+      if (!files.length) {
+        bad(ctx, `no .md files under ${target}`);
+        return 1;
+      }
+      files.sort();
+      let added = 0;
+      let dups = 0;
+      for (const f of files) {
+        const raw = fs.readFileSync(f, "utf8");
+        const { meta, body } = parseFrontmatter(raw);
+        const heading = /^#\s+(.+)\s*$/m.exec(body)?.[1]?.trim();
+        const title = meta.title || meta.name || heading || path.basename(f, ".md");
+        const r = store.kbAdd({
+          title,
+          body,
+          tags: meta.tags || String(args.flags.tags || ""),
+          source_url: meta.url || "",
+          confidence: meta.confidence || "B",
+          origin: `import:${f}`,
+        });
+        if (r.dup) dups++;
+        else added++;
+      }
+      if (ctx.json) console.log(JSON.stringify({ added, duplicates: dups, files: files.length, target }, null, 2));
+      else ok(ctx, `kb import: ${added} added, ${dups} duplicate(s) kept — ${files.length} file(s) from ${target}`);
+      return 0;
+    }
     case "":
-      out(ctx, paint(C.dim, "  kb: add | search | list | show | link | ingest <artifactId> | promote <noteId>", ctx.color));
+      out(ctx, paint(C.dim, "  kb: add | import <dir|file> | search | list | show | link | ingest <artifactId> | promote <noteId>", ctx.color));
       return 0;
     default:
       bad(ctx, `unknown kb action: ${action}`);

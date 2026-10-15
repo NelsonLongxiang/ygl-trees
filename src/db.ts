@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1 } from "./text";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS queries (
 );
 
 -- ---------------------------------------------------------------- research: sources
+-- query <-> source association: which search query recalled which source
+-- (schema v4; pure additive, no migration needed beyond CREATE IF NOT EXISTS)
+CREATE TABLE IF NOT EXISTS query_sources (
+  query_id  TEXT NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  note      TEXT DEFAULT '',
+  created   TEXT NOT NULL,
+  PRIMARY KEY (query_id, source_id)
+);
+
 CREATE TABLE IF NOT EXISTS sources (
   id           TEXT PRIMARY KEY,
   project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

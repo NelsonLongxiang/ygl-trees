@@ -101,12 +101,16 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 
 ```
 query add       登记检索式
-source add      收来源，按 (project, url_hash) 去重
+query attach    检索式 ↔ 来源关联（query list 显示召回数）
+source add      收来源，按 (project, url_hash) 去重；--query 顺带关联
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）
 claim add       写下断言
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
+claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
 ```
+
+**JSON 纪律**：写命令在 `--json` 下 stdout 只有一个 JSON 对象（重复时带 `duplicate: true`），Agent 可直接 `JSON.parse` 全量输出。
 
 断言的状态**由证据链接自动推导**：有支持有反对 → `contested`，只有支持 → `supported`，都没有 → `unverified`。
 
@@ -125,6 +129,7 @@ export    落盘 markdown
 
 ```
 kb ingest <artifactId>    报告入库
+kb import <dir|file.md>   批量导入 markdown（frontmatter：title/tags/confidence/url；按内容 hash 幂等）
 kb search "<q>"           中文可用（CJK 二元切分）
 kb promote <note>         把笔记提升为可复用 skill（L1 自动从正文提炼，含来源标注）
 agent match "<task>"      Agent 靠 L1 描述命中该 skill
@@ -173,7 +178,7 @@ ygl-trees job tick          # cron 每分钟调它，只跑到期的任务
 ygl-trees job logs
 ```
 
-`job tick` 幂等，重复执行安全。
+`job tick` 幂等，重复执行安全；并发安全（mkdir 锁，活锁跳过、>15 分钟陈旧锁自动抢占），并回收被杀进程留下的悬空 run（>30 分钟，rc=126）。
 
 ---
 

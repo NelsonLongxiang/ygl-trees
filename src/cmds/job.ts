@@ -1,7 +1,7 @@
 /** job group — batch + schedule. `job tick` is what cron/systemctl drives. */
 import { execSync } from "node:child_process";
 import { Env } from "../cli";
-import { ok, bad, out, table, paint, C } from "../fmt";
+import { ok, bad, out, table, paint, C, writeResult } from "../fmt";
 import { nowIso } from "../text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
@@ -32,8 +32,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const force = args.flags.force === true || args.flags.force === "true";
       const j = store.jobAdd({ title, command, every, at, force });
-      if (j.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${j.row.id}  ${title}`, ctx.color));
-      else ok(ctx, `job registered: ${j.row.id}  ${j.row.title}`);
+      writeResult(ctx, j, (r) => `job registered: ${r.id}  ${r.title}`);
       out(ctx, paint(C.dim, `  command:  ${j.row.command}`, ctx.color));
       out(ctx, paint(C.dim, `  schedule: ${j.row.every_minutes ? `every ${j.row.every_minutes} min` : j.row.at || "manual"}`, ctx.color));
       return 0;
@@ -60,13 +59,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "tick": {
-      const due = store.jobDue();
-      if (!due.length) {
-        out(ctx, paint(C.dim, "  nothing due", ctx.color));
+      return withTickLock(env, () => {
+        const reaped = store.jobReapStuck(30);
+        if (reaped) out(ctx, paint(C.yellow, `  ! reaped ${reaped} stuck run(s) (killed mid-run, >30min)`, ctx.color));
+        const due = store.jobDue();
+        if (!due.length) {
+          out(ctx, paint(C.dim, "  nothing due", ctx.color));
+          return 0;
+        }
+        for (const j of due) execute(env, j);
         return 0;
-      }
-      for (const j of due) execute(env, j);
-      return 0;
+      });
     }
     case "disable": {
       const r = store.db.run("UPDATE jobs SET enabled=0 WHERE id=? OR title=?", [rest[0], rest[0]]);
@@ -122,4 +125,52 @@ function execute(env: Env, job: any): void {
   if (rc === 0) ok(ctx, `${job.title}  ok  ${ms}ms`);
   else bad(ctx, `${job.title}  rc=${rc}  ${output.slice(0, 160)}`);
   store.log("job.run", "job", job.id, `rc=${rc} ${nowIso()}`);
+}
+
+/**
+ * Concurrency guard for `job tick`: mkdir-based lock (same primitive the
+ * WASM sqlite VFS uses). A lock older than 15 minutes is considered stale
+ * (crashed holder) and stolen. Never blocks: a live lock means another tick
+ * is running, so we skip — cron will call again.
+ */
+function withTickLock(env: Env, fn: () => number): number {
+  const { ctx } = env;
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const lockDir = path.join(env.home, "tick.lock");
+
+  const tryAcquire = (): boolean => {
+    try {
+      fs.mkdirSync(lockDir);
+      fs.writeFileSync(path.join(lockDir, "info"), `${process.pid} ${new Date().toISOString()}`);
+      return true;
+    } catch (e: any) {
+      if (e?.code === "EEXIST") return false;
+      return true; // unrelated fs error: proceed unlocked rather than block cron
+    }
+  };
+
+  let locked = tryAcquire();
+  if (!locked) {
+    let stale = false;
+    try {
+      stale = Date.now() - fs.statSync(lockDir).mtimeMs > 15 * 60_000;
+    } catch {
+      stale = false;
+    }
+    if (stale) {
+      fs.rmSync(lockDir, { recursive: true, force: true });
+      locked = tryAcquire();
+      if (locked) out(ctx, paint(C.yellow, "  ! stole stale tick.lock (holder crashed >15min ago)", ctx.color));
+    }
+  }
+  if (!locked) {
+    out(ctx, paint(C.yellow, "  another job tick is running; skipping (cron will retry)", ctx.color));
+    return 0;
+  }
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
 }

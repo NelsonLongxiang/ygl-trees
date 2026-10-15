@@ -98,3 +98,18 @@ export function dump(ctx: Ctx, data: any): void {
   if (ctx.json) console.log(JSON.stringify(data, null, 2));
   else console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2));
 }
+
+/**
+ * Write-path result printer with JSON discipline: under --json the ONLY
+ * stdout is one JSON object (duplicate or new, duplicates carry
+ * `duplicate: true`); human-readable lines are tty-only, so agents can
+ * always JSON.parse the full stdout of a write command.
+ */
+export function writeResult(ctx: Ctx, o: { row: any; dup: boolean }, human: (row: any) => string): void {
+  if (ctx.json) {
+    console.log(JSON.stringify(o.dup ? { ...o.row, duplicate: true } : o.row, null, 2));
+    return;
+  }
+  if (o.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${o.row.id}`, ctx.color));
+  else ok(ctx, human(o.row));
+}

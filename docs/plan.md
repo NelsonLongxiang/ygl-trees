@@ -8,6 +8,10 @@
 > - spec R6.2 验收按实测修正为"命中且进前二"（原'排第一'对人工编写的 skill 不成立）
 > - 计划外修复：`bin/ygl-trees.js` 曾把退出码吞成 0（Agent 按 rc 判断会全部误判）；export 的 FTS5 影子表 DDL 会破坏 dump 重放；`DB.tx` 改可重入；CLI 对异步命令（source fetch）保持 db 打开直至完成
 > - `source fetch` 的三类页面行为（静态 html / 404 / 非 html）以本地 http 服务实测验证，demo 保持离线可跑
+>
+> **执行记录 · 0.5.0（2026-10-15，推迟项首批）**：job tick 并发锁（mkdir 锁 + 陈旧抢占）+ 悬空 run 回收（>30min → rc=126）；schema v4 `query_sources`（纯增量，无需特殊迁移）+ `query attach` / `source add --query` / query list 召回数；`claim resolve` 人工仲裁出口（事件留痕，新证据重新推导）；`kb import` 批量 markdown（frontmatter，内容 hash 幂等）。
+> 计划外：发现并修复 README"全部命令支持 --json"的承诺缺口——写命令（add/ingest/import/fetch）在 `--json` 下现在只输出单个 JSON 对象（重复带 `duplicate: true`），此前会混入人类文本污染 Agent 解析。
+> 仍推迟：node 组写命令的 --json 对齐、npm 实际发布（外部动作，需用户确认）、单测框架。
 
 ## 里程碑总览
 

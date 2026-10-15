@@ -2,7 +2,7 @@
  *  `source fetch` is async (Node 18+ global fetch) and returns a promise. */
 import * as fs from "node:fs";
 import { Env } from "../cli";
-import { ok, bad, out, head, table, paint, C } from "../fmt";
+import { ok, bad, out, head, table, paint, C, writeResult } from "../fmt";
 import { clip } from "../text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -34,16 +34,31 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const q = store.queryAdd(project.id, text, String(args.flags.engine || ""), force);
-      if (q.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${q.row.id}`, ctx.color));
-      else ok(ctx, `query registered: ${q.row.id}  ${clip(text, 60)}`);
+      writeResult(ctx, q, (r) => `query registered: ${r.id}  ${clip(text, 60)}`);
       return 0;
     }
+    if (subAction === "attach") {
+      if (!rest[1] || !rest[2]) {
+        bad(ctx, "usage: research query attach <queryId|text> <sourceId> [--note ..]");
+        return 2;
+      }
+      try {
+        const r = store.queryAttach(project.id, rest[1], rest[2], String(args.flags.note || ""));
+        if (r.dup) out(ctx, paint(C.yellow, `  ! already attached: ${r.source.id}`, ctx.color));
+        else ok(ctx, `attached: ${clip(r.source.title || r.source.id, 40)} → "${clip(r.query.text, 40)}"`);
+        return 0;
+      } catch (e: any) {
+        bad(ctx, e?.message || String(e));
+        return 1;
+      }
+    }
     if (subAction === "list" || subAction === undefined) {
-      table(ctx, store.queryList(project.id), ["id", "query", "engine", "status", "created"], [
+      table(ctx, store.queryList(project.id), ["id", "query", "engine", "status", "sources", "created"], [
         "id",
         "text",
         "engine",
         "status",
+        "sources",
         "created",
       ]);
       return 0;
@@ -77,8 +92,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         confidence: String(args.flags.confidence || "B"),
         tags: String(args.flags.tags || ""),
       });
-      if (res.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${res.row.id}`, ctx.color));
-      else ok(ctx, `source added: ${res.row.id}  ${clip(res.row.title, 60)}`);
+      writeResult(ctx, res, (r) => `source added: ${r.id}  ${clip(r.title, 60)}`);
+      const qRef = String(args.flags.query || "");
+      if (qRef) {
+        try {
+          const at = store.queryAttach(project.id, qRef, res.row.id);
+          if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.query.text, 40)}"`, ctx.color));
+        } catch (e: any) {
+          bad(ctx, `source saved, but attach failed: ${e?.message || e}`);
+          return 1;
+        }
+      }
       return 0;
     }
     if (subAction === "fetch") {
@@ -139,16 +163,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             confidence: String(args.flags.confidence || "B"),
             tags: String(args.flags.tags || (thin ? "needs_review" : "")),
           });
-          if (r.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${r.row.id}`, ctx.color));
-          else ok(ctx, `fetched: ${r.row.id}  ${clip(title, 60)}`);
-          out(
-            ctx,
-            paint(
-              C.dim,
-              `  ${(text.length / 1000).toFixed(1)}k chars text · ${metaDesc ? "meta description" : "no meta"}${thin ? " · thin content → tagged needs_review" : ""}`,
-              ctx.color
-            )
-          );
+          writeResult(ctx, r, (row) => `fetched: ${row.id}  ${clip(title, 60)}`);
+          if (!ctx.json)
+            out(
+              ctx,
+              paint(
+                C.dim,
+                `  ${(text.length / 1000).toFixed(1)}k chars text · ${metaDesc ? "meta description" : "no meta"}${thin ? " · thin content → tagged needs_review" : ""}`,
+                ctx.color
+              )
+            );
           return 0;
         })
         .catch((e: any): number => {
@@ -229,8 +253,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         String(args.flags.locator || ""),
         force
       );
-      if (e.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${e.row.id}`, ctx.color));
-      else ok(ctx, `evidence added: ${e.row.id}  ${clip(quote, 50)}`);
+      writeResult(ctx, e, (r) => `evidence added: ${r.id}  ${clip(quote, 50)}`);
       return 0;
     }
     if (subAction === "list" || subAction === undefined) {
@@ -248,8 +271,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const c = store.claimAdd(project.id, text, String(args.flags.confidence || "B"), force);
-      if (c.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${c.row.id}`, ctx.color));
-      else ok(ctx, `claim added: ${c.row.id}  ${clip(text, 60)}`);
+      writeResult(ctx, c, (r) => `claim added: ${r.id}  ${clip(text, 60)}`);
       return 0;
     }
     if (subAction === "link") {
@@ -261,6 +283,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       store.claimLink(rest[1], rest[2], stance);
       const c = store.db.get("SELECT status FROM claims WHERE id=?", [rest[1]]);
       ok(ctx, `linked; claim status now: ${c?.status}`);
+      return 0;
+    }
+    if (subAction === "resolve") {
+      const id = rest[1];
+      const as = String(args.flags.as || "");
+      const valid = ["supported", "refuted", "contested", "unverified"];
+      if (!id || !valid.includes(as)) {
+        bad(ctx, "usage: research claim resolve <claimId> --as supported|refuted|contested|unverified [--note \"..\"]");
+        return 2;
+      }
+      const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
+      if (!c0) {
+        bad(ctx, `claim not found: ${id}`);
+        return 1;
+      }
+      store.claimResolve(id, as, String(args.flags.note || ""));
+      if (ctx.json) console.log(JSON.stringify({ id, status: as, note: String(args.flags.note || "") }, null, 2));
+      else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
       return 0;
     }
     if (subAction === "list" || subAction === undefined) {

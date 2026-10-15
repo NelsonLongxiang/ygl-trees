@@ -81,9 +81,35 @@ export class Store {
   }
 
   queryList(projectId: string): Row[] {
-    return this.db.all("SELECT id,text,engine,status,created FROM queries WHERE project_id=? ORDER BY created", [
+    return this.db.all(
+      `SELECT q.id, q.text, q.engine, q.status, q.created,
+              (SELECT COUNT(*) FROM query_sources s WHERE s.query_id=q.id) AS sources
+         FROM queries q WHERE q.project_id=? ORDER BY q.created`,
+      [projectId]
+    );
+  }
+
+  /** Attach a source to the query that recalled it (id or exact text). */
+  queryAttach(projectId: string, queryIdOrText: string, sourceId: string, note = ""): { query: Row; source: Row; dup: boolean } {
+    const q = this.db.get("SELECT * FROM queries WHERE (id=? OR text=?) AND project_id=?", [
+      queryIdOrText,
+      queryIdOrText,
       projectId,
     ]);
+    if (!q) throw new Error(`query not found: ${queryIdOrText}`);
+    const s = this.db.get("SELECT * FROM sources WHERE id=? AND project_id=?", [sourceId, projectId]);
+    if (!s) throw new Error(`source not found in this project: ${sourceId}`);
+    const ex = this.db.get("SELECT 1 AS hit FROM query_sources WHERE query_id=? AND source_id=?", [q.id, s.id]);
+    if (!ex) {
+      this.db.run("INSERT INTO query_sources(query_id,source_id,note,created) VALUES(?,?,?,?)", [
+        q.id,
+        s.id,
+        note,
+        nowIso(),
+      ]);
+      this.log("query.attach", "query", q.id, s.id);
+    }
+    return { query: q, source: s, dup: !!ex };
   }
 
   queryDone(id: string): void {
@@ -234,6 +260,13 @@ export class Store {
          FROM claims c WHERE c.project_id=? ORDER BY c.created`,
       [projectId]
     );
+  }
+
+  /** Manual arbitration for contested claims; a later evidence link
+   *  re-derives the status automatically. Audited via events. */
+  claimResolve(claimId: string, status: string, note = ""): void {
+    this.db.run("UPDATE claims SET status=? WHERE id=?", [status, claimId]);
+    this.log("claim.resolve", "claim", claimId, `${status}${note ? " | " + note : ""}`);
   }
 
   // ================================================================ artifacts
@@ -597,6 +630,19 @@ export class Store {
       }
       return false;
     });
+  }
+
+  /** Runs left dangling by a killed process: close them out and report. */
+  jobReapStuck(maxAgeMinutes = 30): number {
+    const cutoff = new Date(Date.now() - maxAgeMinutes * 60_000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    const cut = `${cutoff.getFullYear()}-${p(cutoff.getMonth() + 1)}-${p(cutoff.getDate())} ${p(cutoff.getHours())}:${p(cutoff.getMinutes())}:${p(cutoff.getSeconds())}`;
+    const r = this.db.run(
+      `UPDATE runs SET finished=?, rc=126, output=COALESCE(NULLIF(output,''),'') || '(reaped: process was killed mid-run)'
+        WHERE finished='' AND started < ?`,
+      [nowIso(), cut]
+    );
+    return r.changes;
   }
 
   jobStart(jobId: string): string {

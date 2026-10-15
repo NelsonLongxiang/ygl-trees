@@ -64,6 +64,15 @@ $Y kb promote "$K" --name techtree-report >/dev/null
 M=$($Y agent match "科技树 建模" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).matches.map(x=>x.name).join(',')))")
 case "$M" in *techtree-report*) echo "  ✓ promoted skill discoverable via agent match";; *) echo "  ✗ promoted skill NOT matched: $M"; exit 1;; esac
 
+echo "── 5d. query attach + claim resolve (arbitration)"
+$Y research query add "邻接表 闭包表 对比" >/dev/null
+$Y research query attach "邻接表 闭包表 对比" "$A" >/dev/null
+QS=$($Y research query list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const q=JSON.parse(s).find(x=>x.text.includes('对比'));console.log(q.sources)})")
+if [ "$QS" = "1" ]; then echo "  ✓ query ↔ source attached (recalled=1)"; else echo "  ✗ query attach failed: $QS"; exit 1; fi
+$Y research claim resolve "$C" --as contested --note "仲裁演示" >/dev/null
+CS=$($Y research claim list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).find(x=>x.id===process.argv[1]).status))" "$C")
+if [ "$CS" = "contested" ]; then echo "  ✓ claim resolved to contested"; else echo "  ✗ resolve failed: $CS"; exit 1; fi
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done
