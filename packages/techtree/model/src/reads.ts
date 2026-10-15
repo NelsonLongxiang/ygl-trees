@@ -10,6 +10,7 @@
  */
 import { DB, EDGE_RELS, EDGE_MODES, COND_KINDS } from "../../../core/database/src/db";
 import { nowIso, shortId } from "../../../core/text/src/text";
+import { parseEvalSpec } from "../../eval/src/eval";
 
 export type Row = Record<string, any>;
 export type EdgeRel = (typeof EDGE_RELS)[number];
@@ -393,7 +394,12 @@ export class TreeStore {
     const conds = this.db.all("SELECT * FROM node_conditions WHERE node_id=?", [n.id]);
     for (const c of conds) {
       const pass = evalCond(c, state);
-      if (!pass && c.required) missingRequired.push(`${c.name} ${c.op} ${c.value}`.trim());
+      // eval-family values may carry a question envelope — display the
+      // wording, not the JSON (0.26.0)
+      const shown = /^eval(-choice|-score)?$/.test(String(c.op))
+        ? parseEvalSpec(c.value).q
+        : c.value;
+      if (!pass && c.required) missingRequired.push(`${c.name} ${c.op} ${shown}`.trim());
       if (!pass && !c.required) missingOptional.push(`${c.name} (可选)`);
       if (!pass && !c.required && c.effect === "cost_mul") costMul *= Number(c.weight) || 1;
     }
@@ -618,7 +624,7 @@ export class TreeStore {
     const st = this.indexStatus(treeId);
     if (st.dirty) issues.push("index is dirty; run: ygl-trees node index");
     const noCondValue = this.db.all(
-      "SELECT id,name FROM node_conditions c WHERE c.node_id IN (SELECT id FROM nodes WHERE tree_id=?) AND c.required=1 AND c.value='' AND c.kind<>'flag' AND c.op<>'eval'",
+      "SELECT id,name FROM node_conditions c WHERE c.node_id IN (SELECT id FROM nodes WHERE tree_id=?) AND c.required=1 AND c.value='' AND c.kind<>'flag' AND c.op NOT IN ('eval','eval-choice','eval-score')",
       [treeId]
     );
     if (noCondValue.length) issues.push(`${noCondValue.length} required condition(s) without a threshold`);

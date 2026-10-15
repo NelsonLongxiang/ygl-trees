@@ -95,11 +95,14 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
   node unlink <parent> <child> [--rel prereq]
   node cond <key> --name <c>         [--kind flag|resource|level|quest|time|expr]
                                       [--op >=|==|<=|!=|has] [--value v] [--optional]
+                                      [--op eval --value "<布尔问题>"]
+                                      [--op eval-choice --value "<问题>" --options "k=desc,..." --answer k]
+                                      [--op eval-score --value "<问题>" --levels "级0,..." --min-score n]
                                       [--effect gate|cost_mul] [--weight n]
   node index                         rebuild closure + topo order
   node can <key> [--state k=v]       evaluate required vs optional gates
-                                     (--eval: op=eval gates via decision model;
-                                      P>=0.7 pass / P<=0.4 fail / gray pending)
+                                     (--eval: eval 题型经决策模型判定；
+                                      boolean P / choice P(期望答案) / score ±1 灰带)
   node ready [--state k=v] [--eval]  currently unlockable set
   node path <key>                    cheapest unlock order to a target
   node parents|children <key>        direct relations

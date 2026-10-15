@@ -118,6 +118,19 @@ if [ "$?" = "0" ]; then echo "  ✓ offline rc=0"; else echo "  ✗ offline rc n
 RD=$(YGL_EVAL_OFFLINE=1 $Y node ready --eval --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.eval_pending.length&&j.eval_pending[0].key)})")
 if [ "$RD" = "quest-gate" ]; then echo "  ✓ ready --eval offline → 仅 eval 阻塞的 quest-gate 进 eval_pending（steel 因父链未满不入候选）"; else echo "  ✗ ready --eval: $RD"; exit 1; fi
 
+echo "── 6a2. choice/score 题型（离线 → pending；信封 value 显示措辞）"
+$Y node cond steel --name team_pick --kind quest --op eval-choice \
+  --value "该派哪个团队处理" --options "proc=采购:ERP与供应商, ops=物流:账单核对" --answer proc >/dev/null
+$Y node cond steel --name maturity --kind quest --op eval-score \
+  --value "实现成熟度如何" --levels "原型:仅演示, 可用:有测试, 成熟:有用户" --min-score 2 >/dev/null
+CS=$(YGL_EVAL_OFFLINE=1 $Y node can steel --state "research_lab_level=3" --eval --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const t=j.evaluated.filter(e=>e.type!=='boolean');console.log(t.length===2&&t.every(e=>e.outcome==='pending')&&t.map(e=>e.type).sort().join(','))})")
+if [ "$CS" = "choice,score" ]; then echo "  ✓ eval-choice/eval-score offline → 双 pending（题型分派正确）"; else echo "  ✗ choice/score: $CS"; exit 1; fi
+CD=$(YGL_EVAL_OFFLINE=1 $Y node can steel --state "research_lab_level=3" 2>&1)
+case "$CD" in
+  *team_pick*eval-choice*该派哪个团队处理*) echo "  ✓ missing_required 显示问题措辞而非 JSON 信封";;
+  *) echo "  ✗ 信封显示泄漏"; exit 1;;
+esac
+
 echo "── 6b. export → import round-trip"
 $Y node export --out "$YGL_HOME/demo-tree.json" >/dev/null
 $Y node import --file "$YGL_HOME/demo-tree.json" --tree demo-copy >/dev/null

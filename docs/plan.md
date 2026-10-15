@@ -2,6 +2,8 @@
 
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
+> **执行记录 · 0.26.0（2026-10-16，决策模型 choice/score 题型）**：(1) **设计**——R8 原非目标翻案；协议依据材料 §3：choice=1-255 选项全概率分布、score=2-10 级概率加权均值；**零 schema 变更裁决**：op 家族扩 eval/eval-choice/eval-score，问题+选项+期望打包 value 内 JSON 信封，parseEvalSpec 对 plain 向后兼容——避免 v7 九触点，显示层只出措辞。(2) **CLI**——`node cond --op eval-choice --options "k=desc,..." --answer k`（answer ∈ keys 校验 rc=2）；`--op eval-score --levels --min-score`（2-10 级、min 范围校验）；cmds 层打包信封，condAdd 签名不变。(3) **三态**——choice 判 P(期望答案)（阈值同源 config，灰带哲学与布尔一致）；score 判均值 ±1 灰带。(4) **eval.ts 重构**——postEval 共享传输层，四函数同源；导出面 +8。(5) **接线**——can --eval 按op 分派，evaluated[] 带 type（加法兼容）；validate 排除三 op。(6) **验证**——单测 27（含本地 stub 网关断言请求体 criteria 形状、无 token 不出网）；CLI 冒烟（离线双 pending、措辞显示、stub 端点双 pass → can.ok=true 真解锁）；demo 组 6a2；eval-gates skill 三题型版（题面价值排序纪律）。(7) **已知边界**——ready --eval 批量仍仅布尔（spec 非目标更新：混合批量留后续）。
+
 > **执行记录（2026-10-15）**：M1/M2/M3 全部完成——`5622835`（0.2.0）、`84cc285`（0.3.0）、见 git log（0.4.0）。
 > 实施中的偏差与计划外收获：
 > - spec R2 jobs 行改为应用层判重（存量撞名无法安全建唯一索引）

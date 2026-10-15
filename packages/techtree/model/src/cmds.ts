@@ -19,7 +19,10 @@ import { TreeStore } from "./reads";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
 import { getOrm } from "../../../core/database/src/orm";
 import * as treeWrites from "./writes";
-import { DEFAULT_ENDPOINT, evalBoolean, evalBooleanMany, evalToken, mapOutcome } from "../../eval/src/eval";
+import {
+  DEFAULT_ENDPOINT, evalBoolean, evalBooleanMany, evalChoice, evalScore, evalToken,
+  mapChoiceOutcome, mapOutcome, mapScoreOutcome, packEvalChoiceSpec, packEvalScoreSpec, parseEvalSpec,
+} from "../../eval/src/eval";
 import { configGet, configGetBool, configGetNumber } from "../../../ops/tools/src/config";
 import { nowIso, shortId } from "../../../core/text/src/text";
 
@@ -159,7 +162,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     if (sub === "cond") {
       if (!key) {
-        bad(ctx, "usage: node cond <key> --name <cond> [--kind flag|resource|level|quest|time|expr] [--op >=|==|<=|!=|has] [--value n] [--optional] [--effect gate|cost_mul] [--weight n]");
+        bad(ctx, "usage: node cond <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
         return 2;
       }
       const name = flagStr("name");
@@ -175,14 +178,54 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         ]);
         return 0;
       }
+      // eval-family ops pack a question envelope into value (0.26.0):
+      //   eval-choice: --options "k=desc,k2=desc2" --answer k
+      //   eval-score:  --levels "级0,级1,..." (2-10) --min-score n
+      let value = flagStr("value");
+      const op = flagStr("op", ">=");
+      if (op === "eval-choice" || op === "eval-score") {
+        const q = value || name;
+        if (op === "eval-choice") {
+          const optStr = flagStr("options");
+          const answer = flagStr("answer");
+          if (!optStr || !answer) {
+            bad(ctx, "eval-choice needs --options \"k=desc,...\" and --answer <k>");
+            return 2;
+          }
+          const options: Record<string, string> = {};
+          for (const part of optStr.split(/[,;]/)) {
+            const i = part.indexOf("=");
+            const k = (i < 0 ? part : part.slice(0, i)).trim();
+            const v = i < 0 ? "" : part.slice(i + 1).trim();
+            if (k) options[k] = v;
+          }
+          if (!options[answer]) {
+            bad(ctx, `--answer '${answer}' is not one of the --options keys`);
+            return 2;
+          }
+          value = packEvalChoiceSpec(q, options, answer);
+        } else {
+          const levels = (flagStr("levels") || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+          const min = flagNum("min-score", NaN);
+          if (levels.length < 2 || levels.length > 10) {
+            bad(ctx, "eval-score needs --levels with 2-10 level descriptions");
+            return 2;
+          }
+          if (!Number.isFinite(min) || min < 0 || min > levels.length - 1) {
+            bad(ctx, `eval-score needs --min-score in [0, ${levels.length - 1}]`);
+            return 2;
+          }
+          value = packEvalScoreSpec(q, levels, min);
+        }
+      }
       return runTreeWrite(
         (ds) =>
           treeWrites.condAdd(ds, tid, key, {
             name,
             kind: flagStr("kind", "flag"),
             expr: flagStr("expr") || undefined,
-            op: flagStr("op", ">="),
-            value: flagStr("value"),
+            op,
+            value,
             required: !flagBool("optional"),
             effect: flagStr("effect", "gate"),
             weight: flagNum("weight", 1),
@@ -217,7 +260,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const ctxName = flagStr("context", "default");
       const r = trees.canUnlock(tid, key, ctxName, state);
       const evalConds = flagBool("eval")
-        ? trees.condList(tid, key).filter((c: any) => String(c.op) === "eval")
+        ? trees.condList(tid, key).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
         : [];
       if (!evalConds.length) {
         if (ctx.json) {
@@ -258,9 +301,23 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return (async (): Promise<number> => {
         const evaluated: any[] = [];
         for (const c of evalConds) {
-          const question = String(c.value || c.name); // R8.7 wording fallback
-          const m = mapOutcome(await evalBoolean(contextPkg, question, token, endpoint), passT, failT);
-          evaluated.push({ name: c.name, question, ...m });
+          const spec = parseEvalSpec(c.value); // envelope (choice/score) or plain question
+          const question = spec.q || String(c.name); // R8.7 wording fallback
+          if (String(c.op) === "eval-choice") {
+            const m = mapChoiceOutcome(
+              await evalChoice(contextPkg, question, spec.options || {}, token, endpoint),
+              spec.answer || "",
+              passT,
+              failT
+            );
+            evaluated.push({ name: c.name, question, type: "choice", answer: spec.answer, ...m });
+          } else if (String(c.op) === "eval-score") {
+            const m = mapScoreOutcome(await evalScore(contextPkg, question, spec.levels || [], token, endpoint), spec.min ?? 0);
+            evaluated.push({ name: c.name, question, type: "score", min: spec.min, ...m });
+          } else {
+            const m = mapOutcome(await evalBoolean(contextPkg, question, token, endpoint), passT, failT);
+            evaluated.push({ name: c.name, question, type: "boolean", ...m });
+          }
         }
         const pendingList: string[] = [];
         for (const e of evaluated) {
@@ -268,11 +325,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             r.missing_required = (r.missing_required as string[]).filter((m) => !m.startsWith(e.name));
           } else if (e.outcome === "fail") {
             if (!(r.missing_required as string[]).some((m) => m.startsWith(e.name)))
-              (r.missing_required as string[]).push(`${e.name} (eval P=${e.p} fail)`);
+              (r.missing_required as string[]).push(
+                `${e.name} (eval ${e.p !== undefined ? `P=${e.p}` : `score=${e.score}`} fail)`
+              );
           } else {
             // pending: neither satisfied nor failed — its own lane
             (r.missing_required as string[]) = (r.missing_required as string[]).filter((m) => !m.startsWith(e.name));
-            pendingList.push(`${e.name} (P=${e.p ?? "-"}${e.reason ? ` · ${e.reason}` : ""})`);
+            const metric = e.p !== undefined ? `P=${e.p}` : e.score !== undefined ? `score=${e.score}` : "P=-";
+            pendingList.push(`${e.name} (${metric}${e.reason ? ` · ${e.reason}` : ""})`);
           }
         }
         r.pending = pendingList;

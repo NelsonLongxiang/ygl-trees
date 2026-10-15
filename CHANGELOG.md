@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.26.0（2026-10-16）决策模型 choice/score 题型
+- **`--op eval-choice`（多选一）**：`--options "k=desc,..."` + `--answer k`；判 **P(期望答案)**，阈值与布尔同源（eval.pass/fail_threshold），全概率分布返回
+- **`--op eval-score`（等级评分）**：`--levels "级0,..."`（2-10 级，描述须编码价值排序）+ `--min-score n`；score∈[0,N-1] 概率加权均值，三态 = ≥min pass / ≤min−1 fail / [min−1,min) 灰带
+- **零 schema 变更**：问题与选项打包为 value 内 JSON 信封（`parseEvalSpec` 对 plain 字符串向后兼容）；missing_required 显示问题措辞而非 JSON
+- eval.ts 重构：共享 `postEval` 传输层（四个题型函数同源重试/超时/协议头）；包导出面扩 8 个符号
+- 验证：单测 27 例（信封往返/三态边界/本地 stub 网关协议形状/离线安全）；CLI 全链路冒烟（离线双 pending + stub 端点 choice P=0.9/score 2.31 双 pass → can.ok=true）；demo 组 6a2；eval-gates skill 更新为三题型版
+- 已知边界：`node ready --eval` 批量聚合仍仅布尔 op（choice/score 经 `node can --eval` 逐节点判，混合批量留后续——spec R8 非目标更新）
+
 ## 0.25.0（2026-10-16）读路径写放大清剿 + dashboard 接 agent brief
 - **skillMatch 批量化**：逐行 `UPDATE hits=hits+1`（N 结果 = N 次隐式事务 = N 次 VFS fsync，与 0.23.0 kbSearch 同类缺陷）→ 单语句 `IN (...)`；功能验证 hits 递增正常
 - **dashboard 接 buildBrief**：`agent brief` 的 payload 构建抽为 `buildBrief()` 双端复用——webui Overview 区新增项目进度行（sources/evidence/claims verified/artifacts）、**next_actions 可执行命令列表**（原来硬编码 []）、top_skills 徽章

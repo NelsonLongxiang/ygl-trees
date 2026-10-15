@@ -78,7 +78,9 @@
 - **R8.6 留痕与输出**：events 记 `eval.gate`（条件名/P/outcome）；`node can --json` 新增 `evaluated: [{name, question, p, outcome}]`（加法字段，契约兼容）
 - **R8.7 验收**：离线（无 token）`node can` 对 op=eval 条件输出 pending、demo 断言此路径（demo 保持离线可跑）；有 token 环境手动冒烟结果记入提交说明；`node validate` 对 op=eval 的必检条件不再要求 value 非空（value 是问题措辞，缺省回落用 name）
 
-**非目标**：不接 choice/score 题型（gate 只需布尔）；评估结果不写回数据库（每次 `can` 现评，保持无状态）；`node ready --eval` 与批量评估留后续批次。
+- **R8.8 choice/score 题型（2026-10-16 立项，0.26.0）**：op 家族扩为 `eval`（布尔 P(true)）/ `eval-choice`（多选一，`--options "k=desc,..."` + `--answer k`）/ `eval-score`（等级评分，`--levels "级0,..."` 2-10 级 + `--min-score n`）；**零 schema 变更**——问题与选项打包为 value 内 JSON 信封 `{"q", "options"/"levels", "answer"/"min"}`（parseEvalSpec 对 plain 字符串向后兼容）；三态映射：choice 判 **P(期望答案)**（阈值与布尔同源 eval.pass/fail_threshold）、score 判 **score∈[0,N-1]**（≥min pass / ≤min−1 fail / [min−1,min) 灰带）；missing_required 显示问题措辞而非 JSON；离线安全与凭证优先级链同 R8.5；题面纪律：选项/等级描述必须编码业务价值排序（材料 ρ=0.25 教训）
+
+**非目标**：评估结果不写回数据库（每次 `can` 现评，保持无状态）；`node ready --eval` 批量评估目前仅聚合布尔 op（choice/score 经 `node can --eval` 逐节点判，混合题型批量留后续）。
 
 ## 2. 数据模型变更（schema v2 → v3）
 
