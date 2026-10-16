@@ -78,14 +78,14 @@ export function createApp(dbFile: string): Context { ... }
 ## 数据模型
 
 - SQLite 唯一事实源；PG 单向导出（sync 镜像 / migrate 迁移）
-- Schema 走 `PRAGMA user_version`（当前 v6）；`synchronize` 永久 false
+- Schema 走 `PRAGMA user_version`（当前 v7：events.level 遥测严重级）；`synchronize` 永久 false
 - 加表九触点 → [docs/conventions.md](docs/conventions.md) §一
 - TypeORM 边界（读走 ORM，写走事务化服务）→ [docs/conventions.md](docs/conventions.md) §五
 
 ## 决策链
 
 ```
-docs/spec.md           需求规格 R1-R8 + 验收标准
+docs/spec.md           需求规格 R1-R13 + 验收标准
 docs/plan.md           里程碑 + 逐版本执行记录（证据链）
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）

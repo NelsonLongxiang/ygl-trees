@@ -217,6 +217,10 @@ export async function main(argv: string[]): Promise<number> {
     rel: "../../packages/ops/tools/src/rels",
   };
   const dispatch = async (): Promise<number> => {
+    const t0 = Date.now();
+    // R10.3: one run id per CLI invocation — same-process events carry it in
+    // their payload so `agent log --run` can reconstruct the invocation.
+    process.env.YGL_RUN_ID = process.env.YGL_RUN_ID || String(Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
     const route = DOMAIN_ROUTES[group];
     if (!route) {
       bad(ctx, `unknown group: ${group}`);
@@ -225,7 +229,24 @@ export async function main(argv: string[]): Promise<number> {
     }
     const mod = require(route);
     const rc = await mod.run(env, action || "", args._.slice(2), args);
-    return typeof rc === "number" ? rc : 0;
+    const code = typeof rc === "number" ? rc : 0;
+    // R10.3: cmd.run ledger row — rc-mapped severity (0→info, 2→warn, else→error)
+    try {
+      db.run(
+        "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+        [
+          `${process.env.YGL_RUN_ID}`,
+          new Date().toISOString(),
+          "cli",
+          "cmd.run",
+          group,
+          String(action || ""),
+          JSON.stringify({ run: process.env.YGL_RUN_ID, group, action: action || "", rc: code, duration_ms: Date.now() - t0 }),
+          code === 0 ? "info" : code === 2 ? "warn" : "error",
+        ]
+      );
+    } catch { /* telemetry best-effort — never fail the command */ }
+    return code;
   };
 
   return dispatch()

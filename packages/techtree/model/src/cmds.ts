@@ -300,22 +300,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const contextPkg = trees.evalContext(tid, key, state, ctxName);
       return (async (): Promise<number> => {
         const evaluated: any[] = [];
+        let usageIn = 0, usageOut = 0; // R10.4: token spend per run
         for (const c of evalConds) {
           const spec = parseEvalSpec(c.value); // envelope (choice/score) or plain question
           const question = spec.q || String(c.name); // R8.7 wording fallback
           if (String(c.op) === "eval-choice") {
-            const m = mapChoiceOutcome(
-              await evalChoice(contextPkg, question, spec.options || {}, token, endpoint),
-              spec.answer || "",
-              passT,
-              failT
-            );
+            const raw = await evalChoice(contextPkg, question, spec.options || {}, token, endpoint);
+            usageIn += raw.usage?.inputTokens ?? 0; usageOut += raw.usage?.outputTokens ?? 0;
+            const m = mapChoiceOutcome(raw, spec.answer || "", passT, failT);
             evaluated.push({ name: c.name, question, type: "choice", answer: spec.answer, ...m });
           } else if (String(c.op) === "eval-score") {
-            const m = mapScoreOutcome(await evalScore(contextPkg, question, spec.levels || [], token, endpoint), spec.min ?? 0);
+            const raw = await evalScore(contextPkg, question, spec.levels || [], token, endpoint);
+            usageIn += raw.usage?.inputTokens ?? 0; usageOut += raw.usage?.outputTokens ?? 0;
+            const m = mapScoreOutcome(raw, spec.min ?? 0);
             evaluated.push({ name: c.name, question, type: "score", min: spec.min, ...m });
           } else {
-            const m = mapOutcome(await evalBoolean(contextPkg, question, token, endpoint), passT, failT);
+            const raw = await evalBoolean(contextPkg, question, token, endpoint);
+            usageIn += raw.usage?.inputTokens ?? 0; usageOut += raw.usage?.outputTokens ?? 0;
+            const m = mapOutcome(raw, passT, failT);
             evaluated.push({ name: c.name, question, type: "boolean", ...m });
           }
         }
@@ -339,10 +341,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         r.evaluated = evaluated;
         r.ok = (r.missing_required as string[]).length === 0 && (r.blocked_by as string[]).length === 0 && pendingList.length === 0;
         try {
+          const run = process.env.YGL_RUN_ID || "";
           db.run(
-            "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,'info')",
             [shortId(["eval.gate", "node", key], 12), nowIso(), "cli", "eval.gate", "node", key,
-             JSON.stringify(evaluated.map((e) => ({ name: e.name, outcome: e.outcome, p: e.p ?? null })))]
+             JSON.stringify({
+               conds: evaluated.map((e) => ({ name: e.name, type: e.type, outcome: e.outcome, p: e.p ?? null, score: e.score ?? null })),
+               usage: { inputTokens: usageIn, outputTokens: usageOut },
+               ...(run ? { run } : {}),
+             })]
           );
         } catch { /* audit best-effort */ }
         if (ctx.json) {
@@ -412,6 +419,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return (async (): Promise<number> => {
         const promoted: any[] = [];
         const evalPending: any[] = [];
+        let usageIn = 0, usageOut = 0; // R10.4
         for (const cand of candidates) {
           const ctxPkg = trees.evalContext(tid, cand.key, state, ctxName);
           // 0.27: mixed question types ride ONE request per node (protocol native)
@@ -425,6 +433,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             token,
             endpoint
           );
+          usageIn += (res as any).usage?.inputTokens ?? 0;
+          usageOut += (res as any).usage?.outputTokens ?? 0;
           if (!res.ok) {
             evalPending.push({ key: cand.key, results: cand.conds.map((c: any) => ({ name: c.name, outcome: "pending", reason: res.error })) });
             continue;
@@ -450,10 +460,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         const all = [...rows, ...promoted];
         try {
+          const run = process.env.YGL_RUN_ID || "";
           db.run(
-            "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,'info')",
             [shortId(["eval.ready", "tree", tid], 12), nowIso(), "cli", "eval.ready", "tree", tid,
-             JSON.stringify({ promoted: promoted.map((p) => p.key), pending: evalPending.map((p) => p.key) })]
+             JSON.stringify({
+               promoted: promoted.map((p) => p.key), pending: evalPending.map((p) => p.key),
+               usage: { inputTokens: usageIn, outputTokens: usageOut },
+               ...(run ? { run } : {}),
+             })]
           );
         } catch { /* audit best-effort */ }
         if (ctx.json) {

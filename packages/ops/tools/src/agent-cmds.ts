@@ -137,14 +137,52 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     case "log": {
-      const rows = store.tail(Number(args.flags.limit || 30));
-      table(ctx, rows, ["ts", "actor", "kind", "entity", "id", "payload"], [
-        "ts",
-        "actor",
-        "kind",
-        "entity",
-        "entity_id",
-        "payload",
+      // R10.5: --level filter (info|warn|error), --run aggregation,
+      // --usage token spend summary over eval events
+      const level = String(args.flags.level || "");
+      const run = String(args.flags.run || "");
+      if (args.flags.usage) {
+        const rows = env.db.all(`SELECT payload FROM events WHERE kind IN ('eval.gate','eval.ready')`);
+        let inputTokens = 0, outputTokens = 0, calls = 0;
+        for (const r of rows) {
+          try {
+            const j = JSON.parse(r.payload || "{}");
+            const u = j.usage || {};
+            if (u.inputTokens || u.outputTokens) {
+              inputTokens += Number(u.inputTokens) || 0;
+              outputTokens += Number(u.outputTokens) || 0;
+              calls++;
+            }
+          } catch { /* malformed legacy payload */ }
+        }
+        const summary = { calls, inputTokens, outputTokens };
+        if (ctx.json) {
+          console.log(JSON.stringify(summary, null, 2));
+          return 0;
+        }
+        head(ctx, "eval token spend");
+        out(ctx, `  calls ${calls} · input ${inputTokens} tok · output ${outputTokens} tok`);
+        return 0;
+      }
+      let sql = "SELECT * FROM events WHERE 1=1";
+      const params: any[] = [];
+      if (level) {
+        sql += " AND level=?";
+        params.push(level);
+      }
+      if (run) {
+        sql += " AND payload LIKE ?";
+        params.push(`%"run":"${run}"%`);
+      }
+      sql += " ORDER BY ts DESC LIMIT ?";
+      params.push(Number(args.flags.limit || 30));
+      const rows = env.db.all(sql, params);
+      if (ctx.json) {
+        console.log(JSON.stringify(rows, null, 2));
+        return 0;
+      }
+      table(ctx, rows, ["ts", "level", "kind", "entity", "id", "payload"], [
+        "ts", "level", "kind", "entity", "entity_id", "payload",
       ]);
       return 0;
     }

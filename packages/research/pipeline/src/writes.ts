@@ -24,8 +24,13 @@ export interface WriteResult {
   dup: boolean;
 }
 
-async function logEvent(mgr: EntityManager, kind: string, entity: string, entityId: string, payload: any): Promise<void> {
-  const p = typeof payload === "string" ? payload : JSON.stringify(payload ?? "");
+async function logEvent(mgr: EntityManager, kind: string, entity: string, entityId: string, payload: any, level: "info" | "warn" | "error" = "info"): Promise<void> {
+  // R10.3: object payloads carry the run id so `agent log --run` can
+  // reconstruct one CLI invocation; R10.2 severity is pre-mapped here.
+  let obj = typeof payload === "string" ? payload : payload ?? "";
+  const run = process.env.YGL_RUN_ID || "";
+  if (run && typeof obj === "object") obj = { ...obj, run };
+  const p = typeof obj === "string" ? obj : JSON.stringify(obj);
   await mgr.insert(Event, {
     id: shortId([kind, entity], 12),
     ts: nowIso(),
@@ -34,6 +39,7 @@ async function logEvent(mgr: EntityManager, kind: string, entity: string, entity
     entity,
     entityId,
     payload: p,
+    level,
   });
 }
 

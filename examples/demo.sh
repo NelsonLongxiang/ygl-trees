@@ -177,6 +177,15 @@ DUP=$($Y rel add node:steel kb:"$K" --rel evidenced-by --json | node -e "let s='
 if [ "$DUP" = "true" ]; then echo "  ✓ rel add 幂等（同四元组 duplicate）"; else echo "  ✗ rel add not idempotent"; exit 1; fi
 RL=$($Y rel list --src node:steel --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.length===1&&r[0].rel==='evidenced-by'&&r[0].dst_display?'ok':JSON.stringify(r))})")
 if [ "$RL" = "ok" ]; then echo "  ✓ rel list --src 双向过滤 + 显示名解析"; else echo "  ✗ rel list: $RL"; exit 1; fi
-$Y rel add node:zzz kb:"$K" >/dev/null 2>&1; RC1=$?
-$Y rel add bogus:zzz kb:"$K" >/dev/null 2>&1; RC2=$?
+RC1=0; $Y rel add node:zzz kb:"$K" >/dev/null 2>&1 || RC1=$?
+RC2=0; $Y rel add bogus:zzz kb:"$K" >/dev/null 2>&1 || RC2=$?
 if [ "$RC1" = "1" ] && [ "$RC2" = "2" ]; then echo "  ✓ 引用语义：404→rc1 坏类型→rc2"; else echo "  ✗ rc 语义: $RC1/$RC2"; exit 1; fi
+
+echo "── 10. telemetry（spec R10：树域留痕 + cmd.run + level）"
+NA=$($Y agent log --limit 200 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(e=>e.kind==='node.add')&&r.some(e=>e.kind==='node.link'))})")
+if [ "$NA" = "true" ]; then echo "  ✓ 树域留痕：node.add/node.link 进 events（0.12 例外已推翻）"; else echo "  ✗ 树域留痕缺失"; exit 1; fi
+$Y node show no-such-node >/dev/null 2>&1 || true
+ER=$($Y agent log --level error --limit 5 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);const c=r.find(e=>e.kind==='cmd.run'&&e.entity==='node');console.log(!!c&&JSON.parse(c.payload).rc===1)})")
+if [ "$ER" = "true" ]; then echo "  ✓ cmd.run 事件：失败命令留 error 级（rc 映射 level）"; else echo "  ✗ cmd.run error 缺失"; exit 1; fi
+LV=$($Y agent log --limit 3 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.every(e=>e.level==='info'||e.level==='warn'||e.level==='error'))})")
+if [ "$LV" = "true" ]; then echo "  ✓ events.level 列生效（schema v7）"; else echo "  ✗ level 列异常"; exit 1; fi

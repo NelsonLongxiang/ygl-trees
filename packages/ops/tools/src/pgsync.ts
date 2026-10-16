@@ -259,7 +259,8 @@ CREATE TABLE runs (
   started text NOT NULL, finished text DEFAULT '', rc integer, output text DEFAULT '');
 CREATE TABLE events (
   id text PRIMARY KEY, ts text NOT NULL, actor text NOT NULL DEFAULT 'cli', kind text NOT NULL,
-  entity text DEFAULT '', entity_id text DEFAULT '', payload text DEFAULT '');
+  entity text DEFAULT '', entity_id text DEFAULT '', payload text DEFAULT '',
+  level text NOT NULL DEFAULT 'info');
 `;
 
 const MIGRATE_INDEXES = `

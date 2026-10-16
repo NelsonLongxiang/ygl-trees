@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.30.0（2026-10-17）遥测地基（spec R10）
+- **树域留痕**（推翻 0.12"不写 events"例外）：node.add/link/unlink/cond/delete/unlock/lock 同事务写 events——解锁时刻进账本，R11 时间轴的地基
+- **schema v7**：events 加 `level`（info|warn|error，默认 info）；迁移 v6→v7（ALTER + 表存在守卫）；实体快照/PG MIGRATE_DDL/doctor 同步——并修复 doctor schema 检查硬编码 v6 的漏网触点（改读 SCHEMA_VERSION 单一事实源）
+- **run 关联**：每条 CLI 命令一条 `cmd.run` 事件（group/action/rc/duration_ms；rc 映射 level：0→info/2→warn/else→error）；YGL_RUN_ID 注入同进程事件 payload.run——`agent log --run` 可重建单次调用
+- **eval usage 捕获**（R10.4）：postEval 透传 gateway usage → 四题型返回值 → eval.gate/eval.ready 事件 {inputTokens, outputTokens}；**真实网关验证：1 call · 2764 in / 70 out tok 落账**
+- **agent log 升级**：--level 过滤、--run 聚合、--usage 汇总（`agent log --usage` → calls/input/output tokens）
+- 单测 11 例（v7 迁移/level 默认与显式/树域四操作留痕+run 注入）+ demo 断言组 10；AGENTS.md 口径 v6→v7、R1-R8→R1-R13
+
 ## 0.29.0（2026-10-17）关联织物通电（spec R9）
 - **`rel` 命令组**：万向关联表 `relations` 从 kb↔kb 孤岛通电为八类实体（node/claim/evidence/source/query/kb/artifact/skill）任意两端挂接——引用语法 `<type>:<ref>`（`node:<tree>/<key>` 或当前树裸 key；kb/artifact 支持 id 或 title；skill 按 name）；`rel add [--rel t]` 幂等（同四元组 duplicate rc=0）、`rel rm`、`rel list [--src/--dst/--rel]` 双向过滤 + 对端显示名解析；404→rc1、坏类型→rc2
 - **WebUI 关系叠加**：`/api/node` 返回 `related[]`（双向命中 + 类型/显示名/方向），节点详情面板新增 related 区（rel 类型加粗 + 对端摘要）——"这个节点依据什么证据、关联什么知识"面板直达

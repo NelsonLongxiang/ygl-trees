@@ -21,6 +21,24 @@ async function markDirty(mgr: EntityManager, treeId: string): Promise<void> {
   ]);
 }
 
+/** R10.1 (0.30): tree-domain audit trail — overturns the 0.12 "no events"
+ *  exception. Same shape as the research-domain logEvent (raw SQL here since
+ *  treeWrites predates the entity snapshots); object payloads carry the run id. */
+async function logEvent(
+  mgr: EntityManager,
+  kind: string,
+  entityId: string,
+  payload: Record<string, any>,
+  level: "info" | "warn" | "error" = "info"
+): Promise<void> {
+  const run = process.env.YGL_RUN_ID || "";
+  const body = run ? JSON.stringify({ ...payload, run }) : JSON.stringify(payload ?? {});
+  await mgr.query(
+    `INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)`,
+    [shortId([kind, entityId], 12), nowIso(), "cli", kind, "node", entityId, body, level]
+  );
+}
+
 async function reaches(mgr: EntityManager, treeId: string, fromId: string, toId: string): Promise<boolean> {
   const rows = (await mgr.query(
     `SELECT 1 AS hit FROM node_closure WHERE tree_id=? AND ancestor=? AND descendant=? AND depth>0`,
@@ -184,6 +202,7 @@ export async function nodeAdd(
       ngram(`${o.key} ${name} ${o.tags || ""}`),
     ]);
     await markDirty(mgr, treeId);
+    await logEvent(mgr, "node.add", id, { tree: treeId, key: o.key, name, kind: o.kind || "tech", tier: o.tier ?? 0 });
     const rows = (await mgr.query(`SELECT * FROM nodes WHERE id=?`, [id])) as any[];
     return { row: rows[0], created: true };
   });
@@ -196,6 +215,7 @@ export async function nodeDel(ds: DataSource, treeId: string, keyOrId: string): 
     await mgr.query(`DELETE FROM nodes_fts WHERE id=?`, [rows[0].id]);
     await mgr.query(`DELETE FROM nodes WHERE id=?`, [rows[0].id]); // FK cascades edges/closure/conds/state
     await markDirty(mgr, treeId);
+    await logEvent(mgr, "node.delete", rows[0].id, { tree: treeId, key: keyOrId }, "warn");
   });
 }
 
@@ -242,6 +262,7 @@ export async function link(
       [id, treeId, p[0].id, c[0].id, rel, mode, o.required === false ? 0 : 1, o.min_level ?? 1, o.weight ?? 1, o.note || ""]
     );
     await rebuildClosure(mgr, treeId);
+    await logEvent(mgr, "node.link", id, { tree: treeId, parent: parentKey, child: childKey, rel, mode, required: o.required !== false });
     const rows = (await mgr.query(`SELECT * FROM node_edges WHERE id=?`, [id])) as any[];
     return rows[0];
   });
@@ -254,6 +275,7 @@ export async function unlink(ds: DataSource, treeId: string, parentKey: string, 
     if (!p.length || !c.length) throw new Error("node not found");
     await mgr.query(`DELETE FROM node_edges WHERE parent_id=? AND child_id=? AND rel=?`, [p[0].id, c[0].id, rel]);
     await rebuildClosure(mgr, treeId);
+    await logEvent(mgr, "node.unlink", `${p[0].id}->${c[0].id}`, { tree: treeId, parent: parentKey, child: childKey, rel });
   });
 }
 
@@ -287,6 +309,7 @@ export async function condAdd(
       [id, n[0].id, o.name, kind, o.expr || o.name, o.op || ">=", o.value || "", o.required === false ? 0 : 1, o.effect || "gate", o.weight ?? 1, o.note || ""]
     );
     await markDirty(mgr, treeId);
+    await logEvent(mgr, "node.cond", id, { tree: treeId, node: keyOrId, name: o.name, kind, op: o.op || ">=", required: o.required !== false });
     const rows = (await mgr.query(`SELECT * FROM node_conditions WHERE id=?`, [id])) as any[];
     return rows[0];
   });
@@ -308,6 +331,10 @@ export async function stateSet(
        ON CONFLICT(tree_id,context,node_id) DO UPDATE SET status=excluded.status, level=excluded.level, updated=excluded.updated`,
       [treeId, context, n[0].id, status, level, status === "unlocked" ? 1 : 0, nowIso()]
     );
+    // R10.1: unlock/lock are the timeline anchors for R11's time axis
+    await logEvent(mgr, status === "unlocked" ? "node.unlock" : "node.lock", n[0].id, {
+      tree: treeId, node: keyOrId, status, context,
+    });
   });
 }
 

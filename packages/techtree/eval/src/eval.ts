@@ -51,6 +51,7 @@ export function evalToken(): string {
 export interface EvalBooleanResult {
   ok: boolean;
   p?: number;
+  usage?: any;
   error?: string;
 }
 
@@ -65,7 +66,7 @@ export async function evalBoolean(state: unknown, question: string, token: strin
   if (!r.ok) return { ok: false, error: r.error };
   const p = r.answers.q?.probability;
   if (typeof p !== "number") return { ok: false, error: "malformed answer: no boolean probability" };
-  return { ok: true, p };
+  return { ok: true, p, usage: r.usage };
 }
 
 export type EvalOutcome = "pass" | "fail" | "pending";
@@ -116,7 +117,7 @@ async function postEval(
   questions: Record<string, any>,
   token: string,
   endpoint: string
-): Promise<{ ok: true; answers: any } | { ok: false; error: string }> {
+): Promise<{ ok: true; answers: any; usage?: any } | { ok: false; error: string }> {
   const url = resolveEndpoint(endpoint);
   const body = JSON.stringify({ state, questions });
   for (let attempt = 0; ; attempt++) {
@@ -142,7 +143,8 @@ async function postEval(
       if (!res.ok) return { ok: false, error: `HTTP ${res.status} (protocol/auth error — no retry)` };
       const j: any = await res.json();
       if (!j?.answers) return { ok: false, error: "malformed response: no answers" };
-      return { ok: true, answers: j.answers };
+      // R10.4: gateway reports token usage — capture it for the telemetry ledger
+      return { ok: true, answers: j.answers, usage: j.usage ?? undefined };
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (attempt < 3 && /timeout|abort|network|fetch failed|ECONN/i.test(msg)) {
@@ -163,6 +165,7 @@ export interface EvalChoiceResult {
   ok: boolean;
   choice?: string;
   probabilities?: Record<string, number>;
+  usage?: any;
   error?: string;
 }
 
@@ -180,7 +183,7 @@ export async function evalChoice(
   if (!r.ok) return { ok: false, error: r.error };
   const a = r.answers.q ?? {};
   if (typeof a.choice !== "string" || !a.probabilities) return { ok: false, error: "malformed answer: no choice/probabilities" };
-  return { ok: true, choice: a.choice, probabilities: a.probabilities };
+  return { ok: true, choice: a.choice, probabilities: a.probabilities, usage: r.usage };
 }
 
 /** Tri-state on the EXPECTED answer's probability — same thresholds and
@@ -207,6 +210,7 @@ export interface EvalScoreResult {
   ok: boolean;
   score?: number;
   probabilities?: Record<string, number>;
+  usage?: any;
   error?: string;
 }
 
@@ -222,7 +226,7 @@ export async function evalScore(
   if (!r.ok) return { ok: false, error: r.error };
   const a = r.answers.q ?? {};
   if (typeof a.score !== "number" || !a.probabilities) return { ok: false, error: "malformed answer: no score/probabilities" };
-  return { ok: true, score: a.score, probabilities: a.probabilities };
+  return { ok: true, score: a.score, probabilities: a.probabilities, usage: r.usage };
 }
 
 /** Tri-state on the ordinal scale: score >= min → pass; score <= min-1 →
@@ -285,7 +289,7 @@ export async function evalMixed(
   questions: MixedQuestion[],
   token: string,
   endpoint = GATEWAY_URL
-): Promise<{ ok: true; results: MixedResult[] } | { ok: false; error: string }> {
+): Promise<{ ok: true; results: MixedResult[]; usage?: any } | { ok: false; error: string }> {
   if (!questions.length) return { ok: true, results: [] };
   if (!token) return { ok: false, error: NO_TOKEN };
   const qmap: Record<string, any> = {};
@@ -314,7 +318,7 @@ export async function evalMixed(
       results.push({ ok: true, type: "score", score: a.score, probabilities: a.probabilities });
     }
   }
-  return { ok: true, results };
+  return { ok: true, results, usage: r.usage };
 }
 
 /** R8.4 tri-state mapping. Thresholds come from config (eval.pass_threshold

@@ -25,6 +25,10 @@ export class Event {
 
   @Column({ name: "payload", type: "text" })
   payload!: string;
+
+  /** v7 telemetry severity: info | warn | error (spec R10.2) */
+  @Column({ name: "level", type: "text", default: "info" })
+  level!: string;
 }
 
 export const CORE_ENTITIES = [Event];

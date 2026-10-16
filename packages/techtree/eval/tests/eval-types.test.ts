@@ -29,7 +29,7 @@ const stub = http.createServer((req, res) => {
       if (type === "score") answers[q] = { type, score: 2.31, probabilities: { "0": 0.02, "1": 0.3, "2": 0.68 } };
     }
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ answers, rounding: { probabilityDecimals: 2, scoreDecimals: 2 }, usage: {}, warnings: [] }));
+    res.end(JSON.stringify({ answers, rounding: { probabilityDecimals: 2, scoreDecimals: 2 }, usage: { inputTokens: 669, outputTokens: 85 }, warnings: [] }));
   });
 });
 afterAll(() => new Promise((r) => stub.close(r)));
@@ -66,10 +66,12 @@ describe("stub gateway：协议形状与真实 HTTP 路径", () => {
     expect(mapScoreOutcome(r, 3).outcome).toBe("pending"); // 2.31 ∈ [2,3)
     expect(mapScoreOutcome(r, 4).outcome).toBe("fail"); // 2.31 ≤ 3
   });
-  it("evalBoolean 走共享传输层仍工作（回归）", async () => {
+  it("evalBoolean 走共享传输层仍工作（回归 + usage 透传）", async () => {
     const url = await stubUrl();
     const r = await evalBoolean({ ctx: 1 }, "完成了吗", "t", url);
-    expect(r).toEqual({ ok: true, p: 0.95 });
+    expect(r.ok).toBe(true);
+    expect(r.p).toBe(0.95);
+    expect(r.usage).toEqual({ inputTokens: 669, outputTokens: 85 });
   });
   it("无 token 离线安全（不出网）", async () => {
     const r = await evalChoice({}, "q", { a: "x" }, "");

@@ -12,6 +12,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
+import { SCHEMA_VERSION } from "../../../core/database/src/db";
 
 interface Check {
   name: string;
@@ -25,7 +26,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
   // ── 1. Schema version ──
   const sv = db.get("PRAGMA user_version")?.user_version ?? 0;
-  const LATEST = 6;
+  const LATEST = SCHEMA_VERSION; // single source of truth in db.ts (v7 era)
   checks.push({
     name: "schema_version",
     status: sv === LATEST ? "pass" : sv < LATEST ? "warn" : "fail",

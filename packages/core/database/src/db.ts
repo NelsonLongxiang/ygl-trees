@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1 } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -327,7 +327,8 @@ CREATE TABLE IF NOT EXISTS events (
   kind      TEXT NOT NULL,
   entity    TEXT DEFAULT '',
   entity_id TEXT DEFAULT '',
-  payload   TEXT DEFAULT ''
+  payload   TEXT DEFAULT '',
+  level     TEXT NOT NULL DEFAULT 'info'   -- v7 telemetry severity: info|warn|error
 );
 
 CREATE INDEX IF NOT EXISTS idx_sources_project  ON sources(project_id);
@@ -378,9 +379,19 @@ export class DB {
       // ALTER + backfill BEFORE SCHEMA_SQL creates its unique indexes
       // (they would fail on empty-hash duplicates).
       if (v > 0 || tablesPreExist) this.upgrade2to3();
+      if ((v > 0 && v < 7) || (v === 0 && tablesPreExist)) this.upgrade6to7();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     }
+  }
+
+  /** v6 -> v7: telemetry severity on events (spec R10.2). Existing rows are
+   *  info by definition — the audit ledger has only ever carried outcomes. */
+  private upgrade6to7(): void {
+    const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='events'");
+    if (!hasTable) return; // SCHEMA_SQL below creates it fresh (with level)
+    const has = this.get("SELECT 1 FROM pragma_table_info('events') WHERE name='level'");
+    if (!has) this.db.exec(`ALTER TABLE events ADD COLUMN level TEXT NOT NULL DEFAULT 'info'`);
   }
 
   /**
