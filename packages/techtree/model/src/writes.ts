@@ -268,12 +268,12 @@ export async function link(
     const duplicate = before.length > 0;
     const id = duplicate ? before[0].id : shortId(["edge", p[0].id, c[0].id, rel], 12);
     await mgr.query(
-      `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note)
+      `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note,created)
        VALUES(?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(parent_id,child_id,rel) DO UPDATE SET
          mode=excluded.mode, required=excluded.required, min_level=excluded.min_level,
          weight=excluded.weight, note=excluded.note`,
-      [id, treeId, p[0].id, c[0].id, rel, mode, o.required === false ? 0 : 1, o.min_level ?? 1, o.weight ?? 1, o.note || ""]
+      [id, treeId, p[0].id, c[0].id, rel, mode, o.required === false ? 0 : 1, o.min_level ?? 1, o.weight ?? 1, o.note || "", nowIso()]
     );
     await rebuildClosure(mgr, treeId);
     await logEvent(mgr, "node.link", id, { tree: treeId, parent: parentKey, child: childKey, rel, mode, required: o.required !== false, duplicate });
@@ -489,7 +489,7 @@ export async function importTree(
       const pid = nodeId.get(String(e.parent))!;
       const cid = nodeId.get(String(e.child))!;
       await mgr.query(
-        `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note)
+        `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note,created)
          VALUES(?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(parent_id,child_id,rel) DO UPDATE SET
            mode=excluded.mode, required=excluded.required, min_level=excluded.min_level,

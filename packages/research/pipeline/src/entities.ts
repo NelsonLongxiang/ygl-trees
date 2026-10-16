@@ -130,6 +130,9 @@ export class Source {
   @Column({ name: "retrieved_at", type: "text" })
   retrievedAt!: string;
 
+  @Column({ name: "created", type: "text", nullable: true })
+  created?: string;
+
   @ManyToOne(() => Project, (p) => p.sources, { createForeignKeyConstraints: false })
   @JoinColumn({ name: "project_id" })
   project?: Project;
@@ -222,7 +225,8 @@ export class Claim {
   @Column({ name: "created", type: "text" })
   created!: string;
 
-  @ManyToOne(() => Project, (p) => p.claims, { createForeignKeyConstraints: false })
+  @Column({ name: "updated", type: "text", nullable: true })
+  updated?: string;
   @JoinColumn({ name: "project_id" })
   project?: Project;
 

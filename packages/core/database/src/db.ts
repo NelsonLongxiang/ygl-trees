@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1 } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -132,7 +132,8 @@ CREATE TABLE IF NOT EXISTS claims (
   status       TEXT NOT NULL DEFAULT 'unverified', -- unverified|supported|refuted|contested
   confidence   TEXT NOT NULL DEFAULT 'B',
   content_hash TEXT NOT NULL DEFAULT '',           -- sha1(text): idempotent writes
-  created      TEXT NOT NULL
+  created      TEXT NOT NULL,
+  updated      TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS claim_evidence (
   claim_id    TEXT NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
@@ -295,6 +296,7 @@ CREATE TABLE IF NOT EXISTS relations (
   dst_type TEXT NOT NULL, dst_id TEXT NOT NULL,
   rel      TEXT NOT NULL DEFAULT 'related',
   weight   REAL NOT NULL DEFAULT 1,
+  created  TEXT NOT NULL DEFAULT '',
   UNIQUE(src_type, src_id, dst_type, dst_id, rel)
 );
 
@@ -459,6 +461,7 @@ export class DB {
       if (v > 0 || tablesPreExist) this.upgrade2to3();
       if ((v > 0 && v < 7) || (v === 0 && tablesPreExist)) this.upgrade6to7();
       if ((v > 0 && v < 8) || (v === 0 && tablesPreExist)) this.upgrade7to8();
+      if ((v > 0 && v < 9) || (v === 0 && tablesPreExist)) this.upgrade8to9();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     }
@@ -471,6 +474,31 @@ export class DB {
     if (!hasTable) return;
     const has = this.get("SELECT 1 FROM pragma_table_info('artifacts') WHERE name='meta'");
     if (!has) this.db.exec(`ALTER TABLE artifacts ADD COLUMN meta TEXT NOT NULL DEFAULT ''`);
+  }
+
+  /** v8 -> v9 (0.58): time is a critical dimension — six tables gain
+   *  created/updated columns, backfilled from events when possible. */
+  private upgrade8to9(): void {
+    const now = new Date().toISOString();
+    const addCol = (table: string, col: string) => {
+      const has = this.get(`SELECT 1 FROM pragma_table_info('${table}') WHERE name='${col}'`);
+      if (!has) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+    };
+    addCol("sources", "created");
+    addCol("claims", "updated");
+    addCol("artifacts", "updated");
+    addCol("node_edges", "created");
+    addCol("node_conditions", "created");
+    addCol("relations", "created");
+    // Backfill from events where traceable; fall back to created/current time
+    try {
+      this.db.exec(`UPDATE sources SET created=COALESCE((SELECT MIN(e.ts) FROM events e WHERE e.kind='source.add' AND e.entity_id=sources.id),'${now}') WHERE created='' OR created IS NULL`);
+      this.db.exec(`UPDATE claims SET updated=COALESCE((SELECT MAX(e.ts) FROM events e WHERE e.kind='claim.resolve' AND e.entity_id=claims.id),created) WHERE updated='' OR updated IS NULL`);
+      this.db.exec(`UPDATE artifacts SET updated=COALESCE((SELECT MAX(e.ts) FROM events e WHERE e.kind LIKE 'artifact%' AND e.entity_id=artifacts.id),created) WHERE updated='' OR updated IS NULL`);
+      this.db.exec(`UPDATE node_edges SET created='${now}' WHERE created='' OR created IS NULL`);
+      this.db.exec(`UPDATE node_conditions SET created='${now}' WHERE created='' OR created IS NULL`);
+      this.db.exec(`UPDATE relations SET created='${now}' WHERE created='' OR created IS NULL`);
+    } catch { /* best-effort backfill */ }
   }
 
   /** v6 -> v7: telemetry severity on events (spec R10.2). Existing rows are

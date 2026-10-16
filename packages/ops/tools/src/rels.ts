@@ -108,7 +108,7 @@ export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "re
     }
     const id = shortId(["rel", src.id, dst.id, rel], 10);
     await mgr.query(
-      `INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight) VALUES(?,?,?,?,?,?,1)`,
+      `INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created)) VALUES(?,?,?,?,?,?,1)`,
       [id, src.type, src.id, dst.type, dst.id, rel]
     );
     await mgr.query(`INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)`, [

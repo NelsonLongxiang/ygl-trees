@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.58.0（2026-10-17）时间字段补齐（schema v9）——时间是不可缺的维度
+- **用户需求**：「时间是非常重要的指标」——审计发现 25 表中仅 4 表有完整 created+updated（16%），12 表完全无时间字段（48%）
+- **schema v8→v9**：六表七列新增——`sources.created`（录入时间≠抓取时间）、`claims.updated`（resolve 时更新）、`artifacts.updated`（版本升级时更新）、`node_edges.created`、`node_conditions.created`、`relations.created`
+- **迁移策略**：ALTER TABLE ADD COLUMN + **events 表回填**（sources←source.add 最早记录 / claims←claim.resolve 最新记录 / artifacts←artifact 系列最新记录）；结构表无 events 可溯，回填当前时间
+- **实体 + 写服务同步**：Source/Claim 实体加 created/updated 列声明；sourceAdd 写 created、claimResolve 更新 updated、treeWrites.link 写 created
+- **实测**：新 source `created=2026-10-16 22:27:36` ✓ · claim resolve 后 `updated=22:27:38`（变化可观测）✓ · 存量数据 11/11 回填 ✓
+
 ## 0.57.0（2026-10-17）收尾审计——修复一个从未生效的修复 + 记忆 v8
 - **修复：`neverBuiltDependencies` 从未生效**——0.52 把它放在 `package.json` 的 `pnpm` 字段里，但 **pnpm 9 不再读那个位置**（每次 install 都打印警告说 "ignored"）；现在移到 `pnpm-workspace.yaml` 的正确位置，better-sqlite3 豁免实际生效
 - **修复：tsdown `--external` → `--deps.never-bundle`**——消除 deprecation 警告

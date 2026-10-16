@@ -110,6 +110,8 @@ export async function sourceAdd(
     s.confidence = o.confidence || "B";
     s.tags = o.tags || "";
     s.retrievedAt = nowIso();
+    // v9: creation timestamp (distinct from retrievedAt which is fetch time)
+    s.created = nowIso();
     await mgr.save(s);
     await mgr.query(`INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)`, [
       s.id, title, abstract_, content, ngram(`${title} ${abstract_} ${content} ${o.tags || ""}`),
@@ -236,7 +238,8 @@ export async function claimLink(
 
 export async function claimResolve(ds: DataSource, claimId: string, status: string, note = ""): Promise<void> {
   return ds.transaction(async (mgr) => {
-    await mgr.update(Claim, { id: claimId }, { status });
+    // v9: update the timestamp when the claim is resolved
+    await mgr.update(Claim, { id: claimId }, { status, updated: nowIso() } as any);
     await logEvent(mgr, "claim.resolve", "claim", claimId, `${status}${note ? " | " + note : ""}`);
   });
 }
