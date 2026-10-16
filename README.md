@@ -272,7 +272,7 @@ pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发�
 ygl-trees --version    # 打印版本号
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
-ygl-trees doctor   # 工作区健康检查 9 项（schema/索引/FTS/重复/孤儿/config/锁/eval 信封/插件 profile）
+ygl-trees doctor   # 工作区健康检查 9 项（--fix 一键安全修复）（schema/索引/FTS/重复/孤儿/config/锁/eval 信封/插件 profile）
 ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）
 ygl-trees webui export --out d.html   # 零依赖单文件仪表盘（离线可开）
 ```

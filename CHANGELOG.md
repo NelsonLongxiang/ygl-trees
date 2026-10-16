@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.61.0（2026-10-17）终态同步——0.57-0.60 变更同步到技能面 + README
+- **技能更新**：quickstart 补 kb rm / doctor --fix / webui --host / PG preflight；research 补 --relevance 整数校验；knowledge 补 kb rm
+- **README**：kb rm / --host / --fix 新命令
+- readme:verify 34/34 全绿
+
 ## 0.60.0（2026-10-17）用户六条反馈全修——lockfile 卫生 + kb rm + webui --host + PG 预检 + doctor --fix
 - **① lockfile 卫生**：`.npmrc` 创建（`auto-install-peers=false`，消除 pnpm 9 默认值差异导致的 lockfile 漂移）；lockfile 清理 tmp 绝对路径污染（-381 行）
 - **② relevance 值域**：已修（0.59），确认生效

@@ -1,13 +1,13 @@
 ---
 name: ygl-trees-research
 description: >-
-  用 ygl-trees 研究管线做证据先行的研究：检索式登记（query add）、来源采集（source add /
+  用 ygl-trees 研究管线做证据先行的研究：检索式登记（query add）、来源采集（source add（--relevance 只收整数 0-5，非整数 rc=2） /
   source fetch 网页抓取）、原文摘录（evidence add）、断言与证据链接（claim add / link /
   resolve 人工仲裁）、query↔source 召回关联（query attach）、产出证据支撑的报告
   （produce outline/section/report/export）。
   触发词：研究、调研、evidence、证据、claim、断言、来源、source、引文、仲裁、resolve、
   报告、report、文献、抓取、fetch。
-version: 0.56.0
+version: 0.61.0
 tags: ygl-trees,research,evidence,claim,report
 ---
 

@@ -9,7 +9,7 @@ description: >-
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
-version: 0.56.0
+version: 0.61.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -31,6 +31,17 @@ node dist/apps/cli/src/bin.js agent brief       # 我在哪、有什么、下一
 - **--json 纯净**：写 = 单个 JSON 对象（重复带 `duplicate: true`）；读 = 数组/对象
 - **写入幂等**：claim/evidence/query/kb/job 按内容 hash 判重；`--force` 显式保留重复
 - 输出字段名是冻结契约，snake_case
+
+## 2b. 运维命令速查
+
+```bash
+ygl-trees doctor           # 9 项健康检查
+ygl-trees doctor --fix     # 一键安全修复（脏索引标记 + 陈旧锁清理）
+ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
+ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
+```
+
+PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
 
 ## 3. 健康检查与任务
 
