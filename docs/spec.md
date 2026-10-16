@@ -170,6 +170,7 @@
 
 - v2 老库首次被 v3 CLI 打开时自动迁移，无损、无需人工介入；迁移在事务内
 - JSON 输出结构只增字段不改字段名；退出码语义：0 成功（含"重复已存在"）、1 运行错误、2 用法错误
+- **flag 校验是冻结契约**（0.54 定契）：裸 flag（`--flag` 无值）→ rc=2 `needs a value`，**绝不落库为 `"true"` 字符串**；枚举型 flag（`--kind`/`--op`/`--effect`/`--confidence`/`--stance`/`--rel`/`--mode`）非法值 → rc=2 `must be one of ...`，**不触发任何写入**。回归护栏：`pnpm contract:audit` contract 6（11 项）机械断言
 - **`--json` 是机器通道，成功与失败同样可整体 `JSON.parse`**（0.44 定契）：成功按命令语义输出对象/数组；
   失败输出单对象 `{"error": "<msg>"}`（`error` 为非空字符串），失败类别仍由退出码承载（1 运行 / 2 用法）；
   字段一律 snake_case（camelCase 泄漏视为违约）；人类用法/提示文本只在**非 json 模式**输出。

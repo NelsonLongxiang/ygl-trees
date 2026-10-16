@@ -167,6 +167,31 @@ json_err "claim link bad evidence" 1 -- $Y research claim link no-such no-such2
 json_err "usage: node add"        2 -- $Y node add
 json_err "usage: unknown group"   2 -- $Y no-such-group-at-all
 
+# ── flag validation: bare flags and bad enums must be rejected (rc=2),
+#    never silently stored as "true"/"nonsense" (0.54 cold-user audit class).
+flag_reject() { # flag_reject <desc> -- cmd...
+  local desc="$1"; shift 2
+  local out rc; out=$("$@" 2>&1); rc=$?
+  if [ "$rc" = "2" ] && echo "$out" | grep -q "needs a value\|must be one of"; then
+    pass "flag reject: $desc"
+  else
+    fail "flag reject: $desc" "rc=$rc (want 2), msg: $(echo "$out" | head -1 | cut -c1-50)"
+  fi
+}
+
+echo "── contract 6: flag validation (bare + enum → rc=2, no write)"
+flag_reject "source --abstract (bare)"   -- $Y research source add --title T --url https://e.com/v --abstract
+flag_reject "claim --confidence (bare)"  -- $Y research claim add T --confidence
+flag_reject "kb --body (bare)"           -- $Y kb add --title T --body
+flag_reject "kb --tags (bare)"           -- $Y kb add --title T --body B --tags
+flag_reject "node --name (bare)"         -- $Y node add fn1 --name
+flag_reject "node --kind (bare)"         -- $Y node add fn2 --kind
+flag_reject "cond --value (bare)"        -- $Y node cond a --name FX --kind level --value
+flag_reject "task --note (bare)"         -- $Y task add T --note
+flag_reject "node --kind nonsense"       -- $Y node add fn3 --kind nonsense
+flag_reject "cond --op nonsense"         -- $Y node cond a --name FZ --kind flag --op nonsense --value 1
+flag_reject "cond --effect nonsense"     -- $Y node cond a --name FW --kind flag --op has --value 1 --effect nonsense
+
 echo "── contract 4: usage errors exit 2"
 usage2 "unknown group"          -- $Y no-such-group
 usage2 "node add without key"   -- $Y node add

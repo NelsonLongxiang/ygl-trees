@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.55.0（2026-10-17）flag 校验护栏收口——0.54 遗留
+- **contract:audit 73 → 84 项**：新增 contract 6「flag validation」——11 项断言（8 个裸 flag 拒绝 + 3 个枚举拒绝），确保 0.54 的 flagcheck 代码不被 revert 后静默回归
+- **spec 补 flag 校验契约**：裸 flag → rc=2 `needs a value`（不落库为 `"true"`）；枚举非法 → rc=2 `must be one of ...`（不触发写入）——与退出码/JSON 通道/幂等等已有契约并列
+
 ## 0.54.0（2026-10-17）全命令面 flag 校验审计——14 个缺口一次关死
 - **背景**：0.51 修了 P1-1/P1-2 两个 flag 校验缺口，但审计发现同类问题成片存在——**全命令面扫描**暴露 **14 个缺口**（9 个裸 flag 静默落库 + 5 个枚举未校验）
 - **新增 `flagcheck.ts`**：`rejectBare(ctx, flags, names)` 裸 flag 检测 + `validateEnum(ctx, flags, name, allowed)` 枚举校验——一处定义，各命令复用
