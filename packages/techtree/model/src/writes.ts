@@ -490,14 +490,14 @@ export async function importTree(
       const cid = nodeId.get(String(e.child))!;
       await mgr.query(
         `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note,created)
-         VALUES(?,?,?,?,?,?,?,?,?,?)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(parent_id,child_id,rel) DO UPDATE SET
            mode=excluded.mode, required=excluded.required, min_level=excluded.min_level,
            weight=excluded.weight, note=excluded.note`,
         [
           shortId(["edge", tid, pid, cid, String(e.rel)], 12), tid, pid, cid,
           String(e.rel), String(e.mode || "AND"), e.required === false ? 0 : 1,
-          Number(e.min_level ?? 1), Number(e.weight ?? 1), String(e.note || ""),
+          Number(e.min_level ?? 1), Number(e.weight ?? 1), String(e.note || ""), nowIso(),
         ]
       );
     }
