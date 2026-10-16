@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.64.0（2026-10-17）最终文档同步——skill link / kb rm / --host / --fix 全部入档
+- README + quickstart 补 `skill link [--global]`
+- readme:verify + 全量门禁
+
 ## 0.63.0（2026-10-17）新增 `skill link`——一键软连接技能到 .agents/skills
 - **`ygl-trees skill link [--global]`**：对 `skills/*/SKILL.md` 建 junction——默认到当前工作目录 `.agents/skills/`，`--global` 到 `~/.agents/skills/`；自动创建目标目录；幂等（已存在的跳过）；输出连接清单
 - 效果：DSH / Claude / 其他 Agent 技能发现机制即刻可用，不再需要手动建 junction 的 Node 一行代码

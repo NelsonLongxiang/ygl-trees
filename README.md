@@ -163,6 +163,8 @@ agent brief               状态 + 建议动作 + 健康度（脏索引、存量
 
 `skill import <SKILL.md>` 直接解析 frontmatter。
 
+`skill link [--global]` 一键软连接到 `.agents/skills/`（DSH/Claude 等 Agent 的技能发现路径即刻可用）。
+
 ### rel：关联织物（把研究资产挂到树节点）
 
 研究与建树是两条会各自漂移的流水线；`rel` 把它们钉在一起——八类引用任一两端可连：
