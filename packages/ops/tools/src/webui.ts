@@ -146,7 +146,8 @@ export function gatherData(env: Env): DashboardData {
         .map((r: any) => {
           let meta: any = {};
           try { meta = r.meta ? JSON.parse(r.meta) : {}; } catch { /* malformed */ }
-          return { id: r.id, title: r.title, status: meta.status || "todo" };
+
+return { id: r.id, title: r.title, status: meta.status || "todo" };
         });
       // 0.35: artifact roster (non-task kinds; full text rides /api/artifact)
       data.artifacts = db
@@ -157,6 +158,37 @@ export function gatherData(env: Env): DashboardData {
         .map((r: any) => ({ id: r.id, kind: r.kind, title: r.title, version: r.version, created: r.created }));
     }
   }
+
+  // R19: knowledge graph — entities and relations from the rel fabric
+  const kgNodes: any[] = [];
+  const kgEdges: any[] = [];
+  const kgMap = new Map<string, any>();
+  try {
+    const rels = db.all("SELECT src_type, src_id, dst_type, dst_id, rel FROM relations LIMIT 200") as any[];
+    const colors: Record<string, string> = {
+      node: "#7c9885", claim: "#6a994e", kb: "#8b7355",
+      evidence: "#daa520", artifact: "#5b8db8", skill: "#9b7cb8",
+    };
+    for (const r of rels) {
+      for (const side of ["src", "dst"]) {
+        const type = r[`${side}_type`]; const id = r[`${side}_id`];
+        const key = `${type}:${id}`;
+        if (kgMap.has(key)) continue;
+        let label = id;
+        try {
+          if (type === "node") { const n = db.get("SELECT name FROM nodes WHERE id=?", [id]) as any; if (n) label = n.name; }
+          else if (type === "claim") { const c = db.get("SELECT substr(text,1,40) AS t FROM claims WHERE id=?", [id]) as any; if (c) label = c.t; }
+          else if (type === "kb") { const k = db.get("SELECT title FROM kb_notes WHERE id=?", [id]) as any; if (k) label = k.title.slice(0, 40); }
+          else if (type === "evidence") { const e = db.get("SELECT substr(quote,1,40) AS q FROM evidence WHERE id=?", [id]) as any; if (e) label = e.q; }
+          else if (type === "artifact") { const a = db.get("SELECT title FROM artifacts WHERE id=?", [id]) as any; if (a) label = a.title; }
+        } catch { /* best-effort */ }
+        kgMap.set(key, { id: key, label, type, color: colors[type] || "#999" });
+      }
+      kgEdges.push({ source: `${r.src_type}:${r.src_id}`, target: `${r.dst_type}:${r.dst_id}`, label: r.rel });
+    }
+  } catch { /* graph data best-effort */ }
+  (data as any).knowledge_graph = { nodes: Array.from(kgMap.values()), edges: kgEdges };
+
   return data;
 }
 

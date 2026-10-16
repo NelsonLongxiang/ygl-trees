@@ -7,10 +7,12 @@ import {
 import {
   ExperimentOutlined, BookOutlined, DatabaseOutlined, FileTextOutlined,
   ApartmentOutlined, PartitionOutlined, CheckCircleOutlined, ClockCircleOutlined,
+  NodeIndexOutlined,
 } from "@ant-design/icons";
 import { subscribeDashboard, type DashboardData } from "./api";
 import TreeFlow from "./TreeFlow";
 import Artifacts from "./Artifacts";
+import KnowledgeGraph from "./KnowledgeGraph";
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -150,6 +152,17 @@ export default function App() {
               >
                 <TreeFlow tree={data.tree} />
               </Card>
+
+              {/* ── 知识图谱 ── */}
+              {(data as any).knowledge_graph?.nodes?.length > 0 && (
+                <Card
+                  title={<><NodeIndexOutlined /> 知识图谱</>}
+                  extra={<Text type="secondary">{(data as any).knowledge_graph.nodes.length} 实体 · {(data as any).knowledge_graph.edges.length} 关系</Text>}
+                  style={{ marginBottom: 16 }}
+                >
+                  <KnowledgeGraph graph={(data as any).knowledge_graph} />
+                </Card>
+              )}
 
               {/* ── 任务清单 ── */}
               {data.tasks.length > 0 && (
