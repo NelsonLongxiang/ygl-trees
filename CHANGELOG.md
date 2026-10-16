@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.66.0（2026-10-17）新增 `llms` 命令——结构化能力清单（Ant Design for-agents 模式）
+- **`ygl-trees llms`**：一条命令输出完整 markdown 能力清单——冻结契约表（6 项）+ 16 个命令组全部用法 + 决策模型说明 + Quick Start + 设计系统入口——**任何 LLM 一次性获取全部能力面**
+- **静态 `llms.txt`**：仓库根目录，可被任何 LLM 爬取/注入上下文（同 Ant Design 的 llms.txt 模式）
+- 不走 DB 路径（纯静态输出，无锁无延迟）
+- README 补 `ygl-trees llms` 用法
+
 ## 0.65.0（2026-10-17）GPT-6.1 SOL 评审三项缺陷修复
 - **① cost_mul 折扣方向反转**：原实现 `!pass` 才打折（条件不满足反而优惠），README 承诺"满足条件则成本打折"——修为 `pass` 才应用折扣；补 2 例单测（条件满足→0.8 / 不满足→1.0）
 - **② DB 锁主路径接通**：DatabaseService 构造改传 `{lock: true}`（原仅 profile-boot 回退路径加锁，但 base bundle 必走 Service 路径→锁永不生效）；保留 YGL_TEST=1 旁路

@@ -1,0 +1,210 @@
+# ygl-trees v0.65.0 — AI Agent Research Workbench
+
+> Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
+> CLI for AI agents: every command supports --json (machine-readable, including errors).
+
+## Frozen Contracts
+
+| Contract | Rule | Gate |
+|---|---|---|
+| Exit codes | 0 success (incl. duplicate) · 1 runtime error · 2 usage error | contract 4 |
+| --json | stdout is ONE JSON object/array; failures emit {"error":"..."} + rc 1/2 | contract 5 |
+| Write idempotency | same content re-run → rc=0 + duplicate:true | contract 1+2 |
+| Bad references | named not-found (never raw SqliteError) | contract 3 |
+| Flag validation | bare flag / bad enum → rc=2, never writes "true"/"nonsense" | contract 6 |
+| Field naming | snake_case only, camelCase leak = violation | contract 5 |
+
+## Command Surface
+
+### agent
+
+Agent-facing views (START HERE)
+
+```bash
+agent brief                                                  # current state + next actions
+agent match "<task>"                                         # which skill handles this task
+agent log [--level] [--run]                                  # recent events with filters
+```
+
+### research
+
+Evidence-first research pipeline
+
+```bash
+research query add "<text>"                                  # register a search query
+research source add --title --url                            # add a source (also: --relevance 0-5 --confidence A|B|C)
+research source fetch <url>                                  # fetch page, extract title/meta/text
+research evidence add <sid> --quote "..."                    # verbatim quote from source
+research claim add "<text>"                                  # refutable assertion
+research claim link <cid> <eid> --stance supports|refutes    # link claim to evidence
+research claim resolve <cid> --as supported|refuted|contested # manual arbitration
+research claim evaluate <cid>                                # decision model confidence (0-5 → A/B/C/D)
+research evidence assess <eid>                               # decision model quality assessment
+```
+
+### produce
+
+Reports + engineering artifacts
+
+```bash
+produce outline                                              # auto-outline from claims
+produce section <title> --body|-f                            # add section
+produce report                                               # assemble claims+evidence+sections → report
+produce spec <title> --body|-f                               # requirements spec artifact
+produce design <title> --body|-f --design-type ui-ux|arch|decision # design artifact
+produce export <id> <file>                                   # export artifact to file
+```
+
+### kb
+
+Long-term knowledge + reuse
+
+```bash
+kb add --title --body|-f                                     # add knowledge note
+kb import <dir|file.md>                                      # batch markdown import (>1MB skipped, --force to include)
+kb search "<q>" [--eval]                                     # FTS5 CJK search (--eval: semantic re-rank via decision model)
+kb rm <id>                                                   # remove note
+kb ingest <artifactId>                                       # sink a report into kb
+kb promote <noteId>                                          # promote note to reusable skill
+```
+
+### skill
+
+Skill registry (L1/L2/L3)
+
+```bash
+skill list                                                   # all skills with hits
+skill match "<query>"                                        # full-text match for agent
+skill show <name>                                            # full skill body
+skill link [--global]                                        # junction to .agents/skills/ (or ~/.agents/skills/)
+```
+
+### tree / node
+
+Tech tree model (nodes/edges/conditions/closure)
+
+```bash
+tree new <name>                                              # create tree
+node add <key>                                               # add node (--name --kind --tier --cost --tags)
+node link <parent> <child> [--rel prereq|unlock|excludes|enables] [--mode AND|OR|XOR|NOT] [--optional] # link nodes
+node cond <key> --name <c> --kind <k> [--op eval] [--value "<question>"] # add condition (eval = decision model gate)
+node index                                                   # rebuild closure + topo order
+node can <key> [--state k=v] [--eval]                        # can unlock? (required vs optional + cost)
+node ready                                                   # currently unlockable set
+node path <key>                                              # dependency-order path (OR branches not optimized)
+node unlock <key>                                            # mark unlocked
+node list                                                    # list with state column (locked/unlocked)
+node validate                                                # cycles, dangling edges, dirty index
+```
+
+### task
+
+Task state machine
+
+```bash
+task add "<title>"                                           # create task (todo)
+task list [--status]                                         # list by status
+task doing <id> / task done <id> / task todo <id>            # advance or roll back
+```
+
+### rel
+
+Relation fabric (cross-entity linking)
+
+```bash
+rel add <src> <dst> [--rel t]                                # link two refs: node:key claim:id kb:id artifact:id ...
+rel list [--src r] [--dst r]                                 # browse relations
+```
+
+### plugin
+
+User-level plugin distribution (R14 L3)
+
+```bash
+plugin init                                                  # create $YGL_HOME/plugins profile
+plugin install <spec>                                        # npm package / git url / local dir (auto link:)
+plugin config <name> '<json>'                                # set plugin config
+plugin disable/enable <name>                                 # toggle plugin
+plugin list                                                  # version + state + resolvable
+```
+
+### webui
+
+Dashboard (React + embedded)
+
+```bash
+webui serve [--port N] [--host H]                            # live dashboard (default 127.0.0.1, --host 0.0.0.0 for LAN)
+webui export [--out <file>]                                  # single-file offline dashboard
+```
+
+### db
+
+Database operations
+
+```bash
+db init                                                      # create workspace + schema (auto-imports 9 built-in skills)
+db stats                                                     # row counts per table
+db export <file>                                             # full backup
+db sync pg <url>                                             # one-way mirror to PostgreSQL
+db migrate pg <url> [--fresh]                                # full-fidelity graduation (with type preflight)
+db reset                                                     # delete database
+```
+
+### doctor
+
+Health check (9 items)
+
+```bash
+doctor [--fix]                                               # diagnose (+ auto-fix: dirty index, stale lock)
+```
+
+### config
+
+User settings
+
+```bash
+config list / get / set / reset                              # registry-backed settings
+```
+
+### job
+
+Batch scheduling
+
+```bash
+job add <title> -- "<cmd>" [--every <min>]                   # create scheduled job
+job tick                                                     # run due jobs (drive with cron)
+```
+
+### project
+
+Project management
+
+```bash
+project new <name> -q "<question>"                           # create + select
+project use <name> / list / show                             # switch / browse
+```
+
+## Decision Model (R15)
+
+- kb search --eval: semantic re-ranking (P(relevant) per candidate)
+- claim evaluate: confidence 0-5 → A/B/C/D (auto-triggered on claim link)
+- evidence assess: quality 0-5 → 高/中/低
+- node can --eval: semantic unlock gates (boolean/choice/score)
+- Offline safe: no AI_GATEWAY_API_KEY → shows "离线" and falls back
+
+## Quick Start
+
+```bash
+ygl-trees db init
+ygl-trees agent brief        # START HERE — state + next actions
+ygl-trees project new my-project -q "research question"
+ygl-trees agent match "my task"  # which skill to use
+```
+
+## More
+
+- DESIGN.md: design system tokens (colors/type/components)
+- docs/spec.md: full spec R1-R15
+- docs/plugin-authoring.md: write your own plugins
+- docs/release.md: publish procedure + known pitfalls
+

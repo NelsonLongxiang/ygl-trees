@@ -225,6 +225,13 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  // llms: structured capability manifest for LLM consumption (Ant Design
+  // "for-agents" pattern — one output gives any Agent the full command surface).
+  if (group === "llms") {
+    out(ctx, generateLlmsManifest());
+    return 0;
+  }
+
   if (!group || group === "help" || group === "-h" || group === "--help") {
     if (!ctx.json) out(ctx, usage());
     return 0;
@@ -360,6 +367,166 @@ export async function main(argv: string[]): Promise<number> {
       // For long-running processes, call app.dispose() explicitly.
       try { db?.close(); } catch { /* best effort */ }
     });
+}
+
+// ── llms manifest: structured capability list for LLM consumption ──
+// Ant Design "for-agents" pattern: one command gives any Agent the full
+// command surface, contracts, and skill list — no need to read docs.
+export function generateLlmsManifest(): string {
+  const V = appVersion();
+  const L: string[] = [];
+  L.push(`# ygl-trees v${V} — AI Agent Research Workbench`);
+  L.push("");
+  L.push(`> Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.`);
+  L.push(`> CLI for AI agents: every command supports --json (machine-readable, including errors).`);
+  L.push("");
+  L.push(`## Frozen Contracts`);
+  L.push("");
+  L.push(`| Contract | Rule | Gate |`);
+  L.push(`|---|---|---|`);
+  L.push(`| Exit codes | 0 success (incl. duplicate) · 1 runtime error · 2 usage error | contract 4 |`);
+  L.push(`| --json | stdout is ONE JSON object/array; failures emit {"error":"..."} + rc 1/2 | contract 5 |`);
+  L.push(`| Write idempotency | same content re-run → rc=0 + duplicate:true | contract 1+2 |`);
+  L.push(`| Bad references | named not-found (never raw SqliteError) | contract 3 |`);
+  L.push(`| Flag validation | bare flag / bad enum → rc=2, never writes "true"/"nonsense" | contract 6 |`);
+  L.push(`| Field naming | snake_case only, camelCase leak = violation | contract 5 |`);
+  L.push("");
+  L.push(`## Command Surface`);
+  L.push("");
+  const groups: Array<[string, string, Array<[string, string]>]> = [
+    ["agent", "Agent-facing views (START HERE)", [
+      ["agent brief", "current state + next actions"],
+      ["agent match \"<task>\"", "which skill handles this task"],
+      ["agent log [--level] [--run]", "recent events with filters"],
+    ]],
+    ["research", "Evidence-first research pipeline", [
+      ["research query add \"<text>\"", "register a search query"],
+      ["research source add --title --url", "add a source (also: --relevance 0-5 --confidence A|B|C)"],
+      ["research source fetch <url>", "fetch page, extract title/meta/text"],
+      ["research evidence add <sid> --quote \"...\"", "verbatim quote from source"],
+      ["research claim add \"<text>\"", "refutable assertion"],
+      ["research claim link <cid> <eid> --stance supports|refutes", "link claim to evidence"],
+      ["research claim resolve <cid> --as supported|refuted|contested", "manual arbitration"],
+      ["research claim evaluate <cid>", "decision model confidence (0-5 → A/B/C/D)"],
+      ["research evidence assess <eid>", "decision model quality assessment"],
+    ]],
+    ["produce", "Reports + engineering artifacts", [
+      ["produce outline", "auto-outline from claims"],
+      ["produce section <title> --body|-f", "add section"],
+      ["produce report", "assemble claims+evidence+sections → report"],
+      ["produce spec <title> --body|-f", "requirements spec artifact"],
+      ["produce design <title> --body|-f --design-type ui-ux|arch|decision", "design artifact"],
+      ["produce export <id> <file>", "export artifact to file"],
+    ]],
+    ["kb", "Long-term knowledge + reuse", [
+      ["kb add --title --body|-f", "add knowledge note"],
+      ["kb import <dir|file.md>", "batch markdown import (>1MB skipped, --force to include)"],
+      ["kb search \"<q>\" [--eval]", "FTS5 CJK search (--eval: semantic re-rank via decision model)"],
+      ["kb rm <id>", "remove note"],
+      ["kb ingest <artifactId>", "sink a report into kb"],
+      ["kb promote <noteId>", "promote note to reusable skill"],
+    ]],
+    ["skill", "Skill registry (L1/L2/L3)", [
+      ["skill list", "all skills with hits"],
+      ["skill match \"<query>\"", "full-text match for agent"],
+      ["skill show <name>", "full skill body"],
+      ["skill link [--global]", "junction to .agents/skills/ (or ~/.agents/skills/)"],
+    ]],
+    ["tree / node", "Tech tree model (nodes/edges/conditions/closure)", [
+      ["tree new <name>", "create tree"],
+      ["node add <key>", "add node (--name --kind --tier --cost --tags)"],
+      ["node link <parent> <child> [--rel prereq|unlock|excludes|enables] [--mode AND|OR|XOR|NOT] [--optional]", "link nodes"],
+      ["node cond <key> --name <c> --kind <k> [--op eval] [--value \"<question>\"]", "add condition (eval = decision model gate)"],
+      ["node index", "rebuild closure + topo order"],
+      ["node can <key> [--state k=v] [--eval]", "can unlock? (required vs optional + cost)"],
+      ["node ready", "currently unlockable set"],
+      ["node path <key>", "dependency-order path (OR branches not optimized)"],
+      ["node unlock <key>", "mark unlocked"],
+      ["node list", "list with state column (locked/unlocked)"],
+      ["node validate", "cycles, dangling edges, dirty index"],
+    ]],
+    ["task", "Task state machine", [
+      ["task add \"<title>\"", "create task (todo)"],
+      ["task list [--status]", "list by status"],
+      ["task doing <id> / task done <id> / task todo <id>", "advance or roll back"],
+    ]],
+    ["rel", "Relation fabric (cross-entity linking)", [
+      ["rel add <src> <dst> [--rel t]", "link two refs: node:key claim:id kb:id artifact:id ..."],
+      ["rel list [--src r] [--dst r]", "browse relations"],
+    ]],
+    ["plugin", "User-level plugin distribution (R14 L3)", [
+      ["plugin init", "create $YGL_HOME/plugins profile"],
+      ["plugin install <spec>", "npm package / git url / local dir (auto link:)"],
+      ["plugin config <name> '<json>'", "set plugin config"],
+      ["plugin disable/enable <name>", "toggle plugin"],
+      ["plugin list", "version + state + resolvable"],
+    ]],
+    ["webui", "Dashboard (React + embedded)", [
+      ["webui serve [--port N] [--host H]", "live dashboard (default 127.0.0.1, --host 0.0.0.0 for LAN)"],
+      ["webui export [--out <file>]", "single-file offline dashboard"],
+    ]],
+    ["db", "Database operations", [
+      ["db init", "create workspace + schema (auto-imports 9 built-in skills)"],
+      ["db stats", "row counts per table"],
+      ["db export <file>", "full backup"],
+      ["db sync pg <url>", "one-way mirror to PostgreSQL"],
+      ["db migrate pg <url> [--fresh]", "full-fidelity graduation (with type preflight)"],
+      ["db reset", "delete database"],
+    ]],
+    ["doctor", "Health check (9 items)", [
+      ["doctor [--fix]", "diagnose (+ auto-fix: dirty index, stale lock)"],
+    ]],
+    ["config", "User settings", [
+      ["config list / get / set / reset", "registry-backed settings"],
+    ]],
+    ["job", "Batch scheduling", [
+      ["job add <title> -- \"<cmd>\" [--every <min>]", "create scheduled job"],
+      ["job tick", "run due jobs (drive with cron)"],
+    ]],
+    ["project", "Project management", [
+      ["project new <name> -q \"<question>\"", "create + select"],
+      ["project use <name> / list / show", "switch / browse"],
+    ]],
+  ];
+
+  for (const [name, desc, cmds] of groups) {
+    L.push(`### ${name}`);
+    L.push("");
+    L.push(desc);
+    L.push("");
+    L.push("```bash");
+    for (const [cmd, note] of cmds) {
+      L.push(`${cmd.padEnd(60)} # ${note}`);
+    }
+    L.push("```");
+    L.push("");
+  }
+
+  L.push(`## Decision Model (R15)`);
+  L.push("");
+  L.push(`- kb search --eval: semantic re-ranking (P(relevant) per candidate)`);
+  L.push(`- claim evaluate: confidence 0-5 → A/B/C/D (auto-triggered on claim link)`);
+  L.push(`- evidence assess: quality 0-5 → 高/中/低`);
+  L.push(`- node can --eval: semantic unlock gates (boolean/choice/score)`);
+  L.push(`- Offline safe: no AI_GATEWAY_API_KEY → shows "离线" and falls back`);
+  L.push("");
+  L.push(`## Quick Start`);
+  L.push("");
+  L.push("```bash");
+  L.push("ygl-trees db init");
+  L.push("ygl-trees agent brief        # START HERE — state + next actions");
+  L.push("ygl-trees project new my-project -q \"research question\"");
+  L.push("ygl-trees agent match \"my task\"  # which skill to use");
+  L.push("```");
+  L.push("");
+  L.push(`## More`);
+  L.push("");
+  L.push(`- DESIGN.md: design system tokens (colors/type/components)`);
+  L.push(`- docs/spec.md: full spec R1-R15`);
+  L.push(`- docs/plugin-authoring.md: write your own plugins`);
+  L.push(`- docs/release.md: publish procedure + known pitfalls`);
+  L.push("");
+  return L.join("\n");
 }
 
 // ── self-execute (the executable; rc contract lives HERE) ──
