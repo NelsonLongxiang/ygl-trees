@@ -137,14 +137,22 @@ function pnpm(home: string, args: string[]): void {
   // embedded/offline carriers without touching this module. PATH may carry
   // broken .bin shims (observed: a parent node_modules shim pointing at a
   // missing pnpm.cjs under vitest) — resolve by probing, not first-hit.
+  //
+  // --ignore-workspace: pnpm walks UP from --dir to the nearest
+  // pnpm-workspace.yaml. When the profile lives inside a workspace (the unit
+  // tests' tmp/ profiles — or any repo-embedded home), the profile registered
+  // as a workspace importer and leaked tmp/plugins-unit-* blocks into the
+  // repo lockfile (committed that way through 0.66.0). Standalone profiles
+  // (the real $YGL_HOME) are outside any workspace, so this flag is a no-op
+  // there. Requires pnpm >= 9.4.
   const pm = process.env.YGL_PACKAGE_MANAGER || "pnpm";
   if (process.platform === "win32") {
     const q = (s: string) => `"${String(s).replace(/["&|<>^]/g, "")}"`;
     const exe = resolvePm(pm);
-    execFileSync([q(exe), ...args.map(q), "--dir", q(profileDir(home))].join(" "), { stdio: "pipe", shell: true });
+    execFileSync([q(exe), ...args.map(q), "--dir", q(profileDir(home)), "--ignore-workspace"].join(" "), { stdio: "pipe", shell: true });
     return;
   }
-  execFileSync(pm, [...args, "--dir", profileDir(home)], { stdio: "pipe" });
+  execFileSync(pm, [...args, "--dir", profileDir(home), "--ignore-workspace"], { stdio: "pipe" });
 }
 
 let cachedPm: string | null | undefined;

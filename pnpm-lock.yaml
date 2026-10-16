@@ -215,66 +215,6 @@ importers:
         specifier: ^20.0.0
         version: 20.19.43
 
-  tmp/plugins-unit-1792163291160/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792163479827/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792163543895/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792163784907/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792163905580/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792164307564/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792165130575/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792165226361/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792166198196/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/readme-verify-ws/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
   vendor/cordis:
     dependencies:
       '@deepseek-ai/cosmokit':

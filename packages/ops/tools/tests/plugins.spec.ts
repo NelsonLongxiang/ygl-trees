@@ -34,6 +34,13 @@ describe("插件 profile（spec R14 L3）", () => {
     const bundle = readUserBundle(home);
     expect(bundle).toEqual([{ name: "ygl-plugin-demo", spec: r.spec }]);
   });
+  it("安装不污染仓库 pnpm-lock.yaml（--ignore-workspace）", () => {
+    // tmp/ profiles sit inside the repo workspace; without --ignore-workspace
+    // pnpm registered them as importers and leaked tmp/plugins-unit-* blocks
+    // into the repo lockfile (committed through 0.66.0).
+    const lock = fs.readFileSync(path.join(process.cwd(), "pnpm-lock.yaml"), "utf8");
+    expect(lock).not.toContain("plugins-unit-");
+  });
   it("loadUserPlugins 解析 apply + commands（demo 命令组）", () => {
     const { plugins, issues } = loadUserPlugins(home);
     expect(issues).toEqual([]);
