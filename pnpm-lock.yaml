@@ -233,6 +233,12 @@ importers:
         specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
         version: link:../../../examples/plugin-demo
 
+  tmp/plugins-unit-1792163784907/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
   vendor/cordis:
     dependencies:
       '@deepseek-ai/cosmokit':

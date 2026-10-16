@@ -86,6 +86,73 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         "updated",
       ]);
       return 0;
+    case "link": {
+      // One-command symlink: skills/ → .agents/skills/ (or ~/.agents/skills/ with --global)
+      // so host agents (DSH, Claude, etc.) can discover them without manual junction setup.
+      const os = require("node:os");
+      const globalFlag = args?.flags?.global === true;
+      const targetDir = globalFlag
+        ? path.join(os.homedir(), ".agents", "skills")
+        : path.join(process.cwd(), ".agents", "skills");
+
+      // Find source skills directory (probe upward from cwd, same as repoRoot)
+      let skillsDir: string | null = null;
+      for (let dir = process.cwd(), i = 0; i < 6; i++, dir = path.dirname(dir)) {
+        const candidate = path.join(dir, "skills");
+        if (fs.existsSync(candidate)) {
+          const entries = fs.readdirSync(candidate).filter((e: string) =>
+            fs.existsSync(path.join(candidate, e, "SKILL.md"))
+          );
+          if (entries.length > 0) {
+            skillsDir = candidate;
+            break;
+          }
+        }
+      }
+      if (!skillsDir) {
+        bad(ctx, `no skills/ directory found (probed upward from ${process.cwd()})`);
+        return 1;
+      }
+
+      // Create target directory
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      // Link each skill
+      const linked: string[] = [];
+      const skipped: string[] = [];
+      for (const entry of fs.readdirSync(skillsDir)) {
+        if (!fs.existsSync(path.join(skillsDir, entry, "SKILL.md"))) continue;
+        const linkPath = path.join(targetDir, entry);
+        if (fs.existsSync(linkPath)) {
+          skipped.push(entry);
+          continue;
+        }
+        try {
+          fs.symlinkSync(path.resolve(skillsDir, entry), linkPath, "junction");
+          linked.push(entry);
+        } catch (e: any) {
+          skipped.push(`${entry} (error: ${String(e.message).slice(0, 40)})`);
+        }
+      }
+
+      if (ctx.json) {
+        console.log(JSON.stringify({ target: targetDir, linked, skipped }, null, 2));
+        return 0;
+      }
+      head(ctx, `skill link → ${targetDir}`);
+      if (linked.length) {
+        ok(ctx, `linked ${linked.length} skill(s):`);
+        for (const l of linked) out(ctx, `  ${l}`);
+      }
+      if (skipped.length) {
+        out(ctx, paint(C.yellow, `  skipped ${skipped.length} (already exist or error):`, ctx.color));
+        for (const s of skipped) out(ctx, paint(C.dim, `  ${s}`, ctx.color));
+      }
+      if (!linked.length && !skipped.length) {
+        out(ctx, paint(C.dim, "  (no skills found to link)", ctx.color));
+      }
+      return 0;
+    }
     case "show": {
       if (!need(name || "", "skill name")) return 2;
       const s = store.skillGet(name);

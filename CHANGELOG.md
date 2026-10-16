@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.63.0（2026-10-17）新增 `skill link`——一键软连接技能到 .agents/skills
+- **`ygl-trees skill link [--global]`**：对 `skills/*/SKILL.md` 建 junction——默认到当前工作目录 `.agents/skills/`，`--global` 到 `~/.agents/skills/`；自动创建目标目录；幂等（已存在的跳过）；输出连接清单
+- 效果：DSH / Claude / 其他 Agent 技能发现机制即刻可用，不再需要手动建 junction 的 Node 一行代码
+- 同步修 relations INSERT 语法错误（多余括号 + 缺 created 参数——0.62 schema v9 引入）
+
 ## 0.62.0（2026-10-17）采集席 P1+P2 修复——fresh init schema 缺口 + 锁文件
 - **P1（严重）：全新工作区 research 链不可用**——`db init` 的 SCHEMA_SQL 缺 v9 列（sources.created / claims.updated / artifacts.updated / node_conditions.created），upgrade8to9 的条件 `v>0 && v<9` 在 fresh init（v=0）时不触发 → fresh 库无这些列 → `source add` 报 `no such column: Source.created`。修：SCHEMA_SQL 直接包含全部 v9 列（init 即 v9 完整 schema）
 - **P2：clean clone 无法 `--frozen-lockfile`**——锁文件重生成（清理 vendor/cordis 多余 plugin 条目 + .npmrc autoInstallPeers=false 与锁文件对齐）
