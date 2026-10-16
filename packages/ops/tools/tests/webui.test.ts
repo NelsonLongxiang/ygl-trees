@@ -86,6 +86,12 @@ describe("webui generateHTML", () => {
       expect(html).toContain(label);
     }
   });
+  it("水平布局（用户裁定）：tier 沿 X 左→右、兄弟纵向扇开", () => {
+    const html = generateHTML(gatherData(env()), false);
+    expect(html).toContain("colGap = 180");
+    expect(html).toContain("tierKeys.length * colGap");
+    expect(html).toContain("y: 40 + ni * rowGap");
+  });
   it("live 模式带 fetch 引导与 10s 轮询", () => {
     const html = generateHTML(gatherData(env()), true);
     expect(html).toContain("fetch('api/data')");

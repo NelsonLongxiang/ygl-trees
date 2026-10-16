@@ -493,22 +493,23 @@ function treeTimeSvg(tree) {
 function treeTierSvg(tree) {
     const nodes = tree.nodes;
     const edges = tree.edges || [];
-    const W = 900, nodeW = 120, nodeH = 36, vGap = 70, hGap = 140;
+    const nodeW = 120, nodeH = 36, colGap = 180, rowGap = 70;
     const tiers = {};
     nodes.forEach(function (n) { const t = n.tier || 0; (tiers[t] = tiers[t] || []).push(n); });
     const tierKeys = Object.keys(tiers).map(Number).sort(function (a, b) { return a - b; });
     const maxPerTier = Math.max.apply(null, tierKeys.map(function (t) { return tiers[t].length; }));
 
-    const svgH = tierKeys.length * vGap + 80;
-    const svgW = Math.max(W, maxPerTier * hGap + 100);
+    // horizontal layout: tier advances left→right, siblings fan vertically
+    const svgW = tierKeys.length * colGap + 60;
+    const svgH = Math.max(300, maxPerTier * rowGap + 60);
 
     const pos = {};
     tierKeys.forEach(function (t, ti) {
       const row = tiers[t];
       row.forEach(function (n, ni) {
         pos[n.key] = {
-          x: svgW / 2 + (ni - (row.length - 1) / 2) * hGap,
-          y: 40 + ti * vGap,
+          x: 60 + ti * colGap + nodeW / 2,
+          y: 40 + ni * rowGap,
         };
       });
     });
@@ -521,7 +522,7 @@ function treeTierSvg(tree) {
       if (!from || !to) return;
       const cls = e.required ? '' : ' optional';
       const color = e.rel === 'excludes' ? ' excludes' : e.rel === 'unlock' ? ' unlock' : '';
-      svg += '<line class="edge' + cls + color + '" x1="' + (from.x + nodeW / 2) + '" y1="' + (from.y + nodeH / 2) + '" x2="' + (to.x - nodeW / 2 + nodeW) + '" y2="' + (to.y - nodeH / 2 + nodeH) + '"/>';
+      svg += '<line class="edge' + cls + color + '" x1="' + (from.x + nodeW / 2) + '" y1="' + (from.y + nodeH / 2) + '" x2="' + (to.x - nodeW / 2) + '" y2="' + (to.y + nodeH / 2) + '"/>';
     });
 
     nodes.forEach(function (n) {

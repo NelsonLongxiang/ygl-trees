@@ -33,9 +33,9 @@ function TreeNode({ data }: NodeProps<Node<TreeNodeData>>) {
         textAlign: "center",
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       {d.label}
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -61,10 +61,11 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
       const row = tierKeys.indexOf(t);
       const siblings = tiers.get(t)!;
       const col = siblings.indexOf(n);
+      // horizontal layout: tier advances left→right (COL), siblings fan vertically (ROW)
       return {
         id: n.key,
         type: "treeNode",
-        position: { x: (col - (siblings.length - 1) / 2) * COL, y: row * ROW },
+        position: { x: row * COL, y: (col - (siblings.length - 1) / 2) * ROW },
         data: { label: n.key.slice(0, 16), unlocked: !!n.unlocked_at, selected: selected === n.key } as TreeNodeData,
       };
     });
