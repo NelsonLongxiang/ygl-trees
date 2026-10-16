@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1",
     "@ygl/core-database": "workspace:~",
     "@ygl/core-text": "workspace:~",
     "@ygl/techtree-model": "workspace:~",

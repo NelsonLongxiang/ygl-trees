@@ -11,7 +11,7 @@ vendor/           上游框架（从 cordiverse/cordis vendor，pnpm workspace �
   cordis/           Cordis 框架核心（Context/Service/事件总线/插件系统）
   cosmokit/         Cordis 依赖的工具库
 
-packages/         领域模块（库代码，可被 apps 组合）
+packages/         领域模块（库代码，可被 apps 组合；pnpm workspace 成员，各带 package.json 依赖图）
   core/             基础层（db/orm/text/fmt/types/entities/container）
   research/         研究域（query→source→evidence→claim→produce）
   techtree/         科技树域（nodes/edges/conditions/eval gates/closure）
@@ -20,9 +20,11 @@ packages/         领域模块（库代码，可被 apps 组合）
   web/              Web 域（app：React 客户端宿主插件，ctx.webApp，DSH 模式）
   （Cordis 服务定义在 core/database/src/plugin.ts 与 web/app/src：declare module 声明合并）
 
-apps/             应用入口（组装 packages，跑产品）
-  cli/              CLI 应用（src/bin.ts 即可执行文件：shebang+自执行，rc 契约在此；profile-boot/startup-diagnostics/process-shutdown/plugin 同 DSH）
+apps/             应用入口（workspace 包：各带 package.json 声明依赖图）
+  cli/              CLI 应用（@ygl/cli；src/bin.ts 即可执行文件：shebang+自执行，rc 契约在此；profile-boot/startup-diagnostics/process-shutdown/plugin 同 DSH）
   web/              React 富客户端（xyflow 树视图，spec R13.5；CLI 内嵌零依赖 dashboard 保留）
+
+（发布单元 = 仓库根 ygl-trees：dist/ 运行时从根 node_modules 解析，根 package.json 须保留 dist 用到的运行时依赖——包内声明是依赖图真相，根声明是发布面需求，两者并存）
 
 benchmarks/       性能基准套件（bench.js 七席 + README，pnpm bench）
 tests/            vitest 单测

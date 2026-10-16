@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.36.2（2026-10-17）apps/cli 成为 workspace 包 + packages/*/* 接入 workspace（用户指出"没有包管理器"）
+- **发现**：`pnpm-workspace.yaml` 只含 `vendor/* + apps/*`——**packages/*/* 九个包从未是 workspace 成员**，0.20 的"各包声明依赖"一直是装饰品（从未链接）；apps/cli 则完全没有 package.json
+- **对齐 DSH**（其 apps/cli 即发布包 `@deepseek-ai/dsh`，含完整 deps/bin）：`apps/cli/package.json` 新建（`@ygl/cli`，声明真实依赖图：6 个 workspace 包 + cordis + schemastery）；`packages/*/*` 接入 workspace——九包 + apps/cli 各自获得 node_modules 链接，依赖图从"纸面声明"变为 pnpm 实链
+- **依赖归位与发布面并存**：`@deepseek-ai/schemastery`→apps/cli、`@deepseek-ai/dsh-atomic-write`→ops-tools（各自真实消费者）；**根 package.json 同时保留两者**——根是发布单元，dist/ 运行时从根 node_modules 解析（实测移除即 MODULE_NOT_FOUND；包内声明=依赖图真相，根声明=发布面需求，两者并存是正确形态）
+- 已知 peer 警告（记录不修）：vitest 要 @types/node≥22（root 20.x）；typeorm peer better-sqlite3@12（用 13）
+
 ## 0.36.1（2026-10-17）bin/ 目录并入 src/bin.ts（DSH 形态收尾）
 - **可执行入口 = `apps/cli/src/bin.ts`**（DSH bin.ts 同形）：shebang + 自执行守卫（rc 契约 0/1/2 由本文件保管）；根 package.json `"bin"` 指向 `dist/apps/cli/src/bin.js`（DSH `"dsh": "lib/bin.js"` 同构）；**bin/ wrapper 目录删除**——三层入口（wrapper→index→main）收敛为单文件
 - 引用面全改（demo.sh / benchmarks/bench.js / scripts/bun-smoke.sh / README / package.json scripts）

@@ -47,6 +47,33 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@20.19.43)(vite@8.3.4(@types/node@20.19.43)(esbuild@0.27.7))
 
+  apps/cli:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.4
+        version: 3.18.4
+      '@ygl/core-database':
+        specifier: workspace:~
+        version: link:../../packages/core/database
+      '@ygl/core-text':
+        specifier: workspace:~
+        version: link:../../packages/core/text
+      '@ygl/ops-tools':
+        specifier: workspace:~
+        version: link:../../packages/ops/tools
+      '@ygl/research-pipeline':
+        specifier: workspace:~
+        version: link:../../packages/research/pipeline
+      '@ygl/techtree-model':
+        specifier: workspace:~
+        version: link:../../packages/techtree/model
+      '@ygl/web-app':
+        specifier: workspace:~
+        version: link:../../packages/web/app
+      cordis:
+        specifier: workspace:~
+        version: link:../../vendor/cordis
+
   apps/web:
     dependencies:
       '@xyflow/react':
@@ -78,25 +105,102 @@ importers:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@25.9.9)(lightningcss@1.33.0)
 
-  tmp/plugins-unit-1792129732586/plugins: {}
-
-  tmp/plugins-unit-1792129760352/plugins: {}
-
-  tmp/plugins-unit-1792129811071/plugins: {}
-
-  tmp/plugins-unit-1792129827868/plugins: {}
-
-  tmp/plugins-unit-1792130217284/plugins: {}
-
-  tmp/plugins-unit-1792130266098/plugins: {}
-
-  tmp/plugins-unit-1792130392993/plugins: {}
-
-  tmp/research-dogfood/plugins:
+  packages/core/database:
     dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
+      better-sqlite3:
+        specifier: ^13.0.0
+        version: 13.0.3
+      cordis:
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      node-sqlite3-wasm:
+        specifier: ^0.8.60
+        version: 0.8.60
+      reflect-metadata:
+        specifier: ^0.2.0
+        version: 0.2.2
+      typeorm:
+        specifier: ^1.1.0
+        version: 1.1.2(better-sqlite3@13.0.3)(pg@8.23.1)
+
+  packages/core/text: {}
+
+  packages/knowledge/skills:
+    dependencies:
+      '@ygl/core-database':
+        specifier: workspace:~
+        version: link:../../core/database
+      '@ygl/core-text':
+        specifier: workspace:~
+        version: link:../../core/text
+      '@ygl/research-pipeline':
+        specifier: workspace:~
+        version: link:../../research/pipeline
+
+  packages/ops/tools:
+    dependencies:
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: 0.0.1-rc.1
+        version: 0.0.1-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.0.1-rc.1(@deepseek-ai/cordis@4.0.4))
+      '@ygl/core-database':
+        specifier: workspace:~
+        version: link:../../core/database
+      '@ygl/core-text':
+        specifier: workspace:~
+        version: link:../../core/text
+      '@ygl/techtree-model':
+        specifier: workspace:~
+        version: link:../../techtree/model
+      '@ygl/web-app':
+        specifier: workspace:~
+        version: link:../../web/app
+      cordis:
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+
+  packages/research/pipeline:
+    dependencies:
+      '@ygl/core-database':
+        specifier: workspace:~
+        version: link:../../core/database
+      typeorm:
+        specifier: ^1.1.0
+        version: 1.1.2(better-sqlite3@13.0.3)(pg@8.23.1)
+
+  packages/research/produce:
+    dependencies:
+      '@ygl/core-database':
+        specifier: workspace:~
+        version: link:../../core/database
+      '@ygl/core-text':
+        specifier: workspace:~
+        version: link:../../core/text
+      '@ygl/research-pipeline':
+        specifier: workspace:~
+        version: link:../pipeline
+
+  packages/techtree/eval: {}
+
+  packages/techtree/model:
+    dependencies:
+      '@ygl/core-database':
+        specifier: workspace:~
+        version: link:../../core/database
+      '@ygl/core-text':
+        specifier: workspace:~
+        version: link:../../core/text
+
+  packages/web/app:
+    dependencies:
+      cordis:
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+
+  tmp/plugins-unit-1792130818734/plugins: {}
 
   vendor/cordis:
     dependencies:

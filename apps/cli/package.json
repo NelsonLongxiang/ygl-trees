@@ -1,0 +1,21 @@
+{
+  "name": "@ygl/cli",
+  "version": "0.36.2",
+  "private": true,
+  "description": "CLI application package (spec R14 L3 / DSH apps/cli exemplar): bin.ts is the executable, profile-boot composes base+user bundles. Published unit stays the repo root (ygl-trees); this manifest declares the app's true dependency graph.",
+  "type": "commonjs",
+  "main": "index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "@ygl/core-database": "workspace:~",
+    "@ygl/core-text": "workspace:~",
+    "@ygl/ops-tools": "workspace:~",
+    "@ygl/research-pipeline": "workspace:~",
+    "@ygl/techtree-model": "workspace:~",
+    "@ygl/web-app": "workspace:~",
+    "cordis": "workspace:~"
+  }
+}
