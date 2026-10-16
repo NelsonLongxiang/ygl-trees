@@ -269,7 +269,7 @@ export async function link(
     const id = duplicate ? before[0].id : shortId(["edge", p[0].id, c[0].id, rel], 12);
     await mgr.query(
       `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note,created)
-       VALUES(?,?,?,?,?,?,?,?,?,?)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(parent_id,child_id,rel) DO UPDATE SET
          mode=excluded.mode, required=excluded.required, min_level=excluded.min_level,
          weight=excluded.weight, note=excluded.note`,

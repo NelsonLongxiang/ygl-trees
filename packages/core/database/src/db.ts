@@ -228,6 +228,7 @@ CREATE TABLE IF NOT EXISTS node_edges (
   min_level  INTEGER NOT NULL DEFAULT 1,
   weight     REAL NOT NULL DEFAULT 1,
   note       TEXT DEFAULT '',
+  created    TEXT NOT NULL DEFAULT '',
   UNIQUE(parent_id, child_id, rel)
 );
 CREATE INDEX IF NOT EXISTS idx_edge_child  ON node_edges(child_id);
@@ -263,6 +264,7 @@ CREATE TABLE IF NOT EXISTS node_conditions (
 );
 CREATE INDEX IF NOT EXISTS idx_cond_node ON node_conditions(node_id);
 CREATE INDEX IF NOT EXISTS idx_cond_req  ON node_conditions(node_id, required);
+-- (node_conditions.created is added by upgrade8to9 for existing DBs; new DBs get it from upgrade8to9 too since SCHEMA_SQL doesn't declare it inline)
 
 -- Runtime state per context (save slot / player / run).
 CREATE TABLE IF NOT EXISTS node_state (

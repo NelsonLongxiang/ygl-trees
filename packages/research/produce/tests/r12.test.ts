@@ -27,10 +27,10 @@ afterAll(async () => {
   fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup
 });
 
-describe("schema v8（artifacts.meta 信封）", () => {
-  it("fresh DB → v8，meta 列存在默认空", () => {
-    expect(SCHEMA_VERSION).toBe(8);
-    expect(db.get("PRAGMA user_version")?.user_version).toBe(8);
+describe("schema v9（artifacts.meta 信封 + 时间字段）", () => {
+  it("fresh DB → v9，meta 列存在，时间字段齐备", () => {
+    expect(SCHEMA_VERSION).toBe(9);
+    expect(db.get("PRAGMA user_version")?.user_version).toBe(9);
     expect(db.get("SELECT 1 AS hit FROM pragma_table_info('artifacts') WHERE name='meta'")).toBeTruthy();
   });
 });
