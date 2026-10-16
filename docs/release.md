@@ -37,6 +37,7 @@ git config core.hooksPath .githooks     # 一次性安装（仓库自带 .githoo
 pnpm test          # 单测 + 构建 + demo
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm readme:verify # 文档真值：README 每条命令示例实测可跑（含冻结契约 rc=2）
+pnpm contract:audit # 写路径契约体检：幂等 / duplicate 回执 / 坏引用点名 / 用法 rc=2
 ```
 
 `pnpm pack:check`（scripts/pack-check.sh）拦的是**源码树测试拦不住的一类 bug**：
@@ -49,6 +50,7 @@ pnpm readme:verify # 文档真值：README 每条命令示例实测可跑（含�
 | 真实命令面 | bin 路径错、shebang 丢、缺运行时文件 |
 | `--json` 纯净 | 输出被污染 → agent 侧 `JSON.parse` 崩 |
 | README 真值 | 命令示例引用了尚未创建的对象 / 前置缺失 → 读者照抄即失败 |
+| 写路径契约 | 写命令重跑崩（UNIQUE/FOREIGN KEY 裸异常）、不幂等、坏引用不点名实体 |
 
 **实测记录（0.38.0）**：tarball 52 包闭包，`@deepseek-ai/cordis@~4.0.5-alpha.2` 等 fork 版本
 在 npm 上均有源（DSH 自己发布）——`workspace:~` 重写后可解；9 条命令面 + doctor 全通过。

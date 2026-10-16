@@ -62,7 +62,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const proj = pid ? db.get("SELECT id FROM projects WHERE name=?", [pid]) : null;
       return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), (t): number => {
         db.metaSet("current_tree", t.name);
-        ack(ctx, t, `tree created and selected: ${t.name}`);
+        ack(
+          ctx,
+          t,
+          t?.duplicate === true
+            ? `tree exists, selected: ${t.name}  (duplicate, not re-created)`
+            : `tree created and selected: ${t.name}`
+        );
         return 0;
       });
     }

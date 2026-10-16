@@ -43,10 +43,11 @@ tmp/              临时脚本与数据（gitignored）
 pnpm install              # pnpm workspace（vendor/* + packages/*/* + apps/*）
 pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单文件发布产物）
 pnpm test:unit            # vitest 单测
-pnpm test                 # 三段制：unit + build + demo（demo 跑 bundle 发布产物）
+pnpm test                 # 四段制：unit + build + demo（跑 bundle 发布产物）+ contract:audit
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
 pnpm pack:check           # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm readme:verify        # 文档真值门禁：README 命令示例逐条跑并断言退出码
+pnpm contract:audit       # 写路径契约体检：幂等/duplicate/坏引用点名/用法 rc=2
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 

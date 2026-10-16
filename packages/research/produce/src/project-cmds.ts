@@ -21,7 +21,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return getOrm(env.db.path)
         .then((ds) => writes.projectCreate(ds, name, question))
         .then((p): number => {
-          ack(ctx, p, `project created and selected: ${p.name}`);
+          ack(
+            ctx,
+            p,
+            p?.duplicate === true
+              ? `project exists, selected: ${p.name}  (duplicate, not re-created)`
+              : `project created and selected: ${p.name}`
+          );
           return 0;
         })
         .catch((e: any): number => {

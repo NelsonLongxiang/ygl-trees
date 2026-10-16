@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
@@ -13,13 +13,14 @@
     "build:bundle": "pnpm build",
     "start": "node dist/bundle/bin.cjs",
     "demo": "bash examples/demo.sh",
-    "test": "pnpm test:unit && pnpm build && bash examples/demo.sh",
+    "test": "pnpm test:unit && pnpm build && bash examples/demo.sh && bash scripts/contract-audit.sh",
     "prepublishOnly": "pnpm test && pnpm pack:check",
     "test:unit": "vitest run",
     "smoke:bun": "bash scripts/bun-smoke.sh",
     "bench": "pnpm build && node benchmarks/bench.js",
     "pack:check": "bash scripts/pack-check.sh",
-    "readme:verify": "bash scripts/readme-verify.sh"
+    "readme:verify": "bash scripts/readme-verify.sh",
+    "contract:audit": "bash scripts/contract-audit.sh"
   },
   "files": [
     "dist",

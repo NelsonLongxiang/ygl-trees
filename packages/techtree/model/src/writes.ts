@@ -166,6 +166,10 @@ export async function buildIndex(
 
 export async function treeCreate(ds: DataSource, name: string, projectId = "", note = ""): Promise<Record<string, any>> {
   return ds.transaction(async (mgr) => {
+    // Idempotency (frozen contract): an existing tree name is selected, not a
+    // UNIQUE-constraint crash — `tree new <same>` is how a caller switches.
+    const existing = (await mgr.query(`SELECT * FROM trees WHERE name=?`, [name])) as any[];
+    if (existing.length) return { ...existing[0], duplicate: true };
     const id = shortId(["tree", name], 10);
     await mgr.query(`INSERT INTO trees(id,project_id,name,note,created) VALUES(?,?,?,?,?)`, [
       id,

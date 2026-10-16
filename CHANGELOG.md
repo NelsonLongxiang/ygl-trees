@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.43.0（2026-10-17）写路径契约体检 + 常驻审计门禁（同类违规不能再悄悄回归）
+- **背景**：0.42 发现 `node link` 幂等崩溃，是"写技能时顺手实测"撞出来的——说明冻结契约需要**机械化体检**而非靠人记得。先做侦察 sweep（16 条写命令 × 2 + 11 条坏引用），确认缺陷边界
+- **修复 1：`project new` / `tree new` 同名幂等**——原先 rc=1 `SqliteError: UNIQUE constraint failed` 崩溃，违反「同内容重跑 rc=0 + duplicate:true」；改为**选中既有行**并回执 `duplicate: true`（`new` 同时也是切换动词），仍更新 `current_project`/`current_tree`；文本回执区分 `created and selected` / `exists, selected`
+- **修复 2：`research claim link` 坏引用裸异常**——传不存在或类型错的 evidence id 抛 `FOREIGN KEY constraint failed`；改为两端预解析、点名实体（`claim not found: X` / `evidence not found: Y`）。审计确认**其余 10 条引用命令本就干净**（evidence add / claim resolve / query attach / kb ingest / kb link / rel add / task doing / node link…），纪律已在、仅漏这一处
+- **新增 `pnpm contract:audit`（scripts/contract-audit.sh，37 项）**——把四类冻结契约变成可执行断言：① **幂等**（16 条写命令各跑两次，均须 rc=0）② **duplicate 回执**（project new / tree new / node link 重复须 `duplicate:true`）③ **坏引用点名**（11 条引用命令遇坏 id 须 rc=1 且消息点名实体，**断言不出现 SqliteError/constraint/TypeError 裸异常**）④ **用法 rc=2**（5 条）
+- **门禁自证有效**：临时还原 claimLink 缺陷 → 门禁 34/37 红、rc=1；恢复后 37/37 绿（不是空跑）
+- `pnpm test` 升为**四段制**（unit + build + demo + contract:audit），pre-push 钩子因此自动把关该项；README/AGENTS/release.md 同步
+
 ## 0.42.0（2026-10-17）新增 lifecycle 技能（更新时机）+ 修复 node link 幂等契约违规
 - **新技能 `ygl-trees-lifecycle`（用户指出缺口）**：现有 9 个技能全在讲「**怎么动**」（机制）与「动成什么样」（方法论），**没有一个讲「什么时候动」**——「时机/维护/节点更新/cadence」类词汇全库零命中，agent 机制全会却在该动的时刻不动，树与研究两条流水线各自漂移。新技能补上：**事件→动作触发表**（树侧 9 行：达成→unlock+挂证据、发现子能力→add+link、路线互斥→excludes、语义门槛→eval、方向变更→先加边再索引再 unlink、重新拆解→先建后删、重复 link→幂等语义…；研究资产侧 10 行：何时 source/evidence/claim/link/resolve/kb/promote/task/produce/rel）、**节奏纪律**（改结构后同轮必 `node index`+`validate`、解锁后必挂证据、会话收口前 `brief`+`doctor`、批量改写前 `db export`）、**五个自问**判定口诀、**漂移六反模式**、与专职技能的分工表。已 junction 进 `.agents/skills`，`agent match` 四类时机查询全部命中；README 技能表 8→9，quickstart/techtree/research 加交叉引用（讲机制时指向时机）
 - **修复冻结契约违规：`node link` 不幂等**（写新技能时实测暴露）——重复 link 同一 (父,子,rel) 不再报 `duplicate:true`，而是 **TypeError 崩溃 rc=1**。根因：upsert 冲突后既有行保留**原 id**，而回读用**新算出的 id** → 查不到 → 返回 undefined → 调用方读 `row.rel` 崩。修：按自然键 (parent,child,rel) 预查 + 回读，重复时回执 `duplicate:true`（rc=0，原地更新 `--mode/--optional` 即改属性）；demo 加护栏（复用已有边命中重复路径）

@@ -208,6 +208,12 @@ export async function claimLink(
   stance: "supports" | "refutes" = "supports"
 ): Promise<{ status: string }> {
   return ds.transaction(async (mgr) => {
+    // Resolve both ends before writing: a bad/foreign id must surface as a
+    // named not-found, not as a raw FOREIGN KEY constraint failure.
+    const c = (await mgr.query(`SELECT id FROM claims WHERE id=?`, [claimId])) as any[];
+    if (!c.length) throw new Error(`claim not found: ${claimId}`);
+    const e = (await mgr.query(`SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
+    if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
     await mgr.query(
       `INSERT INTO claim_evidence(claim_id,evidence_id,stance) VALUES(?,?,?)
        ON CONFLICT(claim_id,evidence_id) DO UPDATE SET stance=excluded.stance`,
@@ -509,6 +515,16 @@ export async function skillRefAdd(
 
 export async function projectCreate(ds: DataSource, name: string, question = ""): Promise<Record<string, any>> {
   return ds.transaction(async (mgr) => {
+    // Idempotency (frozen contract): re-creating a project selects it instead
+    // of failing on the UNIQUE name — "new" is also the switch verb.
+    const existing = (await mgr.query(`SELECT * FROM projects WHERE name=?`, [name])) as any[];
+    if (existing.length) {
+      await mgr.query(
+        `INSERT INTO meta(key,value) VALUES('current_project',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+        [name]
+      );
+      return { ...existing[0], duplicate: true };
+    }
     const now = nowIso();
     const id = shortId(["proj", name], 10);
     await mgr.query(
