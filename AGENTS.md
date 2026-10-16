@@ -47,7 +47,7 @@ pnpm test                 # 四段制：unit + build + demo（跑 bundle 发布�
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
 pnpm pack:check           # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm readme:verify        # 文档真值门禁：README 命令示例逐条跑并断言退出码
-pnpm contract:audit       # 写路径契约体检：幂等/duplicate/坏引用点名/用法 rc=2
+pnpm contract:audit       # 契约体检（73 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道（31 读+6 错误）
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
@@ -78,8 +78,9 @@ export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 
 |---|---|
 | 退出码 | `0` 成功（含重复）· `1` 运行错误/404 · `2` 用法错误 |
 | --json | 写=单 JSON 对象（重复带 `duplicate:true`）；读=数组/对象 |
+| --json 错误路径 | 失败也机器可读：stdout 单对象 `{"error":"<msg>"}`；rc 承载类别（1 运行/2 用法）；人类用法文本只在非 json 模式输出 |
 | 写入幂等 | 同内容重跑返回已存在行 rc=0；`--force` 保留重复 |
-| 字段名 | snake_case，冻结；改字段名 = 破坏性变更 |
+| 字段命名 | 一律 snake_case，冻结；改字段名 = 破坏性变更；camelCase 泄漏视为违约（contract 5 断言） |
 
 ## 数据模型
 

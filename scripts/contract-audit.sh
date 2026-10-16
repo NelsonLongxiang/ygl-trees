@@ -108,6 +108,65 @@ badref "rel add → missing target"      "not found"          -- $Y rel add node
 badref "task doing → missing task"     "task not found"     -- $Y task doing no-such-task
 badref "node link → missing parent"    "parent not found"   -- $Y node link no-such-parent b
 
+# ── JSON channel: in --json mode stdout must parse WHOLE, carry no camelCase
+#    field, and stay parseable on failures too ({"error": ...}).
+json_ok() { # json_ok <desc> -- cmd...
+  local desc="$1"; shift 2
+  local verdict; verdict=$("$@" --json 2>/dev/null | node scripts/json-check.mjs)
+  case "$verdict" in
+    OK) pass "json channel: $desc" ;;
+    *) fail "json channel: $desc" "$verdict" ;;
+  esac
+}
+json_err() { # json_err <desc> <rc> -- cmd...   (failure must still parse on stdout)
+  local desc="$1"; local want="$2"; shift 3
+  local rc verdict
+  verdict=$("$@" --json 2>/dev/null | node scripts/json-check.mjs --error); rc=$?
+  if [ "$verdict" = "OK" ] && [ "$rc" = "$want" ]; then
+    pass "json error: $desc (rc=$rc, {error})"
+  else
+    fail "json error: $desc" "rc=$rc want=$want, stdout verdict: ${verdict:-<empty>}"
+  fi
+}
+
+echo "── contract 5: JSON channel (whole-stdout parse + snake_case + failure shape)"
+json_ok "agent brief"          -- $Y agent brief
+json_ok "db stats"             -- $Y db stats
+json_ok "db path"              -- $Y db path
+json_ok "db dups"              -- $Y db dups
+json_ok "project show"         -- $Y project show
+json_ok "project list"         -- $Y project list
+json_ok "tree list"            -- $Y tree list
+json_ok "node list"            -- $Y node list
+json_ok "node show"            -- $Y node show a
+json_ok "node parents"         -- $Y node parents b
+json_ok "node children"        -- $Y node children a
+json_ok "node ancestors"       -- $Y node ancestors b
+json_ok "node descendants"     -- $Y node descendants a
+json_ok "node path"            -- $Y node path b
+json_ok "node ready"           -- $Y node ready
+json_ok "node export"          -- $Y node export
+json_ok "node can"             -- $Y node can b
+json_ok "node validate"        -- $Y node validate
+json_ok "rel list"             -- $Y rel list
+json_ok "task list"            -- $Y task list
+json_ok "kb list"              -- $Y kb list
+json_ok "config list"          -- $Y config list
+json_ok "config get"           -- $Y config get search.limit
+json_ok "doctor"               -- $Y doctor
+json_ok "plugin list"          -- $Y plugin list
+json_ok "skill list"           -- $Y skill list
+json_ok "job list"             -- $Y job list
+json_ok "job logs"             -- $Y job logs
+json_ok "agent log"            -- $Y agent log
+json_ok "produce list"         -- $Y produce list
+json_err "bad reference"          1 -- $Y node link no-such-a no-such-b
+json_err "claim not found"        1 -- $Y research claim resolve no-such --as supported
+json_err "task not found"         1 -- $Y task doing no-such
+json_err "claim link bad evidence" 1 -- $Y research claim link no-such no-such2
+json_err "usage: node add"        2 -- $Y node add
+json_err "usage: unknown group"   2 -- $Y no-such-group-at-all
+
 echo "── contract 4: usage errors exit 2"
 usage2 "unknown group"          -- $Y no-such-group
 usage2 "node add without key"   -- $Y node add

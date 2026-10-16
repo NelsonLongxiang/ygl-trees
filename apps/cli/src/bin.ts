@@ -219,7 +219,7 @@ export async function main(argv: string[]): Promise<number> {
   const action = args._[1];
 
   if (!group || group === "help" || group === "-h" || group === "--help") {
-    out(ctx, usage());
+    if (!ctx.json) out(ctx, usage());
     return 0;
   }
 
@@ -315,7 +315,7 @@ export async function main(argv: string[]): Promise<number> {
     const mod = DOMAIN_MODULES[group];
     if (!mod) {
       bad(ctx, `unknown group: ${group}`);
-      out(ctx, usage());
+      if (!ctx.json) out(ctx, usage()); // usage text belongs to the human channel
       return 2;
     }
     const rc = await mod.run(env, action || "", args._.slice(2), args);

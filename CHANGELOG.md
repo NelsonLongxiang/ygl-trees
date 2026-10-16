@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.44.0（2026-10-17）JSON 通道契约：失败也必须机器可读（+31 读/6 错误路径机械断言）
+- **侦察（读侧对称体检）**：常用 21 条读命令**全绿**（纯 JSON + 零 camelCase 泄漏）；但角落与错误路径抓到两处真问题
+- **修复 1：`--json db path` 输出裸路径文本**（成功路径的纯净性违规，agent 侧 `JSON.parse` 直接崩）→ 改 `{"path": ...}`
+- **修复 2：所有错误写到 stdout 污染机器通道**（`--json` 下 `✗ parent not found: …`）→ `bad()` 单点修（129 个调用方受益）：json 模式输出单对象 `{"error": "<msg>"}`，rc 仍 1/2 承载类别；非 json 模式人类文本不变。另修 bin.ts 两处 `out(ctx, usage())` 在 json 模式泄漏用法转储
+- **契约措辞落文档**：spec「兼容性承诺」明确 `--json` 成功与失败同样可整体 parse、`error` 非空字符串、snake_case 硬约束、人类文本只在非 json 模式；AGENTS 契约表增两行
+- **门禁扩展**：`contract:audit` 增 **contract 5: JSON 通道**——31 条读命令（含角落：parents/children/ancestors/descendants/path/ready/export/validate/search）断言 stdout 可**整体** parse + 无 camelCase；6 条错误路径断言 `{error}` 形状 + rc（1 运行 / 2 用法）。门禁 37 → **73 项**，四段制全绿
+- **工具化**：内联 node 校验器改为独立 `scripts/json-check.mjs`（消除 bash 内嵌引号地狱，单测与门禁共用同一判定）
+
 ## 0.43.0（2026-10-17）写路径契约体检 + 常驻审计门禁（同类违规不能再悄悄回归）
 - **背景**：0.42 发现 `node link` 幂等崩溃，是"写技能时顺手实测"撞出来的——说明冻结契约需要**机械化体检**而非靠人记得。先做侦察 sweep（16 条写命令 × 2 + 11 条坏引用），确认缺陷边界
 - **修复 1：`project new` / `tree new` 同名幂等**——原先 rc=1 `SqliteError: UNIQUE constraint failed` 崩溃，违反「同内容重跑 rc=0 + duplicate:true」；改为**选中既有行**并回执 `duplicate: true`（`new` 同时也是切换动词），仍更新 `current_project`/`current_tree`；文本回执区分 `created and selected` / `exists, selected`

@@ -20,7 +20,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "path":
-      out(ctx, file);
+      if (ctx.json) console.log(JSON.stringify({ path: file }, null, 2));
+      else out(ctx, file);
       return 0;
     case "stats": {
       const s = env.store.stats();

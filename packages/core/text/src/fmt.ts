@@ -30,7 +30,16 @@ export function ok(ctx: Ctx, msg: string): void {
 export function warn(ctx: Ctx, msg: string): void {
   out(ctx, paint(C.yellow, `  ! ${msg}`, ctx.color));
 }
+/**
+ * Failure report. In --json mode stdout is the MACHINE channel, so a failure
+ * must still be parseable there: a single `{"error": "..."}` object (the exit
+ * code carries the class: 1 runtime, 2 usage). Human text otherwise.
+ */
 export function bad(ctx: Ctx, msg: string): void {
+  if (ctx.json) {
+    console.log(JSON.stringify({ error: msg }, null, 2));
+    return;
+  }
   out(ctx, paint(C.red, `  ✗ ${msg}`, ctx.color));
 }
 export function head(ctx: Ctx, msg: string): void {
