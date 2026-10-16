@@ -9,7 +9,7 @@ description: >-
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
-version: 0.38.0
+version: 0.56.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -110,6 +110,18 @@ ygl-trees config reset eval.pass_threshold
 （树侧何时 unlock/add/link、研究侧何时写 source/evidence/claim/kb/task）、节奏纪律
 （改结构后必 `node index`+`validate`、解锁后必挂证据、会话收口前必 `agent brief`+`doctor`）、
 以及漂移反模式。开场先 `agent brief`，收口前 `doctor`。
+
+## 10c. 冻结契约五项（0.55 定契）
+
+| 契约 | 含义 | 门禁 |
+|---|---|---|
+| ① 退出码 | 0 成功 / 1 运行错误 / 2 用法错误 | contract 4 |
+| ② 写入幂等 | 同内容重跑 rc=0 + `duplicate:true` | contract 1+2 |
+| ③ 坏引用点名 | `xxx not found: <id>`（不裸异常） | contract 3 |
+| ④ --json 通道 | 成功+失败都可整体 `JSON.parse` | contract 5 |
+| ⑤ flag 校验 | 裸 flag / 枚举非法 → rc=2，不落库 | contract 6 |
+
+`pnpm contract:audit` 84 项机械化断言以上全部。
 
 ## 11. 常见坑
 

@@ -265,10 +265,11 @@ ygl-trees agent log        # 审计事件流
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：unit (vitest 120 例) + build (tsc + tsdown) + demo（61 条断言）+ contract:audit（37 项）
+pnpm test          # 四段制回归：unit (vitest 123 例) + build (tsc + tsdown) + demo（61 条断言）+ contract:audit（84 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
+ygl-trees --version    # 打印版本号
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
 ygl-trees doctor   # 工作区健康检查 9 项（schema/索引/FTS/重复/孤儿/config/锁/eval 信封/插件 profile）

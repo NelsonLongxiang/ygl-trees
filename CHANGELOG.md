@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.56.0（2026-10-17）技能与文档刷新——0.49–0.55 变更同步
+- **4 个技能更新**（命令面同步到 0.55）：
+  - `ygl-trees-research` v0.14→v0.56：补 `claim evaluate`（决策模型置信度）+ `evidence assess`（证据质量）
+  - `ygl-trees-knowledge` v0.14→v0.56：补 `kb search --eval`（语义重排）
+  - `ygl-trees-techtree` v0.14→v0.56：补节点状态可见性（`node list` 状态列、`node show` unlocked_at）
+  - `ygl-trees-quickstart` v0.38→v0.56：补冻结契约五项表（含 flag 校验）+ `--version` + `contract:audit` 84 项
+- **README**：更新测试计数（123）、契约审计（84 项）、加 `--version` 用法
+- readme:verify 34/34 全绿
+
 ## 0.55.0（2026-10-17）flag 校验护栏收口——0.54 遗留
 - **contract:audit 73 → 84 项**：新增 contract 6「flag validation」——11 项断言（8 个裸 flag 拒绝 + 3 个枚举拒绝），确保 0.54 的 flagcheck 代码不被 revert 后静默回归
 - **spec 补 flag 校验契约**：裸 flag → rc=2 `needs a value`（不落库为 `"true"`）；枚举非法 → rc=2 `must be one of ...`（不触发写入）——与退出码/JSON 通道/幂等等已有契约并列
