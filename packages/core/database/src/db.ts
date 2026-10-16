@@ -386,40 +386,56 @@ export class DB {
     if (useLock && fs.existsSync(lockDir)) {
       let holder = "unknown";
       try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
-      // Same-process re-entry backstop: 0.65.0 moved the lock onto the
-      // DatabaseService path while profile-boot's fallback could still
-      // construct a second locked DB in the same process — every real
-      // (non-YGL_TEST) invocation self-deadlocked on its own pid. The root
-      // fix waits for the service (profile-boot); this exemption keeps any
-      // future same-process holder safe. Cross-process semantics unchanged:
-      // a live foreign pid still blocks.
+      // Same-process re-entry backstop (0.65.0 self-deadlock lesson).
       const mine = holder === String(process.pid);
-      // stale lock (>15 min) — steal it (same policy as job tick)
-      try {
-        const st = fs.statSync(lockDir);
-        if (mine || Date.now() - st.mtimeMs > 15 * 60 * 1000) {
-          fs.rmSync(lockDir, { recursive: true, force: true });
-        } else {
-          throw new Error(
-            `database is locked by another process (pid: ${holder}).\n` +
-            `  lock: ${lockDir}\n` +
-            `  if no other ygl-trees is running, remove it:  rmdir "${lockDir}"\n` +
-            `  (stale locks auto-clear after 15 minutes)`
-          );
+      // PID liveness (P1 cold-user report): the 15-minute mtime window was a
+      // blunt proxy — on Windows the exit-time rmSync can silently fail (EBUSY
+      // from an un-released handle), leaving an orphaned lock whose mtime is
+      // recent. A dead holder means the lock is garbage regardless of mtime;
+      // a live holder means it is real regardless of mtime.
+      //   signal 0 = pure existence check (does NOT kill the process)
+      //   EPERM   = exists but permission-denied (Windows ACL) — still alive
+      //   ESRCH   = no such process — dead, steal the lock
+      let holderAlive: boolean;
+      if (mine) holderAlive = false; // our own stale entry — always steal
+      else {
+        try {
+          process.kill(Number(holder), 0);
+          holderAlive = true;
+        } catch (e: any) {
+          holderAlive = e.code === "EPERM"; // EPERM = alive (Windows), ESRCH = dead
         }
-      } catch (e: any) {
-        if (String(e.message).includes("locked by another")) throw e;
-        // statSync/readFile failed but lock exists — still fail safe
-        throw new Error(`database is locked: ${lockDir} (holder unreadable)`);
+      }
+      if (!holderAlive) {
+        // Orphaned lock (holder crashed / exit cleanup failed) — steal now.
+        try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
+      } else {
+        throw new Error(
+          `database is locked by another process (pid: ${holder}).\n` +
+          `  lock: ${lockDir}\n` +
+          `  if this is a webui serve dashboard, it shares WAL safely — CLI reads work,\n` +
+          `  write commands need the serve process stopped (or YGL_TEST=1 to bypass)\n` +
+          `  if no other ygl-trees is running, remove it:  rmdir "${lockDir}"`
+        );
       }
     }
     // acquire the lock (best-effort; crash cleanup via stale detection above)
     if (useLock) try {
       fs.mkdirSync(lockDir, { recursive: true });
       fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
-      // belt-and-suspenders: release on ANY process exit path (normal, signal, crash)
-      const self = this;
-      process.on("exit", () => { try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ } });
+      // P1 cold-user report (Windows): `process.on("exit")` rmSync can silently
+      // fail when the SQLite handle hasn't been released yet (EBUSY on the dir).
+      // Two mitigations:
+      //   1. beforeExit fires earlier (while the event loop is still alive)
+      //   2. PID liveness check (above) makes any residual lock self-healing —
+      //      the NEXT process sees a dead PID and clears it immediately.
+      const cleanup = () => {
+        for (let i = 0; i < 3; i++) { // retry: Windows may need a tick
+          try { fs.rmSync(lockDir, { recursive: true, force: true }); return; } catch { /* */ }
+        }
+      };
+      process.on("beforeExit", cleanup);
+      process.on("exit", cleanup);
     } catch { /* lock creation failure is non-fatal (read-only scenarios) */ }
     this.db = new Database(file);
     this.db.exec("PRAGMA journal_mode=WAL");

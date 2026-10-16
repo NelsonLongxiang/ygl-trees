@@ -442,7 +442,7 @@ export async function taskSetStatus(ds: DataSource, taskId: string, status: stri
     let meta: any = {};
     try { meta = rows[0].meta ? JSON.parse(rows[0].meta) : {}; } catch { /* malformed → reset */ }
     const from = meta.status || "todo";
-    await mgr.query(`UPDATE artifacts SET meta=? WHERE id=?`, [JSON.stringify({ ...meta, status }), taskId]);
+    await mgr.query(`UPDATE artifacts SET meta=?, updated=? WHERE id=?`, [JSON.stringify({ ...meta, status }), nowIso(), taskId]);
     await logEvent(mgr, "task.status", "task", taskId, `${from} → ${status}`, status === "done" ? "info" : "info");
     return { id: taskId, title: rows[0].title, from, to: status };
   });

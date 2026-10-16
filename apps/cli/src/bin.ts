@@ -218,6 +218,15 @@ export async function main(argv: string[]): Promise<number> {
   const group = args._[0];
   const action = args._[1];
 
+  // F1 fix (a2a review): webui serve holds its DB connection for the process
+  // lifetime — a process-level exclusive lock there would block ALL CLI
+  // commands until serve exits. SQLite WAL already permits concurrent readers
+  // + serialized writers, so serve skips the app-level lock. Short CLI
+  // commands still lock (single-writer for the brief write window).
+  if (group === "webui" && (action === "serve" || action === "export")) {
+    process.env.YGL_SERVE = "1";
+  }
+
   // P4 fix: --version prints the actual version number (cold-user report);
   // the parser eats --version as a flag, so check flags not positional args.
   if (args.flags.version === true || group === "version") {
@@ -270,10 +279,24 @@ export async function main(argv: string[]): Promise<number> {
       return 1;
     }
     bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
+    // F2 fix (a2a review): --json mode must stay a single parseable object —
+    // suppress the human-only lock hints. Also check PID liveness, not just
+    // directory existence (a live serve holder is NOT stale).
     const lock = `${file}.ygllock`;
-    if (require("node:fs").existsSync(lock)) {
-      out(ctx, `  stale lock dir detected: ${lock}`);
-      out(ctx, `  if no other ygl-trees process is running, remove it:  rmdir "${lock}"`);
+    if (!ctx.json && require("node:fs").existsSync(lock)) {
+      const pidFile = require("node:path").join(lock, "pid");
+      let holder = "?";
+      try { holder = require("node:fs").readFileSync(pidFile, "utf8").trim(); } catch { /* */ }
+      let alive = false;
+      try { process.kill(Number(holder), 0); alive = true; } catch (err: any) { alive = err.code === "EPERM"; }
+      if (alive) {
+        out(ctx, `  lock held by live process pid ${holder} (serve? webui dashboard)`);
+        out(ctx, `  to run CLI write commands, stop that process first — or use YGL_TEST=1 to bypass`);
+      } else {
+        out(ctx, `  orphaned lock (pid ${holder} is dead) — removing: ${lock}`);
+        try { require("node:fs").rmSync(lock, { recursive: true, force: true }); } catch { /* */ }
+        out(ctx, `  retry the command — the lock has been cleaned`);
+      }
     }
     return 1;
   }

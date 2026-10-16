@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.68.0（2026-10-17）锁设计修复——serve/CLI 共存 + PID 活锁检测 + JSON 纯净 + v9 时间纪律
+- **F1（P0）：webui serve 不再持排他锁**——原实现进程级锁让 serve 生命周期内挡掉一切 CLI 命令；现 serve 跳过锁（`YGL_SERVE=1` 旁路），SQLite WAL 天然支持并发读 + 序列化写；CLI 短命令仍锁（单写者保护写窗口）
+- **P1（用户反馈）：PID 活锁检测替代 15 分钟 mtime**——Windows 上 `process.on("exit")` 的 rmSync 句柄未释放时静默失败→锁残留→下进程撞白锁；现用 `process.kill(pid, 0)` 探测持有者是否存活（EPERM=活/ESRCH=死），死 PID **立即清锁**（不看 mtime），活 PID **如实报告**（不误报 stale）
+- **F2：--json 模式锁错误纯净**——原锁提示文本泄露到 stdout 破坏 JSON 通道契约；现 --json 模式抑制人类提示，且提示本身也改为 PID 活锁感知（活锁不叫 stale）
+- **F3：taskSetStatus 更新 artifacts.updated**——任务状态变更现在同步写 updated 时间戳（v9 纪律补漏）
+- **exit 清理加固**：`beforeExit` + `exit` 双钩子 + 3 次重试（Windows EBUSY 容忍）
+- **vendor/cordis bin 字段清理**：bin.js 已删但声明残留——移除
+
 ## 0.67.0（2026-10-17）WebUI antd 迭代——Ant Design 组件库升级 React 客户端
 - **antd v6 + @ant-design/icons**：专业组件库驱动的富客户端
 - **组件替换**：Layout（Header/Content）、Card 统计卡片、Statistic 数字展示、Table 任务清单（可筛选）、Tag 状态标签、Alert 错误提示、Space/Row/Col 布局
