@@ -4,7 +4,7 @@
 import * as fs from "node:fs";
 import { MoreThanOrEqual } from "typeorm";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C, writeResult } from "../../../core/text/src/fmt";
+import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../../core/text/src/fmt";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "./writes";
@@ -76,7 +76,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
-    if (subAction === "list" || subAction === undefined) {
+        if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const qs = await ds.getRepository(Query).find({
@@ -318,7 +318,55 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         (r) => `evidence added: ${r.id}  ${clip(quote, 50)}`
       );
     }
-    if (subAction === "list" || subAction === undefined) {
+    // R15.3: evidence assess — decision model evaluates evidence quality
+    if (action === "evidence" && subAction === "assess") {
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research evidence assess <evidenceId>");
+        return 2;
+      }
+      const ev = store.db.get(
+        `SELECT e.quote, e.locator, s.title AS source_title, s.url AS source_url
+           FROM evidence e LEFT JOIN sources s ON s.id = e.source_id
+          WHERE e.id = ? AND e.project_id = ?`,
+        [id, project.id]
+      ) as any;
+      if (!ev) {
+        bad(ctx, `evidence not found: ${id}`);
+        return 1;
+      }
+      const { assessEvidenceQuality } = require("../../../ops/tools/src/eval-enhance");
+      return assessEvidenceQuality({
+        quote: ev.quote,
+        locator: ev.locator,
+        source_title: ev.source_title || "(无来源)",
+        source_url: ev.source_url,
+      }).then((result: any) => {
+      if (ctx.json) {
+        console.log(JSON.stringify({
+          evidence_id: id,
+          quote: ev.quote.slice(0, 120),
+          source: ev.source_title,
+          quality_score: result.quality_score,
+          reliability: result.reliability,
+          reasoning: result.reasoning,
+        }, null, 2));
+      } else {
+        head(ctx, `evidence assess: ${id}`);
+        show(ctx, {
+          引文: clip(ev.quote, 60),
+          来源: ev.source_title || "-",
+          模型评分: result.quality_score !== null ? `${result.quality_score}/5` : "离线",
+          可靠性: result.reliability,
+        });
+        out(ctx, paint(C.dim, `  ${result.reasoning}`, ctx.color));
+      }
+      return 0;
+      });
+    }
+
+    
+if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const evs = await ds.getRepository(Evidence).find({
@@ -400,7 +448,62 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
-    if (subAction === "list" || subAction === undefined) {
+    // R15.2: claim evaluate — decision model evaluates confidence from linked evidence
+    if (subAction === "evaluate") {
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research claim evaluate <claimId>");
+        return 2;
+      }
+      const claim = store.db.get("SELECT id, text, status, confidence FROM claims WHERE id=? AND project_id=?", [id, project.id]) as any;
+      if (!claim) {
+        bad(ctx, `claim not found: ${id}`);
+        return 1;
+      }
+      const evidenceRows = store.db.all(
+        `SELECT e.quote, ce.stance, s.title AS source_title
+           FROM claim_evidence ce
+           JOIN evidence e ON e.id = ce.evidence_id
+           LEFT JOIN sources s ON s.id = e.source_id
+          WHERE ce.claim_id = ?`,
+        [id]
+      ) as any[];
+      const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
+      return (async () => {
+      const result = await evaluateClaimConfidence({
+        claim_text: claim.text,
+        claim_status: claim.status,
+        evidence: evidenceRows.map((e: any) => ({ quote: e.quote, stance: e.stance, source_title: e.source_title })),
+      });
+      if (ctx.json) {
+        console.log(JSON.stringify({
+          claim_id: id,
+          claim_text: claim.text,
+          current_status: claim.status,
+          current_confidence: claim.confidence,
+          model_confidence: result.confidence_score,
+          model_label: result.confidence_label,
+          evidence_count: evidenceRows.length,
+          reasoning: result.reasoning,
+        }, null, 2));
+      } else {
+        head(ctx, `claim evaluate: ${id}`);
+        show(ctx, {
+          断言: clip(claim.text, 60),
+          当前状态: claim.status,
+          当前置信度: claim.confidence,
+          模型评分: result.confidence_score !== null ? `${result.confidence_score}/5` : "离线",
+          模型置信度: result.confidence_label,
+          证据数: evidenceRows.length,
+        });
+        out(ctx, paint(C.dim, `  ${result.reasoning}`, ctx.color));
+      }
+      return 0;
+      })();
+    }
+
+    
+if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const cls = await ds.getRepository(Claim).find({

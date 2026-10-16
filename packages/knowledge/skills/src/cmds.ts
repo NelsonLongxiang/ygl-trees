@@ -55,7 +55,32 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing query");
         return 2;
       }
-      const rows = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit"))).map((r: any) => ({
+      const raw = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit")));
+      // R15.1: semantic re-ranking via decision model (--eval)
+      if (args.flags.eval) {
+        const { semanticReRank } = require("../../../ops/tools/src/eval-enhance");
+        const candidates = raw.map((r: any) => ({ id: r.id, title: r.title, excerpt: String(r.body || r.title).slice(0, 200) }));
+        return semanticReRank(q, candidates).then((reRanked: any[]) => {
+        const idToRaw = new Map(raw.map((r: any) => [r.id, r]));
+        const rows = reRanked.map((rr: any) => {
+          const orig = idToRaw.get(rr.id) as any;
+          return {
+            id: rr.id,
+            title: clip(orig.title, 42),
+            semantic: rr.semantic_relevance !== null ? rr.semantic_relevance.toFixed(2) : "离线",
+            orig_rank: rr.original_rank,
+            tags: orig.tags || "-",
+            conf: orig.confidence,
+          };
+        });
+        if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+        head(ctx, `kb search "${q}"  (语义重排)`);
+        table(ctx, rows, ["id", "title", "semantic", "orig_rank", "tags", "conf"],
+                        ["id", "title", "semantic", "orig_rank", "tags", "conf"]);
+        return 0;
+        });
+      }
+      const rows = raw.map((r: any) => ({
         id: r.id,
         title: clip(r.title, 46),
         tags: r.tags || "-",

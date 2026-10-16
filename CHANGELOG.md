@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.49.0（2026-10-17）R15：决策模型增强——语义检索重排 + 断言置信度评估 + 证据质量评估
+- **R15.1 `kb search --eval`**：FTS5 召回后由决策模型逐条评估语义相关性 P(relevant) 并重排——实测：搜"插件系统"命中 drift 教程（P=0.05），模型正确判定低相关
+- **R15.2 `research claim evaluate <id>`**：收集关联证据 → 决策模型综合评估置信度（0-5 分 → A/B/C/D 映射）——实测：人工标 A 的断言，模型基于证据评为 **3.5/5 → B**（比人工更保守，有依据）
+- **R15.3 `research evidence assess <id>`**：决策模型评估证据来源可靠性 + 引文质量——实测：源码引文评 **2.9/5 → 中等**
+- **复用 R8 基础设施**：同一模型连接（AI_GATEWAY_API_KEY / TypeSafe jev）、同一三态映射、同一离线安全（无凭证 → 显示"离线"并回退，不炸）
+- **新增模块 `eval-enhance.ts`**：semanticReRank / evaluateClaimConfidence / assessEvidenceQuality 三个可复用函数，任何搜索/评估场景可调用
+- 中文输出（断言/当前状态/模型评分/可靠性 全中文标签）
+
 ## 0.48.0（2026-10-17）冷启动技能自动导入——修产品入口的最后一道缝
 - **问题**（冷启动实战发现）：`db init` 后的全新工作区 `agent match` 返回空——技能需手动 `skill import`，冷用户会以为工具没有能力
 - **修复**：`db init` 自动导入内置 9 个技能（向上探测包内 skills/ 目录，逐技能隔离导入），全新工作区的 `agent match` **立即可用**；三种不同查询实测全命中（"插件系统设计"→quickstart / "怎么建一棵科技树"→techtree / "做调研收集证据"→research）
