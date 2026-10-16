@@ -358,6 +358,42 @@ export class DB {
   constructor(file: string) {
     this.path = file;
     fs.mkdirSync(path.dirname(file), { recursive: true });
+    // P0-2 (real-user incident): single-writer mutex. node-sqlite3-wasm has no
+    // concurrent-write protection; two CLI processes writing simultaneously
+    // corrupted the DB ("malformed"). The .db.lock dir mechanism already
+    // exists (job tick uses it) — reuse it: if another process holds the lock,
+    // fail fast with a clear message instead of silently corrupting.
+    const lockDir = `${file}.lock`;
+    if (fs.existsSync(lockDir)) {
+      let holder = "unknown";
+      try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
+      // stale lock (>15 min) — steal it (same policy as job tick)
+      try {
+        const st = fs.statSync(lockDir);
+        if (Date.now() - st.mtimeMs > 15 * 60 * 1000) {
+          fs.rmSync(lockDir, { recursive: true, force: true });
+        } else {
+          throw new Error(
+            `database is locked by another process (pid: ${holder}).\n` +
+            `  lock: ${lockDir}\n` +
+            `  if no other ygl-trees is running, remove it:  rmdir "${lockDir}"\n` +
+            `  (stale locks auto-clear after 15 minutes)`
+          );
+        }
+      } catch (e: any) {
+        if (String(e.message).includes("locked by another")) throw e;
+        // statSync/readFile failed but lock exists — still fail safe
+        throw new Error(`database is locked: ${lockDir} (holder unreadable)`);
+      }
+    }
+    // acquire the lock (best-effort; crash cleanup via stale detection above)
+    try {
+      fs.mkdirSync(lockDir, { recursive: true });
+      fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
+      // belt-and-suspenders: release on ANY process exit path (normal, signal, crash)
+      const self = this;
+      process.on("exit", () => { try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ } });
+    } catch { /* lock creation failure is non-fatal (read-only scenarios) */ }
     this.db = new Database(file);
     this.db.exec("PRAGMA journal_mode=WAL");
     // WAL + NORMAL (sqlite.org recommended pairing): commits skip the per-tx
@@ -368,8 +404,48 @@ export class DB {
     this.migrate();
   }
 
+  /** Release the write lock (called by close() and process exit). */
+  private releaseLock(): void {
+    try {
+      const lockDir = `${this.path}.lock`;
+      if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
+    } catch { /* best effort */ }
+  }
+
+  /** Static: force-release a lock (for cleanup hooks). */
+  static releaseLockFor(file: string): void {
+    try {
+      const lockDir = `${file}.lock`;
+      if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
+    } catch { /* */ }
+  }
+
   private migrate(): void {
-    const row = this.get<{ user_version: number }>("PRAGMA user_version");
+    let row: { user_version: number } | null;
+    try {
+      row = this.get<{ user_version: number }>("PRAGMA user_version");
+    } catch (e: any) {
+      if (String(e.message).includes("malformed") || String(e.message).includes("not a database")) {
+        throw new Error(
+          `database corrupted: ${this.path}
+` +
+          `  ${e.message}
+` +
+          `  
+` +
+          `  自愈路径（库可随时从源文件重建）：
+` +
+          `  1. 备份损坏库：  cp "${this.path}" "${this.path}.corrupt.bak"
+` +
+          `  2. 重置：        ygl-trees db reset
+` +
+          `  3. 重新导入：    ygl-trees db init && ygl-trees kb import <源目录>
+` +
+          `     （kb 笔记全部有源 .md 文件在盘上，库只是索引）`
+        );
+      }
+      throw e;
+    }
     const v = row?.user_version ?? 0;
     if (v < SCHEMA_VERSION) {
       // A replayed dump has user_version=0 but tables already exist — the
@@ -511,6 +587,7 @@ export class DB {
     } catch {
       /* ignore */
     }
+    this.releaseLock();
   }
 }
 

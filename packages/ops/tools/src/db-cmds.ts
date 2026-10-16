@@ -34,6 +34,8 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<number
   const { parseFrontmatter } = require("../../../core/text/src/text");
   const ds = await getOrm(dbFile);
   let count = 0;
+  // Note: getOrm caches the DataSource; the lock is released when the outer
+  // DB.close() runs. For db init's short-lived process this is fine.
   for (const entry of fs2.readdirSync(skillsDir)) {
     const skillFile = path2.join(skillsDir, entry, "SKILL.md");
     if (!fs2.existsSync(skillFile)) continue;
@@ -70,8 +72,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // Cold-start fix (0.48): a fresh workspace has ZERO skills, so agent match
       // returns nothing and a cold user thinks the tool has no capabilities.
       // Auto-import the built-in skills that ship with this package.
-      autoImportBuiltinSkills(env, file).then((n) => {
+      autoImportBuiltinSkills(env, file).then(async (n) => {
         if (n > 0) ok(ctx, `built-in skills:  ${n} imported (agent match ready)`);
+        // Release the ORM connection so the lock doesn't linger
+        try { const { closeOrm } = require("../../../core/database/src/orm"); await closeOrm(); } catch { /* */ }
       });
       return 0;
     }

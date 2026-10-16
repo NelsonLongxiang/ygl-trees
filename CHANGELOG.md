@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.52.0（2026-10-17）真实使用反馈修复——数据安全三件 + 仓库卫生
+- **来源**：用户在 :8322 部署运行后的实测反馈（含 DEV-LEDGER 483MB 事故复盘）
+- **P0-1 kb import 文件大小护栏**：>1MB 的 .md 默认跳过并在 summary 列出（`--force` 覆盖）——防止 483MB 单文件把库撑到 472MB 并损坏的事故重演
+- **P0-2 写库互斥（单写者锁）**：DB 构造时检测 `.db.lock` 目录，第二个进程 fail-fast 并提示（15 分钟过期自清，同 job tick 策略）；`process.on("exit")` 兜底释放——node-sqlite3-wasm 无并发写保护，两个 CLI 同时写 = malformed
+- **P1 malformed 报错附带自愈指引**：`database disk image is malformed` 时输出三步恢复路径（备份→db reset→kb import 重灌），不再让用户自己悟「库可从源文件重建」
+- **P2 vendor/cordis/bin.js 移出 git 追踪**：本地 `pnpm install` 会改写该文件导致每次 pull 冲突；加入 .gitignore
+- **P4 --version 打印版本号**：parser 把 `--version` 吞成 flag 而非 positional——修在 flags 检查处（0.51 遗留的错位修复）
+
 ## 0.51.0（2026-10-17）冷用户验证修复——2 处数据完整性 + 2 处环境级 + 体验
 - **来源**：外部冷用户验证报告（干净 clone + 全门禁 + 手工全链演练），发现 2 处校验缺口 + 4 类工程问题
 - **P1-1 修复**：`research source add --title`（无值）原先**静默写入 `{"title":"true"}` 垃圾行**（rc=0 违反契约）→ 现在检测 boolean `true` 值并拒绝 `rc=2`；另增 `--url` 格式校验（须 http(s):// 或 file://）

@@ -277,6 +277,8 @@ export async function main(argv: string[]): Promise<number> {
   const loadedPlugins = booted.loadedPlugins;
   const shutdown = createProcessShutdown(async () => {
     try { db?.close(); } catch { /* best effort */ }
+    // P0-2 belt-and-suspenders: force-release the lock on any exit path
+    try { require("../../../packages/core/database/src/db").DB.releaseLockFor(file); } catch { /* */ }
   });
   process.on("SIGINT", () => shutdown.interrupt(0));
   process.on("SIGTERM", () => shutdown.interrupt(0));

@@ -205,8 +205,28 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       files.sort();
+      // P0-1 guard (real-user incident): >1MB .md files are skipped by default.
+      // A 483MB file corrupted the DB — tool-layer guardrails beat human discipline.
+      const MAX_FILE_BYTES = 1 * 1024 * 1024;
+      const skipped: Array<{ file: string; size: string }> = [];
+      const importable = files.filter((f) => {
+        const sz = fs.statSync(f).size;
+        if (sz > MAX_FILE_BYTES && !args.flags.force) {
+          skipped.push({ file: f, size: `${(sz / 1024 / 1024).toFixed(1)}MB` });
+          return false;
+        }
+        return true;
+      });
+      if (skipped.length && !ctx.json) {
+        out(ctx, paint(C.yellow, `  ! skipped ${skipped.length} file(s) >1MB (--force to include):`, ctx.color));
+        for (const sk of skipped) out(ctx, paint(C.dim, `    ${sk.file}  (${sk.size})`, ctx.color));
+      }
+      if (!importable.length) {
+        bad(ctx, `all ${files.length} file(s) exceeded 1MB limit — use --force to import anyway`);
+        return 1;
+      }
       // parse everything first, then ONE bulk transaction (writes.kbImportBulk)
-      const items: writes.KbImportItem[] = files.map((f) => {
+      const items: writes.KbImportItem[] = importable.map((f) => {
         const raw = fs.readFileSync(f, "utf8");
         const { meta, body } = parseFrontmatter(raw);
         const heading = /^#\s+(.+)\s*$/m.exec(body)?.[1]?.trim();
