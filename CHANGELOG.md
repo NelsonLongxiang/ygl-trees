@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.32.1（2026-10-17）React 富客户端骨架（spec R13.5 裁定落地）
+- **React 技术栈裁定（用户）**：WebUI 富客户端按需取用 xyflow/ahooks/react-router/pro-components/remix/grid-layout/react-pdf/react-markdown；`apps/web` 为 React 家园，CLI 零依赖内嵌 dashboard 保留（离线单文件导出不受构建链拖累）
+- **apps/web 骨架**：Vite + React 18 + @xyflow/react——**树视图 pan/zoom/drag + MiniMap**（R13.3 核心，tier 布局，点击节点出详情面板：conditions/确定性 can/R9 related）、next_actions/tasks/统计卡、10s 轮询；`src/tokens.css` 镜像 DESIGN.md（token 单一事实源不变）；开发期 /api 代理到 `webui serve:8642`
+- 构建验证：`pnpm --filter @ygl/web build` ✓（334KB js / 108KB gzip）；根 tsconfig 排除 apps/web（CJS CLI 构建不受 ESM/JSX 影响）
+- obelisk 记忆更新至 v5（R9-R12 + 两项裁定 + 陷阱清单）；决策备案 a2a team-god-system（report-fe2c6647）
+
 ## 0.32.0（2026-10-17）工程产出形态（spec R12）
 - **schema v8**：artifacts 加 `meta TEXT NOT NULL DEFAULT ''`（JSON 信封，循 eval choice 先例）；kind 扩 `spec|design|task`
 - **`produce spec`**（需求规格文档）、**`produce design --design-type ui-ux|arch|decision`**（R12.1a：ui-ux 对齐 DESIGN.md 格式，arch/decision 用 ADR 风格；design_type 存 meta 信封）

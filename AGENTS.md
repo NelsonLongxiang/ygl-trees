@@ -23,7 +23,7 @@ packages/         领域模块（库代码，可被 apps 组合）
 
 apps/             应用入口（组装 packages，跑产品）
   cli/              CLI 应用（参数解析/命令分发/usage）
-  web/              未来 WebUI 应用（webui serve 内嵌在 ops/tools，本目录预留）
+  web/              React 富客户端（xyflow 树视图，spec R13.5；CLI 内嵌零依赖 dashboard 保留）
 
 bin/              可执行入口
 benchmarks/       性能基准套件（bench.js 七席 + README，pnpm bench）
@@ -45,7 +45,7 @@ pnpm bench                # 性能基准（先 build；结果落 tmp/bench-resul
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
-**测试纪律**：提交前 `pnpm test` 全绿。demo 有 8 组断言。新功能必须有 demo 断言或单测。
+**测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 有 15 组断言。新功能必须有 demo 断言或单测。
 
 ## 架构（Cordis 框架）
 
@@ -78,7 +78,7 @@ export function createApp(dbFile: string): Context { ... }
 ## 数据模型
 
 - SQLite 唯一事实源；PG 单向导出（sync 镜像 / migrate 迁移）
-- Schema 走 `PRAGMA user_version`（当前 v7：events.level 遥测严重级）；`synchronize` 永久 false
+- Schema 走 `PRAGMA user_version`（当前 v8：events.level 遥测级 + artifacts.meta 信封）；`synchronize` 永久 false
 - 加表九触点 → [docs/conventions.md](docs/conventions.md) §一
 - TypeORM 边界（读走 ORM，写走事务化服务）→ [docs/conventions.md](docs/conventions.md) §五
 

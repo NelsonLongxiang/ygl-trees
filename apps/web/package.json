@@ -1,0 +1,24 @@
+{
+  "name": "@ygl/web",
+  "version": "0.32.1",
+  "private": true,
+  "description": "React rich client for the ygl-trees dashboard (spec R13.5): xyflow tree view, DESIGN.md tokens. The CLI's zero-dep embedded dashboard (webui export/serve) stays for offline single-file use.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

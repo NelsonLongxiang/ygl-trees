@@ -123,6 +123,8 @@
 - **R13.3**：viz pan/zoom（SVG viewBox 拖拽缩放）支撑真实规模
 - **R13.4 验收**：30+ 节点树在 webui 可浏览可缩放；三个新 skill 可被 agent match 命中
 
+**R13.5 React 技术栈裁定（用户 2026-10-17，0.32.1 起）**：WebUI 的富客户端按需取用以下 React 资源——[xyflow](https://github.com/xyflow/xyflow)（**树/DAG 交互视图核心**：pan/zoom/拖拽/小地图，R13.3 主力）、[ahooks](https://github.com/alibaba/hooks)、[react-router](https://github.com/remix-run/react-router)、[pro-components](https://github.com/ant-design/pro-components)、[remix](https://github.com/remix-run/remix)、[react-grid-layout](https://github.com/react-grid-layout/react-grid-layout)（仪表盘面板）、[react-pdf](https://github.com/diegomura/react-pdf)、[react-markdown](https://github.com/remarkjs/react-markdown)（报告/规格渲染）。**架构分工**：`apps/web` 为 React 家园（Vite 构建，开发期 proxy /api → CLI serve）；CLI 内嵌零依赖 dashboard（webui export/serve）**保留**——离线单文件导出与轻量检阅不受构建链拖累。DESIGN.md 仍是 token 单一事实源（React 组件消费同一套 token）。
+
 ## 2. 数据模型变更（schema v2 → v3）
 
 | 表 | 变更 | 迁移 |
