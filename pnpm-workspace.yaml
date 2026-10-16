@@ -2,3 +2,5 @@ packages:
   - vendor/*
   - packages/*/*
   - apps/*
+neverBuiltDependencies:
+  - better-sqlite3

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.57.0（2026-10-17）收尾审计——修复一个从未生效的修复 + 记忆 v8
+- **修复：`neverBuiltDependencies` 从未生效**——0.52 把它放在 `package.json` 的 `pnpm` 字段里，但 **pnpm 9 不再读那个位置**（每次 install 都打印警告说 "ignored"）；现在移到 `pnpm-workspace.yaml` 的正确位置，better-sqlite3 豁免实际生效
+- **修复：tsdown `--external` → `--deps.never-bundle`**——消除 deprecation 警告
+- **记忆 v7 → v8**：0.45-0.57 全部变更（R15、flag 校验、冷启动、React 构建、5 轮冷用户反馈）
+
 ## 0.56.0（2026-10-17）技能与文档刷新——0.49–0.55 变更同步
 - **4 个技能更新**（命令面同步到 0.55）：
   - `ygl-trees-research` v0.14→v0.56：补 `claim evaluate`（决策模型置信度）+ `evidence assess`（证据质量）

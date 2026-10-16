@@ -215,73 +215,7 @@ importers:
         specifier: ^20.0.0
         version: 20.19.43
 
-  tmp/plugins-unit-1792155601155/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156234395/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156269795/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156293864/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156312168/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156328204/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156606597/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792156828046/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792157526244/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792157896579/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792159278681/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/readme-verify-ws/plugins:
+  tmp/plugins-unit-1792159750150/plugins:
     dependencies:
       ygl-plugin-demo:
         specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
