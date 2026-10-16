@@ -2,15 +2,16 @@
 "use strict";
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
-const { suite, now, stats, freshWorkspace } = require("../support/helpers");
+const { suite, now, stats, freshWorkspace, scale } = require("../support/helpers");
 
-module.exports = async function runStartup(root, bin) {
+module.exports = async function runStartup(root, bin, quick) {
   await suite("startup", async () => {
+    const n = scale(quick, 10, 4);
     const ws = freshWorkspace(root, "startup");
     const args = ["--no-color", "--home", ws, "db", "init"];
     spawnSync(process.execPath, [bin, ...args], { stdio: "ignore" }); // warmup
     const samples = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < n; i++) {
       const t0 = now();
       spawnSync(process.execPath, [bin, "--no-color", "--home", ws, "db", "stats"], { stdio: "ignore" });
       samples.push(now() - t0);

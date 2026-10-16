@@ -1,9 +1,10 @@
 /** User path: tech-tree index — closure rebuild + topo + FTS5 node search. */
 "use strict";
 const path = require("node:path");
-const { suite, now, freshWorkspace } = require("../support/helpers");
+const { suite, now, freshWorkspace, scale } = require("../support/helpers");
 
-module.exports = async function runTechtreeIndex(root) {
+module.exports = async function runTechtreeIndex(root, quick) {
+  const SEARCHES = scale(quick, 100, 30);
   const ws = freshWorkspace(root, "tindex");
   const dbFile = path.join(ws, "bench.db");
   const { DB } = require(path.join(root, "dist/packages/core/database/src/db"));
@@ -15,7 +16,7 @@ module.exports = async function runTechtreeIndex(root) {
   const trees = new TreeStore(db);
   const ds = await getOrm(dbFile);
   const tree = await treeWrites.treeCreate(ds, "bt", "", "");
-  const NODE_N = 300;
+  const NODE_N = scale(quick, 300, 100);
 
   await suite("node-index", async () => {
     db.exec("BEGIN");
@@ -51,7 +52,7 @@ module.exports = async function runTechtreeIndex(root) {
   await suite("node-search", async () => {
     const pool = ["n00", "节点n01", "tech", "n01 n05", "架构", "tier"];
     const samples = [];
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < SEARCHES; i++) {
       const q = pool[i % pool.length];
       const t0 = now();
       trees.nodeSearch(tree.id, q, 20);

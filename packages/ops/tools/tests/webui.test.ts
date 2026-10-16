@@ -178,4 +178,58 @@ describe("webui live server", () => {
     expect(full.content).toContain("单测项目");
     expect((await fetch(`${base}/api/artifact?id=nope`)).status).toBe(404);
   });
+
+  it("0.39 SSE：/api/events 推送到连接（首帧快照 + 变更帧）", async () => {
+    const res = await fetch(`${base}/api/events`, { headers: { accept: "text/event-stream" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    const frames: Array<{ ev: string; data: string }> = [];
+    // read() blocks until data arrives — race it against a deadline, or the
+    // collector hangs forever waiting for a frame the test has yet to cause.
+    const race = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+    const drain = () => {
+      let i: number;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const raw = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const m = /event: (\w+)\ndata: (.*)/s.exec(raw);
+        if (m) frames.push({ ev: m[1], data: m[2] });
+      }
+    };
+    const collect = async (want: number, budgetMs: number) => {
+      const until = Date.now() + budgetMs;
+      while (frames.length < want && Date.now() < until) {
+        const chunk = await race(reader.read(), Math.max(50, until - Date.now()));
+        if (!chunk || chunk.done) break;
+        buf += dec.decode(chunk.value, { stream: true });
+        drain();
+      }
+    };
+    try {
+      await collect(1, 3000); // connect snapshot
+      expect(frames.length).toBeGreaterThanOrEqual(1);
+      expect(frames[0].ev).toBe("data");
+      const snap = JSON.parse(frames[0].data);
+      expect(Array.isArray(snap.tasks)).toBe(true);
+      const before = snap.tasks.length;
+      // mutate the workspace: the 1.5s fingerprint tick must push a fresh frame
+      const writes = await import("../../../research/pipeline/src/writes");
+      const ds = await getOrm(path.join(dir, "unit.db"));
+      const cur = db.metaGet("current_project");
+      const projRow = db.get("SELECT id FROM projects WHERE name=?", [cur]) as any;
+      await writes.taskAdd(ds, projRow.id, "SSE 单测新任务");
+      await collect(2, 8000);
+      expect(frames.length).toBeGreaterThanOrEqual(2);
+      const latest = JSON.parse(frames[frames.length - 1].data);
+      expect(latest.tasks.length).toBe(before + 1);
+      expect(latest.tasks.some((t: any) => t.title === "SSE 单测新任务")).toBe(true);
+    } finally {
+      // release the socket or afterAll's server.close() waits forever
+      await reader.cancel().catch(() => {});
+    }
+  }, 20000);
 });

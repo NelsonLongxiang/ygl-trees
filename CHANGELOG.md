@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.39.0（2026-10-17）WebUI 事件驱动实时化 + 基准维度补齐 + 发布决策上报
+- **SSE 实时通道**：`webui serve` 新增 `/api/events`（text/event-stream）——连接即发首帧完整载荷，之后仅在数据变更时推送；服务端 1.5s 一次**表指纹**（18 张表 `COUNT(*)` 容错拼串，某表缺失记 `?` 不抛错），指纹变化才重算并广播；指纹 tick 挂 `ctx.timer`（vendor 弹药生命周期托管），插件缺失回退裸 interval
+- **客户端零轮询**：React 客户端改 `EventSource` 订阅（`subscribeDashboard`），10s 轮询降级为**仅在 SSE 未接管时**执行；`tsc --noEmit` 零错 + vite 构建通过
+- **修停机挂起**：SSE 客户端永久占 socket，`server.close()` 会永不回调——shutdown 先 `closeLive()` + `closeAllConnections()` 再 close；实测挂着 SSE 客户端时 SIGTERM **324ms** 退出
+- **修 bundle 化回归**：`resolveDistRoot` 原按 `__dirname` 固定层数上探，打包成单文件后 `__dirname` 塌缩到 `dist/bundle` → React 客户端不再被识别（`/` 回落内嵌）。改为**按仓库标记（ygl.bundle.json）逐层上探**——tsc 树 / bundle / 源码直跑三种布局通吃；实测 `/` 恢复服务 React 客户端、`/classic` 回退 200
+- **基准两项限制关闭**：`--quick` 接线到四条路径（startup n=10→4、写入 200→50、kb 500→150 行 / 100→30 检索、树 300→100 节点）；**内存端点**——每席报告 whole-process RSS（after + delta），artifact 随之携带
+- **发现并记录真实 schema 事实**：**没有 tasks 表**——任务是 `artifacts` kind='task' + meta 状态信封（原 SSE 指纹代码按 `tasks` 表查，每 tick 抛错导致永不推送；容错清单修掉并留教训）
+- 单测 108 → **109**（新增 SSE 端到端用例：首帧快照 + 变更帧携带新任务标题）；SSE 设计记入 docs/webui-design.md
+- **发布决策上报 A2A**（report-234c1c3b）：pack:check 全绿、fork 依赖在 npm 有源，待拍板 registry 与放行
+
 ## 0.38.1（2026-10-17）发布就绪门禁 pack:check + 发布流程文档
 - **`pnpm pack:check`**（scripts/pack-check.sh）：打包 → 依赖协议重写检查 → **隔离消费目录真实 npm install** → 驱动发布产物跑 9 条命令面 + doctor + `--json` 整体可解析；拦的是源码树测试拦不住的一类 bug（workspace 协议残留 / 产物未进 files / 依赖闭包不可解 / bin 路径错）
 - **实测发布包可用**（0.38.0 tarball）：52 包闭包，`@deepseek-ai/cordis@~4.0.5-alpha.2` 等 fork 版本在 npm 均有源（DSH 自发布），`workspace:~` 重写后可解；隔离安装后 db init / project / query / tree / node / brief / plugin / doctor 全通过

@@ -21,12 +21,22 @@ declare module "@deepseek-ai/cordis" {
 }
 
 /** Resolve the built client dist (workspace knowledge). Pure: safe to call
- *  from short-lived CLI processes without betting on async plugin timing. */
-export function resolveDistRoot(): string | null {
-  for (const candidate of [
-    path.resolve(__dirname, "../../../../../apps/web/dist"), // from dist/packages/web/app/src
-    path.resolve(__dirname, "../../../../apps/web/dist"), // from packages/web/app/src (ts run)
-  ]) {
+ *  from short-lived CLI processes without betting on async plugin timing.
+ *
+ *  Probe by REPO MARKER, not by counting levels from __dirname: under the
+ *  tsdown single-file build __dirname collapses to dist/bundle, so any
+ *  fixed-depth relative path misses. Walking up to the repo root (the dir
+ *  holding ygl.bundle.json) works from every layout — tsc tree, bundle,
+ *  and a run straight from src/. */
+export function resolveDistRoot(from: string = __dirname): string | null {
+  const candidates: string[] = [];
+  let dir = from;
+  for (let i = 0; i < 6; i++, dir = path.dirname(dir)) {
+    candidates.push(path.join(dir, "apps", "web", "dist"));
+    if (fs.existsSync(path.join(dir, "ygl.bundle.json"))) break; // repo root reached
+  }
+  candidates.push(path.resolve(process.cwd(), "apps", "web", "dist"));
+  for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, "index.html"))) return candidate;
   }
   return null;

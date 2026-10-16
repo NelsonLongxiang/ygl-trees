@@ -752,16 +752,80 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
 
 /** node:http dashboard server. Routes:
  *  / and /index.html → live HTML; /api/data → dashboard JSON;
- *  /api/node?tree=<name>&key=<key> → node detail (deterministic can). */
+ *  /api/events → SSE stream (server-side change detection, pushes fresh
+ *  payloads so clients never poll); /api/node?tree=<name>&key=<key> → node detail. */
 export function createDashboardServer(env: Env) {
   const http = require("node:http");
   // R13.5: when the React client is built (apps/web/dist), it takes "/" and
   // the zero-dep embedded dashboard moves to /classic; without a build the
   // embedded dashboard keeps "/" (offline single-file contract unchanged).
   const hasWebApp = openWebApp("/") !== null;
-  return http.createServer((req: any, res: any) => {
+
+  // ── SSE live channel (0.39): a cheap fingerprint over the tables the
+  // dashboard renders; when it moves, every connected client gets a push.
+  // Server-side polling is 1.5s and constant-cost; clients do zero polling.
+  // Fault-tolerant by table: a missing/renamed table must not freeze the
+  // channel (tasks live in artifacts, not a table of their own).
+  const sseClients = new Set<any>();
+  const FP_TABLES = [
+    "events", "artifacts", "nodes", "node_edges", "node_state", "node_conditions",
+    "claims", "claim_evidence", "evidence", "sources", "queries", "kb_notes",
+    "kb_links", "relations", "skills", "projects", "jobs", "runs",
+  ];
+  const fingerprint = (): string => {
+    const parts: string[] = [];
+    for (const t of FP_TABLES) {
+      let n = "?";
+      try {
+        const r = env.db.get(`SELECT COUNT(*) AS n FROM ${t}`) as any;
+        n = String(r?.n ?? 0);
+      } catch { /* table absent — keep the marker, identity unaffected */ }
+      parts.push(`${t}:${n}`);
+    }
+    return parts.join("|");
+  };
+  let lastFp = fingerprint();
+  const push = (event: string, data: unknown) => {
+    const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const c of sseClients) {
+      try { c.write(frame); } catch { sseClients.delete(c); }
+    }
+  };
+  const tick = () => {
+    if (!sseClients.size) return;
+    const fp = fingerprint();
+    if (fp !== lastFp) {
+      lastFp = fp;
+      push("data", gatherData(env));
+    }
+  };
+  // lifecycle-managed when the timer plugin is loaded (vendor ammo), else raw
+  const timerCtx: any = (env as any).cordis;
+  if (timerCtx?.timer?.setInterval) timerCtx.timer.setInterval(tick, 1500);
+  else {
+    const h = setInterval(tick, 1500);
+    if (typeof h.unref === "function") h.unref();
+  }
+
+  const server = http.createServer((req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");
     const url = u.pathname;
+    if (url === "/api/events") {
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      res.write("retry: 3000\n\n");
+      // initial snapshot: the client needs no separate fetch
+      res.write(`event: data\ndata: ${JSON.stringify(gatherData(env))}\n\n`);
+      sseClients.add(res);
+      const drop = () => { sseClients.delete(res); };
+      req.on("close", drop);
+      req.on("error", drop);
+      res.on("error", drop);
+      return;
+    }
     if (hasWebApp && url !== "/classic" && !url.startsWith("/api/")) {
       const f = openWebApp(url);
       if (f) {
@@ -832,6 +896,15 @@ export function createDashboardServer(env: Env) {
       res.end("not found");
     }
   });
+  // SSE clients hold the connection open — drop them on server close so the
+  // process can exit (and so --json/none-mode callers never hang).
+  const dropLive = () => {
+    for (const c of sseClients) { try { c.end(); } catch { /* */ } }
+    sseClients.clear();
+  };
+  server.on("close", dropLive);
+  (server as any).closeLive = dropLive;
+  return server;
 }
 
 /** Live dashboard: blocks until SIGINT/SIGTERM, then resolves so the CLI can
@@ -876,6 +949,10 @@ function serve(env: Env, args: any): Promise<number> {
       }
     });
     const shutdown = () => {
+      // SSE clients hold live sockets forever: server.close() alone would wait
+      // for them and never call back. Drop them, then close.
+      try { (server as any).closeLive?.(); } catch { /* */ }
+      try { (server as any).closeAllConnections?.(); } catch { /* older node */ }
       server.close(() => resolve(0));
     };
     process.on("SIGINT", shutdown);

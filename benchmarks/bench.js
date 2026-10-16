@@ -22,18 +22,18 @@ const BIN = require("node:fs").existsSync(BUNDLE) ? BUNDLE : path.join(ROOT, "di
   const handles = [];
 
   // startup (subprocess; no db handle to clean)
-  await require("./startup/startup.bench")(ROOT, BIN);
+  await require("./startup/startup.bench")(ROOT, BIN, QUICK);
 
   // research-write
-  const rw = await require("./research-write/research-write.bench")(ROOT);
+  const rw = await require("./research-write/research-write.bench")(ROOT, QUICK);
   handles.push(rw);
 
   // knowledge-search
-  const ks = await require("./knowledge-search/knowledge-search.bench")(ROOT);
+  const ks = await require("./knowledge-search/knowledge-search.bench")(ROOT, QUICK);
   handles.push(ks);
 
   // techtree-index
-  const ti = await require("./techtree-index/techtree-index.bench")(ROOT);
+  const ti = await require("./techtree-index/techtree-index.bench")(ROOT, QUICK);
   handles.push(ti);
 
   // cleanup (EPERM-safe: Windows may hold handles past closeOrm)

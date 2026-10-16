@@ -38,6 +38,53 @@ export async function fetchDashboard(): Promise<DashboardData> {
   return r.json();
 }
 
+/**
+ * Live dashboard subscription (0.39): the server pushes a fresh payload over
+ * SSE whenever its table fingerprint moves, so the client does zero polling.
+ * A 10s polling interval stays as the DEGRADED path: it only runs while no
+ * live connection has been established (older servers, proxies that strip
+ * event-stream, browser EventSource limits).
+ *
+ * Returns a disposer.
+ */
+export function subscribeDashboard(
+  onData: (d: DashboardData) => void,
+  onError?: (e: string) => void
+): () => void {
+  let live = false;
+  // degraded path: poll only until (and unless) SSE takes over
+  const poll = window.setInterval(() => {
+    if (live) return;
+    fetchDashboard().then(onData).catch(() => {});
+  }, 10000);
+  // immediate first paint regardless of transport
+  fetchDashboard().then(onData).catch((e) => onError?.(String(e?.message || e)));
+
+  let es: EventSource | null = null;
+  try {
+    es = new EventSource("api/events");
+    es.addEventListener("data", (ev: MessageEvent) => {
+      live = true;
+      try {
+        onData(JSON.parse(ev.data));
+      } catch (e: any) {
+        onError?.(`event parse: ${String(e?.message || e)}`);
+      }
+    });
+    es.onerror = () => {
+      // browser auto-reconnects; fall back to polling until it does
+      live = false;
+    };
+  } catch (e: any) {
+    onError?.(`eventsource unavailable: ${String(e?.message || e)}`);
+  }
+
+  return () => {
+    window.clearInterval(poll);
+    try { es?.close(); } catch { /* */ }
+  };
+}
+
 export async function fetchNode(tree: string, key: string): Promise<NodeDetail | null> {
   const r = await fetch(`api/node?tree=${encodeURIComponent(tree)}&key=${encodeURIComponent(key)}`);
   if (!r.ok) return null;

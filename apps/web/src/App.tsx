@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchDashboard, type DashboardData } from "./api";
+import { subscribeDashboard, type DashboardData } from "./api";
 import TreeFlow from "./TreeFlow";
 import Artifacts from "./Artifacts";
 
@@ -8,9 +8,8 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchDashboard().then(setData).catch((e) => setErr(String(e.message || e)));
-    const t = setInterval(() => fetchDashboard().then(setData).catch(() => {}), 10000);
-    return () => clearInterval(t);
+    // live SSE with a polling fallback (see subscribeDashboard)
+    return subscribeDashboard(setData, (e) => setErr((prev) => prev ?? e));
   }, []);
 
   if (err)

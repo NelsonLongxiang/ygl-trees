@@ -23,6 +23,7 @@ const results = {};
 const failures = [];
 async function suite(name, fn) {
   const r = { ok: true };
+  const memBefore = process.memoryUsage().rss;
   try {
     Object.assign(r, await fn());
   } catch (e) {
@@ -30,11 +31,27 @@ async function suite(name, fn) {
     r.error = String((e && e.message) || e).slice(0, 200);
     failures.push(name);
   }
+  // memory endpoint: whole-process RSS, read after the work so the suite's
+  // allocation shows up in the delta
+  const rssAfter = process.memoryUsage().rss;
+  r.mem = {
+    rss_after_mb: +(rssAfter / 1048576).toFixed(1),
+    rss_delta_mb: +((rssAfter - memBefore) / 1048576).toFixed(1),
+  };
   results[name] = r;
   const cell = r.ok
-    ? [r.unit === "per-op" ? `p50 ${fmtUs(r.p50)} · p95 ${fmtUs(r.p95)}` : fmtMs(r.total), r.note || ""].filter(Boolean).join(" · ")
+    ? [
+        r.unit === "per-op" ? `p50 ${fmtUs(r.p50)} · p95 ${fmtUs(r.p95)}` : fmtMs(r.total),
+        r.note || "",
+        `rss ${r.mem.rss_after_mb}MB (${r.mem.rss_delta_mb >= 0 ? "+" : ""}${r.mem.rss_delta_mb})`,
+      ].filter(Boolean).join(" · ")
     : `FAIL: ${r.error}`;
   console.log(`  ${name.padEnd(17)} ${cell}`);
+}
+
+/** Scale a workload between full and quick runs (--quick keeps shapes, cuts N). */
+function scale(quick, full, small) {
+  return quick ? small : full;
 }
 
 /** Write the JSON artifact with environment metadata. */
@@ -68,4 +85,4 @@ function freshWorkspace(root, label) {
   return dir;
 }
 
-module.exports = { now, fmtUs, fmtMs, stats, suite, writeArtifact, freshWorkspace, results, failures };
+module.exports = { now, fmtUs, fmtMs, stats, suite, scale, writeArtifact, freshWorkspace, results, failures };

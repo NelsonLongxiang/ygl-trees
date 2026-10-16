@@ -30,9 +30,11 @@ benchmarks/
 ## 用法
 
 ```bash
-pnpm bench             # 先 build 再跑全部，结果落 tmp/bench-results.json
-node benchmarks/bench.js --quick   # 小规模（预留参数位，当前跑全量）
+pnpm bench                          # 先 build 再跑全部，结果落 tmp/bench-results.json
+node benchmarks/bench.js --quick    # 缩小规模（startup n=4 / 写入 50 / kb 150 行·30 检索 / 树 100 节点）
 ```
+
+每席除时延外还报告**内存端点**：whole-process RSS 峰值（after）与该席增量（delta），artifact 同步携带。
 
 ## 基线（fork 4.0.5-α + bundle 发布产物，2026-10-17）
 
@@ -51,6 +53,5 @@ node-search       p50 ~3-5ms
 
 ## 已知限制
 
-- `--quick` 尚未接线到各子模块（预留参数位，当前跑全量）
-- 无内存峰值端点——加内存维度时在 helpers 加 `recordPeakMemory`
-- startup 无独立进程隔离（同进程 spawn），高负载下方差大（见上）
+- startup 无独立进程隔离（同进程 spawn），高负载下方差大（见上测量纪律）
+- 内存端点是 whole-process RSS 而非单席独占计量——同进程多席共享堆，delta 只作趋势参考
