@@ -77,7 +77,7 @@ export async function bootApp(opts: BootOptions): Promise<BootedApp> {
 
   // settle the service layer (one yield; direct construction stays the CLI fallback)
   await new Promise((r) => setImmediate(r));
-  const db: DB = app.database?.db || new DB(opts.dbFile);
+  const db: DB = app.database?.db || new DB(opts.dbFile, { lock: true });
   const store: Store = app.research?.store || new Store(db);
 
   if (startupIssues.length) {

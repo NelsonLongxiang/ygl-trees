@@ -355,16 +355,17 @@ export class DB {
   readonly db: Database;
   readonly path: string;
 
-  constructor(file: string) {
+  constructor(file: string, opts?: { lock?: boolean }) {
     this.path = file;
     fs.mkdirSync(path.dirname(file), { recursive: true });
+    const useLock = opts?.lock === true; // opt-in: only the CLI entry point locks
     // P0-2 (real-user incident): single-writer mutex. node-sqlite3-wasm has no
     // concurrent-write protection; two CLI processes writing simultaneously
     // corrupted the DB ("malformed"). The .db.lock dir mechanism already
     // exists (job tick uses it) — reuse it: if another process holds the lock,
     // fail fast with a clear message instead of silently corrupting.
     const lockDir = `${file}.lock`;
-    if (fs.existsSync(lockDir)) {
+    if (useLock && fs.existsSync(lockDir)) {
       let holder = "unknown";
       try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
       // stale lock (>15 min) — steal it (same policy as job tick)
@@ -387,7 +388,7 @@ export class DB {
       }
     }
     // acquire the lock (best-effort; crash cleanup via stale detection above)
-    try {
+    if (useLock) try {
       fs.mkdirSync(lockDir, { recursive: true });
       fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
       // belt-and-suspenders: release on ANY process exit path (normal, signal, crash)
