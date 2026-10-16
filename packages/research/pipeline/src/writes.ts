@@ -189,7 +189,7 @@ export async function claimAdd(
     c.status = "unverified";
     c.confidence = confidence;
     c.contentHash = hash;
-    c.created = nowIso();
+    c.created = nowIso(); (c as any).updated = nowIso();
     await mgr.save(c);
     await logEvent(mgr, "claim.add", "claim", c.id, text.slice(0, 60));
     return { row: mapClaim(c), dup: false };
