@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.38.1（2026-10-17）发布就绪门禁 pack:check + 发布流程文档
+- **`pnpm pack:check`**（scripts/pack-check.sh）：打包 → 依赖协议重写检查 → **隔离消费目录真实 npm install** → 驱动发布产物跑 9 条命令面 + doctor + `--json` 整体可解析；拦的是源码树测试拦不住的一类 bug（workspace 协议残留 / 产物未进 files / 依赖闭包不可解 / bin 路径错）
+- **实测发布包可用**（0.38.0 tarball）：52 包闭包，`@deepseek-ai/cordis@~4.0.5-alpha.2` 等 fork 版本在 npm 均有源（DSH 自发布），`workspace:~` 重写后可解；隔离安装后 db init / project / query / tree / node / brief / plugin / doctor 全通过
+- **发现并定性 Windows `.cmd` shim 污染**：主机级 cmd 启动钩子（`HKCU\...\Command Processor\Autorun`）让**每个** npm 包的 .cmd shim 先吐 `Active code page: 65001`（实测 `cordis.cmd` 同样），破坏经 shim 的 `--json` 整体解析；**非本包缺陷**——直接 `node` 与 `.ps1` shim 实测输出纯净
+- **docs/release.md**：发布流程（门禁 / `pnpm publish` 必须而 npm 不可的原因 / shim 陷阱与干净调用路径 / 发布面构成 / 根 deps=发布面 vs 包内 deps=依赖图真相 的双处维护纪律）
+- `prepublishOnly` 升为 `pnpm test && pnpm pack:check`——发布前强制产物级验证
+
 ## 0.38.0（2026-10-17）技能面同步 + bundle 默认化 + vendor 弹药启用
 - **quickstart 技能全面重写**（v0.14 → v0.38.0）：覆盖新增命令面——doctor（9 项健康检查）、task 状态机、rel 关联织物（8 类引用）、plugin 用户插件、webui serve/export、benchmarks、build:bundle；触发词扩到 doctor/task/rel/plugin/webui/bench/bundle；入口路径改正（bin/ → dist）。`agent match` 三查询（插件/健康检查/webui）全部命中
 - **bundle 默认化**：`pnpm build` = tsc 树 + tsdown bundle（一条命令两个产物，tsdown 仅 58ms）；根 package.json `bin` 指向 `dist/bundle/bin.cjs`（单文件发布产物）；`prepublishOnly` 保留 test 门禁

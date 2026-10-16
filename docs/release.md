@@ -1,0 +1,68 @@
+---
+name: ygl-trees release
+description: 发布流程——pack-check 门禁（打包→隔离安装→真实运行）、pnpm publish 纪律、workspace 协议重写、Windows .cmd shim 污染陷阱与验证记录。
+kind: 参考
+---
+
+# 发布流程
+
+## 一、发布前门禁（必跑）
+
+```bash
+pnpm test          # 单测 + 构建 + demo（12 组断言）
+pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 真实驱动
+```
+
+`pnpm pack:check`（scripts/pack-check.sh）拦的是**源码树测试拦不住的一类 bug**：
+
+| 检查 | 拦什么 |
+|---|---|
+| 依赖重写 | `workspace:` 协议残留 → 消费者 `npm install` 直接失败 |
+| tarball 完整性 | 构建产物未进 `files` → 装完没有 bin |
+| 隔离安装 | 依赖闭包从 npm 解不出（undecalred runtime dep） |
+| 真实命令面 | bin 路径错、shebang 丢、缺运行时文件 |
+| `--json` 纯净 | 输出被污染 → agent 侧 `JSON.parse` 崩 |
+
+**实测记录（0.38.0）**：tarball 52 包闭包，`@deepseek-ai/cordis@~4.0.5-alpha.2` 等 fork 版本
+在 npm 上均有源（DSH 自己发布）——`workspace:~` 重写后可解；9 条命令面 + doctor 全通过。
+
+## 二、发布命令
+
+```bash
+pnpm publish        # 必须用 pnpm，不能用 npm
+```
+
+**为什么必须 pnpm 发布**：npm 不重写 `workspace:` 协议 → 发出去的包消费者装不上。
+`prepublishOnly` 已挂 `pnpm test && pnpm pack:check`（发布前强制全绿 + 产物验证）。
+
+## 三、Windows `.cmd` shim 污染陷阱（重要）
+
+`node_modules/.bin/ygl-trees.cmd` 在某些 Windows 主机上会先输出一行
+`Active code page: 65001`——来源是**主机级 cmd 启动钩子**
+（`HKCU\Software\Microsoft\Command Processor\Autorun`），污染**所有** npm 包的
+`.cmd` shim（实测 `cordis.cmd` 同样如此），**不是本包的缺陷**。
+
+后果：经 `.cmd` shim 调用的 `--json` 输出无法整体 `JSON.parse`。
+
+**验证过的干净调用路径**（实测均输出纯净 JSON）：
+
+```bash
+node node_modules/ygl-trees/dist/bundle/bin.cjs --json db stats   # ✓ 直接 node
+pwsh -c "& .\node_modules\.bin\ygl-trees.ps1 --json db stats"     # ✓ .ps1 shim
+./node_modules/.bin/ygl-trees.cmd --json db stats                 # ✗ 被主机 AutoRun 污染
+```
+
+Agent/CI 消费 JSON 时用前两条之一；`.cmd` 仍可用于人类交互（输出仅多一行噪声）。
+
+## 四、发布面构成
+
+```
+bin        dist/bundle/bin.cjs     ← tsdown 单文件（cordis + 全部 packages 已内联）
+files      dist/ ygl.bundle.json README.md docs/ skills/ examples/ LICENSE
+externals  better-sqlite3 · node-sqlite3-wasm · typeorm · reflect-metadata · pg
+           @deepseek-ai/dsh-atomic-write（native/可选，不进 bundle）
+```
+
+**关键纪律**：根 `package.json` 的 `dependencies` 是**发布面**（消费者安装什么），
+`packages/*/*/package.json` 是**依赖图真相**（workspace 内部谁依赖谁）。两者并存，
+改依赖时两处都要看——只改一处会分别导致「本地跑不起来」或「装完跑不起来」。

@@ -220,6 +220,8 @@ importers:
 
   tmp/plugins-unit-1792135113057/plugins: {}
 
+  tmp/plugins-unit-1792135663555/plugins: {}
+
   vendor/cordis:
     dependencies:
       '@deepseek-ai/cordis-plugin-include':

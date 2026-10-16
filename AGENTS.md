@@ -45,6 +45,7 @@ pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单�
 pnpm test:unit            # vitest 单测
 pnpm test                 # 三段制：unit + build + demo（demo 跑 bundle 发布产物）
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
+pnpm pack:check           # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
@@ -94,6 +95,7 @@ docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
 docs/layout.md         目录层级规划
 docs/webui-design.md   WebUI 方案（export + serve 已实施）
+docs/release.md        发布流程（pack:check 门禁 / pnpm publish 纪律 / Windows shim 陷阱）
 docs/bun-compat.md     Bun 目标运行时兼容方案（Windows 受阻，含证据与迁移清单）
 CHANGELOG.md           逐版本聚合
 ```
