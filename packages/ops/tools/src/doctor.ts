@@ -13,6 +13,7 @@ import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION } from "../../../core/database/src/db";
+import { listPlugins, profileDir } from "./plugins";
 
 interface Check {
   name: string;
@@ -169,6 +170,27 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         ? `${bad.length} malformed: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? " …" : ""}`
         : `all ${evalConds.length} eval-family condition envelope(s) valid`,
     });
+  }
+
+  // ── 9. User plugin profile integrity (R14 L3) ──
+  {
+    try {
+      if (!require("node:fs").existsSync(profileDir(env.home))) {
+        checks.push({ name: "plugin_profile", status: "pass", detail: "no user plugin profile (plugin init to create)" });
+      } else {
+        const rows = listPlugins(env.home);
+        const broken = rows.filter((r: any) => !r.resolvable);
+        checks.push({
+          name: "plugin_profile",
+          status: broken.length ? "fail" : "pass",
+          detail: broken.length
+            ? `unresolvable: ${broken.map((r: any) => r.name).join(", ")} — plugin remove <name> or fix install`
+            : `${rows.length} user plugin(s) resolvable from ${profileDir(env.home)}`,
+        });
+      }
+    } catch (e: any) {
+      checks.push({ name: "plugin_profile", status: "fail", detail: `profile read failed: ${e?.message || e}` });
+    }
   }
 
   // ── Output ──

@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
@@ -50,7 +50,9 @@
   },
   "vitest": {
     "include": [
-      "packages/*/*/tests/**/*.test.ts"
-    ]
+      "packages/*/*/tests/**/*.test.ts",
+      "apps/*/tests/**/*.test.ts"
+    ],
+    "exclude": ["node_modules", "dist"]
   }
 }

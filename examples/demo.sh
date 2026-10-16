@@ -203,3 +203,17 @@ if [ "$PK" = "true" ]; then echo "  ✓ produce spec/design 工程产出入库";
 $Y rel add node:steel artifact:"$TID" --rel tracked-by >/dev/null
 TR=$($Y rel list --src node:steel --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(x=>String(x.dst).startsWith('artifact:')&&x.rel==='tracked-by'))})")
 if [ "$TR" = "true" ]; then echo "  ✓ task 可 R9 关联到树节点（tracked-by）"; else echo "  ✗ task rel"; exit 1; fi
+
+echo "── 12. user plugins（spec R14 L3：业务域扩展位）"
+REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+$Y plugin init >/dev/null
+$Y plugin install "$REPO_ROOT/examples/plugin-demo" >/dev/null 2>&1 || { echo "  ✗ plugin install failed"; exit 1; }
+PI=$($Y demo hello 2>&1)
+case "$PI" in
+  *"hello from the user layer"*) echo "  ✓ plugin install → 贡献命令组 demo 可达" ;;
+  *) echo "  ✗ plugin command not reachable: $PI"; exit 1 ;;
+esac
+PL=$($Y plugin list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.length===1&&r[0].name==='ygl-plugin-demo'&&r[0].resolvable)})")
+if [ "$PL" = "true" ]; then echo "  ✓ plugin list 显示版本与可解析态"; else echo "  ✗ plugin list: $PL"; exit 1; fi
+PK2=$($Y plugin remove ygl-plugin-demo 2>&1)
+case "$PK2" in *removed*) echo "  ✓ plugin remove 清依赖与 bundle";; *) echo "  ✗ plugin remove: $PK2"; exit 1;; esac

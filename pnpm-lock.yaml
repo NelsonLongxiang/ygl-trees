@@ -1,7 +1,7 @@
 lockfileVersion: '9.0'
 
 settings:
-  autoInstallPeers: true
+  autoInstallPeers: false
   excludeLinksFromLockfile: false
 
 importers:
@@ -77,6 +77,20 @@ importers:
       vite:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@25.9.9)(lightningcss@1.33.0)
+
+  tmp/plugins-unit-1792129732586/plugins: {}
+
+  tmp/plugins-unit-1792129760352/plugins: {}
+
+  tmp/plugins-unit-1792129811071/plugins: {}
+
+  tmp/plugins-unit-1792129827868/plugins: {}
+
+  tmp/research-dogfood/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
 
   vendor/cordis:
     dependencies:

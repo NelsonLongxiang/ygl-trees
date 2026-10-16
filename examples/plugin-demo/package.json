@@ -1,0 +1,7 @@
+{
+  "name": "ygl-plugin-demo",
+  "version": "0.1.0",
+  "description": "ygl-trees user plugin demo (spec R14 L3): Cordis apply + a contributed command group",
+  "main": "index.js",
+  "license": "MIT"
+}

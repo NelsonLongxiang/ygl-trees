@@ -5,15 +5,17 @@
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import { Context as CordisContext } from "cordis";
-import { dbPath } from "../../packages/core/database/src/db";
-import { Ctx, bad, out, paint, C } from "../../packages/core/text/src/fmt";
-import { Args, parse, str, num, bool, Env } from "../../packages/core/database/src/types";
-import { apply as DatabasePlugin } from "../../packages/core/database/src/plugin";
-import { apply as WebAppPlugin } from "../../packages/web/app/src";
-import { Store } from "../../packages/research/pipeline/src/reads";
-import { apply as TechTreePlugin } from "../../packages/techtree/model/src/plugin";
-import { apply as ResearchPlugin } from "../../packages/research/pipeline/src/plugin";
+import { dbPath } from "../../../packages/core/database/src/db";
+import { Ctx, bad, out, paint, C } from "../../../packages/core/text/src/fmt";
+import { Args, parse, str, num, bool, Env } from "../../../packages/core/database/src/types";
+import { apply as DatabasePlugin } from "../../../packages/core/database/src/plugin";
+import { apply as WebAppPlugin } from "../../../packages/web/app/src";
+import { apply as TechTreePlugin } from "../../../packages/techtree/model/src/plugin";
+import { apply as ResearchPlugin } from "../../../packages/research/pipeline/src/plugin";
+import { bootApp, type BootedApp } from "./profile-boot";
+import { StartupError, reportStartupFailure } from "./startup-diagnostics";
+import { createProcessShutdown } from "./process-shutdown";
+import { runPluginCommand } from "./plugin";
 import Schema from "@deepseek-ai/schemastery";
 
 export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees");
@@ -35,23 +37,33 @@ const BundleSchema = Schema.object({
 /** Read + validate ygl.bundle.json. Resolved by probing upward from the
  *  module (src run and dist run land at different depths), then cwd. */
 export function loadBundle(from = __dirname): string[] {
-  const fs = require("node:fs");
-  const pathMod = require("node:path");
-  let file: string | null = null;
-  for (let dir = from, i = 0; i < 6; i++, dir = pathMod.dirname(dir)) {
-    const candidate = pathMod.join(dir, "ygl.bundle.json");
-    if (fs.existsSync(candidate)) { file = candidate; break; }
-  }
-  if (!file && fs.existsSync(pathMod.join(process.cwd(), "ygl.bundle.json"))) {
-    file = pathMod.join(process.cwd(), "ygl.bundle.json");
-  }
-  if (!file) throw new Error("ygl.bundle.json not found (probe upward from module + cwd)");
-  const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  const file = path.join(repoRoot(from), "ygl.bundle.json");
+  if (!require("node:fs").existsSync(file)) throw new Error(`ygl.bundle.json not found (probed from ${from} and cwd)`);
+  const raw = JSON.parse(require("node:fs").readFileSync(file, "utf8"));
   const parsed = BundleSchema(raw);
   for (const id of parsed.plugins) {
     if (!PLUGINS[id]) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
   }
   return parsed.plugins;
+}
+
+/** Repo root by upward probe (src and dist land at different depths). */
+export function repoRoot(from = __dirname): string {
+  const fs = require("node:fs");
+  for (let dir = from, i = 0; i < 6; i++, dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, "ygl.bundle.json"))) return dir;
+  }
+  if (fs.existsSync(path.join(process.cwd(), "ygl.bundle.json"))) return process.cwd();
+  throw new Error("repo root not found (ygl.bundle.json probe failed)");
+}
+
+/** Package version resolved at runtime (dist cannot require ../../package.json). */
+export function appVersion(): string {
+  try {
+    return JSON.parse(require("node:fs").readFileSync(path.join(repoRoot(), "package.json"), "utf8")).version;
+  } catch {
+    return "0.0.0";
+  }
 }
 
 // ── Usage text ──
@@ -171,6 +183,12 @@ ${paint(C.bold, "rel", true)}             关联织物（spec R9：任意两类�
   rm <src> <dst> [--rel t]    unlink
   list [--src r] [--dst r]    browse (either side filter, resolves displays)
 
+${paint(C.bold, "plugin", true)}          用户层插件分发（spec R14 L3，业务域扩展位）
+  init                       create $YGL_HOME/plugins profile
+  install <spec>             npm package / git url / local dir (auto link:)
+  remove <name> | list       manage the user layer ($YGL_HOME/ygl.user.bundle.json)
+  插件契约：export apply(ctx,config) + 可选 commands 贡献 CLI 命令组
+
 ${paint(C.bold, "agent", true)}       agent-facing views
   brief                      current project state + next actions (start here)
   match "<task>"             which skill should handle this task
@@ -209,30 +227,27 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
 
-  // ── Cordis composition (spec R14 L2: declarative) ──
-  // ygl.bundle.json declares WHICH plugins load (data); this registry maps
-  // ids to modules (code keeps the where). Store stays sync-constructible —
-  // services settle after one yield, direct construction remains the
-  // fallback for short-lived CLI processes (0.19 lesson).
-  const app = new CordisContext();
-  let db: any;
-  let store: any;
+  // ── Cordis composition via bootApp (DSH profile-boot exemplar) ──
+  // Base bundle from ygl.bundle.json (data), user layer from the workspace
+  // profile; per-plugin issues surface through StartupError → diagnostics.
+  const VERSION = appVersion();
+  let booted: BootedApp;
   try {
-    for (const id of loadBundle()) {
-      const entry = PLUGINS[id];
-      if (!entry) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
-      app.plugin(entry.apply, entry.config ? entry.config(file) : undefined);
-    }
-    // One yield for the service layer (database has no inject deps)
-    await new Promise((r) => setImmediate(r));
-    db = app.database?.db;
-    if (!db) {
-      // Fallback: direct construction (Cordis rc timing can be unpredictable)
-      const { DB } = require("../../packages/core/database/src/db");
-      db = new DB(file);
-    }
-    store = app.research?.store || new Store(db);
+    booted = await bootApp({
+      home,
+      dbFile: file,
+      baseBundle: loadBundle().map((id) => {
+        const entry = PLUGINS[id];
+        if (!entry) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
+        return { id, apply: entry.apply, config: entry.config };
+      }),
+      version: VERSION,
+    });
   } catch (e: any) {
+    if (e instanceof StartupError) {
+      reportStartupFailure(e, home, VERSION);
+      return 1;
+    }
     bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
     const lock = `${file}.lock`;
     if (require("node:fs").existsSync(lock)) {
@@ -241,11 +256,22 @@ export async function main(argv: string[]): Promise<number> {
     }
     return 1;
   }
+  const app = booted.ctx;
+  const db = booted.db;
+  const store = booted.store;
+  const pluginCommands = booted.pluginCommands;
+  const loadedPlugins = booted.loadedPlugins;
+  const shutdown = createProcessShutdown(async () => {
+    try { db?.close(); } catch { /* best effort */ }
+  });
+  process.on("SIGINT", () => shutdown.interrupt(0));
+  process.on("SIGTERM", () => shutdown.interrupt(0));
   const env: any = {
     ctx,
-    cordis: app,     // Cordis Context (future: long-running services)
+    cordis: app,     // Cordis Context (long-running services)
     db,              // DB instance (from ctx.database or fallback)
-    store,           // Store (created synchronously for CLI)
+    store,           // Store (from ctx.research or fallback)
+    plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
     args, home, group,
   };
 
@@ -253,27 +279,48 @@ export async function main(argv: string[]): Promise<number> {
    *  db open until it settles — hence the awaited dispatch below.
    *  Domain routing: each group maps to its owning domain module. */
   const DOMAIN_ROUTES: Record<string, string> = {
-    db: "../../packages/ops/tools/src/db-cmds",
-    config: "../../packages/ops/tools/src/config-cmds",
-    job: "../../packages/ops/tools/src/job-cmds",
-    agent: "../../packages/ops/tools/src/agent-cmds",
-    research: "../../packages/research/pipeline/src/cmds",
-    project: "../../packages/research/produce/src/project-cmds",
-    produce: "../../packages/research/produce/src/produce-cmds",
-    task: "../../packages/research/produce/src/produce-cmds",
-    tree: "../../packages/techtree/model/src/cmds",
-    node: "../../packages/techtree/model/src/cmds",
-    skill: "../../packages/knowledge/skills/src/skill-cmds",
-    kb: "../../packages/knowledge/skills/src/cmds",
-    webui: "../../packages/ops/tools/src/webui",
-    doctor: "../../packages/ops/tools/src/doctor",
-    rel: "../../packages/ops/tools/src/rels",
+    db: "../../../packages/ops/tools/src/db-cmds",
+    config: "../../../packages/ops/tools/src/config-cmds",
+    job: "../../../packages/ops/tools/src/job-cmds",
+    agent: "../../../packages/ops/tools/src/agent-cmds",
+    research: "../../../packages/research/pipeline/src/cmds",
+    project: "../../../packages/research/produce/src/project-cmds",
+    produce: "../../../packages/research/produce/src/produce-cmds",
+    task: "../../../packages/research/produce/src/produce-cmds",
+    tree: "../../../packages/techtree/model/src/cmds",
+    node: "../../../packages/techtree/model/src/cmds",
+    skill: "../../../packages/knowledge/skills/src/skill-cmds",
+    kb: "../../../packages/knowledge/skills/src/cmds",
+    webui: "../../../packages/ops/tools/src/webui",
+    doctor: "../../../packages/ops/tools/src/doctor",
+    rel: "../../../packages/ops/tools/src/rels",
   };
   const dispatch = async (): Promise<number> => {
     const t0 = Date.now();
     // R10.3: one run id per CLI invocation — same-process events carry it in
     // their payload so `agent log --run` can reconstruct the invocation.
     process.env.YGL_RUN_ID = process.env.YGL_RUN_ID || String(Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    // R14 L3 (DSH exemplar): plugin management is launcher-owned — a bin mode
+    // dispatched BEFORE the domain routes, not a packages command.
+    if (group === "plugin") {
+      const rc = await runPluginCommand(env, action || "", args._.slice(2), args);
+      return typeof rc === "number" ? rc : 0;
+    }
+    // R14 L3: plugin-contributed command groups win before "unknown group"
+    const pluginCmd = pluginCommands[group];
+    if (pluginCmd) {
+      const rc = await pluginCmd.run(env, action || "", args._.slice(2), args);
+      const code = typeof rc === "number" ? rc : 0;
+      try {
+        db.run(
+          "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+          [`${process.env.YGL_RUN_ID}`, new Date().toISOString(), "cli", "cmd.run", group, String(action || ""),
+           JSON.stringify({ run: process.env.YGL_RUN_ID, group, action: action || "", rc: code, duration_ms: Date.now() - t0, plugin: true }),
+           code === 0 ? "info" : code === 2 ? "warn" : "error"]
+        );
+      } catch { /* telemetry best-effort */ }
+      return code;
+    }
     const route = DOMAIN_ROUTES[group];
     if (!route) {
       bad(ctx, `unknown group: ${group}`);

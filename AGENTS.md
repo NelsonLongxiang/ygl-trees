@@ -21,7 +21,7 @@ packages/         领域模块（库代码，可被 apps 组合）
   （Cordis 服务定义在 core/database/src/plugin.ts 与 web/app/src：declare module 声明合并）
 
 apps/             应用入口（组装 packages，跑产品）
-  cli/              CLI 应用（参数解析/命令分发/usage）
+  cli/              CLI 应用（src/ 分层：bin 入口/profile-boot/startup-diagnostics/process-shutdown，DSH apps/cli 规范）
   web/              React 富客户端（xyflow 树视图，spec R13.5；CLI 内嵌零依赖 dashboard 保留）
 
 bin/              可执行入口

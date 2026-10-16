@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.36.0（2026-10-17）用户层插件分发（spec R14 L3——DSH apps/cli 应用典范落地）
+- **`ygl-trees plugin` 命令组**：init（幂等建 profile）/install（npm 包、git 地址、本地目录自动 link:）/remove/list（版本+spec+可解析态）
+- **工作区级插件仓**：`$YGL_HOME/plugins/`（pnpm 管理）+ 用户层声明 `ygl.user.bundle.json`——叠加在 base bundle 之上（DSH user-layer 对应物）；业务域随工作区走
+- **插件契约**：`apply(ctx, config)` + 可选 `commands` 贡献 CLI 命令组（dispatch：插件命令 → 内建路由 → unknown）；可用 ctx 服务：database/research/techtree/webApp
+- **DSH 典范五件套**：withFileLock 安装锁（dsh-atomic-write 同原语）/ 名字=依赖键差集精确解析 / YGL_PACKAGE_MANAGER 包管理器注入（Windows .cmd shim 走 shell）/ StartupError 诊断落盘 `$YGL_HOME/logs/startup-<uuid>.log`（凭证泄漏警告）/ createProcessShutdown 有界停机（5s 宽限·信号升级）
+- **逐插件隔离**：单插件失败不炸工作台，issues 汇总进启动诊断；`yglTrees` 兼容声明主版本不符仅警告
+- **apps/cli 分层**：main.ts 减薄（bin 薄入口），组合进 boot.ts、诊断进 diagnostics.ts、停机进 shutdown.ts
+- doctor 第 9 项 plugin_profile；示例 examples/plugin-demo（demo 组 12 离线 link: 全链路回归）；docs/plugin-authoring.md 插件编写指南；单测 6 例（profile/init/install/load/隔离/remove）
+
 ## 0.35.0（2026-10-17）产出工件渲染进 WebUI
 - **服务端**：`/api/artifact?id=<id>` 全文端点（当前项目工件：kind/title/content/version，404 语义）；`/api/data` 增 artifacts 清单（非 task 工件按创建倒序）
 - **React 客户端**：Artifacts 区——按类型分组（报告/规格/设计/大纲/章节/笔记）+ 点击展开 **react-markdown 全文渲染**（DESIGN.md token 定制组件：标题/链接/代码/引用/表格）；键盘可达
