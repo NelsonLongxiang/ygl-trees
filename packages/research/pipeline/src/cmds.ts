@@ -5,6 +5,7 @@ import * as fs from "node:fs";
 import { MoreThanOrEqual } from "typeorm";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../../core/text/src/fmt";
+import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "./writes";
@@ -122,6 +123,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     if (subAction === "add") {
       // P1-1 fix: a flag given without a value arrives as boolean true — reject
       // it instead of silently storing "true" as the title/url (cold-user report).
+      if (rejectBare(ctx, args.flags, ["abstract", "content", "relevance", "confidence", "tags", "query", "engine"])) return 2;
+      if (validateEnum(ctx, args.flags, "confidence", ["A", "B", "C"])) return 2;
       const titleRaw = args.flags.title;
       const urlRaw = args.flags.url;
       if (titleRaw === true || urlRaw === true) {
@@ -405,6 +408,8 @@ if (subAction === "list" || subAction === undefined) {
 
   if (sub === "claim") {
     if (subAction === "add") {
+      if (rejectBare(ctx, args.flags, ["confidence", "text"])) return 2;
+      if (validateEnum(ctx, args.flags, "confidence", ["A", "B", "C"])) return 2;
       const text = rest.slice(1).join(" ") || String(args.flags.text || "");
       if (!text) {
         bad(ctx, 'missing claim text: research claim add "<text>"');

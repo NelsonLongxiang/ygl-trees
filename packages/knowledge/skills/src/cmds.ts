@@ -9,6 +9,7 @@ import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { deriveL1 } from "../../../research/pipeline/src/reads";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
+import { rejectBare } from "../../../core/text/src/flagcheck";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -23,6 +24,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
   switch (action) {
     case "add": {
+      if (rejectBare(ctx, args.flags, ["title", "body", "tags", "confidence"])) return 2;
       const title = String(args.flags.title || rest[0] || "");
       const body = readBody();
       if (!title || !body) {

@@ -4,6 +4,7 @@
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
+import { rejectBare } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../pipeline/src/writes";
@@ -140,6 +141,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     // ── task group rides the produce router (`ygl-trees task ...`, R12) ──
     case "task-add": {
+      if (rejectBare(ctx, args.flags, ["note"])) return 2;
       const title = rest.join(" ");
       if (!title) {
         bad(ctx, 'usage: task add "<title>" [--note ...]');

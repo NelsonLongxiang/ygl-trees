@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.54.0（2026-10-17）全命令面 flag 校验审计——14 个缺口一次关死
+- **背景**：0.51 修了 P1-1/P1-2 两个 flag 校验缺口，但审计发现同类问题成片存在——**全命令面扫描**暴露 **14 个缺口**（9 个裸 flag 静默落库 + 5 个枚举未校验）
+- **新增 `flagcheck.ts`**：`rejectBare(ctx, flags, names)` 裸 flag 检测 + `validateEnum(ctx, flags, name, allowed)` 枚举校验——一处定义，各命令复用
+- **修复的 14 个缺口**：
+  - 裸 flag（`--flag` 无值 → parser 返回 boolean `true` → 落库为 `"true"` 字符串）：
+    `source --abstract/--confidence/--tags` · `claim --confidence/--text` · `kb --body/--tags` · `node --name/--kind/--tier/--cost/--tags` · `cond --name/--value/--op/--effect/--weight` · `task --note`
+  - 枚举未校验（非法值静默落库）：
+    `node --kind`（只收 tech|skill|quest|milestone|resource|flag）· `cond --op`（只收 >=|==|<=|!=|has|eval|eval-choice|eval-score）· `cond --effect`（只收 gate|cost_mul）· `claim/source --confidence`（只收 A|B|C）
+- **效果**：任何 `--flag` 缺值或枚举非法值 → **rc=2 + 明确错误消息**（`--X needs a value` / `--X must be one of ...`），不再有 `"true"` 或 `"nonsense"` 落库
+
 ## 0.53.0（2026-10-17）React 客户端构建链缺口修复——冷用户反馈三件
 - **来源**：用户在 :8322 部署后发现 `/` 显示内嵌 dashboard 而非 React 客户端（React dist 缺席 + 静默回落）
 - **P1 根因修复**：`pnpm build` 现在包含 React 客户端构建（`tsc → tsdown → vite build`），新 clone 不再默认落后一态

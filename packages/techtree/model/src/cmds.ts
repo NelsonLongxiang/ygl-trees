@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { TreeStore } from "./reads";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
+import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { getOrm } from "../../../core/database/src/orm";
 import * as treeWrites from "./writes";
 import {
@@ -113,6 +114,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: node add <key> [--name ..] [--tier n] [--cost n] [--kind tech|skill|..] [--tags ..]");
         return 2;
       }
+      if (rejectBare(ctx, args.flags, ["name", "kind", "tier", "cost", "tags", "payload", "cost-unit"])) return 2;
+      if (validateEnum(ctx, args.flags, "kind", ["tech", "skill", "quest", "milestone", "resource", "flag"])) return 2;
       const spec = {
         key,
         name: flagStr("name") || undefined,
@@ -178,6 +181,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: node cond <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
         return 2;
       }
+      if (rejectBare(ctx, args.flags, ["name", "value", "op", "effect", "weight", "options", "answer", "levels", "min-score"])) return 2;
+      if (validateEnum(ctx, args.flags, "op", [">=", "==", "<=", "!=", "has", "eval", "eval-choice", "eval-score"])) return 2;
+      if (validateEnum(ctx, args.flags, "effect", ["gate", "cost_mul"])) return 2;
       const name = flagStr("name");
       if (!name) {
         table(ctx, trees.condList(tid, key), ["id", "name", "kind", "op", "value", "必检", "effect"], [
