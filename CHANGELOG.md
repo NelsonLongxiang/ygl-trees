@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.67.0（2026-10-17）WebUI antd 迭代——Ant Design 组件库升级 React 客户端
+- **antd v6 + @ant-design/icons**：专业组件库驱动的富客户端
+- **组件替换**：Layout（Header/Content）、Card 统计卡片、Statistic 数字展示、Table 任务清单（可筛选）、Tag 状态标签、Alert 错误提示、Space/Row/Col 布局
+- **DESIGN.md token 映射**：ConfigProvider theme（colorPrimary=#7c9885 sage、darkAlgorithm 暗色主题、zh_CN 中文语言包）
+- **代码分割**：manualChunks 拆分 vendor/antd/xyflow/markdown 四块，antd 不阻塞首屏
+- **保持不变**：xyflow 树视图、react-markdown 产出渲染、SSE 实时推送、内嵌 dashboard 回退
+
 ## 0.66.0（2026-10-17）新增 `llms` 命令——结构化能力清单（Ant Design for-agents 模式）
 - **`ygl-trees llms`**：一条命令输出完整 markdown 能力清单——冻结契约表（6 项）+ 16 个命令组全部用法 + 决策模型说明 + Quick Start + 设计系统入口——**任何 LLM 一次性获取全部能力面**
 - **静态 `llms.txt`**：仓库根目录，可被任何 LLM 爬取/注入上下文（同 Ant Design 的 llms.txt 模式）

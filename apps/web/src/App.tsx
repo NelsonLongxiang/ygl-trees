@@ -1,102 +1,216 @@
 import { useEffect, useState } from "react";
+import { ConfigProvider, theme as antdTheme } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import {
+  Layout, Card, Row, Col, Statistic, Table, Tag, Typography, Space, Alert,
+} from "antd";
+import {
+  ExperimentOutlined, BookOutlined, DatabaseOutlined, FileTextOutlined,
+  ApartmentOutlined, PartitionOutlined, CheckCircleOutlined, ClockCircleOutlined,
+} from "@ant-design/icons";
 import { subscribeDashboard, type DashboardData } from "./api";
 import TreeFlow from "./TreeFlow";
 import Artifacts from "./Artifacts";
+
+const { Header, Content } = Layout;
+const { Title, Text } = Typography;
+
+/** DESIGN.md token mapping → antd ConfigProvider */
+function AppTheme({ children }: { children: React.ReactNode }) {
+  return (
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        algorithm: antdTheme.darkAlgorithm,
+        token: {
+          colorPrimary: "#7c9885",       // --color-primary (sage green)
+          colorSuccess: "#6a994e",       // --color-success
+          colorWarning: "#daa520",       // --color-warning
+          colorInfo: "#5b8db8",          // --color-accent
+          borderRadius: 8,              // --radius-md
+          fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+        },
+      }}
+    >
+      {children}
+    </ConfigProvider>
+  );
+}
+
+const statIcons: Record<string, React.ReactNode> = {
+  skills: <BookOutlined />,
+  kb_notes: <BookOutlined />,
+  sources: <DatabaseOutlined />,
+  evidence: <FileTextOutlined />,
+  claims: <CheckCircleOutlined />,
+  trees: <ApartmentOutlined />,
+  nodes: <PartitionOutlined />,
+};
+
+const statColors: Record<string, string> = {
+  skills: "#7c9885",
+  kb_notes: "#8b7355",
+  sources: "#5b8db8",
+  evidence: "#daa520",
+  claims: "#6a994e",
+  trees: "#9b7cb8",
+  nodes: "#b87c7c",
+};
 
 export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    // live SSE with a polling fallback (see subscribeDashboard)
     return subscribeDashboard(setData, (e) => setErr((prev) => prev ?? e));
   }, []);
 
-  if (err)
-    return (
-      <div style={{ padding: "var(--spacing-lg)" }}>
-        <h1>🐵 ygl-trees workbench</h1>
-        <p className="dim">api/data 不可达：{err}</p>
-        <p className="mono">ygl-trees webui serve --port 8642</p>      </div>
-    );
-  if (!data) return <div style={{ padding: "var(--spacing-lg)" }}><h1>🐵 ygl-trees workbench</h1><p className="dim">加载中…</p></div>;
-
-  const counts = data.brief.counts || {};
-  const cards: Array<[string, string]> = [
-    ["skills", "技能"], ["kb_notes", "知识笔记"], ["sources", "来源"],
-    ["evidence", "证据"], ["claims", "断言"], ["tasks", "任务"],
-    ["trees", "科技树"], ["nodes", "节点"],
-  ];
-
   return (
-    <div style={{ padding: "var(--spacing-lg)", maxWidth: 1280, margin: "0 auto" }}>
-      <h1>🐵 ygl-trees workbench</h1>
+    <AppTheme>
+      <Layout style={{ minHeight: "100vh" }}>
+        <Header style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 24px" }}>
+          <Text style={{ fontSize: 20, color: "#e8e4dc" }}>🐵 ygl-trees</Text>
+          <Text type="secondary" style={{ fontSize: 14 }}>
+            AI Agent 研究工作台
+          </Text>
+          {data?.brief?.project && (
+            <Tag color="green" style={{ marginLeft: "auto" }}>
+              {data.brief.project.name}
+            </Tag>
+          )}
+        </Header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "var(--spacing-sm)" }}>
-        {cards.map(([k, label]) => (
-          <div key={k} style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "var(--spacing-md)", textAlign: "center" }}>
-            <div style={{ fontSize: "1.5em", fontWeight: 700, color: "var(--color-primary)" }}>{counts[k] ?? 0}</div>
-            <div className="dim">{label}</div>
-          </div>
-        ))}
-      </div>
-
-      {data.brief.project && (
-        <p style={{ marginTop: "var(--spacing-md)" }}>
-          项目 <b>{data.brief.project.name}</b> · 来源 {data.brief.project.sources} · 证据{" "}
-          {data.brief.project.evidence} · 断言 {data.brief.project.verified_claims}/{data.brief.project.claims} 已证实
-        </p>
-      )}
-      {data.brief.next_actions?.length > 0 && (
-        <>
-          <h2>下一步操作</h2>
-          {data.brief.next_actions.map((a) => (
-            <div key={a} className="mono">→ {a}</div>
-          ))}
-        </>
-      )}
-
-      <h2>科技树 <span className="dim">(xyflow · 拖拽缩放 · 小地图)</span></h2>
-      <TreeFlow tree={data.tree} />
-
-      {data.tasks.length > 0 && (
-        <>
-          <h2>任务清单</h2>          {(["todo", "doing", "done"] as const).map((s) => {
-            const rows = data.tasks.filter((t) => t.status === s);
-            if (!rows.length) return null;
-            const color = s === "todo" ? "var(--color-secondary)" : s === "doing" ? "var(--color-warning)" : "var(--color-success)";
-            const label = s === "todo" ? "待办" : s === "doing" ? "进行中" : "已完成";
-            return (
-              <div key={s}>
-                <div className="dim" style={{ color, textTransform: "uppercase", letterSpacing: "0.05em", margin: "6px 0 2px" }}>
-                  {label} · {rows.length}
-                </div>
-                {rows.map((t) => (
-                  <div
-                    key={t.id}
-                    style={{
-                      background: "var(--color-surface)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "6px 12px",
-                      margin: "4px 0",
-                      textDecoration: s === "done" ? "line-through" : "none",
-                      color: s === "done" ? "var(--color-secondary)" : "var(--color-text)",
-                    }}
-                  >
-                    {t.title}
-                  </div>
+        <Content style={{ padding: 24, maxWidth: 1360, margin: "0 auto", width: "100%" }}>
+          {err && (
+            <Alert
+              type="error"
+              message="API 不可达"
+              description={<Text code>ygl-trees webui serve --port 8642</Text>}
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          {!data && !err && (
+            <Card loading style={{ marginBottom: 16 }} />
+          )}
+          {data && (
+            <>
+              {/* ── 统计卡片 ── */}
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                {Object.entries(statIcons).map(([key, icon]) => (
+                  <Col key={key} xs={12} sm={8} md={6} lg={3}>
+                    <Card size="small" hoverable>
+                      <Statistic
+                        title={key.replace("_", " ")}
+                        value={data.brief.counts?.[key] ?? 0}
+                        prefix={icon}
+                        valueStyle={{ color: statColors[key], fontWeight: 700 }}
+                      />
+                    </Card>
+                  </Col>
                 ))}
-              </div>
-            );
-          })}
-        </>
-      )}
-      {data.artifacts.length > 0 && (
-        <>
-          <h2>产出工件 <span className="dim">(react-markdown 全文渲染)</span></h2>
-          <Artifacts artifacts={data.artifacts} />
-        </>
-      )}
-    </div>
+              </Row>
+
+              {/* ── 项目进度 ── */}
+              {data.brief.project && (
+                <Card size="small" style={{ marginBottom: 16 }}>
+                  <Space size="middle" wrap>
+                    <Statistic title="来源" value={data.brief.project.sources} />
+                    <Statistic title="证据" value={data.brief.project.evidence} />
+                    <Statistic
+                      title="已证实断言"
+                      value={data.brief.project.verified_claims}
+                      suffix={`/ ${data.brief.project.claims}`}
+                      valueStyle={{ color: "#6a994e" }}
+                    />
+                  </Space>
+                </Card>
+              )}
+
+              {/* ── 下一步操作 ── */}
+              {data.brief.next_actions?.length > 0 && (
+                <Card
+                  title={<><ClockCircleOutlined /> 下一步操作</>}
+                  size="small"
+                  style={{ marginBottom: 16 }}
+                >
+                  {data.brief.next_actions.map((a: string, i: number) => (
+                    <div key={i}>
+                      <Text code>→ {a}</Text>
+                    </div>
+                  ))}
+                </Card>
+              )}
+
+              {/* ── 科技树 ── */}
+              <Card
+                title={<><ApartmentOutlined /> 科技树</>}
+                extra={<Text type="secondary">xyflow · 拖拽缩放 · 小地图</Text>}
+                style={{ marginBottom: 16 }}
+              >
+                <TreeFlow tree={data.tree} />
+              </Card>
+
+              {/* ── 任务清单 ── */}
+              {data.tasks.length > 0 && (
+                <Card
+                  title={<><ExperimentOutlined /> 任务清单</>}
+                  size="small"
+                  style={{ marginBottom: 16 }}
+                >
+                  <Table
+                    dataSource={data.tasks}
+                    rowKey="id"
+                    size="small"
+                    pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                    columns={[
+                      {
+                        title: "状态",
+                        dataIndex: "status",
+                        width: 100,
+                        filters: [
+                          { text: "待办", value: "todo" },
+                          { text: "进行中", value: "doing" },
+                          { text: "已完成", value: "done" },
+                        ],
+                        onFilter: (value, record) => record.status === value,
+                        render: (s: string) => {
+                          const cfg: Record<string, { color: string; label: string }> = {
+                            todo: { color: "default", label: "待办" },
+                            doing: { color: "processing", label: "进行中" },
+                            done: { color: "success", label: "已完成" },
+                          };
+                          const c = cfg[s] || cfg.todo;
+                          return <Tag color={c.color}>{c.label}</Tag>;
+                        },
+                      },
+                      {
+                        title: "任务",
+                        dataIndex: "title",
+                        render: (t: string, record: any) => (
+                          <Text delete={record.status === "done"} type={record.status === "done" ? "secondary" : undefined}>
+                            {t}
+                          </Text>
+                        ),
+                      },
+                    ]}
+                  />
+                </Card>
+              )}
+
+              {/* ── 产出工件 ── */}
+              {data.artifacts.length > 0 && (
+                <Card
+                  title={<><FileTextOutlined /> 产出工件</>}
+                  extra={<Text type="secondary">react-markdown 全文渲染</Text>}
+                >
+                  <Artifacts artifacts={data.artifacts} />
+                </Card>
+              )}
+            </>
+          )}
+        </Content>
+      </Layout>
+    </AppTheme>
   );
 }
