@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.70.0（2026-10-17）`agent metrics`——从 R11 手动测量到自动化指标
+- **`ygl-trees agent metrics`**：一条命令输出工作台全量量化指标——冷启动（brief 耗时/next actions/可用技能）、知识（总量/7日增长/增长率）、研究（来源/证据/断言/验证率/证据密度）、技能（总数/命中/均命中）、科技树（棵数/节点/解锁率）、活动（7 日 events）
+- **来源**：R11 冷启动量化研究的手动测量 → 自动化——从 `time agent brief` + 手动 grep 统计变为一键输出
+- 135 单测全绿
+
 ## 0.69.0（2026-10-17）MCP Server——R8 研究设计的工程落地
 - **`ygl-trees mcp`**：启动 stdio MCP 服务器（JSON-RPC 2.0），Claude Desktop / Cursor / VS Code 等 IDE Agent 可直接连接
 - **8 工具面**（三支柱理论驱动）：agent_brief · agent_match · kb_search · claim_evaluate · tree_state · produce_report · doctor · task_advance

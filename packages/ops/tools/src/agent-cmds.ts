@@ -77,6 +77,94 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const { ctx, store } = env;
 
   switch (action) {
+    case "metrics": {
+      // R11 cold-start research → automated measurement. Health/efficiency
+      // metrics for the workspace — one command answers "how good is this
+      // workbench?" with quantified data.
+      const t0 = Date.now();
+      const brief = buildBrief(env);
+      const briefMs = Date.now() - t0;
+
+      // Knowledge metrics
+      const kbTotal = (env.db.get("SELECT COUNT(*) AS n FROM kb_notes") as any)?.n || 0;
+      const kbRecent = (env.db.get(
+        "SELECT COUNT(*) AS n FROM kb_notes WHERE created > datetime('now', '-7 days')"
+      ) as any)?.n || 0;
+
+      // Research metrics
+      const claims = (env.db.get("SELECT COUNT(*) AS n FROM claims") as any)?.n || 0;
+      const claimsVerified = (env.db.get(
+        "SELECT COUNT(*) AS n FROM claims WHERE status='supported'"
+      ) as any)?.n || 0;
+      const evidence = (env.db.get("SELECT COUNT(*) AS n FROM evidence") as any)?.n || 0;
+      const sources = (env.db.get("SELECT COUNT(*) AS n FROM sources") as any)?.n || 0;
+
+      // Skill metrics
+      const skills = store.skillList();
+      const skillHits = skills.reduce((s: number, x: any) => s + (x.hits || 0), 0);
+
+      // Tree metrics
+      const trees = env.db.all("SELECT id, name FROM trees") as any[];
+      let nodesTotal = 0, nodesUnlocked = 0;
+      for (const t of trees) {
+        const r = env.db.get(
+          "SELECT COUNT(*) AS total, SUM(CASE WHEN ns.status='unlocked' THEN 1 ELSE 0 END) AS unlocked FROM nodes n LEFT JOIN node_state ns ON ns.node_id=n.id AND ns.context='default' WHERE n.tree_id=?",
+          [t.id]
+        ) as any;
+        nodesTotal += r?.total || 0;
+        nodesUnlocked += r?.unlocked || 0;
+      }
+
+      // Event metrics
+      const events7d = (env.db.get(
+        "SELECT COUNT(*) AS n FROM events WHERE ts > datetime('now', '-7 days')"
+      ) as any)?.n || 0;
+
+      const metrics = {
+        cold_start: {
+          brief_ms: briefMs,
+          next_actions: brief.next_actions?.length || 0,
+          skills_available: skills.length,
+        },
+        knowledge: {
+          total_notes: kbTotal,
+          recent_7d: kbRecent,
+          growth_rate_7d: kbTotal > 0 ? Math.round(kbRecent / kbTotal * 100) : 0,
+        },
+        research: {
+          sources, evidence, claims,
+          verified_claims: claimsVerified,
+          verification_rate: claims > 0 ? Math.round(claimsVerified / claims * 100) : 0,
+          evidence_per_claim: claims > 0 ? (evidence / claims).toFixed(1) : "0",
+        },
+        skills: {
+          total: skills.length,
+          total_hits: skillHits,
+          avg_hits: skills.length > 0 ? (skillHits / skills.length).toFixed(1) : "0",
+        },
+        trees: {
+          total_trees: trees.length,
+          nodes: nodesTotal,
+          unlocked: nodesUnlocked,
+          unlock_rate: nodesTotal > 0 ? Math.round(nodesUnlocked / nodesTotal * 100) : 0,
+        },
+        activity: { events_7d: events7d },
+        doctor: "run `doctor` for health checks",
+      };
+
+      if (ctx.json) {
+        console.log(JSON.stringify(metrics, null, 2));
+        return 0;
+      }
+      head(ctx, "ygl-trees metrics");
+      out(ctx, `  冷启动     brief ${metrics.cold_start.brief_ms}ms · ${metrics.cold_start.next_actions} next actions · ${metrics.cold_start.skills_available} skills`);
+      out(ctx, `  知识       ${metrics.knowledge.total_notes} notes (${metrics.knowledge.recent_7d} in 7d, ${metrics.knowledge.growth_rate_7d}% growth)`);
+      out(ctx, `  研究       ${metrics.research.sources} sources · ${metrics.research.evidence} evidence · ${metrics.research.verified_claims}/${metrics.research.claims} verified (${metrics.research.verification_rate}%)`);
+      out(ctx, `  技能       ${metrics.skills.total} skills · ${metrics.skills.total_hits} hits (avg ${metrics.skills.avg_hits})`);
+      out(ctx, `  科技树     ${metrics.trees.total_trees} trees · ${metrics.trees.unlocked}/${metrics.trees.nodes} unlocked (${metrics.trees.unlock_rate}%)`);
+      out(ctx, `  活动       ${metrics.activity.events_7d} events in 7d`);
+      return 0;
+    }
     case "brief": {
       const payload = buildBrief(env);
       const cur = payload.current_project;
