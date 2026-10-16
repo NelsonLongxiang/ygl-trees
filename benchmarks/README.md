@@ -1,48 +1,52 @@
-# benchmarks — ygl-trees 性能基准套件
+---
+name: ygl-trees benchmarks
+description: 仓库级性能基准——按用户路径组织（startup/research-write/knowledge-search/techtree-index），DSH benchmarks 典范。pnpm bench 一键跑全部。
+kind: 库
+---
 
-零依赖（`node:perf_hooks` + `node:child_process`）。度量这个 CLI 里真实付费的面。
+# benchmarks/ — 性能基准
 
-## 运行
+按**用户路径**组织（一个目录一条路径），不镜像包树。DSH benchmarks 典范。
+
+## 结构
+
+```
+benchmarks/
+  AGENTS.md              基准纪律（合成输入/进程级采样/预算不可环境覆盖）
+  package.json           @ygl/benchmarks（workspace 包）
+  bench.js               薄 runner（按路径调度子模块，清理，写 artifact）
+  support/
+    helpers.js           共享：stats/suite/时长格式化/artifact 写出/freshWorkspace
+  startup/
+    startup.bench.js     CLI 完整进程 spawn（p50/p95 × n=10）
+  research-write/
+    research-write.bench.js  事务化 claim 写入 + 幂等命中
+  knowledge-search/
+    knowledge-search.bench.js  kb 批量导入 + FTS5 bm25 CJK 检索
+  techtree-index/
+    techtree-index.bench.js  闭包重建 + Kahn 拓扑 + 节点检索
+```
+
+## 用法
 
 ```bash
-pnpm bench              # = pnpm build && node benchmarks/bench.js
-node benchmarks/bench.js --quick   # 小规模快速冒烟
+pnpm bench             # 先 build 再跑全部，结果落 tmp/bench-results.json
+node benchmarks/bench.js --quick   # 小规模（预留参数位，当前跑全量）
 ```
 
-工作区一次性落在 `tmp/bench-workspace/`（每次重建，gitignored）；结果同时写
-`tmp/bench-results.json`（含 node 版本 / 平台 / git 短哈希 / quick 标记，供跨提交对比）。
-
-## 基准面
-
-| 套件 | 度量什么 | 形态 |
-|---|---|---|
-| `startup` | 进程 + Cordis Context + wasm DB open + Store 构造 | 子进程完整 CLI（`db stats`），n=10，p50/p95 |
-| `claim-write` | 事务化写路径（幂等探查 + 插入 + events） | in-process，200 事务，每 op 均摊 |
-| `claim-dedupe` | 重复命中路径（hash 查找，无插入） | in-process，200 次重放 |
-| `kb-import-batch` | 批量导入单事务（500 行：基表 + FTS 影子 + hash 幂等） | in-process，rows/s |
-| `kb-search` | FTS5 bm25 + title 加权 + reuse 计数回写 | in-process，8 个 CJK 查询轮转 100 次，p50/p95 |
-| `node-index` | 闭包重建 + Kahn 拓扑索引 | 300 节点/596 边播种，median-of-3 |
-| `node-search` | FTS5 节点检索 + key/name 加权 | in-process，100 次，p50/p95 |
-
-## 方法论
-
-- **子进程 vs in-process**：startup 度量的是用户每条命令真实付出的完整代价，必须含进程创建；其余套件 in-process 隔离被测代码。
-- **统计**：per-op 套件报 p50/p95；一次性操作（node-index）报 median-of-3（操作幂等可重跑）。
-- **方差注意**：Windows 上 Defender 对新建文件的实时扫描会显著抬首轮数字（node-index 一次跑 0.5s~2.5s 都见过）；对比请看同机多次运行的 p50/中位数，不要比单次极值。
-- **语料**：kb 语料刻意混合共享 token（命中多行）与专属 token（命中少数行），逼出 bm25 排序的真实工作量；`--quick` 全部规模缩到 ~1/5。
-
-## 战绩
-
-- 0.23.0 首跑即抓到 `kbSearch` reuse 回写写放大：top-20 逐行 UPDATE（20 次隐式事务 = 20 次 VFS fsync）→ 单语句 `IN (...)` 批更新。500 行语料 p50 326ms→172ms、p95 2039ms→484ms。
-
-## 基线（2026-10-16，node v24.12.0，win32，0.23.0）
+## 基线（fork 4.0.5-α，2026-10-17）
 
 ```
-startup           p50 63.6ms   p95 75.8ms
-claim-write       43.3ms/op    (200 txns)
-claim-dedupe      398µs/op     (200 dup-hits)
-kb-import-batch   491 rows/s   (500 rows/1tx)
-kb-search         p50 172.6ms  p95 483.7ms  (corpus=500)
-node-index        ~0.5-2.5s median-of-3 (300n/596e, Defender 方差大)
-node-search       p50 2.5ms    p95 6.1ms    (tree=300)
+startup           p50 523ms   p95 568ms
+claim-write       25.8ms/op   (200 txns)
+claim-dedupe      372µs/op    (200 dup-hits)
+kb-import-batch   890 rows/s  (500 rows/1tx)
+kb-search         p50 30.5ms  p95 174ms  (corpus=500)
+node-index        591ms median-of-3 (300n/596e)
+node-search       p50 2.7ms   p95 5.7ms
 ```
+
+## 已知限制
+
+- `--quick` 尚未接线到各子模块（预留参数位，当前跑全量）
+- 无内存峰值端点——加内存维度时在 helpers 加 `recordPeakMemory`

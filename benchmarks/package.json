@@ -1,0 +1,10 @@
+{
+  "name": "@ygl/benchmarks",
+  "version": "0.37.1",
+  "private": true,
+  "description": "Repository-level performance benchmarks organized by measured user path (DSH benchmarks exemplar)",
+  "type": "commonjs",
+  "scripts": {
+    "bench": "node bench.js"
+  }
+}

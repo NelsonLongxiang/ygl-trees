@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.37.2（2026-10-17）benchmarks 目录规范对齐 DSH（用户指出"未对齐开发标准与目录规范"）
+- **per-user-path 重组**：bench.js 平铺单文件拆成四条用户路径目录——`startup/`（CLI 进程 spawn）、`research-write/`（事务化写入+幂等）、`knowledge-search/`（kb 批导+FTS5 bm25）、`techtree-index/`（闭包+拓扑+节点检索）；不镜像包树（DSH 典范）
+- **benchmarks/AGENTS.md**：基准纪律——合成固定输入/进程级采样/预算不可环境覆盖/跑生产入口/support 移入需两处复用
+- **@ygl/benchmarks workspace 包**：package.json 声明（benchmark 专用依赖不污染根）
+- **support/helpers.js**：共享 runner 基础设施——suite()/stats()/writeArtifact()/freshWorkspace()；EPERM 安全清理（Windows 句柄残留）
+- **bench.js 减薄为调度器**：按路径加载子模块→收集→统一清理→写 artifact
+- **README 重写**：结构图 + 用法 + fork 4.0.5 新基线 + 已知限制
+- 全量跑通（7 席全绿）：startup p50 570ms / claim-write 20.3ms/op / kb-search p50 22.5ms / node-index 619ms
+
 ## 0.37.1（2026-10-17）bundle 完全可用——DOMAIN_ROUTES 静态 barrel 化
 - **domain-barrel.ts**：所有领域命令模块从动态 `require(route)` 改为静态 import barrel——bundler（tsdown/rolldown）可追踪，bundle 产出完整功能（全命令面实测通过：agent brief / db stats / rel list / demo hello / plugin list）
 - **bundle 对比**：323KB 单文件 bin.cjs，启动 559ms vs tsc 树 621ms（~10% 提速）；外部保留 native/opt 依赖（better-sqlite3/node-sqlite3-wasm/typeorm/pg/reflect-metadata/atomic-write）
