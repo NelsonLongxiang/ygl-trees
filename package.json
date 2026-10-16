@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
@@ -20,6 +20,7 @@
   "files": [
     "bin",
     "dist",
+    "ygl.bundle.json",
     "README.md",
     "docs",
     "CHANGELOG.md"
@@ -28,12 +29,14 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.4",
     "better-sqlite3": "^13.0.3",
+    "cordis": "workspace:~",
+    "cosmokit": "workspace:~",
     "node-sqlite3-wasm": "^0.8.60",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^1.1.2",
-    "cordis": "workspace:~",
-    "cosmokit": "workspace:~"
+    "typeorm": "^1.1.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

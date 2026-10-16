@@ -125,6 +125,13 @@
 
 **R13.5 React 技术栈裁定（用户 2026-10-17，0.32.1 起）**：WebUI 的富客户端按需取用以下 React 资源——[xyflow](https://github.com/xyflow/xyflow)（**树/DAG 交互视图核心**：pan/zoom/拖拽/小地图，R13.3 主力）、[ahooks](https://github.com/alibaba/hooks)、[react-router](https://github.com/remix-run/react-router)、[pro-components](https://github.com/ant-design/pro-components)、[remix](https://github.com/remix-run/remix)、[react-grid-layout](https://github.com/react-grid-layout/react-grid-layout)（仪表盘面板）、[react-pdf](https://github.com/diegomura/react-pdf)、[react-markdown](https://github.com/remarkjs/react-markdown)（报告/规格渲染）。**架构分工**：`apps/web` 为 React 家园（Vite 构建，开发期 proxy /api → CLI serve）；CLI 内嵌零依赖 dashboard（webui export/serve）**保留**——离线单文件导出与轻量检阅不受构建链拖累。DESIGN.md 仍是 token 单一事实源（React 组件消费同一套 token）。
 
+### R14 插件化补完（2026-10-17 立项，0.34.0；L1/L2 落地，L3 缓）
+
+- **R14.1 L1 接线**：`ctx.research`/`ctx.techtree` 全部接上（死导入复活，ResearchService 补 0.18 欠账）；compose.ts 死代码删除；rc.11 时序探针记录：named-apply 服务可注册、inject 链 wall-time 沉降但 setImmediate 泵不可靠——CLI 保留直构回退、长驻进程走服务
+- **R14.2 L2 声明式组合**：`ygl.bundle.json` 声明插件清单（数据说 WHAT），`main.ts PLUGINS` 注册表管模块解析（代码说 WHERE），schemastery 校验声明；**不引 DSH fork loader**（规则 7 精神：不拖 fork 运行时）；profile 概念记录为后续（cli/serve 当前四插件全量等价，不硬造）
+- **R14.3 T1 套件引入**：`@deepseek-ai/dsh-atomic-write`（webui export / db export 原子写——截断导出=数据损失，禁半写）+ `@deepseek-ai/schemastery`（组合声明校验）；T2（timer/frontend-static/webserver）裁不引（已自研等价 + fork 拖拽风险）
+- **R14.4 L3 缓**：用户层插件分发（外部 eval provider / skill 包）等真实需求再裁——YAGNI
+
 ## 2. 数据模型变更（schema v2 → v3）
 
 | 表 | 变更 | 迁移 |

@@ -74,10 +74,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         counts.push(`${t}:${rows.length}`);
       }
       lines.push("PRAGMA foreign_keys=ON;");
-      fs.writeFileSync(dest, lines.join("\n") + "\n", "utf8");
-      ok(ctx, `dumped to ${dest}`);
-      out(ctx, paint(C.dim, `  ${counts.join("  ")}`, ctx.color));
-      return 0;
+      // atomic: a truncated SQL dump restores as data loss — never half-write
+      const { writeFileAtomic } = require("@deepseek-ai/dsh-atomic-write");
+      return writeFileAtomic(dest, lines.join("\n") + "\n", {} as any).then((): number => {
+        ok(ctx, `dumped to ${dest}`);
+        out(ctx, paint(C.dim, `  ${counts.join("  ")}`, ctx.color));
+        return 0;
+      });
     }
     case "reset": {
       db.close();

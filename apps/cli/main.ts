@@ -13,8 +13,46 @@ import { apply as DatabasePlugin } from "../../packages/core/database/src/plugin
 import { apply as WebAppPlugin } from "../../packages/web/app/src";
 import { Store } from "../../packages/research/pipeline/src/reads";
 import { apply as TechTreePlugin } from "../../packages/techtree/model/src/plugin";
+import { apply as ResearchPlugin } from "../../packages/research/pipeline/src/plugin";
+import Schema from "@deepseek-ai/schemastery";
 
 export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees");
+
+// ── Declarative composition registry (spec R14 L2) ──
+// ygl.bundle.json names plugins by id; this map is the code-side "where".
+const PLUGINS: Record<string, { apply: (ctx: any, config?: any) => void; config?: (file: string) => any }> = {
+  database: { apply: DatabasePlugin, config: (file) => ({ file }) },
+  research: { apply: ResearchPlugin },
+  techtree: { apply: TechTreePlugin },
+  "web-app": { apply: WebAppPlugin },
+};
+
+const BundleSchema = Schema.object({
+  name: Schema.string().required(),
+  plugins: Schema.array(Schema.string()).required(),
+});
+
+/** Read + validate ygl.bundle.json. Resolved by probing upward from the
+ *  module (src run and dist run land at different depths), then cwd. */
+export function loadBundle(from = __dirname): string[] {
+  const fs = require("node:fs");
+  const pathMod = require("node:path");
+  let file: string | null = null;
+  for (let dir = from, i = 0; i < 6; i++, dir = pathMod.dirname(dir)) {
+    const candidate = pathMod.join(dir, "ygl.bundle.json");
+    if (fs.existsSync(candidate)) { file = candidate; break; }
+  }
+  if (!file && fs.existsSync(pathMod.join(process.cwd(), "ygl.bundle.json"))) {
+    file = pathMod.join(process.cwd(), "ygl.bundle.json");
+  }
+  if (!file) throw new Error("ygl.bundle.json not found (probe upward from module + cwd)");
+  const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  const parsed = BundleSchema(raw);
+  for (const id of parsed.plugins) {
+    if (!PLUGINS[id]) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
+  }
+  return parsed.plugins;
+}
 
 // ── Usage text ──
 // (kept in apps/cli because it's presentation, not domain logic)
@@ -171,18 +209,21 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
 
-  // ── Cordis composition ──
-  // Context + DatabasePlugin for architecture; Store created synchronously
-  // for CLI speed (async plugin chain is for long-running processes).
+  // ── Cordis composition (spec R14 L2: declarative) ──
+  // ygl.bundle.json declares WHICH plugins load (data); this registry maps
+  // ids to modules (code keeps the where). Store stays sync-constructible —
+  // services settle after one yield, direct construction remains the
+  // fallback for short-lived CLI processes (0.19 lesson).
   const app = new CordisContext();
   let db: any;
   let store: any;
   try {
-    app.plugin(DatabasePlugin, { file });
-    // R13.5: web-app glue (ctx.webApp over apps/web/dist); the webui server
-    // reads the dist via the pure resolver, so plugin timing is not load-bearing.
-    app.plugin(WebAppPlugin);
-    // One yield for the database service (no inject deps)
+    for (const id of loadBundle()) {
+      const entry = PLUGINS[id];
+      if (!entry) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
+      app.plugin(entry.apply, entry.config ? entry.config(file) : undefined);
+    }
+    // One yield for the service layer (database has no inject deps)
     await new Promise((r) => setImmediate(r));
     db = app.database?.db;
     if (!db) {
@@ -190,7 +231,7 @@ export async function main(argv: string[]): Promise<number> {
       const { DB } = require("../../packages/core/database/src/db");
       db = new DB(file);
     }
-    store = new Store(db);
+    store = app.research?.store || new Store(db);
   } catch (e: any) {
     bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
     const lock = `${file}.lock`;

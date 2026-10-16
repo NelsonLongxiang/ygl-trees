@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.0（2026-10-17）插件化补完 R14（L1 接线 + L2 声明式组合 + T1 套件）
+- **L1 接线**：`ctx.research`（ResearchService，0.18 欠账——发现早已写好未接）与 `ctx.techtree`（死导入复活）全部接到组合面；compose.ts 死代码删除
+- **L2 声明式组合**：`ygl.bundle.json` 声明四插件（database→research→techtree→web-app；数据说 WHAT），main.ts `PLUGINS` 注册表管模块解析（代码说 WHERE），schemastery 校验；loader 向上探测解析（src/dist 双深度）；profile 概念暂缓（两态当前等价不硬造）
+- **rc.11 时序探针**（tmp/svc-probe*.js）：named-apply 服务注册 ✓；inject 链 wall-time 500ms 沉降 ✓；setImmediate 泵不可靠——CLI 保留直构回退，长驻进程走服务层
+- **T1 套件**：`@deepseek-ai/dsh-atomic-write`（零运行时耦合实证）接入 webui export + db export 原子写——截断导出=数据损失；`@deepseek-ai/schemastery` 校验 bundle 声明；T2（timer/frontend-static/webserver）按 DSH 对比裁不引（自研等价 + 不拖 fork）
+- 四服务实证（serve 组合）：ctx.database/research/techtree/webApp 就位；CLI 冒烟全通；bundle 入 files 发布面
+
 ## 0.33.0（2026-10-17）真实规模树 + 方法论 skills（spec R13 收官）
 - **dogfood #4——evolution 树**：ygl-trees 自身演进建成 **32 节点 / 7 层 / 39 边**真实规模树——六大生长干（架构/研究管线/知识/模型层/能力/Web 客户端），29 已解锁里程碑 + **3 个锁定未来节点带真实门**（npm-publish：registry_pick choice= npmjs + green_closed 布尔；bun-runtime：上游就绪度 score min=2；real-users：readiness score min=1）；R9 关联织物跨四类实体挂接（claim decided-by / kb evidenced-by / task tracked-by / design decided-by）；doctor 8/8
 - **三个方法论 skills**（R13.2）：`ygl-trees-tree-building`（领域分解四步/反模式立靶/tier 语义/自检清单）、`ygl-trees-relating`（rel 词汇表/决策树/消费面）、`ygl-trees-design-capture`（ui-ux=DESIGN.md 格式/arch+decision=ADR 三段/挂接纪律）——junction + import，**agent match 三查询各自 top-1 命中**（R13.4）

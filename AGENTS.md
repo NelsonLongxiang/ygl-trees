@@ -53,7 +53,7 @@ pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 do
 - **运行时服务发现** — `ctx.database`、`ctx.research` 等按名访问
 - **多服务生命周期** — Services 随 Context 启动/停止，自动资源清理
 - **事件驱动组合** — `ctx.on()/emit()` 跨域事件
-- **动态插件加载** — `ctx.plugin()` 运行时注册
+- **动态插件加载** — `ygl.bundle.json` 声明组合（R14 L2），`ctx.plugin()` 由 main.ts 按声明加载
 - **时空可组合性** — 子 Context 隔离、作用域嵌套
 
 ```typescript
@@ -82,7 +82,7 @@ export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 
 ## 决策链
 
 ```
-docs/spec.md           需求规格 R1-R13 + 验收标准
+docs/spec.md           需求规格 R1-R14 + 验收标准
 docs/plan.md           里程碑 + 逐版本执行记录（证据链）
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）

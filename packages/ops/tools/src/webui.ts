@@ -41,11 +41,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const data = gatherData(env);
   const html = generateHTML(data, false);
   const dest = String(args.flags.out || "dashboard.html");
-  require("node:fs").writeFileSync(dest, html, "utf8");
-
-  ok(env.ctx, `dashboard written to ${dest} (${(html.length / 1024).toFixed(1)} KB)`);
-  out(env.ctx, paint(C.dim, `  open in browser: file://${require("node:path").resolve(dest)}`, env.ctx.color));
-  return 0;
+  return (async (): Promise<number> => {
+    // atomic write: a half-written dashboard on process kill is worse than none
+    const { writeFileAtomic } = require("@deepseek-ai/dsh-atomic-write");
+    await writeFileAtomic(dest, html, {} as any);
+    ok(env.ctx, `dashboard written to ${dest} (${(html.length / 1024).toFixed(1)} KB)`);
+    out(env.ctx, paint(C.dim, `  open in browser: file://${require("node:path").resolve(dest)}`, env.ctx.color));
+    return 0;
+  })();
 }
 
 /** Collect dashboard data from the current workspace state. */
