@@ -120,10 +120,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
   if (sub === "source") {
     if (subAction === "add") {
-      const title = String(args.flags.title || "");
-      const url = String(args.flags.url || "");
+      // P1-1 fix: a flag given without a value arrives as boolean true — reject
+      // it instead of silently storing "true" as the title/url (cold-user report).
+      const titleRaw = args.flags.title;
+      const urlRaw = args.flags.url;
+      if (titleRaw === true || urlRaw === true) {
+        bad(ctx, 'flag needs a value: --title "..." / --url "..."  (bare flag was treated as boolean)');
+        return 2;
+      }
+      const title = String(titleRaw || "");
+      const url = String(urlRaw || "");
       if (!title && !url) {
         bad(ctx, "need --title and/or --url");
+        return 2;
+      }
+      if (url && !/^https?:\/\/|^file:\/\//.test(url)) {
+        bad(ctx, `--url must be http(s):// or file:// (got: "${clip(url, 30)}")`);
         return 2;
       }
       const spec = {
@@ -410,7 +422,14 @@ if (subAction === "list" || subAction === undefined) {
         bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance refutes]");
         return 2;
       }
-      const stance = String(args.flags.stance || "supports") as "supports" | "refutes";
+      const stanceRaw = String(args.flags.stance || "supports");
+      // P1-2 fix: --stance must be exactly supports|refutes; a bad value must
+      // NOT silently rewrite claim status (cold-user report: nonsense → unverified).
+      if (stanceRaw !== "supports" && stanceRaw !== "refutes") {
+        bad(ctx, `--stance must be supports|refutes (got: "${stanceRaw}")`);
+        return 2;
+      }
+      const stance = stanceRaw as "supports" | "refutes";
       return getOrm(env.db.path)
         .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
         .then((r): number => {

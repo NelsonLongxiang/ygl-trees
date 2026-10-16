@@ -218,6 +218,13 @@ export async function main(argv: string[]): Promise<number> {
   const group = args._[0];
   const action = args._[1];
 
+  // P4 fix: --version prints the actual version number (cold-user report);
+  // the parser eats --version as a flag, so check flags not positional args.
+  if (args.flags.version === true || group === "version") {
+    out(ctx, appVersion());
+    return 0;
+  }
+
   if (!group || group === "help" || group === "-h" || group === "--help") {
     if (!ctx.json) out(ctx, usage());
     return 0;

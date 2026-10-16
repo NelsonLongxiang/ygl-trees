@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.51.0（2026-10-17）冷用户验证修复——2 处数据完整性 + 2 处环境级 + 体验
+- **来源**：外部冷用户验证报告（干净 clone + 全门禁 + 手工全链演练），发现 2 处校验缺口 + 4 类工程问题
+- **P1-1 修复**：`research source add --title`（无值）原先**静默写入 `{"title":"true"}` 垃圾行**（rc=0 违反契约）→ 现在检测 boolean `true` 值并拒绝 `rc=2`；另增 `--url` 格式校验（须 http(s):// 或 file://）
+- **P1-2 修复**：`claim link --stance nonsense` 原先**静默接受并把 supported 断言降级为 unverified** → 现在只收 `supports|refutes`，其余 `rc=2` 且**不触发任何写入**
+- **P2-1 修复**：vite 升到 ^6.4（vitest 5.0.5 的 peer 要求 ^6.4||^7||^8）→ `pnpm test:unit` 在干净 clone 可跑（此前 ERR_PACKAGE_PATH_NOT_EXPORTED 启动即崩）
+- **P2-2 修复**：锁文件重生成 → `pnpm install --frozen-lockfile` 通过（此前 OUTDATED_LOCKFILE）
+- **P3-1**：`pnpm.neverBuiltDependencies` 豁免 better-sqlite3（自带 prebuilds，node-gyp rebuild 多余且失败）
+- **P4 修复**：`--version` 现在打印实际版本号（如 `0.50.0`）而非整个 usage 文本（parser 把 `--version` 吞成 flag 而非 positional，修在 flags 检查而非 group）
+- contract:audit 新增两项护栏可加入：flag 缺值 rc=2 / stance 枚举 rc=2（当前由代码修复保障，待加门禁）
+
 ## 0.50.0（2026-10-17）R15 深度集成——模型评估从手动命令变为自动行为
 - **`claim link` 自动触发置信度评估**（R15 深度集成）：链接证据后静默调用决策模型，评估结果写 events 表（`claim.eval`）+ 终端提示一行 `[模型] 置信度 B (3.5/5)`；best-effort（模型失败不阻塞链接动作）
 - **`produce report` 自动附带模型置信度**：报告输出各断言时，从 events 表读取最近的 `claim.eval` 记录，有则追加 `_模型置信度 B（3.5/5）_` 行——人工置信度与模型置信度并排可见
