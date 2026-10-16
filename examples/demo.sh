@@ -169,3 +169,14 @@ if grep -q "ygl-trees dashboard" "$YGL_HOME/dashboard.html" && grep -q "const FA
 else
   echo "  ✗ webui export failed"; exit 1
 fi
+
+echo "── 9. relation fabric（spec R9）"
+K=$($Y kb list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)[0].id))")
+$Y rel add node:steel kb:"$K" --rel evidenced-by >/dev/null
+DUP=$($Y rel add node:steel kb:"$K" --rel evidenced-by --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).duplicate))")
+if [ "$DUP" = "true" ]; then echo "  ✓ rel add 幂等（同四元组 duplicate）"; else echo "  ✗ rel add not idempotent"; exit 1; fi
+RL=$($Y rel list --src node:steel --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.length===1&&r[0].rel==='evidenced-by'&&r[0].dst_display?'ok':JSON.stringify(r))})")
+if [ "$RL" = "ok" ]; then echo "  ✓ rel list --src 双向过滤 + 显示名解析"; else echo "  ✗ rel list: $RL"; exit 1; fi
+$Y rel add node:zzz kb:"$K" >/dev/null 2>&1; RC1=$?
+$Y rel add bogus:zzz kb:"$K" >/dev/null 2>&1; RC2=$?
+if [ "$RC1" = "1" ] && [ "$RC2" = "2" ]; then echo "  ✓ 引用语义：404→rc1 坏类型→rc2"; else echo "  ✗ rc 语义: $RC1/$RC2"; exit 1; fi

@@ -119,6 +119,12 @@ ${paint(C.bold, "webui", true)}            dashboard (zero-dependency)
   export [--out <file>]     single-file dashboard.html (open in browser)
   serve [--port N]          live dashboard at http://127.0.0.1:N/ (Ctrl+C to stop)
 
+${paint(C.bold, "rel", true)}             关联织物（spec R9：任意两类实体互相挂接）
+  add <src> <dst> [--rel t]   link two refs: node:key claim:id kb:id artifact:id
+                             skill:name evidence:id source:id query:id
+  rm <src> <dst> [--rel t]    unlink
+  list [--src r] [--dst r]    browse (either side filter, resolves displays)
+
 ${paint(C.bold, "agent", true)}       agent-facing views
   brief                      current project state + next actions (start here)
   match "<task>"             which skill should handle this task
@@ -208,6 +214,7 @@ export async function main(argv: string[]): Promise<number> {
     kb: "../../packages/knowledge/skills/src/cmds",
     webui: "../../packages/ops/tools/src/webui",
     doctor: "../../packages/ops/tools/src/doctor",
+    rel: "../../packages/ops/tools/src/rels",
   };
   const dispatch = async (): Promise<number> => {
     const route = DOMAIN_ROUTES[group];

@@ -2,6 +2,22 @@
 
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
+> **执行记录 · 0.29.0（2026-10-17，关联织物通电 spec R9）**：(1) **spec/plan 大修先行**——两轮 WebUI 检阅结论（六项意见 + 遥测对照 DSH session-telemetry）固化为 R9–R13 + 里程碑表；共同诊断=研究域过度发育/工程域未发育/两域零缝合；记录推翻 0.12 "树域不写 events" 例外（R10 补）。(2) **rels.ts**——引用解析器八类（node 树内/跨树 key、kb/artifact id 或 title、skill name、其余按 id）；relAdd 事务化（UNIQUE 四元组幂等 + rel.add events 留痕）；relRm **先查存在再删**（初版先删后查在删除成功后误报 not found——TypeORM 原生 DELETE 返回形状不可靠，单测抓获）；rel list 双向过滤 + resolveId 显示名（悬空关联回落裸 id 不炸）。(3) **WebUI**——/api/node related（UNION 双向 + 方向标记 in/out），面板 related 区 rel 加粗 + 对端摘要 40 字截断。(4) **dogfood**：release 节点挂 evidenced-by（kb: cordis-lifecycle report）+ decided-by（claim: 插件三形态）——检阅页刷新即可见。(5) 验证：单测 8 例、demo 组 9（幂等/双向显示名/rc 语义三断言）、CLI 冒烟（含 404/坏类型）、/api/node 实测。Web 服务重启至新 dist（PID 66136）。
+
+
+> **里程碑路线（2026-10-17 WebUI 检阅后制定，spec R9–R13）**：两轮检阅（六项意见 + 遥测对照 DSH session-telemetry）的共同诊断=**研究域过度发育、工程域未发育、两域零缝合**。地基优先于视图：
+>
+> | 版本 | 主题 | spec |
+> |---|---|---|
+> | 0.29 | 关联织物通电（rel add/list + webui 关系叠加） | R9 |
+> | 0.30 | 遥测地基（树域留痕/severity v7/run 关联/eval usage） | R10 |
+> | 0.31 | 时间维度（树时间轴 + 研究管线时间线） | R11 |
+> | 0.32 | 工程产出形态（spec/design/task artifacts + 任务清单） | R12 |
+> | 0.33 | 真实规模树 dogfood #4 + 方法论 skills + pan/zoom | R13 |
+>
+> **已识别的历史裁决推翻**：0.12.0 "tree 域不写 events" 例外 → R10.1 补齐（时间维度前置）。
+
+
 > **执行记录 · 0.28.0（2026-10-16，dogfood #3 发布门自评 + doctor eval 信封检查）**：(1) **dogfood #3——工具审判自己的发布**——release-gate 树（dev→rc→release）；release 挂三题型真实条件（boolean "测试绿+文档收口"、choice "registry 选哪个" options npmjs/tea answer=npmjs、score "发布就绪度" levels 原型/可用/成熟 min=1）；**真实网关活评估**（未收口时点）：registry_pick P=1.0 **pass**（模型完全背书 npmjs）、green_and_closed P=0.4 **fail**（CHANGELOG/plan 未写——门诚实拦截未收口版本，判定语义正确性活证）、readiness score=0.98 **灰带**（文档未收口压低均值）；结果存回研究管线（project release-028：1 源 3 证据 2 断言 supported + 3 链接）；收口后重评（无 state）：boolean 仍 P=0.4——**外部事实不进上下文包，模型正确拒绝脑补**（R8.2 纪律活证）；带 `--state "tests_green=76_pass, changelog_written=0.28.0, ..."` 重评：boolean **P=0.81 翻转 pass**、readiness score=0.99 仍灰带（差 0.01 过"可用"——模型坚持"未经真实用户验证"保留原型权重）→ **发布门停在 pending，离发布差一次真实用户验证**（dogfood 核心教训：外部事实必须进 --state 袋，判定器不脑补）。(2) **doctor 第 8 项 eval_envelopes**——坏信封（choice answer∉options / score 级数越界 / min 越界）会让 evalChoice/evalScore 拿空 options/levels → **门永远 pending 的静默退化**；doctor 现在逐条点名报 fail；CLI cond 入口已校验，此检查防 db sql 直写与导入数据漂移；单测 3 好 + 3 坏负路径。(3) README 健康面（决策模型章节三题型+混批版、doctor 8 项、skills 表）+ techtree skill 补 eval-gates 指针。
 
 > **执行记录 · 0.27.0（2026-10-16，ready --eval 混合题型批量 + npm 发布预检）**：(1) **evalMixed**——单请求混三题型（协议原生：boolean/choice/score 同 state 一请求）；返回形状与单题函数一致 → mapOutcome/mapChoiceOutcome/mapScoreOutcome 直用；单测断言请求体含三种 question 定义且只发 1 个请求。(2) **接线**——evalCandidates 过滤扩 /^eval(-choice|-score)?$/ 并携带 op+解析信封（name/op/question/options/answer/levels/min）；ready --eval 每节点一次 evalMixed，聚合按各自映射器判三态；pending 显示带 score。CLI stub 冒烟：choice+score 单节点 1 请求双 pass → promoted ✓。(3) **npm 发布预检**（不碰 registry）——npm pack tarball 面 57 文件健康；**关键裁决：必须 pnpm publish**——实测 pnpm pack 把 dependencies 里 `cordis: workspace:~`/`cosmokit: workspace:~` 重写为 `~4.0.0-rc.11`/`~1.8.1`（tarball 内 package.json 验证），npm publish 不重写 → 消费者 npm install 直接失败；0.23.0 发布清单第 ② 步更新为"pnpm publish（禁 npm publish——workspace 协议不重写）"。(4) 验证：单测 27→30、demo 6a2 扩 ready 级三题型聚合断言。(5) 会话治理：obelisk 记忆 v3→v4（mem-69218cab 归档 → mem-ff6b2eb8，英文 summary 覆盖 0.19–0.26 裁决）；本批非重大裁决经 a2a_report 备案至 team-god-system（report-e600799b）。

@@ -82,6 +82,46 @@
 
 **非目标**：评估结果不写回数据库（每次 `can` 现评，保持无状态）。~~`node ready --eval` 批量评估留后续批次~~（0.16.0 落地；0.27.0 扩为三题型混批）。
 
+### R9 关联织物通电（2026-10-17 立项，0.29；依据 WebUI 检阅意见 4）
+
+**动机**：`relations` 表（类型无关万向关联，schema 早期埋线）唯一入口是 `kb link`（kb↔kb），nodes/claims/evidence/artifacts/skills 全接不进来——研究域与科技树域是两条平行流水线，科技树成数据孤岛，可视化无从展示"节点 ↔ 证据 ↔ 报告"的关系。
+
+- **R9.1 引用语法**：`<type>:<ref>`——`node:<tree>/<key>`（裸 `node:<key>` 在当前树解析）、`claim:<id>`、`evidence:<id>`、`source:<id>`、`query:<id>`、`kb:<id>`、`artifact:<id>`、`skill:<name>`
+- **R9.2 命令**：`rel add <src> <dst> [--rel <type>]`（默认 related；幂等：同四元组重跑 rc=0 报 duplicate）、`rel list [--src <ref>] [--dst <ref>] [--rel <type>]`、`rel rm <src> <dst> [--rel <type>]`
+- **R9.3 解析校验**：两端引用必须指向真实行（404 → rc=1）；类型与 id 分离存储（src_type/src_id 沿用 relations 现有列，src_id 存实体 id——node 存 node.id，skill 存 name）
+- **R9.4 WebUI 关系叠加**：`/api/node` 返回 related 数组（双向：src 或 dst 命中该节点），带对端类型+显示名（claim 取 text 摘要、kb 取 title、artifact 取 title）；节点详情面板新增 related 区（可点击跳 kb/claim 详情）
+- **R9.5 验收**：demo 断言 rel add/list/幂等/404；dogfood release-gate 树的节点挂上 claim/kb 后面板可见；单测覆盖引用解析与双向查询
+
+### R10 遥测地基（2026-10-17 立项，0.30；依据 WebUI 检阅意见 5 + DSH session-telemetry 概念对照）
+
+**动机**：events 是事务性审计账本（事件与数据变更原子——强于 best-effort 镜像），但半盲：树域 0 事件（0.12.0 "不写 events" 例外成盲区）、命令失败不可见、无 severity、无 run 关联、**eval gateway 返回的 usage tokens 被丢弃**。
+
+- **R10.1 树域留痕**：node.add/link/unlock/lock/cond.add 写 events（推翻 0.12 例外）；tree 域其余（index/export）保持不留（纯派生操作）
+- **R10.2 severity**：events 加 `level TEXT NOT NULL DEFAULT 'info'`（info|warn|error）——schema v7，九触点走齐；error 级=命令 rc=1 的运行信号
+- **R10.3 run 关联**：每条 CLI 命令一条 `cmd.run` 事件（group/action/rc/duration_ms）——回答"这次会话做了什么"；同进程内事件带同 run id（events payload.run）
+- **R10.4 eval usage 捕获**：eval.gate payload 增 usage（gateway 返回的 inputTokens/outputTokens；postEval 透传 usage 字段）
+- **R10.5 agent log 升级**：`--level` 过滤、`--run <id>` 聚合、usage 汇总（eval 花费可见）
+- **R10.6 验收**：树操作后 `agent log` 可见留痕；失败命令留 error 级 cmd.run；eval 后 usage 累计可查
+
+### R11 时间维度（2026-10-17 立项，0.31；检阅意见 5）
+
+- **R11.1**：树视图时间轴模式——tier 布局 ↔ 时间布局切换；X 轴=时间（node.created / node_state.updated 解锁时刻），解锁前的节点灰显
+- **R11.2**：研究管线时间线——sources/evidence/claims/artifacts 按日聚合的推进视图（消费 events）
+- **R11.3 验收**：dogfood release-gate 三幕解锁弧在时间轴可回放
+
+### R12 工程产出形态（2026-10-17 立项，0.32；检阅意见 1/2/3）
+
+- **R12.1**：artifacts kind 扩 `spec`（需求规格）、`design`（多类型：ui-ux/arch/decision，payload 元数据带 design_type）、`task`（todo|doing|done 状态机）
+- **R12.2**：`produce spec/design` 命令；`task` 独立命令组（add/list/done）；webui 任务清单视图（status 分组 + 勾销）
+- **R12.3 验收**：spec/design/task 均可 R9 关联到树节点；任务清单勾销全程留痕
+
+### R13 真实规模树与方法论（2026-10-17 立项，0.33；检阅意见 6/7）
+
+- **R13.1**：dogfood #4——把 ygl-trees 自身演进（0.1→当前）建成 30+ 节点分叉树（含 R9 关联与 R12 产出）
+- **R13.2**：方法论 skills——树构建法（领域分解/衍生）、关联方法论（研究资产挂节点）、design 捕获法
+- **R13.3**：viz pan/zoom（SVG viewBox 拖拽缩放）支撑真实规模
+- **R13.4 验收**：30+ 节点树在 webui 可浏览可缩放；三个新 skill 可被 agent match 命中
+
 ## 2. 数据模型变更（schema v2 → v3）
 
 | 表 | 变更 | 迁移 |

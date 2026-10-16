@@ -11,6 +11,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
 import { TreeStore } from "../../../techtree/model/src/reads";
 import { buildBrief } from "./agent-cmds";
+import { resolveId } from "./rels";
 
 interface DashboardData {
   brief: any;
@@ -445,6 +446,14 @@ function renderNodePanel(d) {
   html += rel('parents', d.parents);
   html += rel('children', d.children);
 
+  if ((d.related || []).length) {
+    html += '<div class="panel-sec">related (' + d.related.length + ')</div><div>' +
+      d.related.map(function (r) {
+        return '<span class="chip" title="' + esc(r.type + ':' + r.id + ' ' + (r.dir === 'in' ? '←' : '→')) + '">' +
+          '<b>' + esc(r.rel) + '</b> ' + esc(r.type) + ': ' + esc(String(r.display).slice(0, 40)) + '</span>';
+      }).join('') + '</div>';
+  }
+
   panel.innerHTML = html;
 }
 
@@ -474,12 +483,22 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
   const tid = trees[0].id;
   const node = ts.nodeGet(tid, key);
   if (!node) return null;
+  // R9: relation fabric — both directions, other end resolved to a display
+  const rels = db.all(
+    `SELECT rel, src_type AS other_type, src_id AS other_id, 'in' AS dir
+       FROM relations WHERE dst_type='node' AND dst_id=?
+      UNION ALL
+     SELECT rel, dst_type AS other_type, dst_id AS other_id, 'out' AS dir
+       FROM relations WHERE src_type='node' AND src_id=?`,
+    [node.id, node.id]
+  );
   return {
     node,
     parents: ts.parents(tid, key),
     children: ts.children(tid, key),
     conditions: ts.condList(tid, key),
     can: ts.canUnlock(tid, key),
+    related: rels.map((r: any) => ({ rel: r.rel, type: r.other_type, id: r.other_id, dir: r.dir, display: resolveId(env, r.other_type, r.other_id) })),
   };
 }
 

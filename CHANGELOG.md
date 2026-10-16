@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.0（2026-10-17）关联织物通电（spec R9）
+- **`rel` 命令组**：万向关联表 `relations` 从 kb↔kb 孤岛通电为八类实体（node/claim/evidence/source/query/kb/artifact/skill）任意两端挂接——引用语法 `<type>:<ref>`（`node:<tree>/<key>` 或当前树裸 key；kb/artifact 支持 id 或 title；skill 按 name）；`rel add [--rel t]` 幂等（同四元组 duplicate rc=0）、`rel rm`、`rel list [--src/--dst/--rel]` 双向过滤 + 对端显示名解析；404→rc1、坏类型→rc2
+- **WebUI 关系叠加**：`/api/node` 返回 `related[]`（双向命中 + 类型/显示名/方向），节点详情面板新增 related 区（rel 类型加粗 + 对端摘要）——"这个节点依据什么证据、关联什么知识"面板直达
+- **spec/plan 大修**：WebUI 检阅两轮结论固化为 R9–R13 五条新需求 + 0.29–0.33 里程碑路线（关联织物→遥测地基→时间维度→工程产出→真实规模树）；记录历史裁决推翻（0.12 树域不写 events 例外将由 R10 补齐）
+- dogfood：release-gate/release 节点挂上 evidenced-by kb + decided-by claim（webui 可见）
+- 单测 8 例（引用解析/幂等/跨域/rm 语义/events 留痕）+ demo 断言组 9；修复 relRm 先删后查的误报 bug（改先查存在再删）
+
 ## 0.28.0（2026-10-16）dogfood #3（发布门自评）+ doctor eval 信封检查
 - **dogfood #3：工具审判自己的发布**——release-gate 树（dev→rc→release，release 挂三题型真实条件）真实网关活评估：**registry_pick (choice) P=1.0 pass**（npmjs）、**green_and_closed (boolean) P=0.4 fail**（未收口时点诚实拦截）、**readiness (score) 0.98 灰带**（原型↔可用徘徊）；结果存回研究管线（1 源 3 证据 2 断言 supported）；收口后重评见 plan.md
 - **doctor 第 8 项 `eval_envelopes`**：eval 族条件信封有效性（choice answer∈options、score 级数 2-10 且 min 界内）——坏信封会让门永远 pending（静默退化），现在报 fail 点名；单测负路径（3 好 + 3 坏）
