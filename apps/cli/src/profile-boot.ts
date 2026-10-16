@@ -75,9 +75,17 @@ export async function bootApp(opts: BootOptions): Promise<BootedApp> {
     }
   }
 
-  // settle the service layer (one yield; direct construction stays the CLI fallback)
-  await new Promise((r) => setImmediate(r));
-  const db: DB = app.database?.db || new DB(opts.dbFile, { lock: process.env.YGL_TEST !== '1' });
+  // settle the service layer. Cordis runs plugin apply() inside fibers — one
+  // setImmediate tick does NOT guarantee the database service has constructed;
+  // the fallback below would then double-open the DB in one process (0.65.0
+  // P0: dir-lock self-deadlock / sqlite BUSY). Wait for it, bounded; the
+  // fallback stays as crash safety if the service never comes up.
+  let db: DB | undefined = app.database?.db;
+  for (let i = 0; i < 50 && !db; i++) {
+    await new Promise((r) => setImmediate(r));
+    db = app.database?.db;
+  }
+  db = db || new DB(opts.dbFile, { lock: process.env.YGL_TEST !== '1' });
   const store: Store = app.research?.store || new Store(db);
 
   if (startupIssues.length) {
