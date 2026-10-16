@@ -309,7 +309,7 @@ ygl-trees webui serve --port 8642
 
 ## 七、专属 Skills（Agent 学习/使用入口）
 
-八个技能覆盖工具全域，位于 `skills/<name>/SKILL.md`（frontmatter L1 + 正文 L2，可被本工具 `skill import` 直接导入，也可被宿主 Agent 的技能系统发现）：
+九个技能覆盖工具全域，位于 `skills/<name>/SKILL.md`（frontmatter L1 + 正文 L2，可被本工具 `skill import` 直接导入，也可被宿主 Agent 的技能系统发现）：
 
 | 技能 | 覆盖 |
 |---|---|
@@ -321,6 +321,7 @@ ygl-trees webui serve --port 8642
 | `ygl-trees-tree-building` | 树构建方法论（领域分解四步、tier 语义、反模式立靶、≥30 节点自检清单） |
 | `ygl-trees-relating` | 关联织物方法论（rel 词汇表、何时挂什么、防平行流水线反模式） |
 | `ygl-trees-design-capture` | design 捕获法（ui-ux=DESIGN.md 格式、arch/decision=ADR 三段、挂接纪律） |
+| `ygl-trees-lifecycle` | **更新时机与维护节奏**（事件→动作触发表、改结构后必索引、解锁后必挂证据、会话收口纪律、漂移反模式） |
 
 `.agents/skills/` 下为指向 `skills/` 的目录联接（Windows junction，不入库）。克隆到新机器后一行重建：
 

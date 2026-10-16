@@ -272,6 +272,18 @@ importers:
         specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
         version: link:../../../examples/plugin-demo
 
+  tmp/plugins-unit-1792140778164/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
+  tmp/plugins-unit-1792141554894/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
   tmp/readme-verify-ws/plugins:
     dependencies:
       ygl-plugin-demo:

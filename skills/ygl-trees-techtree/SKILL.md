@@ -16,6 +16,8 @@ tags: ygl-trees,techtree,dag,unlock,gate
 `node_edges` 邻接表是唯一事实源；`node_closure`（祖先/后代闭包）与 `node_index`（拓扑序）
 是派生索引——`node index` 重建，遇到必检环直接报错。
 
+> **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
+
 ## 1. 建树
 
 ```bash

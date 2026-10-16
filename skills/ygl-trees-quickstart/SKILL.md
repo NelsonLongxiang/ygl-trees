@@ -104,6 +104,13 @@ ygl-trees config set eval.pass_threshold 0.8   # 写入即校验 + 留痕
 ygl-trees config reset eval.pass_threshold
 ```
 
+## 10b. 什么时候动数据（时机问题）
+
+本技能讲"怎么动"；**"什么时候动"看 `ygl-trees-lifecycle` 技能**——事件→动作触发表
+（树侧何时 unlock/add/link、研究侧何时写 source/evidence/claim/kb/task）、节奏纪律
+（改结构后必 `node index`+`validate`、解锁后必挂证据、会话收口前必 `agent brief`+`doctor`）、
+以及漂移反模式。开场先 `agent brief`，收口前 `doctor`。
+
 ## 11. 常见坑
 
 - 数据库打不开报 "database is locked"：可能残留 `<db>.lock` 目录

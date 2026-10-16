@@ -252,7 +252,17 @@ export async function link(
         throw new Error(`cycle rejected: ${childKey} already reaches ${parentKey}`);
     }
 
-    const id = shortId(["edge", p[0].id, c[0].id, rel], 12);
+    // Idempotency (frozen contract): re-linking the same (parent,child,rel)
+    // updates in place and reports duplicate:true — it must NOT look like a
+    // fresh insert. The upsert keeps the ORIGINAL row id, so the return must
+    // re-read by the natural key; selecting by a freshly derived id returns
+    // nothing and crashed the caller (regression fixed 0.42).
+    const before = (await mgr.query(
+      `SELECT id FROM node_edges WHERE parent_id=? AND child_id=? AND rel=?`,
+      [p[0].id, c[0].id, rel]
+    )) as any[];
+    const duplicate = before.length > 0;
+    const id = duplicate ? before[0].id : shortId(["edge", p[0].id, c[0].id, rel], 12);
     await mgr.query(
       `INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode,required,min_level,weight,note)
        VALUES(?,?,?,?,?,?,?,?,?,?)
@@ -262,9 +272,13 @@ export async function link(
       [id, treeId, p[0].id, c[0].id, rel, mode, o.required === false ? 0 : 1, o.min_level ?? 1, o.weight ?? 1, o.note || ""]
     );
     await rebuildClosure(mgr, treeId);
-    await logEvent(mgr, "node.link", id, { tree: treeId, parent: parentKey, child: childKey, rel, mode, required: o.required !== false });
-    const rows = (await mgr.query(`SELECT * FROM node_edges WHERE id=?`, [id])) as any[];
-    return rows[0];
+    await logEvent(mgr, "node.link", id, { tree: treeId, parent: parentKey, child: childKey, rel, mode, required: o.required !== false, duplicate });
+    const rows = (await mgr.query(
+      `SELECT * FROM node_edges WHERE parent_id=? AND child_id=? AND rel=?`,
+      [p[0].id, c[0].id, rel]
+    )) as any[];
+    if (!rows.length) throw new Error(`edge vanished after upsert: ${parentKey} → ${childKey} [${rel}]`);
+    return duplicate ? { ...rows[0], duplicate: true } : rows[0];
   });
 }
 

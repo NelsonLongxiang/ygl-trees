@@ -142,7 +142,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             note: flagStr("note"),
           }),
         (row): number => {
-          ack(ctx, row, `linked ${key} → ${child}  [${row.rel}/${row.mode}/${row.required ? "必检" : "可选"}]`);
+          const dup = row?.duplicate === true;
+          ack(
+            ctx,
+            row,
+            dup
+              ? `linked ${key} → ${child}  [${row.rel}/${row.mode}/${row.required ? "必检" : "可选"}]  (duplicate, updated in place)`
+              : `linked ${key} → ${child}  [${row.rel}/${row.mode}/${row.required ? "必检" : "可选"}]`
+          );
           return 0;
         }
       );

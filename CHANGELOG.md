@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.42.0（2026-10-17）新增 lifecycle 技能（更新时机）+ 修复 node link 幂等契约违规
+- **新技能 `ygl-trees-lifecycle`（用户指出缺口）**：现有 9 个技能全在讲「**怎么动**」（机制）与「动成什么样」（方法论），**没有一个讲「什么时候动」**——「时机/维护/节点更新/cadence」类词汇全库零命中，agent 机制全会却在该动的时刻不动，树与研究两条流水线各自漂移。新技能补上：**事件→动作触发表**（树侧 9 行：达成→unlock+挂证据、发现子能力→add+link、路线互斥→excludes、语义门槛→eval、方向变更→先加边再索引再 unlink、重新拆解→先建后删、重复 link→幂等语义…；研究资产侧 10 行：何时 source/evidence/claim/link/resolve/kb/promote/task/produce/rel）、**节奏纪律**（改结构后同轮必 `node index`+`validate`、解锁后必挂证据、会话收口前 `brief`+`doctor`、批量改写前 `db export`）、**五个自问**判定口诀、**漂移六反模式**、与专职技能的分工表。已 junction 进 `.agents/skills`，`agent match` 四类时机查询全部命中；README 技能表 8→9，quickstart/techtree/research 加交叉引用（讲机制时指向时机）
+- **修复冻结契约违规：`node link` 不幂等**（写新技能时实测暴露）——重复 link 同一 (父,子,rel) 不再报 `duplicate:true`，而是 **TypeError 崩溃 rc=1**。根因：upsert 冲突后既有行保留**原 id**，而回读用**新算出的 id** → 查不到 → 返回 undefined → 调用方读 `row.rel` 崩。修：按自然键 (parent,child,rel) 预查 + 回读，重复时回执 `duplicate:true`（rc=0，原地更新 `--mode/--optional` 即改属性）；demo 加护栏（复用已有边命中重复路径）
+- 顺带修正新技能里写错的命令名（`link --rm` → 真实子命令 `node unlink`）——技能命令面也经实测核对
+
 ## 0.41.0（2026-10-17）README 前门刷新 + 客户端测试覆盖 + Bun 根因精确化
 - **README 全面刷新**（265 → 350 行；规则 5「README 健康」此前跳过 0.37–0.40）：入口改为**发布产物** `dist/bundle/bin.cjs`（附开发树对照）、依赖面补 vendored cordis 家族、schema v5→**v8**；
   **新增四节**——`rel` 关联织物（八类引用 + 双向浏览）、`task` 状态机（并澄清**没有 tasks 表**，是 artifacts kind='task'、+meta 状态信封）、`produce spec/design`（design_type 信封 + DESIGN.md 格式）、**`plugin` 用户层插件**（install/config/enable/disable/list + 契约 + 隔离与诊断）；

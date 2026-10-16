@@ -249,3 +249,13 @@ $Y plugin enable ygl-plugin-demo >/dev/null 2>&1
 EN=$($Y demo hello 2>&1)
 case "$EN" in *"hello from the user layer"*) echo "  ✓ plugin enable 恢复挂载";; *) echo "  ✗ enable: $EN"; exit 1;; esac
 $Y plugin remove ygl-plugin-demo >/dev/null 2>&1
+
+# 冻结契约：重复 node link 必须幂等（rc=0 + duplicate:true），不得崩。
+# 复用 demo 里已建的 bronze→steel 边，正好命中"重复"路径。
+RC=0
+DUP=$($Y --json node link bronze steel --optional 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).duplicate===true)}catch(e){console.log('parse-fail')}})") || RC=$?
+if [ "$DUP" = "true" ] && [ "$RC" = "0" ]; then
+  echo "  ✓ 重复 node link 幂等（duplicate:true，rc=0，原地更新）"
+else
+  echo "  ✗ link 幂等契约：duplicate=$DUP rc=$RC"; exit 1
+fi

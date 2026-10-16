@@ -16,6 +16,8 @@ tags: ygl-trees,research,evidence,claim,report
 核心循环：**来源 → 证据 → 断言 → 报告**。断言状态由证据链接自动推导
 （supported/refuted/contested/unverified），报告只把已证实的写成结论。
 
+> **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
+
 ## 1. 采集
 
 ```bash
