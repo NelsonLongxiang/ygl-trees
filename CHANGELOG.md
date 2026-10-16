@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.65.0（2026-10-17）GPT-6.1 SOL 评审三项缺陷修复
+- **① cost_mul 折扣方向反转**：原实现 `!pass` 才打折（条件不满足反而优惠），README 承诺"满足条件则成本打折"——修为 `pass` 才应用折扣；补 2 例单测（条件满足→0.8 / 不满足→1.0）
+- **② DB 锁主路径接通**：DatabaseService 构造改传 `{lock: true}`（原仅 profile-boot 回退路径加锁，但 base bundle 必走 Service 路径→锁永不生效）；保留 YGL_TEST=1 旁路
+- **③ node path 帮助文案修正**：原承诺 "cheapest unlock order" 但 OR 分支未做最省选择——改为如实描述 "dependency-order path (OR branches not optimized)"；readme:verify 34/34 通过
+
 ## 0.64.0（2026-10-17）最终文档同步——skill link / kb rm / --host / --fix 全部入档
 - README + quickstart 补 `skill link [--global]`
 - readme:verify + 全量门禁

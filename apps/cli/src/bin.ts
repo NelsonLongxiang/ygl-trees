@@ -167,7 +167,7 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
                                      (--eval: eval 题型经决策模型判定；
                                       boolean P / choice P(期望答案) / score ±1 灰带)
   node ready [--state k=v] [--eval]  currently unlockable set
-  node path <key>                    cheapest unlock order to a target
+  node path <key>                    dependency-order path to target (all locked ancestors; OR branches not optimized)
   node parents|children <key>        direct relations
   node ancestors|descendants <key>   transitive, via closure index
   node list | show <key> | search "<q>" | unlock|lock <key>

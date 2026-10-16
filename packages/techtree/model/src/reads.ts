@@ -420,7 +420,10 @@ export class TreeStore {
         : c.value;
       if (!pass && c.required) missingRequired.push(`${c.name} ${c.op} ${shown}`.trim());
       if (!pass && !c.required) missingOptional.push(`${c.name} (可选)`);
-      if (!pass && !c.required && c.effect === "cost_mul") costMul *= Number(c.weight) || 1;
+      // GPT-6.1 SOL fix: cost_mul applies the DISCOUNT when the optional
+      // condition PASSES (README: "满足条件则成本打折"). The original `!pass`
+      // inverted the semantics — an unsatisfied condition granted the discount.
+      if (pass && !c.required && c.effect === "cost_mul") costMul *= Number(c.weight) || 1;
     }
 
     const ok = missingRequired.length === 0 && blocked.length === 0;
