@@ -158,6 +158,14 @@
 文档：usage 补 db sql / job enable
 ```
 
+### R15 决策模型增强（2026-10-17，0.49–0.50）
+
+- **R15.1 语义检索重排**：`kb search "<q>" --eval` — FTS5 召回后由决策模型逐条评估 P(语义相关) 并重排；离线安全（无凭证显示"离线"并保持原序）
+- **R15.2 断言置信度评估**：`research claim evaluate <id>` — 收集关联证据，决策模型综合评估 0-5 分并映射 A/B/C/D；**`claim link` 自动触发**（评估结果写 events 表 `claim.eval`，报告输出自动附带）
+- **R15.3 证据质量评估**：`research evidence assess <id>` — 决策模型评估来源可靠性 + 引文质量（0-5 分 → 高/中/低）
+- 复用 R8 基础设施（AI_GATEWAY_API_KEY / TypeSafe jev / 三态映射 / 离线安全）；新增 `eval-enhance.ts` 模块（semanticReRank / evaluateClaimConfidence / assessEvidenceQuality）
+- 验收：三种查询全命中（模型在线）/ 离线安全（无凭证不炸、显示"离线"）/ `claim link` 自动评估并写遥测 / `produce report` 附带模型置信度
+
 ## 4. 兼容性承诺
 
 - v2 老库首次被 v3 CLI 打开时自动迁移，无损、无需人工介入；迁移在事务内

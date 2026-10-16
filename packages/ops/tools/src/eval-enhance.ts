@@ -38,7 +38,7 @@ export async function semanticReRank(
   candidates: ReRankCandidate[],
   token?: string
 ): Promise<ReRankedResult[]> {
-  const t = token || evalToken();
+  const t = token !== undefined ? token : evalToken();
   if (!t) {
     // Offline: return original order, no re-ranking
     return candidates.map((c, i) => ({
@@ -98,7 +98,7 @@ export async function evaluateClaimConfidence(
   ctx: ClaimEvalContext,
   token?: string
 ): Promise<ClaimEvalResult> {
-  const t = token || evalToken();
+  const t = token !== undefined ? token : evalToken();
   if (!t) {
     return {
       ok: false,
@@ -168,7 +168,7 @@ export async function assessEvidenceQuality(
   ctx: EvidenceAssessContext,
   token?: string
 ): Promise<EvidenceAssessResult> {
-  const t = token || evalToken();
+  const t = token !== undefined ? token : evalToken();
   if (!t) {
     return {
       ok: false,

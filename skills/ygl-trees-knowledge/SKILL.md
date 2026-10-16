@@ -26,7 +26,7 @@ ygl-trees kb link <a> <b> --rel related
 ## 2. 检索（中文原生）
 
 ```bash
-ygl-trees kb search "闭包表 索引"
+ygl-trees kb search（--eval 语义重排：决策模型逐条评估相关性） "闭包表 索引"
 ```
 
 排序语义：命中 token 数降序 → **标题含 token 优先** → bm25。写查询词时把最独特的关键词

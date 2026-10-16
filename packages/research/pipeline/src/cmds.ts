@@ -415,6 +415,31 @@ if (subAction === "list" || subAction === undefined) {
         .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
         .then((r): number => {
           ok(ctx, `linked; claim status now: ${r.status}`);
+          // R15 深度集成：链接后自动触发置信度评估（有模型时静默执行）
+          try {
+            const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
+            const evRows = store.db.all(
+              `SELECT e.quote, ce.stance, s.title AS source_title
+                 FROM claim_evidence ce
+                 JOIN evidence e ON e.id = ce.evidence_id
+                 LEFT JOIN sources s ON s.id = e.source_id
+                WHERE ce.claim_id = ?`, [rest[1]]) as any[];
+            evaluateClaimConfidence({
+              claim_text: (store.db.get("SELECT text FROM claims WHERE id=?", [rest[1]]) as any)?.text || "",
+              claim_status: r.status,
+              evidence: evRows,
+            }).then((evalResult: any) => {
+              if (evalResult.ok) {
+                store.db.run(
+                  "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+                  [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, new Date().toISOString(),
+                   "cli", "claim.eval", "claim", rest[1],
+                   JSON.stringify({ model_confidence: evalResult.confidence_score, label: evalResult.confidence_label }), "info"]
+                );
+                out(ctx, paint(C.dim, `  [模型] 置信度 ${evalResult.confidence_label} (${evalResult.confidence_score}/5) — ${evalResult.reasoning.slice(0, 60)}`, ctx.color));
+              }
+            }).catch(() => { /* eval is best-effort, never blocks the link */ });
+          } catch { /* eval-enhance not loadable — skip */ }
           return 0;
         })
         .catch((e: any): number => {

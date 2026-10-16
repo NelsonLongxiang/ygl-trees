@@ -231,6 +231,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           c.status === "supported" ? "✓" : c.status === "refuted" ? "✗" : c.status === "contested" ? "⚠" : "?";
         L.push(`${i + 1}. ${mark} ${c.text} ${cites ? ` ${cites}` : "_（无证据支撑）_"}  `);
         L.push(`   _置信度 ${c.confidence}，状态 ${c.status}_`);
+        // R15 深度集成：如果决策模型已评估过（events 表有 claim.eval），附上模型评分
+        try {
+          const lastEval = store.db.get(
+            `SELECT payload FROM events WHERE kind='claim.eval' AND entity_id=? ORDER BY rowid DESC LIMIT 1`,
+            [c.id]
+          ) as any;
+          if (lastEval) {
+            const p = JSON.parse(lastEval.payload);
+            if (typeof p.model_confidence === "number") {
+              L.push(`   _模型置信度 ${p.label}（${p.model_confidence}/5）_`);
+            }
+          }
+        } catch { /* events read is best-effort */ }
       });
       L.push("");
 
