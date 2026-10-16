@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.69.0（2026-10-17）MCP Server——R8 研究设计的工程落地
+- **`ygl-trees mcp`**：启动 stdio MCP 服务器（JSON-RPC 2.0），Claude Desktop / Cursor / VS Code 等 IDE Agent 可直接连接
+- **8 工具面**（三支柱理论驱动）：agent_brief · agent_match · kb_search · claim_evaluate · tree_state · produce_report · doctor · task_advance
+- **每个工具继承 CLI 冻结契约**（幂等写入、JSON 纯净、snake_case）——Agent 调用工具不需要解析命令行
+- **实现**：`packages/ops/tools/src/mcp.ts`——readline stdio + JSON-RPC 路由 + `cliJson()` 子进程调用（`process.argv[1]` 自引用，bundle/源码双兼容）
+- 实测：initialize ✓ · tools/list(8) ✓ · agent_brief(project) ✓ · kb_search(CJK 命中) ✓ · doctor(9 项) ✓
+
 ## 0.68.0（2026-10-17）锁设计修复——serve/CLI 共存 + PID 活锁检测 + JSON 纯净 + v9 时间纪律
 - **F1（P0）：webui serve 不再持排他锁**——原实现进程级锁让 serve 生命周期内挡掉一切 CLI 命令；现 serve 跳过锁（`YGL_SERVE=1` 旁路），SQLite WAL 天然支持并发读 + 序列化写；CLI 短命令仍锁（单写者保护写窗口）
 - **P1（用户反馈）：PID 活锁检测替代 15 分钟 mtime**——Windows 上 `process.on("exit")` 的 rmSync 句柄未释放时静默失败→锁残留→下进程撞白锁；现用 `process.kill(pid, 0)` 探测持有者是否存活（EPERM=活/ESRCH=死），死 PID **立即清锁**（不看 mtime），活 PID **如实报告**（不误报 stale）

@@ -241,6 +241,15 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  // MCP: Model Context Protocol server (stdio) — 8-tool surface.
+  // Designed by the unified three-pillar theory (R8 research); each tool
+  // routes to CLI --json, inheriting frozen contracts.
+  if (group === "mcp") {
+    const { serveMcp } = await import("../../../packages/ops/tools/src/mcp");
+    serveMcp();
+    return new Promise<number>(() => { /* server runs until stdin closes */ });
+  }
+
   if (!group || group === "help" || group === "-h" || group === "--help") {
     if (!ctx.json) out(ctx, usage());
     return 0;

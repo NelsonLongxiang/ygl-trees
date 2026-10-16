@@ -6,3 +6,4 @@ export { CONFIG_REGISTRY, configGet, configGetNumber, configGetBool, configSet, 
 export { syncToPg, migrateToPg, MIRROR_TABLES } from "./pgsync";
 export type { SyncResult, MigrateResult } from "./pgsync";
 export { OpsService, apply } from "./plugin";
+export { serveMcp, buildTools } from "./mcp";
