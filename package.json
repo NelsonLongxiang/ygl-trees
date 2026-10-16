@@ -1,5 +1,5 @@
 {
-  "name": "ygl-trees",
+  "name": "@nelsonlongxiang/ygl-trees",
   "version": "0.66.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
@@ -69,5 +69,8 @@
     "env": {
       "YGL_TEST": "1"
     }
+  },
+  "publishConfig": {
+    "registry": "http://192.168.3.88:3000/api/packages/jf-tech/npm/"
   }
 }
