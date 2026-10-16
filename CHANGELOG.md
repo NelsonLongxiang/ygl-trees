@@ -7,6 +7,7 @@
 - **新增 `pnpm contract:audit`（scripts/contract-audit.sh，37 项）**——把四类冻结契约变成可执行断言：① **幂等**（16 条写命令各跑两次，均须 rc=0）② **duplicate 回执**（project new / tree new / node link 重复须 `duplicate:true`）③ **坏引用点名**（11 条引用命令遇坏 id 须 rc=1 且消息点名实体，**断言不出现 SqliteError/constraint/TypeError 裸异常**）④ **用法 rc=2**（5 条）
 - **门禁自证有效**：临时还原 claimLink 缺陷 → 门禁 34/37 红、rc=1；恢复后 37/37 绿（不是空跑）
 - `pnpm test` 升为**四段制**（unit + build + demo + contract:audit），pre-push 钩子因此自动把关该项；README/AGENTS/release.md 同步
+- **实测到并记录一个运维交互**：钩子跑完整门禁约 2 分钟、期间与远端零流量，Gitee 的 SSH 会话会在此期间空闲断开 → 钩子通过后的传输立刻失败（`unexpected disconnect while reading sideband packet` / `closed by remote host` / rc=141 SIGPIPE），**而门禁是绿的**。处置：以门禁输出为证据，`YGL_SKIP_HOOKS=1 git push` 重推；钩子现会主动打印这条提示，docs/release.md 记入「已知交互」
 
 ## 0.42.0（2026-10-17）新增 lifecycle 技能（更新时机）+ 修复 node link 幂等契约违规
 - **新技能 `ygl-trees-lifecycle`（用户指出缺口）**：现有 9 个技能全在讲「**怎么动**」（机制）与「动成什么样」（方法论），**没有一个讲「什么时候动」**——「时机/维护/节点更新/cadence」类词汇全库零命中，agent 机制全会却在该动的时刻不动，树与研究两条流水线各自漂移。新技能补上：**事件→动作触发表**（树侧 9 行：达成→unlock+挂证据、发现子能力→add+link、路线互斥→excludes、语义门槛→eval、方向变更→先加边再索引再 unlink、重新拆解→先建后删、重复 link→幂等语义…；研究资产侧 10 行：何时 source/evidence/claim/link/resolve/kb/promote/task/produce/rel）、**节奏纪律**（改结构后同轮必 `node index`+`validate`、解锁后必挂证据、会话收口前 `brief`+`doctor`、批量改写前 `db export`）、**五个自问**判定口诀、**漂移六反模式**、与专职技能的分工表。已 junction 进 `.agents/skills`，`agent match` 四类时机查询全部命中；README 技能表 8→9，quickstart/techtree/research 加交叉引用（讲机制时指向时机）

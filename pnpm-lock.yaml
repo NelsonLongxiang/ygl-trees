@@ -296,6 +296,30 @@ importers:
         specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
         version: link:../../../examples/plugin-demo
 
+  tmp/plugins-unit-1792142832286/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
+  tmp/plugins-unit-1792142971511/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
+  tmp/plugins-unit-1792143169804/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
+  tmp/plugins-unit-1792143330108/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
   tmp/readme-verify-ws/plugins:
     dependencies:
       ygl-plugin-demo:

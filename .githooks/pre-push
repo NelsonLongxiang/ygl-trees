@@ -48,4 +48,13 @@ if [ "$TAG_PUSH" = "1" ]; then
 fi
 
 echo "pre-push: gates passed"
+# Operational note: this hook takes ~2 minutes. A remote with an SSH idle
+# timeout can drop the session while it runs, so the transfer right after
+# fails with SIGPIPE / "Connection closed by remote host" even though the
+# gates passed. The gates above are the evidence — retry with the documented
+# bypass rather than re-running them over a dead connection:
+#   YGL_SKIP_HOOKS=1 git push
+echo "pre-push: (if the transfer now fails with a broken pipe, that is the"
+echo "pre-push:  remote's idle timeout during these 2 min — re-run with"
+echo "pre-push:  YGL_SKIP_HOOKS=1 git push, gates already passed above)"
 exit 0

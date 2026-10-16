@@ -27,6 +27,14 @@ git config core.hooksPath .githooks     # 一次性安装（仓库自带 .githoo
 **旁路纪律**：只能显式旁路，且留痕——
 `YGL_SKIP_HOOKS=1 git push ...`（钩子会打印跳过原因，不静默）。
 
+**已知交互：慢钩子 × 远端空闲超时**（实测 2026-10-17）。钩子跑完整门禁约 2 分钟，
+期间与远端**零流量**；Gitee 的 SSH 会话会在此期间空闲断开，于是钩子通过后的传输立刻
+失败——表现为 `send-pack: unexpected disconnect while reading sideband packet`、
+`Connection to gitee.com closed by remote host` 或进程 `rc=141`（SIGPIPE），
+**而门禁本身是绿的**。处置：门禁输出即证据，直接
+`YGL_SKIP_HOOKS=1 git push` 重推（不要在网络已断的情况下重跑两分钟门禁）。
+若需长期避免：把重门禁留给 tag 推送，普通 push 手动跑 `pnpm test`。
+
 **若日后 Gitee Go 开放**：用 `gitee pipeline example -R <owner>/<repo>` 取官方 YAML 基线
 （**不要手写字段**），改造为 `pnpm install && pnpm test && pnpm pack:check` 后
 `gitee pipeline commit` 提交。阻断点只有一个：账户权限。
