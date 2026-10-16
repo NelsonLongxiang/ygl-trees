@@ -1,17 +1,24 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
-import { getOrm } from "../../../core/database/src/orm";
+import { getOrm, closeOrm } from "../../../core/database/src/orm";
 
 let db: DB;
+let dir: string;
 let file: string;
 
 beforeAll(async () => {
-  const dir = path.join(process.cwd(), "tmp", `telemetry-unit-${Date.now()}`);
+  dir = path.join(process.cwd(), "tmp", `telemetry-unit-${Date.now()}`);
   fs.mkdirSync(dir, { recursive: true });
   file = path.join(dir, "unit.db");
   db = new DB(file);
+});
+
+afterAll(async () => {
+  await closeOrm();
+  db?.close();
+  fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup
 });
 
 describe("schema v7+（events.level）", () => {

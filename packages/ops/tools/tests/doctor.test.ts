@@ -1,14 +1,20 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { packEvalChoiceSpec, packEvalScoreSpec } from "../../../techtree/eval/src/eval";
 
 let db: DB;
+let dir: string;
 const now = new Date().toISOString();
 
+afterAll(() => {
+  db?.close();
+  fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup (user-flagged accumulation)
+});
+
 beforeAll(() => {
-  const dir = path.join(process.cwd(), "tmp", `doctor-unit-${Date.now()}`);
+  dir = path.join(process.cwd(), "tmp", `doctor-unit-${Date.now()}`);
   fs.mkdirSync(dir, { recursive: true });
   db = new DB(path.join(dir, "unit.db"));
   db.run("INSERT INTO trees(id,name,created) VALUES(?,?,?)", ["t1", "dt", now]);

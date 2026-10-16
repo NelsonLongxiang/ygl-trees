@@ -1,17 +1,18 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
-import { getOrm } from "../../../core/database/src/orm";
+import { getOrm, closeOrm } from "../../../core/database/src/orm";
 import { resolveRef, relAdd, relRm, REL_TYPES, RelError } from "../src/rels";
 
 let db: DB;
+let dir: string;
 let env: any;
 const now = new Date().toISOString();
 
 beforeAll(async () => {
-  const dir = path.join(process.cwd(), "tmp", `rels-unit-${Date.now()}`);
+  dir = path.join(process.cwd(), "tmp", `rels-unit-${Date.now()}`);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, "unit.db");
   db = new DB(file);
@@ -28,6 +29,12 @@ beforeAll(async () => {
   await treeWrites.nodeAdd(ds, tree.id, { key: "alpha" });
   db.metaSet("current_tree", "rt");
   (globalThis as any).__ids = { ev: ev.row.id, cl: cl.row.id };
+});
+
+afterAll(async () => {
+  await closeOrm();
+  db?.close();
+  fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup
 });
 
 describe("引用解析", () => {

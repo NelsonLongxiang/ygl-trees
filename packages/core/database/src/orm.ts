@@ -35,3 +35,16 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
   cached = { file: dbFile, ds };
   return ds;
 }
+
+/** Destroy the cached DataSource (tests/scratch dirs cannot be removed on
+ *  Windows while a better-sqlite3 handle keeps the file open — EPERM). */
+export async function closeOrm(): Promise<void> {
+  if (cached) {
+    try {
+      await cached.ds.destroy();
+    } catch {
+      /* best effort */
+    }
+    cached = null;
+  }
+}
