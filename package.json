@@ -64,6 +64,9 @@
     "exclude": [
       "node_modules",
       "dist"
-    ]
+    ],
+    "env": {
+      "YGL_TEST": "1"
+    }
   }
 }
