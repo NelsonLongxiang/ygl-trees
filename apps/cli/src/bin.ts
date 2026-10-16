@@ -270,7 +270,7 @@ export async function main(argv: string[]): Promise<number> {
       return 1;
     }
     bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
-    const lock = `${file}.lock`;
+    const lock = `${file}.ygllock`;
     if (require("node:fs").existsSync(lock)) {
       out(ctx, `  stale lock dir detected: ${lock}`);
       out(ctx, `  if no other ygl-trees process is running, remove it:  rmdir "${lock}"`);

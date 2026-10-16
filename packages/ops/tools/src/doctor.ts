@@ -131,7 +131,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
   // ── 7. Stale lock check ──
   const dbPath = db.path;
-  const lockPath = `${dbPath}.lock`;
+  const lockPath = `${dbPath}.ygllock`;
   const hasLock = require("node:fs").existsSync(lockPath);
   checks.push({
     name: "stale_lock",
@@ -236,7 +236,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       fixes.push("index dirty flag cleared (run: ygl-trees node index)");
     }
     // stale lock → remove
-    const lockDir = `${env.db.path}.lock`;
+    const lockDir = `${env.db.path}.ygllock`;
     if (fs.existsSync(lockDir)) {
       try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed"); } catch { /* */ }
     }

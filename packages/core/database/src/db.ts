@@ -368,17 +368,36 @@ export class DB {
     const useLock = opts?.lock === true; // opt-in: only the CLI entry point locks
     // P0-2 (real-user incident): single-writer mutex. node-sqlite3-wasm has no
     // concurrent-write protection; two CLI processes writing simultaneously
-    // corrupted the DB ("malformed"). The .db.lock dir mechanism already
-    // exists (job tick uses it) — reuse it: if another process holds the lock,
-    // fail fast with a clear message instead of silently corrupting.
-    const lockDir = `${file}.lock`;
+    // corrupted the DB ("malformed"). App-level dir lock with pid file +
+    // stale steal + friendly error.
+    //
+    // NAME COLLISION (0.65.0 P0): node-sqlite3-wasm's Node VFS implements
+    // sqlite's own file-lock protocol with exactly `${file}.lock` (mkdir on
+    // lock, EEXIST → SQLITE_BUSY, rmdir on unlock). An app lock using that
+    // name made every locked open fail BUSY on itself. Ours is `.ygllock` —
+    // the wasm protocol dir stays untouched.
+    const legacyLockDir = `${file}.lock`;
+    if (fs.existsSync(path.join(legacyLockDir, "pid"))) {
+      // orphaned 0.65.0 app-layer lock (wasm protocol dirs are empty — a pid
+      // file marks it as ours) would block wasm forever; remove it.
+      try { fs.rmSync(legacyLockDir, { recursive: true, force: true }); } catch { /* */ }
+    }
+    const lockDir = `${file}.ygllock`;
     if (useLock && fs.existsSync(lockDir)) {
       let holder = "unknown";
       try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
+      // Same-process re-entry backstop: 0.65.0 moved the lock onto the
+      // DatabaseService path while profile-boot's fallback could still
+      // construct a second locked DB in the same process — every real
+      // (non-YGL_TEST) invocation self-deadlocked on its own pid. The root
+      // fix waits for the service (profile-boot); this exemption keeps any
+      // future same-process holder safe. Cross-process semantics unchanged:
+      // a live foreign pid still blocks.
+      const mine = holder === String(process.pid);
       // stale lock (>15 min) — steal it (same policy as job tick)
       try {
         const st = fs.statSync(lockDir);
-        if (Date.now() - st.mtimeMs > 15 * 60 * 1000) {
+        if (mine || Date.now() - st.mtimeMs > 15 * 60 * 1000) {
           fs.rmSync(lockDir, { recursive: true, force: true });
         } else {
           throw new Error(
@@ -415,7 +434,7 @@ export class DB {
   /** Release the write lock (called by close() and process exit). */
   private releaseLock(): void {
     try {
-      const lockDir = `${this.path}.lock`;
+      const lockDir = `${this.path}.ygllock`;
       if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
     } catch { /* best effort */ }
   }
@@ -423,7 +442,7 @@ export class DB {
   /** Static: force-release a lock (for cleanup hooks). */
   static releaseLockFor(file: string): void {
     try {
-      const lockDir = `${file}.lock`;
+      const lockDir = `${file}.ygllock`;
       if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
     } catch { /* */ }
   }
