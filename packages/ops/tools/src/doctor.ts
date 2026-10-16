@@ -130,9 +130,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 
   // ── 7. Stale lock check ──
+  // The CLI process running doctor holds its own .ygllock while checking —
+  // exclude our own live lock; warn only on foreign/stale holders.
   const dbPath = db.path;
   const lockPath = `${dbPath}.ygllock`;
-  const hasLock = require("node:fs").existsSync(lockPath);
+  let lockHolder = "";
+  try { lockHolder = require("node:fs").readFileSync(`${lockPath}/pid`, "utf8").trim(); } catch { /* absent/unreadable */ }
+  const hasLock = require("node:fs").existsSync(lockPath) && lockHolder !== String(process.pid);
   checks.push({
     name: "stale_lock",
     status: hasLock ? "warn" : "pass",
@@ -235,9 +239,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       db.run("UPDATE meta SET value='0' WHERE key='index_dirty'");
       fixes.push("index dirty flag cleared (run: ygl-trees node index)");
     }
-    // stale lock → remove
+    // stale lock → remove (never our own live lock)
     const lockDir = `${env.db.path}.ygllock`;
-    if (fs.existsSync(lockDir)) {
+    let holder = "";
+    try { holder = fs.readFileSync(`${lockDir}/pid`, "utf8").trim(); } catch { /* */ }
+    if (fs.existsSync(lockDir) && holder !== String(process.pid)) {
       try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed"); } catch { /* */ }
     }
     if (fixes.length) {

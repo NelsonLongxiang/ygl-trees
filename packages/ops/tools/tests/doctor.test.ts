@@ -65,3 +65,35 @@ describe("doctor eval_envelopes 检查", () => {
     }
   });
 });
+
+describe("doctor stale_lock 自检", () => {
+  it("own live lock is not warned; a foreign lock is", async () => {
+    const mod = await import("../src/doctor");
+    const lockDir = `${db.path}.ygllock`;
+    const runDoctor = async (): Promise<string> => {
+      const lines: string[] = [];
+      const ctx: any = { json: true, color: false, quiet: false };
+      const origLog = console.log;
+      console.log = (s: string) => lines.push(String(s));
+      try {
+        await mod.run({ ctx, db, store: null } as any, "", [], {});
+        const payload = JSON.parse(lines.join(""));
+        return payload.find((c: any) => c.name === "stale_lock").status;
+      } finally {
+        console.log = origLog;
+      }
+    };
+    // our own live lock (the process running doctor) → pass
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
+    const own = await runDoctor();
+    fs.rmSync(lockDir, { recursive: true, force: true });
+    // a foreign holder → warn
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(path.join(lockDir, "pid"), "999999");
+    const foreign = await runDoctor();
+    fs.rmSync(lockDir, { recursive: true, force: true });
+    expect(own).toBe("pass");
+    expect(foreign).toBe("warn");
+  });
+});
