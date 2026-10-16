@@ -28,6 +28,7 @@ ygl-trees node link a b --rel excludes                   # 互斥分支：父解
 ygl-trees node cond steel --name lab_level --kind level --value 3          # 必检门槛
 ygl-trees node cond steel --name has_eng --kind flag --op has --optional \
            --effect cost_mul --weight 0.8                                 # 可选打折
+# 语义型门槛（决策模型三题型 boolean/choice/score）→ 见 ygl-trees-eval-gates 技能
 ygl-trees node index && ygl-trees node validate
 ```
 

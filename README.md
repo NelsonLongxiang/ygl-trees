@@ -91,12 +91,14 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 
 `node can` 的输出把三类失败分开列：**必检未满足 / 被排斥 / 可选未满足（不阻塞）**，外加成本系数。
 
-**决策模型布尔判定（0.14.0，spec R8）**：语义型必检条件（"任务完成了吗"）可用 `--op eval` 声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）做确定性布尔判定 P(true)：
+**决策模型评估门（spec R8；0.14 布尔 → 0.26 三题型 → 0.27 混批）**：语义型必检条件用 eval 题型声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）判定：
 
-- P≥0.7 通过 · P≤0.4 未通过 · **0.4<P<0.7 灰带 pending**（过程态，禁作终态，单列不阻塞也不放行）
+- **三题型**：`--op eval`（布尔 P(true)）/ `--op eval-choice`（多选一，判 **P(期望答案)**，`--options "k=desc,..."` + `--answer k`）/ `--op eval-score`（等级评分 `--levels "级0,..."` 2-10 级 + `--min-score n`，判概率加权均值 ±1 灰带）
+- P≥0.7 通过 · P≤0.4 未通过 · **灰带 pending**（过程态，禁作终态，单列不阻塞也不放行）；score 的灰带是 [min−1, min)
 - **离线安全**：未配置凭证（`AI_GATEWAY_API_KEY` 或 `~/.vercel.ai-gateway.env`）时该条件回落 pending、rc=0——评估器是增强不是依赖；`YGL_EVAL_OFFLINE=1` 可强制离线（测试用）
-- 判定留痕 events（`eval.gate`），`--json` 输出附加 `evaluated[]` 与 `pending[]` 字段
-- **`node ready --eval`（0.16.0）**：仅被 eval 门槛阻塞的节点每节点**一次多题请求**（协议原生批量）批量判定——全过者提升进 ready 列表（标 `eval_verified`），其余进 `eval_pending` 单列（逐题带 P）；离线全部 pending、rc=0；留痕 `eval.ready`
+- 判定留痕 events（`eval.gate`），`--json` 输出附加 `evaluated[]`（带 `type` 字段）与 `pending[]` 字段
+- **`node ready --eval`（0.16 布尔批 → 0.27 混批）**：仅被 eval 门槛阻塞的节点每节点**一次混题型请求**（协议原生：boolean/choice/score 同 state 单请求）批量判定——全过者提升进 ready（标 `eval_verified`），其余进 `eval_pending`（逐题带 P/score）；离线全部 pending、rc=0；留痕 `eval.ready`
+- `ygl-trees doctor` 的 `eval_envelopes` 检查（0.28.0）会对坏信封条件（choice 的 answer 不在 options、score 级数越界等）报 fail
 
 **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 
@@ -207,7 +209,7 @@ ygl-trees agent log        # 审计事件流
 pnpm test          # 三段制回归：unit (vitest) + build (tsc) + demo (8 组断言)
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引重建），结果落 tmp/bench-results.json
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
-ygl-trees doctor   # 工作区健康检查（7 项：schema/索引/FTS/重复/孤儿/config/锁）
+ygl-trees doctor   # 工作区健康检查（8 项：schema/索引/FTS/重复/孤儿/config/锁/eval 信封）
 ygl-trees webui serve  # 活数据仪表盘（http://127.0.0.1:8642/，Ctrl+C 停）
 ```
 
@@ -232,7 +234,7 @@ ygl-trees webui serve  # 活数据仪表盘（http://127.0.0.1:8642/，Ctrl+C �
 | `ygl-trees-research` | 证据先行研究管线（query/source/evidence/claim/produce） |
 | `ygl-trees-knowledge` | 知识复用闭环（kb/skill/promote/agent match） |
 | `ygl-trees-techtree` | 科技树建模（rel×mode、必检/可选、索引、can/ready/path） |
-| `ygl-trees-eval-gates` | 决策模型布尔门槛（op=eval、三态、灰带、离线安全） |
+| `ygl-trees-eval-gates` | 决策模型评估门（三题型：boolean/choice/score、三态灰带、混批、离线安全） |
 
 `.agents/skills/` 下为指向 `skills/` 的目录联接（Windows junction，不入库）。克隆到新机器后一行重建：
 

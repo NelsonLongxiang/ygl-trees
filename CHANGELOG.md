@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.0（2026-10-16）dogfood #3（发布门自评）+ doctor eval 信封检查
+- **dogfood #3：工具审判自己的发布**——release-gate 树（dev→rc→release，release 挂三题型真实条件）真实网关活评估：**registry_pick (choice) P=1.0 pass**（npmjs）、**green_and_closed (boolean) P=0.4 fail**（未收口时点诚实拦截）、**readiness (score) 0.98 灰带**（原型↔可用徘徊）；结果存回研究管线（1 源 3 证据 2 断言 supported）；收口后重评见 plan.md
+- **doctor 第 8 项 `eval_envelopes`**：eval 族条件信封有效性（choice answer∈options、score 级数 2-10 且 min 界内）——坏信封会让门永远 pending（静默退化），现在报 fail 点名；单测负路径（3 好 + 3 坏）
+- README 健康面：决策模型章节更新为三题型+混批、doctor 8 项、skills 表描述；techtree skill 补 eval-gates 指针
+
 ## 0.27.0（2026-10-16）ready --eval 混合题型批量 + npm 发布预检
 - **`node ready --eval` 三题型混批**：evalMixed 单请求携带 boolean/choice/score（协议原生多题型）——evalCandidates 返回带 op+信封的条件，聚合按各自映射器判三态；CLI stub 冒烟：choice+score 单节点 **1 个请求**双 pass → promoted
 - **npm 发布预检**（不碰 registry）：tarball 面 57 文件健康（bin/dist/docs/README/CHANGELOG，vendor/tmp 无泄漏）；**关键裁决：必须 `pnpm publish`**——实测 pnpm pack 把 `workspace:~` 重写为 `~4.0.0-rc.11`/`~1.8.1`，npm publish 不重写（消费者装不上）

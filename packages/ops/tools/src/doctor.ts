@@ -11,6 +11,7 @@
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
+import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 
 interface Check {
   name: string;
@@ -136,6 +137,38 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ? `lock dir detected: ${lockPath} — remove if no other ygl-trees process is running`
       : "no stale locks",
   });
+
+  // ── 8. eval-family envelope sanity (0.28.0) ──
+  // A malformed envelope silently degrades: evalChoice/evalScore fall back to
+  // empty options/levels → the gate can never resolve (always pending).
+  {
+    const evalConds = db.all(
+      `SELECT c.id, c.name, c.op, c.value, n.key AS node
+         FROM node_conditions c JOIN nodes n ON n.id=c.node_id
+        WHERE c.op IN ('eval','eval-choice','eval-score')`
+    );
+    const bad: string[] = [];
+    for (const c of evalConds) {
+      const spec = parseEvalSpec(c.value);
+      if (c.op === "eval-choice") {
+        if (!spec.options || !Object.keys(spec.options).length) bad.push(`${c.name}(${c.node}): no options in envelope`);
+        else if (!spec.answer || !(spec.answer in spec.options)) bad.push(`${c.name}(${c.node}): answer '${spec.answer}' not in options`);
+      } else if (c.op === "eval-score") {
+        if (!spec.levels || spec.levels.length < 2 || spec.levels.length > 10)
+          bad.push(`${c.name}(${c.node}): levels must be 2-10, got ${spec.levels?.length ?? 0}`);
+        else if (typeof spec.min !== "number" || spec.min < 0 || spec.min > spec.levels.length - 1)
+          bad.push(`${c.name}(${c.node}): min=${spec.min} outside [0, ${spec.levels.length - 1}]`);
+      }
+      // op=eval keeps plain wording (envelope tolerated, fields not required)
+    }
+    checks.push({
+      name: "eval_envelopes",
+      status: bad.length ? "fail" : "pass",
+      detail: bad.length
+        ? `${bad.length} malformed: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? " …" : ""}`
+        : `all ${evalConds.length} eval-family condition envelope(s) valid`,
+    });
+  }
 
   // ── Output ──
   const failed = checks.filter((c) => c.status === "fail").length;
