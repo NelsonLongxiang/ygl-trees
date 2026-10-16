@@ -77,7 +77,14 @@ describe("webui generateHTML", () => {
     const html = generateHTML(gatherData(env()), false);
     expect(html).toContain("ygl-trees dashboard");
     expect(html).toContain("const FALLBACK =");
-    expect(html).toContain("data embedded at export time");
+    expect(html).toContain("数据内嵌于导出时");
+  });
+  it("中文友好化：统计卡/区头/空态/面板文案全中文", () => {
+    const html = generateHTML(gatherData(env()), false);
+    for (const label of ["📊 总览", "科技树", "研究断言", "技能", "知识笔记", "下一步操作", "常用技能",
+      "解锁状态", "必检未满足", "父节点", "子节点", "关联", "暂无任务", "已证实", "['research', '研究']", "加载中"]) {
+      expect(html).toContain(label);
+    }
   });
   it("live 模式带 fetch 引导与 10s 轮询", () => {
     const html = generateHTML(gatherData(env()), true);

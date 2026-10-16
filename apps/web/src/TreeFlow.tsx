@@ -131,7 +131,7 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
         }}
       >
         <h2 style={{ marginTop: 0 }}>{selected ?? "点击节点"}</h2>
-        {!detail && <p className="dim">{selected ? "loading…" : "pan/zoom 自由导航，点击节点看详情（条件/判定/关联）"}</p>}
+        {!detail && <p className="dim">{selected ? "加载中…" : "拖拽缩放自由导航，点击节点看详情（条件 / 判定 / 关联）"}</p>}
         {detail && (
           <>
             <p className="dim">
@@ -142,7 +142,7 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
             </p>
             {detail.conditions.length > 0 && (
               <>
-                <p className="dim">conditions ({detail.conditions.length})</p>
+                <p className="dim">条件 ({detail.conditions.length})</p>
                 <table style={{ width: "100%", fontSize: "0.78em", borderCollapse: "collapse" }}>
                   <tbody>
                     {detail.conditions.map((c) => (
@@ -158,7 +158,7 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
             )}
             {detail.related.length > 0 && (
               <>
-                <p className="dim">related ({detail.related.length})</p>
+                <p className="dim">关联 ({detail.related.length})</p>
                 {detail.related.map((r) => (
                   <div key={r.id + r.rel} style={{ fontSize: "0.78em" }}>
                     <b style={{ color: "var(--color-tertiary)" }}>{r.rel}</b> {r.type}: {String(r.display).slice(0, 30)}
