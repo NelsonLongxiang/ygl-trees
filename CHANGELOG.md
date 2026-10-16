@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.53.0（2026-10-17）React 客户端构建链缺口修复——冷用户反馈三件
+- **来源**：用户在 :8322 部署后发现 `/` 显示内嵌 dashboard 而非 React 客户端（React dist 缺席 + 静默回落）
+- **P1 根因修复**：`pnpm build` 现在包含 React 客户端构建（`tsc → tsdown → vite build`），新 clone 不再默认落后一态
+- **P2 静默回落消除**：`webui serve` 启动时检测 React dist 是否存在，缺席则输出醒目 warn `⚠ React 客户端未构建 — 当前为内嵌 dashboard 回落态` + 构建命令——违背「显式契约」哲学的静默行为已消除
+- **P3 `/classic` 永远 200**：回落态下 `/classic` 原先 404 但首页是同一内容——语义混乱；现在无论 React 是否构建，`/classic` 始终返回内嵌 dashboard（兑现「零依赖版永远可达」承诺）
+- 事故链：`apps/web/dist` 缺席 → `resolveDistRoot()` 返回 null → `hasWebApp=false` → 内嵌版占 `/` → 用户看到的是简化版但**没有任何提示**
+
 ## 0.52.0（2026-10-17）真实使用反馈修复——数据安全三件 + 仓库卫生
 - **来源**：用户在 :8322 部署运行后的实测反馈（含 DEV-LEDGER 483MB 事故复盘）
 - **P0-1 kb import 文件大小护栏**：>1MB 的 .md 默认跳过并在 summary 列出（`--force` 覆盖）——防止 483MB 单文件把库撑到 472MB 并损坏的事故重演

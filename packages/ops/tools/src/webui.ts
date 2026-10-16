@@ -834,7 +834,10 @@ export function createDashboardServer(env: Env) {
         return;
       }
     }
-    if (url === "/" || url === "/index.html" || (hasWebApp && url === "/classic")) {
+    // /classic ALWAYS serves the embedded dashboard (zero-dep promise).
+    // P3 fix (cold-user report): in fallback mode (React not built), /classic
+    // returned 404 while / served the same content — semantically wrong.
+    if (url === "/" || url === "/index.html" || url === "/classic") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(generateHTML(gatherData(env), true));
     } else if (url === "/api/data") {
@@ -913,6 +916,8 @@ export function createDashboardServer(env: Env) {
  *  lifecycle-managed: dispose cleans it automatically. */
 function serve(env: Env, args: any): Promise<number> {
   const { ctx } = env;
+  // re-check (the server's hasWebApp is scoped to createDashboardServer)
+  const reactAvailable = require("../../../packages/web/app/src/index").resolveDistRoot() !== null;
   return new Promise<number>((resolve) => {
     const port = Number(args.flags.port || 8642);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -932,6 +937,12 @@ function serve(env: Env, args: any): Promise<number> {
       const p = typeof addr === "object" && addr ? addr.port : port;
       ok(ctx, `dashboard live at http://127.0.0.1:${p}/  (Ctrl+C to stop)`);
       out(ctx, paint(C.dim, `  data endpoint: http://127.0.0.1:${p}/api/data`, ctx.color));
+      // P2 (cold-user report): silent fallback violates the explicit-contract
+      // philosophy — tell the user they are looking at the embedded version.
+      if (!reactAvailable) {
+        out(ctx, paint(C.yellow, `  ⚠ React 客户端未构建 — 当前为内嵌 dashboard 回落态`, ctx.color));
+        out(ctx, paint(C.dim, `    构建完整版: pnpm --filter @ygl/web build  然后重启 serve`, ctx.color));
+      }
 
       // vendored cordis-plugin-timer: lifecycle-managed heartbeat
       // (auto-cleans on ctx dispose — no manual clearInterval needed)
