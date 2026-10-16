@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.41.0（2026-10-17）README 前门刷新 + 客户端测试覆盖 + Bun 根因精确化
+- **README 全面刷新**（265 → 350 行；规则 5「README 健康」此前跳过 0.37–0.40）：入口改为**发布产物** `dist/bundle/bin.cjs`（附开发树对照）、依赖面补 vendored cordis 家族、schema v5→**v8**；
+  **新增四节**——`rel` 关联织物（八类引用 + 双向浏览）、`task` 状态机（并澄清**没有 tasks 表**，是 artifacts kind='task'、+meta 状态信封）、`produce spec/design`（design_type 信封 + DESIGN.md 格式）、**`plugin` 用户层插件**（install/config/enable/disable/list + 契约 + 隔离与诊断）；
+  **新增 WebUI 节**（React 客户端 `/` vs 零依赖 `/classic` 回退、SSE 实时通道、中文友好、DESIGN.md 单一事实源）；工具节计数修正（112 单测 / 61 断言 / doctor **9** 项）+ 补 `pack:check`、`bench --quick` 与 RSS 端点、**pre-push 提交门禁**；环境变量补 `YGL_PACKAGE_MANAGER` / `YGL_SKIP_HOOKS`；技能数 5→**8**；文档地图补 packages/AGENTS、benchmarks/AGENTS、plugin-authoring、release，spec 范围 R1–R8→**R1–R14**
+- **`pnpm readme:verify`**（scripts/readme-verify.sh）：README 命令示例的**文档真值门禁**——在 scratch 工作区逐条跑并断言退出码（含冻结契约 rc=2）。首跑 **34 项**即挖出两处真实顺序缺陷：① §一 的 node 示例缺 `tree new` 前置（新工作区照抄报 `no tree selected`）② `node cond steel` 用了**后面才创建**的节点（报 `node not found: steel`）——两处已修，现 **34/34 通过**
+- **React 客户端测试覆盖从 0 → 8 例**（apps/web/tests/api.test.ts）：SSE 订阅建立与首帧立即拉取、帧解析投递、**接管后轮询静默**、未接管时 10s 降级仍工作、断线回落、坏帧只报错不炸、EventSource 构造失败仍可轮询、disposer 关闭连接、非 2xx 抛错
+- **Bun 根因精确化（复探，取代早前描述）**：早前记录的「`fs.openSync` + O_CREAT 对不存在文件 ENOENT」在 1.3.0 下**已不复现**；真实边界更窄——**bun 进程内新建的目录，其内文件 openSync(O_CREAT) 报 ENOENT**（`existsSync`/`statSync`/`readdirSync` 与**其他进程**都说目录存在），而目录由进程外预建时**开库/建表/写入全部正常**。四个 workaround（逐级 mkdir / 中间插 IO / 原参数重试 / realpath）**实测全败**。已给最小复现 + 边界表 + 穷尽的 workaround 否定结果，判定脚本不变（`bun-smoke` pass=1/fail=10）
+
 ## 0.40.0（2026-10-17）CI 门禁（Gitee Go 不可用的等效方案）+ 发布链路 + loader 裁决
 - **`.githooks/pre-push`**：无 CI 环境下的仓库级门禁——分支 push 跑 `pnpm test`，**tag push 追加 `pnpm pack:check`**（产物级）；旁路只能显式 `YGL_SKIP_HOOKS=1`（打印跳过原因，不静默）；安装 `git config core.hooksPath .githooks`
 - **Gitee Go 阻塞留证**：`gitee pipeline` 全部命令返回 `giteego: HTTP 403 您无此操作权限`（两测一致）——账户无该服务权限，非配置问题；docs/release.md 记录日后接入法（`pipeline example` 取官方 YAML 基线，不手写字段）

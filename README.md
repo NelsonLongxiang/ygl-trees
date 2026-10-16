@@ -4,12 +4,14 @@
 
 - 单一 SQLite 文件就是全部状态，没有 sidecar JSON，没有"用 git 当数据库"
 - 依赖面（0.8.0 起引入 TypeORM 查询层）：`node-sqlite3-wasm`（纯 WASM 免编译）+ `typeorm` / `better-sqlite3` / `reflect-metadata`（TypeORM 栈，better-sqlite3 走 prebuild 免编译）+ 可选 `pg`（仅用 PostgreSQL 镜像/迁移时）
+- 框架层 **vendored**（`vendor/`，与 DSH 同版本同源）：`@deepseek-ai/cordis` 4.0.5-α + `cosmokit` + `schemastery` + 六件 cordis-plugin（timer 已启用）
 - 全部命令支持 `--json`，方便 Agent 直接解析
 
 ```bash
 pnpm install
-pnpm build          # tsc -> dist/
-node dist/apps/cli/src/bin.js db init
+pnpm build          # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单文件发布产物）
+node dist/bundle/bin.cjs db init     # 发布产物（bin 字段指向它；比 tsc 树快 ~8%）
+# 开发树：node dist/apps/cli/src/bin.js   二者同代码，demo/bench 优先测发布产物
 ```
 
 ---
@@ -26,6 +28,9 @@ node dist/apps/cli/src/bin.js db init
 | 派生索引 | `node_index` | 拓扑序、tier 分桶、入度表 |
 | 非结构条件 | `node_conditions` | 资源/等级/任务等，必检或可选 |
 | 运行时 | `node_state` | 按 context（存档槽）存 locked/available/unlocked |
+
+> **先建一棵树**：节点都活在树里，全新工作区直接跑 `node ...` 会报 `no tree selected`。
+> `ygl-trees tree new demo`（建并选中）→ `ygl-trees tree list` / `tree use <name>` 切换。
 
 ### 父子与关联：四种 rel × 四种 mode
 
@@ -54,6 +59,7 @@ node dist/apps/cli/src/bin.js db init
   - `cost_mul`（可选）：满足条件则成本打折，`weight` 即系数
 
 ```bash
+ygl-trees node add steel                                                            # 先有节点
 ygl-trees node cond steel --name research_lab_level --kind level --value 3          # 必检
 ygl-trees node cond steel --name has_engineer --kind flag --op has \
            --optional --effect cost_mul --weight 0.8                                # 可选，打八折
@@ -155,6 +161,57 @@ agent brief               状态 + 建议动作 + 健康度（脏索引、存量
 
 `skill import <SKILL.md>` 直接解析 frontmatter。
 
+### rel：关联织物（把研究资产挂到树节点）
+
+研究与建树是两条会各自漂移的流水线；`rel` 把它们钉在一起——八类引用任一两端可连：
+
+```bash
+ygl-trees rel add node:steel claim:<id>       --rel decided-by     # 决策依据
+ygl-trees rel add node:steel evidence:<id>    --rel evidenced-by  # 证据
+ygl-trees rel add node:steel kb:<id>          --rel explained-by  # 知识沉淀
+ygl-trees rel add node:steel artifact:<id>    --rel tracked-by    # 产出/任务
+ygl-trees rel list --src node:steel           # 双向浏览（对端解析成显示名）
+```
+
+`<type>:<ref>` 词表：`node claim evidence source query kb artifact skill`。`/api/node` 同时返回双向 `related[]`，WebUI 节点详情直接可见。
+
+### task：任务状态机（todo → doing → done）
+
+```bash
+ygl-trees task add "<标题>" [--note ...]   # 建任务（todo）
+ygl-trees task list [--status todo|doing|done]
+ygl-trees task doing <id> | task done <id> # 推进（每次状态变更留痕 events）
+```
+
+任务本体是 `artifacts` 的 `kind='task'` + meta 状态信封（**没有独立的 tasks 表**）——与产出工件同源，可被 `rel ... tracked-by` 挂到节点。
+
+### produce spec / design：工程产出形态
+
+```bash
+ygl-trees produce spec <title> --body|-f ...              # 需求规格工件
+ygl-trees produce design <title> --body|-f --design-type ui-ux|arch|decision
+```
+
+`design_type` 存进 `artifacts.meta` 信封；ui-ux 用 [DESIGN.md](DESIGN.md) 格式（google-labs-code：YAML tokens + rationale 节序 + lint 工具链），arch/decision 用 ADR 三段。方法详见 `ygl-trees-design-capture` 技能。
+
+### plugin：用户层插件（业务域扩展位，spec R14 L3）
+
+**不改源码就能给工作台加业务域**——插件是一个普通 npm 包，导出 `apply(ctx, config)` + 可选 `commands`：
+
+```bash
+ygl-trees plugin init                                  # 建 $YGL_HOME/plugins profile
+ygl-trees plugin install ./my-domain-plugin            # 本地目录自动 link:；也收 npm 包 / git 地址
+ygl-trees mydom ...                                    # 插件贡献的命令组即刻可达
+ygl-trees plugin config my-domain-plugin '{"k":1}'     # apply(ctx, config) 收到它
+ygl-trees plugin disable my-domain-plugin              # 保留安装，启动时不挂载
+ygl-trees plugin list                                  # 版本 / 状态 / config / 可解析态
+```
+
+- 契约：`export apply(ctx, config)`（可用 `ctx.database / ctx.research / ctx.techtree / ctx.webApp`）+ `export commands = { <组名>: { run } }`
+- 逐插件隔离：单个插件加载失败不影响其余，汇总进启动诊断（报告落 `$YGL_HOME/logs/startup-<uuid>.log`）
+- 安装走文件锁；名字按依赖键差集精确解析；`YGL_PACKAGE_MANAGER` 可换包管理器
+- 示例与指南：[examples/plugin-demo](examples/plugin-demo) · [docs/plugin-authoring.md](docs/plugin-authoring.md)
+
 ---
 
 ## 三、为什么用 SQLite 而不是文件
@@ -170,12 +227,12 @@ agent brief               状态 + 建议动作 + 健康度（脏索引、存量
 
 CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 token。这里在写入时把中文按字切二元组（`科技树` → `科技 技树`），再逐 token 匹配并按命中数排序，长句也能召回。
 
-### 数据安全（schema v5）
+### 数据安全（schema v8）
 
 - **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
 - **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
 - **PostgreSQL 镜像/迁移**：`db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
-- **TypeORM 查询层**（0.8.0 起，研究域试点 `project show`）：实体是 schema v5 的类型化快照（`synchronize` 永久 false，迁移权威仍在 user_version 轨道；FTS5/PRAGMA 路径保持裸 SQL）。依赖 typeorm + better-sqlite3 + reflect-metadata
+- **TypeORM 查询层**（0.8.0 起，研究域试点 `project show`）：实体是 schema v8 的类型化快照（`synchronize` 永久 false，迁移权威仍在 user_version 轨道；FTS5/PRAGMA 路径保持裸 SQL）。依赖 typeorm + better-sqlite3 + reflect-metadata
 - **重复可见**：`db dups` 列出同内容多行（含迁移前存量重复）
 - **自动迁移**：v2 老库首次打开自动升级 schema v3（补 content_hash 列 + 回填 + 唯一索引），无人工介入
 
@@ -206,11 +263,37 @@ ygl-trees agent log        # 审计事件流
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 三段制回归：unit (vitest) + build (tsc) + demo (8 组断言)
-pnpm bench         # 性能基准七席（startup/写路径/检索/索引重建），结果落 tmp/bench-results.json
+pnpm test          # 三段制回归：unit (vitest 112 例) + build (tsc + tsdown) + demo（61 条断言）
+pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
+node benchmarks/bench.js --quick   # 缩小规模快速跑
+pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
-ygl-trees doctor   # 工作区健康检查（8 项：schema/索引/FTS/重复/孤儿/config/锁/eval 信封）
-ygl-trees webui serve  # 活数据仪表盘（http://127.0.0.1:8642/，Ctrl+C 停）
+ygl-trees doctor   # 工作区健康检查 9 项（schema/索引/FTS/重复/孤儿/config/锁/eval 信封/插件 profile）
+ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）
+ygl-trees webui export --out d.html   # 零依赖单文件仪表盘（离线可开）
+```
+
+**提交门禁（无 CI 环境的等效方案）**：`.githooks/pre-push` —— push 分支跑 `pnpm test`，
+**push tag 追加 `pnpm pack:check`**；旁路只能显式 `YGL_SKIP_HOOKS=1`。安装一次：
+`git config core.hooksPath .githooks`。（本仓库 Gitee Go 服务对当前账户 403 不可用，见 [docs/release.md](docs/release.md)。）
+
+---
+
+## 五c、WebUI
+
+两个界面，同一份数据：
+
+| 入口 | 是什么 |
+|---|---|
+| `/` | **React 富客户端**（`apps/web`：@xyflow/react 水平树视图 + 时间轴 + react-markdown 产出渲染），`apps/web/dist` 存在时自动挂载 |
+| `/classic` | **零依赖内嵌仪表盘**（单文件、无构建、离线可用）——React 未构建时的回退，也永远可用 |
+| `/api/events` | **SSE 实时通道**：服务端 1.5s 表指纹检测，数据一变即推；客户端零轮询（EventSource 不可用时降级回 10s 轮询） |
+
+**中文友好**：两个界面的标签、空态、面板文案全中文；设计系统单一事实源是 [DESIGN.md](DESIGN.md)（13 色 / 5 字号 / 9 组件，`designmd lint` 全绿）。
+
+```bash
+pnpm --filter @ygl/web build     # 构建 React 客户端（vite）
+ygl-trees webui serve --port 8642
 ```
 
 ---
@@ -226,7 +309,7 @@ ygl-trees webui serve  # 活数据仪表盘（http://127.0.0.1:8642/，Ctrl+C �
 
 ## 七、专属 Skills（Agent 学习/使用入口）
 
-五个技能覆盖工具全域，位于 `skills/<name>/SKILL.md`（frontmatter L1 + 正文 L2，可被本工具 `skill import` 直接导入，也可被宿主 Agent 的技能系统发现）：
+八个技能覆盖工具全域，位于 `skills/<name>/SKILL.md`（frontmatter L1 + 正文 L2，可被本工具 `skill import` 直接导入，也可被宿主 Agent 的技能系统发现）：
 
 | 技能 | 覆盖 |
 |---|---|
@@ -252,12 +335,16 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 | [AGENTS.md](AGENTS.md) | **Agent 常驻守则**（仓库布局、命令、契约、开发规则——入口文件） |
 | [CHANGELOG.md](CHANGELOG.md) | 逐版本聚合 |
 | [docs/research.md](docs/research.md) | 初始调研与差距分析（历史归档） |
-| [docs/spec.md](docs/spec.md) | 需求规格与验收标准（R1–R8） |
+| [docs/spec.md](docs/spec.md) | 需求规格与验收标准（R1–R14） |
 | [docs/plan.md](docs/plan.md) | 开发计划与逐版本执行记录 |
 | [docs/conventions.md](docs/conventions.md) | 数据模型应用规范（加表九触点、幂等决策树、FTS 纪律、TypeORM 边界、tmp/ 规范） |
 | [docs/pg-compat.md](docs/pg-compat.md) | PostgreSQL 兼容方案（镜像/迁移；L2 双后端已取消） |
 | [docs/layout.md](docs/layout.md) | 项目目录层级规划与设计 |
-| [docs/webui-design.md](docs/webui-design.md) | WebUI 可视化方案（零依赖：静态 HTML 导出 + `webui serve` 活数据仪表盘） |
+| [packages/AGENTS.md](packages/AGENTS.md) | **包级开发纪律**（插件导出契约、写路径铁律、测试/README 纪律） |
+| [benchmarks/AGENTS.md](benchmarks/AGENTS.md) | 性能基准纪律（按用户路径组织、合成输入、测量纪律） |
+| [docs/webui-design.md](docs/webui-design.md) | WebUI 方案（React 客户端 + 零依赖内嵌仪表盘 + SSE 实时通道） |
+| [docs/plugin-authoring.md](docs/plugin-authoring.md) | 用户插件编写指南（契约、profile、config/enable、故障排查） |
+| [docs/release.md](docs/release.md) | 发布流程（pre-push 门禁 / `pnpm publish` 纪律 / Windows shim 陷阱 / 标签与 Release） |
 | [docs/bun-compat.md](docs/bun-compat.md) | Bun 目标运行时兼容方案（Windows 受阻：fs.openSync O_CREAT 上游缺陷 + 迁移清单） |
 
 ## 九、许可

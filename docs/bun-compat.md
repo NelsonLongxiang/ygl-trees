@@ -1,6 +1,6 @@
 # Bun 运行时兼容方案（目标运行时）
 
-日期：2026-10-16 ｜ 状态：**Windows 上受阻（BLOCKED）** ｜ 决策：未来用 Bun 封装 CLI（用户指示 2026-10-16）
+日期：2026-10-16 ｜ 复探：2026-10-17 ｜ 状态：**Windows 上受阻（BLOCKED）** ｜ 决策：未来用 Bun 封装 CLI（用户指示 2026-10-16）
 
 ## 决策
 
@@ -8,21 +8,51 @@ CLI 未来以 [Bun](https://bun.sh) 作为运行时封装（`bun build --compile
 
 ## 现状：Windows 受阻（bun 1.3.0, win32 x64）
 
-**根因**：bun 在 Windows 上 `fs.openSync(path, O_RDWR|O_CREAT)` 对不存在的文件抛 `ENOENT`，**不创建文件**。Node 下同代码正常。
+### 根因（0.41 复探后精确化，取代早前描述）
 
-**传导链**：`db.ts` 用 `node-sqlite3-wasm`（WASM SQLite，运行时无关）→ 其 Node VFS 的 `_nodejs_open` 调 `fs.openSync` 建/开库文件 → 返回 -1 → `SQLITE_CANTOPEN` → `db init` 第一步即死（CLI 全命令面不可用）。
+> **早前记录（已过时）**：`fs.openSync(path, O_RDWR|O_CREAT)` 对**不存在的文件**抛 ENOENT。
+> **复探结论**：该形态在 1.3.0 下**已不复现**（裸 `openSync` 建文件通过）。真实边界更窄：
 
-**证据**（本机 2026-10-16 实测，探针脚本 `tmp/bun-probe/fs-probe.cjs`）：
+**在 bun 进程内创建的目录，其内文件 `fs.openSync(..., O_CREAT)` 抛 ENOENT**——尽管：
 
-| 探针 | bun 1.3.0 (win32) | node 24 |
-|---|---|---|
-| `fs.openSync` 新文件 + O_CREAT | ✗ ENOENT | ✓ 创建 |
-| `fs.openSync` 数值 mode (420) | ✗ ENOENT | ✓ |
-| wasm 驱动绝对路径开库 | ✗ CANTOPEN | ✓ sqlite 3.53.4 |
-| wasm 驱动相对路径开库 | ✗ CANTOPEN | ✓ |
-| mkdir/rmdir 锁目录、randomFillSync、path.resolve | ✓ | ✓ |
+| 检查 | bun 结果 |
+|---|---|
+| `fs.mkdirSync(deep, {recursive:true})` | 正常返回，不抛 |
+| `fs.existsSync(deep)` | **true** |
+| `fs.statSync(deep).isDirectory()` | **true** |
+| `fs.readdirSync(parent)` | 看得到该目录 |
+| **bash 视角（另一进程）** | **目录真实存在** |
+| `fs.openSync(deep + "/f.db", O_RDWR\|O_CREAT, 0o666)` | **✗ ENOENT** |
 
-完整命令面冒烟：`bash scripts/bun-smoke.sh`（10 项全红，第一项就是 fs 探针）。Linux/macOS 未在本机验证——Windows 是我们的开发机，必须先绿。
+反证：目录由**进程外**预先建好时，bun 的开库/写库**全部正常**（探针实测：打开既有库 → 建表 → 写入 → 读回 n=1 ✓）。即
+**问题不在 SQLite/WASM，而在 bun 对"本进程新建目录"的 open 解析**。
+
+### 最小复现（可提上游）
+
+```js
+const fs = require("node:fs"), path = require("node:path");
+const d = path.join(tmp, "a", "b");
+fs.mkdirSync(d, { recursive: true });
+console.log(fs.existsSync(d));                              // true
+fs.openSync(path.join(d, "f.db"), fs.constants.O_RDWR | fs.constants.O_CREAT, 0o666);
+// bun 1.3.0 win32 → ENOENT: no such file or directory   （node 24 → 正常）
+```
+
+### workaround 空间已穷尽（全部实测失败）
+
+| 尝试 | bun 1.3.0 |
+|---|---|
+| `mkdirSync` 逐级（非 recursive） | ✗ ENOENT |
+| mkdir 后做一次其它 IO（readdir）再开 | ✗ ENOENT |
+| 失败后原参数重试 | ✗ ENOENT |
+| `realpathSync(dir)` 后再开 | ✗ ENOENT |
+| 目录由进程外预建（≠ 单进程 CLI 场景） | ✓ 可用 |
+
+**传导链**：`db.ts` 用 `node-sqlite3-wasm` → Node VFS 的 `_nodejs_open` 调 `fs.openSync` 建/开库文件 → 返回 -1 → `SQLITE_CANTOPEN` →
+`db init` 第一步即死（CLI 全命令面不可用）。而 CLI 正常路径必然"先 mkdir `$YGL_HOME` 再开库"，**与 bug 边界正面相撞**。
+
+**完整命令面冒烟**：`bash scripts/bun-smoke.sh` → `pass=1 fail=10`（唯一通过项是裸 fs 探针，恰好绕开了目录边界）。
+Linux/macOS 未在本机验证——Windows 是我们的开发机，必须先绿。
 
 **相邻上游问题**（非同因，迁移时留意）：
 - [oven-sh/bun#40001](https://github.com/oven-sh/bun/issues/40001) — Windows `node:sqlite` `DatabaseSync.close()` 不 finalize 未跑完的 prepared statement → 文件锁 EBUSY。若未来从 wasm 驱动迁 `bun:sqlite`/`node:sqlite`，此坑在前方。
@@ -30,7 +60,13 @@ CLI 未来以 [Bun](https://bun.sh) 作为运行时封装（`bun build --compile
 
 ## 解锁条件
 
-bun win32 的 `fs.openSync + O_CREAT` 行为修复后：`bash scripts/bun-smoke.sh` 全绿 = 解锁。
+bun win32 上「进程内新建目录」后的 `fs.openSync` 恢复正常（或提供可用 workaround）：
+
+```bash
+bash scripts/bun-smoke.sh     # 全绿 = 解锁
+```
+
+判定脚本已就绪，无需改动；每次复探只需重跑它并对照本节边界。
 
 ## 迁移清单（解锁后执行）
 
@@ -45,3 +81,4 @@ bun win32 的 `fs.openSync + O_CREAT` 行为修复后：`bash scripts/bun-smoke.
 
 - [docs/pg-compat.md](pg-compat.md) — 同类兼容决策文档先例
 - `scripts/bun-smoke.sh` — 探针脚本（不进 pnpm test，当前必红）
+- `tmp/bunprobe/{fresh,mode,mkdir,workaround}.js` — 0.41 复探的四个探针（gitignored，重建成本低）
