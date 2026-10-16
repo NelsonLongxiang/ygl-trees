@@ -1,0 +1,17 @@
+{
+  "name": "@ygl/web-app",
+  "version": "0.32.2",
+  "description": "Cordis runtime-glue plugin: resolves the built React client (apps/web/dist) and serves it as ctx.webApp (spec R13.5)",
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+}

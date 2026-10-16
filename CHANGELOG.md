@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.32.2（2026-10-17）web-app Cordis 插件（DSH 模式落地）
+- **新包 `packages/web/app`（@ygl/web-app）**：运行时胶水插件（模式取自 DSH packages/bundle/web-app + adding-a-package cookbook）——`ctx.webApp` 服务（available/open）+ 纯函数 `resolveDistRoot()/openStatic()`（短命 CLI 不赌异步插件时序，0.19 教训）；dist 路径=workspace 知识非用户配置；SPA 回落 + 路径遍历防护
+- **webui serve 分流**：构建产物存在 → React 客户端挂 `/`（xyflow pan/zoom 树视图），内嵌零依赖 dashboard 移驻 `/classic`；未构建检出 → 内嵌保持 `/`（离线单文件契约不变）；`/api/*` 永不拦截
+- CLI 组合面加载 WebAppPlugin（第二个真实 Cordis 插件）；gate 9 包
+- 修 0.32.1 遗留：resolveDistRoot 相对层级数错（dist 出发 5 层/src 出发 4 层才到仓库根——实测 / 404 定位）
+- 全路由实测：`/`→React shell、`/assets/*.js`→200、`/classic`→embedded、`/api/data` 完好
+
 ## 0.32.1（2026-10-17）React 富客户端骨架（spec R13.5 裁定落地）
 - **React 技术栈裁定（用户）**：WebUI 富客户端按需取用 xyflow/ahooks/react-router/pro-components/remix/grid-layout/react-pdf/react-markdown；`apps/web` 为 React 家园，CLI 零依赖内嵌 dashboard 保留（离线单文件导出不受构建链拖累）
 - **apps/web 骨架**：Vite + React 18 + @xyflow/react——**树视图 pan/zoom/drag + MiniMap**（R13.3 核心，tier 布局，点击节点出详情面板：conditions/确定性 can/R9 related）、next_actions/tasks/统计卡、10s 轮询；`src/tokens.css` 镜像 DESIGN.md（token 单一事实源不变）；开发期 /api 代理到 `webui serve:8642`

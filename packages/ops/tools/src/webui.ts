@@ -13,6 +13,7 @@ import { TreeStore } from "../../../techtree/model/src/reads";
 import { buildBrief } from "./agent-cmds";
 import { resolveId } from "./rels";
 import { getOrm } from "../../../core/database/src/orm";
+import { openStatic as openWebApp } from "../../../web/app/src";
 
 interface DashboardData {
   brief: any;
@@ -720,10 +721,22 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
  *  /api/node?tree=<name>&key=<key> → node detail (deterministic can). */
 export function createDashboardServer(env: Env) {
   const http = require("node:http");
+  // R13.5: when the React client is built (apps/web/dist), it takes "/" and
+  // the zero-dep embedded dashboard moves to /classic; without a build the
+  // embedded dashboard keeps "/" (offline single-file contract unchanged).
+  const hasWebApp = openWebApp("/") !== null;
   return http.createServer((req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");
     const url = u.pathname;
-    if (url === "/" || url === "/index.html") {
+    if (hasWebApp && url !== "/classic" && !url.startsWith("/api/")) {
+      const f = openWebApp(url);
+      if (f) {
+        res.writeHead(200, { "content-type": f.mime });
+        res.end(f.body);
+        return;
+      }
+    }
+    if (url === "/" || url === "/index.html" || (hasWebApp && url === "/classic")) {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(generateHTML(gatherData(env), true));
     } else if (url === "/api/data") {

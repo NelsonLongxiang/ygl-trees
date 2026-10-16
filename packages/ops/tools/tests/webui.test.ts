@@ -109,7 +109,7 @@ describe("webui generateHTML", () => {
 });
 
 describe("webui live server", () => {
-  it("/", async () => {
+  it("/ 与 /classic（R13.5 分流：dist 在则 React 挂 /，内嵌永远在 /classic）", async () => {
     server = createDashboardServer(env());
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const addr = server.address() as any;
@@ -117,7 +117,12 @@ describe("webui live server", () => {
     const res = await fetch(base + "/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("ygl-trees dashboard");
+    // either the React shell (dist built) or the embedded dashboard — both html
+    expect(html).toMatch(/id="root"|ygl-trees dashboard/);
+    // the embedded zero-dep dashboard is always reachable at /classic
+    const classic = await fetch(base + "/classic");
+    expect(classic.status).toBe(200);
+    expect(await classic.text()).toContain("ygl-trees dashboard");
   });
   it("/api/data 返回 JSON（live 收集，brief 含 next_actions）", async () => {
     const res = await fetch(base + "/api/data");
@@ -142,8 +147,8 @@ describe("webui live server", () => {
     expect((await fetch(`${base}/api/node?tree=wt&key=nope`)).status).toBe(404);
     expect((await fetch(`${base}/api/node`)).status).toBe(400);
   });
-  it("未知路径 404", async () => {
-    const res = await fetch(base + "/nope");
+  it("未知 /api 路径 404（React 分流下 SPA 路径回落 200 属预期）", async () => {
+    const res = await fetch(base + "/api/nope");
     expect(res.status).toBe(404);
   });
 });

@@ -16,10 +16,9 @@ packages/         领域模块（库代码，可被 apps 组合）
   research/         研究域（query→source→evidence→claim→produce）
   techtree/         科技树域（nodes/edges/conditions/eval gates/closure）
   knowledge/        知识域（kb/skills/match）
-  ops/              运维域（config/pgsync/jobs/agent）
-  context.ts        Cordis Context 定义（DatabaseService/ResearchService）
-  container.ts      轻量 DI 容器（Cordis 备选方案）
-  index.ts          包导出面
+  ops/              运维域（config/pgsync/jobs/agent/rels/webui）
+  web/              Web 域（app：React 客户端宿主插件，ctx.webApp，DSH 模式）
+  （Cordis 服务定义在 core/database/src/plugin.ts 与 web/app/src：declare module 声明合并）
 
 apps/             应用入口（组装 packages，跑产品）
   cli/              CLI 应用（参数解析/命令分发/usage）
@@ -58,12 +57,10 @@ pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 do
 - **时空可组合性** — 子 Context 隔离、作用域嵌套
 
 ```typescript
-// packages/context.ts
-import { Context, Service } from "cordis";
-
-export class DatabaseService extends Service { ... }
-export class ResearchService extends Service { ... }
-export function createApp(dbFile: string): Context { ... }
+// packages/core/database/src/plugin.ts（web/app 同模式）
+export class DatabaseService extends Service { ... }   // ctx.database
+export class WebAppService extends Service { ... }     // ctx.webApp
+export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 组合
 ```
 
 ## Agent API 契约（冻结）

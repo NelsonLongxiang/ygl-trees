@@ -10,6 +10,7 @@ import { dbPath } from "../../packages/core/database/src/db";
 import { Ctx, bad, out, paint, C } from "../../packages/core/text/src/fmt";
 import { Args, parse, str, num, bool, Env } from "../../packages/core/database/src/types";
 import { apply as DatabasePlugin } from "../../packages/core/database/src/plugin";
+import { apply as WebAppPlugin } from "../../packages/web/app/src";
 import { Store } from "../../packages/research/pipeline/src/reads";
 import { apply as TechTreePlugin } from "../../packages/techtree/model/src/plugin";
 
@@ -178,6 +179,9 @@ export async function main(argv: string[]): Promise<number> {
   let store: any;
   try {
     app.plugin(DatabasePlugin, { file });
+    // R13.5: web-app glue (ctx.webApp over apps/web/dist); the webui server
+    // reads the dist via the pure resolver, so plugin timing is not load-bearing.
+    app.plugin(WebAppPlugin);
     // One yield for the database service (no inject deps)
     await new Promise((r) => setImmediate(r));
     db = app.database?.db;
