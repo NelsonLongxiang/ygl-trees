@@ -222,7 +222,9 @@ export async function main(argv: string[]): Promise<number> {
 
   const home = str(args, "home", HOME);
   const file = str(args, "db", "") || dbPath(home);
-  const needInit = !(group === "db" && action === "init");
+  // plugin management never touches the db (DSH exemplar: launcher-owned
+  // mode) — it must work on a fresh workspace before `db init`
+  const needInit = !(group === "db" && action === "init") && group !== "plugin";
   if (needInit && !require("node:fs").existsSync(file)) {
     bad(ctx, `no database at ${file}`);
     out(ctx, `  run: ygl-trees db init`);

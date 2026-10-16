@@ -66,6 +66,31 @@ export function initProfile(home: string): void {
   if (!fs.existsSync(path.join(dir, ".npmrc"))) {
     fs.writeFileSync(path.join(dir, ".npmrc"), "auto-install-peers=false\n", "utf8");
   }
+  const readme = path.join(dir, "README.md");
+  if (!fs.existsSync(readme)) {
+    fs.writeFileSync(
+      readme,
+      [
+        "# 用户插件 profile（spec R14 L3）",
+        "",
+        "本目录是 ygl-trees 工作区的插件仓（pnpm 管理）。安装的插件由",
+        "`../ygl.user.bundle.json` 声明，启动时叠加在 base 组合之上。",
+        "",
+        "```bash",
+        "ygl-trees plugin install <npm 包 | git 地址 | 本地目录（自动 link:）>",
+        "ygl-trees plugin list          # 版本 / spec / 可解析态",
+        "ygl-trees plugin remove <name>",
+        "```",
+        "",
+        "插件契约与完整指南：docs/plugin-authoring.md（仓库内）。",
+        "示例插件：examples/plugin-demo（仓库内）。",
+        "",
+        "注意：插件代码以进程全权限运行——只装你信任的包。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+  }
 }
 
 function readProfileDeps(home: string): Record<string, string> {

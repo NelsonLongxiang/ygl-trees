@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.36.3（2026-10-17）包领域 AGENTS.md + 插件目录 README（用户指示，DSH packages/AGENTS.md 对齐）
+- **`packages/AGENTS.md`**：包级开发纪律（补位根 AGENTS，DSH 同构）——包形状五件套/零散禁区、Cordis 插件导出契约（Service+apply+declare module、构造必须同步）、写路径三铁律（事务化服务/九触点/读不写）、遥测纪律（树域已推翻 0.12 例外）、测试纪律（scratch 自清理三步/demo 字段名教训）、README frontmatter 与内容序、DSH 角色词表命名；根 AGENTS 核心铁律挂链
+- **`examples/plugin-demo/README.md`**：示例插件 README（试跑四命令/契约表/写自己的插件三步/已知限制）
+- **profile README**：`plugin init` 现在在 `$YGL_HOME/plugins/` 生成 README.md（结构说明+命令速查+信任模型警告，幂等）
+
 ## 0.36.2（2026-10-17）apps/cli 成为 workspace 包 + packages/*/* 接入 workspace（用户指出"没有包管理器"）
 - **发现**：`pnpm-workspace.yaml` 只含 `vendor/* + apps/*`——**packages/*/* 九个包从未是 workspace 成员**，0.20 的"各包声明依赖"一直是装饰品（从未链接）；apps/cli 则完全没有 package.json
 - **对齐 DSH**（其 apps/cli 即发布包 `@deepseek-ai/dsh`，含完整 deps/bin）：`apps/cli/package.json` 新建（`@ygl/cli`，声明真实依赖图：6 个 workspace 包 + cordis + schemastery）；`packages/*/*` 接入 workspace——九包 + apps/cli 各自获得 node_modules 链接，依赖图从"纸面声明"变为 pnpm 实链

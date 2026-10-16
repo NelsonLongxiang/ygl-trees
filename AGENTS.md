@@ -2,7 +2,7 @@
 
 ygl-trees 是面向 AI Agent 的研究工作台 CLI（研究 → 产出 → 知识复用 + 科技树模型），基于 Cordis 框架构建。任何 Agent 进入本仓库前先读完此文件。
 
-**核心铁律**：改 `packages/` 前读 [docs/conventions.md](docs/conventions.md)；改 schema 前读 [docs/spec.md](docs/spec.md)；每个版本的决策证据链在 [docs/plan.md](docs/plan.md) 执行记录里。
+**核心铁律**：改 `packages/` 前读 [packages/AGENTS.md](packages/AGENTS.md)（包级纪律）与 [docs/conventions.md](docs/conventions.md)；改 schema 前读 [docs/spec.md](docs/spec.md)；每个版本的决策证据链在 [docs/plan.md](docs/plan.md) 执行记录里。
 
 ## 仓库布局
 
