@@ -20,7 +20,7 @@ echo "── 1. workspace"
 $Y db init
 # 0.48：冷启动内置技能自动导入——全新工作区的 agent match 必须立即可用
 sleep 2  # auto-import is async
-NS=$($Y agent brief --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.counts?.skills??0)}')")
+NS=$($Y agent brief --json 2>/dev/null | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).counts.skills')
 if [ "$NS" -ge 9 ]; then echo "  ✓ 冷启动内置技能自动导入（$NS 个，agent match 即可用）"; else echo "  ✗ 冷启动技能数：$NS（期望 ≥9）"; exit 1; fi
 $Y project new techtree -q "科技树数据模型如何建模与索引"
 $Y config set search.limit 5 >/dev/null
