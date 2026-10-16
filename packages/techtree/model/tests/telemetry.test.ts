@@ -14,10 +14,10 @@ beforeAll(async () => {
   db = new DB(file);
 });
 
-describe("schema v7（events.level）", () => {
-  it("fresh DB → user_version=7，level 列存在，默认 info", () => {
-    expect(SCHEMA_VERSION).toBe(7);
-    expect(db.get("PRAGMA user_version")?.user_version).toBe(7);
+describe("schema v7+（events.level）", () => {
+  it("fresh DB → 最新 user_version，level 列存在，默认 info", () => {
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(7);
+    expect(db.get("PRAGMA user_version")?.user_version).toBe(SCHEMA_VERSION);
     const col = db.get("SELECT 1 AS hit FROM pragma_table_info('events') WHERE name='level'");
     expect(col).toBeTruthy();
     db.run("INSERT INTO events(id,ts,kind) VALUES('t1','2026-01-01','probe')");

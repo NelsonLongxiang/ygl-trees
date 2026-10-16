@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.32.0（2026-10-17）工程产出形态（spec R12）
+- **schema v8**：artifacts 加 `meta TEXT NOT NULL DEFAULT ''`（JSON 信封，循 eval choice 先例）；kind 扩 `spec|design|task`
+- **`produce spec`**（需求规格文档）、**`produce design --design-type ui-ux|arch|decision`**（R12.1a：ui-ux 对齐 DESIGN.md 格式，arch/decision 用 ADR 风格；design_type 存 meta 信封）
+- **`task` 命令组**：`add "<title>" [--note]`（todo 起步）、`list [--status]`、`doing|done <id>` 状态机推进——每次流转留痕 `task.status` 事件（from → to）
+- **WebUI 任务清单**：状态分组（todo 灰/doing 黄/done 绿+删除线）+ 点击勾销（`▶ start`/`✓ finish`）经 **POST /api/task** 写回并即时刷新；静态导出提示需 serve；键盘可达
+- **R9 互联验收**：task/spec/design 均可 `rel add node:… artifact:…` 挂节点（demo 断言 tracked-by）
+- 单测 5 例（v8 迁移/状态机全程+留痕/非法状态/meta 信封）+ demo 断言组 11 + POST 端点 E2E（todo→doing 实时回显）
+
 ## 0.31.0（2026-10-17）时间维度（spec R11）
 - **树视图时间轴模式**：`layout: tier` ⇄ `layout: time` 切换（chip 按钮）——时间布局每节点一条泳道（按 created 排序），created 圆点 + 解锁弧（created→unlocked_at 实线绿箭头 + 终点圆）或未解锁灰虚线延伸至今；日刻度竖线；节点仍可点击出详情面板
 - **研究管线时间线**：`/api/data` 增 `timeline`（近 30 天 events 按日聚合，research/tree/eval/other 四桶），前端逐日堆叠条（DESIGN.md token：primary/tertiary/warning/secondary）+ 图例 + title 提示

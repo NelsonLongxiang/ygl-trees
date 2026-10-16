@@ -66,11 +66,18 @@ ${paint(C.bold, "research", true)}    collect → screen → extract → claim
   claim resolve <claimId> --as supported|refuted|contested [--note]
   claim list
 
-${paint(C.bold, "produce", true)}     outline → section → report
+${paint(C.bold, "produce", true)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
   section <title> --body|-f  add a section artifact
   report                     assemble claims+evidence+sections into a report
+  spec <title> --body|-f     requirements spec artifact (R12)
+  design <title> --body|-f   design artifact (R12) --design-type ui-ux|arch|decision
   list | show <id> | export <id> <file>
+
+${paint(C.bold, "task", true)}          任务清单（todo|doing|done 状态机，R12）
+  add "<title>" [--note ...] create a task (status todo)
+  list [--status todo|doing|done]
+  doing|done <id>            move along the state machine（勾销全程留痕）
 
 ${paint(C.bold, "kb", true)}          long-term knowledge
   add --title --body|-f [--tags --confidence]
@@ -208,6 +215,7 @@ export async function main(argv: string[]): Promise<number> {
     research: "../../packages/research/pipeline/src/cmds",
     project: "../../packages/research/produce/src/project-cmds",
     produce: "../../packages/research/produce/src/produce-cmds",
+    task: "../../packages/research/produce/src/produce-cmds",
     tree: "../../packages/techtree/model/src/cmds",
     node: "../../packages/techtree/model/src/cmds",
     skill: "../../packages/knowledge/skills/src/skill-cmds",

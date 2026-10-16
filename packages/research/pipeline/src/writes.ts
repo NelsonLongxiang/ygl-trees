@@ -390,7 +390,8 @@ export async function artifactAdd(
   kind: string,
   title: string,
   content: string,
-  format = "markdown"
+  format = "markdown",
+  meta = ""
 ): Promise<{ row: Record<string, any>; version: number }> {
   return ds.transaction(async (mgr) => {
     // version numbering inside the transaction — no duplicate versions under concurrency
@@ -402,14 +403,39 @@ export async function artifactAdd(
     const id = shortId(["art", projectId, kind, title, String(ver)], 10);
     const created = nowIso();
     await mgr.query(
-      `INSERT INTO artifacts(id,project_id,kind,title,format,content,version,created) VALUES(?,?,?,?,?,?,?,?)`,
-      [id, projectId, kind, title, format, content, ver, created]
+      `INSERT INTO artifacts(id,project_id,kind,title,format,content,version,created,meta) VALUES(?,?,?,?,?,?,?,?,?)`,
+      [id, projectId, kind, title, format, content, ver, created, meta]
     );
     await logEvent(mgr, "artifact.add", "artifact", id, `${kind}:${title} v${ver}`);
     return {
-      row: { id, project_id: projectId, kind, title, format, content, version: ver, created },
+      row: { id, project_id: projectId, kind, title, format, content, version: ver, created, meta },
       version: ver,
     };
+  });
+}
+
+// ================================================================ engineering artifacts (spec R12, 0.32)
+
+const TASK_STATUSES = ["todo", "doing", "done"] as const;
+
+/** Create a task artifact (kind=task, status machine in the meta envelope). */
+export async function taskAdd(ds: DataSource, projectId: string, title: string, note = ""): Promise<Record<string, any>> {
+  const r = await artifactAdd(ds, projectId, "task", title, note, "markdown", JSON.stringify({ status: "todo" }));
+  return r.row;
+}
+
+/** Move a task along its state machine (todo|doing|done); logs task.status. */
+export async function taskSetStatus(ds: DataSource, taskId: string, status: string): Promise<Record<string, any>> {
+  if (!(TASK_STATUSES as readonly string[]).includes(status)) throw new Error(`status must be one of ${TASK_STATUSES.join("|")}`);
+  return ds.transaction(async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM artifacts WHERE id=? AND kind='task'`, [taskId])) as any[];
+    if (!rows.length) throw new Error(`task not found: ${taskId}`);
+    let meta: any = {};
+    try { meta = rows[0].meta ? JSON.parse(rows[0].meta) : {}; } catch { /* malformed → reset */ }
+    const from = meta.status || "todo";
+    await mgr.query(`UPDATE artifacts SET meta=? WHERE id=?`, [JSON.stringify({ ...meta, status }), taskId]);
+    await logEvent(mgr, "task.status", "task", taskId, `${from} → ${status}`, status === "done" ? "info" : "info");
+    return { id: taskId, title: rows[0].title, from, to: status };
   });
 }
 

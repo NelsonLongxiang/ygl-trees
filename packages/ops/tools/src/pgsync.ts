@@ -196,7 +196,8 @@ CREATE TABLE artifacts (
   id text PRIMARY KEY, project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   kind text NOT NULL DEFAULT 'section', title text NOT NULL DEFAULT '',
   format text NOT NULL DEFAULT 'markdown', content text NOT NULL DEFAULT '',
-  version integer NOT NULL DEFAULT 1, created text NOT NULL);
+  version integer NOT NULL DEFAULT 1, created text NOT NULL,
+  meta text NOT NULL DEFAULT '');
 CREATE TABLE kb_notes (
   id text PRIMARY KEY, title text NOT NULL, body text NOT NULL DEFAULT '',
   source_url text DEFAULT '', origin text DEFAULT '', tags text DEFAULT '',

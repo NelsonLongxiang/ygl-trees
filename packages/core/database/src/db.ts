@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1 } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -145,12 +145,13 @@ CREATE TABLE IF NOT EXISTS claim_evidence (
 CREATE TABLE IF NOT EXISTS artifacts (
   id         TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL DEFAULT 'section',  -- outline|section|report|note
+  kind       TEXT NOT NULL DEFAULT 'section',  -- outline|section|report|note|spec|design|task
   title      TEXT NOT NULL DEFAULT '',
   format     TEXT NOT NULL DEFAULT 'markdown',
   content    TEXT NOT NULL DEFAULT '',
   version    INTEGER NOT NULL DEFAULT 1,
-  created    TEXT NOT NULL
+  created    TEXT NOT NULL,
+  meta       TEXT NOT NULL DEFAULT ''          -- v8 JSON envelope: task {"status"}, design {"design_type"}
 );
 
 -- ---------------------------------------------------------------- knowledge base
@@ -380,9 +381,19 @@ export class DB {
       // (they would fail on empty-hash duplicates).
       if (v > 0 || tablesPreExist) this.upgrade2to3();
       if ((v > 0 && v < 7) || (v === 0 && tablesPreExist)) this.upgrade6to7();
+      if ((v > 0 && v < 8) || (v === 0 && tablesPreExist)) this.upgrade7to8();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     }
+  }
+
+  /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine
+   *  and design_type ride in a JSON meta column on artifacts. */
+  private upgrade7to8(): void {
+    const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='artifacts'");
+    if (!hasTable) return;
+    const has = this.get("SELECT 1 FROM pragma_table_info('artifacts') WHERE name='meta'");
+    if (!has) this.db.exec(`ALTER TABLE artifacts ADD COLUMN meta TEXT NOT NULL DEFAULT ''`);
   }
 
   /** v6 -> v7: telemetry severity on events (spec R10.2). Existing rows are

@@ -189,3 +189,17 @@ ER=$($Y agent log --level error --limit 5 --json | node -e "let s='';process.std
 if [ "$ER" = "true" ]; then echo "  ✓ cmd.run 事件：失败命令留 error 级（rc 映射 level）"; else echo "  ✗ cmd.run error 缺失"; exit 1; fi
 LV=$($Y agent log --limit 3 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.every(e=>e.level==='info'||e.level==='warn'||e.level==='error'))})")
 if [ "$LV" = "true" ]; then echo "  ✓ events.level 列生效（schema v7）"; else echo "  ✗ level 列异常"; exit 1; fi
+
+echo "── 11. 工程产出形态（spec R12：task 状态机 + spec/design）"
+TID=$($Y task add "演示任务：发布准备" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).id))")
+$Y task doing "$TID" >/dev/null
+$Y task done "$TID" >/dev/null
+TS=$($Y task list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const t=JSON.parse(s).find(x=>x.id===process.argv[1]);console.log(t&&t.status)})" "$TID")
+if [ "$TS" = "done" ]; then echo "  ✓ task 状态机 todo→doing→done（勾销留痕）"; else echo "  ✗ task: $TS"; exit 1; fi
+$Y produce spec "发布规格" --body "R1-R13 验收 + pnpm publish" >/dev/null
+$Y produce design "视觉系统" --design-type ui-ux --body "DESIGN.md 单一事实源" >/dev/null
+PK=$($Y produce list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(x=>x.kind==='spec')&&r.some(x=>x.kind==='design'))})")
+if [ "$PK" = "true" ]; then echo "  ✓ produce spec/design 工程产出入库"; else echo "  ✗ spec/design"; exit 1; fi
+$Y rel add node:steel artifact:"$TID" --rel tracked-by >/dev/null
+TR=$($Y rel list --src node:steel --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(x=>String(x.dst).startsWith('artifact:')&&x.rel==='tracked-by'))})")
+if [ "$TR" = "true" ]; then echo "  ✓ task 可 R9 关联到树节点（tracked-by）"; else echo "  ✗ task rel"; exit 1; fi

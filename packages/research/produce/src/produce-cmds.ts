@@ -10,6 +10,19 @@ import * as writes from "../../pipeline/src/writes";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
+
+  // R12: the `task` command group rides this router — translate its verbs
+  // onto the task-* cases (doing/done/todo carry their status in rest[1]).
+  if (env.group === "task") {
+    const map: Record<string, string> = { add: "task-add", list: "task-list", doing: "task-status", done: "task-status", todo: "task-status" };
+    if (!action || !map[action]) {
+      bad(ctx, 'usage: task add "<title>" [--note ...] | list [--status todo|doing|done] | doing|done <id>');
+      return 2;
+    }
+    if (map[action] === "task-status") rest = [rest[0], action];
+    action = map[action];
+  }
+
   let project: any;
   try {
     project = store.projectResolve(args.flags.p ? String(args.flags.p) : undefined);
@@ -69,6 +82,115 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         .then((r): number => {
           if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
           else ok(ctx, `section saved: ${r.row.id} (v${r.version})`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+
+    // ── R12 engineering artifacts (0.32) ──
+    case "spec": {
+      const title = rest[0] || String(args.flags.title || "");
+      const body = readBody();
+      if (!title || !body) {
+        bad(ctx, "usage: produce spec <title> --body|-f <file>");
+        return 2;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.artifactAdd(ds, pid, "spec", title, body))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          else ok(ctx, `spec saved: ${r.row.id} (v${r.version})`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+
+    case "design": {
+      const title = rest[0] || String(args.flags.title || "");
+      const body = readBody();
+      const designType = String(args.flags["design-type"] || "arch");
+      if (!title || !body) {
+        bad(ctx, "usage: produce design <title> --body|-f <file> [--design-type ui-ux|arch|decision]");
+        return 2;
+      }
+      if (!["ui-ux", "arch", "decision"].includes(designType)) {
+        bad(ctx, "--design-type must be one of ui-ux|arch|decision");
+        return 2;
+      }
+      // R12.1a ruling: ui-ux designs follow the DESIGN.md format
+      // (google-labs-code); arch/decision follow the ADR style.
+      return getOrm(env.db.path)
+        .then((ds) => writes.artifactAdd(ds, pid, "design", title, body, "markdown", JSON.stringify({ design_type: designType })))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          else ok(ctx, `design saved: ${r.row.id} (v${r.version}) [${designType}]`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+
+    // ── task group rides the produce router (`ygl-trees task ...`, R12) ──
+    case "task-add": {
+      const title = rest.join(" ");
+      if (!title) {
+        bad(ctx, 'usage: task add "<title>" [--note ...]');
+        return 2;
+      }
+      const note = String(args.flags.note || "");
+      return getOrm(env.db.path)
+        .then((ds) => writes.taskAdd(ds, pid, title, note))
+        .then((row): number => {
+          if (ctx.json) console.log(JSON.stringify(row, null, 2));
+          else ok(ctx, `task added: ${row.id}  ${title}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+
+    case "task-list": {
+      const rows = store.db.all(
+        "SELECT id, title, meta, created FROM artifacts WHERE project_id=? AND kind='task' ORDER BY created DESC",
+        [pid]
+      ).map((r: any) => {
+        let meta: any = {};
+        try { meta = r.meta ? JSON.parse(r.meta) : {}; } catch { /* malformed */ }
+        return { id: r.id, title: r.title, status: meta.status || "todo", created: r.created };
+      });
+      const statusF = String(args.flags.status || "");
+      const filtered = statusF ? rows.filter((r: any) => r.status === statusF) : rows;
+      if (ctx.json) {
+        console.log(JSON.stringify(filtered, null, 2));
+        return 0;
+      }
+      head(ctx, `Tasks (${filtered.length})`);
+      table(ctx, filtered, ["id", "status", "title"], ["id", "status", "title"]);
+      return 0;
+    }
+
+    case "task-status": {
+      const id = rest[0];
+      const status = rest[1];
+      if (!id || !status) {
+        bad(ctx, "usage: task doing|done|todo <taskId>");
+        return 2;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.taskSetStatus(ds, id, status))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify(r, null, 2));
+          else ok(ctx, `task ${r.id}: ${r.from} → ${r.to}`);
           return 0;
         })
         .catch((e: any): number => {

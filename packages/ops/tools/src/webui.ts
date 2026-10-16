@@ -12,6 +12,7 @@ import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
 import { TreeStore } from "../../../techtree/model/src/reads";
 import { buildBrief } from "./agent-cmds";
 import { resolveId } from "./rels";
+import { getOrm } from "../../../core/database/src/orm";
 
 interface DashboardData {
   brief: any;
@@ -24,6 +25,8 @@ interface DashboardData {
   claim_evidence: any[];
   /** R11.2: daily event aggregates [{day, research, tree, eval, other}] */
   timeline: any[];
+  /** R12: task list [{id, title, status}] */
+  tasks: any[];
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -48,7 +51,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 export function gatherData(env: Env): DashboardData {
   const { db, store } = env;
 
-  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [], timeline: [] };
+  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [], timeline: [], tasks: [] };
 
   // full brief payload (next_actions / top_skills / project progress) — same
   // builder the `agent brief` command uses
@@ -123,6 +126,23 @@ export function gatherData(env: Env): DashboardData {
       WHERE ts >= date('now', '-30 days')
       GROUP BY day ORDER BY day`
   );
+
+  // R12: task checklist (kind=task artifacts, status in the meta envelope)
+  if (cur) {
+    const project2 = store.projectByName(cur);
+    if (project2) {
+      data.tasks = db
+        .all(
+          "SELECT id, title, meta, created FROM artifacts WHERE project_id=? AND kind='task' ORDER BY created DESC",
+          [project2.id]
+        )
+        .map((r: any) => {
+          let meta: any = {};
+          try { meta = r.meta ? JSON.parse(r.meta) : {}; } catch { /* malformed */ }
+          return { id: r.id, title: r.title, status: meta.status || "todo" };
+        });
+    }
+  }
   return data;
 }
 
@@ -219,6 +239,9 @@ svg { max-width: 100%; height: auto; }
 <h2>🕒 Timeline <span class="dim">(近 30 天事件推进)</span></h2>
 <div id="timeline"></div>
 
+<h2>✅ Tasks</h2>
+<div id="tasks"></div>
+
 <h2>🔬 Research Claims</h2>
 <div id="claims"></div>
 
@@ -283,6 +306,7 @@ function render(DATA) {
   renderSources(DATA);
   renderTree(DATA);
   renderTimeline(DATA);
+  renderTasks(DATA);
 }
 
 // ── Claims: grouped by status, click to expand evidence ──
@@ -595,6 +619,57 @@ function renderNodePanel(d) {
   panel.innerHTML = html;
 }
 
+// ── R12: task checklist — grouped by status, click advances the machine ──
+function renderTasks(DATA) {
+  const el = document.getElementById('tasks');
+  const tasks = DATA.tasks || [];
+  if (!tasks.length) {
+    el.innerHTML = '<p class="dim">No tasks (ygl-trees task add "&lt;title&gt;")</p>';
+    return;
+  }
+  const groups = ['todo', 'doing', 'done'];
+  el.innerHTML = groups.map(function (s) {
+    const rows = tasks.filter(function (t) { return t.status === s; });
+    if (!rows.length) return '';
+    const label = s === 'todo' ? 'todo' : s === 'doing' ? 'doing' : 'done ✓';
+    const color = s === 'todo' ? '#8b949e' : s === 'doing' ? '#d29922' : '#3fb950';
+    return '<div class="group-h" style="color:' + color + '">' + label + ' · ' + rows.length + '</div>' +
+      rows.map(function (t) {
+        const next = s === 'todo' ? '▶ start' : s === 'doing' ? '✓ finish' : '';
+        const clickable = s !== 'done';
+        return '<div class="claim" style="cursor:' + (clickable ? 'pointer' : 'default') + '"' +
+          (clickable ? ' role="button" tabindex="0" onclick="advanceTask(\\'' + jq(t.id) + '\\',\\'' + s + '\\')"' +
+            ' onkeydown="keyTask(event,\\'' + jq(t.id) + '\\',\\'' + s + '\\')"' : '') + '>' +
+          '<span class="text" style="' + (s === 'done' ? 'color:#8b949e;text-decoration:line-through' : '') + '">' + esc(t.title) + '</span>' +
+          (next ? ' <span class="chip click">' + next + '</span>' : '') +
+          '</div>';
+      }).join('');
+  }).join('') || '<p class="dim">No tasks</p>';
+}
+
+async function advanceTask(id, status) {
+  try {
+    const r = await fetch('api/task', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const d = await r.json();
+    // live mode: refresh data (static export: tasks are read-only)
+    if (location.protocol.startsWith('http')) {
+      const fresh = await fetch('api/data').then((x) => x.json());
+      render(fresh);
+    }
+  } catch (e) {
+    // static export (file://): no write endpoint — surface it honestly
+    const el = document.getElementById('tasks');
+    if (el) el.insertAdjacentHTML('afterbegin', '<p class="dim">勾销需要 live 模式：ygl-trees webui serve</p>');
+  }
+}
+
+function keyTask(ev, id, status) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); advanceTask(id, status); } }
+
 // ── Bootstrap: paint embedded snapshot immediately; upgrade to live data ──
 render(FALLBACK);
 ${live ? `
@@ -670,6 +745,27 @@ export function createDashboardServer(env: Env) {
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(detail));
+    } else if (url === "/api/task" && req.method === "POST") {
+      // R12: advance a task along its state machine from the dashboard
+      let body = "";
+      req.on("data", (c: any) => (body += c));
+      req.on("end", () => {
+        (async () => {
+          try {
+            const { id, status } = JSON.parse(body || "{}");
+            const next = ({ todo: "doing", doing: "done", done: "done" } as any)[String(status)] || "doing";
+            const ds = await getOrm(env.db.path);
+            const { taskSetStatus } = await import("../../../research/pipeline/src/writes");
+            const r = await taskSetStatus(ds, String(id), next);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify(r));
+          } catch (e: any) {
+            res.writeHead(400, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: String(e?.message || e) }));
+          }
+        })();
+      });
+      return;
     } else {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
