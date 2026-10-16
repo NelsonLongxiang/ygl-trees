@@ -192,6 +192,9 @@ flag_reject "node --kind nonsense"       -- $Y node add fn3 --kind nonsense
 flag_reject "cond --op nonsense"         -- $Y node cond a --name FZ --kind flag --op nonsense --value 1
 flag_reject "cond --effect nonsense"     -- $Y node cond a --name FW --kind flag --op has --value 1 --effect nonsense
 
+flag_reject "relevance 0.95 (REAL)"  -- $Y research source add --title T --url https://e.com/rel --relevance 0.95
+flag_reject "relevance 99 (range)"    -- $Y research source add --title T --url https://e.com/rel2 --relevance 99
+
 echo "── contract 4: usage errors exit 2"
 usage2 "unknown group"          -- $Y no-such-group
 usage2 "node add without key"   -- $Y node add

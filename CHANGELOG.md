@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.0（2026-10-17）relevance 值域校验——PG 迁移暴露的跨库类型陷阱（用户 R284 反馈）
+- **来源**：用户在 PG 迁移（L1.5 db migrate pg）时发现 `sources.relevance` 的 REAL 值 0.95 在 SQLite 弱类型下静默落库，到 PG 迁移才爆 `invalid input syntax for type integer`
+- **修复**：`source add --relevance` 现在只收整数 0-5（非整数/超范围 → rc=2 `must be an integer 0-5`）
+- **护栏**：contract:audit 84→86 项（+2：REAL 0.95 拒绝 / 超范围 99 拒绝）
+- **根因**：SQLite 弱类型照单全收 vs PG 强类型严格拒绝——CLI 是第一道门，不应把类型问题留给迁移时才爆
+
 ## 0.58.0（2026-10-17）时间字段补齐（schema v9）——时间是不可缺的维度
 - **用户需求**：「时间是非常重要的指标」——审计发现 25 表中仅 4 表有完整 created+updated（16%），12 表完全无时间字段（48%）
 - **schema v8→v9**：六表七列新增——`sources.created`（录入时间≠抓取时间）、`claims.updated`（resolve 时更新）、`artifacts.updated`（版本升级时更新）、`node_edges.created`、`node_conditions.created`、`relations.created`

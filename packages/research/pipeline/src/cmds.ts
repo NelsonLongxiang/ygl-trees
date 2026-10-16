@@ -124,6 +124,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // P1-1 fix: a flag given without a value arrives as boolean true — reject
       // it instead of silently storing "true" as the title/url (cold-user report).
       if (rejectBare(ctx, args.flags, ["abstract", "content", "relevance", "confidence", "tags", "query", "engine"])) return 2;
+      // R284 fix: relevance is INTEGER 0-5 (screening score band); a REAL like
+      // 0.95 passes SQLite's weak typing but explodes in PG migration
+      // ("invalid input syntax for type integer") — reject at the CLI gate.
+      if (args.flags.relevance !== undefined && args.flags.relevance !== "") {
+        const rel = Number(args.flags.relevance);
+        if (!Number.isInteger(rel) || rel < 0 || rel > 5) {
+          bad(ctx, `--relevance must be an integer 0-5 (got: ${args.flags.relevance})`);
+          return 2;
+        }
+      }
       if (validateEnum(ctx, args.flags, "confidence", ["A", "B", "C"])) return 2;
       const titleRaw = args.flags.title;
       const urlRaw = args.flags.url;
