@@ -49,13 +49,32 @@ export class TreeStore {
     return this.db.get("SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)", [treeId, keyOrId, keyOrId]);
   }
 
-  nodeList(treeId: string): Row[] {
+  /** Runtime state for one node (default context). Separate from nodeGet on
+   *  purpose: nodeGet feeds WRITE paths, and a context join there could return
+   *  one row per context — silently wrong for link/unlink/rm. */
+  nodeStateOf(treeId: string, keyOrId: string, context = "default"): { state: string; unlocked_at: string | null } {
+    const r = this.db.get(
+      `SELECT st.status AS state, st.updated AS unlocked_at
+         FROM nodes n LEFT JOIN node_state st ON st.node_id=n.id AND st.context=?
+        WHERE n.tree_id=? AND (n.key=? OR n.id=?)`,
+      [context, treeId, keyOrId, keyOrId]
+    ) as any;
+    return { state: r?.state || "locked", unlocked_at: r?.unlocked_at || null };
+  }
+
+  nodeList(treeId: string, context = "default"): Row[] {
+    // Runtime state rides along: the lifecycle discipline ("unlock the moment a
+    // capability lands") is only auditable if the CLI can SEE the unlock state.
     return this.db.all(
       `SELECT n.key, n.name, n.kind, n.tier, n.cost, n.tags,
               (SELECT COUNT(*) FROM node_edges e WHERE e.child_id=n.id AND e.required=1) AS req_parents,
-              (SELECT COUNT(*) FROM node_edges e WHERE e.parent_id=n.id) AS children
-         FROM nodes n WHERE n.tree_id=? ORDER BY n.tier, n.key`,
-      [treeId]
+              (SELECT COUNT(*) FROM node_edges e WHERE e.parent_id=n.id) AS children,
+              COALESCE(st.status,'locked') AS state,
+              st.updated AS unlocked_at
+         FROM nodes n
+         LEFT JOIN node_state st ON st.node_id=n.id AND st.context=?
+        WHERE n.tree_id=? ORDER BY n.tier, n.key`,
+      [context, treeId]
     );
   }
 

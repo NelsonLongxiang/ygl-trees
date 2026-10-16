@@ -16,7 +16,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   if (env.group === "task") {
     const map: Record<string, string> = { add: "task-add", list: "task-list", doing: "task-status", done: "task-status", todo: "task-status" };
     if (!action || !map[action]) {
-      bad(ctx, 'usage: task add "<title>" [--note ...] | list [--status todo|doing|done] | doing|done <id>');
+      bad(ctx, 'usage: task add "<title>" [--note ...] | list [--status todo|doing|done] | todo|doing|done <id>');
       return 2;
     }
     if (map[action] === "task-status") rest = [rest[0], action];

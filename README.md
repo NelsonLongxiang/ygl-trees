@@ -69,6 +69,8 @@ ygl-trees node cond steel --name has_engineer --kind flag --op has \
 
 - `node_closure` 让 `ancestors` / `descendants` / `reaches` 走 O(1) 查表
 - `node_index.topo_order` 让 `node ready` 单次拓扑序扫描搞定，不必反复 DFS
+- 运行时状态（locked/unlocked）**CLI 可直接对账**：`node list` 有「状态」列，`node show <key>` 带
+  `state` + `unlocked_at`（`--json` 同名字段）——解锁是维护动作，看不见就无法执行「解锁后必须挂依据」的纪律
 - `node index` 重建两者；**遇到环直接报错**，坏数据在构建期暴露，而不是运行时
 
 ```bash

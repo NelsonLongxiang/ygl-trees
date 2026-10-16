@@ -553,12 +553,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "list" || sub === undefined) {
-      table(ctx, trees.nodeList(tid), ["key", "name", "kind", "tier", "cost", "必检父", "子节点"], [
+      table(ctx, trees.nodeList(tid), ["key", "name", "kind", "tier", "cost", "状态", "必检父", "子节点"], [
         "key",
         "name",
         "kind",
         "tier",
         "cost",
+        "state",
         "req_parents",
         "children",
       ]);
@@ -577,12 +578,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `node not found: ${key}`);
         return 1;
       }
+      const st = trees.nodeStateOf(tid, key);
       if (ctx.json) {
-        console.log(JSON.stringify({ node: n, parents: trees.parents(tid, key), conditions: trees.condList(tid, key) }, null, 2));
+        console.log(JSON.stringify({
+          node: { ...n, state: st.state, unlocked_at: st.unlocked_at },
+          parents: trees.parents(tid, key),
+          conditions: trees.condList(tid, key),
+        }, null, 2));
         return 0;
       }
       head(ctx, `${n.key}  (${n.name})`);
-      show(ctx, { id: n.id, kind: n.kind, tier: n.tier, cost: `${n.cost}${n.cost_unit ? " " + n.cost_unit : ""}`, tags: n.tags || "-" });
+      show(ctx, {
+        id: n.id, kind: n.kind, tier: n.tier,
+        cost: `${n.cost}${n.cost_unit ? " " + n.cost_unit : ""}`,
+        tags: n.tags || "-",
+        状态: st.state === "unlocked" ? `已解锁${st.unlocked_at ? " @ " + st.unlocked_at : ""}` : st.state,
+      });
       const ps = trees.parents(tid, key);
       out(ctx, paint(C.bold, "\n  父节点 / 关联", ctx.color));
       if (!ps.length) out(ctx, paint(C.dim, "    (root)", ctx.color));

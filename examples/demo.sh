@@ -104,6 +104,17 @@ $Y node link bronze steel --optional            # optional gate
 $Y node cond steel --name research_lab_level --kind level --value 3
 $Y node cond steel --name has_engineer --kind flag --op has --optional --effect cost_mul --weight 0.8
 $Y node link steel mining || echo "  (cycle correctly rejected)"
+# 0.45：解锁态必须可从 CLI 对账（此前只有 WebUI/SQL 看得到，节奏纪律无从执行）。
+# 用 smelting 探针后**立即锁回**——解锁会把它移出 node path 的待解锁集，后续断言依赖该集合。
+$Y node unlock smelting >/dev/null 2>&1
+ST=$($Y node list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.find(n=>n.key==='smelting')?.state||'?')})")
+if [ "$ST" = "unlocked" ]; then echo "  ✓ node list 暴露解锁态（state=unlocked，可对账）"; else echo "  ✗ 解锁态不可见：$ST"; exit 1; fi
+SST=$($Y node show smelting --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log((j.node.state||'?')+'/'+(j.node.unlocked_at?'ts':'no-ts'))})")
+if [ "$SST" = "unlocked/ts" ]; then echo "  ✓ node show 带 state + unlocked_at 时间戳"; else echo "  ✗ node show 态不全：$SST"; exit 1; fi
+$Y node lock smelting >/dev/null 2>&1
+LC=$($Y node list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.find(n=>n.key==='smelting')?.state||'?')})")
+if [ "$LC" = "locked" ]; then echo "  ✓ 锁回后态回归（node lock 可逆）"; else echo "  ✗ 锁回失败：$LC"; exit 1; fi
+
 $Y node index
 $Y node validate
 $Y node ready
@@ -211,6 +222,12 @@ if [ "$PK" = "true" ]; then echo "  ✓ produce spec/design 工程产出入库";
 $Y rel add node:steel artifact:"$TID" --rel tracked-by >/dev/null
 TR=$($Y rel list --src node:steel --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(x=>String(x.dst).startsWith('artifact:')&&x.rel==='tracked-by'))})")
 if [ "$TR" = "true" ]; then echo "  ✓ task 可 R9 关联到树节点（tracked-by）"; else echo "  ✗ task rel"; exit 1; fi
+
+# 状态机必须可回退：假状态比缺状态更坏（0.45 教训：任务被演练走成 done 却并未完成）
+$Y task todo "$TID" >/dev/null 2>&1
+TS=$($Y task list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.find(t=>t.id==='$TID')?.status||'?')})")
+if [ "$TS" = "todo" ]; then echo "  ✓ task 状态可回退（done→todo，修正假状态）"; else echo "  ✗ task 回退失败：$TS"; exit 1; fi
+$Y task done "$TID" >/dev/null 2>&1
 
 echo "── 12. user plugins（spec R14 L3：业务域扩展位）"
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)

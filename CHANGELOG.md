@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.45.0（2026-10-17）应用 lifecycle 技能做了一次真实维护回合——挖出三处缺陷并修
+- **背景**：用户要求「使用技能 ygl-trees-lifecycle」。按其 §3 节奏对真实工作区（tmp/research-dogfood）执行：`agent brief` → 对账 → 动作 → 收口 `doctor`
+- **对账发现的漂移（技能 §5 反模式 #1/#6 大规模发生）**：evolution 树 **32 节点全部未解锁**，而实际已交付 0.1.0–0.44.0；且交付期间新增能力（用户插件/bundle 产物/SSE/契约门禁/JSON 错误契约）**在树上根本没有节点**（§1「未建模子能力」）
+- **维护动作**：新增 5 个能力节点并挂接（`packages→user-plugins`、`packages→bundle-dist`、`webui-serve→sse-live`、`json-contract→json-errors`、`idempotency+json-contract→contract-gates`）→ **同轮** `node index`（268 闭包行）+ `node validate`（无 issue）→ 建证据链（1 源 + 6 条 CHANGELOG 原文摘录 + 6 条交付簇断言，链→resolve）→ **34 节点解锁且每个同轮 `rel … --rel decided-by` 挂依据** → 既有 report/spec/design 工件挂到相关节点 → `kb ingest` 报告 + 2 条方法论笔记 → 清理自己的临时任务 → 收口 `doctor`（all checks passed）。终态：**34 unlocked / 3 locked**（bun-runtime、npm-publish、real-users 的门槛实测仍生效）
+- **顺带修的三处真缺陷**：
+  1. **假状态（比缺状态更坏）**：任务「发布到 npmjs」显示 done 但从未发布——events 显示它创建后 2 秒被状态机演练走完（演练用了真实标题）。已回退为 `doing`
+  2. **未宣传的能力**：`task todo` 可逆生效（实现与另一处 usage 都支持），但**顶层 usage 只写 doing|done** → 补齐；demo 增回退护栏（done→todo→done）
+  3. **投影盲区**：`node_state` 权威表有解锁行，而 CLI 的 `node list/show` **不返回 state/unlocked_at**（只有 WebUI 与裸 SQL 看得到）→ **节奏纪律要求「解锁后对账」而 CLI 无从对账**；已补 `state`/`unlocked_at`（`nodeStateOf` 独立方法，**不碰写路径复用的 `nodeGet`**——多 context join 会让行数放大、`db.get` 静默取错行），`node list` 增「状态」列，demo 增 3 条断言（含锁回可逆）
+- 契约兼容：JSON 只增字段（`node.list[].state`/`node.show.node.state`），不改名不删——符合「只增字段」承诺
+
 ## 0.44.0（2026-10-17）JSON 通道契约：失败也必须机器可读（+31 读/6 错误路径机械断言）
 - **侦察（读侧对称体检）**：常用 21 条读命令**全绿**（纯 JSON + 零 camelCase 泄漏）；但角落与错误路径抓到两处真问题
 - **修复 1：`--json db path` 输出裸路径文本**（成功路径的纯净性违规，agent 侧 `JSON.parse` 直接崩）→ 改 `{"path": ...}`
