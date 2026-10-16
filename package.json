@@ -40,7 +40,7 @@
     "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1",
     "@deepseek-ai/schemastery": "workspace:~",
     "better-sqlite3": "^13.0.3",
-    "node-sqlite3-wasm": "^0.8.60",
+    "node-sqlite3-wasm": "^0.8.61",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^1.1.2"
   },
