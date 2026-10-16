@@ -227,6 +227,13 @@ export class Claim {
 
   @Column({ name: "updated", type: "text", nullable: true })
   updated?: string;
+
+  // The @ManyToOne here was missing (likely lost in an early edit): Claim.project
+  // was an undecorated property, so Project.claims' inverseSide never resolved
+  // and every ORM find loading the claims relation threw
+  // "Cannot read properties of undefined (reading 'joinColumns')" —
+  // `project show` / demo have been broken on this since the TypeORM pilot.
+  @ManyToOne(() => Project, (p) => p.claims, { createForeignKeyConstraints: false })
   @JoinColumn({ name: "project_id" })
   project?: Project;
 
