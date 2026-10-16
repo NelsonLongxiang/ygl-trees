@@ -9,7 +9,7 @@
 ```bash
 pnpm install
 pnpm build          # tsc -> dist/
-node bin/ygl-trees.js db init
+node dist/apps/cli/src/bin.js db init
 ```
 
 ---

@@ -79,7 +79,7 @@ const trees = new TreeStore(db);
 
   // 1. startup — full CLI process, db stats (spawn, excluded warmup)
   await suite("startup", async () => {
-    const bin = path.join(ROOT, "bin/ygl-trees.js");
+    const bin = path.join(ROOT, "dist/apps/cli/src/bin.js");
     const args = ["--no-color", "--home", WS, "db", "stats"];
     spawnSync(process.execPath, [bin, ...args], { stdio: "ignore" }); // warmup
     const samples = [];

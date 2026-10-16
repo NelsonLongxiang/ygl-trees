@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.36.1（2026-10-17）bin/ 目录并入 src/bin.ts（DSH 形态收尾）
+- **可执行入口 = `apps/cli/src/bin.ts`**（DSH bin.ts 同形）：shebang + 自执行守卫（rc 契约 0/1/2 由本文件保管）；根 package.json `"bin"` 指向 `dist/apps/cli/src/bin.js`（DSH `"dsh": "lib/bin.js"` 同构）；**bin/ wrapper 目录删除**——三层入口（wrapper→index→main）收敛为单文件
+- 引用面全改（demo.sh / benchmarks/bench.js / scripts/bun-smoke.sh / README / package.json scripts）
+- 根治 vitest 捡 dist 编译测试：tsc exclude `apps/*/tests`（测试不再进 dist，发布面更干净）；实测 unknown→rc2 / ok→rc0 / demo 插件命令可达
+
 ## 0.36.0（2026-10-17）用户层插件分发（spec R14 L3——DSH apps/cli 应用典范落地）
 - **`ygl-trees plugin` 命令组**：init（幂等建 profile）/install（npm 包、git 地址、本地目录自动 link:）/remove/list（版本+spec+可解析态）
 - **工作区级插件仓**：`$YGL_HOME/plugins/`（pnpm 管理）+ 用户层声明 `ygl.user.bundle.json`——叠加在 base bundle 之上（DSH user-layer 对应物）；业务域随工作区走

@@ -21,10 +21,9 @@ packages/         领域模块（库代码，可被 apps 组合）
   （Cordis 服务定义在 core/database/src/plugin.ts 与 web/app/src：declare module 声明合并）
 
 apps/             应用入口（组装 packages，跑产品）
-  cli/              CLI 应用（src/ 分层：bin 入口/profile-boot/startup-diagnostics/process-shutdown，DSH apps/cli 规范）
+  cli/              CLI 应用（src/bin.ts 即可执行文件：shebang+自执行，rc 契约在此；profile-boot/startup-diagnostics/process-shutdown/plugin 同 DSH）
   web/              React 富客户端（xyflow 树视图，spec R13.5；CLI 内嵌零依赖 dashboard 保留）
 
-bin/              可执行入口
 benchmarks/       性能基准套件（bench.js 七席 + README，pnpm bench）
 tests/            vitest 单测
 skills/           专属 Agent Skills（junction 到 .agents/skills/）
@@ -53,7 +52,7 @@ pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 do
 - **运行时服务发现** — `ctx.database`、`ctx.research` 等按名访问
 - **多服务生命周期** — Services 随 Context 启动/停止，自动资源清理
 - **事件驱动组合** — `ctx.on()/emit()` 跨域事件
-- **动态插件加载** — `ygl.bundle.json` 声明组合（R14 L2），`ctx.plugin()` 由 main.ts 按声明加载
+- **动态插件加载** — `ygl.bundle.json` 声明组合 + 用户层 `$YGL_HOME/ygl.user.bundle.json`（R14）；由 apps/cli/src/bin.ts 按声明加载
 - **时空可组合性** — 子 Context 隔离、作用域嵌套
 
 ```typescript

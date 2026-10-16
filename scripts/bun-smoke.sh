@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 export YGL_HOME="$PWD/tmp/bun-smoke"
 command -v bun >/dev/null 2>&1 || { echo "bun not installed"; exit 1; }
 rm -rf "$YGL_HOME"
-Y="bun bin/ygl-trees.js --no-color"
+Y="bun dist/apps/cli/src/bin.js --no-color"
 pass=0; fail=0
 t() { # t <name> <cmd...>
   local name="$1"; shift

@@ -5,7 +5,7 @@
 # wipes it — never point it at a workspace you care about.
 set -euo pipefail
 export YGL_HOME="${YGL_DEMO_HOME:-/tmp/ygl-demo}"
-Y="node $(cd "$(dirname "$0")/.." && pwd)/bin/ygl-trees.js --no-color"
+Y="node $(cd "$(dirname "$0")/.." && pwd)/dist/apps/cli/src/bin.js --no-color"
 rm -rf "$YGL_HOME"
 
 echo "── 1. workspace"

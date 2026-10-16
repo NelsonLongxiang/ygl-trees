@@ -1,7 +1,9 @@
+#!/usr/bin/env node
 /**
- * CLI application layer — composes domain packages via Cordis Context.
- * Services are accessed through ctx.database, ctx.research, ctx.techtree.
- * No domain logic here; only composition and dispatch.
+ * Command-line entry for ygl-trees (DSH bin.ts shape: shebang + self-execute;
+ * root package.json bin field points at the compiled dist file — the old
+ * bin/ygl-trees.js wrapper is gone, this IS the executable).
+ * Composition happens in profile-boot; no domain logic here.
  */
 import * as os from "node:os";
 import * as path from "node:path";
@@ -361,4 +363,13 @@ export async function main(argv: string[]): Promise<number> {
       // For long-running processes, call app.dispose() explicitly.
       try { db?.close(); } catch { /* best effort */ }
     });
+}
+
+// ── self-execute (the executable; rc contract lives HERE) ──
+// 0/1/2 from main(); rejection → 1. Agents rely on rc≠0 to detect failures.
+if (require.main === module) {
+  main(process.argv.slice(2)).then(
+    (rc) => { if (typeof rc === "number") process.exitCode = rc; },
+    () => { process.exitCode = 1; }
+  );
 }
