@@ -26,6 +26,7 @@ beforeAll(async () => {
   const ev = await writes.evidenceAdd(ds, proj.id, src.row.id, "关键摘录原文", "", "§2");
   const cl = await writes.claimAdd(ds, proj.id, "单测断言：面板可用");
   await writes.claimLink(ds, cl.row.id, ev.row.id, "supports");
+  await writes.artifactAdd(ds, proj.id, "outline", "单测大纲", "# 单测项目\n结论要点"); // 0.35 artifacts
   const tree = await treeWrites.treeCreate(ds, "wt", proj.id, "");
   await treeWrites.nodeAdd(ds, tree.id, { key: "root" });
   await treeWrites.nodeAdd(ds, tree.id, { key: "leaf", tier: 1 });
@@ -166,5 +167,15 @@ describe("webui live server", () => {
   it("未知 /api 路径 404（React 分流下 SPA 路径回落 200 属预期）", async () => {
     const res = await fetch(base + "/api/nope");
     expect(res.status).toBe(404);
+  });
+  it("0.35：artifacts 清单（非 task 工件）+ /api/artifact 全文", async () => {
+    const d = gatherData(env());
+    expect(d.artifacts.length).toBe(1);
+    expect(d.artifacts[0].kind).toBe("outline");
+    const res = await fetch(`${base}/api/artifact?id=${d.artifacts[0].id}`);
+    expect(res.status).toBe(200);
+    const full = await res.json();
+    expect(full.content).toContain("单测项目");
+    expect((await fetch(`${base}/api/artifact?id=nope`)).status).toBe(404);
   });
 });

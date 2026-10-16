@@ -2,6 +2,8 @@
 
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
+> **执行记录 · 0.35.0（2026-10-17，产出工件渲染进 WebUI）**：资源清单 react-markdown 位兑现。服务端 /api/artifact 全文端点（当前项目 scope，404）+ /api/data artifacts 清单（kind<>'task'，创建倒序）；React Artifacts 组件——类型分组（报告/规格/设计/大纲/章节/笔记中文映射）+ 点击展开 react-markdown 全文（components 映射走 DESIGN.md token：h1→h2 降级/链接 primary/代码块 neutral 底/引用左边框/表格细线）；内嵌 dashboard 最小清单区（零依赖不渲染正文）。锁定：单测（清单形状/全文内容含项目名/404）+ tsc --noEmit + vite build（457KB）。serve PID 42304 供检阅。
+
 > **执行记录 · 0.34.2（2026-10-17，树视图水平展开）**：用户裁定 tier 布局横排。内嵌 dashboard tierSvg 轴交换（tier→X 列距 180/兄弟→Y 行距 70，edges 父右缘→子左缘水平连线，SVG 尺寸列数×兄弟数自适应）；React TreeFlow 同步（position x=row·COL / handles Left/Right）。时间轴布局保持水平不动。锁定：源码级几何断言 + apps/web tsc --noEmit（新纪律：vite 构建不做类型校验，React 面改动必跑）。serve PID 70100 供检阅。
 
 > **执行记录 · 0.34.1（2026-10-17，WebUI 中文友好化）**：用户裁定 WebUI 中文友好化。双客户端面同改——内嵌 dashboard（webui.ts 模板）：统计卡/区头/进度行/下一步操作/断言状态四词/节点面板六列条件表头+父节点子节点关联/任务三态+按钮/时间线图例+title/布局切换/空态加载态页脚全中文；React 客户端（App/TreeFlow）：统计卡/进度/科技树副标题/任务分组/条件/关联/加载中。锁法：generateHTML 单测断言 13 组中文标签 + 导出实测 8 命中 + React 重建。serve 重启 PID 39776。

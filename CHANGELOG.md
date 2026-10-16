@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.35.0（2026-10-17）产出工件渲染进 WebUI
+- **服务端**：`/api/artifact?id=<id>` 全文端点（当前项目工件：kind/title/content/version，404 语义）；`/api/data` 增 artifacts 清单（非 task 工件按创建倒序）
+- **React 客户端**：Artifacts 区——按类型分组（报告/规格/设计/大纲/章节/笔记）+ 点击展开 **react-markdown 全文渲染**（DESIGN.md token 定制组件：标题/链接/代码/引用/表格）；键盘可达
+- **内嵌 dashboard**：📦 产出工件最小清单区（类型徽章 + 标题 + 版本）
+- 单测锁定（清单形状 + 全文端点 + 404）+ tsc/vite 双构建（bundle 457KB/146KB gzip）；serve 重启 PID 42304；react-markdown 兑现资源清单"报告/规格渲染"位
+
 ## 0.34.2（2026-10-17）树视图水平展开（用户裁定）
 - **tier 布局横排**：tier 沿 X 轴左→右推进（每层 180px 列距），同层兄弟纵向扇开（70px 行距）——经典科技树横版；React xyflow 同步（Handles Left/Right）；时间轴布局本就是水平（时间轴语义不改）
 - 内嵌 dashboard：edges 横向连线（父右缘→子左缘）；SVG 尺寸按列数×兄弟数自适应

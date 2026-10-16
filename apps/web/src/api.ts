@@ -28,6 +28,7 @@ export interface DashboardData {
   tree: TreeData | null;
   claims: Array<{ id: string; text: string; status: string; sup: number; ref: number }>;
   tasks: Array<{ id: string; title: string; status: string }>;
+  artifacts: Array<{ id: string; kind: string; title: string; version: number; created: string }>;
   timeline: Array<{ day: string; research: number; tree: number; eval: number; other: number }>;
 }
 

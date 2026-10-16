@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardData } from "./api";
 import TreeFlow from "./TreeFlow";
+import Artifacts from "./Artifacts";
 
 export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -61,8 +62,7 @@ export default function App() {
 
       {data.tasks.length > 0 && (
         <>
-          <h2>任务清单</h2>
-          {(["todo", "doing", "done"] as const).map((s) => {
+          <h2>任务清单</h2>          {(["todo", "doing", "done"] as const).map((s) => {
             const rows = data.tasks.filter((t) => t.status === s);
             if (!rows.length) return null;
             const color = s === "todo" ? "var(--color-secondary)" : s === "doing" ? "var(--color-warning)" : "var(--color-success)";
@@ -90,6 +90,12 @@ export default function App() {
               </div>
             );
           })}
+        </>
+      )}
+      {data.artifacts.length > 0 && (
+        <>
+          <h2>产出工件 <span className="dim">(react-markdown 全文渲染)</span></h2>
+          <Artifacts artifacts={data.artifacts} />
         </>
       )}
     </div>

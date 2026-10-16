@@ -28,6 +28,8 @@ interface DashboardData {
   timeline: any[];
   /** R12: task list [{id, title, status}] */
   tasks: any[];
+  /** 0.35: artifact roster for the current project [{id, kind, title, version}] */
+  artifacts: any[];
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -55,7 +57,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 export function gatherData(env: Env): DashboardData {
   const { db, store } = env;
 
-  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [], timeline: [], tasks: [] };
+  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [], timeline: [], tasks: [], artifacts: [] };
 
   // full brief payload (next_actions / top_skills / project progress) — same
   // builder the `agent brief` command uses
@@ -145,6 +147,13 @@ export function gatherData(env: Env): DashboardData {
           try { meta = r.meta ? JSON.parse(r.meta) : {}; } catch { /* malformed */ }
           return { id: r.id, title: r.title, status: meta.status || "todo" };
         });
+      // 0.35: artifact roster (non-task kinds; full text rides /api/artifact)
+      data.artifacts = db
+        .all(
+          "SELECT id, kind, title, version, created FROM artifacts WHERE project_id=? AND kind<>'task' ORDER BY created DESC",
+          [project2.id]
+        )
+        .map((r: any) => ({ id: r.id, kind: r.kind, title: r.title, version: r.version, created: r.created }));
     }
   }
   return data;
@@ -243,6 +252,9 @@ svg { max-width: 100%; height: auto; }
 <h2>🕒 Timeline <span class="dim">(近 30 天事件推进)</span></h2>
 <div id="timeline"></div>
 
+<h2>📦 产出工件</h2>
+<div id="artifacts"></div>
+
 <h2>✅ Tasks</h2>
 <div id="tasks"></div>
 
@@ -310,7 +322,24 @@ function render(DATA) {
   renderSources(DATA);
   renderTree(DATA);
   renderTimeline(DATA);
+  renderArtifacts(DATA);
   renderTasks(DATA);
+}
+
+// ── 0.35: artifact roster (zero-dep: list only; full text via live /api/artifact) ──
+function renderArtifacts(DATA) {
+  const el = document.getElementById('artifacts');
+  const kinds = (DATA.artifacts || []);
+  if (!kinds.length) {
+    el.innerHTML = '<p class="dim">暂无产出（produce outline/section/report/spec/design）</p>';
+    return;
+  }
+  const kindZh = { report: '报告', spec: '规格', design: '设计', outline: '大纲', section: '章节', note: '笔记' };
+  el.innerHTML = kinds.map(function (a) {
+    return '<div class="claim" style="cursor:default">' +
+      '<span class="chip">' + esc(kindZh[a.kind] || a.kind) + '</span> ' +
+      '<span class="text">' + esc(a.title) + '</span> <span class="dim">v' + a.version + '</span></div>';
+  }).join('');
 }
 
 // ── Claims: grouped by status, click to expand evidence ──
@@ -763,6 +792,20 @@ export function createDashboardServer(env: Env) {
       }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(detail));
+    } else if (url === "/api/artifact") {
+      // 0.35: full artifact text for the markdown renderer
+      const id = u.searchParams.get("id") || "";
+      const cur = env.db.metaGet("current_project");
+      const row = cur
+        ? env.db.get("SELECT id, kind, title, content, version FROM artifacts WHERE id=? AND project_id=(SELECT id FROM projects WHERE name=?)", [id, cur])
+        : null;
+      if (!row) {
+        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+        res.end(`artifact not found: ${id}`);
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(row));
     } else if (url === "/api/task" && req.method === "POST") {
       // R12: advance a task along its state machine from the dashboard
       let body = "";
