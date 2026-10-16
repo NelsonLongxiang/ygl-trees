@@ -215,19 +215,7 @@ importers:
         specifier: ^20.0.0
         version: 20.19.43
 
-  tmp/plugins-unit-1792162595638/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/plugins-unit-1792162884180/plugins:
-    dependencies:
-      ygl-plugin-demo:
-        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
-        version: link:../../../examples/plugin-demo
-
-  tmp/readme-verify-ws/plugins:
+  tmp/plugins-unit-1792163291160/plugins:
     dependencies:
       ygl-plugin-demo:
         specifier: link:D:/workspace/ygl-trees/examples/plugin-demo

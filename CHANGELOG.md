@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.62.0（2026-10-17）采集席 P1+P2 修复——fresh init schema 缺口 + 锁文件
+- **P1（严重）：全新工作区 research 链不可用**——`db init` 的 SCHEMA_SQL 缺 v9 列（sources.created / claims.updated / artifacts.updated / node_conditions.created），upgrade8to9 的条件 `v>0 && v<9` 在 fresh init（v=0）时不触发 → fresh 库无这些列 → `source add` 报 `no such column: Source.created`。修：SCHEMA_SQL 直接包含全部 v9 列（init 即 v9 完整 schema）
+- **P2：clean clone 无法 `--frozen-lockfile`**——锁文件重生成（清理 vendor/cordis 多余 plugin 条目 + .npmrc autoInstallPeers=false 与锁文件对齐）
+- **UNIQUE 59 口径**：来自迁移前 SQLite 侧的 `sqlite_master` UNIQUE 约束计数（含 PK 的隐式 UNIQUE），PG 侧因 PK/UNIQUE 实现方式不同导致数字不一致——非错误，但口径应统一为 PG 侧 `pg_constraint` 计数
+- 附带修复：claimAdd 创建时设 `updated = nowIso()`（v9 NOT NULL 约束，前一轮已修 `6927379`，此处确认）
+
 ## 0.61.0（2026-10-17）终态同步——0.57-0.60 变更同步到技能面 + README
 - **技能更新**：quickstart 补 kb rm / doctor --fix / webui --host / PG preflight；research 补 --relevance 整数校验；knowledge 补 kb rm
 - **README**：kb rm / --host / --fix 新命令

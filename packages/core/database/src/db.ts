@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS sources (
   relevance    INTEGER NOT NULL DEFAULT 0,   -- 0..5 screening score
   confidence   TEXT NOT NULL DEFAULT 'B',    -- A|B|C source trust grade
   tags         TEXT DEFAULT '',
+  created      TEXT NOT NULL DEFAULT '',
   retrieved_at TEXT NOT NULL,
   UNIQUE(project_id, url_hash)
 );
@@ -152,6 +153,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   content    TEXT NOT NULL DEFAULT '',
   version    INTEGER NOT NULL DEFAULT 1,
   created    TEXT NOT NULL,
+  updated    TEXT NOT NULL DEFAULT '',
   meta       TEXT NOT NULL DEFAULT ''          -- v8 JSON envelope: task {"status"}, design {"design_type"}
 );
 
@@ -260,7 +262,8 @@ CREATE TABLE IF NOT EXISTS node_conditions (
   required INTEGER NOT NULL DEFAULT 1,
   effect   TEXT NOT NULL DEFAULT 'gate',   -- gate | cost_mul | bonus
   weight   REAL NOT NULL DEFAULT 1,
-  note     TEXT DEFAULT ''
+  note     TEXT DEFAULT '',
+  created  TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_cond_node ON node_conditions(node_id);
 CREATE INDEX IF NOT EXISTS idx_cond_req  ON node_conditions(node_id, required);
