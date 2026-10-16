@@ -173,7 +173,7 @@ json_err "usage: unknown group"   2 -- $Y no-such-group-at-all
 flag_reject() { # flag_reject <desc> -- cmd...
   local desc="$1"; shift 2
   local out rc; out=$("$@" 2>&1); rc=$?
-  if [ "$rc" = "2" ] && echo "$out" | grep -q "needs a value\|must be one of"; then
+  if [ "$rc" = "2" ] && echo "$out" | grep -q "needs a value\|must be one of\|must be an integer"; then
     pass "flag reject: $desc"
   else
     fail "flag reject: $desc" "rc=$rc (want 2), msg: $(echo "$out" | head -1 | cut -c1-50)"
