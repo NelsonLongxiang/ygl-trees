@@ -9,7 +9,7 @@ description: >-
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
-version: 0.63.0
+version: 0.68.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -49,6 +49,13 @@ ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
 ```
 
 PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
+
+## 2c. DB 锁行为（0.68）
+
+- CLI 短命令：进程级锁（保护写窗口，退出自动释放）
+- webui serve：无锁（WAL 并发安全，与 CLI 共存）
+- 死锁自愈：下一进程探测持有者 PID，死则即时清（无需手动 rmdir）
+- YGL_TEST=1：全旁路（测试并行）
 
 ## 3. 健康检查与任务
 
