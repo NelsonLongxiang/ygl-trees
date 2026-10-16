@@ -31,8 +31,14 @@ export function parse(argv: string[]): Args {
   const flags: Record<string, string | boolean> = {};
   let rest = false;
   const takesValue = (name: string) => !BOOLEAN_FLAGS.has(name);
-  /** `-1` looks like a flag but is a negative number — accept it as a value. */
-  const isValue = (s: string) => !s.startsWith("-") || /^-\d+(\.\d+)?$/.test(s);
+  /** A token is a flag boundary only if this parser could itself consume it as
+   *  a flag: `--`, a long `--name`, or a single-letter `-x`. Any other token
+   *  starting with `-` (e.g. `- 双平台…`, `-1`, `-abc`) can never be parsed as
+   *  a flag, so a value-taking flag safely claims it — `--quote "- text"`
+   *  keeps its value instead of collapsing to `true` and leaking the text
+   *  into positionals. */
+  const looksLikeFlag = (s: string) => s === "--" || s.startsWith("--") || /^-[A-Za-z]$/.test(s);
+  const isValue = (s: string) => !looksLikeFlag(s);
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
