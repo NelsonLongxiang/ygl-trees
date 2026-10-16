@@ -8,7 +8,8 @@
 # Exits non-zero on any failed assertion. Uses tmp/pack-check/ (gitignored).
 set -uo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/.."
+export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows) && pwd)"
 WORK="$REPO/tmp/pack-check"
 FAILED=0
 fail() { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }

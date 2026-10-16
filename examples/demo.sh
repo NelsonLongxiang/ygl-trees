@@ -4,6 +4,7 @@
 # Uses its OWN scratch workspace (YGL_DEMO_HOME, default /tmp/ygl-demo) and
 # wipes it — never point it at a workspace you care about.
 set -euo pipefail
+export YGL_TEST=1  # demo: skip DB lock
 export YGL_HOME="${YGL_DEMO_HOME:-/tmp/ygl-demo}"
 # Exercise the SHIPPED entry: the tsdown bundle (single file) when built,
 # else the tsc tree (dev path). Both are the same code; the bundle is what

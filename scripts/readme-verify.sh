@@ -6,6 +6,7 @@
 # Usage: bash scripts/readme-verify.sh   (or: pnpm readme:verify)
 set -uo pipefail
 cd "$(dirname "$0")/.."
+export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows)
 export YGL_HOME="$(pwd)/tmp/readme-verify-ws"
 rm -rf "$YGL_HOME"
 Y="node dist/bundle/bin.cjs --no-color"

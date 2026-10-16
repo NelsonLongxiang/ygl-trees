@@ -13,6 +13,7 @@
 # every time. Usage: bash scripts/contract-audit.sh   (pnpm contract:audit)
 set -uo pipefail
 cd "$(dirname "$0")/.."
+export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows)
 
 WS="$(pwd)/tmp/contract-audit"
 rm -rf "$WS"
