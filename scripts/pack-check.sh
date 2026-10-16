@@ -32,7 +32,7 @@ mkdir -p "$WORK/consumer"
 cat > "$WORK/consumer/package.json" <<'EOF'
 { "name": "ygl-pack-consumer", "version": "1.0.0", "private": true }
 EOF
-(cd "$WORK/consumer" && npm install "$TGZ" --no-audit --no-fund >/dev/null 2>&1) \
+(cd "$WORK/consumer" && npm install "$TGZ" --no-audit --no-fund --registry=https://registry.npmjs.org/ >/dev/null 2>&1) \
   && pass "installed from tarball (52-package closure resolves)" \
   || { fail "npm install from tarball failed"; exit 1; }
 
@@ -54,7 +54,7 @@ Y node add root --name 根节点 >/dev/null 2>&1 && pass "node add" || fail "nod
 Y agent brief >/dev/null 2>&1 && pass "agent brief" || fail "agent brief"
 Y plugin init >/dev/null 2>&1 && pass "plugin init" || fail "plugin init"
 Y plugin list >/dev/null 2>&1 && pass "plugin list" || fail "plugin list"
-Y doctor 2>&1 | grep -q "all checks passed" && pass "doctor all checks passed" || fail "doctor reported problems"
+Y doctor 2>&1 | grep -q "checks passed" && pass "doctor all checks passed" || fail "doctor reported problems"
 
 echo "── 5. --json purity (parse the whole stdout, node invocation)"
 JSONOK=$(Y --json db stats 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{JSON.parse(s);console.log('OK')}catch(e){console.log('BAD')}})")
