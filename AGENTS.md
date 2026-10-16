@@ -11,7 +11,8 @@ vendor/           DSH fork 框架全家桶（用户裁定框架级一致性，pn
   cordis/           @deepseek-ai/cordis 4.0.5-α（修复 rc.11 时序）
   cosmokit/         @deepseek-ai/cosmokit 1.8.6-α
   schemastery/      @deepseek-ai/schemastery 3.18.5-α
-  loader/ include/ group/ hmr/ timer/ logger-console/（七个 cordis-plugin 可用弹药）
+  timer/            @deepseek-ai/cordis-plugin-timer 1.1.7-α **已启用**（base bundle 第 5 插件；ctx.timer 生命周期托管定时器，webui serve 心跳在用）
+  loader/ include/ group/ hmr/ logger-console/（六件可用弹药，等需求接入）
 
 packages/         领域模块（库代码，可被 apps 组合；pnpm workspace 成员，各带 package.json 依赖图）
   core/             基础层（db/orm/text/fmt/types/entities/container）
@@ -39,13 +40,15 @@ tmp/              临时脚本与数据（gitignored）
 ## 命令
 
 ```bash
-pnpm install              # pnpm workspace（vendor/* + apps/*）
-pnpm build                # tsc -> dist/
+pnpm install              # pnpm workspace（vendor/* + packages/*/* + apps/*）
+pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单文件发布产物）
 pnpm test:unit            # vitest 单测
-pnpm test                 # 三段制：unit + build + demo
+pnpm test                 # 三段制：unit + build + demo（demo 跑 bundle 发布产物）
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
+
+**入口**：发布产物 = `dist/bundle/bin.cjs`（tsdown 单文件，bin 字段指向它）；开发路径 = `dist/apps/cli/src/bin.js`（tsc 树）。demo/bench 优先测发布产物。
 
 **测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 有 15 组断言。新功能必须有 demo 断言或单测。
 

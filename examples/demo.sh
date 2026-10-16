@@ -5,7 +5,15 @@
 # wipes it — never point it at a workspace you care about.
 set -euo pipefail
 export YGL_HOME="${YGL_DEMO_HOME:-/tmp/ygl-demo}"
-Y="node $(cd "$(dirname "$0")/.." && pwd)/dist/apps/cli/src/bin.js --no-color"
+# Exercise the SHIPPED entry: the tsdown bundle (single file) when built,
+# else the tsc tree (dev path). Both are the same code; the bundle is what
+# `pnpm build` + the published `bin` field deliver.
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$REPO/dist/bundle/bin.cjs" ]; then
+  Y="node $REPO/dist/bundle/bin.cjs --no-color"
+else
+  Y="node $REPO/dist/apps/cli/src/bin.js --no-color"
+fi
 rm -rf "$YGL_HOME"
 
 echo "── 1. workspace"

@@ -1,16 +1,17 @@
 {
   "name": "ygl-trees",
-  "version": "0.37.2",
+  "version": "0.38.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
   "bin": {
-    "ygl-trees": "dist/apps/cli/src/bin.js"
+    "ygl-trees": "dist/bundle/bin.cjs"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:bundle": "pnpm build && npx tsdown apps/cli/src/bin.ts --format cjs --out-dir dist/bundle --platform node --target node20 --external better-sqlite3 --external node-sqlite3-wasm --external typeorm --external reflect-metadata --external pg --external @deepseek-ai/dsh-atomic-write",
-    "start": "node dist/apps/cli/src/bin.js",
+    "build": "tsc -p tsconfig.json && pnpm build:bundle:only",
+    "build:bundle:only": "tsdown apps/cli/src/bin.ts --format cjs --out-dir dist/bundle --platform node --target node20 --external better-sqlite3 --external node-sqlite3-wasm --external typeorm --external reflect-metadata --external pg --external @deepseek-ai/dsh-atomic-write",
+    "build:bundle": "pnpm build",
+    "start": "node dist/bundle/bin.cjs",
     "demo": "bash examples/demo.sh",
     "test": "pnpm test:unit && pnpm build && bash examples/demo.sh",
     "prepublishOnly": "pnpm test",
@@ -36,7 +37,8 @@
     "better-sqlite3": "^13.0.3",
     "node-sqlite3-wasm": "^0.8.60",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^1.1.2"
+    "typeorm": "^1.1.2",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:~"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

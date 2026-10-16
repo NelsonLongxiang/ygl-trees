@@ -12,7 +12,9 @@ const { writeArtifact, failures } = require("./support/helpers");
 
 const ROOT = path.resolve(__dirname, "..");
 const QUICK = process.argv.includes("--quick");
-const BIN = path.join(ROOT, "dist/apps/cli/src/bin.js");
+// Measure the SHIPPED entry (tsdown bundle) when built, else the tsc tree.
+const BUNDLE = path.join(ROOT, "dist/bundle/bin.cjs");
+const BIN = require("node:fs").existsSync(BUNDLE) ? BUNDLE : path.join(ROOT, "dist/apps/cli/src/bin.js");
 
 (async () => {
   console.log(`ygl-trees benchmarks · node ${process.version} · ${process.platform}${QUICK ? " · QUICK" : ""}`);

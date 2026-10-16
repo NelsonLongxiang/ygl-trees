@@ -34,19 +34,23 @@ pnpm bench             # 先 build 再跑全部，结果落 tmp/bench-results.js
 node benchmarks/bench.js --quick   # 小规模（预留参数位，当前跑全量）
 ```
 
-## 基线（fork 4.0.5-α，2026-10-17）
+## 基线（fork 4.0.5-α + bundle 发布产物，2026-10-17）
 
 ```
-startup           p50 523ms   p95 568ms
-claim-write       25.8ms/op   (200 txns)
-claim-dedupe      372µs/op    (200 dup-hits)
-kb-import-batch   890 rows/s  (500 rows/1tx)
-kb-search         p50 30.5ms  p95 174ms  (corpus=500)
-node-index        591ms median-of-3 (300n/596e)
-node-search       p50 2.7ms   p95 5.7ms
+startup           p50 560ms   (受控交替测量，bundle vs 树 607ms → ~8% 提速)
+claim-write       ~16-25ms/op (200 txns，跨次波动)
+claim-dedupe      ~380-615µs/op (200 dup-hits)
+kb-import-batch   ~1400-3000 rows/s (500 rows/1tx)
+kb-search         p50 ~23-31ms (corpus=500)
+node-index        ~560-630ms median-of-3 (300n/596e)
+node-search       p50 ~3-5ms
 ```
+
+**startup 测量纪律**：进程 spawn 对系统负载敏感——单次 `pnpm bench` 的 p95 可能因并发进程飙到 3s+。
+判定 bundle/树差异必须**交替测量同一负载窗口**（各自 8 轮取 p50），不要跨时间窗对比单次运行。
 
 ## 已知限制
 
 - `--quick` 尚未接线到各子模块（预留参数位，当前跑全量）
 - 无内存峰值端点——加内存维度时在 helpers 加 `recordPeakMemory`
+- startup 无独立进程隔离（同进程 spawn），高负载下方差大（见上）

@@ -2,5 +2,5 @@
   "$schema": "./docs/bundle.schema.md",
   "name": "ygl-trees",
   "description": "Declarative composition (spec R14 L2): which plugins the CLI composes, in load order. Module resolution stays in code (main.ts PLUGINS map); profiles deferred until cli/serve actually diverge.",
-  "plugins": ["database", "research", "techtree", "web-app"]
+  "plugins": ["database", "research", "techtree", "web-app", "timer"]
 }

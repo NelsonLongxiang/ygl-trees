@@ -11,6 +11,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:vendor/cordis
+      '@deepseek-ai/cordis-plugin-timer':
+        specifier: workspace:~
+        version: link:vendor/timer
       '@deepseek-ai/cosmokit':
         specifier: workspace:~
         version: link:vendor/cosmokit
@@ -58,6 +61,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-timer':
+        specifier: workspace:~
+        version: link:../../vendor/timer
       '@deepseek-ai/schemastery':
         specifier: workspace:~
         version: link:../../vendor/schemastery
@@ -206,7 +212,13 @@ importers:
         specifier: ^20.0.0
         version: 20.19.43
 
-  tmp/plugins-unit-1792133666987/plugins: {}
+  tmp/plugins-unit-1792134654711/plugins: {}
+
+  tmp/plugins-unit-1792134686985/plugins: {}
+
+  tmp/plugins-unit-1792134910747/plugins: {}
+
+  tmp/plugins-unit-1792135113057/plugins: {}
 
   vendor/cordis:
     dependencies:

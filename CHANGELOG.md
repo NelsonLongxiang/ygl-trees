@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.0（2026-10-17）技能面同步 + bundle 默认化 + vendor 弹药启用
+- **quickstart 技能全面重写**（v0.14 → v0.38.0）：覆盖新增命令面——doctor（9 项健康检查）、task 状态机、rel 关联织物（8 类引用）、plugin 用户插件、webui serve/export、benchmarks、build:bundle；触发词扩到 doctor/task/rel/plugin/webui/bench/bundle；入口路径改正（bin/ → dist）。`agent match` 三查询（插件/健康检查/webui）全部命中
+- **bundle 默认化**：`pnpm build` = tsc 树 + tsdown bundle（一条命令两个产物，tsdown 仅 58ms）；根 package.json `bin` 指向 `dist/bundle/bin.cjs`（单文件发布产物）；`prepublishOnly` 保留 test 门禁
+- **发布产物实测更快**：受控对比 bundle p50 560ms vs tsc 树 607ms（**~8% 启动提速**，8 轮交替测量）
+- **demo + benchmarks 改测发布产物**：demo.sh 与 bench.js 优先用 `dist/bundle/bin.cjs`（缺失回退树）——回归与基准对准用户真实入口
+- **vendor 弹药首启**：`@deepseek-ai/cordis-plugin-timer` 接入 base bundle（第五插件）——webui serve 的 60s 心跳（行数统计）走 `ctx.timer.setInterval`，生命周期托管（ctx dispose 自动清理，无需手工 clearInterval）；实测组合后 `ctx.timer` 就位（4 tick/150ms）
+- 单测断言更新（bundle 4 → 5 插件）；vendor/README 弹药状态更新（1 用 6 待）
+
 ## 0.37.2（2026-10-17）benchmarks 目录规范对齐 DSH（用户指出"未对齐开发标准与目录规范"）
 - **per-user-path 重组**：bench.js 平铺单文件拆成四条用户路径目录——`startup/`（CLI 进程 spawn）、`research-write/`（事务化写入+幂等）、`knowledge-search/`（kb 批导+FTS5 bm25）、`techtree-index/`（闭包+拓扑+节点检索）；不镜像包树（DSH 典范）
 - **benchmarks/AGENTS.md**：基准纪律——合成固定输入/进程级采样/预算不可环境覆盖/跑生产入口/support 移入需两处复用

@@ -835,7 +835,9 @@ export function createDashboardServer(env: Env) {
 }
 
 /** Live dashboard: blocks until SIGINT/SIGTERM, then resolves so the CLI can
- *  close the db in its finally block. */
+ *  close the db in its finally block. Server-side heartbeat (doctor-lite
+ *  check every 60s) runs on ctx.timer (vendored cordis-plugin-timer) —
+ *  lifecycle-managed: dispose cleans it automatically. */
 function serve(env: Env, args: any): Promise<number> {
   const { ctx } = env;
   return new Promise<number>((resolve) => {
@@ -857,6 +859,21 @@ function serve(env: Env, args: any): Promise<number> {
       const p = typeof addr === "object" && addr ? addr.port : port;
       ok(ctx, `dashboard live at http://127.0.0.1:${p}/  (Ctrl+C to stop)`);
       out(ctx, paint(C.dim, `  data endpoint: http://127.0.0.1:${p}/api/data`, ctx.color));
+
+      // vendored cordis-plugin-timer: lifecycle-managed heartbeat
+      // (auto-cleans on ctx dispose — no manual clearInterval needed)
+      const cordisCtx = (env as any).cordis;
+      if (cordisCtx?.timer) {
+        cordisCtx.timer.setInterval(() => {
+          try {
+            const stats = env.store.stats();
+            const total = Object.values(stats).reduce((a: number, b: any) => a + Number(b), 0);
+            if (ctx.quiet !== true) {
+              out(ctx, paint(C.dim, `  [heartbeat] ${new Date().toISOString().slice(11, 19)} · ${total} rows`, ctx.color));
+            }
+          } catch { /* heartbeat best-effort */ }
+        }, 60_000);
+      }
     });
     const shutdown = () => {
       server.close(() => resolve(0));

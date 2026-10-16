@@ -12,7 +12,7 @@
 | `include/` | `@deepseek-ai/cordis-plugin-include` | 1.0.10-alpha.2 | 配置 include（bundle 分层叠加） |
 | `group/` | `@deepseek-ai/cordis-plugin-group` | 1.0.5-alpha.2 | 插件嵌套分组 |
 | `hmr/` | `@deepseek-ai/cordis-plugin-hmr` | 1.0.20-alpha.2 | 插件热替换 |
-| `timer/` | `@deepseek-ai/cordis-plugin-timer` | 1.1.7-alpha.2 | 生命周期托管定时器 |
+| `timer/` | `@deepseek-ai/cordis-plugin-timer` | 1.1.7-alpha.2 | 生命周期托管定时器（**已启用**：base bundle 第 5 插件，webui serve 心跳） |
 | `logger-console/` | `@deepseek-ai/cordis-plugin-logger-console` | 1.0.5-alpha.2 | 控制台 logger |
 
 **为什么是 fork**：上游 cordiverse/cordis 停在 rc.11（时序 bug），DSH fork 4.0.5 修复（fork 探针：单 yield 后全部服务就绪 ✓）。
@@ -26,5 +26,5 @@
 
 ## 已知/后续
 
-- 七个 cordis-plugin 尚未在代码中 import——可用弹药，等真实需求接入
-- **bundle 化**：tsdown 脚手架就绪（build:bundle），DOMAIN_ROUTES 动态 require 需改静态 barrel 后 bundle 才完整可用
+- **弹药启用状态**：`timer` 已启用（base bundle 第 5 插件，ctx.timer 生命周期托管定时器，webui serve 心跳在用）；其余六件（loader/include/group/hmr/logger-console）尚未 import——等真实需求接入
+- **bundle 化**：`pnpm build` = tsc 树 + tsdown 单文件（dist/bundle/bin.cjs，根 bin 字段指向它）；受控对比 bundle p50 560ms vs 树 607ms（~8% 提速）

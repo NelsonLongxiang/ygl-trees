@@ -1,13 +1,16 @@
 ---
 name: ygl-trees-quickstart
 description: >-
-  ygl-trees 工作台快速上手与全局契约：初始化工作区（db init）、建研究项目（project new）、
-  agent brief 定位下一步、--json 纯净纪律与退出码契约、备份导出（db export）、PG 镜像/迁移
-  （db sync pg / migrate pg）、调度（job add/tick）与临时文件 tmp/ 规范。
+  ygl-trees 工作台快速上手与全局契约：初始化（db init）、研究项目（project new）、
+  agent brief 定位下一步、--json 纯净纪律与退出码契约、健康检查（doctor）、
+  任务清单（task）、关联织物（rel）、用户插件（plugin install）、WebUI（webui serve）、
+  备份导出（db export）、PG 镜像/迁移、调度（job add/tick）、性能基准（pnpm bench）、
+  bundle 构建（build:bundle）、临时文件 tmp/ 规范。
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
-  PostgreSQL、sync、migrate、镜像、job、tick、定时。
-version: 0.14.0
-tags: ygl-trees,quickstart,backup,postgres,schedule
+  PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
+  关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
+version: 0.38.0
+tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
 # ygl-trees 快速上手与全局契约
@@ -17,47 +20,94 @@ tags: ygl-trees,quickstart,backup,postgres,schedule
 ## 1. 冷启动三步
 
 ```bash
-node bin/ygl-trees.js db init                    # 建工作区（$YGL_HOME，默认 ~/.ygl-trees）
-node bin/ygl-trees.js project new <name> -q "<研究问题>"
-node bin/ygl-trees.js agent brief                # 我在哪、有什么、下一步做什么（从这里开始）
+node dist/apps/cli/src/bin.js db init           # 建工作区（$YGL_HOME，默认 ~/.ygl-trees）
+node dist/apps/cli/src/bin.js project new <name> -q "<研究问题>"
+node dist/apps/cli/src/bin.js agent brief       # 我在哪、有什么、下一步做什么（从这里开始）
 ```
 
 ## 2. Agent API 契约（冻结，勿靠猜）
 
-- **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误/404、`2` 用法错误——按 rc 分支是安全的
-- **--json 纯净**：写命令 stdout = 单个 JSON 对象（重复带 `duplicate: true`）；读命令 = 单个数组/对象；绝不混人类文本，可直接 `JSON.parse` 全量
-- **写入幂等**：claim/evidence/query/kb/job 等按内容 hash 判重，Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题后缀）
+- **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误/404、`2` 用法错误
+- **--json 纯净**：写 = 单个 JSON 对象（重复带 `duplicate: true`）；读 = 数组/对象
+- **写入幂等**：claim/evidence/query/kb/job 按内容 hash 判重；`--force` 显式保留重复
 - 输出字段名是冻结契约，snake_case
 
-## 3. 备份 / PostgreSQL / 调度
+## 3. 健康检查与任务
 
 ```bash
-ygl-trees db export <file.sql>          # 全部数据表 + 行数摘要；可重放恢复（先删库再逐行执行）
-ygl-trees db sync pg <url>              # 可刷新 PK-only 镜像（分析用）；url 或环境变量 YGL_PG_URL
-ygl-trees db migrate pg <url> [--fresh] # 一次性完整保真迁移（FK/UNIQUE 齐全，目标库独立持有）
-ygl-trees db dups                       # 列出同内容多行
-ygl-trees job add <title> -- "<cmd>" --every 60   # cron 每分钟跑 job tick（幂等+并发锁）
+ygl-trees doctor                     # 9 项健康检查（schema/索引/FTS/重复/孤儿/config/锁/eval信封/插件）
+ygl-trees task add "<标题>"           # 建任务（todo 起步）
+ygl-trees task list                  # 按状态分组
+ygl-trees task done <id>             # 勾销（全程留痕）
+```
+
+## 4. 关联织物（把研究资产挂到树节点）
+
+```bash
+ygl-trees rel add node:<tree>/<key> claim:<id> --rel decided-by
+ygl-trees rel add node:<key> kb:<id> --rel evidenced-by
+ygl-trees rel add node:<key> artifact:<id> --rel tracked-by
+ygl-trees rel list --src node:<key>  # 双向过滤 + 对端显示名
+```
+
+八类引用：`node claim evidence source query kb artifact skill`。
+详细方法论见 `ygl-trees-relating` 技能。
+
+## 5. 用户插件（业务域扩展位）
+
+```bash
+ygl-trees plugin init                          # 建 $YGL_HOME/plugins profile
+ygl-trees plugin install <npm包|git地址|本地目录> # 本地目录自动 link:
+ygl-trees plugin list                          # 版本 / spec / 可解析态
+ygl-trees plugin remove <name>
+```
+
+插件契约：`export apply(ctx, config)` + 可选 `export commands = { <组名>: { run } }`
+贡献 CLI 命令组。编写指南：`docs/plugin-authoring.md`。示例：`examples/plugin-demo/`。
+
+## 6. WebUI
+
+```bash
+ygl-trees webui serve --port 8642   # React 客户端（xyflow 树 + 时间轴 + 产出渲染）
+ygl-trees webui export --out d.html # 零依赖单文件导出（离线可开）
+```
+
+构建 React 客户端：`pnpm --filter @ygl/web build`。设计系统：仓库根 `DESIGN.md`。
+
+## 7. 备份 / PostgreSQL / 调度
+
+```bash
+ygl-trees db export <file.sql>          # 全部数据表 + 行数摘要
+ygl-trees db sync pg <url>              # 可刷新 PK-only 镜像
+ygl-trees db migrate pg <url> [--fresh] # 一次性完整保真迁移
+ygl-trees job add <title> -- "<cmd>" --every 60   # cron 每分钟跑 job tick
 ```
 
 禁止双后端同写：ygl-trees 永远只写 SQLite，PG 是单向出口。
 
-## 4. 临时文件铁律
-
-一切临时脚本/数据放 `<repo>/tmp/`（已 gitignore），**禁止**写系统临时目录（Git Bash 的 /tmp）。
-
-## 4b. 用户配置（config 表，schema v6）
+## 8. 性能基准
 
 ```bash
-ygl-trees config list                  # 全部键：当前值 + 默认 + 说明
-ygl-trees config set eval.pass_threshold 0.8   # 写入即校验（类型/范围）并留痕
-ygl-trees config reset eval.pass_threshold     # 回落默认
+pnpm bench               # 7 席（startup/写入/检索/索引），结果 tmp/bench-results.json
+pnpm build:bundle        # tsdown 单文件 bundle（~323KB，10% 启动提速）
 ```
 
-键（均真实接线）：`eval.pass_threshold/fail_threshold/offline`、`fetch.timeout_ms/user_agent`、
-`search.limit`、`default_confidence`、`job.stale_minutes`。环境变量 > config > 默认。
+## 9. 临时文件铁律
 
-## 5. 常见坑
+一切临时脚本/数据放 `<repo>/tmp/`（已 gitignore），**禁止**写系统临时目录。
 
-- 数据库打不开报 "database is locked"：可能残留 `<db>.lock` 目录（外部进程崩了），确认无活动进程后 rmdir
-- `job --force` 必须放在 `--` 分隔符**之前**（之后的都算命令内容）
-- 测试工作区：`YGL_HOME=<dir>` 指到临时位置，别用真实库调试
+## 10. 用户配置（config 表）
+
+```bash
+ygl-trees config list                  # 全部键
+ygl-trees config set eval.pass_threshold 0.8   # 写入即校验 + 留痕
+ygl-trees config reset eval.pass_threshold
+```
+
+## 11. 常见坑
+
+- 数据库打不开报 "database is locked"：可能残留 `<db>.lock` 目录
+- `job --force` 必须在 `--` 之前（之后都算命令内容）
+- 测试工作区：`YGL_HOME=<dir>` 指到临时位置
+- Windows 下 `.cmd` shim 需 shell 解析（plugin install 已处理）
+- CLI 入口是 `dist/apps/cli/src/bin.js`（自执行，rc 契约在此）；`dist/bundle/bin.cjs` 是 bundle 版（更快）

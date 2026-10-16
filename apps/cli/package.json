@@ -16,6 +16,7 @@
     "@ygl/research-pipeline": "workspace:~",
     "@ygl/techtree-model": "workspace:~",
     "@ygl/web-app": "workspace:~",
-    "@deepseek-ai/cordis": "workspace:~"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:~"
   }
 }
