@@ -52,7 +52,7 @@ pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 do
 
 **入口**：发布产物 = `dist/bundle/bin.cjs`（tsdown 单文件，bin 字段指向它）；开发路径 = `dist/apps/cli/src/bin.js`（tsc 树）。demo/bench 优先测发布产物。
 
-**测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 有 15 组断言。新功能必须有 demo 断言或单测。
+**测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 现有 61 条断言（12+ 组）。新功能必须有 demo 断言或单测；改命令面后 `pnpm readme:verify` 也要绿。
 
 ## 架构（Cordis 框架）
 
@@ -95,9 +95,10 @@ docs/plan.md           里程碑 + 逐版本执行记录（证据链）
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
 docs/layout.md         目录层级规划
-docs/webui-design.md   WebUI 方案（export + serve 已实施）
+docs/webui-design.md   WebUI 方案（React 客户端 + 内嵌 dashboard + SSE 实时通道）
 docs/release.md        发布流程（pack:check 门禁 / pnpm publish 纪律 / Windows shim 陷阱）
-docs/bun-compat.md     Bun 目标运行时兼容方案（Windows 受阻，含证据与迁移清单）
+docs/bun-compat.md     Bun 目标运行时兼容方案（Windows 受阻，含最小复现与迁移清单）
+docs/plugin-authoring.md  用户插件编写指南（契约 / profile / config-enable / 故障排查）
 CHANGELOG.md           逐版本聚合
 ```
 
