@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.0（2026-10-17）真实规模树 + 方法论 skills（spec R13 收官）
+- **dogfood #4——evolution 树**：ygl-trees 自身演进建成 **32 节点 / 7 层 / 39 边**真实规模树——六大生长干（架构/研究管线/知识/模型层/能力/Web 客户端），29 已解锁里程碑 + **3 个锁定未来节点带真实门**（npm-publish：registry_pick choice= npmjs + green_closed 布尔；bun-runtime：上游就绪度 score min=2；real-users：readiness score min=1）；R9 关联织物跨四类实体挂接（claim decided-by / kb evidenced-by / task tracked-by / design decided-by）；doctor 8/8
+- **三个方法论 skills**（R13.2）：`ygl-trees-tree-building`（领域分解四步/反模式立靶/tier 语义/自检清单）、`ygl-trees-relating`（rel 词汇表/决策树/消费面）、`ygl-trees-design-capture`（ui-ux=DESIGN.md 格式/arch+decision=ADR 三段/挂接纪律）——junction + import，**agent match 三查询各自 top-1 命中**（R13.4）
+- **R13.4 验收**：React 客户端（pan/zoom/MiniMap）承载 32 节点树，npm-publish 详情面板 2 条件 + 2 关联 + can.ok=false（锁定门可见可读）
+- R13 全条目闭环：pan/zoom（0.32.1 xyflow）、真实规模树 + 方法论（本版）
+
 ## 0.32.2（2026-10-17）web-app Cordis 插件（DSH 模式落地）
 - **新包 `packages/web/app`（@ygl/web-app）**：运行时胶水插件（模式取自 DSH packages/bundle/web-app + adding-a-package cookbook）——`ctx.webApp` 服务（available/open）+ 纯函数 `resolveDistRoot()/openStatic()`（短命 CLI 不赌异步插件时序，0.19 教训）；dist 路径=workspace 知识非用户配置；SPA 回落 + 路径遍历防护
 - **webui serve 分流**：构建产物存在 → React 客户端挂 `/`（xyflow pan/zoom 树视图），内嵌零依赖 dashboard 移驻 `/classic`；未构建检出 → 内嵌保持 `/`（离线单文件契约不变）；`/api/*` 永不拦截

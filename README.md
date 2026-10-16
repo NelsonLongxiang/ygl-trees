@@ -235,6 +235,9 @@ ygl-trees webui serve  # 活数据仪表盘（http://127.0.0.1:8642/，Ctrl+C �
 | `ygl-trees-knowledge` | 知识复用闭环（kb/skill/promote/agent match） |
 | `ygl-trees-techtree` | 科技树建模（rel×mode、必检/可选、索引、can/ready/path） |
 | `ygl-trees-eval-gates` | 决策模型评估门（三题型：boolean/choice/score、三态灰带、混批、离线安全） |
+| `ygl-trees-tree-building` | 树构建方法论（领域分解四步、tier 语义、反模式立靶、≥30 节点自检清单） |
+| `ygl-trees-relating` | 关联织物方法论（rel 词汇表、何时挂什么、防平行流水线反模式） |
+| `ygl-trees-design-capture` | design 捕获法（ui-ux=DESIGN.md 格式、arch/decision=ADR 三段、挂接纪律） |
 
 `.agents/skills/` 下为指向 `skills/` 的目录联接（Windows junction，不入库）。克隆到新机器后一行重建：
 
