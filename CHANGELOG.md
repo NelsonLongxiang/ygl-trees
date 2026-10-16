@@ -7,6 +7,7 @@
 - **契约措辞落文档**：spec「兼容性承诺」明确 `--json` 成功与失败同样可整体 parse、`error` 非空字符串、snake_case 硬约束、人类文本只在非 json 模式；AGENTS 契约表增两行
 - **门禁扩展**：`contract:audit` 增 **contract 5: JSON 通道**——31 条读命令（含角落：parents/children/ancestors/descendants/path/ready/export/validate/search）断言 stdout 可**整体** parse + 无 camelCase；6 条错误路径断言 `{error}` 形状 + rc（1 运行 / 2 用法）。门禁 37 → **73 项**，四段制全绿
 - **工具化**：内联 node 校验器改为独立 `scripts/json-check.mjs`（消除 bash 内嵌引号地狱，单测与门禁共用同一判定）
+- **根治推送摩擦（0.43 记录的交互）**：2 分钟钩子期间与远端零流量 → SSH 会话被远端回收 → 传输 `rc=141`。已配置 `core.sshCommand` 带 `ServerAliveInterval=20`（空闲心跳），并**用带钩子的真实推送验证**不再需要旁路；docs/release.md 记根治方案，旁路降为兜底
 
 ## 0.43.0（2026-10-17）写路径契约体检 + 常驻审计门禁（同类违规不能再悄悄回归）
 - **背景**：0.42 发现 `node link` 幂等崩溃，是"写技能时顺手实测"撞出来的——说明冻结契约需要**机械化体检**而非靠人记得。先做侦察 sweep（16 条写命令 × 2 + 11 条坏引用），确认缺陷边界
