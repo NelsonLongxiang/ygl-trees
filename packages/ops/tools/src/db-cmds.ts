@@ -4,6 +4,56 @@ import { ok, bad, out, head, table, paint, C, show } from "../../../core/text/sr
 import { dbPath } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
 
+
+/**
+ * Cold-start: import the built-in skills that ship with this package, so a
+ * fresh workspace immediately has capability discovery (agent match) working.
+ * Resolves skills/ relative to the CLI installation (repo root or npm package).
+ */
+async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<number> {
+  const fs2 = require("node:fs");
+  const path2 = require("node:path");
+  // probe upward from this module to find skills/ (same approach as repoRoot)
+  let skillsDir: string | null = null;
+  let dir: string = __dirname;
+  for (let i = 0; i < 6; i++, dir = path2.dirname(dir)) {
+    const candidate = path2.join(dir, "skills");
+    if (fs2.existsSync(candidate)) {
+      const entries = fs2.readdirSync(candidate).filter((e: string) =>
+        fs2.existsSync(path2.join(candidate, e, "SKILL.md"))
+      );
+      if (entries.length > 0) {
+        skillsDir = candidate;
+        break;
+      }
+    }
+  }
+  if (!skillsDir) return 0;
+  const { getOrm } = require("../../../core/database/src/orm");
+  const writes = require("../../../research/pipeline/src/writes");
+  const { parseFrontmatter } = require("../../../core/text/src/text");
+  const ds = await getOrm(dbFile);
+  let count = 0;
+  for (const entry of fs2.readdirSync(skillsDir)) {
+    const skillFile = path2.join(skillsDir, entry, "SKILL.md");
+    if (!fs2.existsSync(skillFile)) continue;
+    try {
+      const raw = fs2.readFileSync(skillFile, "utf8");
+      const { meta, body } = parseFrontmatter(raw);
+      await writes.skillUpsert(ds, {
+        name: meta.name || entry,
+        description: meta.description || "",
+        body,
+        tags: (meta.tags || "").toString(),
+        version: meta.version || "0.1.0",
+        origin: `builtin:${entry}`,
+      });
+      count++;
+    } catch { /* per-skill isolation: one bad skill must not block the rest */ }
+  }
+  return count;
+}
+
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db, home } = env;
   const file = args.flags.db ? String(args.flags.db) : dbPath(home);
@@ -17,6 +67,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       d.close();
       ok(ctx, `workspace ready: ${home}`);
       ok(ctx, `database:        ${file}`);
+      // Cold-start fix (0.48): a fresh workspace has ZERO skills, so agent match
+      // returns nothing and a cold user thinks the tool has no capabilities.
+      // Auto-import the built-in skills that ship with this package.
+      autoImportBuiltinSkills(env, file).then((n) => {
+        if (n > 0) ok(ctx, `built-in skills:  ${n} imported (agent match ready)`);
+      });
       return 0;
     }
     case "path":
