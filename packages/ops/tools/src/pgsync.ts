@@ -304,6 +304,18 @@ export async function migrateToPg(db: DB, url: string, fresh = false): Promise<M
   } catch {
     throw new Error("pg driver not installed — run: pnpm add pg (optional dependency)");
   }
+
+  // ⑤ cold-user report: a REAL value in an INTEGER column passes SQLite's
+  // weak typing but explodes in PG with no table/column/row context. Pre-flight
+  // type check: scan INTEGER columns for non-integer values, name the offender.
+  const typeErrors = preflightTypeCheck(db);
+  if (typeErrors.length) {
+    const lines = typeErrors.slice(0, 5).map((e) => `  ${e.table}.${e.column} rowid=${e.rowid}: value "${e.value}" is not a valid INTEGER`);
+    throw new Error(
+      `pre-flight type check failed (${typeErrors.length} issue(s)) — fix these before migrating:\n${lines.join("\n")}${typeErrors.length > 5 ? `\n  ...and ${typeErrors.length - 5} more` : ""}\n  hint: ygl-trees db sql "UPDATE <table> SET <column>=<int> WHERE rowid=<rowid>"`
+    );
+  }
+
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
@@ -395,4 +407,28 @@ export async function migrateToPg(db: DB, url: string, fresh = false): Promise<M
   } finally {
     await client.end();
   }
+}
+
+/** Pre-flight: scan INTEGER columns for non-integer values (SQLite weak
+ *  typing allows REAL into INTEGER; PG rejects at migration time with no
+ *  context). Returns actionable errors with table.column+rowid. */
+function preflightTypeCheck(db: DB): Array<{ table: string; column: string; rowid: number; value: string }> {
+  const issues: Array<{ table: string; column: string; rowid: number; value: string }> = [];
+  const tables = db.all(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '%_fts%' AND name NOT LIKE '%_config%' AND name NOT LIKE '%_content%' AND name NOT LIKE '%_data%' AND name NOT LIKE '%_docsize%' AND name NOT LIKE '%_idx%' AND name != 'meta'"
+  ) as any[];
+  for (const t of tables) {
+    const cols = db.all(`PRAGMA table_info(${t.name})`) as any[];
+    for (const c of cols) {
+      if (c.type !== "INTEGER") continue;
+      // SQLite typeof() returns 'integer', 'real', 'text', 'blob', 'null'
+      const bad = db.all(
+        `SELECT rowid, ${c.name} AS v FROM ${t.name} WHERE typeof(${c.name}) NOT IN ('integer','null') LIMIT 5`
+      ) as any[];
+      for (const row of bad) {
+        issues.push({ table: t.name, column: c.name, rowid: row.rowid, value: String(row.v) });
+      }
+    }
+  }
+  return issues;
 }

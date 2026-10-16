@@ -103,6 +103,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         "updated",
       ]);
       return 0;
+    case "rm":
+    case "remove": {
+      // ③ cold-user report: `skill rm` exists but `kb rm` doesn't — asymmetric
+      // command surface forces users to raw `db sql DELETE` for cleanup.
+      const id = rest[0];
+      if (!id) {
+        bad(ctx, "usage: kb rm <id>");
+        return 2;
+      }
+      const note = store.kbGet(id);
+      if (!note) {
+        bad(ctx, `note not found: ${id}`);
+        return 1;
+      }
+      store.db.run("DELETE FROM kb_fts WHERE id=?", [id]);
+      store.db.run("DELETE FROM kb_notes WHERE id=?", [id]);
+      ok(ctx, `note removed: ${id}  ${String((note as any).title || "").slice(0, 40)}`);
+      return 0;
+    }
     case "show": {
       const n = store.kbGet(rest[0]);
       if (!n) {

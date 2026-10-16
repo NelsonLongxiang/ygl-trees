@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.60.0（2026-10-17）用户六条反馈全修——lockfile 卫生 + kb rm + webui --host + PG 预检 + doctor --fix
+- **① lockfile 卫生**：`.npmrc` 创建（`auto-install-peers=false`，消除 pnpm 9 默认值差异导致的 lockfile 漂移）；lockfile 清理 tmp 绝对路径污染（-381 行）
+- **② relevance 值域**：已修（0.59），确认生效
+- **③ `kb rm <id>`**：命令面补齐（skill rm 有而 kb rm 无——不对称迫使裸 db sql DELETE）；not-found 干净 rc=1
+- **④ `webui serve --host`**：默认 127.0.0.1（安全），`--host 0.0.0.0` 开放 LAN/WSL 访问（不再需要外部转发器）
+- **⑤ PG migrate 类型预检**：迁移前逐表扫描 INTEGER 列的 typeof()，发现非整数值即报错并**点名 `table.column rowid=N: value "X"`**——排障从十分钟缩到十秒
+- **⑥ doctor 语义修正 + `--fix`**：warning 态下不再同时输出"all checks passed"（改为 `checks passed (N warning)`）；`--fix` 一键安全修复（index dirty flag 清理 + stale lock 移除）
+
 ## 0.59.0（2026-10-17）relevance 值域校验——PG 迁移暴露的跨库类型陷阱（用户 R284 反馈）
 - **来源**：用户在 PG 迁移（L1.5 db migrate pg）时发现 `sources.relevance` 的 REAL 值 0.95 在 SQLite 弱类型下静默落库，到 PG 迁移才爆 `invalid input syntax for type integer`
 - **修复**：`source add --relevance` 现在只收整数 0-5（非整数/超范围 → rc=2 `must be an integer 0-5`）

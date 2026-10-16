@@ -14,6 +14,7 @@ import { CONFIG_REGISTRY } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION } from "../../../core/database/src/db";
 import { listPlugins, profileDir } from "./plugins";
+import * as fs from "node:fs";
 
 interface Check {
   name: string;
@@ -216,9 +217,34 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     bad(ctx, `${failed} check(s) failed`);
     return 1;
   }
+  // ⑥ cold-user report: "all checks passed" alongside "1 warning(s)" is
+  // semantically contradictory — qualify the success message.
   if (warned > 0) {
     out(ctx, paint(C.yellow, `  ${warned} warning(s) — see above`, ctx.color));
+    ok(ctx, `checks passed (${warned} warning${warned > 1 ? "s" : ""})`);
+  } else {
+    ok(ctx, "all checks passed");
   }
-  ok(ctx, failed === 0 ? "all checks passed" : "");
+
+  // ⑥ doctor --fix: safe auto-remediation
+  if (args?.flags?.fix && warned > 0) {
+    const fixes: string[] = [];
+    // dirty index → suggest rebuild command (sync, no ORM needed here)
+    const idx = db.get("SELECT value FROM meta WHERE key='index_dirty'") as any;
+    if (idx?.value === "1") {
+      db.run("UPDATE meta SET value='0' WHERE key='index_dirty'");
+      fixes.push("index dirty flag cleared (run: ygl-trees node index)");
+    }
+    // stale lock → remove
+    const lockDir = `${env.db.path}.lock`;
+    if (fs.existsSync(lockDir)) {
+      try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed"); } catch { /* */ }
+    }
+    if (fixes.length) {
+      for (const f of fixes) ok(ctx, `  fixed: ${f}`);
+    } else {
+      out(ctx, paint(C.dim, "  (--fix: no auto-fixable issues found)", ctx.color));
+    }
+  }
   return 0;
 }

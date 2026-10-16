@@ -932,7 +932,10 @@ function serve(env: Env, args: any): Promise<number> {
       resolve(1);
     };
     server.once("error", onErr);
-    server.listen(port, "127.0.0.1", () => {
+    // ④ cold-user report: hardcoded 127.0.0.1 blocks LAN/WSL access.
+    // Default stays 127.0.0.1 (safe); --host 0.0.0.0 opens to the network.
+    const host = String(args.flags.host || "127.0.0.1");
+    server.listen(port, host, () => {
       server.removeListener("error", onErr);
       const addr = server.address();
       const p = typeof addr === "object" && addr ? addr.port : port;
