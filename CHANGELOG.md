@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.39.1（2026-10-17）仓库级 commit 门禁（Gitee Go 不可用的等效方案）+ 发布/标签流程入档
+- **`.githooks/pre-push`**：push 时自动跑仓库级门禁——分支 push 跑 `pnpm test`（单测+构建+demo），**tag push 追加 `pnpm pack:check`**（产物级验证，防未验证产物出门）；安装 `git config core.hooksPath .githooks`；旁路只能显式 `YGL_SKIP_HOOKS=1`（钩子打印跳过原因，不静默）
+- **Gitee Go 阻塞留证**：`gitee pipeline` 全部命令（含最轻的服务状态检查）返回 `giteego: HTTP 403 {"msg":"您无此操作权限！"}`，两次复测一致——**账户无该服务权限**，非配置问题、无 API 可自助开通；已记录开通路径与日后接法（`pipeline example` 取官方 YAML 基线，不手写字段）
+- **docs/release.md 补两章**：门禁章（现状/等效方案/旁路纪律/日后接 Gitee Go 的步骤）+ 标签与 Release 章（`git tag -a` → `push` 经钩子验证 → `gitee release create --body "$(sed -n ...)"` 从 CHANGELOG 取说明，单一事实源）
+- 实测：钩子旁路 rc=0、真实门禁路径跑通（109 单测 + demo 12 组 → gates passed）
+
 ## 0.39.0（2026-10-17）WebUI 事件驱动实时化 + 基准维度补齐 + 发布决策上报
 - **SSE 实时通道**：`webui serve` 新增 `/api/events`（text/event-stream）——连接即发首帧完整载荷，之后仅在数据变更时推送；服务端 1.5s 一次**表指纹**（18 张表 `COUNT(*)` 容错拼串，某表缺失记 `?` 不抛错），指纹变化才重算并广播；指纹 tick 挂 `ctx.timer`（vendor 弹药生命周期托管），插件缺失回退裸 interval
 - **客户端零轮询**：React 客户端改 `EventSource` 订阅（`subscribeDashboard`），10s 轮询降级为**仅在 SSE 未接管时**执行；`tsc --noEmit` 零错 + vite 构建通过

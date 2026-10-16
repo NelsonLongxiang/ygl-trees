@@ -6,6 +6,31 @@ kind: 参考
 
 # 发布流程
 
+## 零、仓库级门禁：push 时自动跑（无 CI 的等效方案）
+
+**现状**：本仓库的 Gitee Go 服务不可用——`gitee pipeline` 的每个命令（含最轻的
+`pipeline list` 服务状态检查）都返回 `giteego: HTTP 403 {"msg":"您无此操作权限！"}`
+（2026-10-17 复测两次一致，非瞬时）。Gitee Go 未对本账户开放，**不是配置问题**，
+也无 API 可自助开通（需在页面开通且当前账户无权限）。
+
+**替代**：门禁下沉到 **push 时**，与 CI 等效且离线可测——
+
+```bash
+git config core.hooksPath .githooks     # 一次性安装（仓库自带 .githooks/pre-push）
+```
+
+| 触发 | 跑什么 |
+|---|---|
+| push 分支 | `pnpm test`（单测 + 构建 + demo 12 组断言） |
+| push **tag** | `pnpm test` + `pnpm pack:check`（发布产物级验证，防未验证产物出门） |
+
+**旁路纪律**：只能显式旁路，且留痕——
+`YGL_SKIP_HOOKS=1 git push ...`（钩子会打印跳过原因，不静默）。
+
+**若日后 Gitee Go 开放**：用 `gitee pipeline example -R <owner>/<repo>` 取官方 YAML 基线
+（**不要手写字段**），改造为 `pnpm install && pnpm test && pnpm pack:check` 后
+`gitee pipeline commit` 提交。阻断点只有一个：账户权限。
+
 ## 一、发布前门禁（必跑）
 
 ```bash
@@ -53,6 +78,23 @@ pwsh -c "& .\node_modules\.bin\ygl-trees.ps1 --json db stats"     # ✓ .ps1 shi
 ```
 
 Agent/CI 消费 JSON 时用前两条之一；`.cmd` 仍可用于人类交互（输出仅多一行噪声）。
+
+## 三点五、版本标签与 Release
+
+```bash
+# 1. 版本号已在 package.json（收口提交里 bump）
+# 2. 打标签并推送（pre-push 钩子会对 tag 额外跑 pack:check）
+git tag -a v0.39.1 -m "v0.39.1 — <一句话主题>"
+git push origin v0.39.1
+
+# 3. 建 Gitee Release（说明取自 CHANGELOG 对应版本节）
+gitee release create -R NelsonLongXiang/ygl-trees --tag v0.39.0   --name "v0.39.0" --body "$(sed -n '/^## 0.39.0/,/^## 0.38/p' CHANGELOG.md | head -n -1)" --no-tui
+```
+
+要点：
+- **tag 必须走钩子**——tag push 触发 `pack:check`，拦的是「版本号对了但产物装不上」
+- Release 说明**从 CHANGELOG 取**，不另写一份（单一事实源）
+- 语义化版本：CLI 命令面/字段名/退出码属冻结契约，破坏性变更进主版本
 
 ## 四、发布面构成
 

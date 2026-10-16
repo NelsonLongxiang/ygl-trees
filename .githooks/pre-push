@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# pre-push gate — the CI-equivalent check that runs where there is no CI.
+#
+# Gitee Go is unavailable for this account (gitee-go service status returns
+# HTTP 403 for every pipeline command), so the repository-level gate lives
+# here instead: a push must pass the same three-stage gate the release
+# procedure uses.
+#
+#   push to a branch  →  pnpm test        (unit + build + demo)
+#   push of a TAG     →  pnpm test + pnpm pack:check  (artifact-level)
+#
+# Bypass deliberately (never silently):  YGL_SKIP_HOOKS=1 git push ...
+#
+# Install:  git config core.hooksPath .githooks
+set -uo pipefail
+
+if [ "${YGL_SKIP_HOOKS:-}" = "1" ]; then
+  echo "pre-push: YGL_SKIP_HOOKS=1 → gates skipped (deliberate bypass)"
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 1
+
+# stdin carries "<local ref> <local sha> <remote ref> <remote sha>" lines
+TAG_PUSH=0
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/tags/*) TAG_PUSH=1 ;;
+  esac
+done
+
+echo "pre-push gate: pnpm test (unit + build + demo)"
+if ! pnpm test; then
+  echo
+  echo "pre-push: FAILED at 'pnpm test' — push blocked."
+  echo "  fix the failure, or bypass deliberately with:  YGL_SKIP_HOOKS=1 git push"
+  exit 1
+fi
+
+if [ "$TAG_PUSH" = "1" ]; then
+  echo "pre-push gate: tag push → also running 'pnpm pack:check' (publish-readiness)"
+  if ! pnpm pack:check; then
+    echo
+    echo "pre-push: FAILED at 'pnpm pack:check' — tag push blocked (would ship an unverified artifact)."
+    exit 1
+  fi
+fi
+
+echo "pre-push: gates passed"
+exit 0
