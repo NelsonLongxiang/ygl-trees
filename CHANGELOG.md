@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.30.1（2026-10-17）DESIGN.md 落地（前端 design 方法论裁定）
+- **用户裁定固化（spec R12.1a）**：前端/UI design 采用 [DESIGN.md 格式](https://github.com/google-labs-code/design.md)（google-labs-code：YAML tokens + rationale 固定节序 + lint/diff/export 工具链）；arch/decision 类 design 由 Agent 定义（ADR 风格）
+- **仓库根 `DESIGN.md`**：现有 dashboard 视觉身份（GitHub-dark 双层画布/单一 primary 交互色/等宽可执行文本/状态词色配对/边框优先分层）固化为 13 色 + 5 字阶 + 9 组件 token——webui 设计系统单一事实源，R11 时间轴与 R13 pan/zoom 以它为 token 来源
+- lint 实测 0 error（`designmd` Windows 别名）；2 个 border 色 orphan 警告为格式 alpha 限制（组件属性面无 borderColor），已记录
+
 ## 0.30.0（2026-10-17）遥测地基（spec R10）
 - **树域留痕**（推翻 0.12"不写 events"例外）：node.add/link/unlink/cond/delete/unlock/lock 同事务写 events——解锁时刻进账本，R11 时间轴的地基
 - **schema v7**：events 加 `level`（info|warn|error，默认 info）；迁移 v6→v7（ALTER + 表存在守卫）；实体快照/PG MIGRATE_DDL/doctor 同步——并修复 doctor schema 检查硬编码 v6 的漏网触点（改读 SCHEMA_VERSION 单一事实源）

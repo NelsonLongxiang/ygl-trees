@@ -112,8 +112,9 @@
 ### R12 工程产出形态（2026-10-17 立项，0.32；检阅意见 1/2/3）
 
 - **R12.1**：artifacts kind 扩 `spec`（需求规格）、`design`（多类型：ui-ux/arch/decision，payload 元数据带 design_type）、`task`（todo|doing|done 状态机）
+- **R12.1a design 方法论裁定（用户 2026-10-17）**：**前端/UI design 采用 [DESIGN.md 格式](https://github.com/google-labs-code/design.md)**（YAML tokens + rationale 固定节序 + `@google/design.md` lint/diff/export 工具链）——仓库根 `DESIGN.md` 即 webui 的设计系统单一事实源，后续前端视图（R11 时间轴、R13 pan/zoom）以它为 token 来源；**其他 design 类型（arch/decision）由 Agent 定义**（ADR 风格：上下文/决策/后果三段）
 - **R12.2**：`produce spec/design` 命令；`task` 独立命令组（add/list/done）；webui 任务清单视图（status 分组 + 勾销）
-- **R12.3 验收**：spec/design/task 均可 R9 关联到树节点；任务清单勾销全程留痕
+- **R12.3 验收**：spec/design/task 均可 R9 关联到树节点；任务清单勾销全程留痕；DESIGN.md lint 0 error
 
 ### R13 真实规模树与方法论（2026-10-17 立项，0.33；检阅意见 6/7）
 
