@@ -1,20 +1,30 @@
-# vendor/ — 上游框架落盘
+# vendor/ — DSH fork 框架全家桶（用户裁定 2026-10-17：框架级一致性）
 
-从上游 npm tarball 落盘的框架件（**不是** git clone，**不是** @deepseek-ai fork——根 AGENTS 规则 7）。pnpm workspace 成员，`workspace:~` 引用。
+从 DSH vendor **源码同步**（非 npm 安装——DSH 模式：fork 仓库源码 git 跟踪 + workspace:~ 链接）。
+所有包 rescope 到 `@deepseek-ai/` scope，版本与 DSH vendor 一致。
 
-| 包 | 上游 | 我们版本 | 用途 |
+| 目录 | npm 名 | 版本 | 用途 |
 |---|---|---|---|
-| cordis | cordiverse/cordis | 4.0.0-rc.11 | Context/Service/插件系统——四内建插件 + 用户插件的运行时 |
-| cosmokit | cordis 生态 | 1.8.1 | cordis 依赖的工具库 |
+| `cordis/` | `@deepseek-ai/cordis` | 4.0.5-alpha.2 | Context/Service/插件系统（**修复 rc.11 setImmediate 时序**） |
+| `cosmokit/` | `@deepseek-ai/cosmokit` | 1.8.6-alpha.2 | cordis 依赖的工具库 |
+| `schemastery/` | `@deepseek-ai/schemastery` | 3.18.5-alpha.2 | schema 校验（bundle/user bundle 声明） |
+| `loader/` | `@deepseek-ai/cordis-plugin-loader` | 1.0.6-alpha.2 | 声明式插件加载器 |
+| `include/` | `@deepseek-ai/cordis-plugin-include` | 1.0.10-alpha.2 | 配置 include（bundle 分层叠加） |
+| `group/` | `@deepseek-ai/cordis-plugin-group` | 1.0.5-alpha.2 | 插件嵌套分组 |
+| `hmr/` | `@deepseek-ai/cordis-plugin-hmr` | 1.0.20-alpha.2 | 插件热替换 |
+| `timer/` | `@deepseek-ai/cordis-plugin-timer` | 1.1.7-alpha.2 | 生命周期托管定时器 |
+| `logger-console/` | `@deepseek-ai/cordis-plugin-logger-console` | 1.0.5-alpha.2 | 控制台 logger |
+
+**为什么是 fork**：上游 cordiverse/cordis 停在 rc.11（时序 bug），DSH fork 4.0.5 修复（fork 探针：单 yield 后全部服务就绪 ✓）。
 
 ## 纪律
 
-- **来源**：npm tarball（`npm pack` 或 registry 下载）解包落盘——保留上游 package.json/README；不是 git submodule
-- **升级路径**：下载新版 tarball → 替换目录 → `pnpm install` → 全量 `pnpm test`；**先跑 rc.11 时序探针**（tmp/svc-probe 模式：named-apply/inject 链/setImmediate 泵）确认行为面
-- **已知漂移**（记录于 docs/plan.md 0.34）：上游停在 rc.11，DSH fork 已到 4.0.x——T2 级 fork 插件不可直接引用（会拖 fork 双运行时，违反规则 7 精神）
-- **候选挂账**：schemastery（cordis 生态件，现从 npm 消费 ^3.18.4）——下次动 bundle 校验时评估 vendoring 一致性
-- 禁止在此目录开发业务代码；它只镜像上游
+- **来源**：与 DSH vendor 同步（同版本同 commit），git 跟踪
+- **升级**：同步 DSH vendor → `pnpm install`（workspace 链接）→ `pnpm build` → `pnpm test` → fork 时序探针
+- 禁止在此目录开发业务代码；只镜像 DSH fork
+- 第三方依赖不 vendor，留在 npm
 
-## 对照
+## 已知/后续
 
-DSH vendor 九件（cordis/cosmokit/schemastery/loader/include/group/hmr/timer/logger-console，全 fork 版）——其余七件对我们均为“否”，裁决依据见 docs/plan.md 0.36.x 执行记录。
+- 七个 cordis-plugin 尚未在代码中 import——可用弹药，等真实需求接入
+- **bundle 化**：tsdown 脚手架就绪（build:bundle），DOMAIN_ROUTES 动态 require 需改静态 barrel 后 bundle 才完整可用

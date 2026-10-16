@@ -7,9 +7,11 @@ ygl-trees 是面向 AI Agent 的研究工作台 CLI（研究 → 产出 → 知�
 ## 仓库布局
 
 ```
-vendor/           上游框架（从 cordiverse/cordis vendor，pnpm workspace 管理）
-  cordis/           Cordis 框架核心（Context/Service/事件总线/插件系统）
-  cosmokit/         Cordis 依赖的工具库
+vendor/           DSH fork 框架全家桶（用户裁定框架级一致性，pnpm workspace 管理）
+  cordis/           @deepseek-ai/cordis 4.0.5-α（修复 rc.11 时序）
+  cosmokit/         @deepseek-ai/cosmokit 1.8.6-α
+  schemastery/      @deepseek-ai/schemastery 3.18.5-α
+  loader/ include/ group/ hmr/ timer/ logger-console/（七个 cordis-plugin 可用弹药）
 
 packages/         领域模块（库代码，可被 apps 组合；pnpm workspace 成员，各带 package.json 依赖图）
   core/             基础层（db/orm/text/fmt/types/entities/container）
@@ -101,4 +103,4 @@ CHANGELOG.md           逐版本聚合
 4. **临时文件**：`<repo>/tmp/`（gitignored）
 5. **README 健康**：每版本收口前过一遍
 6. **技能维护**：skills/ 随命令面变更同步
-7. **vendor 管理**：上游 cordis/cosmokit 从 npm tarball 落盘到 vendor/，通过 pnpm workspace `workspace:~` 引用；**不依赖 @deepseek-ai fork**
+7. **vendor 管理**：从 DSH vendor 源码同步（用户裁定 2026-10-17：框架级一致性，fork 4.0.5 修复 rc.11 时序问题），`@deepseek-ai/` scope，通过 pnpm workspace `workspace:~` 引用；与 DSH vendor 同版本升级

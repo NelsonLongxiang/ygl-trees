@@ -7,7 +7,7 @@
  * established CLI fallbacks (0.19 lesson), and reports per-plugin issues
  * through StartupError instead of failing wholesale or silently skipping.
  */
-import { Context } from "cordis";
+import { Context } from "@deepseek-ai/cordis";
 import { DB } from "../../../packages/core/database/src/db";
 import { Store } from "../../../packages/research/pipeline/src/reads";
 import { loadUserPlugins, LoadedUserPlugin, PluginIssue } from "../../../packages/ops/tools/src/plugins";

@@ -1,11 +1,14 @@
+/** Uppercase the first character of a string. */
 export function capitalize(source: string) {
   return source.charAt(0).toUpperCase() + source.slice(1)
 }
 
+/** Lowercase the first character of a string. */
 export function uncapitalize(source: string) {
   return source.charAt(0).toLowerCase() + source.slice(1)
 }
 
+/** Convert dash or underscore delimited text to camelCase. */
 export function camelCase(source: string) {
   return source.replace(/[_-][a-z]/g, str => str.slice(1).toUpperCase())
 }
@@ -50,15 +53,19 @@ function tokenize(source: string, delimiters: number[], delimiter: number) {
   return String.fromCharCode(...output)
 }
 
+/** Convert text to dash-delimited parameter case. */
 export function paramCase(source: string) {
   return tokenize(source, [45, 95], 45)
 }
 
+/** Convert text to underscore-delimited snake case. */
 export function snakeCase(source: string) {
   return tokenize(source, [45, 95], 95)
 }
 
+/** Runtime alias for `camelCase`. */
 export const camelize = camelCase
+/** Runtime alias for `paramCase`. */
 export const hyphenate = paramCase
 
 namespace Letter {
@@ -82,19 +89,24 @@ namespace Letter {
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */
+/** Type-level conversion from dash-delimited text to camelCase. */
 export type camelize<S extends string> = S extends `${infer L}-${infer M}${infer R}` ? `${L}${Letter.ToUpper<M>}${camelize<R>}` : S
+/** Type-level conversion from camelCase text to dash-delimited text. */
 export type hyphenate<S extends string> = S extends `${infer L}${infer R}` ? `${Letter.ToLower<L, '-'>}${hyphenate<R>}` : S
 /* eslint-enable @typescript-eslint/naming-convention */
 
+/** Format a property key as a JavaScript member access suffix. */
 export function formatProperty(key: keyof any) {
   if (typeof key !== 'string') return `[${key.toString()}]`
   return /^[a-z_$][\w$]*$/i.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
 }
 
+/** Remove one trailing slash from a path string. */
 export function trimSlash(source: string) {
   return source.replace(/\/$/, '')
 }
 
+/** Ensure a path starts with `/` and has no trailing slash. */
 export function sanitize(source: string) {
   if (!source.startsWith('/')) source = '/' + source
   return trimSlash(source)

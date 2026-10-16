@@ -4,10 +4,10 @@
  *
  * @module @ygl/research-pipeline/plugin
  */
-import { Context, Service } from "cordis";
+import { Context, Service } from "@deepseek-ai/cordis";
 import { Store } from "./reads";
 
-declare module "cordis" {
+declare module "@deepseek-ai/cordis" {
   interface Context {
     research: ResearchService;
   }

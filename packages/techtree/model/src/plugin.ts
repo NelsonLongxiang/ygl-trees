@@ -4,10 +4,10 @@
  *
  * @module @ygl/techtree-model/plugin
  */
-import { Context, Service } from "cordis";
+import { Context, Service } from "@deepseek-ai/cordis";
 import { TreeStore } from "./reads";
 
-declare module "cordis" {
+declare module "@deepseek-ai/cordis" {
   interface Context {
     techtree: TechTreeService;
   }

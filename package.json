@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.36.4",
+  "version": "0.37.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:bundle": "pnpm build && tsdown --config-loader tsx",
     "start": "node dist/apps/cli/src/bin.js",
     "demo": "bash examples/demo.sh",
     "test": "pnpm test:unit && pnpm build && bash examples/demo.sh",
@@ -28,17 +29,19 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cosmokit": "workspace:~",
     "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1",
-    "@deepseek-ai/schemastery": "^3.18.4",
+    "@deepseek-ai/schemastery": "workspace:~",
     "better-sqlite3": "^13.0.3",
-    "cordis": "workspace:~",
-    "cosmokit": "workspace:~",
     "node-sqlite3-wasm": "^0.8.60",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^1.1.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "tsdown": "^0.23.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.0",
     "vitest": "^5.0.5"
   },
@@ -52,6 +55,9 @@
       "packages/*/*/tests/**/*.test.ts",
       "apps/*/tests/**/*.test.ts"
     ],
-    "exclude": ["node_modules", "dist"]
+    "exclude": [
+      "node_modules",
+      "dist"
+    ]
   }
 }

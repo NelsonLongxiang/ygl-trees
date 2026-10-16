@@ -1,3 +1,4 @@
+/** Time constants plus parsing and formatting helpers. */
 export namespace Time {
   export const millisecond = 1
   export const second = 1000

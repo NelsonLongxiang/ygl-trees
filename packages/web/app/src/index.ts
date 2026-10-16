@@ -9,9 +9,9 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Context, Service } from "cordis";
+import { Context, Service } from "@deepseek-ai/cordis";
 
-declare module "cordis" {
+declare module "@deepseek-ai/cordis" {
   interface Context {
     /** The React rich client this process can serve; dist-missing → null
      *  methods report unavailability and the caller falls back to the

@@ -9,13 +9,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4",
+    "@deepseek-ai/schemastery": "workspace:~",
     "@ygl/core-database": "workspace:~",
     "@ygl/core-text": "workspace:~",
     "@ygl/ops-tools": "workspace:~",
     "@ygl/research-pipeline": "workspace:~",
     "@ygl/techtree-model": "workspace:~",
     "@ygl/web-app": "workspace:~",
-    "cordis": "workspace:~"
+    "@deepseek-ai/cordis": "workspace:~"
   }
 }

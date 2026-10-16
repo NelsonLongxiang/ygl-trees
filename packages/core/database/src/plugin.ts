@@ -4,10 +4,10 @@
  *
  * @module @ygl/core-database/plugin
  */
-import { Context, Service } from "cordis";
+import { Context, Service } from "@deepseek-ai/cordis";
 import { DB } from "./db";
 
-declare module "cordis" {
+declare module "@deepseek-ai/cordis" {
   interface Context {
     database: DatabaseService;
   }

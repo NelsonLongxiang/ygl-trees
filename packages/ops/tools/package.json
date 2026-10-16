@@ -15,6 +15,6 @@
     "@ygl/core-text": "workspace:~",
     "@ygl/techtree-model": "workspace:~",
     "@ygl/web-app": "workspace:~",
-    "cordis": "workspace:~"
+    "@deepseek-ai/cordis": "workspace:~"
   }
 }

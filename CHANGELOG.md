@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.37.0（2026-10-17）vendor DSH 全家桶对齐 + tsdown bundle 脚手架（用户两项裁定）
+- **vendor 九件套对齐 DSH**（用户裁定：框架级一致性）：从 DSH vendor 源码同步（非 npm 安非 git clone——DSH 模式：fork 仓库源码 git 跟踪 + workspace:~ 链接）；cordis 升级到 fork 4.0.5-α（**修复 rc.11 setImmediate 时序**——fork 探针实测单 yield 后 database+named+inject 链 needsDb 全就绪 ✓）；cosmokit 1.8.6-α、schemastery 3.18.5-α、loader/include/group/hmr/timer/logger-console 七件 cordis-plugin 首次入库（可用弹药，等需求接入）
+- **import 面 rescope**：`from "cordis"` → `from "@deepseek-ai/cordis"`（6 文件）；`declare module "cordis"` → `"@deepseek-ai/cordis"`（5 文件）；package.json 依赖声明更新（根 + apps/cli + 4 包）
+- **vendor README 重写**：manifest 表（九件版本对齐）+ fork 理由（上游停在 rc.11，DSH fork 4.0.5 修时序）+ 同步纪律
+- **tsdown bundle 脚手架**：`pnpm build:bundle` = tsc + tsdown（rolldown bundler）；入口 apps/cli/src/bin.ts → dist/bundle/bin.cjs（101KB 单文件）；**已知限制**：DOMAIN_ROUTES 动态 require(route) 被 bundler 静态分析不了——需后续改静态 barrel 导入（tsdown.config 暂移除——Node 24.12 tsdown config-loader 已知 bug，CLI 直传参数可用）
+- 规则 7 重写（根 AGENTS）：从 DSH vendor 源码同步（用户裁定框架级一致性）
+
 ## 0.36.4（2026-10-17）vendor 逐项裁决 + vendor README（用户两问驱动）
 - **裁决入库**：tsdown.worker.ts **否**（属 DSH 的 bundle 化+Worker+VFS 构建形态；触发条件：采 bundle 分发或引 Worker 线程）；DSH vendor 九件套**七否一有一挂账**——loader（R14 已裁不引 fork）/include/group/hmr/timer/logger-console 逐项否（各有本仓等价或场景不存在）；schemastery 挂账（npm 消费正常，vendoring 属一致性收益）
 - **vendor/README.md**：补齐 DSH 有的 vendor 树纪律文档——来源纪律（npm tarball 非 clone 非 fork）/升级路径（先跑 rc.11 时序探针）/fork 漂移与 T2 禁引/候选挂账
