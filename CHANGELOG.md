@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.36.4（2026-10-17）vendor 逐项裁决 + vendor README（用户两问驱动）
+- **裁决入库**：tsdown.worker.ts **否**（属 DSH 的 bundle 化+Worker+VFS 构建形态；触发条件：采 bundle 分发或引 Worker 线程）；DSH vendor 九件套**七否一有一挂账**——loader（R14 已裁不引 fork）/include/group/hmr/timer/logger-console 逐项否（各有本仓等价或场景不存在）；schemastery 挂账（npm 消费正常，vendoring 属一致性收益）
+- **vendor/README.md**：补齐 DSH 有的 vendor 树纪律文档——来源纪律（npm tarball 非 clone 非 fork）/升级路径（先跑 rc.11 时序探针）/fork 漂移与 T2 禁引/候选挂账
+
 ## 0.36.3（2026-10-17）包领域 AGENTS.md + 插件目录 README（用户指示，DSH packages/AGENTS.md 对齐）
 - **`packages/AGENTS.md`**：包级开发纪律（补位根 AGENTS，DSH 同构）——包形状五件套/零散禁区、Cordis 插件导出契约（Service+apply+declare module、构造必须同步）、写路径三铁律（事务化服务/九触点/读不写）、遥测纪律（树域已推翻 0.12 例外）、测试纪律（scratch 自清理三步/demo 字段名教训）、README frontmatter 与内容序、DSH 角色词表命名；根 AGENTS 核心铁律挂链
 - **`examples/plugin-demo/README.md`**：示例插件 README（试跑四命令/契约表/写自己的插件三步/已知限制）
