@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.47.0（2026-10-17）冷启动实战 + 完整研究闭环——产品承诺的终极验证
+- **冷启动验证**：全新工作区，零上下文 Agent 仅靠 `agent brief`（给出 next_actions）+ `agent match`（命中 ygl-trees-research 技能）即上手——产品入口有效
+- **真实研究（非功能测试）**：「AI Agent 插件系统设计模式对比（Cordis vs DSH vs VSCode）」——4 检索式 → 4 来源（1 网页抓取 + 3 本地第一手源码知识）→ 6 条证据摘录 → 5 条断言（全部链接证据 + 仲裁为 supported）→ outline + 对比章节 + **61 行报告**（含四维对比表与四条核心发现）
+- **知识复用闭环全通**：报告 `kb ingest` → `kb promote` → 技能 `plugin-design-patterns` 生成 → **跨进程 `agent match` 命中**（换两种完全不同的问法均命中）——下次任何 Agent 问插件框架选型，L1 描述自动浮现
+- **核心发现**（报告摘要）：① 粒度决定架构（VSCode 面向功能面、Cordis 面向服务、DSH 面向组合）② declare module 是 Cordis 杀手锏 ③ 有界停机 + 诊断落盘是 CLI 层必备 ④ 采纳能力 ≠ 采纳机械（loader 裁定范例）
+- **产品验证结论**：冷启动→研究→产出→知识复用→下次命中，完整闭环在真实数据上走通——**工具是好用的，不只是好测的**
+
 ## 0.46.0（2026-10-17）WebUI 端到端验证 + 基准刷新（用户确认不发布 npm）
 - **WebUI 全量验证**（维护后数据）：37 节点树（React 客户端水平布局）+ 34 解锁/3 锁定态可见 + 45 条边；SSE 实时推送实测（首帧 + 变更帧携带新任务标题）；`/classic` 内嵌回退 200；中文标签 8/8 命中（科技树/任务清单/产出工件/下一步操作/技能/知识笔记/断言/证据）
 - **基准刷新**（0.45.0 构建，bundle 入口）：startup p50 571ms / claim-write 21.6ms/op / kb-import 2672 rows/s / kb-search p50 24ms / node-index 577ms / node-search p50 2.8ms——各席均在正常区间，含 RSS 内存端点
