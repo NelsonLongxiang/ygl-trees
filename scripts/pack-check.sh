@@ -8,8 +8,8 @@
 # Exits non-zero on any failed assertion. Uses tmp/pack-check/ (gitignored).
 set -uo pipefail
 
-REPO="$(cd "$(dirname "$0")/.."
-export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows) && pwd)"
+export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows)
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$REPO/tmp/pack-check"
 FAILED=0
 fail() { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
@@ -21,7 +21,7 @@ mkdir -p "$WORK"
 echo "── 1. build + pack"
 (cd "$REPO" && pnpm build >/dev/null 2>&1) || { echo "BUILD FAILED"; exit 1; }
 (cd "$REPO" && pnpm pack --pack-destination "$WORK" >/dev/null 2>&1) || { echo "PACK FAILED"; exit 1; }
-TGZ=$(ls "$WORK"/ygl-trees-*.tgz 2>/dev/null | head -1)
+TGZ=$(ls "$WORK"/*ygl-trees-*.tgz 2>/dev/null | head -1)
 [ -n "$TGZ" ] && pass "tarball: $(basename "$TGZ")" || { fail "no tarball produced"; exit 1; }
 
 echo "── 2. dependencies rewritten off workspace: (consumer installs from npm)"
@@ -37,8 +37,9 @@ EOF
   && pass "installed from tarball (52-package closure resolves)" \
   || { fail "npm install from tarball failed"; exit 1; }
 
-BIN="$WORK/consumer/node_modules/ygl-trees/dist/bundle/bin.cjs"
-[ -f "$BIN" ] && pass "shipped bundle present in tarball" || fail "dist/bundle/bin.cjs missing from tarball"
+BIN=$(ls "$WORK"/consumer/node_modules/ygl-trees/dist/bundle/bin.cjs \
+      "$WORK"/consumer/node_modules/@*/ygl-trees/dist/bundle/bin.cjs 2>/dev/null | head -1)
+[ -n "$BIN" ] && [ -f "$BIN" ] && pass "shipped bundle present in tarball" || fail "dist/bundle/bin.cjs missing from tarball"
 
 # Invoke via node directly: the .cmd shim is polluted by a host-level cmd
 # AutoRun ("Active code page: ...") that would break --json parsing.
