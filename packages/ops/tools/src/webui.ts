@@ -22,6 +22,8 @@ interface DashboardData {
   evidence: any[];
   /** claim↔evidence links (for claim expand) */
   claim_evidence: any[];
+  /** R11.2: daily event aggregates [{day, research, tree, eval, other}] */
+  timeline: any[];
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -46,7 +48,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 export function gatherData(env: Env): DashboardData {
   const { db, store } = env;
 
-  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [] };
+  const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [], timeline: [] };
 
   // full brief payload (next_actions / top_skills / project progress) — same
   // builder the `agent brief` command uses
@@ -83,8 +85,15 @@ export function gatherData(env: Env): DashboardData {
     const trees = db.all("SELECT * FROM trees WHERE name=? OR id=?", [currentTree, currentTree]);
     if (trees.length) {
       const tid = trees[0].id;
+      // R11: created + unlock timestamp ride along for the time-axis layout
+      // (node_state.updated is the unlock moment; default context)
       const nodes = db.all(
-        "SELECT key, name, kind, tier, cost, tags FROM nodes WHERE tree_id=? ORDER BY tier, key",
+        `SELECT n.key, n.name, n.kind, n.tier, n.cost, n.tags, n.created,
+                s.status AS state, s.updated AS unlocked_at
+           FROM nodes n
+           LEFT JOIN node_state s ON s.node_id = n.id AND s.context = 'default' AND s.status = 'unlocked'
+          WHERE n.tree_id = ?
+          ORDER BY n.tier, n.key`,
         [tid]
       );
       const edges = db.all(
@@ -98,6 +107,22 @@ export function gatherData(env: Env): DashboardData {
       data.tree = { name: trees[0].name, nodes, edges };
     }
   }
+
+  // R11.2: research-pipeline timeline — daily event aggregates, bucketed by
+  // domain (research / tree / eval / other), last 30 days, capped
+  data.timeline = db.all(
+    `SELECT substr(ts, 1, 10) AS day,
+            SUM(CASE WHEN kind LIKE 'source.%' OR kind LIKE 'evidence.%' OR kind LIKE 'claim.%'
+                       OR kind LIKE 'query.%' OR kind LIKE 'kb.%' OR kind LIKE 'artifact.%' THEN 1 ELSE 0 END) AS research,
+            SUM(CASE WHEN kind LIKE 'node.%' OR kind LIKE 'tree.%' THEN 1 ELSE 0 END) AS tree,
+            SUM(CASE WHEN kind LIKE 'eval.%' THEN 1 ELSE 0 END) AS eval,
+            SUM(CASE WHEN kind NOT LIKE 'source.%' AND kind NOT LIKE 'evidence.%' AND kind NOT LIKE 'claim.%'
+                       AND kind NOT LIKE 'query.%' AND kind NOT LIKE 'kb.%' AND kind NOT LIKE 'artifact.%'
+                       AND kind NOT LIKE 'node.%' AND kind NOT LIKE 'tree.%' AND kind NOT LIKE 'eval.%' THEN 1 ELSE 0 END) AS other
+       FROM events
+      WHERE ts >= date('now', '-30 days')
+      GROUP BY day ORDER BY day`
+  );
   return data;
 }
 
@@ -185,8 +210,14 @@ svg { max-width: 100%; height: auto; }
 <div class="grid" id="stats"></div>
 <div id="brief-extra"></div>
 
-<h2>🌳 Tech Tree: <span id="tree-name"></span></h2>
+<h2>🌳 Tech Tree: <span id="tree-name"></span>
+  <span class="chip click" id="layout-toggle" role="button" tabindex="0"
+        onclick="toggleLayout()" onkeydown="keyToggle(event,'__lt')">layout: tier</span>
+</h2>
 <div id="tree-container"></div>
+
+<h2>🕒 Timeline <span class="dim">(近 30 天事件推进)</span></h2>
+<div id="timeline"></div>
 
 <h2>🔬 Research Claims</h2>
 <div id="claims"></div>
@@ -202,7 +233,7 @@ svg { max-width: 100%; height: auto; }
 const FALLBACK = ${json};
 
 var LAST = null;
-var uiState = { expanded: {}, selectedNode: null };
+var uiState = { expanded: {}, selectedNode: null, layout: "tier" };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -251,6 +282,7 @@ function render(DATA) {
   renderClaims(DATA);
   renderSources(DATA);
   renderTree(DATA);
+  renderTimeline(DATA);
 }
 
 // ── Claims: grouped by status, click to expand evidence ──
@@ -313,15 +345,125 @@ function renderSources(DATA) {
   }
 }
 
-// ── Tech Tree (SVG DAG, clickable nodes) ──
+// ── R11.2: timeline — one stacked bar per active day (DESIGN.md tokens:
+// research=primary, tree=tertiary, eval=warning, other=secondary) ──
+function renderTimeline(DATA) {
+  const el = document.getElementById('timeline');
+  const days = (DATA.timeline || []).filter(function (d) {
+    return (d.research + d.tree + d.eval + d.other) > 0;
+  });
+  if (!days.length) {
+    el.innerHTML = '<p class="dim">no events in the last 30 days</p>';
+    return;
+  }
+  const max = Math.max.apply(null, days.map(function (d) { return d.research + d.tree + d.eval + d.other; }));
+  const barW = 18, gap = 6, h = 80, legend = [
+    ['research', '#58a6ff'], ['tree', '#79c0ff'], ['eval', '#d29922'], ['other', '#8b949e'],
+  ];
+  let svg = '<svg width="' + (days.length * (barW + gap) + 10) + '" height="' + (h + 40) + '" xmlns="http://www.w3.org/2000/svg">';
+  days.forEach(function (d, i) {
+    const x = 5 + i * (barW + gap);
+    let y = h;
+    [['research', '#58a6ff'], ['tree', '#79c0ff'], ['eval', '#d29922'], ['other', '#8b949e']].forEach(function (seg) {
+      const n = Number(d[seg[0]]) || 0;
+      if (!n) return;
+      const hh = Math.max(2, (n / max) * h);
+      y -= hh;
+      svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + hh + '" fill="' + seg[1] + '"><title>' +
+        d.day + ' · ' + seg[0] + ' ' + n + '</title></rect>';
+    });
+    svg += '<text x="' + (x + barW / 2) + '" y="' + (h + 14) + '" font-size="9" fill="#8b949e" text-anchor="middle">' +
+      String(d.day).slice(5) + '</text>';
+  });
+  svg += '</svg>';
+  const legendHtml = legend.map(function (l) {
+    return '<span class="chip"><b style="color:' + l[1] + '">■</b> ' + l[0] + '</span>';
+  }).join('');
+  el.innerHTML = svg + '<div style="margin-top:6px">' + legendHtml + '</div>';
+}
+
+// ── Tech Tree (SVG DAG, clickable nodes; tier or time layout) ──
+function toggleLayout() {
+  uiState.layout = uiState.layout === "time" ? "tier" : "time";
+  renderTree(LAST);
+}
 function renderTree(DATA) {
   const treeEl = document.getElementById('tree-container');
   const treeNameEl = document.getElementById('tree-name');
+  const toggleEl = document.getElementById('layout-toggle');
+  if (toggleEl) toggleEl.textContent = 'layout: ' + (uiState.layout || 'tier');
   if (DATA.tree && DATA.tree.nodes && DATA.tree.nodes.length) {
     treeNameEl.textContent = DATA.tree.name;
-    const nodes = DATA.tree.nodes;
-    const edges = DATA.tree.edges || [];
+    treeEl.innerHTML = uiState.layout === 'time' ? treeTimeSvg(DATA.tree) : treeTierSvg(DATA.tree);
+    // re-apply selection after re-render
+    if (uiState.selectedNode) {
+      document.querySelectorAll('.node-box').forEach(function (g) {
+        if (g.getAttribute('data-key') === uiState.selectedNode) g.classList.add('selected');
+      });
+    }
+  } else {
+    treeNameEl.textContent = '(none selected)';
+    treeEl.innerHTML = '<p class="dim">No tree selected (run: ygl-trees tree use &lt;name&gt;)</p>';
+  }
+}
 
+/** R11.1: time-axis layout — one lane per node (sorted by created); a solid
+ *  arc from created to unlocked_at, a dashed run to "now" while locked.
+ *  Tokens from DESIGN.md: locked = secondary/dim, unlocked arc = success. */
+function treeTimeSvg(tree) {
+  const nodes = tree.nodes.slice().sort(function (a, b) { return String(a.created).localeCompare(String(b.created)); });
+  const now = Date.now();
+  const t0 = Math.min.apply(null, nodes.map(function (n) { return Date.parse(n.created || now); }));
+  const t1 = Math.max.apply(null, nodes.map(function (n) {
+    return Math.max(Date.parse(n.created || now), n.unlocked_at ? Date.parse(n.unlocked_at) : now, now);
+  }));
+  const span = Math.max(t1 - t0, 1);
+  const labelW = 130, rightPad = 30, laneH = 34, topPad = 26;
+  const W = 900, H = topPad + nodes.length * laneH + 10;
+  const x = function (t) { return labelW + ((t - t0) / span) * (W - labelW - rightPad); };
+  const day = 86400000;
+  const ticks = [];
+  for (let t = t0; t <= t1; t += day) {
+    const px = x(t);
+    const d = new Date(t);
+    if (px > labelW + 20 && px < W - rightPad && (d.getDate() === 1 || ticks.length === 0 || span <= 3 * day)) {
+      ticks.push('<line stroke="#21262d" x1="' + px + '" y1="' + (topPad - 8) + '" x2="' + px + '" y2="' + H + '"/>' +
+        '<text fill="#8b949e" font-size="9" x="' + px + '" y="' + (topPad - 12) + '" text-anchor="middle">' +
+        (d.getMonth() + 1) + '/' + d.getDate() + '</text>');
+    }
+  }
+  let svg = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg">';
+  svg += '<defs><marker id="tarrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#30363d"/></marker></defs>';
+  svg += ticks.join('');
+  nodes.forEach(function (n, i) {
+    const y = topPad + i * laneH + laneH / 2;
+    const c = Date.parse(n.created || now);
+    const u = n.unlocked_at ? Date.parse(n.unlocked_at) : null;
+    const locked = !u;
+    const stroke = locked ? '#484f58' : '#3fb950';
+    const textFill = locked ? '#484f58' : '#c9d1d9';
+    // lane base line
+    svg += '<line x1="' + labelW + '" y1="' + y + '" x2="' + (W - rightPad) + '" y2="' + y + '" stroke="#21262d" stroke-dasharray="2 4"/>';
+    // arc: created -> unlocked (solid) or created -> now (dashed, dim)
+    if (u) {
+      svg += '<line x1="' + x(c) + '" y1="' + y + '" x2="' + x(u) + '" y2="' + y + '" stroke="' + stroke + '" stroke-width="3" marker-end="url(#tarrow)"/>';
+      svg += '<circle cx="' + x(u) + '" cy="' + y + '" r="4.5" fill="#3fb950"><title>unlocked ' + esc(String(n.unlocked_at).slice(0, 16).replace('T', ' ')) + '</title></circle>';
+    } else {
+      svg += '<line x1="' + x(c) + '" y1="' + y + '" x2="' + (W - rightPad) + '" y2="' + y + '" stroke="' + stroke + '" stroke-width="2" stroke-dasharray="5 4"/>';
+    }
+    svg += '<circle cx="' + x(c) + '" cy="' + y + '" r="3.5" fill="' + (locked ? '#484f58' : '#58a6ff') + '"><title>created ' + esc(String(n.created || '').slice(0, 16).replace('T', ' ')) + '</title></circle>';
+    svg += '<g class="node-box' + (uiState.selectedNode === n.key ? ' selected' : '') + '" role="button" tabindex="0" data-key="' + esc(n.key) + '"' +
+      ' onclick="nodeClick(\\'' + jq(n.key) + '\\')"' +
+      ' onkeydown="keyNode(event, \\'' + jq(n.key) + '\\')">' +
+      '<text x="' + (labelW - 10) + '" y="' + (y + 3.5) + '" text-anchor="end" font-size="11" fill="' + textFill + '">' + esc(String(n.key).slice(0, 16)) + '</text></g>';
+  });
+  svg += '</svg>';
+  return svg;
+}
+
+function treeTierSvg(tree) {
+    const nodes = tree.nodes;
+    const edges = tree.edges || [];
     const W = 900, nodeW = 120, nodeH = 36, vGap = 70, hGap = 140;
     const tiers = {};
     nodes.forEach(function (n) { const t = n.tier || 0; (tiers[t] = tiers[t] || []).push(n); });
@@ -365,11 +507,7 @@ function renderTree(DATA) {
     });
 
     svg += '</svg>';
-    treeEl.innerHTML = svg;
-  } else {
-    treeNameEl.textContent = '(none selected)';
-    treeEl.innerHTML = '<p class="dim">No tree selected (run: ygl-trees tree use &lt;name&gt;)</p>';
-  }
+    return svg;
 }
 
 // ── Node detail panel (live fetch; static export shows a hint) ──

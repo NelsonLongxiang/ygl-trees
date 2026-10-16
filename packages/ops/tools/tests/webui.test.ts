@@ -59,6 +59,17 @@ describe("webui gatherData", () => {
     expect(d.evidence.length).toBe(1);
     expect(d.evidence[0].quote).toContain("关键摘录原文");
   });
+  it("R11：树节点带 created/unlocked_at/state，timeline 日聚合成形", () => {
+    const d = gatherData(env());
+    const n = d.tree.nodes[0];
+    expect(n.created).toBeTruthy();
+    expect("state" in n && "unlocked_at" in n).toBe(true);
+    expect(Array.isArray(d.timeline)).toBe(true);
+    // our own seeding wrote events today → at least one bucketed day
+    expect(d.timeline.length).toBeGreaterThanOrEqual(1);
+    const t = d.timeline[d.timeline.length - 1];
+    for (const k of ["day", "research", "tree", "eval", "other"]) expect(k in t).toBe(true);
+  });
 });
 
 describe("webui generateHTML", () => {

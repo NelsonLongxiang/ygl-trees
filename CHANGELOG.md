@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.31.0（2026-10-17）时间维度（spec R11）
+- **树视图时间轴模式**：`layout: tier` ⇄ `layout: time` 切换（chip 按钮）——时间布局每节点一条泳道（按 created 排序），created 圆点 + 解锁弧（created→unlocked_at 实线绿箭头 + 终点圆）或未解锁灰虚线延伸至今；日刻度竖线；节点仍可点击出详情面板
+- **研究管线时间线**：`/api/data` 增 `timeline`（近 30 天 events 按日聚合，research/tree/eval/other 四桶），前端逐日堆叠条（DESIGN.md token：primary/tertiary/warning/secondary）+ 图例 + title 提示
+- 数据面：tree 节点带 `created/unlocked_at/state`（LEFT JOIN node_state default 上下文解锁行）——0.30 树域留痕的直接消费
+- **dogfood 三幕验收**：release-gate 树 dev/rc 实线解锁弧 + release/probe-node 灰虚线待解锁——检阅页 http://127.0.0.1:8642 切 layout: time 可回放
+- 单测 13 例（+R11 数据面断言）；DESIGN.md token 纪律（零新增色）
+
 ## 0.30.1（2026-10-17）DESIGN.md 落地（前端 design 方法论裁定）
 - **用户裁定固化（spec R12.1a）**：前端/UI design 采用 [DESIGN.md 格式](https://github.com/google-labs-code/design.md)（google-labs-code：YAML tokens + rationale 固定节序 + lint/diff/export 工具链）；arch/decision 类 design 由 Agent 定义（ADR 风格）
 - **仓库根 `DESIGN.md`**：现有 dashboard 视觉身份（GitHub-dark 双层画布/单一 primary 交互色/等宽可执行文本/状态词色配对/边框优先分层）固化为 13 色 + 5 字阶 + 9 组件 token——webui 设计系统单一事实源，R11 时间轴与 R13 pan/zoom 以它为 token 来源
