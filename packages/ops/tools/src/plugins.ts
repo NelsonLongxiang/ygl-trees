@@ -25,11 +25,17 @@ export interface UserPluginSpec {
   name: string;
   /** original install spec, kept for display */
   spec: string;
+  /** Config handed to the plugin's apply(ctx, config). Absent → {}. */
+  config?: Record<string, unknown>;
+  /** false → entry stays in the bundle but is not mounted (disable without uninstalling). */
+  enabled?: boolean;
 }
 
 export interface LoadedUserPlugin {
   name: string;
   apply?: (ctx: any, config?: any) => void;
+  /** Config from the bundle entry (loader Entry-option parity, adopted without the loader). */
+  config?: Record<string, unknown>;
   commands?: Record<string, { run: (env: any, action: string, rest: string[], args: any) => number | Promise<number> }>;
   /** yglTrees compatibility declared by the plugin; undefined = unconstrained */
   compat?: string;
@@ -109,7 +115,14 @@ export function readUserBundle(home: string): UserPluginSpec[] {
   try {
     const j = JSON.parse(fs.readFileSync(f, "utf8"));
     if (!Array.isArray(j.plugins)) return [];
-    return j.plugins.filter((p: any) => p && typeof p.name === "string").map((p: any) => ({ name: p.name, spec: p.spec || p.name }));
+    return j.plugins
+      .filter((p: any) => p && typeof p.name === "string")
+      .map((p: any) => {
+        const out: UserPluginSpec = { name: p.name, spec: p.spec || p.name };
+        if (p.config && typeof p.config === "object") out.config = p.config;
+        if (p.enabled === false) out.enabled = false;
+        return out;
+      });
   } catch {
     return [];
   }
@@ -186,7 +199,29 @@ export async function removePlugin(home: string, name: string): Promise<void> {
 }
 
 /** Profile contents + bundle composition (for `plugin list` / doctor). */
-export function listPlugins(home: string): { name: string; spec: string; version?: string; compat?: string; resolvable: boolean }[] {
+/** Flip an installed entry's `enabled` flag (keeps it installed). */
+export function setPluginEnabled(home: string, name: string, enabled: boolean): UserPluginSpec {
+  const bundle = readUserBundle(home);
+  const entry = bundle.find((p) => p.name === name);
+  if (!entry) throw new Error(`'${name}' is not in the user bundle (see: plugin list)`);
+  if (enabled) delete entry.enabled;
+  else entry.enabled = false;
+  writeUserBundle(home, bundle);
+  return entry;
+}
+
+/** Replace an entry's config block (what its apply(ctx, config) receives). */
+export function setPluginConfig(home: string, name: string, config: Record<string, unknown>): UserPluginSpec {
+  const bundle = readUserBundle(home);
+  const entry = bundle.find((p) => p.name === name);
+  if (!entry) throw new Error(`'${name}' is not in the user bundle (see: plugin list)`);
+  if (config && Object.keys(config).length) entry.config = config;
+  else delete entry.config;
+  writeUserBundle(home, bundle);
+  return entry;
+}
+
+export function listPlugins(home: string): { name: string; spec: string; version?: string; compat?: string; resolvable: boolean; enabled: boolean; has_config: boolean }[] {
   const bundle = readUserBundle(home);
   const dir = profileDir(home);
   return bundle.map((p) => {
@@ -203,7 +238,7 @@ export function listPlugins(home: string): { name: string; spec: string; version
     } catch {
       /* unresolved */
     }
-    return { name: p.name, spec: p.spec, version, compat, resolvable };
+    return { name: p.name, spec: p.spec, version, compat, resolvable, enabled: p.enabled !== false, has_config: !!p.config };
   });
 }
 
@@ -223,6 +258,7 @@ export function loadUserPlugins(home: string): UserLoadResult {
   const plugins: LoadedUserPlugin[] = [];
   const issues: PluginIssue[] = [];
   for (const p of readUserBundle(home)) {
+    if (p.enabled === false) continue; // disabled entries stay installed, just not mounted
     try {
       const mod = require(require.resolve(p.name, { paths: [dir] }));
       if (typeof mod.apply !== "function" && !mod.commands) {
@@ -233,7 +269,7 @@ export function loadUserPlugins(home: string): UserLoadResult {
       try {
         compat = JSON.parse(fs.readFileSync(require.resolve(path.join(p.name, "package.json"), { paths: [dir] }), "utf8")).yglTrees;
       } catch { /* unconstrained */ }
-      plugins.push({ name: p.name, apply: mod.apply, commands: mod.commands, compat });
+      plugins.push({ name: p.name, apply: mod.apply, config: p.config, commands: mod.commands, compat });
     } catch (e: any) {
       issues.push({ name: p.name, error: String(e?.message || e) });
     }

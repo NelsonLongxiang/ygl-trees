@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.40.0（2026-10-17）CI 门禁（Gitee Go 不可用的等效方案）+ 发布链路 + loader 裁决
+- **`.githooks/pre-push`**：无 CI 环境下的仓库级门禁——分支 push 跑 `pnpm test`，**tag push 追加 `pnpm pack:check`**（产物级）；旁路只能显式 `YGL_SKIP_HOOKS=1`（打印跳过原因，不静默）；安装 `git config core.hooksPath .githooks`
+- **Gitee Go 阻塞留证**：`gitee pipeline` 全部命令返回 `giteego: HTTP 403 您无此操作权限`（两测一致）——账户无该服务权限，非配置问题；docs/release.md 记录日后接入法（`pipeline example` 取官方 YAML 基线，不手写字段）
+- **发布链路打通**：`v0.39.1` tag 推送（经钩子全流程验证：`pnpm test` + `pack-check: PASS`）+ Gitee Release `id 1210127`（说明取自 CHANGELOG）；docs/release.md 补「标签与 Release」章
+- **loader 架构裁决（探针实证 no-go，能力采纳）**：四轮探针证明 loader 与我们的插件模块**完全兼容**（四种形态全通、config 透传、`update()` 重配），但 ① 编译产物不暴露 `moduleNamespace`（源码有/lib 无）→ 拿不到 `commands`；② 按 specifier 运行时导入 → tsdown 不可追踪 → 用于基础插件会**破坏自包含单文件产物**。裁决记录于 vendor/README（含三项重审触发条件）
+- **能力采纳（不引入 loader 机制）**：用户层 bundle 支持 `config` 与 `enabled`——`plugin config <name> '<json>'` / `--clear`、`plugin enable|disable <name>`（停用保留安装）、`plugin list` 增 state/cfg 两列；`apply(ctx, config)` 实收配置
+- **修复 0.37.1 引入的契约回归**：`unknown group → rc 2` 守卫被误删，未知组改为 TypeError 崩溃（违反冻结退出码契约）——修复并加 demo 断言防复发
+- demo 断言 +4（未知组 rc=2 / config 往返 / disable 后仍干净 rc=2 / enable 恢复）；单测 109 → **112**
+
 ## 0.39.1（2026-10-17）仓库级 commit 门禁（Gitee Go 不可用的等效方案）+ 发布/标签流程入档
 - **`.githooks/pre-push`**：push 时自动跑仓库级门禁——分支 push 跑 `pnpm test`（单测+构建+demo），**tag push 追加 `pnpm pack:check`**（产物级验证，防未验证产物出门）；安装 `git config core.hooksPath .githooks`；旁路只能显式 `YGL_SKIP_HOOKS=1`（钩子打印跳过原因，不静默）
 - **Gitee Go 阻塞留证**：`gitee pipeline` 全部命令（含最轻的服务状态检查）返回 `giteego: HTTP 403 {"msg":"您无此操作权限！"}`，两次复测一致——**账户无该服务权限**，非配置问题、无 API 可自助开通；已记录开通路径与日后接法（`pipeline example` 取官方 YAML 基线，不手写字段）

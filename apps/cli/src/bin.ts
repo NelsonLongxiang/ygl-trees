@@ -313,6 +313,11 @@ export async function main(argv: string[]): Promise<number> {
       return code;
     }
     const mod = DOMAIN_MODULES[group];
+    if (!mod) {
+      bad(ctx, `unknown group: ${group}`);
+      out(ctx, usage());
+      return 2;
+    }
     const rc = await mod.run(env, action || "", args._.slice(2), args);
     const code = typeof rc === "number" ? rc : 0;
     // R10.3: cmd.run ledger row — rc-mapped severity (0→info, 2→warn, else→error)

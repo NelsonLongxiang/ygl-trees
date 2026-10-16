@@ -225,3 +225,27 @@ PL=$($Y plugin list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).
 if [ "$PL" = "true" ]; then echo "  ✓ plugin list 显示版本与可解析态"; else echo "  ✗ plugin list: $PL"; exit 1; fi
 PK2=$($Y plugin remove ygl-plugin-demo 2>&1)
 case "$PK2" in *removed*) echo "  ✓ plugin remove 清依赖与 bundle";; *) echo "  ✗ plugin remove: $PK2"; exit 1;; esac
+
+# 冻结契约：未知命令组必须干净退出 2（不是崩溃）；0.37.1 曾丢此守卫，此断言防复发
+set +e
+$Y definitely-not-a-group >/dev/null 2>&1
+UG=$?
+set -e
+if [ "$UG" = "2" ]; then echo "  ✓ 未知组退出码契约 rc=2（干净用法错误）"; else echo "  ✗ 未知组 rc=$UG（期望 2）"; exit 1; fi
+
+# 0.40：用户层 Entry-option 等价能力（config / enabled），无 loader 依赖
+$Y plugin install "$REPO_ROOT/examples/plugin-demo" >/dev/null 2>&1
+$Y plugin config ygl-plugin-demo '{"greeting":"demo","limit":3}' >/dev/null 2>&1
+CFG=$($Y plugin config ygl-plugin-demo 2>&1 | tr -d '
+ ')
+case "$CFG" in *'"limit":3'*) echo "  ✓ plugin config 往返（apply 收到的 config 可查可改）";; *) echo "  ✗ plugin config: $CFG"; exit 1;; esac
+$Y plugin disable ygl-plugin-demo >/dev/null 2>&1
+set +e
+$Y demo hello >/dev/null 2>&1
+DG=$?
+set -e
+if [ "$DG" = "2" ]; then echo "  ✓ plugin disable 后命令组不可达（且仍是干净 rc=2）"; else echo "  ✗ disable 后 rc=$DG（期望 2）"; exit 1; fi
+$Y plugin enable ygl-plugin-demo >/dev/null 2>&1
+EN=$($Y demo hello 2>&1)
+case "$EN" in *"hello from the user layer"*) echo "  ✓ plugin enable 恢复挂载";; *) echo "  ✗ enable: $EN"; exit 1;; esac
+$Y plugin remove ygl-plugin-demo >/dev/null 2>&1

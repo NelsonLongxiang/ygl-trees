@@ -62,7 +62,9 @@ export async function bootApp(opts: BootOptions): Promise<BootedApp> {
   for (const i of issues) startupIssues.push({ where: `user plugin ${i.name}`, error: i.error });
 
   for (const up of plugins) {
-    app.plugin(up.apply || (() => {}), {});
+    // Entry-option parity adopted without the loader: config rides the bundle
+    // entry, disabled entries never reach here (filtered in loadUserPlugins).
+    app.plugin(up.apply || (() => {}), up.config ?? {});
     const w = compatWarn(up.name, up.compat, opts.version);
     if (w) {
       process.stderr.write(`ygl-trees: plugin compat warning: ${w}\n`);

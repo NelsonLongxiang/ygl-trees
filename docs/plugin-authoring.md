@@ -29,6 +29,27 @@ ygl-trees doctor           # 第 9 项 profile_integrity 护航
 
 完整可跑示例见 [examples/plugin-demo](../examples/plugin-demo)（demo 组 12 回归锁定）。
 
+### 给插件传配置 / 临时停用
+
+```bash
+ygl-trees plugin config my-domain-plugin '{"greeting":"你好","limit":5}'   # apply(ctx, config) 收到它
+ygl-trees plugin config my-domain-plugin                                  # 查看当前 config
+ygl-trees plugin config my-domain-plugin --clear                          # 清空
+ygl-trees plugin disable my-domain-plugin     # 保留安装，启动时不挂载（命令组随之消失）
+ygl-trees plugin enable  my-domain-plugin
+ygl-trees plugin list                         # state（启用/停用）+ cfg（有/—）两列
+```
+
+`$YGL_HOME/ygl.user.bundle.json` 的条目形如：
+
+```json
+{ "plugins": [ { "name": "my-domain-plugin", "spec": "link:/abs/path",
+                 "config": { "greeting": "你好" }, "enabled": true } ] }
+```
+
+`enabled: false` 与卸载的区别：**条目留在 bundle**（重启用无需重装）；`config` 省略时 `apply` 收到 `{}`。
+这两个字段对标 Cordis loader 的 Entry options（`config` / `disabled`）——采纳其**能力**，不引入 loader 机制（理由见 [vendor/README.md](../vendor/README.md) 的 loader 裁决）。
+
 ## 插件契约
 
 | 导出 | 必填 | 语义 |

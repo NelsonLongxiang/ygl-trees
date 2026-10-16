@@ -212,6 +212,18 @@ importers:
         specifier: ^20.0.0
         version: 20.19.43
 
+  tmp/plugcap-test/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
+  tmp/plugcap-test2/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
   tmp/plugins-unit-1792134654711/plugins: {}
 
   tmp/plugins-unit-1792134686985/plugins: {}
@@ -227,6 +239,20 @@ importers:
   tmp/plugins-unit-1792137727498/plugins: {}
 
   tmp/plugins-unit-1792138299105/plugins: {}
+
+  tmp/plugins-unit-1792138537057/plugins: {}
+
+  tmp/plugins-unit-1792139300615/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
+
+  tmp/plugins-unit-1792139430510/plugins:
+    dependencies:
+      ygl-plugin-demo:
+        specifier: link:D:/workspace/ygl-trees/examples/plugin-demo
+        version: link:../../../examples/plugin-demo
 
   vendor/cordis:
     dependencies:
