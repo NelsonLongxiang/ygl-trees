@@ -9,6 +9,7 @@
  */
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
+import { resolveDistRoot } from "../../../web/app/src/index";
 import { TreeStore } from "../../../techtree/model/src/reads";
 import { buildBrief } from "./agent-cmds";
 import { resolveId } from "./rels";
@@ -917,7 +918,7 @@ export function createDashboardServer(env: Env) {
 function serve(env: Env, args: any): Promise<number> {
   const { ctx } = env;
   // re-check (the server's hasWebApp is scoped to createDashboardServer)
-  const reactAvailable = require("../../../packages/web/app/src/index").resolveDistRoot() !== null;
+  const reactAvailable = resolveDistRoot() !== null;
   return new Promise<number>((resolve) => {
     const port = Number(args.flags.port || 8642);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
