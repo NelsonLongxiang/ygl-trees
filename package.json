@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.37.0",
+  "version": "0.37.1",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "build:bundle": "pnpm build && tsdown --config-loader tsx",
+    "build:bundle": "pnpm build && npx tsdown apps/cli/src/bin.ts --format cjs --out-dir dist/bundle --platform node --target node20 --external better-sqlite3 --external node-sqlite3-wasm --external typeorm --external reflect-metadata --external pg --external @deepseek-ai/dsh-atomic-write",
     "start": "node dist/apps/cli/src/bin.js",
     "demo": "bash examples/demo.sh",
     "test": "pnpm test:unit && pnpm build && bash examples/demo.sh",

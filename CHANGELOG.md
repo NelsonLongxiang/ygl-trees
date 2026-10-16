@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.37.1（2026-10-17）bundle 完全可用——DOMAIN_ROUTES 静态 barrel 化
+- **domain-barrel.ts**：所有领域命令模块从动态 `require(route)` 改为静态 import barrel——bundler（tsdown/rolldown）可追踪，bundle 产出完整功能（全命令面实测通过：agent brief / db stats / rel list / demo hello / plugin list）
+- **bundle 对比**：323KB 单文件 bin.cjs，启动 559ms vs tsc 树 621ms（~10% 提速）；外部保留 native/opt 依赖（better-sqlite3/node-sqlite3-wasm/typeorm/pg/reflect-metadata/atomic-write）
+- `build:bundle` 脚本固定 CLI 直传参数（tsdown.config.ts 有 Node 24.12 config-loader bug，暂绕过）
+- vendor/AGENTS.md 补充（DSH 典范——src 编辑禁令 + 同步程序 + 我们的补充纪律）
+
 ## 0.37.0（2026-10-17）vendor DSH 全家桶对齐 + tsdown bundle 脚手架（用户两项裁定）
 - **vendor 九件套对齐 DSH**（用户裁定：框架级一致性）：从 DSH vendor 源码同步（非 npm 安非 git clone——DSH 模式：fork 仓库源码 git 跟踪 + workspace:~ 链接）；cordis 升级到 fork 4.0.5-α（**修复 rc.11 setImmediate 时序**——fork 探针实测单 yield 后 database+named+inject 链 needsDb 全就绪 ✓）；cosmokit 1.8.6-α、schemastery 3.18.5-α、loader/include/group/hmr/timer/logger-console 七件 cordis-plugin 首次入库（可用弹药，等需求接入）
 - **import 面 rescope**：`from "cordis"` → `from "@deepseek-ai/cordis"`（6 文件）；`declare module "cordis"` → `"@deepseek-ai/cordis"`（5 文件）；package.json 依赖声明更新（根 + apps/cli + 4 包）

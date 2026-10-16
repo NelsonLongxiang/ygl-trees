@@ -18,6 +18,7 @@ import { bootApp, type BootedApp } from "./profile-boot";
 import { StartupError, reportStartupFailure } from "./startup-diagnostics";
 import { createProcessShutdown } from "./process-shutdown";
 import { runPluginCommand } from "./plugin";
+import { DOMAIN_MODULES } from "./domain-barrel";
 import Schema from "@deepseek-ai/schemastery";
 
 export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees");
@@ -282,23 +283,7 @@ export async function main(argv: string[]): Promise<number> {
   /** Async commands (e.g. source fetch) return a promise; main must keep the
    *  db open until it settles — hence the awaited dispatch below.
    *  Domain routing: each group maps to its owning domain module. */
-  const DOMAIN_ROUTES: Record<string, string> = {
-    db: "../../../packages/ops/tools/src/db-cmds",
-    config: "../../../packages/ops/tools/src/config-cmds",
-    job: "../../../packages/ops/tools/src/job-cmds",
-    agent: "../../../packages/ops/tools/src/agent-cmds",
-    research: "../../../packages/research/pipeline/src/cmds",
-    project: "../../../packages/research/produce/src/project-cmds",
-    produce: "../../../packages/research/produce/src/produce-cmds",
-    task: "../../../packages/research/produce/src/produce-cmds",
-    tree: "../../../packages/techtree/model/src/cmds",
-    node: "../../../packages/techtree/model/src/cmds",
-    skill: "../../../packages/knowledge/skills/src/skill-cmds",
-    kb: "../../../packages/knowledge/skills/src/cmds",
-    webui: "../../../packages/ops/tools/src/webui",
-    doctor: "../../../packages/ops/tools/src/doctor",
-    rel: "../../../packages/ops/tools/src/rels",
-  };
+  // Domain routing: static barrel (bundle-traceable) — see domain-barrel.ts
   const dispatch = async (): Promise<number> => {
     const t0 = Date.now();
     // R10.3: one run id per CLI invocation — same-process events carry it in
@@ -325,13 +310,7 @@ export async function main(argv: string[]): Promise<number> {
       } catch { /* telemetry best-effort */ }
       return code;
     }
-    const route = DOMAIN_ROUTES[group];
-    if (!route) {
-      bad(ctx, `unknown group: ${group}`);
-      out(ctx, usage());
-      return 2;
-    }
-    const mod = require(route);
+    const mod = DOMAIN_MODULES[group];
     const rc = await mod.run(env, action || "", args._.slice(2), args);
     const code = typeof rc === "number" ? rc : 0;
     // R10.3: cmd.run ledger row — rc-mapped severity (0→info, 2→warn, else→error)
