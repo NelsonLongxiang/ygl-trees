@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.74.0（2026-10-17）export-markdown + v2 测试 + 技能同步
+- **db export-markdown**：一键生成工作区 Markdown 报告（Summary/Projects/Claims/Knowledge/Trees）
+- **v2 功能测试**：6 项新单测覆盖 time-travel/timeline/workspace/obsidian/help-suggestions/llms-sections
+- **技能同步 v0.73.0**：quickstart/knowledge/research/techtree 全部更新到最新命令面
+- **141 单测**（+6）
+
 ## 0.73.0（2026-10-17）引导增强 + Token 优化 + A2A 修复
 - **首启引导**：无数据库时显示 Welcome + 3 步入门指南
 - **空态引导**：列表为空时显示具体命令建议（kb/project/task）
