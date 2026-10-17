@@ -28,6 +28,7 @@ chk "node validate"       0 -- $Y node validate
 # §二 研究/产出/kb/skill
 chk "project new"         0 -- $Y project new rt -q "README 校验"
 chk "research query add"  0 -- $Y research query add "校验用检索式"
+chk "source --adjudication" 0 -- $Y research source add --adjudication "README 校验会话裁决：三条件已核对"
 chk "produce outline"     0 -- $Y produce outline
 chk "produce spec"        0 -- $Y produce spec "演示规格" --body "# 规格"
 chk "produce design"      0 -- $Y produce design "演示设计" --body "# 设计" --design-type arch

@@ -17,6 +17,11 @@ tags: ygl-trees,methodology,relations,fabric
 **两条平行流水线**：研究管线（source→evidence→claim→report）和科技树各自发育、零缝合——
 检阅者看不出"这个节点依据什么证据、由什么断言决定、跟踪着什么任务"。`relations` 表就是缝合线。
 
+**缝合直接喂决策模型（0.80）**：节点挂接的 rel 关系（双向 ≤12 条）自动进 eval 上下文包
+`attachments`——claim 带 text+status+confidence、evidence 带 quote 摘要。裁决 `decided-by`
+挂链后 `node can --eval` 不必 `--state k=v` 手动携带事实（实测 P 0.30 → 0.92）。
+挂链纪律由此获得语义门槛层面的回报。
+
 ## 2. rel 词汇表（方向：src --rel→ dst）
 
 | rel | 语义 | 典型挂法 |

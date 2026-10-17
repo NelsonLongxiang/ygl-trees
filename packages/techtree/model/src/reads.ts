@@ -455,6 +455,12 @@ export class TreeStore {
    * + unlocked set + the caller's state bag. The eval API demands a context
    * package — bare state fell into the gray band 6/8 in the material's
    * routing test, so we ship everything the tree knows about this node.
+   *
+   * 0.80: the rel fabric joins the package — evidence/claim/kb summaries
+   * attached to the node (either direction) land in `attachments`, so a
+   * decided-by chain is visible to the eval model without manually
+   * re-carrying facts via --state (user finding: P 0.30 → 0.92 gap).
+   * Bounded: ≤12 rows, text clipped to 120 chars.
    */
   evalContext(treeId: string, keyOrId: string, stateBag: Record<string, any>, context = "default"): Row {
     const n = this.nodeGet(treeId, keyOrId);
@@ -468,7 +474,7 @@ export class TreeStore {
       name: c.name, kind: c.kind, op: c.op, value: c.value, required: !!c.required, effect: c.effect,
     }));
     const unlocked = [...this.unlockedSet(treeId, context)].map((id) => idToKey.get(id) || id);
-    return {
+    const pkg: Row = {
       node: { key: n.key, name: n.name, kind: n.kind, tier: n.tier, cost: n.cost },
       parents,
       ancestors,
@@ -476,6 +482,44 @@ export class TreeStore {
       unlocked,
       state: stateBag,
     };
+    const attachments = this.relAttachments(String(n.id));
+    if (attachments.length) pkg.attachments = attachments;
+    return pkg;
+  }
+
+  /** 0.80: rel-fabric summaries for the eval context package (both directions). */
+  relAttachments(nodeId: string): Row[] {
+    const rows = this.db.all(
+      `SELECT rel, src_type, src_id, dst_type, dst_id FROM relations
+       WHERE (src_type='node' AND src_id=?) OR (dst_type='node' AND dst_id=?)
+       ORDER BY rowid LIMIT 12`,
+      [nodeId, nodeId]
+    );
+    const clip = (v: unknown, n = 120) => String(v ?? "").slice(0, n);
+    return rows.map((r: Row): Row => {
+      const srcIsMe = r.src_type === "node" && r.src_id === nodeId;
+      const type = String(srcIsMe ? r.dst_type : r.src_type);
+      const id = String(srcIsMe ? r.dst_id : r.src_id);
+      const base: Row = { rel: String(r.rel), type, id };
+      const q = (sql: string): Row | undefined => this.db.get(sql, [id]) as Row | undefined;
+      if (type === "claim") {
+        const c = q("SELECT text, status, confidence FROM claims WHERE id=?");
+        if (c) return { ...base, text: clip(c.text), status: c.status, confidence: c.confidence };
+      } else if (type === "evidence") {
+        const e = q("SELECT quote FROM evidence WHERE id=?");
+        if (e) return { ...base, quote: clip(e.quote) };
+      } else if (type === "kb") {
+        const k = q("SELECT title FROM kb_notes WHERE id=?");
+        if (k) return { ...base, title: clip(k.title, 80) };
+      } else if (type === "source") {
+        const s = q("SELECT title FROM sources WHERE id=?");
+        if (s) return { ...base, title: clip(s.title, 80) };
+      } else if (type === "node") {
+        const nd = q("SELECT key, name FROM nodes WHERE id=?");
+        if (nd) return { ...base, key: nd.key, name: clip(nd.name, 80) };
+      }
+      return base; // query/artifact/skill or dangling ref: id only
+    });
   }
 
   /** Every node whose required gates are currently satisfied. */

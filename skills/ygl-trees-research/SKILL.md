@@ -26,9 +26,14 @@ ygl-trees research source add --title t --url https://... \
         --abstract "..." --relevance 4 --query "邻接表 vs 闭包表"   # 手工入库+关联检索式
 ygl-trees research source fetch https://example.com/page     # 自动抓取（title/meta/正文；
                                                               # 非 html 拒收零副作用；薄内容打 needs_review）
+ygl-trees research source add --adjudication "会话内裁决：三条件已逐条核对" \
+        --tags adjudication                                    # 会话内裁决原生载体（0.80）：
+                                                              # url 自动 session://adjudication/<时刻>，
+                                                              # 摘要兼作标题——不再需要临时文件绕行
 ```
 
 来源按 `(project, url_hash)` 去重；`--query` 顺带建立召回关联（query list 显示召回数）。
+`--url` 收 http(s):// · file:// · session://（0.80）。
 
 ## 2. 摘录与断言
 

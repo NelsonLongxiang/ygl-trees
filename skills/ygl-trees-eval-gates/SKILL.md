@@ -60,7 +60,12 @@ ygl-trees node can gate-node --eval --json     # evaluated[] 带 type 字段 + p
 ## 4. 上下文包（模型看到什么）
 
 节点元数据（key/name/kind/tier/cost）+ 直接父（node_edges）+ 祖先链（node_closure）+
-该节点全部条件 + 已解锁集 + `--state` 袋。**state 必带上下文包**——裸 state 大概率落灰带。
+该节点全部条件 + 已解锁集 + `--state` 袋 + **rel 挂接摘要（0.80）**。**state 必带上下文包**——裸 state 大概率落灰带。
+
+**attachments（0.80 织物并入）**：节点挂接的 rel 关系（双向 ≤12 条）自动摘录入包——
+claim（text+status+confidence）、evidence（quote 截 120 字）、kb/source（标题）、node（key+name）、
+其余类型 id-only。裁决链 `decided-by` 挂好后 eval 模型直接可见，不必 `--state k=v` 手动携带事实
+（用户实测：不挂链 P=0.30，挂链后 0.92）。
 
 ## 5. 凭证与端点（优先级：config > 环境变量/文件 > 默认网关）
 

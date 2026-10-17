@@ -14,6 +14,11 @@ import { Claim, Evidence, Query, Source } from "./entities";
 
 /** Run a write through the TypeORM transactional write service and print
  *  with JSON discipline. Keeps every write command 6 lines. */
+/** 0.80: compact timestamp for session:// adjudication urls (yyyymmddhhmm). */
+function nowCompact(): string {
+  return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
+}
+
 function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
   return getOrm(env.db.path)
@@ -141,14 +146,29 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'flag needs a value: --title "..." / --url "..."  (bare flag was treated as boolean)');
         return 2;
       }
-      const title = String(titleRaw || "");
-      const url = String(urlRaw || "");
+      let title = String(titleRaw || "");
+      let url = String(urlRaw || "");
+      // 0.80: in-session adjudication carrier — the most common human
+      // arbitration form had no native --url shape (http(s)/file only),
+      // forcing temp-file workarounds. `--adjudication "<裁决摘要>"`
+      // fills url with a session:// pseudo-scheme and doubles as the
+      // title when --title is absent.
+      const adjRaw = args.flags.adjudication;
+      if (adjRaw === true) {
+        bad(ctx, 'flag needs a value: --adjudication "<裁决摘要>"');
+        return 2;
+      }
+      if (adjRaw !== undefined && adjRaw !== "") {
+        const adj = String(adjRaw);
+        if (!url) url = `session://adjudication/${nowCompact()}`;
+        if (!title) title = adj.slice(0, 60);
+      }
       if (!title && !url) {
         bad(ctx, "need --title and/or --url");
         return 2;
       }
-      if (url && !/^https?:\/\/|^file:\/\//.test(url)) {
-        bad(ctx, `--url must be http(s):// or file:// (got: "${clip(url, 30)}")`);
+      if (url && !/^https?:\/\/|^file:\/\/|^session:\/\//.test(url)) {
+        bad(ctx, `--url must be http(s)://, file:// or session:// (got: "${clip(url, 30)}")`);
         return 2;
       }
       const spec = {

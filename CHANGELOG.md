@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.80.0（2026-10-17）rel 织物并入 eval 上下文 + 会话内裁决载体
+- **eval 上下文包并入 rel 挂接摘要**（用户实测发现：裁决已 `decided-by` 挂链，P 仍 0.30，必须 `--state k=v` 手动携带事实才 0.92）：`evalContext` 新增 `attachments`——节点挂接的 relations 双向查询（≤12 条），claim 摘录 text+status+confidence、evidence 摘录 quote（截 120 字）、kb/source 标题、node key+name、其余 id-only；无挂接时字段缺省（与旧形状逐字节兼容）
+- **`research source add --adjudication "<裁决摘要>"`**：会话内裁决原生载体——url 自动 `session://adjudication/<yyyymmddhhmm>`，摘要兼作缺省标题；`--url` 校验放宽收 `session://`；裸 `--adjudication` 旗标缺值 rc=2
+- 测试：`packages/techtree/model/tests/evalctx.spec.ts` 5 例（无挂接兼容 / decided-by 摘要 / 反向 evidenced-by / 截断与悬空退化 / 12 条上限）；`scripts/readme-verify.sh` +1（--adjudication rc=0）
+
 ## 0.79.1（2026-10-17）锁身份 + serve --help 短路 + 批量判定 + 回测状态桥
 - **异常①锁归属**：`.ygllock` 记录持有者命令行；撞锁报错、`db unlock`（含 `holder_cmd` JSON 字段）、`doctor` 三处回显真实持有者身份——CLI 撞 CLI 不再被误标为 serve（serve 从不取写锁，报错明示这一点）
 - **异常②**：`webui serve --help` 短路打印用法即退出，不再直接启动服务（随机端口误触发实证）

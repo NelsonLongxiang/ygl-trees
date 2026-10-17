@@ -103,7 +103,9 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 
 **批量判定 + `--state-file`（0.79.1）**：`node can k1 k2 k3` 一次进程判定多节点（多键自动进批模式，`--json` 返回数组）；`--state-file <json>` 喂状态袋，两种形状——**扁平计数** `{"y_imported": 40}` 全节点共享，或**按节点** `{"a": {"y_imported": 40}, "b": {...}}` 各取各袋。探针脚本从此每树起一次进程而非每节点。
 
-**决策模型评估门（spec R8；0.14 布尔 → 0.26 三题型 → 0.27 混批）**：语义型必检条件用 eval 题型声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）判定：
+**决策模型评估门（spec R8；0.14 布尔 → 0.26 三题型 → 0.27 混批 → 0.80 织物并入）**：语义型必检条件用 eval 题型声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋 + rel 挂接摘要**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）判定：
+
+- **rel 织物并入（0.80）**：节点挂接的 evidence（quote 摘要）/ claim（text+status+confidence）/ kb/source（标题）等 rel 关系（双向，≤12 条，文本截 120 字）自动进上下文包的 `attachments`——「证据挂链」纪律从此对语义门槛可见，不必再 `--state k=v` 手动携带裁决事实（实测 P 0.30 → 0.92 的差距由挂链补平）
 
 - **三题型**：`--op eval`（布尔 P(true)）/ `--op eval-choice`（多选一，判 **P(期望答案)**，`--options "k=desc,..."` + `--answer k`）/ `--op eval-score`（等级评分 `--levels "级0,..."` 2-10 级 + `--min-score n`，判概率加权均值 ±1 灰带）
 - P≥0.7 通过 · P≤0.4 未通过 · **灰带 pending**（过程态，禁作终态，单列不阻塞也不放行）；score 的灰带是 [min−1, min)
@@ -124,6 +126,7 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 query add       登记检索式
 query attach    检索式 ↔ 来源关联（query list 显示召回数）
 source add      收来源，按 (project, url_hash) 去重；--query 顺带关联
+                --adjudication "<裁决摘要>"：会话内裁决原生载体（url 自动 session://adjudication/<时刻>，摘要兼作标题）；--url 也收 session://
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
 claim add       写下断言
