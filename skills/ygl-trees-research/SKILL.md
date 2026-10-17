@@ -43,13 +43,16 @@ ygl-trees research evidence add <sourceId> --quote "原文片段" --locator "§2
 ygl-trees research evidence add <sourceId> --file quotes.md         # 长摘录免转义
 ygl-trees research claim add "断言文本" --confidence A               # 档位
 ygl-trees research claim add "断言文本" --confidence 0.92            # 数值档（0.81：0-1 或 0-100%）
-ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导（普通断言）
+ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导（普通断言）+ 自动模型评估落账（0.84）
 ygl-trees research claim resolve <claimId> --as contested --note "矛盾待查"  # 人工仲裁出口
 ygl-trees research claim unresolve <claimId>   # 复位回 unverified（0.82.1：撤销链接副作用/抢跑仲裁）
+ygl-trees research claim evaluate <claimId>    # 模型置信度评估（0.84：写 claim.eval 事件，不再 stdout 蒸发）
+ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（0.84：校准预测 ≥60% 判据的测量面）
 ```
 
 - 有支持有反对 → `contested`；仲裁后新证据链接会重新推导
 - **预测断言（`[预测·…]` 前缀）挂证据不自动晋升**（0.82.1）：挂证据 ≠ 仲裁，状态保持 unverified 直到显式 resolve / 到期回测——predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `claim unresolve` 归位（幂等 duplicate:true）
+- **判定史可对账（0.84）**：link 自动评估与手动 evaluate 都落 `claim.eval` 事件（mode: auto-on-link|manual）；`calibration` 按"每断言最新评估胜出"汇总模型档位 vs 人工仲裁档位——巡检"决策模型置信度"预测时先跑它，别手工数事件
 - 全部命令幂等：同内容重跑返回已存在行（`duplicate: true`，rc=0）
 
 ## 3. 产出

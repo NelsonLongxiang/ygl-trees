@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.84.0（2026-10-18）判定落账：claim.eval 事件 + 校准读出
+
+- **链接自动评估修复（截断缺陷）**：`claim link` 的自动置信度评估此前是 fire-and-forget——CLI 短进程在网关调用（3-5s）结算前退出，评估从未落账（工作区 112 次 link 零 `claim.eval` 事件）。现在 await 结算后写事件再打回执。
+- **JSON 纯度修复（顺带抓到）**：`--json` 模式下 [模型] 行曾污染 stdout（对象后追加文本，违反契约②）。现在评估先结算、`model_label`/`model_confidence` 并入 JSON 对象，人类视图只在非 json 模式输出。
+- **手动评估落账**：`claim evaluate` 在线成功时写 `claim.eval` 事件（mode: manual，含 human_status/human_confidence/evidence_count）——判定史从 stdout 蒸发改为可对账。
+- **新增 `research claim calibration [--all]`**：每断言最新评估胜出，模型档位（A/B/C/D→4/3/2/1）vs 人工仲裁档位（supported/contested/refuted→4/2/1）档差表 + `模型低≥1档` 份额——直接测量"决策模型置信度系统性低于人工一档"预测（判据 ≥60%）。
+- 离线安全不变：无凭证回落离线提示、零事件、rc=0；demo 5l 断言 ×4；单测 claimeval.spec.ts ×4（spawn 端到端——只有端到端能抓进程退出截断类缺陷）。
+
+### 0.84.0 评审修复（REVIEW-0.84.0.md 四 P1 + tmp/review-0.84.0.md F2-F4）
+- **P1-1**：`claim calibration` 的 `evaluated` 曾报全工作区 claim.eval 数——`-p` 项目模式下分母虚高、份额失真；现按同口径计数（`evaluated === rows.length`，spec 断言锁定）
+- **P1-2**：`pnpm test` 顺序改 `build → test:unit → demo → audit`（claimeval.spec 依赖 dist/bundle/bin.cjs，干净克隆原顺序必挂）；spec 另加 BIN 缺失守卫（describe.skipIf + 指路 pnpm build）
+- **P1-3**：demo / contract-audit / readme-verify 三脚本 scratch home 改 `mktemp -d` + `trap … EXIT` 清理（并发门禁互删数据实测事故；$$ PID 后缀仍可跨 shell 撞），`YGL_DEMO_HOME` 覆盖口子保留
+- **P1-4**：db 缺失路径 `--json` 纯度（`bin.ts` no-db 分支曾输出"错误对象+人类 3 行"）——提示走 stderr，stdout 单对象；契约审计 +1 用例（86→87）
+- **F2/F4**：`claim link --by-source` 批量路径补齐评估落账（此前校准数据源盲区）；duplicate link 不再付全价网关评估（回执如实带 `duplicate:true`）；link 后置评估抽成公共函数
+- **F3**：research/pipeline → ops/tools（eval-enhance）跨域依赖在 package.json 如实声明 + packages/AGENTS.md 例外清单补记（架构待办：下沉 core/ 或 Cordis 服务注入）
+- **#6 文档**：AGENTS.md 契约计数 73→87、demo 断言数改"以运行时实测为准"；llms.txt 刷新至 0.84.0；readme:verify 新增 llms 版本头一致性断言
+
 ## 0.83.1（2026-10-17）job 运行史持久化热修
 - **`jobFinish` 漏传 runId（UPDATE 静默 no-op）**：`UPDATE runs SET finished=?,rc=?,output=? WHERE id=?` 的参数数组只有 3 个值——缺失的占位符绑定为 NULL，WHERE id=NULL 匹配 0 行且不报错。后果：**runs 运行史从未落库**（rc/output/finished 恒空，job logs 看到的 rc 全部来自 reaper 兜底）；jobs 侧的 last_run/status 更新正常，掩盖了缺陷。在验证 0.83 到期巡检任务的落库输出时捕获。demo §7 增回归断言（job run 后 runs 表 rc=0 可读回）→ 114
 

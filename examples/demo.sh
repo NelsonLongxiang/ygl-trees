@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 # ygl-trees end-to-end demo: research -> production -> knowledge reuse,
 # plus the tech-tree node model (parent/child, required vs optional, indexes).
-# Uses its OWN scratch workspace (YGL_DEMO_HOME, default /tmp/ygl-demo) and
-# wipes it — never point it at a workspace you care about.
+# Uses its OWN scratch workspace (mktemp'd by default; YGL_DEMO_HOME overrides —
+# caller then owns the directory). Never point it at a workspace you care about.
 set -euo pipefail
 export YGL_TEST=1  # demo: skip DB lock
-export YGL_HOME="${YGL_DEMO_HOME:-/tmp/ygl-demo}"
+# Isolated scratch home (P1-3, REVIEW-0.84.0): mktemp guarantees uniqueness even
+# when PID collides across shells/hosts; cleanup on exit. YGL_DEMO_HOME overrides
+# (kept — caller then owns the directory and its lifetime).
+CREATED_HOME=0
+if [ -n "${YGL_DEMO_HOME:-}" ]; then
+  export YGL_HOME="$YGL_DEMO_HOME"
+else
+  export YGL_HOME="$(mktemp -d "${TMPDIR:-/tmp}/ygl-demo.XXXXXX")"
+  CREATED_HOME=1
+fi
+cleanup() { [ "$CREATED_HOME" = 1 ] && rm -rf "$YGL_HOME" || true; }
+trap cleanup EXIT
 # Exercise the SHIPPED entry: the tsdown bundle (single file) when built,
 # else the tsc tree (dev path). Both are the same code; the bundle is what
 # `pnpm build` + the published `bin` field deliver.
@@ -60,7 +71,8 @@ $Y research evidence add "$A" --quote "邻接表保真，闭包表加速查询" 
 $Y research claim add "科技树本质是 DAG，应把静态定义、解锁状态、效果系统三层分开" --confidence A
 C=$($Y research claim list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)[0].id))")
 E=$($Y research evidence list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)[0].id))")
-$Y research claim link "$C" "$E"
+# 0.84：链接自动评估已 await 落账——demo 全程离线，保证确定性（无网络依赖）
+YGL_EVAL_OFFLINE=1 $Y research claim link "$C" "$E"
 
 echo "── 4. production"
 $Y produce section "落地建议" --body "1. 邻接表保真
@@ -113,8 +125,9 @@ SRC4=$($Y db sql "SELECT source_id FROM evidence LIMIT 1" --json | node -e "let 
 CL4=$($Y research claim link "$C" "$SRC4" 2>&1 || true)
 case "$CL4" in *"that id is a SOURCE"*) echo "  ✓ claim link source-id mixup explains itself";; *) echo "  ✗ claim link enrichment failed: $CL4"; exit 1;; esac
 # ④ --by-source links every evidence under the source
+# (YGL_EVAL_OFFLINE: 0.84 评审 F2 后 by-source 同样触发自动评估——离线钉住确定性与零费用)
 EV4=$($Y research evidence add "$SRC4" --quote "by-source probe quote" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).id))")
-BYS=$($Y research claim link "$C" "$SRC4" --by-source 2>&1 || true)
+BYS=$(YGL_EVAL_OFFLINE=1 $Y research claim link "$C" "$SRC4" --by-source 2>&1 || true)
 case "$BYS" in *"linked"*evidence*) echo "  ✓ claim link --by-source batch links";; *) echo "  ✗ by-source failed: $BYS"; exit 1;; esac
 # ② db unlock on a dead-pid lock clears without --force
 mkdir -p "$YGL_HOME/ygl-trees.db.ygllock" && echo "3900000" > "$YGL_HOME/ygl-trees.db.ygllock/pid"
@@ -293,6 +306,27 @@ $Y rel add node:probe-batch/pb2 evidence:$EV83 --rel evidenced-by >/dev/null 2>&
 CAN83=$(YGL_EVAL_OFFLINE=1 $Y node can pb2 -t probe-batch --eval --json 2>&1)
 case "$CAN83" in *'"eval_attachments"'*"$EV83"*) echo "  ✓ can --eval 携带本次 attachments 快照";; *) echo "  ✗ attachments: $CAN83"; exit 1;; esac
 $Y node cond rm pb2 --name snap83 -t probe-batch >/dev/null 2>&1
+
+echo "── 5l. 0.84 判定落账与校准读出（自动评估被进程退出截断的修复）"
+# ① 离线 evaluate：rc=0、标"离线"、零事件（判定不落账就不算数）
+set +e
+EVLD=$(YGL_EVAL_OFFLINE=1 $Y research claim evaluate "$PRED" -p techtree 2>&1)
+EVLD_RC=$?
+set -e
+case "$EVLD" in *离线*) [ "$EVLD_RC" = "0" ] && echo "  ✓ 离线 evaluate 安全回落（无模型不落账）";; *) echo "  ✗ offline evaluate: $EVLD"; exit 1;; esac
+CE0=$($Y db sql "SELECT COUNT(*) AS n FROM events WHERE kind='claim.eval'" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s)[0].n)})")
+[ "$CE0" = "0" ] && echo "  ✓ 离线判定零事件（不产生假数据）" || { echo "  ✗ offline wrote events: $CE0"; exit 1; }
+# ② 校准读出：种子两条 claim.eval（最新覆盖旧的），档差与份额可对账
+CAL_CL=$($Y research claim add "校准demo断言：模型档差" -p techtree --json 2>&1 | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+$Y db sql "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES('evdemo841a','2026-01-01T10:00:00.000Z','demo','claim.eval','claim','$CAL_CL','{\"model_confidence\":1.0,\"label\":\"D\",\"mode\":\"manual\"}','info')" >/dev/null 2>&1
+$Y db sql "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES('evdemo841b','2026-01-01T11:00:00.000Z','demo','claim.eval','claim','$CAL_CL','{\"model_confidence\":2.5,\"label\":\"C\",\"mode\":\"manual\"}','info')" >/dev/null 2>&1
+$Y research claim resolve "$CAL_CL" --as supported -p techtree >/dev/null 2>&1
+CALJ=$($Y research claim calibration -p techtree --json 2>&1)
+CALROW=$(echo "$CALJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const r=j.rows.find(x=>x.claim==='$CAL_CL');console.log(r?r.gap:'(no-row)')})")
+[ "$CALROW" = "模型低2档" ] && echo "  ✓ 校准读出：最新评估胜出（D→C），supported 下模型低 2 档" || { echo "  ✗ calibration gap: $CALROW"; exit 1; }
+CALSH=$(echo "$CALJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).model_lower_1plus>=1?'yes':'no')})")
+[ "$CALSH" = "yes" ] && echo "  ✓ 份额统计（模型低≥1档计数）服务 11-16 校准预测" || { echo "  ✗ share: $CALJ"; exit 1; }
+$Y db sql "DELETE FROM events WHERE id IN ('evdemo841a','evdemo841b')" >/dev/null 2>&1
 
 echo "── 6. tech-tree node model"
 $Y tree new demo

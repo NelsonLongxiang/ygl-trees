@@ -523,6 +523,40 @@ if (subAction === "list" || subAction === undefined) {
       // Report ④-3: --by-source sugar — hand a SOURCE id and every evidence
       // under it links in one shot (the three-id taxonomy forced a per-evidence
       // lookup round trip before this).
+      // 0.84.0 评审 F2/F4（REVIEW-0.84.0 + tmp/review-0.84.0.md）：
+      // link 后置评估抽成公共步骤——by-source 批量路径与单条路径同一语义；
+      // duplicate 路径不再付全价网关评估（幂等重跑 3-5s/次的隐性税）。
+      const evalAndLog = async (claimId: string, claimStatus: string): Promise<{ label?: string; score?: number }> => {
+        try {
+          // F3（评审纪律项）：research→ops/tools 的相对路径 require 是 0.84 前的
+          // 预存形态；依赖声明见 package.json，架构裁定（下沉 core/服务注入）挂任务。
+          const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
+          const evRows = store.db.all(
+            `SELECT e.quote, ce.stance, s.title AS source_title
+               FROM claim_evidence ce
+               JOIN evidence e ON e.id = ce.evidence_id
+               LEFT JOIN sources s ON s.id = e.source_id
+              WHERE ce.claim_id = ?`, [claimId]) as any[];
+          const evalResult = await evaluateClaimConfidence({
+            claim_text: (store.db.get("SELECT text FROM claims WHERE id=?", [claimId]) as any)?.text || "",
+            claim_status: claimStatus,
+            evidence: evRows,
+          });
+          if (evalResult.ok) {
+            store.db.run(
+              "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+              [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, new Date().toISOString(),
+               process.env.YGL_SESSION || "cli", "claim.eval", "claim", claimId,
+               JSON.stringify({ model_confidence: evalResult.confidence_score, label: evalResult.confidence_label, mode: "auto-on-link", human_status: claimStatus }), "info"]
+            );
+            if (!ctx.json) {
+              out(ctx, paint(C.dim, `  [模型] 置信度 ${evalResult.confidence_label} (${evalResult.confidence_score}/5) — ${evalResult.reasoning.slice(0, 60)}`, ctx.color));
+            }
+            return { label: evalResult.confidence_label, score: evalResult.confidence_score ?? undefined };
+          }
+        } catch { /* eval is best-effort, never blocks the link */ }
+        return {};
+      };
       if (args.flags["by-source"]) {
         const evs = store.db.all(
           "SELECT id FROM evidence WHERE source_id=? AND project_id=? ORDER BY created",
@@ -547,7 +581,10 @@ if (subAction === "list" || subAction === undefined) {
               existing.has(ev.id) ? dups++ : linked++;
               status = r.status;
             }
-            if (ctx.json) console.log(JSON.stringify({ claim: rest[1], source: rest[2], linked, duplicates: dups, status }, null, 2));
+            // F2：批量路径同样落 claim.eval（此前校准数据源盲区）；全 dup 时跳过（F4）
+            let model: { label?: string; score?: number } = {};
+            if (linked > 0) model = await evalAndLog(rest[1], status);
+            if (ctx.json) console.log(JSON.stringify({ claim: rest[1], source: rest[2], linked, duplicates: dups, status, ...(model.label ? { model_label: model.label, model_confidence: model.score } : {}) }, null, 2));
             else ok(ctx, `linked ${linked} evidence from source ${rest[2]} (${dups} already) — claim status: ${status}`);
             return 0;
           })
@@ -556,43 +593,26 @@ if (subAction === "list" || subAction === undefined) {
             return 1;
           });
       }
+      // F4：duplicate 检出在 link 前完成（幂等重跑跳过评估 + 回执如实标 duplicate）
+      const wasDup = !!store.db.get("SELECT 1 FROM claim_evidence WHERE claim_id=? AND evidence_id=?", [rest[1], rest[2]]);
       return getOrm(env.db.path)
         .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
-        .then((r): number => {
+        .then(async (r): Promise<number> => {
+          // R15 深度集成：链接后自动触发置信度评估。0.84.0 修复两处——
+          // ① await 落地：fire-and-forget 会被 CLI 短进程退出截断（事件从未落账）；
+          // ② JSON 纯度：评估先结算再打回执，模型档位并入 JSON 对象（契约② stdout 单对象）。
+          const model = wasDup ? {} : await evalAndLog(rest[1], r.status);
+          const modelLabel = model.label;
+          const modelScore = model.score;
           // 0.82.1: prediction claims never auto-promote on link — the receipt
           // says so explicitly instead of showing a silently-unchanged status.
           if (ctx.json) {
-            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote }, null, 2));
+            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(wasDup ? { duplicate: true } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
           } else if (r.auto_promote === false) {
             ok(ctx, `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`);
           } else {
             ok(ctx, `linked; claim status now: ${r.status}`);
           }
-          // R15 深度集成：链接后自动触发置信度评估（有模型时静默执行）
-          try {
-            const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
-            const evRows = store.db.all(
-              `SELECT e.quote, ce.stance, s.title AS source_title
-                 FROM claim_evidence ce
-                 JOIN evidence e ON e.id = ce.evidence_id
-                 LEFT JOIN sources s ON s.id = e.source_id
-                WHERE ce.claim_id = ?`, [rest[1]]) as any[];
-            evaluateClaimConfidence({
-              claim_text: (store.db.get("SELECT text FROM claims WHERE id=?", [rest[1]]) as any)?.text || "",
-              claim_status: r.status,
-              evidence: evRows,
-            }).then((evalResult: any) => {
-              if (evalResult.ok) {
-                store.db.run(
-                  "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
-                  [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, new Date().toISOString(),
-                   "cli", "claim.eval", "claim", rest[1],
-                   JSON.stringify({ model_confidence: evalResult.confidence_score, label: evalResult.confidence_label }), "info"]
-                );
-                out(ctx, paint(C.dim, `  [模型] 置信度 ${evalResult.confidence_label} (${evalResult.confidence_score}/5) — ${evalResult.reasoning.slice(0, 60)}`, ctx.color));
-              }
-            }).catch(() => { /* eval is best-effort, never blocks the link */ });
-          } catch { /* eval-enhance not loadable — skip */ }
           return 0;
         })
         .catch((e: any): number => {
@@ -700,6 +720,16 @@ if (subAction === "list" || subAction === undefined) {
         claim_status: claim.status,
         evidence: evidenceRows.map((e: any) => ({ quote: e.quote, stance: e.stance, source_title: e.source_title })),
       });
+      // 0.84.0：判定落账——手动评估也写 claim.eval 事件，校准预测（模型 vs 人工）
+      // 需要完整历史，否则每次判定蒸发在 stdout 里。
+      if (result.ok) {
+        store.db.run(
+          "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+          [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, new Date().toISOString(),
+           process.env.YGL_SESSION || "cli", "claim.eval", "claim", id,
+           JSON.stringify({ model_confidence: result.confidence_score, label: result.confidence_label, mode: "manual", human_status: claim.status, human_confidence: claim.confidence, evidence_count: evidenceRows.length }), "info"]
+        );
+      }
       if (ctx.json) {
         console.log(JSON.stringify({
           claim_id: id,
@@ -725,6 +755,68 @@ if (subAction === "list" || subAction === undefined) {
       }
       return 0;
       })();
+    }
+
+    // 0.84.0: claim calibration — 模型置信度 vs 人工仲裁的档差读出。
+    // 服务校准预测（claim.eval 事件历史 → 模型是否系统性低于人工一档）。
+    if (subAction === "calibration") {
+      const all = args.flags.all === true;
+      const rows = store.db.all(
+        `SELECT e.entity_id AS claim_id, e.payload, e.ts
+           FROM events e
+          WHERE e.kind = 'claim.eval'
+          ORDER BY e.ts ASC`
+      ) as any[];
+      const claimIds = [...new Set(rows.map((r) => r.claim_id))];
+      const claimsById = new Map<string, any>();
+      for (const cid of claimIds) {
+        const c = store.db.get("SELECT id, status, confidence, project_id FROM claims WHERE id=?", [cid]) as any;
+        if (c) claimsById.set(cid, c);
+      }
+      // 每断言取最新一次评估
+      const latest = new Map<string, any>();
+      for (const r of rows) {
+        const p = (() => { try { return JSON.parse(r.payload); } catch { return null; } })();
+        if (!p || typeof p.model_confidence !== "number" || !p.label) continue;
+        latest.set(r.claim_id, { ...p, ts: r.ts });
+      }
+      const HUMAN: Record<string, number | null> = { supported: 4, contested: 2, refuted: 1, unverified: null };
+      const table2: any[] = [];
+      let comparable = 0, lower1 = 0;
+      for (const [cid, ev] of latest) {
+        const c = claimsById.get(cid);
+        if (!c) continue;
+        if (!all && c.project_id !== project.id) continue;
+        const hGrade = HUMAN[c.status] ?? null;
+        const mGrade = ev.label === "A" ? 4 : ev.label === "B" ? 3 : ev.label === "C" ? 2 : ev.label === "D" ? 1 : null;
+        if (mGrade === null) continue;
+        const gap = hGrade === null ? null : hGrade - mGrade;
+        if (gap !== null) {
+          comparable++;
+          if (gap >= 1) lower1++;
+        }
+        table2.push({
+          claim: cid,
+          model: `${ev.label}(${ev.model_confidence})`,
+          human: c.status,
+          gap: gap === null ? "—" : gap > 0 ? `模型低${gap}档` : gap < 0 ? `模型高${-gap}档` : "同档",
+          mode: ev.mode || "auto-on-link",
+        });
+      }
+      const share = comparable ? +(100 * lower1 / comparable).toFixed(1) : null;
+      if (ctx.json) {
+        console.log(JSON.stringify({
+          evaluated: table2.length, comparable, model_lower_1plus: lower1,
+          share_pct: share, rows: table2,
+        }, null, 2));
+      } else {
+        head(ctx, `claim calibration${all ? " — workspace" : ` — ${project.name}`}`);
+        table(ctx, table2, ["claim", "model", "human", "gap", "mode"], ["claim", "model", "human", "gap", "mode"]);
+        const verdict = share === null ? "无可比对样本（先 claim evaluate / link，再 claim resolve）"
+          : `模型低≥1档：${lower1}/${comparable} = ${share}%（校准预测判据 ≥60%）`;
+        out(ctx, `  ${verdict}`);
+      }
+      return 0;
     }
 
     

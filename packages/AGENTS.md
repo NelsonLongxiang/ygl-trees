@@ -6,7 +6,7 @@
 
 - **五件套**：`package.json`（workspace 成员，声明真实依赖图）+ `tsconfig.json`（extends 根 base）+ `README.md`（YAML frontmatter）+ `src/index.ts`（@module JSDoc 导出面）+ `tests/*.spec.ts`
 - **零散 .ts 禁区**：`packages/` 根与 `<group>/` 根不允许任何 loose 文件（scripts/gate.js 硬检查）
-- 依赖方向单向：`core/* → 域模块 → apps`；域间不互相 import（例外：ops/tools 跨切面可依赖 techtree/web——须在 package.json 如实声明）
+- 依赖方向单向：`core/* → 域模块 → apps`；域间不互相 import（例外：ops/tools 跨切面可依赖 techtree/web——须在 package.json 如实声明；research/pipeline → ops/tools 的 eval-enhance 为 0.84 评审 F3 认定的既有例外，已声明——架构待办：下沉 core/ 或改 Cordis 服务注入）
 
 ## 插件导出契约（Cordis）
 

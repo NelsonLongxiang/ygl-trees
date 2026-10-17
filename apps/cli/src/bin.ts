@@ -122,6 +122,8 @@ ${paint(C.bold, "research", true)}    collect → screen → extract → claim
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
   claim resolve <claimId> --as supported|refuted|contested [--note]
   claim unresolve <claimId>   reset to unverified (undo auto-promote / early arbitration)
+  claim evaluate <claimId>    decision-model confidence from linked evidence (persisted)
+  claim calibration [--all]   model-vs-human grade gap readout (校准预测判据)
   claim list
 
 ${paint(C.bold, "produce", true)}     outline → section → report · spec/design（工程产出）
@@ -357,11 +359,14 @@ export async function main(argv: string[]): Promise<number> {
   const needInit = !(group === "db" && action === "init") && group !== "plugin";
   if (needInit && !require("node:fs").existsSync(file)) {
     bad(ctx, `no database at ${file}`);
-    out(ctx, `  run: ygl-trees db init`);
+    // P1-4 (REVIEW-0.84.0): with --json, stdout is the machine channel — bad()
+    // already emits the single {"error":…} object; these hints must not pollute
+    // it. They go to stderr for humans/CI logs instead.
     // 0.83 (user report ③): name the workspace root cause — a foreign
     // YGL_HOME (or its absence) is invisible otherwise, and the user chases
     // the db instead of the environment.
-    out(ctx, `  workspace: ${home}${process.env.YGL_HOME ? "  (from YGL_HOME)" : "  (default ~/.ygl-trees — set YGL_HOME to switch)"}`);
+    const wsHint = `  run: ygl-trees db init\n  workspace: ${home}${process.env.YGL_HOME ? "  (from YGL_HOME)" : "  (default ~/.ygl-trees — set YGL_HOME to switch)"}`;
+    if (ctx.json) console.error(wsHint); else out(ctx, wsHint);
     return 2;
   }
 
@@ -628,7 +633,8 @@ export function generateLlmsManifest(): string {
       ["research claim link <cid> <eid> --stance supports|refutes", "link claim to evidence"],
       ["research claim resolve <cid> --as supported|refuted|contested", "manual arbitration"],
       ["research claim unresolve <cid>", "reset to unverified (undo link auto-promote)"],
-      ["research claim evaluate <cid>", "decision model confidence (0-5 → A/B/C/D)"],
+      ["research claim evaluate <cid>", "decision model confidence (0-5 → A/B/C/D), persisted as claim.eval"],
+      ["research claim calibration [--all]", "model-vs-human grade gap (校准预测判据 ≥60%)"],
       ["research evidence assess <eid>", "decision model quality assessment"],
     ]],
     ["produce", "Reports + engineering artifacts", [

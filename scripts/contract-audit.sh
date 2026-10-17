@@ -15,9 +15,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows)
 
-WS="$(pwd)/tmp/contract-audit"
-rm -rf "$WS"
+mkdir -p "$(pwd)/tmp"
+WS="$(mktemp -d "$(pwd)/tmp/contract-audit.XXXXXX")"
 export YGL_HOME="$WS"
+trap 'rm -rf "$WS"' EXIT
 Y="node dist/bundle/bin.cjs --no-color"
 FAIL=0; N=0
 pass() { N=$((N+1)); echo "  ✓ $1"; }
@@ -167,6 +168,8 @@ json_err "task not found"         1 -- $Y task doing no-such
 json_err "claim link bad evidence" 1 -- $Y research claim link no-such no-such2
 json_err "usage: node add"        2 -- $Y node add
 json_err "usage: unknown group"   2 -- $Y no-such-group-at-all
+# P1-4 (REVIEW-0.84.0): missing db must keep stdout a single {"error":…} object
+json_err "usage: db missing"      2 -- env YGL_HOME="$WS-no-db" $Y kb add --title T --body B
 
 # ── flag validation: bare flags and bad enums must be rejected (rc=2),
 #    never silently stored as "true"/"nonsense" (0.54 cold-user audit class).

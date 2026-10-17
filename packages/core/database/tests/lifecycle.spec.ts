@@ -50,20 +50,24 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
     const dbFile = path.join(dir, "test.db");
     process.env.YGL_TEST = undefined; // enable lock
 
-    const db = new DB(dbFile, { lock: true });
-    const lockDir = `${dbFile}.ygllock`;
-    expect(fs.existsSync(lockDir)).toBe(true); // lock acquired
+    try {
+      const db = new DB(dbFile, { lock: true });
+      const lockDir = `${dbFile}.ygllock`;
+      expect(fs.existsSync(lockDir)).toBe(true); // lock acquired
 
-    db.close();
-    // After close, querying must fail (SQLite handle released)
-    let queryFailed = false;
-    try { db.get("PRAGMA user_version"); } catch { queryFailed = true; }
-    expect(queryFailed).toBe(true); // closed connection rejects queries
-    // Lock dir: beforeExit/exit handlers clean on process exit;
-    // PID-liveness (0.68) self-heals any Windows residue.
-
-    process.env.YGL_TEST = "1"; // restore
-    fs.rmSync(dir, { recursive: true, force: true });
+      db.close();
+      // After close, querying must fail (SQLite handle released)
+      let queryFailed = false;
+      try { db.get("PRAGMA user_version"); } catch { queryFailed = true; }
+      expect(queryFailed).toBe(true); // closed connection rejects queries
+      // Lock dir: beforeExit/exit handlers clean on process exit;
+      // PID-liveness (0.68) self-heals any Windows residue.
+    } finally {
+      // try/finally: a mid-test failure must NOT leave YGL_TEST cleared for
+      // sibling tests in this worker — they would hang on DB locks (cascade).
+      process.env.YGL_TEST = "1"; // restore
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }, 20000);
 
   it("stop() is idempotent — multiple calls safe", () => {

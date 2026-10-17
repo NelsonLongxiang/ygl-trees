@@ -1,4 +1,4 @@
-# ygl-trees v0.76.1 — AI Agent Research Workbench
+# ygl-trees v0.84.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -38,7 +38,9 @@ research evidence add <sid> --quote "..."                    # verbatim quote fr
 research claim add "<text>"                                  # refutable assertion
 research claim link <cid> <eid> --stance supports|refutes    # link claim to evidence
 research claim resolve <cid> --as supported|refuted|contested # manual arbitration
-research claim evaluate <cid>                                # decision model confidence (0-5 → A/B/C/D)
+research claim unresolve <cid>                               # reset to unverified (undo link auto-promote)
+research claim evaluate <cid>                                # decision model confidence (0-5 → A/B/C/D), persisted as claim.eval
+research claim calibration [--all]                           # model-vs-human grade gap (校准预测判据 ≥60%)
 research evidence assess <eid>                               # decision model quality assessment
 ```
 
@@ -90,7 +92,8 @@ node link <parent> <child> [--rel prereq|unlock|excludes|enables] [--mode AND|OR
 node cond <key> --name <c> --kind <k> [--op eval] [--value "<question>"] # add condition (eval = decision model gate)
 node index                                                   # rebuild closure + topo order
 node can <key> [--state k=v] [--eval]                        # can unlock? (required vs optional + cost)
-node ready                                                   # currently unlockable set
+node ready [--all]                                           # currently unlockable set (--all: every tree)
+node cond --due [--days n] [--eval]                          # eval gates with deadlines due in n days
 node path <key>                                              # dependency-order path (OR branches not optimized)
 node unlock <key>                                            # mark unlocked
 node list                                                    # list with state column (locked/unlocked)
@@ -147,15 +150,16 @@ db stats                                                     # row counts per ta
 db export <file>                                             # full backup
 db sync pg <url>                                             # one-way mirror to PostgreSQL
 db migrate pg <url> [--fresh]                                # full-fidelity graduation (with type preflight)
+db unlock [--force]                                          # clear stale .ygllock (pid-liveness checked; refuses live holders)
 db reset                                                     # delete database
 ```
 
 ### doctor
 
-Health check (9 items)
+Health check (10 items)
 
 ```bash
-doctor [--fix]                                               # diagnose (+ auto-fix: dirty index, stale lock)
+doctor [--fix]                                               # diagnose (+ auto-fix: dirty index, dead stale lock, phantom writes)
 ```
 
 ### config

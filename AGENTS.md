@@ -43,17 +43,17 @@ tmp/              临时脚本与数据（gitignored）
 pnpm install              # pnpm workspace（vendor/* + packages/*/* + apps/*）
 pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单文件发布产物）
 pnpm test:unit            # vitest 单测
-pnpm test                 # 四段制：unit + build + demo（跑 bundle 发布产物）+ contract:audit
+pnpm test                 # 四段制：build + unit + demo（跑 bundle 发布产物）+ contract:audit（0.84 起构建先行：单测依赖发布产物）
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
 pnpm pack:check           # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm readme:verify        # 文档真值门禁：README 命令示例逐条跑并断言退出码
-pnpm contract:audit       # 契约体检（73 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道（31 读+6 错误）
+pnpm contract:audit       # 契约体检（87 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道（31 读+7 错误）
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
 **入口**：发布产物 = `dist/bundle/bin.cjs`（tsdown 单文件，bin 字段指向它）；开发路径 = `dist/apps/cli/src/bin.js`（tsc 树）。demo/bench 优先测发布产物。
 
-**测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 现有 61 条断言（12+ 组）。新功能必须有 demo 断言或单测；改命令面后 `pnpm readme:verify` 也要绿。
+**测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 断言数以运行时实测为准（README 收口记录，不在此硬编码——0.84 评审教训）。新功能必须有 demo 断言或单测；改命令面后 `pnpm readme:verify` 也要绿。
 
 ## 架构（Cordis 框架）
 

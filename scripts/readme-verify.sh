@@ -7,8 +7,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export YGL_TEST=1  # test scripts: skip DB lock (process-exit race on Windows)
-export YGL_HOME="$(pwd)/tmp/readme-verify-ws"
-rm -rf "$YGL_HOME"
+mkdir -p "$(pwd)/tmp"
+export YGL_HOME="$(mktemp -d "$(pwd)/tmp/readme-verify-ws.XXXXXX")"
+trap 'rm -rf "$YGL_HOME"' EXIT
 Y="node dist/bundle/bin.cjs --no-color"
 F=0; N=0
 chk() { # chk "<desc>" <expected-rc> -- cmd...
@@ -65,6 +66,10 @@ chk "claim unresolve"     2 -- $Y research claim unresolve
 chk "kb add --help"       0 -- $Y kb add --help
 chk "source add --project" 0 -- $Y research source add --title "README 校验" --url "https://ex.com/readme-83" --project rt
 chk "node list --tree"    1 -- $Y node list --tree nonexist-tree
+# §0.84 判定落账（离线安全：evaluate 不存在的 claim → rc=1 点名；calibration 空表 rc=0）
+chk "claim add 校准"      0 -- $Y research claim add "README 校准断言" -p rt
+chk "claim evaluate"      1 -- env YGL_EVAL_OFFLINE=1 $Y research claim evaluate no-such-claim -p rt
+chk "claim calibration"   0 -- $Y research claim calibration --all
 # §plugin
 chk "plugin init"         0 -- $Y plugin init
 chk "plugin install"      0 -- $Y plugin install ./examples/plugin-demo
@@ -77,6 +82,9 @@ chk "plugin list"         0 -- $Y plugin list
 chk "未知组 rc=2"         2 -- $Y nope-not-a-group
 chk "config list"         0 -- $Y config list
 chk "db export"           0 -- $Y db export "$YGL_HOME/dump.sql"
-rm -rf "$YGL_HOME"
+# llms.txt 发布面新鲜度（0.84 评审 #6：版本头必须与 package.json 同步）
+N=$((N+1))
+PV=$(node -p "require('$(pwd)/package.json').version")
+if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV"; else echo "  ✗ llms.txt 版本头 ≠ v$PV（run: ygl-trees llms 刷新后提交）"; F=$((F+1)); fi
 echo "readme-verify: $((N-F))/$N 通过"
 [ "$F" = "0" ] || exit 1
