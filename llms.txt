@@ -1,4 +1,4 @@
-# ygl-trees v0.85.0 — AI Agent Research Workbench
+# ygl-trees v0.86.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -184,8 +184,8 @@ job tick                                                     # run due jobs (dri
 Project management
 
 ```bash
-project new <name> -q "<question>"                           # create + select
-project use <name> / list / show                             # switch / browse
+project new <name> -q "<question>"                           # create + select (session-scoped)
+project use <name> [--global] / list / show                  # switch / browse (selection_source shown)
 ```
 
 ## Decision Model (R15)

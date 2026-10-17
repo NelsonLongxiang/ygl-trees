@@ -84,27 +84,32 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const raw = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit")));
       // R15.1: semantic re-ranking via decision model (--eval)
+      // 0.86 M7-1: re-rank goes through ctx.ops.semanticRank (Cordis service);
+      // service missing (crash-safety boot) → fall back to raw FTS order.
+      const opsEval = (env as any).cordis?.ops;
       if (args.flags.eval) {
-        const { semanticReRank } = require("../../../ops/tools/src/eval-enhance");
         const candidates = raw.map((r: any) => ({ id: r.id, title: r.title, excerpt: String(r.body || r.title).slice(0, 200) }));
-        return semanticReRank(q, candidates).then((reRanked: any[]) => {
-        const idToRaw = new Map(raw.map((r: any) => [r.id, r]));
-        const rows = reRanked.map((rr: any) => {
-          const orig = idToRaw.get(rr.id) as any;
-          return {
-            id: rr.id,
-            title: clip(orig.title, 42),
-            semantic: rr.semantic_relevance !== null ? rr.semantic_relevance.toFixed(2) : "离线",
-            orig_rank: rr.original_rank,
-            tags: orig.tags || "-",
-            conf: orig.confidence,
-          };
-        });
-        if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
-        head(ctx, `kb search "${q}"  (语义重排)`);
-        table(ctx, rows, ["id", "title", "semantic", "orig_rank", "tags", "conf"],
-                        ["id", "title", "semantic", "orig_rank", "tags", "conf"]);
-        return 0;
+        const rerankPromise: Promise<any[]> = opsEval
+          ? opsEval.semanticRank(q, candidates)
+          : Promise.resolve(candidates.map((c: any, i: number) => ({ ...c, semantic_relevance: null, original_rank: i + 1 })));
+        return rerankPromise.then((reRanked: any[]) => {
+          const idToRaw = new Map(raw.map((r: any) => [r.id, r]));
+          const rows = reRanked.map((rr: any) => {
+            const orig = idToRaw.get(rr.id) as any;
+            return {
+              id: rr.id,
+              title: clip(orig.title, 42),
+              semantic: rr.semantic_relevance != null ? rr.semantic_relevance.toFixed(2) : "离线",
+              orig_rank: rr.original_rank,
+              tags: orig.tags || "-",
+              conf: orig.confidence,
+            };
+          });
+          if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+          head(ctx, `kb search "${q}"  (语义重排)`);
+          table(ctx, rows, ["id", "title", "semantic", "orig_rank", "tags", "conf"],
+                          ["id", "title", "semantic", "orig_rank", "tags", "conf"]);
+          return 0;
         });
       }
       const rows = raw.map((r: any) => ({

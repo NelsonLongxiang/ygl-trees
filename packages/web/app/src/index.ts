@@ -1,24 +1,14 @@
 /**
- * WebAppPlugin — provides ctx.webApp: serves the built React client
- * (apps/web/dist, workspace knowledge — never user config) over the
- * dashboard server. Pattern follows DSH packages/bundle/web-app: the app
- * entry builds with vite, this runtime-glue plugin resolves the dist and
- * hands static-file serving to whoever owns the HTTP surface.
+ * Web-app static resolver for the React rich client (apps/web/dist,
+ * workspace knowledge — never user config). 0.86 (Cordis P0-2): the
+ * WebAppService shell is deleted — webui calls openStatic() directly and
+ * nobody consumed ctx.webApp; what remains is the pure resolver the HTTP
+ * surface owns.
  *
  * @module @ygl/web-app
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Context, Service } from "@deepseek-ai/cordis";
-
-declare module "@deepseek-ai/cordis" {
-  interface Context {
-    /** The React rich client this process can serve; dist-missing → null
-     *  methods report unavailability and the caller falls back to the
-     *  embedded zero-dep dashboard. */
-    webApp: WebAppService;
-  }
-}
 
 /** Resolve the built client dist (workspace knowledge). Pure: safe to call
  *  from short-lived CLI processes without betting on async plugin timing.
@@ -73,25 +63,4 @@ export function openStatic(urlPath: string): StaticFile | null {
   }
   const ext = path.extname(file).toLowerCase();
   return { body: fs.readFileSync(file), mime: MIME[ext] || "application/octet-stream" };
-}
-
-export class WebAppService extends Service {
-  constructor(ctx: Context) {
-    super(ctx, "webApp");
-  }
-
-  /** Whether a built client exists to serve. */
-  available(): boolean {
-    return resolveDistRoot() !== null;
-  }
-
-  /** Delegates to the pure resolver — short-lived CLI callers may use the
-   *  standalone openStatic() without waiting on plugin timing. */
-  open(urlPath: string): StaticFile | null {
-    return openStatic(urlPath);
-  }
-}
-
-export function apply(ctx: Context) {
-  new WebAppService(ctx);
 }

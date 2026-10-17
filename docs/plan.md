@@ -237,6 +237,15 @@
 
 决策记录：P0 归 0.86 而非挤 0.85.0（0.85 已在发布门禁上）——评审席 dsh/fdc757f6 认可（direct-92887873）。
 
+### M7 执行记录（0.86.0，2026-10-18）
+
+- **M7-1 ✓**：OpsService 填实（evalClaim/assessEvidence/semanticRank，静态 import 委托）；bin.ts PLUGINS + ygl.bundle.json → database/ops/research/timer；research cmds.ts 三处 + knowledge kb search --eval 改 `env.cordis?.ops` + 离线形 fallback；grep 验收：research/knowledge 无 eval-enhance require。遗留（域间下沉，M7-4 域）：config.ts configGet（research cmds:13 + knowledge cmds:12）、rels.ts relAdd（produce-cmds:12）。
+- **M7-2 ✓**：删 techtree/model/plugin.ts + WebAppService；web/app 保留 openStatic/resolveDistRoot；bin.spec 断言新组合（4 插件）。
+- **M7-3 ✓**：SSE 主路 `ctx.on("ygl")`，非 Cordis 宿主回退 eventbus，fingerprint tick 降级保留。
+- **根因修复（计划外，本批最重要）**：桥 require() 在 ESM 宿主静默死亡（ReferenceError 被 try/catch 吞）→ 改静态 import；桥链单测（apply 后 ctx.on("ygl") 收到 emitEvent）转绿。
+- **M7-4 部分**：knownKinds 硬编码清单 → `ygl:<kind>` 动态桥接。**未做**（0.87 候选）：ctx.dispose() fork、settle loop、域间事件化试点。
+- **flake 决策记录（评审残项 direct-2faf60bb）**：lifecycle.spec「DB.close() closes handle (lock cleanup on process exit)」在并行负载下 64904ms 超时（npm publish prepublishOnly 406s 失败与 0.85 pre-push 失败同一根因）；隔离重跑 3/3 绿（3.31s）。属已知并行负载家族，非代码回归；硬化方向（锁用例串行化/锁获取快败）记 0.87 候选。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

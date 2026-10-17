@@ -11,7 +11,7 @@ vendor/           DSH fork 框架全家桶（用户裁定框架级一致性，pn
   cordis/           @deepseek-ai/cordis 4.0.5-α（修复 rc.11 时序）
   cosmokit/         @deepseek-ai/cosmokit 1.8.6-α
   schemastery/      @deepseek-ai/schemastery 3.18.5-α
-  timer/            @deepseek-ai/cordis-plugin-timer 1.1.7-α **已启用**（base bundle 第 5 插件；ctx.timer 生命周期托管定时器，webui serve 心跳在用）
+  timer/            @deepseek-ai/cordis-plugin-timer 1.1.7-α **已启用**（base bundle 第 4 插件；ctx.timer 生命周期托管定时器，webui serve 心跳在用）
   loader/ include/ group/ hmr/ logger-console/（六件可用弹药，等需求接入）
 
 packages/         领域模块（库代码，可被 apps 组合；pnpm workspace 成员，各带 package.json 依赖图）
@@ -19,9 +19,9 @@ packages/         领域模块（库代码，可被 apps 组合；pnpm workspace
   research/         研究域（query→source→evidence→claim→produce）
   techtree/         科技树域（nodes/edges/conditions/eval gates/closure）
   knowledge/        知识域（kb/skills/match）
-  ops/              运维域（config/pgsync/jobs/agent/rels/webui）
-  web/              Web 域（app：React 客户端宿主插件，ctx.webApp，DSH 模式）
-  （Cordis 服务定义在 core/database/src/plugin.ts 与 web/app/src：declare module 声明合并）
+  ops/              运维域（config/pgsync/jobs/agent/rels/webui + OpsService：ctx.ops.evalClaim/assessEvidence/semanticRank，0.86 服务化）
+  web/              Web 域（app：React 客户端静态资源 openStatic/resolveDistRoot；0.86 删壳服务，无 ctx 挂载）
+  （Cordis 服务定义在 core/database/src/plugin.ts（ctx.database + eventbus→ctx.emit 桥）与 ops/tools/src/plugin.ts（ctx.ops））
 
 apps/             应用入口（workspace 包：各带 package.json 声明依赖图）
   cli/              CLI 应用（@ygl/cli；src/bin.ts 即可执行文件：shebang+自执行，rc 契约在此；profile-boot/startup-diagnostics/process-shutdown/plugin 同 DSH）
@@ -66,9 +66,9 @@ pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 do
 - **时空可组合性** — 子 Context 隔离、作用域嵌套
 
 ```typescript
-// packages/core/database/src/plugin.ts（web/app 同模式）
+// packages/core/database/src/plugin.ts（ops/tools 同模式）
 export class DatabaseService extends Service { ... }   // ctx.database
-export class WebAppService extends Service { ... }     // ctx.webApp
+export class OpsService extends Service { ... }        // ctx.ops（evalClaim/assessEvidence/semanticRank）
 export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 组合
 ```
 

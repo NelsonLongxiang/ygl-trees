@@ -867,21 +867,29 @@ export function createDashboardServer(env: Env) {
     if (typeof h.unref === "function") h.unref();
   }
 
-  // ── 0.76 Event-driven SSE: subscribe to the cross-domain event bus.
-  // Writes (node unlock, claim resolve, kb add, etc.) now emit instantly —
-  // SSE pushes fresh data on write instead of waiting for the 1.5s tick.
-  // The fingerprint tick above stays as a fallback/degradation path.
+  // ── 0.76 Event-driven SSE / 0.86 M7-3 (Cordis P0-3): subscribe via the
+  // PUBLIC Cordis channel ctx.on("ygl") — the eventbus is the internal
+  // write-path transport (bridged into ctx.emit by DatabasePlugin); SSE
+  // rides the documented API, not the transport. Direct-eventbus fallback
+  // covers non-Cordis hosts (tests, embedded servers); the fingerprint
+  // tick below stays as the degradation path.
   let unsubBus: (() => void) | null = null;
-  try {
-    const { onEvent } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
-    unsubBus = onEvent((evt) => {
-      if (!sseClients.size) return;
-      // Event received — push immediately (no polling delay)
-      push("data", gatherData(env));
-      // Also push the event itself as a named SSE event for fine-grained consumers
-      push(evt.kind.replace(/\//g, "-"), evt);
-    });
-  } catch { /* eventbus optional — fingerprint tick still covers */ }
+  const cordisCtx: any = (env as any).cordis;
+  const onYglEvent = (evt: any) => {
+    if (!sseClients.size) return;
+    // Event received — push immediately (no polling delay)
+    push("data", gatherData(env));
+    // Also push the event itself as a named SSE event for fine-grained consumers
+    push(String(evt.kind || "ygl").replace(/\//g, "-"), evt);
+  };
+  if (typeof cordisCtx?.on === "function") {
+    unsubBus = cordisCtx.on("ygl", onYglEvent) as unknown as () => void;
+  } else {
+    try {
+      const { onEvent } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
+      unsubBus = onEvent(onYglEvent);
+    } catch { /* eventbus optional — fingerprint tick still covers */ }
+  }
 
   const server = http.createServer((req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");

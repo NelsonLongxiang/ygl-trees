@@ -11,9 +11,8 @@ import { dbPath } from "../../../packages/core/database/src/db";
 import { Ctx, bad, out, paint, C } from "../../../packages/core/text/src/fmt";
 import { Args, parse, str, num, bool, Env } from "../../../packages/core/database/src/types";
 import { apply as DatabasePlugin } from "../../../packages/core/database/src/plugin";
-import { apply as WebAppPlugin } from "../../../packages/web/app/src";
-import { apply as TechTreePlugin } from "../../../packages/techtree/model/src/plugin";
 import { apply as ResearchPlugin } from "../../../packages/research/pipeline/src/plugin";
+import { apply as OpsPlugin } from "../../../packages/ops/tools/src/plugin";
 import TimerPlugin from "@deepseek-ai/cordis-plugin-timer";
 import { bootApp, type BootedApp } from "./profile-boot";
 import { StartupError, reportStartupFailure } from "./startup-diagnostics";
@@ -28,9 +27,8 @@ export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees"
 // ygl.bundle.json names plugins by id; this map is the code-side "where".
 const PLUGINS: Record<string, { apply: any; config?: (file: string) => any }> = {
   database: { apply: DatabasePlugin, config: (file) => ({ file }) },
+  ops: { apply: OpsPlugin },
   research: { apply: ResearchPlugin },
-  techtree: { apply: TechTreePlugin },
-  "web-app": { apply: WebAppPlugin },
   timer: { apply: TimerPlugin },
 };
 

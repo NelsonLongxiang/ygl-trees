@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.86.0（2026-10-18）Cordis 深化：evalClaim 服务化 + 删壳服务 + 事件桥真修
+
+- **M7-1 `ctx.ops` 服务化（P0-1）**：新建 OpsService（`ctx.ops.evalClaim`/`assessEvidence`/`semanticRank`），base bundle 四插件（database/ops/research/timer）；research/knowledge 对 ops/eval-enhance 的三处跨包 require 全部改走 Cordis 服务（`env.cordis?.ops` + 离线形 fallback）——域包不再反向 import 运维实现，eval 网关调用有了统一服务入口。
+- **M7-2 删两个零消费壳服务（P0-2）**：`ctx.techtree`（techtree/model/plugin.ts 整文件）与 `ctx.webApp`（web/app 壳服务）零消费即删——bundle 组合、PLUGINS 注册表、declare module 同步收口；web/app 保留纯静态资源面（openStatic/resolveDistRoot）。误删防线：bin.spec 断言 bundle 组合，ops-service.spec 断言服务面。
+- **M7-3 WebUI SSE 走 Cordis 公共通道（P0-3）**：SSE 订阅改 `ctx.on("ygl", …)`（公共 API），非 Cordis 宿主回退直连 eventbus，1.5s fingerprint tick 降级保留；事件链路从「轮询 diff」升为「事件驱动 + 轮询兜底」。
+- **事件桥静默死亡根因修复（本批最重要发现）**：database 插件的 eventbus→ctx.emit 桥原用 `require()` 包 try/catch——ESM 宿主（vitest 及任何未来 ESM 入口）下 require 未定义，ReferenceError 被静默吞掉，桥直接死亡（运行时 bundle 是 CJS 才活着）。改静态 `import { onEvent }`（core→core 同层无环）；新增桥链单测（apply 后 ctx.on("ygl") 真收到 emitEvent）转绿 = 真修非绕测。
+- **M7-4（部分）knownKinds 硬编码消除**：桥的 kind 专用通道原是 11 种硬编码清单（清单外 kind 被静默丢弃）；改为 `ygl:<kind>` 动态桥接——所有 kind 一视同仁。
+- 顺带：lifecycle.spec「DB.close() 清锁」65s 超时已定位为并行负载 flake 家族（隔离 3/3 绿 3.31s），决策记录进 docs/plan.md M7。
+- 测试：ops-service.spec.ts ×5（真 Context 组合/服务面/离线安全/semanticRank 透传/桥链）→ 全量 200；demo 122 照绿（新组合下判定落账路径全通过）；contract 93 照绿。
+
 ## 0.85.0（2026-10-18）会话选择分辨率（R16）+ job --at 修复 + npm SEO
 
 - **升级注意**：跨会话不再自动继承项目选择——`project new`/`project use` 现写**会话键**（`current_project@<sid>`，sid=YGL_SESSION||DSH_SESSION_ID||"default"），旧全局 `current_project` 仅作展示/迁移兜底。多项目工作区里并行会话互踩共享指针的问题（0.83 用 --project 钉住治标）就此根治。

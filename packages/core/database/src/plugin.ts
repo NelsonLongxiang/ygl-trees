@@ -6,6 +6,11 @@
  */
 import { Context, Service } from "@deepseek-ai/cordis";
 import { DB } from "./db";
+// 0.86 M7-3: static import, not require — under ESM hosts (vitest) require is
+// undefined and the try/catch silently swallowed it, leaving the bridge dead;
+// any ESM entry would silently lose ctx.on("ygl") events. core→core same
+// layer, no cycle (text never imports database).
+import { onEvent } from "../../../core/text/src/eventbus";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -59,17 +64,16 @@ export function apply(ctx: Context, config: DatabaseConfig) {
   // This makes "ctx.on()/emit()" work as documented — plugins can listen
   // with ctx.on("ygl", handler) or ctx.on("ygl:node.unlock", handler).
   // The eventbus remains the internal write-path transport.
+  // 0.86 M7-4: kind channels bridge DYNAMICALLY from evt.kind — the old
+  // hardcoded knownKinds list silently dropped any kind it didn't name.
   try {
-    const { onEvent, onEventKind } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
-    const unsub = onEvent((evt) => { try { (ctx as any).emit("ygl", evt); } catch { /* */ } });
-    // Also bridge kind-specific channels
+    const unsub = onEvent((evt) => {
+      try {
+        (ctx as any).emit("ygl", evt);
+        if (evt?.kind) (ctx as any).emit(`ygl:${evt.kind}`, evt);
+      } catch { /* */ }
+    });
     const kindSubs: Array<() => void> = [unsub];
-    const knownKinds = ["node.unlock", "node.lock", "node.add", "node.link",
-      "kb.add", "kb.rm", "claim.resolve", "claim.add", "task.status",
-      "project.new", "skill.add"];
-    for (const kind of knownKinds) {
-      kindSubs.push(onEventKind(kind, (evt) => { try { (ctx as any).emit(`ygl:${kind}`, evt); } catch { /* */ } }));
-    }
     // Cleanup on Context dispose (best-effort — this fork has no ctx.dispose)
     (ctx as any).fiber?.collect?.(() => {
       for (const u of kindSubs) { try { u(); } catch { /* */ } }

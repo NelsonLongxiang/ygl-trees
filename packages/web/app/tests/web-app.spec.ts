@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { resolveDistRoot, openStatic, apply } from "../src/index";
+import { resolveDistRoot, openStatic } from "../src/index";
+import * as webAppModule from "../src/index";
 
 describe("web-app 插件（spec R13.5）", () => {
   it("resolveDistRoot：构建产物存在时指向 apps/web/dist；未构建检出为 null", () => {
@@ -18,7 +19,9 @@ describe("web-app 插件（spec R13.5）", () => {
     // traversal resolves back to the SPA shell — never the repo file
     expect(evil === null || evil.mime.includes("text/html")).toBe(true);
   });
-  it("插件形状：apply 可组合（ctx.plugin 入口）", () => {
-    expect(typeof apply).toBe("function");
+  it("0.86 P0-2：纯解析器形态——无 Service 壳（webui 直调 openStatic）", () => {
+    // apply 已删除：模块只导出纯函数（resolveDistRoot/openStatic/MIME 表）
+    const mod = Object.keys(webAppModule).sort();
+    expect(mod).toEqual(["openStatic", "resolveDistRoot"]);
   });
 });

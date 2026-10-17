@@ -446,13 +446,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `evidence not found: ${id}`);
         return 1;
       }
-      const { assessEvidenceQuality } = require("../../../ops/tools/src/eval-enhance");
-      return assessEvidenceQuality({
-        quote: ev.quote,
-        locator: ev.locator,
-        source_title: ev.source_title || "(无来源)",
-        source_url: ev.source_url,
-      }).then((result: any) => {
+      // 0.86 M7-1: model-eval via ctx.ops (Cordis service) — no cross-package
+      // require. Fallback = offline-shaped result when the service isn't up
+      // (crash-safety boot path constructs env without full services).
+      const opsEval = (env as any).cordis?.ops;
+      const assess = opsEval
+        ? opsEval.assessEvidence({
+            quote: ev.quote,
+            locator: ev.locator,
+            source_title: ev.source_title || "(无来源)",
+            source_url: ev.source_url,
+          })
+        : Promise.resolve({ quality_score: null, reliability: "unavailable", reasoning: "eval service unavailable (ops plugin not loaded)" });
+      return assess.then((result: any) => {
       if (ctx.json) {
         console.log(JSON.stringify({
           evidence_id: id,
@@ -551,16 +557,18 @@ if (subAction === "list" || subAction === undefined) {
       // duplicate 路径不再付全价网关评估（幂等重跑 3-5s/次的隐性税）。
       const evalAndLog = async (claimId: string, claimStatus: string): Promise<{ label?: string; score?: number }> => {
         try {
-          // F3（评审纪律项）：research→ops/tools 的相对路径 require 是 0.84 前的
-          // 预存形态；依赖声明见 package.json，架构裁定（下沉 core/服务注入）挂任务。
-          const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
+          // 0.86 M7-1 (Cordis P0-1): the model-eval gateway call goes through
+          // ctx.ops.evalClaim — the service owns the ops domain; research no
+          // longer reaches into ops source by relative require.
+          const opsEval = (env as any).cordis?.ops;
+          if (!opsEval) return {};
           const evRows = store.db.all(
             `SELECT e.quote, ce.stance, s.title AS source_title
                FROM claim_evidence ce
                JOIN evidence e ON e.id = ce.evidence_id
                LEFT JOIN sources s ON s.id = e.source_id
               WHERE ce.claim_id = ?`, [claimId]) as any[];
-          const evalResult = await evaluateClaimConfidence({
+          const evalResult = await opsEval.evalClaim({
             claim_text: (store.db.get("SELECT text FROM claims WHERE id=?", [claimId]) as any)?.text || "",
             claim_status: claimStatus,
             evidence: evRows,
@@ -736,13 +744,16 @@ if (subAction === "list" || subAction === undefined) {
           WHERE ce.claim_id = ?`,
         [id]
       ) as any[];
-      const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
+      // 0.86 M7-1: manual evaluate also goes through ctx.ops.evalClaim.
+      const opsEval = (env as any).cordis?.ops;
       return (async () => {
-      const result = await evaluateClaimConfidence({
-        claim_text: claim.text,
-        claim_status: claim.status,
-        evidence: evidenceRows.map((e: any) => ({ quote: e.quote, stance: e.stance, source_title: e.source_title })),
-      });
+      const result = opsEval
+        ? await opsEval.evalClaim({
+            claim_text: claim.text,
+            claim_status: claim.status,
+            evidence: evidenceRows.map((e: any) => ({ quote: e.quote, stance: e.stance, source_title: e.source_title })),
+          })
+        : { ok: false, confidence_score: null, confidence_label: "离线", reasoning: "eval service unavailable (ops plugin not loaded)" };
       // 0.84.0：判定落账——手动评估也写 claim.eval 事件，校准预测（模型 vs 人工）
       // 需要完整历史，否则每次判定蒸发在 stdout 里。
       if (result.ok) {

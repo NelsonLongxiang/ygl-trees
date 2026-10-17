@@ -124,6 +124,7 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 - `ygl-trees doctor` 的 `eval_envelopes` 检查（0.28.0）会对坏信封条件（choice 的 answer 不在 options、score 级数越界等）报 fail
 - **判定落账 + 校准读出（0.84）**：`claim evaluate` 与链接自动评估均写 `claim.eval` 事件（此前判定蒸发在 stdout：自动评估被 CLI 短进程退出截断、手动评估不落账）；`research claim calibration [--all]` 汇总模型档位 vs 人工仲裁档差（每断言最新评估胜出），输出 `模型低≥1档` 份额——直接服务"决策模型置信度系统性低于人工一档"预测（判据 ≥60%）的测量。链接 `--json` 回执并入 `model_label`/`model_confidence`（保持 stdout 单对象）
 - **会话选择分辨率（0.85，spec R16）**：项目/树选择优先级 = 显式 flag > env（`YGL_PROJECT`/`YGL_TREE`）> **会话键**（`current_project@<sid>`，每个 Agent 会话独立）> 全局键（仅兜底展示）。多项目工作区未选择时 `research`/`produce`/`agent brief`/`project show` fail-closed（rc=2 单错误对象点名出路），工作区级命令照常；单项目自动命中零摩擦。`project/tree show --json` 带 `selection_source`，`tree show` 汇报选择来源 + 树统计；WebUI 未选择显示选择入口不回退全局。并行会话互踩 `current_project` 指针自此根治
+- **Cordis 服务化 + 事件桥真修（0.86）**：evalClaim/assessEvidence/semanticRank 进 `ctx.ops` 服务（域包不再跨包 require 运维实现，eval 网关统一入口）；零消费壳服务（ctx.techtree/ctx.webApp）删除，base bundle 收敛为 database/ops/research/timer；WebUI SSE 改走 Cordis 公共通道 `ctx.on("ygl")`（事件驱动 + 轮询降级）；**事件桥 ESM 静默死亡缺陷根治**——桥原用 require() 包 try/catch，ESM 宿主下 ReferenceError 被静默吞、桥直接死亡，改静态 import 后桥链有了单测防线；kind 专用通道从 11 种硬编码清单改为动态桥接（`ygl:<kind>`），不再静默丢弃清单外事件
 
 **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 
@@ -302,7 +303,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 195 例) + demo（122 条断言）+ contract:audit（93 项）
+pnpm test          # 四段制回归：build + unit (vitest 200 例) + demo（122 条断言）+ contract:audit（93 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
