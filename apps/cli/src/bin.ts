@@ -352,7 +352,9 @@ export async function main(argv: string[]): Promise<number> {
           home, dbFile: dbFile2, ctx,
           db: null, store: null, cordis: null,
         };
-        out(ctx, paint(C.yellow, "  ! degraded mode: user plugins failed to load — plugin commands only", ctx.color));
+        // JSON purity: stdout is the machine channel — degraded-mode notice goes to stderr there
+        if (ctx.json) console.error(paint(C.yellow, "  ! degraded mode: user plugins failed to load — plugin commands only", ctx.color));
+        else out(ctx, paint(C.yellow, "  ! degraded mode: user plugins failed to load — plugin commands only", ctx.color));
         return pluginCmds.runPluginCommand(env2, action || "list", args._.slice(2), args);
       }
       reportStartupFailure(e, home, VERSION);
@@ -479,7 +481,9 @@ export async function main(argv: string[]): Promise<number> {
       } else {
         bad(ctx, `unknown group: ${group}`);
       }
-      out(ctx, paint(C.dim, "  try: ygl-trees (no args) for full usage", ctx.color));;
+      if (!ctx.json) {
+        out(ctx, paint(C.dim, "  try: ygl-trees (no args) for full usage", ctx.color));
+      }
       if (!ctx.json) out(ctx, usage()); // usage text belongs to the human channel
       return 2;
     }

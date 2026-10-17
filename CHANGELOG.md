@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.77.2（2026-10-17）JSON 纯净性修复
+- **契约修复**：unknown-group 错误路径的 try 提示不再泄漏到 --json stdout（冷启动之旅实测发现）
+- degraded mode 提示在 json 模式改走 stderr
+- 冷安装全链路验证通过（npm install → init → doctor → research → tree → kb → webui）
+
 ## 0.77.1（2026-10-17）DEP0190 hotfix
 - 所有 shell:true 消除（resolvePm 的 where/version 检查改用无 shell 调用）
 - plugin install/remove 零弃用警告
