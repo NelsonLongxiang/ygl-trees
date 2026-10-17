@@ -143,6 +143,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         FROM events GROUP BY date(ts) ORDER BY day
       `) as any[];
       if (!days.length) { ok(ctx, "no events yet"); return 0; }
+      // F2 fix: --json outputs pure JSON (frozen contract ④)
+      if (ctx.json) {
+        console.log(JSON.stringify({ timeline: days, total: days.reduce((s2: number, d: any) => s2 + d.events, 0) }, null, 2));
+        return 0;
+      }
       const maxEvents = Math.max(...days.map(d => d.events));
       head(ctx, "Workspace Timeline");
       let totalP = 0, totalS = 0, totalC = 0, totalK = 0, totalN = 0;

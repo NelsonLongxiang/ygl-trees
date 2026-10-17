@@ -102,18 +102,23 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       for (const r of routes) {
         if (r.pattern.test(q)) {
           if (!ctx.json) out(ctx, paint(C.dim, `  → ${r.label}`, ctx.color));
-          // Execute via CLI sub-process
+          // F1 fix (a2a review): parent holds .ygllock → child self-deadlocks.
+          // Fix: child gets YGL_TEST=1 to skip lock (parent already holds it —
+          // no concurrent write risk for read-only routing).
           const cmdParts = [r.group, r.action, ...(r.extra || [])].filter(Boolean);
           const { execSync } = require("node:child_process") as typeof import("node:child_process");
           const self = process.argv[1];
           try {
             const result = execSync(
               `${JSON.stringify(process.execPath)} ${JSON.stringify(self)} --no-color ${cmdParts.map(c => JSON.stringify(c)).join(" ")}`,
-              { env: { ...process.env }, encoding: "utf8", timeout: 10000 }
+              { env: { ...process.env, YGL_TEST: "1" }, encoding: "utf8", timeout: 10000 }
             );
+            // F2 fix: --json mode outputs only the inner result (contract ④)
+            if (ctx.json) { console.log(result.trim()); return 0; }
             out(ctx, result.trim());
             return 0;
           } catch (e: any) {
+            if (ctx.json) { console.log(JSON.stringify({ error: String(e?.message || e).slice(0, 200) })); return 1; }
             bad(ctx, String(e?.stdout || e?.message || e).slice(0, 200));
             return 1;
           }
