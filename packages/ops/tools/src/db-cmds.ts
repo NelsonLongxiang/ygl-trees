@@ -94,6 +94,38 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       show(ctx, { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
       return 0;
     }
+    case "timeline": {
+      // v2: workspace growth timeline — events per day with entity milestones
+      const days = db.all(`
+        SELECT date(ts) as day, COUNT(*) as events,
+          SUM(CASE WHEN kind LIKE 'project%' THEN 1 ELSE 0 END) as projects,
+          SUM(CASE WHEN kind LIKE 'source%' THEN 1 ELSE 0 END) as sources,
+          SUM(CASE WHEN kind LIKE 'claim%' THEN 1 ELSE 0 END) as claims,
+          SUM(CASE WHEN kind LIKE 'kb%' THEN 1 ELSE 0 END) as kb,
+          SUM(CASE WHEN kind LIKE 'node%' THEN 1 ELSE 0 END) as nodes
+        FROM events GROUP BY date(ts) ORDER BY day
+      `) as any[];
+      if (!days.length) { ok(ctx, "no events yet"); return 0; }
+      const maxEvents = Math.max(...days.map(d => d.events));
+      head(ctx, "Workspace Timeline");
+      let totalP = 0, totalS = 0, totalC = 0, totalK = 0, totalN = 0;
+      for (const d of days) {
+        totalP += d.projects; totalS += d.sources; totalC += d.claims;
+        totalK += d.kb; totalN += d.nodes;
+        const barLen = Math.round(d.events / maxEvents * 30);
+        const bar = "█".repeat(barLen);
+        const milestones: string[] = [];
+        if (d.projects > 0) milestones.push(`+${d.projects}项目`);
+        if (d.sources > 0) milestones.push(`+${d.sources}来源`);
+        if (d.claims > 0) milestones.push(`+${d.claims}断言`);
+        if (d.kb > 0) milestones.push(`+${d.kb}知识`);
+        if (d.nodes > 0) milestones.push(`+${d.nodes}节点`);
+        out(ctx, `  ${d.day} ${bar.padEnd(32)} ${String(d.events).padStart(5)} events  ${milestones.join(" ")}`);
+      }
+      out(ctx, "");
+      out(ctx, paint(C.dim, `  累计: ${totalP}项目 · ${totalS}来源 · ${totalC}断言 · ${totalK}知识 · ${totalN}节点变更`, ctx.color));
+      return 0;
+    }
     case "workspace": {
       // v2: multi-workspace management — each workspace is a YGL_HOME directory
       const sub = rest[0] || "list";
