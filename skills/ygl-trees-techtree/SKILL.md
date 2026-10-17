@@ -7,7 +7,7 @@ description: >-
   （node unlock/export/import）。
   触发词：科技树、技能树、依赖图、DAG、tech tree、skill tree、解锁、unlock、前置、
   prerequisite、拓扑、闭包、closure、互斥、节点、node。
-version: 0.56.0
+version: 0.73.0
 tags: ygl-trees,techtree,dag,unlock,gate
 ---
 

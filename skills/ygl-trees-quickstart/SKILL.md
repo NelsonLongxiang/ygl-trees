@@ -9,7 +9,7 @@ description: >-
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
-version: 0.68.0
+version: 0.73.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -37,6 +37,20 @@ node dist/apps/cli/src/bin.js agent brief       # 我在哪、有什么、下一
 ```bash
 ygl-trees skill link              # 连接到 ./.agents/skills/（DSH/Claude 等 Agent 即刻可发现）
 ygl-trees skill link --global    # 连接到 ~/.agents/skills/（全局）
+```
+
+## 2a. v2 新命令（0.72+）
+
+```bash
+ygl-trees agent ask "<问题>"       # 自然语言路由（projects/search/tree/health/...）
+ygl-trees db time-travel "日期"    # 查询过去某时刻的工作区状态
+ygl-trees db timeline              # 增长时间线（events/天+里程碑）
+ygl-trees db workspace list        # 多工作区管理
+ygl-trees db obsidian [dir]        # 导出 Obsidian markdown vault
+ygl-trees skill init <name>        # 模板创建技能
+ygl-trees skill refs <name>        # 技能引用展示
+ygl-trees llms --section <name>    # 能力清单节选
+ygl-trees llms --json              # 结构化 JSON
 ```
 
 ## 2b. 运维命令速查

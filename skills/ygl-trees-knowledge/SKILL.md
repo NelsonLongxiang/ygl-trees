@@ -26,7 +26,8 @@ ygl-trees kb link <a> <b> --rel related
 ## 2. 检索（中文原生）
 
 ```bash
-ygl-trees kb rm <id>（删除笔记）
+ygl-trees kb rm <id>
+db obsidian [dir]（导出为 Obsidian vault）（删除笔记）
 kb search（--eval 语义重排：决策模型逐条评估相关性） "闭包表 索引"
 ```
 
