@@ -170,7 +170,7 @@ function resolvePm(pm: string): string {
     const where = execFileSync("where", [pm], { stdio: "pipe", shell: true }).toString().split(/\r?\n/).filter(Boolean);
     for (const candidate of where) {
       try {
-        execFileSync([q2(candidate), "--version"].join(" "), { stdio: "pipe", shell: true });
+        execFileSync("cmd", ["/c", candidate, "--version"], { stdio: "pipe" });
         cachedPm = candidate;
         return candidate;
       } catch { /* broken shim — try next */ }
