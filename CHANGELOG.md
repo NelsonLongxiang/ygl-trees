@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.75.1（2026-10-17）npm 包修复 hotfix——skills/ 确认进入 tarball
+- 0.75.0 发布时 files 字段更新未被 pnpm pack 拾取（时间窗口 bug）——0.75.1 确认 12 个 skills 文件在 tarball 中
+- 包大小：352KB → 381KB（+29KB = 9 个 SKILL.md）
+- 验证：干净安装 → node_modules/ygl-trees/skills/ 存在
+
 ## 0.75.0（2026-10-17）npm 包修复——skills/ 进 tarball + 乱码修复 + fail-loud
 - **修复（P0）**：npm tarball 现在包含 skills/ 目录——9 个内置技能随包分发，db init 的 "auto-imported" 承诺兑现
 - **修复**：autoImportBuiltinSkills 找不到技能时不再静默返回 0——显式警告 "skills/ directory not found"
