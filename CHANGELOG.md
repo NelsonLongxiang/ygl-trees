@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.77.1（2026-10-17）DEP0190 hotfix
+- 所有 shell:true 消除（resolvePm 的 where/version 检查改用无 shell 调用）
+- plugin install/remove 零弃用警告
+
 ## 0.77.0（2026-10-17）plugin 安全加固 + DEP0190 消除
 - **P0 修复**：plugin install 坏路径不再被记录——存在性校验 + package.json name 校验（a2a 7aa5c871）
 - **P0 修复**：StartupError 时 plugin 命令走 degraded mode——坏插件不再砖死 home，plugin remove 自愈可用
