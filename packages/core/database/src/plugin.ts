@@ -61,14 +61,14 @@ export function apply(ctx: Context, config: DatabaseConfig) {
   // The eventbus remains the internal write-path transport.
   try {
     const { onEvent, onEventKind } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
-    const unsub = onEvent((evt) => ctx.emit("ygl", evt));
+    const unsub = onEvent((evt) => { try { (ctx as any).emit("ygl", evt); } catch { /* */ } });
     // Also bridge kind-specific channels
     const kindSubs: Array<() => void> = [unsub];
     const knownKinds = ["node.unlock", "node.lock", "node.add", "node.link",
       "kb.add", "kb.rm", "claim.resolve", "claim.add", "task.status",
       "project.new", "skill.add"];
     for (const kind of knownKinds) {
-      kindSubs.push(onEventKind(kind, (evt) => ctx.emit(`ygl:${kind}`, evt)));
+      kindSubs.push(onEventKind(kind, (evt) => { try { (ctx as any).emit(`ygl:${kind}`, evt); } catch { /* */ } }));
     }
     // Cleanup on Context dispose (best-effort — this fork has no ctx.dispose)
     (ctx as any).fiber?.collect?.(() => {
