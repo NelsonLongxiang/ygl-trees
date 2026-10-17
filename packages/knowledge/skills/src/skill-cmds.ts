@@ -48,6 +48,69 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
+    case "init": {
+      // v2: create a new skill from template — guides the author
+      const name = String(args.flags.name || rest[0] || "");
+      if (!name) {
+        bad(ctx, "usage: skill init <name> [--description ...] [--body ...]");
+        bad(ctx, "  creates a skill with frontmatter template; edit body with skill show + update");
+        return 2;
+      }
+      const desc = String(args.flags.description || "");
+      const body = String(args.flags.body || `# ${name}
+
+## When to use
+(describe when this skill should activate)
+
+## What to do
+(step-by-step instructions)
+
+## Examples
+(concrete command examples)
+`);
+      const tags = String(args.flags.tags || "");
+      return getOrm(env.db.path)
+        .then((ds) => writes.skillUpsert(ds, { name, description: desc, body, tags, version: "0.1.0" }))
+        .then((r: any) => {
+          ok(ctx, `skill created: ${name} v0.1.0`);
+          out(ctx, paint(C.dim, `  edit: ygl-trees skill show ${name}`, ctx.color));
+          out(ctx, paint(C.dim, `  add refs: ygl-trees skill refs add ${name} <path> --body "..."`, ctx.color));
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, String(e?.message || e));
+          return 1;
+        });
+    }
+    case "refs":
+    case "references": {
+      // v2: show all references linked to a skill (L3 progressive disclosure)
+      const skillName = rest[0];
+      if (!skillName) {
+        bad(ctx, "usage: skill refs <name>");
+        return 2;
+      }
+      const sk = store.skillGet(skillName);
+      if (!sk) {
+        bad(ctx, `skill not found: ${skillName}`);
+        return 1;
+      }
+      const refs = env.db.all("SELECT * FROM skill_refs WHERE skill_id=? ORDER BY path", [(sk as any).id]) as any[];
+      head(ctx, `Skill: ${skillName}`);
+      if (ctx.json) {
+        console.log(JSON.stringify(refs, null, 2));
+        return 0;
+      }
+      if (!refs.length) {
+        out(ctx, paint(C.dim, "  (no references — add with: skill refs add <name> <path> --body ...)", ctx.color));
+        return 0;
+      }
+      for (const r of refs) {
+        out(ctx, `  ${r.path}`);
+        if (r.body) out(ctx, paint(C.dim, `    ${String(r.body).slice(0, 80)}`, ctx.color));
+      }
+      return 0;
+    }
     case "add": {
       const n = args.flags.name ? String(args.flags.name) : "";
       const file = args.flags.f ? String(args.flags.f) : "";

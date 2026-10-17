@@ -94,6 +94,43 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       show(ctx, { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
       return 0;
     }
+    case "time-travel": {
+      // v2: query workspace state at a past moment using entity created_at
+      const when = rest[0];
+      if (!when) {
+        bad(ctx, 'usage: db time-travel "YYYY-MM-DD HH:MM" (or "YYYY-MM-DD")');
+        return 2;
+      }
+      const ts = when.includes(" ") ? when : when + " 23:59:59";
+      const tables = ["projects", "sources", "evidence", "claims", "kb_notes", "skills", "trees", "nodes", "artifacts", "events"];
+      const counts: Record<string, number> = {};
+      for (const t of tables) {
+        try {
+          const r = db.get(`SELECT COUNT(*) as n FROM ${t} WHERE created <= ?`, [ts]) as any;
+          counts[t] = r?.n || 0;
+        } catch { counts[t] = 0; }
+      }
+      // node unlock state at that time (via events)
+      let unlockedAt = 0;
+      try {
+        const r = db.get(
+          `SELECT COUNT(DISTINCT entity_id) as n FROM events WHERE kind='node.unlock' AND ts <= ?`, [ts]
+        ) as any;
+        unlockedAt = r?.n || 0;
+      } catch { /* */ }
+      if (ctx.json) { console.log(JSON.stringify({ timestamp: ts, counts, unlocked_nodes: unlockedAt }, null, 2)); return 0; }
+      head(ctx, `Workspace at ${ts}`);
+      const labels: Record<string, string> = {
+        projects: "项目", sources: "来源", evidence: "证据", claims: "断言",
+        kb_notes: "知识", skills: "技能", trees: "树", nodes: "节点",
+        artifacts: "产出", events: "事件",
+      };
+      for (const [k, v] of Object.entries(counts)) {
+        out(ctx, `  ${String(labels[k] || k).padEnd(6)} ${String(v).padStart(5)}`);
+      }
+      out(ctx, `  已解锁  ${String(unlockedAt).padStart(5)}`);
+      return 0;
+    }
     case "timeline": {
       // v2: workspace growth timeline — events per day with entity milestones
       const days = db.all(`

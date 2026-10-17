@@ -237,6 +237,33 @@ export async function main(argv: string[]): Promise<number> {
   // llms: structured capability manifest for LLM consumption (Ant Design
   // "for-agents" pattern — one output gives any Agent the full command surface).
   if (group === "llms") {
+    // v2: llms enhancement — --json, --section <name>, dynamic skills
+    const section = String(args.flags.section || "");
+    if (args.flags.json === true) {
+      const manifest = generateLlmsManifest();
+      const sections: Record<string, string> = {};
+      let current = "header";
+      for (const line of manifest.split("\n")) {
+        if (line.startsWith("## ")) { current = line.slice(3).toLowerCase().replace(/\s+/g, "_"); sections[current] = line + "\n"; }
+        else if (sections[current] !== undefined) sections[current] += line + "\n";
+      }
+      console.log(JSON.stringify({ version: appVersion(), sections }, null, 2));
+      return 0;
+    }
+    if (section) {
+      const manifest = generateLlmsManifest();
+      const all = manifest.split("
+## ");
+      const match = all.find(s2 => s2.toLowerCase().startsWith(section.toLowerCase()));
+      if (match) {
+        out(ctx, "## " + match);
+        return 0;
+      }
+      bad(ctx, `section not found: ${section}`);
+      out(ctx, `  available: ${all.map(s3 => s3.split("
+")[0]).join(" | ")}`);
+      return 1;
+    }
     out(ctx, generateLlmsManifest());
     return 0;
   }
@@ -362,7 +389,53 @@ export async function main(argv: string[]): Promise<number> {
     }
     const mod = DOMAIN_MODULES[group];
     if (!mod) {
-      bad(ctx, `unknown group: ${group}`);
+      // Help guidance: suggest closest match for unknown commands
+      const known = ["agent","research","produce","kb","skill","tree","node","task","rel","plugin","webui","db","doctor","config","job","project","mcp","llms","version","help"];
+      const aliases: Record<string, string> = {
+        database: "db", data: "db", sqlite: "db",
+        knowledge: "kb", notes: "kb", notebook: "kb",
+        helth: "doctor", check: "doctor", health: "doctor",
+        server: "webui", dashboard: "webui", ui: "webui",
+        timeline: "db", "time-travel": "db", workspace: "db", obsidian: "db",
+      };
+      const input = String(group).toLowerCase();
+      const suggestions: string[] = [];
+      // 0. alias check (database→db, knowledge→kb, etc.)
+      if (aliases[input]) suggestions.push(aliases[input]);
+      // 0b. alias prefix (databse→database→db, knolge→knowledge→kb)
+      for (const [alias, cmd] of Object.entries(aliases)) {
+        if (alias.startsWith(input.slice(0, 4)) && !suggestions.includes(cmd)) {
+          suggestions.push(cmd); break;
+        }
+      }
+      // 1. exact prefix match (strongest)
+      for (const k of known) if (k.startsWith(input.slice(0, 3)) && !suggestions.includes(k)) suggestions.push(k);
+      // 2. subsequence match (input chars appear in order)
+      if (suggestions.length < 2) {
+        for (const k of known) {
+          if (suggestions.includes(k)) continue;
+          let ki = 0;
+          for (const ch of input) {
+            ki = k.indexOf(ch, ki);
+            if (ki === -1) break;
+            ki++;
+          }
+          if (ki !== -1) suggestions.push(k);
+          if (suggestions.length >= 3) break;
+        }
+      }
+      // 3. known command contains input
+      if (suggestions.length < 2) {
+        for (const k of known) if (k.includes(input) && !suggestions.includes(k)) suggestions.push(k);
+      }
+      if (suggestions.length === 1) {
+        bad(ctx, `unknown group: ${group} — did you mean "${suggestions[0]}"?`);
+      } else if (suggestions.length > 1) {
+        bad(ctx, `unknown group: ${group} — did you mean: ${suggestions.slice(0, 3).join(" | ")}?`);
+      } else {
+        bad(ctx, `unknown group: ${group}`);
+      }
+      out(ctx, paint(C.dim, "  try: ygl-trees (no args) for full usage", ctx.color));;
       if (!ctx.json) out(ctx, usage()); // usage text belongs to the human channel
       return 2;
     }
