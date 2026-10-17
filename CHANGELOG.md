@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.78.0（2026-10-17）预测回测管线
+- **新命令** `research predict audit`：扫描 [预测·N天] 断言——deadline 解析（显式日期优先,created+horizon 推导兜底）、本地可测判据自动实测（树/kb 计数,或语义 any-hit）、npm 版本数 registry 探测（3s 超时,--offline 关闭）
+- 判定四态：hit / miss / pending（含已达标标记）/ manual（外部判据）——只报告不仲裁,给出待 resolve 命令建议
+- 修复 lifecycle 测试并行负载超时抖动（5s→20s 余量）
+- 解锁 pred-val/backtest-pipeline（能力落地即解锁）
+
 ## 0.77.3（2026-10-17）node list 位置参数 UX + 树漂移修正
 - **UX**：node list <tree> 位置参数现在真的选中该树（此前静默忽略并回退 current_tree——巡检中实际踩中）
 - 非树名位置参数给显式提示而非静默误导；-t 标志仍优先

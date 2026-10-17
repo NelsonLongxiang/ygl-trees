@@ -6,6 +6,8 @@ import { DatabaseService } from "../src/plugin";
 import { Context } from "@deepseek-ai/cordis";
 
 describe("Cordis lifecycle: Service.stop() cleans resources", () => {
+  // spawn/lock tests need headroom under parallel suite load (was 5s default, flaked at ~5.1-9s)
+  // per-test timeout headroom: 20s
   it("DatabaseService.stop() closes db handle", () => {
     process.env.YGL_TEST = "1"; // skip lock
     const dir = path.join(process.cwd(), "tmp", `lifecycle-${Date.now()}`);
@@ -40,7 +42,7 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
 
     // Cleanup
     fs.rmSync(dir, { recursive: true, force: true });
-  });
+  }, 20000);
 
   it("DB.close() closes handle (lock cleanup on process exit)", () => {
     const dir = path.join(process.cwd(), "tmp", `lock-test-${Date.now()}`);
@@ -62,7 +64,7 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
 
     process.env.YGL_TEST = "1"; // restore
     fs.rmSync(dir, { recursive: true, force: true });
-  });
+  }, 20000);
 
   it("stop() is idempotent — multiple calls safe", () => {
     process.env.YGL_TEST = "1";
@@ -75,5 +77,5 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
     svc.stop(); // still no throw
     expect(true).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
-  });
+  }, 20000);
 });

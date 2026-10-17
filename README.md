@@ -125,6 +125,7 @@ evidence add    从来源摘原文片段，带 locator（页码/章节）
 claim add       写下断言
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
 claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
+predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据自动测（树/kb 计数、npm 版本数），判 hit/miss/pending/manual——只报告不仲裁，给出待 resolve 建议
 ```
 
 **JSON 纪律**：写命令在 `--json` 下 stdout 只有一个 JSON 对象（重复时带 `duplicate: true`），Agent 可直接 `JSON.parse` 全量输出。

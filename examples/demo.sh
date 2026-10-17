@@ -99,6 +99,11 @@ $Y research claim resolve "$C" --as contested --note "仲裁演示" >/dev/null
 CS=$($Y research claim list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).find(x=>x.id===process.argv[1]).status))" "$C")
 if [ "$CS" = "contested" ]; then echo "  ✓ claim resolved to contested"; else echo "  ✗ resolve failed: $CS"; exit 1; fi
 
+echo "── 5e. predict audit (backtest pipeline)"
+$Y research claim add "[预测·7天] 2026-12-31 前 kb≥1——demo 预测，判据可本地实测" >/dev/null
+PA=$($Y research predict audit --offline --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).find(x=>x.criterion.includes('kb≥1'));console.log(r?r.verdict+':'+r.actual:'missing')})")
+case "$PA" in pending*kb=*/*) echo "  ✓ predict audit measured local criterion ($PA)";; *) echo "  ✗ predict audit failed: $PA"; exit 1;; esac
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done

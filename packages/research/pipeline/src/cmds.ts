@@ -588,11 +588,51 @@ if (subAction === "list" || subAction === undefined) {
     }
   }
 
+  // ---------------------------------------------------------------- predict group
+  // pred-val/backtest-pipeline: deadline audit of `[预测·N天]` claims.
+  // Measures locally-measurable criteria, reports hit/miss/pending/manual —
+  // never auto-resolves (arbitration stays human, frozen contract).
+  if (sub === "predict") {
+    if (subAction === "audit") {
+      const claims = store.db.all(
+        "SELECT id, text, status, created FROM claims WHERE project_id=? AND text LIKE '[预测·%' ORDER BY created",
+        [project.id]
+      ) as any[];
+      if (!claims.length) {
+        if (ctx.json) console.log("[]");
+        else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color));
+        return 0;
+      }
+      const { auditPredictions } = require("./predict");
+      return (async () => {
+        const rows = await auditPredictions({ claims, db: store.db, npmProbe: args.flags.offline !== true });
+        if (ctx.json) {
+          console.log(JSON.stringify(rows, null, 2));
+        } else {
+          head(ctx, `prediction audit — ${project.name} (${rows.length} predictions)`);
+          table(ctx, rows, ["claim", "horizon", "deadline", "判据", "实测", "判定", "days"], [
+            "claim_id", "horizon", "deadline", "criterion", "actual", "verdict", "days_left",
+          ]);
+          const actionable = rows.filter((r: any) => r.verdict === "hit" || r.verdict === "miss");
+          for (const r of actionable) {
+            out(ctx, paint(C.dim, `  → research claim resolve ${r.claim_id} --as ${r.verdict === "hit" ? "supported" : "refuted"}   # ${r.deadline} 已到`, ctx.color));
+          }
+          for (const r of rows.filter((x: any) => x.verdict === "manual")) {
+            out(ctx, paint(C.dim, `  · ${r.claim_id}: ${r.hint}`, ctx.color));
+          }
+        }
+        return 0;
+      })();
+    }
+    bad(ctx, "usage: research predict audit [--offline]");
+    return 2;
+  }
+
   out(
     ctx,
     paint(
       C.dim,
-      "  research: query add|list · source add|list|search|show|rm · evidence add|list · claim add|link|list",
+      "  research: query add|list · source add|list|search|show|rm · evidence add|list · claim add|link|list · predict audit",
       ctx.color
     )
   );
