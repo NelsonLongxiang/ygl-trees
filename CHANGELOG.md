@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.77.0（2026-10-17）plugin 安全加固 + DEP0190 消除
+- **P0 修复**：plugin install 坏路径不再被记录——存在性校验 + package.json name 校验（a2a 7aa5c871）
+- **P0 修复**：StartupError 时 plugin 命令走 degraded mode——坏插件不再砖死 home，plugin remove 自愈可用
+- **P1 修复**：启动失败退出码 rc=1（修复前 rc=0，违反冻结契约）
+- **P2 修复**：包名从 package.json 读取真实 name（不再退化为 basename）
+- **DEP0190 消除**：pnpm spawn 改用 cmd /c 显式调用（不再传 args 给 shell:true）
+
 ## 0.76.1（2026-10-17）--ai 多 Agent 支持 + ctx.emit 桥接
 - **skill link --ai <agent>**：一键连接到多种 AI Agent 的技能目录——pi(~/.pi/agent/skills/) · claude · cursor · windsurf · custom(--to)
 - **ctx.emit 桥接**：eventbus 内部事件自动转发到 Cordis ctx.emit——插件可用 ctx.on("ygl") 监听（文档承诺兑现）

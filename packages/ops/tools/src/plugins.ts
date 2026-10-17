@@ -147,9 +147,16 @@ function pnpm(home: string, args: string[]): void {
   // there. Requires pnpm >= 9.4.
   const pm = process.env.YGL_PACKAGE_MANAGER || "pnpm";
   if (process.platform === "win32") {
-    const q = (s: string) => `"${String(s).replace(/["&|<>^]/g, "")}"`;
     const exe = resolvePm(pm);
-    execFileSync([q(exe), ...args.map(q), "--dir", q(profileDir(home)), "--ignore-workspace"].join(" "), { stdio: "pipe", shell: true });
+    // DEP0190 fix (a2a 7aa5c871 cosmetic): avoid shell:true with args —
+    // invoke cmd explicitly instead, args are properly escaped by spawnSync.
+    const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
+    const r = spawnSync("cmd", ["/c", exe, ...args, "--dir", profileDir(home), "--ignore-workspace"], { stdio: "pipe" });
+    if (r.status !== 0) {
+      const err = new Error(String(r.stderr || r.stdout || `pnpm exited ${r.status}`));
+      (err as any).status = r.status;
+      throw err;
+    }
     return;
   }
   execFileSync(pm, [...args, "--dir", profileDir(home), "--ignore-workspace"], { stdio: "pipe" });
