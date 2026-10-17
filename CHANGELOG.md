@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.73.0（2026-10-17）引导增强 + Token 优化 + A2A 修复
+- **首启引导**：无数据库时显示 Welcome + 3 步入门指南
+- **空态引导**：列表为空时显示具体命令建议（kb/project/task）
+- **Token 优化**：表格列 40 字符截断 · brief 技能描述 60 字符 · 输出减 24-28%
+- **A2A 修复**（应用测试席反馈）：F1 agent ask 子进程锁自撞（YGL_TEST 旁路）· F2 timeline --json 纯净 · F4 job 子进程锁旁路
+- **命令建议**：未知命令模糊匹配（rsrch→research · databse→db · healh→doctor）
+
 ## 0.72.0（2026-10-17）v2 功能包——8 项新能力
 - **db time-travel**：查询过去某时刻的工作区状态（实体计数+已解锁节点）
 - **db timeline**：工作区增长可视化（events/天 + 实体里程碑）
