@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.82.1（2026-10-17）预测生命周期护栏：挂证据 ≠ 仲裁
+- **`claim link` 不再抢跑预测仲裁**（用户上报③：`--stance supports` 自动把 [预测·…] 断言置 supported，predict audit 判 supported||refuted → resolved——预测刚挂证据就退出跟踪表，实际无人仲裁）：预测前缀断言挂证据时跳过自动晋升，状态保持 unverified 直到显式 `claim resolve` / 到期回测；证据链接与 stance 照常落库，回执明示 `auto_promote: false`（`--json` 返回 `{claim, evidence, stance, status, auto_promote}`）；普通断言的自动推导不变（回归护栏）
+- **`claim unresolve <claimId>`**（建议②：误晋升后无归位命令）：复位通道把断言重置回 unverified（撤销链接副作用 / 抢跑仲裁），幂等（已 unverified → `duplicate:true`），落 `claim.unresolve` 事件留痕——0.82.1 前被误晋升的预测可用它归队
+- **predict audit `--json` 覆盖确认**（建议③）：`--json` 始终输出全量 rows（含 resolved 终态行），人类视图默认隐藏终态——机器读全量、人看增量，同构无缺口
+- 测试：predlink.spec.ts 5 例（预测不晋升 / 普通照常推导 / unresolve 复位+事件 / 幂等 / 坏 id 点名）→ 177；demo 5j 段 5 断言（挂证据不晋升 / 普通推导回归 / unresolve 复位 / 幂等 / 复位后仍在跟踪表）→ 106
+
 ## 0.82.0（2026-10-17）跨树巡检 + 临期 eval 门槛 + 幻影对账一键修复
 - **`node ready --all`**（用户建议②：12 棵树巡检要 24 条命令——每树 tree use + ready）：一次进程扫全部树的就绪集，无需 tree use / `-t`；`--json` 返回 `[{tree, ready[]}]`，人类输出按树分节
 - **`node cond --due [--days N] [--eval]`**（建议③：w1/d90 检验依赖人记得看）：扫描全部 eval 族条件，提取问题文本中的 `YYYY-MM-DD` 期限，列出 N 天内到期（含逾期）的条件（树/节点/deadline/剩余天数）；`--days` 放宽窗口（默认 7）；`--eval` 逐条组装上下文包送判定模型（三题型按 op 自动选择，离线安全回落 pending）——**判定只报告不仲裁**，通过 ≠ 自动解锁，resolve/unlock 保持人工（与 predict audit 同纪律）；跨树扫描前置于树解析，无当前树也能跑

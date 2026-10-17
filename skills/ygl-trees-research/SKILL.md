@@ -42,11 +42,13 @@ ygl-trees research evidence add <sourceId> --quote "原文片段" --locator "§2
 ygl-trees research evidence add <sourceId> --file quotes.md         # 长摘录免转义
 ygl-trees research claim add "断言文本" --confidence A               # 档位
 ygl-trees research claim add "断言文本" --confidence 0.92            # 数值档（0.81：0-1 或 0-100%）
-ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导
+ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导（普通断言）
 ygl-trees research claim resolve <claimId> --as contested --note "矛盾待查"  # 人工仲裁出口
+ygl-trees research claim unresolve <claimId>   # 复位回 unverified（0.82.1：撤销链接副作用/抢跑仲裁）
 ```
 
 - 有支持有反对 → `contested`；仲裁后新证据链接会重新推导
+- **预测断言（`[预测·…]` 前缀）挂证据不自动晋升**（0.82.1）：挂证据 ≠ 仲裁，状态保持 unverified 直到显式 resolve / 到期回测——predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `claim unresolve` 归位（幂等 duplicate:true）
 - 全部命令幂等：同内容重跑返回已存在行（`duplicate: true`，rc=0）
 
 ## 3. 产出
@@ -65,6 +67,7 @@ ygl-trees produce export <reportId> report.md
 - 先 `agent brief --json` 看 next_actions（它会告诉你缺来源/缺证据/缺断言）
 - 每条断言至少一条证据再进报告；contested 的要么补证据要么 resolve
 - 预测断言（`[预测·N天]`）定期 `research predict audit` 回测：本地判据自动测；`--state <file|url>`
-  桥接外部计数（裸键名后缀匹配 `counts.y_imported`）；已 resolve 的默认隐藏（`--all` 查看终态表）
+  桥接外部计数（裸键名后缀匹配 `counts.y_imported`）；已 resolve 的默认隐藏（`--all` 查看终态表，
+  `--json` 始终含全量行含终态——机器读全量、人看增量）
 - `--json` 输出可直接 parse 拿 id；列表命令字段：source(id,title,url,relevance,…)、
   claim(id,text,status,confidence,sup,ref)、evidence(id,source,locator,quote,used_by)

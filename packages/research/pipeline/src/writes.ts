@@ -214,11 +214,11 @@ export async function claimLink(
   claimId: string,
   evidenceId: string,
   stance: "supports" | "refutes" = "supports"
-): Promise<{ status: string }> {
+): Promise<{ status: string; auto_promote: boolean }> {
   return ds.transaction(async (mgr) => {
     // Resolve both ends before writing: a bad/foreign id must surface as a
     // named not-found, not as a raw FOREIGN KEY constraint failure.
-    const c = (await mgr.query(`SELECT id FROM claims WHERE id=?`, [claimId])) as any[];
+    const c = (await mgr.query(`SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
     if (!c.length) throw new Error(`claim not found: ${claimId}`);
     const e = (await mgr.query(`SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
     if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
@@ -227,6 +227,19 @@ export async function claimLink(
        ON CONFLICT(claim_id,evidence_id) DO UPDATE SET stance=excluded.stance`,
       [claimId, evidenceId, stance]
     );
+    // 0.82.1 (user report ③): prediction claims (`[预测·…]` prefix) must NOT
+    // auto-promote on link — predict audit treats supported/refuted as
+    // human-arbitrated (terminal), so a mere evidence link would kick the
+    // prediction out of the tracking table before its deadline. Evidence
+    // linking is evidence gathering; arbitration stays an explicit
+    // `claim resolve` (frozen contract, same discipline as predict audit).
+    const text = String(c[0]?.text ?? "");
+    if (text.startsWith("[预测·")) {
+      const cur = (await mgr.query(`SELECT status FROM claims WHERE id=?`, [claimId])) as any[];
+      const status = String(cur?.[0]?.status ?? "unverified");
+      await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId} (prediction: auto-promote skipped)`);
+      return { status, auto_promote: false };
+    }
     const sup = (await mgr.query(
       `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='supports'`, [claimId]
     )) as any[];
@@ -238,7 +251,22 @@ export async function claimLink(
     const status = s && r ? "contested" : s ? "supported" : r ? "refuted" : "unverified";
     await mgr.update(Claim, { id: claimId }, { status });
     await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId}`);
-    return { status };
+    return { status, auto_promote: true };
+  });
+}
+
+/** 0.82.1 (user report ③): reset an auto-promoted / wrongly arbitrated claim
+ * back to unverified — the repair channel for link side effects on
+ * predictions (and for any claim arbitrated too early). Idempotent: already
+ * unverified → duplicate:true, no event spam. */
+export async function claimUnresolve(ds: DataSource, claimId: string): Promise<{ status: string; duplicate: boolean }> {
+  return ds.transaction(async (mgr) => {
+    const c = (await mgr.query(`SELECT id, status FROM claims WHERE id=?`, [claimId])) as any[];
+    if (!c.length) throw new Error(`claim not found: ${claimId}`);
+    if (String(c[0]?.status) === "unverified") return { status: "unverified", duplicate: true };
+    await mgr.update(Claim, { id: claimId }, { status: "unverified", updated: nowIso() } as any);
+    await logEvent(mgr, "claim.unresolve", "claim", claimId, `${c[0]?.status} → unverified`);
+    return { status: "unverified", duplicate: false };
   });
 }
 

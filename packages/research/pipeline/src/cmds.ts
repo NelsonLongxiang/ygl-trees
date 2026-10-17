@@ -539,7 +539,15 @@ if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
         .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
         .then((r): number => {
-          ok(ctx, `linked; claim status now: ${r.status}`);
+          // 0.82.1: prediction claims never auto-promote on link — the receipt
+          // says so explicitly instead of showing a silently-unchanged status.
+          if (ctx.json) {
+            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote }, null, 2));
+          } else if (r.auto_promote === false) {
+            ok(ctx, `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`);
+          } else {
+            ok(ctx, `linked; claim status now: ${r.status}`);
+          }
           // R15 深度集成：链接后自动触发置信度评估（有模型时静默执行）
           try {
             const { evaluateClaimConfidence } = require("../../../ops/tools/src/eval-enhance");
@@ -610,6 +618,34 @@ if (subAction === "list" || subAction === undefined) {
         .then((): number => {
           if (ctx.json) console.log(JSON.stringify({ id, status: as, note }, null, 2));
           else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+    // 0.82.1 (user report ③): the repair channel for link side effects —
+    // resets a claim to unverified. Covers predictions auto-promoted before
+    // 0.82.1 AND any claim arbitrated too early (explicit un-arbitration).
+    if (subAction === "unresolve") {
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research claim unresolve <claimId>");
+        return 2;
+      }
+      const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
+      if (!c0) {
+        bad(ctx, `claim not found: ${id}`);
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.claimUnresolve(ds, id))
+        .then((r): number => {
+          if (ctx.json) console.log(JSON.stringify({ id, status: r.status, duplicate: r.duplicate }, null, 2));
+          else ok(ctx, r.duplicate
+            ? `claim ${id} already unverified (no change)`
+            : `claim ${id}: ${c0.status} → unverified  (back in tracking; arbitration: claim resolve)`);
           return 0;
         })
         .catch((e: any): number => {

@@ -241,6 +241,26 @@ DF3=$($Y doctor --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('
 if [ "$DF3" = "pass" ]; then echo "  ✓ --fix 后 write_integrity 回 pass"; else echo "  ✗ post-fix: $DF3"; exit 1; fi
 $Y db sql "DELETE FROM events WHERE id='evdemo821'" >/dev/null
 
+echo "── 5j. 0.82.1 预测生命周期护栏（真实用户报告：link 抢跑仲裁）"
+# 预测 claim 挂证据不再自动晋升 —— 退出跟踪表的唯一路径是显式 resolve
+PRED=$($Y research claim add "[预测·7天] 2026-10-24 前 demo 判据树≥1" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+DEVSRC=$($Y research source list --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s)[0].id)})")
+DEV=$($Y research evidence add "$DEVSRC" --quote "demo evidence for prediction guard" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+PL1=$(YGL_EVAL_OFFLINE=1 $Y research claim link "$PRED" "$DEV" --stance supports --json 2>&1)
+case "$PL1" in *'"status": "unverified"'*'"auto_promote": false'*) echo "  ✓ [预测· claim 挂证据不晋升（auto_promote:false）";; *) echo "  ✗ pred link: $PL1"; exit 1;; esac
+# 普通 claim 仍然自动推导（回归护栏：guard 只拦预测）
+PLAIN=$($Y research claim add "plain claim for guard regression" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+PL2=$(YGL_EVAL_OFFLINE=1 $Y research claim link "$PLAIN" "$DEV" --stance supports --json 2>&1)
+case "$PL2" in *'"status": "supported"'*'"auto_promote": true'*) echo "  ✓ 普通 claim 链接照常自动推导";; *) echo "  ✗ plain link: $PL2"; exit 1;; esac
+# unresolve 复位通道：误晋升/抢跑仲裁可归位，幂等 duplicate:true
+UR1=$($Y research claim unresolve "$PLAIN" --json 2>&1)
+case "$UR1" in *'"status": "unverified"'*'"duplicate": false'*) echo "  ✓ claim unresolve 复位为 unverified";; *) echo "  ✗ unresolve: $UR1"; exit 1;; esac
+UR2=$($Y research claim unresolve "$PLAIN" --json 2>&1)
+case "$UR2" in *'"duplicate": true'*) echo "  ✓ unresolve 幂等（already unverified → duplicate）";; *) echo "  ✗ unresolve idem: $UR2"; exit 1;; esac
+# 复位后预测仍在默认跟踪表（不被 resolved 隐藏）
+PA=$($Y research predict audit --offline --json -p techtree 2>&1)
+case "$PA" in *"$PRED"*'"verdict": "pending"'*) echo "  ✓ 预测复位后仍在跟踪表（pending，非 resolved）";; *) echo "  ✗ audit: $PA"; exit 1;; esac
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done

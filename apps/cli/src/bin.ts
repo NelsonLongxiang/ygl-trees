@@ -121,6 +121,7 @@ ${paint(C.bold, "research", true)}    collect → screen → extract → claim
   claim link <claimId> <evidenceId> [--stance supports|refutes]
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
   claim resolve <claimId> --as supported|refuted|contested [--note]
+  claim unresolve <claimId>   reset to unverified (undo auto-promote / early arbitration)
   claim list
 
 ${paint(C.bold, "produce", true)}     outline → section → report · spec/design（工程产出）
@@ -596,6 +597,7 @@ export function generateLlmsManifest(): string {
       ["research claim add \"<text>\"", "refutable assertion"],
       ["research claim link <cid> <eid> --stance supports|refutes", "link claim to evidence"],
       ["research claim resolve <cid> --as supported|refuted|contested", "manual arbitration"],
+      ["research claim unresolve <cid>", "reset to unverified (undo link auto-promote)"],
       ["research claim evaluate <cid>", "decision model confidence (0-5 → A/B/C/D)"],
       ["research evidence assess <eid>", "decision model quality assessment"],
     ]],
