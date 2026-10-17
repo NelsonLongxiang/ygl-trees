@@ -13,7 +13,7 @@ import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt"
 import { nowIso, shortId } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
 
-export const REL_TYPES = ["node", "claim", "evidence", "source", "query", "kb", "artifact", "skill"] as const;
+export const REL_TYPES = ["node", "claim", "evidence", "source", "query", "kb", "artifact", "task", "skill"] as const;
 
 /** Resolve one `<type>:<ref>` against the database → { type, id, display }.
  *  Throws RelError(code) on unknown type / missing row. */
@@ -28,8 +28,14 @@ const DISPLAY: Record<string, (db: any, ref: string) => { id: string; display: s
     // node:<tree>/<key> explicit, or node:<key> resolved in the current tree
     const [treeName, key] = ref.includes("/") ? [ref.slice(0, ref.indexOf("/")), ref.slice(ref.indexOf("/") + 1)] : [null, ref];
     const cur = treeName || db.metaGet("current_tree") || "";
+    if (!cur) {
+      // 0.81: bare node:<key> with NO current tree used to die as a generic
+      // "node not found" — name the real cause (parallel session cleared the
+      // selection) and both ways out.
+      throw new RelError(1, `no current tree — qualify as node:<tree>/${key} or run 'ygl-trees tree use <name>' first`);
+    }
     const rows = db.all("SELECT n.id, n.key, n.name FROM nodes n JOIN trees t ON t.id=n.tree_id WHERE (t.name=? OR t.id=?) AND (n.key=? OR n.id=?)", [cur, cur, key, key]);
-    if (!rows.length) throw new RelError(1, `node not found: ${ref}`);
+    if (!rows.length) throw new RelError(1, `node not found: ${ref}${treeName ? "" : ` (searched current tree '${cur}' — qualify as node:<tree>/${key} for another tree)`}`);
     return { id: String(rows[0].id), display: String(rows[0].name || rows[0].key) };
   },
   claim: (db, ref) => {
@@ -60,6 +66,13 @@ const DISPLAY: Record<string, (db: any, ref: string) => { id: string; display: s
   artifact: (db, ref) => {
     const r = db.get("SELECT id, title FROM artifacts WHERE id=? OR title=? LIMIT 1", [ref, ref]);
     if (!r) throw new RelError(1, `artifact not found: ${ref}`);
+    return { id: String(r.id), display: String(r.title) };
+  },
+  task: (db, ref) => {
+    // tasks are artifacts kind='task' (0.81: task:<id|title> so `task add
+    // --node` can link without spelling artifact:)
+    const r = db.get("SELECT id, title FROM artifacts WHERE kind='task' AND (id=? OR title=?) LIMIT 1", [ref, ref]);
+    if (!r) throw new RelError(1, `task not found: ${ref}`);
     return { id: String(r.id), display: String(r.title) };
   },
   skill: (db, ref) => {

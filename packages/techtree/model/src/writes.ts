@@ -339,6 +339,33 @@ export async function condAdd(
   });
 }
 
+/** 0.81: `node cond rm <key> --name <n>` — remove one condition by natural
+ * key. Throws "node not found" / "condition not found: <name> (node X has:
+ * ...)" (named, per frozen contract ④). Mirrors condAdd: transactional +
+ * event (node.cond-rm) + markDirty. */
+export async function condRemove(
+  ds: DataSource,
+  treeId: string,
+  keyOrId: string,
+  name: string
+): Promise<Record<string, any>> {
+  return ds.transaction(async (mgr) => {
+    const n = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
+    if (!n.length) throw new Error(`node not found: ${keyOrId}`);
+    const existing = (await mgr.query(`SELECT * FROM node_conditions WHERE node_id=? AND name=?`, [n[0].id, name])) as any[];
+    if (!existing.length) {
+      const all = (await mgr.query(`SELECT name FROM node_conditions WHERE node_id=?`, [n[0].id])) as any[];
+      const have = all.map((r: any) => r.name).join(", ") || "(none)";
+      throw new Error(`condition not found: ${name} (node ${keyOrId} has: ${have})`);
+    }
+    const row = existing[0];
+    await mgr.query(`DELETE FROM node_conditions WHERE id=?`, [row.id]);
+    await markDirty(mgr, treeId);
+    await logEvent(mgr, "node.cond-rm", row.id, { tree: treeId, node: keyOrId, name, kind: row.kind, op: row.op, required: !!row.required, effect: row.effect });
+    return { ...row, removed: true };
+  });
+}
+
 export async function stateSet(
   ds: DataSource,
   treeId: string,

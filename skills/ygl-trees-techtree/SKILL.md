@@ -27,9 +27,10 @@ ygl-trees node link mining smelting                      # prereq/AND/必检（�
 ygl-trees node link bronze steel --optional              # 可选：不阻塞，进 missing_optional
 ygl-trees node link bronze iron --mode OR                # 任一父解锁即可
 ygl-trees node link a b --rel excludes                   # 互斥分支：父解锁则子被封死
-ygl-trees node cond steel --name lab_level --kind level --value 3          # 必检门槛
-ygl-trees node cond steel --name has_eng --kind flag --op has --optional \
-           --effect cost_mul --weight 0.8                                 # 可选打折
+ygl-trees node cond add steel --name lab_level --kind level --value 3       # 必检门槛（add 动作词 0.81）
+ygl-trees node cond add steel --name has_eng --kind flag --op has --optional \
+            --effect cost_mul --weight 0.8                                 # 可选打折
+ygl-trees node cond rm steel --name lab_level                              # 按自然键删除（0.81）
 # 语义型门槛（决策模型三题型 boolean/choice/score）→ 见 ygl-trees-eval-gates 技能
 ygl-trees node index && ygl-trees node validate
 ```

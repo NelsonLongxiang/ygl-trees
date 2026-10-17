@@ -8,6 +8,7 @@ import { rejectBare } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../pipeline/src/writes";
+import { relAdd, RelError } from "../../../ops/tools/src/rels";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -147,23 +148,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     // ── task group rides the produce router (`ygl-trees task ...`, R12) ──
     case "task-add": {
-      if (rejectBare(ctx, args.flags, ["note"])) return 2;
+      if (rejectBare(ctx, args.flags, ["note", "node"])) return 2;
       const title = rest.join(" ");
       if (!title) {
-        bad(ctx, 'usage: task add "<title>" [--note ...]');
+        bad(ctx, 'usage: task add "<title>" [--note ...] [--node <tree>/<key>]');
         return 2;
       }
       const note = String(args.flags.note || "");
+      const nodeRef = args.flags.node !== undefined ? String(args.flags.node) : "";
       return getOrm(env.db.path)
         .then((ds) => writes.taskAdd(ds, pid, title, note))
-        .then((row): number => {
-          if (ctx.json) console.log(JSON.stringify(row, null, 2));
-          else ok(ctx, `task added: ${row.id}  ${title}`);
-          return 0;
+        .then((row): number | Promise<number> => {
+          if (!nodeRef) {
+            if (ctx.json) console.log(JSON.stringify(row, null, 2));
+            else ok(ctx, `task added: ${row.id}  ${title}`);
+            return 0;
+          }
+          // 0.81 ⑦: tasks join the relation fabric — `task add --node` links
+          // the fresh task to a tree node (rel=tracked-by) in the same breath,
+          // so task lists and node timelines stop being parallel pipelines.
+          return relAdd(env, `node:${nodeRef}`, `task:${row.id}`, "tracked-by")
+            .then((r): number => {
+              if (ctx.json) console.log(JSON.stringify({ ...row, node: nodeRef, relation: "tracked-by" }, null, 2));
+              else ok(ctx, `task added: ${row.id}  ${title}  (tracked-by node:${nodeRef})`);
+              return 0;
+            });
         })
         .catch((e: any): number => {
           bad(ctx, e?.message || String(e));
-          return 1;
+          return e instanceof RelError && e.code === 2 ? 2 : 1;
         });
     }
 

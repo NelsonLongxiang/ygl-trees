@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, show, paint, C, writeResult } from "../../../core/text/src/fmt";
 import { clip, parseFrontmatter } from "../../../core/text/src/text";
+import { emitEvent } from "../../../core/text/src/eventbus";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { deriveL1 } from "../../../research/pipeline/src/reads";
@@ -143,6 +144,34 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       store.db.run("DELETE FROM kb_fts WHERE id=?", [id]);
       store.db.run("DELETE FROM kb_notes WHERE id=?", [id]);
+      // 0.81: kb.rm event — doctor check 10 replays *.add events against base
+      // tables; a legit removal used to look like a phantom write. Logging the
+      // rm (mirroring source/evidence rm paths) lets doctor reconcile.
+      try {
+        const ev = {
+          id: `ev${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+          ts: new Date().toISOString(),
+          actor: process.env.YGL_SESSION || "cli",
+          kind: "kb.rm",
+          entity: "kb_note",
+          entity_id: id,
+          payload: JSON.stringify({ title: String((note as any).title || "") }),
+          level: "info",
+        };
+        store.db.run(
+          "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+          [ev.id, ev.ts, ev.actor, ev.kind, ev.entity, ev.entity_id, ev.payload, ev.level]
+        );
+        emitEvent({
+          kind: "kb.rm",
+          entity: "kb_note",
+          entityId: id,
+          payload: JSON.stringify({ title: String((note as any).title || "") }),
+          ts: ev.ts,
+        });
+      } catch {
+        // event logging is best-effort — the delete itself already succeeded
+      }
       ok(ctx, `note removed: ${id}  ${String((note as any).title || "").slice(0, 40)}`);
       return 0;
     }

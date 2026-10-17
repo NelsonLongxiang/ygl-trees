@@ -263,6 +263,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "timeline": {
       // v2: workspace growth timeline — events per day with entity milestones
+      // 0.81 ⑧: --actor <a> / --session <s> narrow the stream for multi-agent
+      // reconciliation (actor column / payload.session); a filtered run also
+      // shows a raw tail so 对账 doesn't need db sql.
+      const actorF = String(args.flags.actor || "");
+      const sessionF = String(args.flags.session || "");
+      const conds: string[] = [];
+      const params: any[] = [];
+      if (actorF) { conds.push("actor=?"); params.push(actorF); }
+      if (sessionF) { conds.push(`payload LIKE ?`); params.push(`%"session":"${sessionF}"%`); }
+      const where = conds.length ? ` WHERE ${conds.join(" AND ")}` : "";
       const days = db.all(`
         SELECT date(ts) as day, COUNT(*) as events,
           SUM(CASE WHEN kind LIKE 'project%' THEN 1 ELSE 0 END) as projects,
@@ -270,16 +280,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           SUM(CASE WHEN kind LIKE 'claim%' THEN 1 ELSE 0 END) as claims,
           SUM(CASE WHEN kind LIKE 'kb%' THEN 1 ELSE 0 END) as kb,
           SUM(CASE WHEN kind LIKE 'node%' THEN 1 ELSE 0 END) as nodes
-        FROM events GROUP BY date(ts) ORDER BY day
-      `) as any[];
+        FROM events${where} GROUP BY date(ts) ORDER BY day
+      `, params) as any[];
       if (!days.length) { ok(ctx, "no events yet"); return 0; }
+      const tail = conds.length
+        ? (db.all(`SELECT ts, actor, kind, entity_id FROM events${where} ORDER BY ts DESC LIMIT 20`, params) as any[])
+        : [];
       // F2 fix: --json outputs pure JSON (frozen contract ④)
       if (ctx.json) {
-        console.log(JSON.stringify({ timeline: days, total: days.reduce((s2: number, d: any) => s2 + d.events, 0) }, null, 2));
+        console.log(JSON.stringify({ timeline: days, total: days.reduce((s2: number, d: any) => s2 + d.events, 0), ...(tail.length ? { tail } : {}) }, null, 2));
         return 0;
       }
       const maxEvents = Math.max(...days.map(d => d.events));
-      head(ctx, "Workspace Timeline");
+      head(ctx, `Workspace Timeline${actorF ? ` · actor=${actorF}` : ""}${sessionF ? ` · session=${sessionF}` : ""}`);
       let totalP = 0, totalS = 0, totalC = 0, totalK = 0, totalN = 0;
       for (const d of days) {
         totalP += d.projects; totalS += d.sources; totalC += d.claims;
@@ -296,6 +309,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       out(ctx, "");
       out(ctx, paint(C.dim, `  累计: ${totalP}项目 · ${totalS}来源 · ${totalC}断言 · ${totalK}知识 · ${totalN}节点变更`, ctx.color));
+      if (tail.length) {
+        out(ctx, "");
+        out(ctx, paint(C.dim, `  最近 ${tail.length} 条（按时间倒序）:`, ctx.color));
+        for (const t of tail) out(ctx, `  ${String(t.ts).slice(0, 19)}  ${String(t.actor).padEnd(12)} ${String(t.kind).padEnd(14)} ${String(t.entity_id || "")}`);
+      }
       return 0;
     }
     case "workspace": {

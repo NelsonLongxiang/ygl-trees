@@ -45,6 +45,7 @@ ygl-trees skill link --global    # 连接到 ~/.agents/skills/（全局）
 ygl-trees agent ask "<问题>"       # 自然语言路由（projects/search/tree/health/...）
 ygl-trees db time-travel "日期"    # 查询过去某时刻的工作区状态
 ygl-trees db timeline              # 增长时间线（events/天+里程碑）
+ygl-trees db timeline --actor <a> [--session <s>]  # 按 actor/会话过滤 + 最近 20 条原始事件（多 Agent 对账）
 ygl-trees db workspace list        # 多工作区管理
 ygl-trees db obsidian [dir]        # 导出 Obsidian markdown vault
 ygl-trees skill init <name>        # 模板创建技能
@@ -84,8 +85,9 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 ## 3. 健康检查与任务
 
 ```bash
-ygl-trees doctor                     # 10 项健康检查（schema/索引/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入）
+ygl-trees doctor                     # 10 项健康检查（schema/索引/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入→warn）
 ygl-trees task add "<标题>"           # 建任务（todo 起步）
+ygl-trees task add "验证 X" --node <tree>/<key>   # 建任务并挂树节点（tracked-by，0.81）
 ygl-trees task list                  # 按状态分组
 ygl-trees task done <id>             # 勾销（全程留痕）
 ```

@@ -228,16 +228,38 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "cond") {
-      if (!key) {
-        bad(ctx, "usage: node cond <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
+      // 0.81 action-word consistency: `node cond add <key>` used to parse
+      // "add" as the node key ("node not found: add"); link/unlock style
+      // now works, and the long-missing `node cond rm <key> --name <n>`
+      // finally exists (was db-sql-only cleanup).
+      let cKey: string | undefined = key;
+      const cAct = key === "add" ? "add" : key === "rm" || key === "remove" ? "rm" : "";
+      if (cAct) cKey = rest[1];
+      if (cAct === "rm") {
+        const name = flagStr("name");
+        if (!cKey || !name) {
+          bad(ctx, "usage: node cond rm <key> --name <cond>");
+          return 2;
+        }
+        return runTreeWrite(
+          (ds) => treeWrites.condRemove(ds, tid, cKey!, name),
+          (r): number => {
+            ok(ctx, `condition removed: ${cKey} · ${name}  (was ${r.required ? "必检" : "可选"}/${r.effect})`);
+            return 0;
+          }
+        );
+      }
+      if (!cKey) {
+        bad(ctx, "usage: node cond [add|rm] <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
         return 2;
       }
+      const k = cKey;
       if (rejectBare(ctx, args.flags, ["name", "value", "op", "effect", "weight", "options", "answer", "levels", "min-score"])) return 2;
       if (validateEnum(ctx, args.flags, "op", [">=", "==", "<=", "!=", "has", "eval", "eval-choice", "eval-score"])) return 2;
       if (validateEnum(ctx, args.flags, "effect", ["gate", "cost_mul"])) return 2;
       const name = flagStr("name");
       if (!name) {
-        table(ctx, trees.condList(tid, key), ["id", "name", "kind", "op", "value", "必检", "effect"], [
+        table(ctx, trees.condList(tid, k), ["id", "name", "kind", "op", "value", "必检", "effect"], [
           "id",
           "name",
           "kind",
@@ -290,7 +312,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       return runTreeWrite(
         (ds) =>
-          treeWrites.condAdd(ds, tid, key, {
+          treeWrites.condAdd(ds, tid, k, {
             name,
             kind: flagStr("kind", "flag"),
             expr: flagStr("expr") || undefined,
@@ -301,7 +323,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             weight: flagNum("weight", 1),
           }),
         (c): number => {
-          ack(ctx, c, `condition added: ${key} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
+          ack(ctx, c, `condition added: ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
           return 0;
         }
       );
@@ -672,6 +694,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "list" || sub === undefined) {
+      // Contract ⑤ extension (user report: `node list --tree X` silently
+      // swallowed the unknown flag and listed the CURRENT tree). node list
+      // takes exactly -t <tree> / --json — any other flag is a typo worth
+      // an explicit rc=2 instead of silent misdirection.
+      for (const f of Object.keys(args.flags || {})) {
+        if (!["t", "json", "no-color"].includes(f)) {
+          bad(ctx, `unknown flag --${f} for 'node list' — tree selection is '-t <tree>' (positional <tree> also works)`);
+          return 2;
+        }
+      }
       table(ctx, trees.nodeList(tid), ["key", "name", "kind", "tier", "cost", "状态", "必检父", "子节点"], [
         "key",
         "name",

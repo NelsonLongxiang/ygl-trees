@@ -33,13 +33,15 @@ ygl-trees research source add --adjudication "会话内裁决：三条件已逐�
 ```
 
 来源按 `(project, url_hash)` 去重；`--query` 顺带建立召回关联（query list 显示召回数）。
-`--url` 收 http(s):// · file:// · session://（0.80）。
+`--url` 收任意 `<scheme>://`（https/file/session/a2a/…，0.81）——跨 Agent 引用免落盘。
 
 ## 2. 摘录与断言
 
 ```bash
 ygl-trees research evidence add <sourceId> --quote "原文片段" --locator "§2"
-ygl-trees research claim add "断言文本" --confidence A
+ygl-trees research evidence add <sourceId> --file quotes.md         # 长摘录免转义
+ygl-trees research claim add "断言文本" --confidence A               # 档位
+ygl-trees research claim add "断言文本" --confidence 0.92            # 数值档（0.81：0-1 或 0-100%）
 ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导
 ygl-trees research claim resolve <claimId> --as contested --note "矛盾待查"  # 人工仲裁出口
 ```

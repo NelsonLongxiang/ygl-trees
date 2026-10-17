@@ -28,7 +28,7 @@ beforeAll(async () => {
   const tree = await treeWrites.treeCreate(ds, "rt", proj.id, "");
   await treeWrites.nodeAdd(ds, tree.id, { key: "alpha" });
   db.metaSet("current_tree", "rt");
-  (globalThis as any).__ids = { ev: ev.row.id, cl: cl.row.id };
+  (globalThis as any).__ids = { ev: ev.row.id, cl: cl.row.id, pid: proj.id };
 });
 
 afterAll(async () => {
@@ -38,7 +38,16 @@ afterAll(async () => {
 });
 
 describe("引用解析", () => {
-  it("八类类型注册齐全", () => expect(REL_TYPES.length).toBe(8));
+  it("九类类型注册齐全", () => expect(REL_TYPES.length).toBe(9));
+  it("task:<id> 解析为 artifacts kind='task' 行", async () => {
+    const writes = await import("../../../research/pipeline/src/writes");
+    const ds = await getOrm(db.path!);
+    const t = await writes.taskAdd(ds, (globalThis as any).__ids.pid as string, "关联单测任务");
+    const r = resolveRef(env, `task:${t.id}`);
+    expect(r.type).toBe("task");
+    expect(r.display).toBe("关联单测任务");
+    expect(() => resolveRef(env, "task:nope")).toThrowError(/task not found/);
+  });
   it("node:<key> 在当前树解析为 node.id", () => {
     const r = resolveRef(env, "node:alpha");
     expect(r.type).toBe("node");

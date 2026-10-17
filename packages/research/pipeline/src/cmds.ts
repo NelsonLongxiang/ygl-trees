@@ -167,8 +167,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "need --title and/or --url");
         return 2;
       }
-      if (url && !/^https?:\/\/|^file:\/\/|^session:\/\//.test(url)) {
-        bad(ctx, `--url must be http(s)://, file:// or session:// (got: "${clip(url, 30)}")`);
+      if (url && !/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+        // 0.81: any RFC-3986 scheme is a valid carrier — cross-agent refs
+        // (a2a://peer/task), session://, file://, http(s):// … url_hash
+        // dedupe protects the rest (user report: a2a:// rejected).
+        bad(ctx, `--url must be <scheme>:// — https://, file://, session://, a2a:// … (got: "${clip(url, 30)}")`);
         return 2;
       }
       const spec = {
@@ -459,7 +462,19 @@ if (subAction === "list" || subAction === undefined) {
   if (sub === "claim") {
     if (subAction === "add") {
       if (rejectBare(ctx, args.flags, ["confidence", "text"])) return 2;
-      if (validateEnum(ctx, args.flags, "confidence", ["A", "B", "C"])) return 2;
+      // 0.81: confidence accepts the letter grades (A|B|C) OR a numeric
+      // level — 0-1 decimal (0.92) or 0-100 percentage (92, 85%). Column
+      // stays TEXT; raw input is stored as given.
+      {
+        const raw = String(args.flags.confidence ?? "");
+        if (raw !== "" && !/^[ABC]$/.test(raw)) {
+          const n = Number(raw.replace(/%$/, ""));
+          if (!Number.isFinite(n) || n < 0 || n > 100) {
+            bad(ctx, `--confidence must be A|B|C or a number 0-1 / 0-100(%) (got: "${clip(raw, 20)}")`);
+            return 2;
+          }
+        }
+      }
       const text = rest.slice(1).join(" ") || String(args.flags.text || "");
       if (!text) {
         bad(ctx, 'missing claim text: research claim add "<text>"');

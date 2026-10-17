@@ -173,6 +173,47 @@ case "$PRA" in *resolved*隐藏*) echo "  ✓ resolved prediction hidden by defa
 PAA=$($Y research predict audit --offline --all --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).find(x=>x.claim_id==='$PCID');console.log(r?r.verdict:'missing')})")
 if [ "$PAA" = "resolved" ]; then echo "  ✓ --all exposes resolved terminal verdict"; else echo "  ✗ --all resolved: $PAA"; exit 1; fi
 
+echo "── 5h. 0.81 command-surface fixes (real-user report)"
+# ③ node list --tree <t> was silently swallowed and listed the CURRENT tree — contract ⑤ wants rc=2
+NL3=$($Y node list --tree probe-batch 2>&1; echo "rc=$?")
+case "$NL3" in *"unknown flag --tree"*"rc=2") echo "  ✓ node list rejects unknown --tree flag (rc=2)";; *) echo "  ✗ node list flag check: $NL3"; exit 1;; esac
+# ④ cond verbs: `node cond add <key>` used to parse "add" as the key; rm didn't exist
+CV1=$($Y node cond add pb1 --name t_ready --op ">=" --value 5 -t probe-batch 2>&1)
+case "$CV1" in *"condition added: pb1"*) echo "  ✓ node cond add <key> action word";; *) echo "  ✗ cond add: $CV1"; exit 1;; esac
+CV2=$($Y node cond rm pb1 --name t_ready -t probe-batch 2>&1)
+case "$CV2" in *"condition removed: pb1 · t_ready"*) echo "  ✓ node cond rm removes by natural key";; *) echo "  ✗ cond rm: $CV2"; exit 1;; esac
+# ② generic URL schemes: cross-agent references (a2a://) no longer rejected
+A2A=$($Y research source add --url "a2a://peer1/task-42" --title "跨Agent任务引用" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.url:(r.url||'missing'))})")
+case "$A2A" in a2a://peer1/task-42) echo "  ✓ source add accepts arbitrary scheme (a2a://)";; *) echo "  ✗ a2a url: $A2A"; exit 1;; esac
+# ⑥ confidence letter grades OR numeric (0-1 / 0-100%)
+CN1=$($Y research claim add "demo811 数值置信断言" --confidence 0.92 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.confidence||'missing')})")
+if [ "$CN1" = "0.92" ]; then echo "  ✓ claim --confidence accepts 0-1 decimal"; else echo "  ✗ confidence numeric: $CN1"; exit 1; fi
+CN2=$($Y research claim add "demo811 百分比断言" --confidence 85% 2>&1; echo "rc=$?")
+case "$CN2" in *"claim added"*"rc=0") echo "  ✓ claim --confidence accepts percentage";; *) echo "  ✗ confidence pct: $CN2"; exit 1;; esac
+CN3=$($Y research claim add "x" --confidence nonsense 2>&1; echo "rc=$?")
+case "$CN3" in *"A|B|C or a number"*"rc=2") echo "  ✓ confidence garbage rejected rc=2";; *) echo "  ✗ confidence reject: $CN3"; exit 1;; esac
+# ① kb rm leaves a reconcilable event — doctor write_integrity stays pass
+KRID=$($Y kb add --title "demo-rm" --body "rm probe" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).id))")
+$Y kb rm "$KRID" >/dev/null 2>&1
+DOC1=$($Y doctor --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const c=JSON.parse(s).find(x=>x.name==='write_integrity');console.log(c.status)})")
+if [ "$DOC1" = "pass" ]; then echo "  ✓ kb rm reconciled by doctor (write_integrity pass)"; else echo "  ✗ doctor after kb rm: $DOC1"; exit 1; fi
+# unexplained orphan (no rm event) downgrades to warn — doctor itself still rc=0
+$Y db sql "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES('evdemo811','$(date -u +%Y-%m-%dT%H:%M:%SZ)','cli','kb.add','kb_note','kb_ghost_demo','{}','info')" >/dev/null
+DOC2=$($Y doctor --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const c=JSON.parse(s).find(x=>x.name==='write_integrity');console.log(c.status)})")
+$Y db sql "DELETE FROM events WHERE id='evdemo811'" >/dev/null
+if [ "$DOC2" = "warn" ]; then echo "  ✓ unexplained write event downgrades to warn (doctor rc=0)"; else echo "  ✗ doctor warn path: $DOC2"; exit 1; fi
+# ⑦ task add --node joins the relation fabric
+TN=$($Y task add "demo 挂节点任务" --node probe-batch/pb1 2>&1)
+case "$TN" in *"task added"*"tracked-by node:probe-batch/pb1"*) echo "  ✓ task add --node links tracked-by relation";; *) echo "  ✗ task --node: $TN"; exit 1;; esac
+# ⑧ timeline --actor filters the stream and shows a raw tail
+TL=$($Y db timeline --actor cli 2>&1)
+case "$TL" in *"actor=cli"*"最近"*) echo "  ✓ db timeline --actor filter + raw tail";; *) echo "  ✗ timeline actor: $TL"; exit 1;; esac
+# ⑤ bare node:<key> with no current tree names both ways out
+$Y db sql "DELETE FROM meta WHERE key='current_tree'" >/dev/null
+RN=$($Y rel add node:pb1 claim:x related 2>&1; echo "rc=$?")
+case "$RN" in *"no current tree — qualify as node:<tree>/pb1"*"rc=1") echo "  ✓ bare node ref with no tree explains itself";; *) echo "  ✗ no-tree error: $RN"; exit 1;; esac
+$Y tree use probe-batch >/dev/null 2>&1
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done

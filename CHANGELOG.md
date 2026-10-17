@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.81.0（2026-10-17）命令面五处修正 + task 挂树 + 事件流对账
+- **doctor write_integrity 误报修复**（用户上报①：合法 `kb remove` 后 doctor 报 phantom write fail）：`kb rm` 现在落 `kb.rm` 事件（与 source/evidence 对齐）；check 10 的幽灵扫描加 `NOT EXISTS rm 事件` 豁免，且整体降级 fail→warn——无 rm 事件的缺行可能是 0.81 前的合法删除或 db sql 手工清理，不值得炸掉脚本门禁
+- **`--url` 收任意 scheme**（上报②：a2a:// 被拒，跨 Agent 引用被迫落盘）：正则放宽为 RFC-3986 `<scheme>://`，https/file/session/a2a/… 均可；url_hash 去重照常兜底
+- **`node list` 未知旗标点名 rc=2**（上报③：`node list --tree X` 静默吞 flag 列出当前树——冻结契约⑤违约）：允许集 {t, json, no-color}，其余旗标点名拒绝并指路 `-t <tree>`
+- **`node cond add|rm` 动作词**（上报④：`cond add p0` 被解析成 key="add" 报 node not found）：add/rm/remove 动作词前置，与 link/unlock 风格一致；**新增 `node cond rm <key> --name <n>`**（此前只能 db sql 手工清理）——事务删除 + `node.cond-rm` 事件 + 缺失时点名并列出该节点剩余条件名
+- **rel 节点引用的错误指引**（上报⑤：裸 `node:<key>` 在 current_tree 未设时报泛型 not found）：无当前树 →「qualify as node:<tree>/<key> 或先 tree use」；有当前树但未命中 → 附「searched current tree 'X'」
+- **`claim add --confidence` 数值档**（建议⑥）：A|B|C 之外收 0-1 小数与 0-100(%)（0.92 / 85% 原样入库，列仍 TEXT）；nonsense 仍 rc=2
+- **`task add --node <tree>/<key>`**（建议⑦：task 与 rel 织物脱节）：建任务同时挂 `tracked-by` 关系；`task:<id|title>` 成为第九类引用类型（REL_TYPES 8→9）
+- **`db timeline --actor <a> --session <s>`**（建议⑧：多 Agent 并发对账）：按 events.actor / payload.session 过滤增长视图，过滤时附最近 20 条原始事件尾
+- 测试：`condrm.spec.ts` 3 例（自然键删除+事件 / 点名+剩余条件 / node not found）、`rels.test.ts` +1（task 引用解析）→ 单测 172；demo 5h 段 12 断言（含 doctor warn 降级、a2a://、confidence 三态、task --node、timeline actor、无树指路）→ 94；README 修复 db 命令表被 PG 段落吞并的排版缺陷 + `db timeline --actor` 文档
+
 ## 0.80.0（2026-10-17）rel 织物并入 eval 上下文 + 会话内裁决载体
 - **eval 上下文包并入 rel 挂接摘要**（用户实测发现：裁决已 `decided-by` 挂链，P 仍 0.30，必须 `--state k=v` 手动携带事实才 0.92）：`evalContext` 新增 `attachments`——节点挂接的 relations 双向查询（≤12 条），claim 摘录 text+status+confidence、evidence 摘录 quote（截 120 字）、kb/source 标题、node key+name、其余 id-only；无挂接时字段缺省（与旧形状逐字节兼容）
 - **`research source add --adjudication "<裁决摘要>"`**：会话内裁决原生载体——url 自动 `session://adjudication/<yyyymmddhhmm>`，摘要兼作缺省标题；`--url` 校验放宽收 `session://`；裸 `--adjudication` 旗标缺值 rc=2

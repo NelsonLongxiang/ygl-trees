@@ -223,9 +223,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // write events against the base tables and names the phantom ids.
   {
     const PHANTOM_SPECS = [
-      { kind: "kb.add", table: "kb_notes", label: "kb" },
-      { kind: "source.add", table: "sources", label: "source" },
-      { kind: "evidence.add", table: "evidence", label: "evidence" },
+      { kind: "kb.add", table: "kb_notes", label: "kb", rm: "kb.rm" },
+      { kind: "source.add", table: "sources", label: "source", rm: "source.rm" },
+      { kind: "evidence.add", table: "evidence", label: "evidence", rm: "evidence.rm" },
     ];
     const phantoms: string[] = [];
     for (const spec of PHANTOM_SPECS) {
@@ -233,15 +233,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         `SELECT e.entity_id id, e.ts FROM events e
           WHERE e.kind='${spec.kind}'
             AND e.ts >= datetime('now', '-2 days')
-            AND NOT EXISTS (SELECT 1 FROM ${spec.table} t WHERE t.id = e.entity_id)`
+            AND NOT EXISTS (SELECT 1 FROM ${spec.table} t WHERE t.id = e.entity_id)
+            AND NOT EXISTS (SELECT 1 FROM events r WHERE r.kind='${spec.rm}' AND r.entity_id = e.entity_id)`
       );
       for (const r of rows) phantoms.push(`${spec.label} ${r.id} (${String(r.ts).slice(0, 16)})`);
     }
+    // 0.81 ①: downgrade to warn — a missing row can also mean a legit delete
+    // made BEFORE 0.81 (rm events didn't exist then) or via raw db sql; only
+    // the receipt-vs-table comparison says "lost", and that distinction is
+    // not worth failing doctor (which gates scripts) over.
     checks.push({
       name: "write_integrity",
-      status: phantoms.length ? "fail" : "pass",
+      status: phantoms.length ? "warn" : "pass",
       detail: phantoms.length
-        ? `${phantoms.length} phantom write event(s) in last 48h: ${phantoms.slice(0, 3).join(", ")}${phantoms.length > 3 ? " …" : ""} — event logged but row missing (rollback or different workspace; check receipts' workspace line)`
+        ? `${phantoms.length} unexplained write event(s) in last 48h: ${phantoms.slice(0, 3).join(", ")}${phantoms.length > 3 ? " …" : ""} — row missing without an rm event (deleted pre-0.81 or via db sql? otherwise: rollback / different workspace — check receipts' workspace line)`
         : "recent write events all match stored rows",
     });
   }

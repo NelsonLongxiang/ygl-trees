@@ -60,9 +60,10 @@ node dist/bundle/bin.cjs db init     # 发布产物（bin 字段指向它；比 
 
 ```bash
 ygl-trees node add steel                                                            # 先有节点
-ygl-trees node cond steel --name research_lab_level --kind level --value 3          # 必检
-ygl-trees node cond steel --name has_engineer --kind flag --op has \
-           --optional --effect cost_mul --weight 0.8                                # 可选，打八折
+ygl-trees node cond add steel --name research_lab_level --kind level --value 3       # 必检
+ygl-trees node cond add steel --name has_engineer --kind flag --op has \
+            --optional --effect cost_mul --weight 0.8                                # 可选，打八折
+ygl-trees node cond rm steel --name research_lab_level                               # 按自然键删除
 ```
 
 ### 索引：查询不再递归
@@ -126,10 +127,10 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 query add       登记检索式
 query attach    检索式 ↔ 来源关联（query list 显示召回数）
 source add      收来源，按 (project, url_hash) 去重；--query 顺带关联
-                --adjudication "<裁决摘要>"：会话内裁决原生载体（url 自动 session://adjudication/<时刻>，摘要兼作标题）；--url 也收 session://
+                --adjudication "<裁决摘要>"：会话内裁决原生载体（url 自动 session://adjudication/<时刻>，摘要兼作标题）；--url 收任意 <scheme>://（https/file/session/a2a/… 跨 Agent 引用免落盘）
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
-claim add       写下断言
+claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
                 --by-source：传来源 id 一次挂齐其全部证据；误传来源 id 会列出该来源的证据 id
 claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
@@ -188,17 +189,18 @@ ygl-trees rel add node:steel artifact:<id>    --rel tracked-by    # 产出/任�
 ygl-trees rel list --src node:steel           # 双向浏览（对端解析成显示名）
 ```
 
-`<type>:<ref>` 词表：`node claim evidence source query kb artifact skill`。`/api/node` 同时返回双向 `related[]`，WebUI 节点详情直接可见。
+`<type>:<ref>` 词表：`node claim evidence source query kb artifact task skill`。`/api/node` 同时返回双向 `related[]`，WebUI 节点详情直接可见。
 
 ### task：任务状态机（todo → doing → done）
 
 ```bash
-ygl-trees task add "<标题>" [--note ...]   # 建任务（todo）
+ygl-trees task add "<标题>" [--note ...]                 # 建任务（todo）
+ygl-trees task add "验证 X" --node <tree>/<key>          # 建任务并挂到树节点（tracked-by）
 ygl-trees task list [--status todo|doing|done]
 ygl-trees task doing <id> | task done <id> # 推进（每次状态变更留痕 events）
 ```
 
-任务本体是 `artifacts` 的 `kind='task'` + meta 状态信封（**没有独立的 tasks 表**）——与产出工件同源，可被 `rel ... tracked-by` 挂到节点。
+任务本体是 `artifacts` 的 `kind='task'` + meta 状态信封（**没有独立的 tasks 表**）——与产出工件同源，可被 `rel ... tracked-by` 挂到节点（`task add --node` 一步到位，`task:<id>` 也是合法引用类型）。
 
 ### produce spec / design：工程产出形态
 
@@ -246,14 +248,17 @@ CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 tok
 
 - **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
 - **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
-- **PostgreSQL 镜像/迁移**：`db time-travel "<ts>"        workspace state at past moment
-  db timeline                 growth visualization (events/day)
-  db workspace list|create    multi-workspace management
-  db obsidian [dir]           export as Obsidian markdown vault
-  db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
+- **PostgreSQL 镜像/迁移**：`db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
 - **TypeORM 查询层**（0.8.0 起，研究域试点 `project show`）：实体是 schema v8 的类型化快照（`synchronize` 永久 false，迁移权威仍在 user_version 轨道；FTS5/PRAGMA 路径保持裸 SQL）。依赖 typeorm + better-sqlite3 + reflect-metadata
 - **重复可见**：`db dups` 列出同内容多行（含迁移前存量重复）
 - **自动迁移**：v2 老库首次打开自动升级 schema v3（补 content_hash 列 + 回填 + 唯一索引），无人工介入
+
+```bash
+db time-travel "<ts>"        # 工作区在历史时刻的状态
+db timeline [--actor <a>] [--session <s>]   # events/day 增长视图；过滤时附最近 20 条原始事件（多 Agent 对账）
+db workspace list|create    # 多工作区管理
+db obsidian [dir]           # 导出 Obsidian markdown vault
+```
 
 ---
 
@@ -284,7 +289,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：unit (vitest 163 例) + build (tsc + tsdown) + demo（82 条断言）+ contract:audit（86 项）
+pnpm test          # 四段制回归：unit (vitest 172 例) + build (tsc + tsdown) + demo（94 条断言）+ contract:audit（86 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
