@@ -344,7 +344,7 @@ export async function main(argv: string[]): Promise<number> {
       // plugin remove/install must work even when other plugins fail to load.
       // If the command is plugin-related, proceed with a degraded boot.
       if (group === "plugin") {
-        const pluginCmds = await import("../../../packages/ops/tools/src/plugin");
+        const pluginCmds = await import("./plugin");
         const { dbPath } = await import("../../../packages/core/database/src/db");
         const dbFile2 = dbPath(home);
         // Minimal env — no plugins, direct DB access
@@ -353,8 +353,7 @@ export async function main(argv: string[]): Promise<number> {
           db: null, store: null, cordis: null,
         };
         out(ctx, paint(C.yellow, "  ! degraded mode: user plugins failed to load — plugin commands only", ctx.color));
-        const pluginAction = action || "list";
-        return pluginCmds.run(env2, pluginAction, rest, args);
+        return pluginCmds.runPluginCommand(env2, action || "list", rest, args);
       }
       reportStartupFailure(e, home, VERSION);
       return 1;
