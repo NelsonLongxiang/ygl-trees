@@ -83,9 +83,10 @@ export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[]
   }
   const cols = keys || Object.keys(rows[0]).filter((k) => !k.startsWith("_"));
   const hs = headers || cols;
-  const widthOf = (k: string) => Math.max(...rows.map((r) => dispWidth(String(r[k] ?? ""))));
+  const widthOf = (k: string) => Math.min(40, Math.max(...rows.map((r) => dispWidth(String(r[k] ?? "")))));
   const w = cols.map((k, i) => Math.max(dispWidth(hs[i] ?? ""), widthOf(k)));
-  const line = (cells: string[]) => cells.map((c, i) => padEnd(String(c), w[i])).join("  ");
+  const trunc = (s: string) => s.length > 40 ? s.slice(0, 39) + "…" : s;
+  const line = (cells: string[]) => cells.map((c, i) => padEnd(trunc(String(c)), w[i])).join("  ");
   out(ctx, paint(C.bold, "  " + line(hs), ctx.color));
   out(ctx, paint(C.dim, "  " + w.map((n) => "-".repeat(n)).join("  "), ctx.color));
   for (const r of rows) out(ctx, "  " + line(cols.map((k) => String(r[k] ?? ""))));

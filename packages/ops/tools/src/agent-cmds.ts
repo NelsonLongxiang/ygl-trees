@@ -14,7 +14,7 @@ export function buildBrief(env: Env): any {
   const { store } = env;
   const cur = store.db.metaGet("current_project");
   const stats = store.stats();
-  const skills = store.skillList().slice(0, 5);
+  const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
   const notes = store.kbList().slice(0, 5);
 
   const payload: any = {
@@ -46,30 +46,30 @@ export function buildBrief(env: Env): any {
       .filter((c: any) => c.status !== "supported")
       .map((c: any) => ({ id: c.id, text: clip(c.text, 80), status: c.status }));
 
-    if (!src.length) payload.next_actions.push(`ygl-trees research source add --title "..." --url "..."`);
-    if (src.length && !ev.length) payload.next_actions.push(`ygl-trees research evidence add <sourceId> --quote "..." `);
-    if (ev.length && !claims.length) payload.next_actions.push(`ygl-trees research claim add "<断言>"`);
-    if (claims.length) payload.next_actions.push(`ygl-trees research claim link <claimId> <evidenceId>`);
+    if (!src.length) (payload.next_actions || []).slice(0, 3).push(`ygl-trees research source add --title "..." --url "..."`);
+    if (src.length && !ev.length) (payload.next_actions || []).slice(0, 3).push(`ygl-trees research evidence add <sourceId> --quote "..." `);
+    if (ev.length && !claims.length) (payload.next_actions || []).slice(0, 3).push(`ygl-trees research claim add "<断言>"`);
+    if (claims.length) (payload.next_actions || []).slice(0, 3).push(`ygl-trees research claim link <claimId> <evidenceId>`);
     if (claims.some((c: any) => c.status === "supported") && !arts.length)
-      payload.next_actions.push(`ygl-trees produce report`);
+      (payload.next_actions || []).slice(0, 3).push(`ygl-trees produce report`);
     if (arts.some((a: any) => a.kind === "report"))
-      payload.next_actions.push(`ygl-trees kb ingest <artifactId>   # 沉淀为长期知识`);
-    if (!stats.skills) payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
+      (payload.next_actions || []).slice(0, 3).push(`ygl-trees kb ingest <artifactId>   # 沉淀为长期知识`);
+    if (!stats.skills) (payload.next_actions || []).slice(0, 3).push(`ygl-trees skill import path/to/SKILL.md`);
   } else {
-    payload.next_actions.push(`ygl-trees project new <name> -q "<研究问题>"`);
-    payload.next_actions.push(`ygl-trees skill import path/to/SKILL.md`);
+    (payload.next_actions || []).slice(0, 3).push(`ygl-trees project new <name> -q "<研究问题>"`);
+    (payload.next_actions || []).slice(0, 3).push(`ygl-trees skill import path/to/SKILL.md`);
   }
 
   // Health: surface data problems an agent should fix first.
   const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
-  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index   # tree '${t.name}' index is stale`);
+  for (const t of dirtyTrees) (payload.next_actions || []).slice(0, 3).push(`ygl-trees node index   # tree '${t.name}' index is stale`);
   const dupGroups = store.db.all(
     `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'evidence', COUNT(*) FROM (SELECT 1 FROM evidence GROUP BY source_id, quote HAVING COUNT(*)>1)
      UNION ALL SELECT 'kb_notes', COUNT(*) FROM (SELECT 1 FROM kb_notes GROUP BY title, body HAVING COUNT(*)>1)`
   );
-  if (dupGroups.some((g: any) => g.c > 0)) payload.next_actions.push(`ygl-trees db dups   # duplicate content rows exist`);
+  if (dupGroups.some((g: any) => g.c > 0)) (payload.next_actions || []).slice(0, 3).push(`ygl-trees db dups   # duplicate content rows exist`);
   return payload;
 }
 
@@ -223,7 +223,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const payload = buildBrief(env);
       const cur = payload.current_project;
       const stats = payload.counts;
-      const skills = store.skillList().slice(0, 5);
+      const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
 
       if (ctx.json) {
         console.log(JSON.stringify(payload, null, 2));
@@ -246,7 +246,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         for (const s of skills) out(ctx, `  - ${s.name}  ${paint(C.dim, clip(s.description, 90), ctx.color)}`);
       }
       out(ctx, paint(C.bold, "\n  next actions", ctx.color));
-      for (const a of payload.next_actions) out(ctx, `  → ${a}`);
+      for (const a of (payload.next_actions || []).slice(0, 3)) out(ctx, `  → ${a}`);
       return 0;
     }
 
