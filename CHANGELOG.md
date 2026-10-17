@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.72.0（2026-10-17）v2 功能包——8 项新能力
+- **db time-travel**：查询过去某时刻的工作区状态（实体计数+已解锁节点）
+- **db timeline**：工作区增长可视化（events/天 + 实体里程碑）
+- **db workspace list/create**：多工作区管理
+- **db obsidian**：导出为 Obsidian markdown vault（frontmatter 兼容）
+- **agent ask**：自然语言接口（关键词路由到 CLI 命令）
+- **skill init**：模板创建新技能（引导式）
+- **skill refs**：展示技能关联引用（L3 渐进披露）
+- **llms --section/--json**：节选输出 + 结构化 JSON
+- **help 引导**：未知命令模糊匹配建议（前缀+子序列+别名）
+
 ## 0.70.0（2026-10-17）`agent metrics`——从 R11 手动测量到自动化指标
 - **`ygl-trees agent metrics`**：一条命令输出工作台全量量化指标——冷启动（brief 耗时/next actions/可用技能）、知识（总量/7日增长/增长率）、研究（来源/证据/断言/验证率/证据密度）、技能（总数/命中/均命中）、科技树（棵数/节点/解锁率）、活动（7 日 events）
 - **来源**：R11 冷启动量化研究的手动测量 → 自动化——从 `time agent brief` + 手动 grep 统计变为一键输出

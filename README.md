@@ -235,7 +235,11 @@ CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 tok
 
 - **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
 - **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
-- **PostgreSQL 镜像/迁移**：`db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
+- **PostgreSQL 镜像/迁移**：`db time-travel "<ts>"        workspace state at past moment
+  db timeline                 growth visualization (events/day)
+  db workspace list|create    multi-workspace management
+  db obsidian [dir]           export as Obsidian markdown vault
+  db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
 - **TypeORM 查询层**（0.8.0 起，研究域试点 `project show`）：实体是 schema v8 的类型化快照（`synchronize` 永久 false，迁移权威仍在 user_version 轨道；FTS5/PRAGMA 路径保持裸 SQL）。依赖 typeorm + better-sqlite3 + reflect-metadata
 - **重复可见**：`db dups` 列出同内容多行（含迁移前存量重复）
 - **自动迁移**：v2 老库首次打开自动升级 schema v3（补 content_hash 列 + 回填 + 唯一索引），无人工介入
@@ -259,7 +263,8 @@ ygl-trees job logs
 ```bash
 ygl-trees agent brief      # 我在哪、有什么、下一步做什么
 ygl-trees agent match "…"  # 这个任务该用哪个 skill
-ygl-trees agent log        # 审计事件流
+ygl-trees agent ask "<question>"     natural language interface
+  agent log        # 审计事件流
 ```
 
 `agent brief --json` 直接给出结构化状态和建议动作序列，Agent 可以照着执行。
