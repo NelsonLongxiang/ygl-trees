@@ -353,7 +353,7 @@ export async function main(argv: string[]): Promise<number> {
           db: null, store: null, cordis: null,
         };
         out(ctx, paint(C.yellow, "  ! degraded mode: user plugins failed to load — plugin commands only", ctx.color));
-        return pluginCmds.runPluginCommand(env2, action || "list", rest, args);
+        return pluginCmds.runPluginCommand(env2, action || "list", args._.slice(2), args);
       }
       reportStartupFailure(e, home, VERSION);
       return 1;
