@@ -35,7 +35,11 @@ cat > "$WORK/consumer/package.json" <<'EOF'
 EOF
 # stderr survives into tmp/npm-packcheck.log — a gate that swallows its own
 # failure reason (npm network blip vs real defect) is anti-diagnostic.
-(cd "$WORK/consumer" && npm install "$TGZ" --no-audit --no-fund --registry=https://registry.npmjs.org/ >"$REPO/tmp/npm-packcheck.log" 2>&1) \
+# unset npm_config_allow_scripts: `pnpm run` injects pnpm's allow-scripts
+# whitelist (e.g. @deepseek-ai/dsh-subprocess-local,koffi) into the child
+# env; npm ≥10 then rejects project-scoped installs with EALLOWSCRIPTS —
+# an artifact of HOW the gate is invoked, not of the tarball.
+(cd "$WORK/consumer" && unset npm_config_allow_scripts && npm install "$TGZ" --no-audit --no-fund --registry=https://registry.npmjs.org/ >"$REPO/tmp/npm-packcheck.log" 2>&1) \
   && pass "installed from tarball (52-package closure resolves)" \
   || { fail "npm install from tarball failed (see tmp/npm-packcheck.log)"; exit 1; }
 
