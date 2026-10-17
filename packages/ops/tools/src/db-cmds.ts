@@ -94,6 +94,39 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       show(ctx, { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
       return 0;
     }
+    case "workspace": {
+      // v2: multi-workspace management — each workspace is a YGL_HOME directory
+      const sub = rest[0] || "list";
+      const wsRoot = path.join(env.home, ".."); // parent of current workspace
+      if (sub === "list") {
+        const dirs = fs.existsSync(wsRoot) ? fs.readdirSync(wsRoot).filter((d: string) =>
+          fs.existsSync(path.join(wsRoot, d, "ygl-trees.db"))
+        ) : [];
+        const cur = path.basename(env.home);
+        head(ctx, "Workspaces (parent: " + wsRoot + ")");
+        for (const d of dirs) {
+          out(ctx, (d === cur ? "  * " : "    ") + d);
+        }
+        out(ctx, "");
+        out(ctx, paint(C.dim, "  * = current | switch: YGL_HOME=<path> ygl-trees <cmd>", ctx.color));
+        return 0;
+      }
+      if (sub === "create") {
+        const name = rest[1];
+        if (!name) { bad(ctx, "usage: db workspace create <name>"); return 2; }
+        const dir = path.join(wsRoot, name);
+        if (fs.existsSync(path.join(dir, "ygl-trees.db"))) {
+          ok(ctx, `workspace already exists: ${name}`);
+          return 0;
+        }
+        fs.mkdirSync(dir, { recursive: true });
+        ok(ctx, `workspace created: ${dir}`);
+        out(ctx, paint(C.dim, `  init: YGL_HOME=${dir} ygl-trees db init`, ctx.color));
+        return 0;
+      }
+      bad(ctx, "usage: db workspace list | create <name>");
+      return 2;
+    }
     case "obsidian": {
       // v2 feature: export workspace as Obsidian-compatible markdown vault
       const outDir = rest[0] || path.join(env.home, "obsidian-export");
