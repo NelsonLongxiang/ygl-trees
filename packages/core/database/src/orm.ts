@@ -16,6 +16,7 @@ import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { RESEARCH_ENTITIES } from "../../../research/pipeline/src/entities";
 import { CORE_ENTITIES } from "./entities";
+import { ormState } from "./db";
 
 let cached: { file: string; ds: DataSource } | null = null;
 
@@ -33,6 +34,7 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
   // as the wasm DB — per-commit fsync otherwise dominates write latency.
   await ds.query("PRAGMA synchronous=NORMAL");
   cached = { file: dbFile, ds };
+  ormState.opened = true; // 0.87: lets plugin.ts stop() know without importing typeorm
   return ds;
 }
 

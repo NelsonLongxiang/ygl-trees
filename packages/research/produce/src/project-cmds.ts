@@ -106,6 +106,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         { project: name, scope, session: sessionId() },
         `now using: ${name}  (${scope} selection${scope === "session" ? ` — session ${sessionId().slice(0, 8)}` : ""})`
       );
+      // 0.87 (user ruling m07308): bare shells share the "default" session
+      // key — parallel terminals on different projects would stomp each
+      // other. Explicit pinning is first-class; env identity is the fallback.
+      if (!ctx.json && scope === "session" && sessionId() === "default" && projectCount(store.db) > 1) {
+        out(ctx, paint(C.dim, `hint: shells without a session id share one "default" selection — parallel sessions on different projects interfere.`, ctx.color));
+        out(ctx, paint(C.dim, `      pin explicitly (recommended): ygl-trees <cmd> --project ${name} · or isolate this shell: export YGL_SESSION=<name>`, ctx.color));
+      }
       return 0;
     }
     case "show": {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.87.0（2026-10-18）显式优先：裸 shell 提示 + stop() ESM 修复
+
+- **`project use` 裸 shell 提示（用户裁定：环境变量不保险，显式指定最重要）**：无会话身份（无 YGL_SESSION/DSH_SESSION_ID）的裸 shell 落 "default" 会话键——并行终端开不同项目会互踩。现在 sid=default 且多项目时 `project use` 打非阻断 hint，**第一推荐显式 `--project` 钉住**（可 grep、可审计、行为与文本一一对应），`export YGL_SESSION` 隔离降为次选；JSON 模式不泄漏提示文本。DSH 会话（自带 DSH_SESSION_ID）不受影响、无提示。
+- **plugin stop() 的 `require("./orm")` 同款 ESM 修复（评审 direct-80e781dc 补充）**：与 0.86 事件桥同款模式——ESM 宿主下 require 未定义被 try/catch 静默吞，closeOrm 从不执行。改 `ormState.opened` 标志（db.ts，orm 落账时置位）+ dynamic import：未用 ORM 的运行零开销（typeorm 不进冷启动），用过则可靠清理。
+- plan.md M7 执行记录补评审证据引用（tmp/review-cordis.md）。
+- 测试：selection.spec +1（裸 shell 提示出现 + 会话 shell 不出现 + JSON 纯净；坑：DSH 宿主注入的 DSH_SESSION_ID 也须剥除才构成"裸"）→ 全量 202。
+
 ## 0.86.0（2026-10-18）Cordis 深化：evalClaim 服务化 + 删壳服务 + 事件桥真修
 
 - **M7-1 `ctx.ops` 服务化（P0-1）**：新建 OpsService（`ctx.ops.evalClaim`/`assessEvidence`/`semanticRank`），base bundle 四插件（database/ops/research/timer）；research/knowledge 对 ops/eval-enhance 的三处跨包 require 全部改走 Cordis 服务（`env.cordis?.ops` + 离线形 fallback）——域包不再反向 import 运维实现，eval 网关调用有了统一服务入口。

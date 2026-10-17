@@ -123,6 +123,27 @@ describe("R16 exemptions", () => {
     expect(r3.status).toBe(0);
     fs.rmSync(solo, { recursive: true, force: true });
   });
+
+  it("0.87: bare shell (no session id) + multi-project → use prints explicit-pin hint; sessioned shell does not", () => {
+    // bare shell: strip session identity from the spawn env (DSH hosts
+    // inject DSH_SESSION_ID into this process — the "default" fallback only
+    // fires when BOTH ids are absent)
+    const bareEnv = { ...process.env, YGL_HOME: home };
+    delete (bareEnv as any).YGL_SESSION;
+    delete (bareEnv as any).DSH_SESSION_ID;
+    const r1 = spawnSync(process.execPath, [BIN, "project", "use", "alpha"], { encoding: "utf8", env: bareEnv });
+    expect(r1.status).toBe(0);
+    expect(r1.stdout).toMatch(/share one "default" selection/);
+    expect(r1.stdout).toMatch(/--project alpha/); // explicit pin is the FIRST recommendation
+    // sessioned shell: no hint
+    const r2 = run(["project", "use", "alpha"]);
+    expect(r2.rc).toBe(0);
+    expect(r2.stdout).not.toMatch(/share one "default" selection/);
+    // JSON mode stays pure: no hint text leaks into the object stream
+    const r3 = spawnSync(process.execPath, [BIN, "project", "use", "alpha", "--json"], { encoding: "utf8", env: bareEnv });
+    expect(r3.status).toBe(0);
+    expect(JSON.parse(r3.stdout).project).toBe("alpha");
+  });
 });
 
 describe("R16.5 tree-side", () => {

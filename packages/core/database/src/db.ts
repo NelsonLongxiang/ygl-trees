@@ -11,6 +11,11 @@ import { sha1 } from "../../text/src/text";
 
 export const SCHEMA_VERSION = 9;
 
+/** Shared ORM-opened signal: orm.ts flips this when a DataSource settles.
+ * plugin.ts stop() reads it WITHOUT importing orm (which pulls typeorm) so
+ * shutdown stays cheap for runs that never touched the ORM. 0.87. */
+export const ormState = { opened: false };
+
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
 -- runtime state the tool writes itself (current selections, bookkeeping);

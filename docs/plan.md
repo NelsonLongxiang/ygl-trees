@@ -246,6 +246,12 @@
 - **M7-4 部分**：knownKinds 硬编码清单 → `ygl:<kind>` 动态桥接。**未做**（0.87 候选）：ctx.dispose() fork、settle loop、域间事件化试点。
 - **flake 决策记录（评审残项 direct-2faf60bb）**：lifecycle.spec「DB.close() closes handle (lock cleanup on process exit)」在并行负载下 64904ms 超时（npm publish prepublishOnly 406s 失败与 0.85 pre-push 失败同一根因）；隔离重跑 3/3 绿（3.31s）。属已知并行负载家族，非代码回归；硬化方向（锁用例串行化/锁获取快败）记 0.87 候选。
 
+### 0.87.0 执行记录（2026-10-18）
+
+- 评审证据引用：M7 批次评审报告 `tmp/review-cordis.md`（评审席 dsh/fdc757f6，回执 direct-80e781dc 实读代码逐项核验）。
+- plugin stop() `require("./orm")` 同款 ESM 修复（评审 0.87 候选补充）：ormState.opened 标志（db.ts）+ dynamic import——保懒加载（typeorm 不进冷启动）且 ESM/CJS 双兼容。
+- `project use` 裸 shell 提示（用户裁定 m07308：环境变量不保险，显式指定最重要）：sid=default 且多项目时非阻断 hint，第一推荐显式 `--project` 钉住，`export YGL_SESSION` 降为次选。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

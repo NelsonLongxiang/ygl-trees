@@ -5,7 +5,7 @@
  * @module @ygl/core-database/plugin
  */
 import { Context, Service } from "@deepseek-ai/cordis";
-import { DB } from "./db";
+import { DB, ormState } from "./db";
 // 0.86 M7-3: static import, not require — under ESM hosts (vitest) require is
 // undefined and the try/catch silently swallowed it, leaving the bridge dead;
 // any ESM entry would silently lose ctx.on("ygl") events. core→core same
@@ -40,14 +40,14 @@ export class DatabaseService extends Service {
   stop(): void {
     if (this.disposed) return;
     this.disposed = true;
-    try {
-      // Close the cached ORM DataSource if it was opened on this file
-      const { closeOrm } = require("./orm") as typeof import("./orm");
+    // 0.87: closeOrm only when the ORM actually opened this run (cheap for
+    // write-only runs), via dynamic import — the old require("./orm") died
+    // silently under ESM hosts (same pattern the 0.86 bridge fix removed).
+    if (ormState.opened) {
       // closeOrm is async but stop() is sync in Cordis — fire-and-forget is
-      // safe here because db.close() below releases the file handle the ORM
-      // depends on; the ORM will see a closed connection and GC naturally.
-      closeOrm().catch(() => { /* best-effort; db.close is the real cleanup */ });
-    } catch { /* orm module not loaded — fine */ }
+      // safe: db.close() below releases the file handle the ORM depends on.
+      void import("./orm").then((m) => m.closeOrm()).catch(() => { /* best effort */ });
+    }
     try {
       this.db.close(); // releases .ygllock + closes SQLite handle
     } catch { /* already closed */ }
