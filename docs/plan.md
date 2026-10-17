@@ -219,8 +219,8 @@
 
 | # | 任务 | 涉及 | 验收 |
 |---|---|---|---|
-| M6-1 | selection.ts 解析器：flag > env(YGL_PROJECT/YGL_TREE) > 会话键(`current_project@<sid>`) > 全局；selection_source 六态 | core/database/src/selection.ts | 单测 selection.spec ×10 spawn 端到端 |
-| M6-2 | research/produce/task/agent brief/project show 严格门禁（rc=2 单错误对象）+ 工作区级豁免 + 单项目 only | research/pipeline、research/produce、ops/tools | demo 5m ×4；契约 +5（92 项） |
+| M6-1 | selection.ts 解析器：flag > env(YGL_PROJECT/YGL_TREE) > 会话键(`current_project@<sid>`) > 全局；selection_source 六态 | core/database/src/selection.ts | 单测 selection.spec ×11 spawn 端到端（含 calibration --all 工作区豁免） |
+| M6-2 | research/produce/task/agent brief/project show 严格门禁（rc=2 单错误对象）+ 工作区级豁免 + 单项目 only | research/pipeline、research/produce、ops/tools | demo 5m ×4；契约 +6（93 项） |
 | M6-3 | webui 未选择态（不回退全局）+ /api/artifact id 直查归属 + 树面板选择来源 | ops/webui.ts | webui.test 17/17 |
 | M6-4 | tree new --project 未知 rc=2 点名；tree use 跨项目 WARN；tree show 新子命令；doctor selection_hygiene | techtree/model、ops/doctor | spec 断言 + doctor 全绿 |
 

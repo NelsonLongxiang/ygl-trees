@@ -10,7 +10,7 @@
 - **doctor 2b selection_hygiene**：仅全局指针 + 多项目 → WARN 提示迁移；会话键健康则 pass 并报来源。
 - **`job add --at` 命令面修复（Windows shim 陷阱）**：带空格的一次性计划值（`"YYYY-MM-DD HH:MM"`）两条路径都失效——前置 flag 式经 npm `.cmd` shim 被再切分成散词落入 command（flags.at 空 → "manual"）；尾式回收正则只吃单 token。现尾式正则接受裸 `YYYY-MM-DD HH:MM[:SS]`（含 `T` 连写），shim 无关路径跨平台可解析；job-at.spec.ts ×3（尾式裸/尾式引号/前置式直调）。
 - **npm 可发现性（npm-seo）**：package.json 补 `keywords`（research/ai-agents/tech-tree/knowledge-base/cli/mcp 等 15 个）+ 描述改为英文检索词前置（中文品牌后置）——此前 `npm search research workbench` 完全不命中，keywords 字段 undefined。
-- 测试：selection.spec.ts ×10（spawn 端到端：门禁/豁免/三路放行/ghost 点名/单项目）；demo 5m 段 ×4 → 122；契约 +5（R16 门禁/豁免/会话恢复）→ 92；webui SSE 用例随会话化修正。
+- 测试：selection.spec.ts ×11（spawn 端到端：门禁/豁免/三路放行/ghost 点名/单项目/calibration --all 工作区豁免）；demo 5m 段 ×4 → 122；契约 +6（R16 门禁/豁免/calibration --all/会话恢复）→ 93；webui SSE 用例随会话化修正。
 
 ## 0.84.0（2026-10-18）判定落账：claim.eval 事件 + 校准读出
 
