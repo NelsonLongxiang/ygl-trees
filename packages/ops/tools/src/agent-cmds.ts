@@ -77,6 +77,55 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const { ctx, store } = env;
 
   switch (action) {
+    case "ask":
+    case "?": {
+      // v2: natural language interface — keyword routing to other commands
+      const question = rest.join(" ");
+      if (!question) {
+        bad(ctx, 'usage: ygl-trees agent ask "<question>"');
+        out(ctx, '  examples: ask "what projects" | ask "search AI" | ask "健康"');
+        return 2;
+      }
+      const q = question.toLowerCase();
+      type Route = { pattern: RegExp; label: string; group: string; action: string; extra?: string[] };
+      const routes: Route[] = [
+        { pattern: /what.*project|项目列表|所有项目/, label: "project list", group: "project", action: "list" },
+        { pattern: /search|搜索|检索|找/, label: "kb search", group: "kb", action: "search",
+          extra: [question.replace(/.*?(search|搜索|检索|找)\s*/i, "").replace(/["']/g, "")] },
+        { pattern: /tree|树/, label: "node list", group: "node", action: "list" },
+        { pattern: /health|健康|doctor|检查/, label: "doctor", group: "doctor", action: "" },
+        { pattern: /skill|技能/, label: "skill list", group: "skill", action: "list" },
+        { pattern: /task|任务/, label: "task list", group: "task", action: "list" },
+        { pattern: /metric|指标/, label: "agent metrics", group: "agent", action: "metrics" },
+      ];
+      let matched = false;
+      for (const r of routes) {
+        if (r.pattern.test(q)) {
+          if (!ctx.json) out(ctx, paint(C.dim, `  → ${r.label}`, ctx.color));
+          // Execute via CLI sub-process
+          const cmdParts = [r.group, r.action, ...(r.extra || [])].filter(Boolean);
+          const { execSync } = require("node:child_process") as typeof import("node:child_process");
+          const self = process.argv[1];
+          try {
+            const result = execSync(
+              `${JSON.stringify(process.execPath)} ${JSON.stringify(self)} --no-color ${cmdParts.map(c => JSON.stringify(c)).join(" ")}`,
+              { env: { ...process.env }, encoding: "utf8", timeout: 10000 }
+            );
+            out(ctx, result.trim());
+            return 0;
+          } catch (e: any) {
+            bad(ctx, String(e?.stdout || e?.message || e).slice(0, 200));
+            return 1;
+          }
+        }
+      }
+      // Default: brief
+      if (!ctx.json) out(ctx, paint(C.dim, "  → agent brief (no specific match)", ctx.color));
+      const payload = buildBrief(env);
+      if (ctx.json) { console.log(JSON.stringify(payload, null, 2)); return 0; }
+      // Reuse brief rendering
+      return run(env, "brief", [], args);
+    }
     case "metrics": {
       // R11 cold-start research → automated measurement. Health/efficiency
       // metrics for the workspace — one command answers "how good is this
