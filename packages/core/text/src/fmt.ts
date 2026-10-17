@@ -71,13 +71,14 @@ function padEnd(s: string, width: number): string {
 }
 
 /** Render rows as an aligned table (falls back to JSON when ctx.json). */
-export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[]): void {
+export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[], hint?: string): void {
   if (ctx.json) {
     console.log(JSON.stringify(rows, null, 2));
     return;
   }
   if (!rows.length) {
     out(ctx, paint(C.dim, "  (empty)", ctx.color));
+    if (hint) out(ctx, paint(C.dim, `  → ${hint}`, ctx.color));
     return;
   }
   const cols = keys || Object.keys(rows[0]).filter((k) => !k.startsWith("_"));

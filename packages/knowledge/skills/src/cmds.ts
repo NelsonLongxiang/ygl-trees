@@ -101,7 +101,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         "confidence",
         "reuse",
         "updated",
-      ]);
+      ], undefined, "kb add --title ... --body ... | kb import <dir>");
       return 0;
     case "rm":
     case "remove": {

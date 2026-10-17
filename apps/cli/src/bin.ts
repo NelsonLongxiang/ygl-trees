@@ -236,6 +236,27 @@ export async function main(argv: string[]): Promise<number> {
 
   // llms: structured capability manifest for LLM consumption (Ant Design
   // "for-agents" pattern — one output gives any Agent the full command surface).
+  // Onboarding: detect first run (no DB) and guide to db init
+  if (!group || group === "help") {
+    const dbFile = require("node:path").join(
+      process.env.YGL_HOME || require("node:path").join(require("node:os").homedir(), ".ygl-trees"),
+      "ygl-trees.db"
+    );
+    if (!require("node:fs").existsSync(dbFile)) {
+      console.log("✓ Welcome to ygl-trees! 🐵");
+      console.log();
+      console.log("  This workspace has no database yet. Get started in 3 steps:");
+      console.log();
+      console.log("  1.  ygl-trees db init              # create workspace (9 skills auto-imported)");
+      console.log("  2.  ygl-trees agent brief           # see current state + next actions");
+      console.log('  3.  ygl-trees project new my-research -q "your question"');
+      console.log();
+      console.log("  More: ygl-trees llms (full capability manifest) | ygl-trees (no args, after init)");
+      console.log();
+      return 0;
+    }
+  }
+
   if (group === "llms") {
     // v2: llms enhancement — --json, --section <name>, dynamic skills
     const section = String(args.flags.section || "");
