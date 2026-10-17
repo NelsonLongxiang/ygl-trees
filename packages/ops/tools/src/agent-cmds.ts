@@ -28,6 +28,36 @@ export function buildBrief(env: Env): any {
 
   let project: any = null;
   if (cur) project = store.projectByName(cur);
+
+  // Report ③: selection-change awareness. tree.use / project.use events are
+  // logged by every selection flip; a recent one the CLI session didn't make
+  // itself usually means a parallel session re-pointed current_tree /
+  // current_project — exactly the 0.76 "node not found" incident class.
+  try {
+    const recent = store.db.all(
+      `SELECT kind, entity_id, ts, payload FROM events
+        WHERE kind IN ('tree.use','project.use')
+          AND ts >= datetime('now','-10 minutes')
+        ORDER BY ts DESC LIMIT 5`
+    ) as any[];
+    if (recent.length) {
+      payload.selection_changed = recent.map((r) => ({
+        kind: r.kind,
+        name: r.entity_id,
+        session: (() => { try { return JSON.parse(r.payload || "{}").session || null; } catch { return null; } })(),
+        ts: r.ts,
+      }));
+      const others = recent.filter((r) => {
+        try { return (JSON.parse(r.payload || "{}").session || "cli") !== (process.env.YGL_SESSION || "cli"); } catch { return false; }
+      });
+      if (others.length) {
+        payload.next_actions.unshift(
+          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} '${o.entity_id}'`).join(", ")} — 命令请带 -t/-p 固定上下文`
+        );
+      }
+    }
+  } catch { /* events table optional in exotic setups */ }
+
   if (project) {
     const claims = store.claimList(project.id);
     const ev = store.evidenceList(project.id);

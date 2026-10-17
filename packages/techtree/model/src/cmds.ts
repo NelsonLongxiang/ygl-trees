@@ -45,9 +45,46 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       .then(fn)
       .then(print)
       .catch((e: any): number => {
-        bad(ctx, e?.message || String(e));
+        bad(ctx, enrichNodeNotFound(e?.message || String(e)));
         return 1;
       });
+  }
+
+  /** Report ③-3: selection changes are now first-class events — a parallel
+   *  session flipping current_tree/current_project becomes observable
+   *  (agent brief surfaces it; db timeline shows the history). Session
+   *  identity comes from YGL_SESSION (agents that care can set it). */
+  function logSelectionEvent(database: any, kind: "tree.use" | "project.use", name: string): void {
+    try {
+      database.run(
+        "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+        [
+          `ev${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+          new Date().toISOString(),
+          process.env.YGL_SESSION || "cli",
+          kind,
+          kind === "tree.use" ? "tree" : "project",
+          name,
+          JSON.stringify({ name, session: process.env.YGL_SESSION || "cli" }),
+          "info",
+        ]
+      );
+    } catch { /* telemetry only — never block the selection */
+    }
+  }
+
+  /** Report ③ enrichment: "node not found: X" earned a cross-tree lookup —
+   *  if a parallel session flipped current_tree, the key usually exists in
+   *  another tree; name it instead of making the user blind-list. */
+  function enrichNodeNotFound(msg: string): string {
+    const m = /^node not found: (.+)$/.exec(msg);
+    if (!m) return msg;
+    const others = trees.nodeInOtherTrees(m[1], tid);
+    if (others.length) {
+      const names = others.map((o: any) => `'${o.tree}'`).join(", ");
+      return `${msg}\n  key exists in other tree(s): ${names} — pin it: ygl-trees ${env.group} ... -t ${others[0].tree}`;
+    }
+    return `${msg}  (current tree: '${tree?.name ?? "?"}' — node list to inspect, -t <tree> to switch)`;
   }
 
   // ---------------------------------------------------------------- tree group
@@ -63,6 +100,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const proj = pid ? db.get("SELECT id FROM projects WHERE name=?", [pid]) : null;
       return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), (t): number => {
         db.metaSet("current_tree", t.name);
+        logSelectionEvent(db, "tree.use", t.name);
         ack(
           ctx,
           t,
@@ -90,6 +128,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       db.metaSet("current_tree", name);
+      logSelectionEvent(db, "tree.use", name);
       ack(ctx, { tree: name }, `now using tree: ${name}`);
       return 0;
     }
@@ -289,7 +328,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const state = parseState(args);
       const ctxName = flagStr("context", "default");
-      const r = trees.canUnlock(tid, key, ctxName, state);
+      let r: any;
+      try {
+        r = trees.canUnlock(tid, key, ctxName, state);
+      } catch (e: any) {
+        bad(ctx, enrichNodeNotFound(e?.message || String(e)));
+        return 1;
+      }
       const evalConds = flagBool("eval")
         ? trees.condList(tid, key).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
         : [];
@@ -525,13 +570,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: node path <key>");
         return 2;
       }
-      const p = trees.pathTo(tid, key, flagStr("context", "default"));
+      let p: any;
+      try {
+        p = trees.pathTo(tid, key, flagStr("context", "default"));
+      } catch (e: any) {
+        bad(ctx, enrichNodeNotFound(e?.message || String(e)));
+        return 1;
+      }
       if (ctx.json) {
         console.log(JSON.stringify(p, null, 2));
         return 0;
       }
       head(ctx, `Unlock order to ${key}`);
-      p.order.forEach((k, i) => out(ctx, `  ${i + 1}. ${k}`));
+      p.order.forEach((k: any, i: number) => out(ctx, `  ${i + 1}. ${k}`));
       out(ctx, paint(C.dim, `  total cost: ${p.total_cost}`, ctx.color));
       return 0;
     }
@@ -593,7 +644,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     if (sub === "show") {
       const n = trees.nodeGet(tid, key);
       if (!n) {
-        bad(ctx, `node not found: ${key}`);
+        bad(ctx, enrichNodeNotFound(`node not found: ${key}`));
         return 1;
       }
       const st = trees.nodeStateOf(tid, key);
@@ -689,10 +740,40 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`
           );
           db.metaSet("current_tree", r.tree.name);
+          logSelectionEvent(db, "tree.use", r.tree.name);
           if (!ctx.json) out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
           return 0;
         }
       );
+    }
+
+    // Report ⑤: tree-scoped growth timeline — workspace-level `db timeline`
+    // already existed; this projects a single tree's unlock/add milestones.
+    if (sub === "timeline") {
+      const rows = db.all(
+        `SELECT e.ts, e.kind, e.payload FROM events e
+          WHERE e.entity = 'node'
+            AND e.entity_id IN (SELECT id FROM nodes WHERE tree_id = ?)
+          ORDER BY e.ts DESC LIMIT 30`,
+        [tid]
+      );
+      if (ctx.json) {
+        console.log(JSON.stringify(rows.map((r: any) => ({
+          ts: r.ts, kind: r.kind, ...(JSON.parse(r.payload || "{}") as any),
+        })), null, 2));
+        return 0;
+      }
+      head(ctx, `Timeline — tree '${tree.name}' (last ${rows.length})`);
+      for (const r of rows) {
+        let detail = "";
+        try {
+          const p = JSON.parse(r.payload || "{}") as any;
+          detail = [p.key, p.name ? String(p.name).slice(0, 30) : ""].filter(Boolean).join("  ");
+        } catch { /* */ }
+        out(ctx, `  ${String(r.ts).slice(0, 16)}  ${r.kind.padEnd(14)} ${detail}`);
+      }
+      if (!rows.length) out(ctx, paint(C.dim, "  (no node events yet — unlock/add to start the history)", ctx.color));
+      return 0;
     }
 
     if (sub === "rm") {

@@ -330,9 +330,29 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   if (sub === "evidence") {
     if (subAction === "add") {
       const sourceId = rest[1];
-      const quote = String(args.flags.quote || readBody());
+      // Report ⑤: --file reads the quote from disk — long multi-line excerpts
+      // stop fighting the shell for --quote escaping.
+      const file = String(args.flags.file || "");
+      let quote = String(args.flags.quote || "");
+      if (file) {
+        if (quote) {
+          bad(ctx, "--file and --quote are mutually exclusive");
+          return 2;
+        }
+        try {
+          quote = require("fs").readFileSync(file, "utf8").trim();
+        } catch (e: any) {
+          bad(ctx, `cannot read --file: ${e?.message || e}`);
+          return 1;
+        }
+        if (!quote) {
+          bad(ctx, `--file is empty: ${file}`);
+          return 2;
+        }
+      }
+      if (!quote) quote = readBody();
       if (!sourceId || !quote) {
-        bad(ctx, "usage: research evidence add <sourceId> --quote \"...\"");
+        bad(ctx, "usage: research evidence add <sourceId> --quote \"...\" | --file <path> [--note ..] [--locator ..]");
         return 2;
       }
       const note = String(args.flags.note || "");
@@ -434,7 +454,7 @@ if (subAction === "list" || subAction === undefined) {
     }
     if (subAction === "link") {
       if (!rest[1] || !rest[2]) {
-        bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance refutes]");
+        bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance refutes] [--by-source]");
         return 2;
       }
       const stanceRaw = String(args.flags.stance || "supports");
@@ -445,6 +465,42 @@ if (subAction === "list" || subAction === undefined) {
         return 2;
       }
       const stance = stanceRaw as "supports" | "refutes";
+      // Report ④-3: --by-source sugar — hand a SOURCE id and every evidence
+      // under it links in one shot (the three-id taxonomy forced a per-evidence
+      // lookup round trip before this).
+      if (args.flags["by-source"]) {
+        const evs = store.db.all(
+          "SELECT id FROM evidence WHERE source_id=? AND project_id=? ORDER BY created",
+          [rest[2], project.id]
+        ) as any[];
+        if (!evs.length) {
+          const srcExists = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [rest[2], project.id]);
+          bad(ctx, srcExists
+            ? `source ${rest[2]} has no evidence yet — research evidence add ${rest[2]} --quote ".." first`
+            : `source not found: ${rest[2]}`);
+          return 1;
+        }
+        return getOrm(env.db.path)
+          .then(async (ds): Promise<number> => {
+            const existing = new Set(
+              (store.db.all("SELECT evidence_id FROM claim_evidence WHERE claim_id=?", [rest[1]]) as any[])
+                .map((x: any) => x.evidence_id)
+            );
+            let linked = 0, dups = 0, status = "";
+            for (const ev of evs) {
+              const r = await writes.claimLink(ds, rest[1], ev.id, stance);
+              existing.has(ev.id) ? dups++ : linked++;
+              status = r.status;
+            }
+            if (ctx.json) console.log(JSON.stringify({ claim: rest[1], source: rest[2], linked, duplicates: dups, status }, null, 2));
+            else ok(ctx, `linked ${linked} evidence from source ${rest[2]} (${dups} already) — claim status: ${status}`);
+            return 0;
+          })
+          .catch((e: any): number => {
+            bad(ctx, e?.message || String(e));
+            return 1;
+          });
+      }
       return getOrm(env.db.path)
         .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
         .then((r): number => {
@@ -477,6 +533,25 @@ if (subAction === "list" || subAction === undefined) {
           return 0;
         })
         .catch((e: any): number => {
+          // Report ④-2: the three-id taxonomy (source/evidence/claim) makes
+          // "evidence not found: X" ambiguous when X is actually a SOURCE id.
+          // Detect that case and hand back the real evidence ids to use.
+          const m = /^evidence not found: (.+)$/.exec(e?.message || "");
+          if (m) {
+            const evs = store.db.all(
+              "SELECT id FROM evidence WHERE source_id=? AND project_id=? ORDER BY created LIMIT 8",
+              [m[1], project.id]
+            ) as any[];
+            if (evs.length) {
+              bad(ctx, `${e.message} — that id is a SOURCE; its evidence: ${evs.map((x) => x.id).join(" ")} (or rerun with --by-source to link them all)`);
+              return 1;
+            }
+            const srcExists = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [m[1], project.id]);
+            if (srcExists) {
+              bad(ctx, `${e.message} — that id is a SOURCE with no evidence yet: research evidence add ${m[1]} --quote ".." first`);
+              return 1;
+            }
+          }
           bad(ctx, e?.message || String(e));
           return 1;
         });

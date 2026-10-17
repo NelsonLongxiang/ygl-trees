@@ -9,7 +9,7 @@ description: >-
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
-version: 0.73.0
+version: 0.79.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -56,13 +56,21 @@ ygl-trees llms --json              # 结构化 JSON
 ## 2b. 运维命令速查
 
 ```bash
-ygl-trees doctor           # 9 项健康检查
-ygl-trees doctor --fix     # 一键安全修复（脏索引标记 + 陈旧锁清理）
+ygl-trees doctor           # 10 项健康检查（含锁 pid 存活、幻影写入对账）
+ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁；活 holder 不动）
+ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 拒绝并说明，--force 强清）
 ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
 ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
 ```
 
 PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
+
+## 2b2. 多会话安全（0.79）
+
+- `tree use` / `project use` 落 `tree.use` / `project.use` 事件（`YGL_SESSION` 会话标识）
+- `agent brief` 的 `selection_changed`：最近 10 分钟选择变更；跨会话变更置顶提示带 `-t`/`-p`
+- `kb add` 回执自检（`verified:true`）+ 工作区回显（防写错 home 的"丢笔记"事故）
+- `research claim link <cid> <sid> --by-source`：来源下全部证据一次挂齐；误传来源 id 会列出其证据 id
 
 ## 2c. DB 锁行为（0.68）
 
@@ -74,7 +82,7 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 ## 3. 健康检查与任务
 
 ```bash
-ygl-trees doctor                     # 9 项健康检查（schema/索引/FTS/重复/孤儿/config/锁/eval信封/插件）
+ygl-trees doctor                     # 10 项健康检查（schema/索引/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入）
 ygl-trees task add "<标题>"           # 建任务（todo 起步）
 ygl-trees task list                  # 按状态分组
 ygl-trees task done <id>             # 勾销（全程留痕）

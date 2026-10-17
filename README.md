@@ -91,6 +91,7 @@ ygl-trees node can steel --state "research_lab_level=3,has_engineer=1"
 ygl-trees node ready                                # 当前可解锁集合
 ygl-trees node path advanced-alloy                  # 到目标的最省顺序 + 累计成本
 ygl-trees node ancestors bronze                     # 闭包索引，直接父 depth=1
+ygl-trees node timeline demo                        # 单树成长时间线（add/link/unlock 倒序）
 ygl-trees node export --out tree.json               # 可移植 JSON
 ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导入
 ```
@@ -121,9 +122,10 @@ query add       登记检索式
 query attach    检索式 ↔ 来源关联（query list 显示召回数）
 source add      收来源，按 (project, url_hash) 去重；--query 顺带关联
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
-evidence add    从来源摘原文片段，带 locator（页码/章节）
+evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
 claim add       写下断言
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
+                --by-source：传来源 id 一次挂齐其全部证据；误传来源 id 会列出该来源的证据 id
 claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
 predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据自动测（树/kb 计数、npm 版本数），判 hit/miss/pending/manual——只报告不仲裁，给出待 resolve 建议
 ```
@@ -273,7 +275,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：unit (vitest 123 例) + build (tsc + tsdown) + demo（61 条断言）+ contract:audit（84 项）
+pnpm test          # 四段制回归：unit (vitest 156 例) + build (tsc + tsdown) + demo（74 条断言）+ contract:audit（86 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
@@ -281,10 +283,17 @@ ygl-trees --version    # 打印版本号
 ygl-trees llms          # 结构化能力清单（LLM 参考一次性获取全部命令面）
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
-ygl-trees doctor   # 工作区健康检查 9 项（--fix 一键安全修复）（schema/索引/FTS/重复/孤儿/config/锁/eval 信封/插件 profile）
+ygl-trees doctor   # 工作区健康检查 10 项（--fix 一键安全修复）（schema/索引/FTS/重复/孤儿/config/锁存活/eval 信封/插件 profile/幻影写入）
+ygl-trees db unlock    # 清残留 .ygllock：查 pid 存活，死 pid 直接清；活 holder（并行会话/serve）拒绝并说明，--force 才强清
+ygl-trees node timeline <tree>   # 单树成长时间线（add/link/unlock 事件倒序）
 ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）
 ygl-trees webui export --out d.html   # 零依赖单文件仪表盘（离线可开）
 ```
+
+**多会话安全（0.79）**：`tree use` / `project use` 全部落 `tree.use` / `project.use` 事件（带
+`YGL_SESSION` 会话标识）；`agent brief` 的 `selection_changed` 字段暴露最近 10 分钟的选择变更，
+跨会话变更会置顶提示命令带 `-t/-p` 固定上下文。`kb add` 回执自带 `verified` 自检与工作区回显，
+`doctor` 第 10 项回放近 2 天 kb/source/evidence 写事件对账基表，幻影写入当场点名。
 
 **提交门禁（无 CI 环境的等效方案）**：`.githooks/pre-push` —— push 分支跑 `pnpm test`，
 **push tag 追加 `pnpm pack:check`**；旁路只能显式 `YGL_SKIP_HOOKS=1`。安装一次：

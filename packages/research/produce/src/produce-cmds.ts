@@ -95,6 +95,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "spec": {
       const title = rest[0] || String(args.flags.title || "");
       const body = readBody();
+      // Feedback confirmation ①: --design-type is a produce design flag; spec
+      // silently swallowing it let a decision record land as a plain spec.
+      if (args.flags["design-type"] !== undefined) {
+        bad(ctx, "--design-type belongs to 'produce design' (spec does not take it; if this is a design decision, use: produce design <title> --design-type decision)");
+        return 2;
+      }
       if (!title || !body) {
         bad(ctx, "usage: produce spec <title> --body|-f <file>");
         return 2;

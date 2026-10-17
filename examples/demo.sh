@@ -104,6 +104,25 @@ $Y research claim add "[预测·7天] 2026-12-31 前 kb≥1——demo 预测，�
 PA=$($Y research predict audit --offline --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).find(x=>x.criterion.includes('kb≥1'));console.log(r?r.verdict+':'+r.actual:'missing')})")
 case "$PA" in pending*kb=*/*) echo "  ✓ predict audit measured local criterion ($PA)";; *) echo "  ✗ predict audit failed: $PA"; exit 1;; esac
 
+echo "── 5f. 0.79 feedback hardening (real-user report surfaces)"
+# ① kb receipt self-verify + workspace echo (lost-notes incident class)
+KBV=$($Y kb add --title "demo-verify" --body "receipt self-verify probe" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.verified===true?'ok':'verified='+r.verified)})")
+case "$KBV" in ok) echo "  ✓ kb add receipt self-verified (verified:true)";; *) echo "  ✗ kb verify failed: $KBV"; exit 1;; esac
+# ④ claim link with a SOURCE id must teach the taxonomy, not just fail
+SRC4=$($Y db sql "SELECT source_id FROM evidence LIMIT 1" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)[0].source_id))")
+CL4=$($Y research claim link "$C" "$SRC4" 2>&1 || true)
+case "$CL4" in *"that id is a SOURCE"*) echo "  ✓ claim link source-id mixup explains itself";; *) echo "  ✗ claim link enrichment failed: $CL4"; exit 1;; esac
+# ④ --by-source links every evidence under the source
+EV4=$($Y research evidence add "$SRC4" --quote "by-source probe quote" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).id))")
+BYS=$($Y research claim link "$C" "$SRC4" --by-source 2>&1 || true)
+case "$BYS" in *"linked"*evidence*) echo "  ✓ claim link --by-source batch links";; *) echo "  ✗ by-source failed: $BYS"; exit 1;; esac
+# ② db unlock on a dead-pid lock clears without --force
+mkdir -p "$YGL_HOME/ygl-trees.db.ygllock" && echo "3900000" > "$YGL_HOME/ygl-trees.db.ygllock/pid"
+UNL=$($Y db unlock 2>&1 || true); case "$UNL" in *"lock cleared"*|*"no lock present"*) echo "  ✓ db unlock clears stale lock ($UNL)";; *) echo "  ✗ db unlock failed: $UNL"; exit 1;; esac
+# produce spec must reject --design-type (silent-ignore incident)
+SP4=$($Y produce spec "t" --body b --design-type decision 2>&1; echo "rc=$?")
+case "$SP4" in *"belongs to 'produce design'"*"rc=2") echo "  ✓ produce spec rejects --design-type (rc=2)";; *) echo "  ✗ spec flag check failed: $SP4"; exit 1;; esac
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done

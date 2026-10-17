@@ -43,7 +43,31 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           })
         )
         .then((r): number => {
-          writeResult(ctx, r as any, (row) => `note stored: ${row.id}  ${clip(title, 50)}`);
+          const row = (r as any).row;
+          // Real-user report ①: three kb adds returned ✓, none was ever
+          // readable back. The transaction itself is sound (kb_notes +
+          // kb_fts + event commit together), so the loss was environmental
+          // (split workspace / different YGL_HOME between calls). Two in-band
+          // signals now make the landing point visible:
+          //   1. every receipt carries the workspace it wrote to
+          //   2. a verify probe re-reads the row through the SAME read path
+          //      kb search/list use — a miss is printed loudly, not silently
+          const verify = store.kbGet(row.id);
+          if (ctx.json) {
+            console.log(JSON.stringify({
+              ...row,
+              ...((r as any).dup ? { duplicate: true } : {}),
+              verified: !!verify,
+              workspace: env.home,
+            }, null, 2));
+          } else {
+            writeResult(ctx, r as any, (rw) => `note stored: ${rw.id}  ${clip(title, 50)}`);
+            out(ctx, paint(C.dim, `  @ ${env.home}`, ctx.color));
+            if (!verify) {
+              out(ctx, paint(C.yellow, `  ⚠ verify miss: id ${row.id} not readable back — the write may not have landed.`, ctx.color));
+              out(ctx, paint(C.yellow, `    run: ygl-trees doctor   (write_integrity check names phantom writes)`, ctx.color));
+            }
+          }
           return 0;
         })
         .catch((e: any): number => {

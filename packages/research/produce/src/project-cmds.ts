@@ -11,6 +11,26 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const { ctx, store } = env;
   const name = rest[0];
 
+  /** Report ③-3: selection changes are events (session-tagged) — see the
+   *  twin helper in techtree/model/src/cmds.ts for the rationale. */
+  function logSelectionEvent(kind: "project.use", projName: string): void {
+    try {
+      store.db.run(
+        "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+        [
+          `ev${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+          new Date().toISOString(),
+          process.env.YGL_SESSION || "cli",
+          kind,
+          "project",
+          projName,
+          JSON.stringify({ name: projName, session: process.env.YGL_SESSION || "cli" }),
+          "info",
+        ]
+      );
+    } catch { /* telemetry only */ }
+  }
+
   switch (action) {
     case "new": {
       if (!name) {
@@ -18,15 +38,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const question = String(args.flags.q || args.flags.question || "");
+      // Feedback confirmation ②: auto-selecting the new project silently
+      // re-points every flag-less command away from prior work — say so.
+      const prior = store.db.metaGet("current_project");
+      const priorHint = prior && prior !== name
+        ? `  (prior project '${prior}' is no longer selected — project use ${prior} to switch back)`
+        : "";
       return getOrm(env.db.path)
         .then((ds) => writes.projectCreate(ds, name, question))
         .then((p): number => {
+          logSelectionEvent("project.use", p.name);
           ack(
             ctx,
             p,
             p?.duplicate === true
-              ? `project exists, selected: ${p.name}  (duplicate, not re-created)`
-              : `project created and selected: ${p.name}`
+              ? `project exists, selected: ${p.name}  (duplicate, not re-created)${priorHint}`
+              : `project created and selected: ${p.name}${priorHint}`
           );
           return 0;
         })
@@ -60,6 +87,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       store.db.metaSet("current_project", name);
+      logSelectionEvent("project.use", name);
       ack(ctx, { project: name }, `now using: ${name}`);
       return 0;
     }

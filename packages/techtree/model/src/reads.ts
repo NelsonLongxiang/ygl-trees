@@ -49,6 +49,18 @@ export class TreeStore {
     return this.db.get("SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)", [treeId, keyOrId, keyOrId]);
   }
 
+  /** Which OTHER trees contain this key? (Report ③: a parallel session
+   *  flipped current_tree; `node can p_dates` then said just "node not
+   *  found" — the key existed the whole time, in another tree. This lookup
+   *  lets the error name the tree instead of forcing a blind node list.) */
+  nodeInOtherTrees(keyOrId: string, excludeTreeId: string): { tree: string; key: string }[] {
+    return this.db.all(
+      `SELECT t.name AS tree, n.key FROM nodes n JOIN trees t ON t.id=n.tree_id
+        WHERE n.tree_id<>? AND (n.key=? OR n.id=?) LIMIT 5`,
+      [excludeTreeId, keyOrId, keyOrId]
+    ) as any;
+  }
+
   /** Runtime state for one node (default context). Separate from nodeGet on
    *  purpose: nodeGet feeds WRITE paths, and a context join there could return
    *  one row per context — silently wrong for link/unlink/rm. */

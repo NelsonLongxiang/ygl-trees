@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, warn, out, head, table, paint, C, show } from "../../../core/text/src/fmt";
-import { dbPath } from "../../../core/database/src/db";
+import { dbPath, pidAlive } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
 
 
@@ -95,6 +95,55 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (ctx.json) console.log(JSON.stringify({ path: file }, null, 2));
       else out(ctx, file);
       return 0;
+    case "unlock": {
+      // Real-user report ②: residual .ygllock after a crash left users with
+      // an "rmdir" instruction and no safety net. `db unlock` checks pid
+      // liveness — dead/absent holder clears, a LIVE holder is refused
+      // (that is a parallel session or webui serve, not garbage) unless --force.
+      const lockDir = `${file}.ygllock`;
+      let holder = "";
+      try { holder = fs.readFileSync(`${lockDir}/pid`, "utf8").trim(); } catch { /* */ }
+      if (!fs.existsSync(lockDir)) {
+        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder: null, cleared: false, reason: "no lock present" }, null, 2));
+        else ok(ctx, `no lock present: ${lockDir}`);
+        return 0;
+      }
+      if (holder && pidAlive(holder) && !args.flags.force) {
+        // Self-check: OUR OWN boot may hold this lock — that is not a
+        // parallel session, and refusing here would deadlock the command
+        // against itself. Clear it; the process exits right after anyway.
+        const self = Number(holder) === process.pid;
+        const msg = self
+          ? `lock is held by THIS process (pid ${holder}) — acquired during boot; clearing.`
+          : `lock held by LIVE process (pid: ${holder}) — refusing to clear.`;
+        if (self) {
+          try {
+            fs.rmSync(lockDir, { recursive: true, force: true });
+            if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder, cleared: true, reason: "self (acquired during boot)" }, null, 2));
+            else ok(ctx, `lock cleared: ${lockDir}  (self — acquired during boot)`);
+            return 0;
+          } catch { /* fall through to the generic clear below */ }
+        }
+        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder, cleared: false, reason: "holder alive (use --force to override)" }, null, 2));
+        else {
+          bad(ctx, msg);
+          out(ctx, paint(C.yellow, `  this is a parallel session or webui serve — retry after it exits;`, ctx.color));
+          out(ctx, paint(C.yellow, `  the lock self-heals then. --force overrides (corruption risk if writes are in flight).`, ctx.color));
+        }
+        return 1;
+      }
+      try {
+        fs.rmSync(lockDir, { recursive: true, force: true });
+        const why = !holder || !pidAlive(holder) ? `stale (pid ${holder || "?"} dead)` : "forced";
+        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder: holder || null, cleared: true, reason: why }, null, 2));
+        else ok(ctx, `lock cleared: ${lockDir}  (${why})`);
+        return 0;
+      } catch (e: any) {
+        if (ctx.json) console.log(JSON.stringify({ error: `remove failed: ${e?.message || e}` }, null, 2));
+        else bad(ctx, `remove failed: ${e?.message || e}`);
+        return 1;
+      }
+    }
     case "stats": {
       const s = env.store.stats();
       if (ctx.json) {

@@ -115,10 +115,11 @@ ${paint(C.bold, "research", true)}    collect → screen → extract → claim
   source add --title --url [--abstract --content --relevance --confidence --query]
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
-  evidence add <sourceId> --quote "..." [--note --locator]
+  evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
   evidence list
   claim add "<text>" [--confidence A|B|C]
   claim link <claimId> <evidenceId> [--stance supports|refutes]
+                                      --by-source <claimId> <sourceId>: link ALL evidence under a source
   claim resolve <claimId> --as supported|refuted|contested [--note]
   claim list
 
@@ -174,6 +175,7 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
   node validate                      cycles, dangling edges, dirty index
   node export [--out file.json]      portable JSON
   node import --file <file.json>     [--tree name] [--merge] — strict, transactional
+  node timeline [tree]               per-tree growth history (add/link/unlock events)
 
   Writes are idempotent (claim/evidence/query/kb/job dedupe by content
   hash); pass --force to keep a deliberate duplicate.
@@ -634,10 +636,11 @@ export function generateLlmsManifest(): string {
       ["db export <file>", "full backup"],
       ["db sync pg <url>", "one-way mirror to PostgreSQL"],
       ["db migrate pg <url> [--fresh]", "full-fidelity graduation (with type preflight)"],
+      ["db unlock [--force]", "clear stale .ygllock (pid-liveness checked; refuses live holders)"],
       ["db reset", "delete database"],
     ]],
-    ["doctor", "Health check (9 items)", [
-      ["doctor [--fix]", "diagnose (+ auto-fix: dirty index, stale lock)"],
+    ["doctor", "Health check (10 items)", [
+      ["doctor [--fix]", "diagnose (+ auto-fix: dirty index, dead stale lock, phantom writes)"],
     ]],
     ["config", "User settings", [
       ["config list / get / set / reset", "registry-backed settings"],

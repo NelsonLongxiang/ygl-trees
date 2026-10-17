@@ -412,10 +412,11 @@ export class DB {
       } else {
         throw new Error(
           `database is locked by another process (pid: ${holder}).\n` +
-          `  lock: ${lockDir}\n` +
-          `  if this is a webui serve dashboard, it shares WAL safely — CLI reads work,\n` +
-          `  write commands need the serve process stopped (or YGL_TEST=1 to bypass)\n` +
-          `  if no other ygl-trees is running, remove it:  rmdir "${lockDir}"`
+          `  this is usually a parallel session or webui serve holding the WRITE lock;\n` +
+          `  read commands still work. The lock self-heals once pid ${holder} exits —\n` +
+          `  simply retry after it finishes.\n` +
+          `  to clear manually:  ygl-trees db unlock   (checks pid liveness, refuses live holders)\n` +
+          `  last resort:         rmdir "${lockDir}"`
         );
       }
     }
@@ -461,6 +462,15 @@ export class DB {
       const lockDir = `${file}.ygllock`;
       if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
     } catch { /* */ }
+  }
+
+  /** Static: read the holder pid of a lock file ("" when absent/unreadable). */
+  static lockHolder(file: string): string {
+    try {
+      return fs.readFileSync(path.join(`${file}.ygllock`, "pid"), "utf8").trim();
+    } catch {
+      return "";
+    }
   }
 
   private migrate(): void {
@@ -667,6 +677,21 @@ export const EDGE_RELS = ["prereq", "unlock", "excludes", "enables"] as const;
 export const EDGE_MODES = ["AND", "OR", "XOR", "NOT"] as const;
 /** Condition kinds for non-structural gates. */
 export const COND_KINDS = ["flag", "resource", "level", "quest", "time", "expr"] as const;
+
+/** PID liveness probe (shared by lock acquisition, `db unlock`, and doctor).
+ *  signal 0 = pure existence check (does NOT kill the process)
+ *  EPERM    = exists but permission-denied (Windows ACL) — still alive
+ *  ESRCH    = no such process — dead. NaN (garbage pid file) counts as dead. */
+export function pidAlive(pidStr: string | number): boolean {
+  const pid = Number(pidStr);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e.code === "EPERM"; // EPERM = alive (Windows), ESRCH = dead
+  }
+}
 
 /** Resolve the active database file. */
 export function dbPath(home: string): string {

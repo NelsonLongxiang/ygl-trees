@@ -12,7 +12,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
-import { SCHEMA_VERSION } from "../../../core/database/src/db";
+import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
 
@@ -130,20 +130,33 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 
   // ── 7. Stale lock check ──
-  // The CLI process running doctor holds its own .ygllock while checking —
-  // exclude our own live lock; warn only on foreign/stale holders.
+  // Real-user report ②: a residual lock with a DEAD pid earned an ambiguous
+  // "remove if no other process is running" warning, and a LIVE holder
+  // (parallel session / serve) was indistinguishable from garbage. Now the
+  // pid liveness probe (same one lock acquisition uses) decides:
+  //   dead holder → warn (clearable via `db unlock` / doctor --fix)
+  //   live holder → PASS (a live write-lock is a legitimate parallel session)
   const dbPath = db.path;
   const lockPath = `${dbPath}.ygllock`;
-  let lockHolder = "";
-  try { lockHolder = require("node:fs").readFileSync(`${lockPath}/pid`, "utf8").trim(); } catch { /* absent/unreadable */ }
-  const hasLock = require("node:fs").existsSync(lockPath) && lockHolder !== String(process.pid);
-  checks.push({
-    name: "stale_lock",
-    status: hasLock ? "warn" : "pass",
-    detail: hasLock
-      ? `lock dir detected: ${lockPath} — remove if no other ygl-trees process is running`
-      : "no stale locks",
-  });
+  {
+    // Report ②: a foreign LIVE holder is normal multi-session usage; only a
+    // DEAD holder is stale residue (db unlock / doctor --fix clear it).
+    let lockHolder = "";
+    try { lockHolder = fs.readFileSync(`${lockPath}/pid`, "utf8").trim(); } catch { /* absent/unreadable */ }
+    const mine = lockHolder === String(process.pid);
+    const foreignLock = fs.existsSync(lockPath) && !mine;
+    const holderAlive = !!lockHolder && pidAlive(lockHolder);
+    let status: Check["status"] = "pass";
+    let detail = "no stale locks";
+    if (foreignLock && holderAlive) {
+      status = "pass";
+      detail = `lock held by live pid ${lockHolder} (parallel session / serve) — normal in multi-session use`;
+    } else if (foreignLock) {
+      status = "warn";
+      detail = `stale lock (pid ${lockHolder || "?"} dead) — ygl-trees db unlock or doctor --fix clears it`;
+    }
+    checks.push({ name: "stale_lock", status, detail });
+  }
 
   // ── 8. eval-family envelope sanity (0.28.0) ──
   // A malformed envelope silently degrades: evalChoice/evalScore fall back to
@@ -198,6 +211,37 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
   }
 
+  // ── 10. Write integrity: recent write events whose rows are missing ──
+  // Real-user report ①: `kb add` returned ✓ but the note was never found
+  // again (search/list/promote all missed it). If a write event landed but
+  // the row did not, the write path lost data (rollback / crash between
+  // commit and receipt / a different workspace). This check replays recent
+  // write events against the base tables and names the phantom ids.
+  {
+    const PHANTOM_SPECS = [
+      { kind: "kb.add", table: "kb_notes", label: "kb" },
+      { kind: "source.add", table: "sources", label: "source" },
+      { kind: "evidence.add", table: "evidence", label: "evidence" },
+    ];
+    const phantoms: string[] = [];
+    for (const spec of PHANTOM_SPECS) {
+      const rows = db.all(
+        `SELECT e.entity_id id, e.ts FROM events e
+          WHERE e.kind='${spec.kind}'
+            AND e.ts >= datetime('now', '-2 days')
+            AND NOT EXISTS (SELECT 1 FROM ${spec.table} t WHERE t.id = e.entity_id)`
+      );
+      for (const r of rows) phantoms.push(`${spec.label} ${r.id} (${String(r.ts).slice(0, 16)})`);
+    }
+    checks.push({
+      name: "write_integrity",
+      status: phantoms.length ? "fail" : "pass",
+      detail: phantoms.length
+        ? `${phantoms.length} phantom write event(s) in last 48h: ${phantoms.slice(0, 3).join(", ")}${phantoms.length > 3 ? " …" : ""} — event logged but row missing (rollback or different workspace; check receipts' workspace line)`
+        : "recent write events all match stored rows",
+    });
+  }
+
   // ── Output ──
   const failed = checks.filter((c) => c.status === "fail").length;
   const warned = checks.filter((c) => c.status === "warn").length;
@@ -239,12 +283,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       db.run("UPDATE meta SET value='0' WHERE key='index_dirty'");
       fixes.push("index dirty flag cleared (run: ygl-trees node index)");
     }
-    // stale lock → remove (never our own live lock)
-    const lockDir = `${env.db.path}.ygllock`;
-    let holder = "";
-    try { holder = fs.readFileSync(`${lockDir}/pid`, "utf8").trim(); } catch { /* */ }
-    if (fs.existsSync(lockDir) && holder !== String(process.pid)) {
-      try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed"); } catch { /* */ }
+    // stale lock → remove ONLY if the holder pid is dead (report ②: --fix used
+    // to nuke ANY non-self lock — including a live parallel session's, which
+    // reintroduced exactly the double-writer corruption the lock prevents)
+    {
+      const { pidAlive } = require("../../../core/database/src/db");
+      const lockDir = `${env.db.path}.ygllock`;
+      let holder = "";
+      try { holder = fs.readFileSync(`${lockDir}/pid`, "utf8").trim(); } catch { /* */ }
+      if (fs.existsSync(lockDir) && holder !== String(process.pid) && !pidAlive(holder)) {
+        try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed (holder pid dead)"); } catch { /* */ }
+      }
     }
     if (fixes.length) {
       for (const f of fixes) ok(ctx, `  fixed: ${f}`);

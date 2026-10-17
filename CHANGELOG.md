@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.79.0（2026-10-17）真实用户反馈硬化（四异常 + 六特性）
+- **报告②新命令** `db unlock`：清残留 .ygllock——pid 存活检测，死 pid 直接清；活 holder（并行会话/serve）拒绝并解释，`--force` 才强清；自持锁（boot 期间获得）自清不死锁
+- **报告②** doctor 锁检查升级 pid 存活判定：外进程活锁=PASS（多会话正常态），死 pid 才告警；`--fix` 只清死锁（此前会误删并行会话的活锁）
+- **报告③** 选择变更事件化：`tree use`/`project use`/`tree new`/`project new`/`node import` 全落 `tree.use`/`project.use` 事件（带 `YGL_SESSION`）；`agent brief` 新增 `selection_changed`（最近 10 分钟），跨会话变更置顶提示带 `-t`/`-p`
+- **报告③** node not found 增强：key 在其他树 → 点名树并给 `-t` 提示；不存在 → 显示当前树名（并行会话翻转 current_tree 后错误自解释）
+- **报告①** kb add 回执自检：提交后立即 kbGet 回读，`--json` 带 `verified:true` + `workspace`；人类模式回显 `@ <home>`（防写错 home 的"丢笔记"）；doctor 第 10 项 write_integrity：回放近 2 天 kb/source/evidence 写事件对账基表，幻影写入点名
+- **报告④** claim link 三 id 纲目修复：误传来源 id → 列出该来源证据 id + 建议；无证据来源 → 提示先 evidence add；`--by-source` 批量挂齐来源下全部证据
+- **报告⑤新命令** `node timeline <tree>`：单树成长时间线（add/link/unlock 事件倒序 30 条）
+- **报告⑤** `research evidence add --file <path>`：长摘录免 shell 转义（与 --quote 互斥，空文件 rc=2）
+- **确认①** produce spec 拒绝 `--design-type`（rc=2 并指向 produce design）
+- **确认②** project new 回执提示前项目不再选中 + 回切命令
+- 单测 156（+5：pidAlive/lockHolder 语义）、demo 74（+5：5f 反馈硬化断言）、contract 86
+
 ## 0.78.0（2026-10-17）预测回测管线
 - **新命令** `research predict audit`：扫描 [预测·N天] 断言——deadline 解析（显式日期优先,created+horizon 推导兜底）、本地可测判据自动实测（树/kb 计数,或语义 any-hit）、npm 版本数 registry 探测（3s 超时,--offline 关闭）
 - 判定四态：hit / miss / pending（含已达标标记）/ manual（外部判据）——只报告不仲裁,给出待 resolve 命令建议
