@@ -1,0 +1,60 @@
+/** job add --at 解析回归（0.84.1）：Windows npm shim 会把带空格的值再切分，
+ * 尾式裸 `--at YYYY-MM-DD HH:MM` 必须跨平台可解析；前置 flag 式在直调
+ * （无 shim）路径下也必须进 flags.at。spawn 发布产物，scratch home。 */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+const REPO = resolve(__dirname, "../../../.."); // packages/ops/tools/tests -> repo root
+const BIN = resolve(REPO, "dist/bundle/bin.cjs");
+let HOME = "";
+
+function run(args: string[]) {
+  const r = spawnSync(process.execPath, [BIN, ...args], {
+    encoding: "utf8",
+    timeout: 60_000,
+    env: { ...process.env, YGL_HOME: HOME, YGL_EVAL_OFFLINE: "1" },
+  });
+  return { rc: r.status ?? -1, stdout: r.stdout || "", stderr: r.stderr || "" };
+}
+
+beforeAll(() => {
+  HOME = mkdtempSync(resolve(tmpdir(), "ygl-jobat-"));
+  run(["db", "init"]);
+});
+afterAll(() => rmSync(HOME, { recursive: true, force: true }));
+
+describe("job add --at", () => {
+  it("尾式裸日期时间（shim 再切分形态）解析为一次性计划", () => {
+    const r = run([
+      "job", "add", "at-tail-bare",
+      "--", "echo", "hi", "--at", "2026-10-31", "09:00",
+    ]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toContain("2026-10-31 09:00"); // schedule 打印出 at
+    expect(r.stdout).not.toMatch(/command:.*--at/); // --at 不残留在命令里
+  });
+
+  it("尾式引号形态仍可解析", () => {
+    const r = run([
+      "job", "add", "at-tail-quoted",
+      "--", "echo", "hi", "--at", '"2026-11-01 08:30"',
+    ]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toContain("2026-11-01 08:30");
+    expect(r.stdout).not.toMatch(/command:.*--at/);
+  });
+
+  it("前置 flag 式（无 shim 直调）进 flags.at，command 干净", () => {
+    const r = run([
+      "job", "add", "at-leading",
+      "--at", "2026-12-02 10:15",
+      "--", "echo", "hi",
+    ]);
+    expect(r.rc).toBe(0);
+    expect(r.stdout).toContain("2026-12-02 10:15");
+    expect(r.stdout).toContain("command:  echo hi");
+  });
+});

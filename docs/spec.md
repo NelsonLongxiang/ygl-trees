@@ -166,6 +166,17 @@
 - 复用 R8 基础设施（AI_GATEWAY_API_KEY / TypeSafe jev / 三态映射 / 离线安全）；新增 `eval-enhance.ts` 模块（semanticReRank / evaluateClaimConfidence / assessEvidenceQuality）
 - 验收：三种查询全命中（模型在线）/ 离线安全（无凭证不炸、显示"离线"）/ `claim link` 自动评估并写遥测 / `produce report` 附带模型置信度
 
+### R16 选择分辨率与会话级选中态（2026-10-17 评审 v2 草案；0.85 目标；用户裁定：项目作用域命令读写都 fail-closed）
+
+**动机**：`current_project`/`current_tree` 是 meta 里的两行全局 KV，写入点在写服务事务内（`research/pipeline/src/writes.ts:553-579`、`techtree/model/src/cmds.ts:106-109`），读取点却是 3 个解析调用点（`research/pipeline/src/cmds.ts:44`、`research/produce/src/produce-cmds.ts:30`、`research/produce/src/project-cmds.ts:95`，定义在 `reads.ts:32-38`）+ 5 个旁路直读（`ops/tools/src/agent-cmds.ts:15`、`webui.ts:67/93/914-917`、`rels.ts:30`）；无 env、无会话作用域，多会话共享即互相劫持（0.76/0.79/0.83 三代事故同根）。真实工作区现有 **33 个项目**——「全局兜底」在多数工作区里就是歧义。kb 无项目维度是域语义，不在此列。
+
+- **R16.1 解析优先级**：显式旗标 > env（`YGL_PROJECT` / `YGL_TREE`）> 会话键（meta 键 `current_project@<sid>` / `current_tree@<sid>`，sid = `YGL_SESSION || DSH_SESSION_ID || "default"`）> 全局键。结果带 `selection_source`（flag|env|session|global|only|none）；**全局键只做展示与迁移兜底，不授权项目作用域命令**（见 R16.3）。`project show --json` / `tree show --json` 加法输出该字段（契约兼容）
+- **R16.2 写侧分工**：`project use` / `tree use` 写会话键；`--global` 显式写全局；`project new` / `tree new` 默认只写会话键（不再改写全局），且不构成对后续命令的授权；全局键降级为迁移兜底，`doctor` 报 WARN
+- **R16.3 严格授权（读写都 fail-closed）**：项目作用域命令——research 全部子命令（`claim/query/source/evidence/artifact/task`，含按 id 寻址的 `claim link/resolve`，它们本就带 `AND project_id=?` 过滤，`pipeline/src/cmds.ts:650/677/703`）以及 `agent brief`、`project show`——在「工作区项目数 > 1」且「解析来源 ∈ {global, none}」时一律 **rc=2**，`--json` 输出单对象 `{"error": "ambiguous project: <n> projects in workspace; pass --project <name> or run ygl-trees project use <name>; projects: <前 8 个>"}`；人类模式同信息 + 修复命令。**豁免**：项目数 = 1（source=`only`）；`--all` 显式跨项目命令；工作区级命令（`db *`、`doctor`、`project list`、`kb *`、`node *`、`job *`、`rel *`、`config *`、`agent log`）
+- **R16.4 旁路收口**：webui `/api/data`、`/api/tree`、`/api/artifact`、`agent brief`、`rels` 一律走解析器；`/api/artifact` 改按 id 直查（`artifacts.project_id` NOT NULL，db.ts:147-158），归属不符 404 并说明；未选择时 webui 不阻断启动，项目面显示「未选择」并给选择入口，**不回退全局指针内容**；面板显示 `selection_source`
+- **R16.5 跨指针一致性**：`tree use` 对 `project_id` 非空且 ≠ 当前项目 → WARN 不阻断；`tree new --project <未知>` → rc=2 点名（修 `proj?.id || ""` 静默落空）；不回填历史 `trees.project_id`（workspace 级标签语义）
+- **R16.6 验收**：33 项目工作区未选择时 `claim list` / `claim add` / `claim link` / `agent brief` 均 rc=2 且 JSON 单对象，`doctor` / `project list` / `kb search` rc=0（`node list` 属树作用域：未选树时保持既有 rc=1，不受项目门禁）；单项目工作区全部 rc=0；`--project` / `YGL_PROJECT` / 会话键三路各放行并标注 `selection_source`；会话键指向已删项目 → rc=1 点名；仅全局指针时 `doctor` WARN；webui 未选择态显示「未选择」；`contract:audit` 增上述断言，demo 增「未选择即拒绝」与「会话选择后放行」两条；兼容性——跨会话不再自动继承上次选择，CHANGELOG 与升级说明写明
+
 ## 4. 兼容性承诺
 
 - v2 老库首次被 v3 CLI 打开时自动迁移，无损、无需人工介入；迁移在事务内

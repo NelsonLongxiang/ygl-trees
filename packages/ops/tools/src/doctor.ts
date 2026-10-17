@@ -13,6 +13,7 @@ import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
+import { resolveProject, projectSessionKey, projectCount } from "../../../core/database/src/selection";
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
 
@@ -44,6 +45,27 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ? "all tree indexes clean"
       : `${dirtyTrees.length} tree(s) with dirty index: ${dirtyTrees.map((t: any) => t.name).join(", ")} — run: ygl-trees node index`,
   });
+
+  // ── 2b. Selection hygiene (R16.2) ──
+  // The global current_project pointer is a migration fallback now; a
+  // multi-project workspace that ONLY has it (no session selection recorded)
+  // gets a heads-up, since project-scoped commands fail-closed there.
+  {
+    const sel = resolveProject(db);
+    const globalSet = !!db.metaGet("current_project");
+    const sessionSet = !!db.metaGet(projectSessionKey());
+    if (globalSet && !sessionSet && projectCount(db) > 1) {
+      checks.push({
+        name: "selection_hygiene",
+        status: "warn",
+        detail:
+          `only the global 'current_project' pointer is set (migration fallback, source: ${sel.source}) — ` +
+          `project-scoped commands fail-closed; run 'ygl-trees project use <name>' per session or pass --project`,
+      });
+    } else if (sel.source !== "none") {
+      checks.push({ name: "selection_hygiene", status: "pass", detail: `selection resolves via ${sel.source}` });
+    }
+  }
 
   // ── 3. FTS sync (spot check: sources vs sources_fts) ──
   const srcCount = db.get("SELECT COUNT(*) c FROM sources")?.c ?? 0;

@@ -25,7 +25,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         every = Number(tailEvery[1]);
         command = command.slice(0, tailEvery.index).trim();
       }
-      const tailAt = /\s--at(?:=|\s+)?("[^"]*"|'[^']*'|\S+)\s*$/.exec(command);
+      // Shim-proof: on Windows the npm .cmd shim re-splits space-bearing flag
+      // values, so the quoted pre-`--` form reaches us as loose words inside
+      // the command. Accept a bare `YYYY-MM-DD HH:MM[:SS]` (also `T`-joined)
+      // at the tail so both platforms parse.
+      const tailAt =
+        /\s--at(?:=|\s+)?("[^"]*"|'[^']*'|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?|\S+)\s*$/.exec(command);
       if (tailAt) {
         at = tailAt[1].replace(/^["']|["']$/g, "");
         command = command.slice(0, tailAt.index).trim();

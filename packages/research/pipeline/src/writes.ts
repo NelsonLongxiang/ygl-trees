@@ -550,15 +550,19 @@ export async function skillRefAdd(
 
 // ================================================================ projects (batch 2)
 
+/** R16.2: `project new` selects via the SESSION key only — the global
+ *  pointer is demoted to migration fallback and must not be re-pointed
+ *  implicitly (parallel sessions used to steal each other's selection). */
 export async function projectCreate(ds: DataSource, name: string, question = ""): Promise<Record<string, any>> {
   return ds.transaction(async (mgr) => {
     // Idempotency (frozen contract): re-creating a project selects it instead
     // of failing on the UNIQUE name — "new" is also the switch verb.
+    const sessionKey = `current_project@${process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "default"}`;
     const existing = (await mgr.query(`SELECT * FROM projects WHERE name=?`, [name])) as any[];
     if (existing.length) {
       await mgr.query(
-        `INSERT INTO meta(key,value) VALUES('current_project',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-        [name]
+        `INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+        [sessionKey, name]
       );
       return { ...existing[0], duplicate: true };
     }
@@ -570,8 +574,8 @@ export async function projectCreate(ds: DataSource, name: string, question = "")
     );
     // selecting the new project is part of the create — same transaction
     await mgr.query(
-      `INSERT INTO meta(key,value) VALUES('current_project',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      [name]
+      `INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      [sessionKey, name]
     );
     await logEvent(mgr, "project.create", "project", id, name);
     const rows = (await mgr.query(`SELECT * FROM projects WHERE id=?`, [id])) as any[];

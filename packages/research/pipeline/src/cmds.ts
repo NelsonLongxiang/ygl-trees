@@ -8,6 +8,7 @@ import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../..
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
+import { resolveProject, ambiguousProject, projectSample, projectCount } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 import { Claim, Evidence, Query, Source } from "./entities";
@@ -38,13 +39,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const sub = action;
   const subAction = rest[0];
 
-  // -- project resolution (allow --p override) -----------------------------
+  // -- project resolution (R16: flag > env > session > global; strict gate) --
+  // R16.3 exemption: `claim calibration --all` is workspace-scoped (project may
+  // be null) — the strict gate must not block the one research subcommand that
+  // legitimately spans projects. predict audit --all stays project-scoped.
+  const workspaceWide = subAction === "calibration" && args.flags.all === true;
   let project: any;
-  try {
-    project = store.projectResolve((args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined);
-  } catch (e: any) {
-    bad(ctx, e.message);
+  const sel = resolveProject(
+    store.db,
+    args.flags.p ?? args.flags.project ? String(args.flags.p ?? args.flags.project) : undefined
+  );
+  if (!workspaceWide && ambiguousProject(store.db, sel)) {
+    // R16.3 fail-closed: a global pointer (or nothing) must not authorize
+    // project-scoped commands in a multi-project workspace.
+    bad(
+      ctx,
+      `ambiguous project: ${projectCount(store.db)} projects in workspace; pass --project <name> or run ygl-trees project use <name>; projects: ${projectSample(store.db).join(", ")}`
+    );
+    return 2;
+  }
+  if (!workspaceWide && !sel.name) {
+    bad(ctx, "no project selected; run: ygl-trees project new <name>");
     return 1;
+  }
+  if (!workspaceWide) {
+    project = store.projectByName(sel.name);
+    if (!project) {
+      bad(ctx, `project not found: ${sel.name}`);
+      return 1;
+    }
   }
 
   const readBody = (): string => {

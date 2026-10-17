@@ -1,8 +1,25 @@
 {
   "name": "ygl-trees",
-  "version": "0.84.0",
-  "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
+  "version": "0.85.0",
+  "description": "Research workbench CLI for AI agents — evidence-first research pipeline, claims calibration and tech-tree skill modeling (SQLite; 猿光·科技树)",
   "type": "commonjs",
+  "keywords": [
+    "research",
+    "workbench",
+    "ai-agents",
+    "agent-tools",
+    "tech-tree",
+    "skill-tree",
+    "knowledge-base",
+    "second-brain",
+    "evidence",
+    "research-pipeline",
+    "claims",
+    "decision-making",
+    "cli",
+    "sqlite",
+    "mcp"
+  ],
   "main": "dist/apps/cli/index.js",
   "bin": {
     "ygl-trees": "dist/bundle/bin.cjs"

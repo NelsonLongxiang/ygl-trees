@@ -16,9 +16,10 @@
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { TreeStore } from "./reads";
-import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
+import { ok, bad, out, head, table, show, paint, C, ack, warn } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { getOrm } from "../../../core/database/src/orm";
+import { resolveProject, sessionId } from "../../../core/database/src/selection";
 import * as treeWrites from "./writes";
 import {
   DEFAULT_ENDPOINT, evalBoolean, evalChoice, evalMixed, evalScore, evalToken,
@@ -104,9 +105,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const pid = flagStr("project");
-      const proj = pid ? db.get("SELECT id FROM projects WHERE name=?", [pid]) : null;
+      let proj: any = null;
+      if (pid) {
+        proj = db.get("SELECT id, name FROM projects WHERE name=?", [pid]);
+        // R16.5: an unknown --project used to silently fall through to a
+        // workspace-level tree (proj?.id || "") — name it instead.
+        if (!proj) {
+          bad(ctx, `project not found: ${pid} (tree new stays workspace-level — drop --project or pass an existing name)`);
+          return 2;
+        }
+      }
       return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), (t): number => {
-        db.metaSet("current_tree", t.name);
+        // R16.2: session-scoped selection — global pointer untouched.
+        db.metaSet(`current_tree@${sessionId()}`, t.name);
         logSelectionEvent(db, "tree.use", t.name);
         ack(
           ctx,
@@ -129,14 +140,65 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ]);
       return 0;
     }
+    if (sub === "show") {
+      // R16.1: selection annotation on the read path (additive JSON field).
+      const selT = trees.treeSelection(flagStr("tree") || flagStr("t") || name);
+      let t: any = selT.name ? trees.treeByName(selT.name) : null;
+      if (!t && name) t = trees.treeByName(name);
+      if (!t) {
+        bad(ctx, `tree not found: ${selT.name || name || "(none selected)"}`);
+        return 1;
+      }
+      const stats = db.get(
+        `SELECT (SELECT COUNT(*) FROM nodes n WHERE n.tree_id=?) AS nodes,
+                (SELECT COUNT(*) FROM node_edges e WHERE e.tree_id=?) AS edges,
+                (SELECT COUNT(*) FROM node_state s WHERE s.tree_id=? AND s.status='unlocked') AS unlocked`,
+        [t.id, t.id, t.id]
+      );
+      const payload = {
+        tree: { name: t.name, note: t.note || "", project_id: t.project_id || null, created: t.created },
+        nodes: stats?.nodes ?? 0,
+        edges: stats?.edges ?? 0,
+        unlocked: stats?.unlocked ?? 0,
+        selection_source: selT.source,
+      };
+      if (ctx.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return 0;
+      }
+      head(ctx, `Tree ${t.name}  (selection: ${selT.source})`);
+      show(ctx, payload.tree);
+      show(ctx, { nodes: payload.nodes, edges: payload.edges, unlocked: payload.unlocked });
+      return 0;
+    }
     if (sub === "use") {
-      if (!trees.treeByName(name)) {
+      const t = trees.treeByName(name);
+      if (!t) {
         bad(ctx, `tree not found: ${name}`);
         return 1;
       }
-      db.metaSet("current_tree", name);
+      // R16.5: a project-bound tree selected while another project resolves
+      // as current is suspicious (parallel session / stale pointer) — WARN,
+      // don't block; the tree itself is still readable.
+      if (t.project_id) {
+        const owner = db.get("SELECT name FROM projects WHERE id=?", [t.project_id]);
+        const projSel = resolveProject(db, flagStr("project"));
+        if (owner && projSel.id && projSel.id !== t.project_id) {
+          warn(
+            ctx,
+            `tree '${name}' belongs to project '${owner.name}'; current project selection is '${projSel.name}' (${projSel.source}) — pin -p <project> if this mismatch is unintended`
+          );
+        }
+      }
+      // R16.2: session key by default; --global opts into the migration fallback.
+      const scope = args.flags.global === true || args.flags.global === "true" ? "global" : "session";
+      db.metaSet(scope === "global" ? "current_tree" : `current_tree@${sessionId()}`, name);
       logSelectionEvent(db, "tree.use", name);
-      ack(ctx, { tree: name }, `now using tree: ${name}`);
+      ack(
+        ctx,
+        { tree: name, scope, session: sessionId() },
+        `now using tree: ${name}  (${scope} selection)`
+      );
       return 0;
     }
   }
@@ -952,7 +1014,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             { tree: r.tree.name, nodes: r.nodes, edges: r.edges, conditions: r.conditions },
             `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`
           );
-          db.metaSet("current_tree", r.tree.name);
+          // R16.2: import re-points the SESSION selection, not the global.
+          db.metaSet(`current_tree@${sessionId()}`, r.tree.name);
           logSelectionEvent(db, "tree.use", r.tree.name);
           if (!ctx.json) out(ctx, paint(C.dim, `  index rebuilt; now using tree: ${r.tree.name}`, ctx.color));
           return 0;

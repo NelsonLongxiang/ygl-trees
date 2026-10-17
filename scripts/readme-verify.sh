@@ -70,6 +70,10 @@ chk "node list --tree"    1 -- $Y node list --tree nonexist-tree
 chk "claim add 校准"      0 -- $Y research claim add "README 校准断言" -p rt
 chk "claim evaluate"      1 -- env YGL_EVAL_OFFLINE=1 $Y research claim evaluate no-such-claim -p rt
 chk "claim calibration"   0 -- $Y research claim calibration --all
+# §0.85 会话选择分辨率（tree show 汇报来源；use --global 显式全局）
+chk "tree show"           0 -- $Y tree show
+chk "project use --global" 0 -- $Y project use rt --global
+chk "project show --json" 0 -- $Y project show --json
 # §plugin
 chk "plugin init"         0 -- $Y plugin init
 chk "plugin install"      0 -- $Y plugin install ./examples/plugin-demo
@@ -84,7 +88,7 @@ chk "config list"         0 -- $Y config list
 chk "db export"           0 -- $Y db export "$YGL_HOME/dump.sql"
 # llms.txt 发布面新鲜度（0.84 评审 #6：版本头必须与 package.json 同步）
 N=$((N+1))
-PV=$(node -p "require('$(pwd)/package.json').version")
+PV=$(node -p "require('./package.json').version")
 if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV"; else echo "  ✗ llms.txt 版本头 ≠ v$PV（run: ygl-trees llms 刷新后提交）"; F=$((F+1)); fi
 echo "readme-verify: $((N-F))/$N 通过"
 [ "$F" = "0" ] || exit 1

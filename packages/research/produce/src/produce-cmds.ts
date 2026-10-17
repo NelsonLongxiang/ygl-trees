@@ -7,6 +7,7 @@ import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt"
 import { rejectBare } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
+import { resolveProject, ambiguousProject, projectCount, projectSample } from "../../../core/database/src/selection";
 import * as writes from "../../pipeline/src/writes";
 import { relAdd, RelError } from "../../../ops/tools/src/rels";
 
@@ -25,11 +26,26 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     action = map[action];
   }
 
+  // -- project resolution (R16: flag > env > session > global; strict gate) --
   let project: any;
-  try {
-    project = store.projectResolve((args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined);
-  } catch (e: any) {
-    bad(ctx, e.message);
+  const sel = resolveProject(
+    store.db,
+    (args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined
+  );
+  if (ambiguousProject(store.db, sel)) {
+    bad(
+      ctx,
+      `ambiguous project: ${projectCount(store.db)} projects in workspace; pass --project <name> or run ygl-trees project use <name>; projects: ${projectSample(store.db).join(", ")}`
+    );
+    return 2;
+  }
+  if (!sel.name) {
+    bad(ctx, "no project selected; run: ygl-trees project new <name>");
+    return 1;
+  }
+  project = store.projectByName(sel.name);
+  if (!project) {
+    bad(ctx, `project not found: ${sel.name}`);
     return 1;
   }
   const pid = project.id;

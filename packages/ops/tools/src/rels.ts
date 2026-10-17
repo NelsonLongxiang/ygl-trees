@@ -12,6 +12,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { nowIso, shortId } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
+import { resolveTree } from "../../../core/database/src/selection";
 
 export const REL_TYPES = ["node", "claim", "evidence", "source", "query", "kb", "artifact", "task", "skill"] as const;
 
@@ -26,8 +27,9 @@ export class RelError extends Error {
 const DISPLAY: Record<string, (db: any, ref: string) => { id: string; display: string }> = {
   node: (db, ref) => {
     // node:<tree>/<key> explicit, or node:<key> resolved in the current tree
+    // (R16: resolved selection — session-aware, not the raw global pointer)
     const [treeName, key] = ref.includes("/") ? [ref.slice(0, ref.indexOf("/")), ref.slice(ref.indexOf("/") + 1)] : [null, ref];
-    const cur = treeName || db.metaGet("current_tree") || "";
+    const cur = treeName || resolveTree(db).name || "";
     if (!cur) {
       // 0.81: bare node:<key> with NO current tree used to die as a generic
       // "node not found" — name the real cause (parallel session cleared the

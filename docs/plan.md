@@ -2,6 +2,14 @@
 
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
+> **评审记录 · 0.84.0（2026-10-17，current_project 全局选中态 v2：源码实证 + 行动计划）**：0.84.0（`3c943c7`）修掉 REVIEW 四 P1 后，评审转向跨会话选择态——用户 v2 复核把根因钉到「会话级概念、机器级实现」。**撤回一条**：kb 不是读侧漏洞（`kb_notes` 无 `project_id`，db.ts:161-173；`kbList/kbSearch` 不收项目参数），kb 是刻意跨项目知识池，上轮「`kb list --project` 被静默忽略」作废。**但顺挖出真缺陷**：`packages/core/text/src/flagcheck.ts:15-23` 的 `rejectBare` 只查裸旗标，未知旗标全仓仅 `packages/techtree/model/src/cmds.ts:832-836` 一处 allowlist；实测 `kb add --project foo` 与 `kb add --bogus x` 均 rc=0 落库，`tree new tA --project nosuch` rc=0 且 `project_id=null`（`techtree/model/src/cmds.ts:106-108` 的 `proj?.id || ""` 静默落空）。
+>
+> **机制实证**：选中态 = meta 两行 KV（`current_project`/`current_tree`），无 env 通道、无会话作用域（`YGL_SESSION` 只给事件打标）；解析链 `flag > name || metaGet(current_project)`（`research/pipeline/src/cmds.ts:44`、`research/produce/src/produce-cmds.ts:30`、`project-cmds.ts:95`、`reads.ts:32-38`）；`project new` 在写服务事务内两处 UPSERT `current_project`（`pipeline/src/writes.ts:553-579`，duplicate 分支同写），`tree new` 对称自动选中；旁路直读 meta 五处——`ops/tools/src/agent-cmds.ts:15`、`webui.ts:67`（dashboard）、`:93`（tree）、`:914-917`（`/api/artifact` 用当前项目做归属过滤，而 `artifacts.project_id` 是 NOT NULL，db.ts:147-158）、`rels.ts:30`。0.76/0.79/0.83 三代事故同根。
+>
+> **裁决与校准**：根因是「选择分辨率缺失 + 旁路直读」，不是共享可变本身；① env 只作最高优先级覆写——DSH 每次调用 fresh shell，开场 export 不跨调用，会话态主路用 meta 后缀键 `current_project@<sid>`（sid=`YGL_SESSION||DSH_SESSION_ID||"default"`，DSH 子进程自带该变量），零 schema 变更；② `project new` 去自动选中是破坏性变更，留 0.85，默认只写会话键、`--global` 写全局；③ kb 的 rc=2 文案必须点名「kb 无项目维度」；④ 树悬空不回填（现存三棵全 NULL，回填只能猜），改为非空才校验 + WARN；⑤ contract⑤ 抽公共 `rejectUnknown`（kb 只是第一个暴露点）；⑥ `agent brief` 的 10 分钟事件窗告警应改报 `selection_source`；⑦ **追加裁定（用户 2026-10-17，读写都 fail-closed）**：研究管线几乎全部命令都按 `project_id` 过滤（`pipeline/src/cmds.ts:195/210/419/562/566/625/650/677/703`），连按 id 寻址的 `claim link/resolve` 也是项目作用域——严格授权的覆盖面比预想大，且 `pipeline/src/cmds.ts:41-48`、`produce-cmds.ts:28-35` 的入口急切解析**不必惰性化**；规则 = 工作区项目数 > 1 且来源 ∈ {global, none} → rc=2 点名（JSON 单对象），豁免 = 单项目工作区、`--all`、工作区级命令（db/doctor/project list/kb/node/job/rel/config/agent log）；全局键只服务展示与迁移。规格草稿见 spec R16。
+>
+> **行动计划**：Batch 0（0.84.1，~1h）公共 `rejectUnknown` + kb 接入 + `tree new --project` 未知名 rc=2 + `contract:audit` 87→90 与 demo 断言；Batch 1（0.85.0）resolver 落 `packages/core/database/src/selection.ts`（策略模式 `project-scoped|workspace`，pipeline/produce 组入口用 strict、`--all` 豁免），优先级 `flag > env > session > global`，写侧会话键，收口 3 解析调用点 + 5 直读点，doctor `selection_scope`，`selection.test.ts`（含 fail-closed 三态）+ demo 4 条；Batch 2 webui `/api/artifact` 按 id 直查 + 面板标注来源；Batch 3 conventions/AGENTS/CHANGELOG/技能。**YAGNI**：不建 `session_selections` 表、不给 kb 加项目维度、不合并双指针、不回填 `project_id`、不在评审冻结窗内做行为变更。**待确认**：`ygl-core-workflow` 技能不在这台机器（`~/.dsh/skills` 与仓库 `skills/` 均无），需给位置或新建。取证全在 `tmp/` 临时 home（`kbflag-probe-*`/`treeproj-probe-*`）跑完即删，真实库零改动。
+
 > **执行记录 · 0.45.0（2026-10-17，lifecycle 技能真实维护回合）**：用户点名使用 `ygl-trees-lifecycle`。按其 §3 节奏对真实工作区执行维护，**对账出大规模漂移**：树 32 节点全未解锁（而交付了 0.1.0–0.44.0），且 0.36 后新增能力**树上无节点**——技能 §5 两个反模式（心内解锁 / 资产不挂树）同时成立。维护动作：补 5 节点+挂接 → **同轮** index+validate → 证据链（1 源 + 6 CHANGELOG 原文证据 + 6 交付簇断言）→ 34 节点解锁且每个同轮 rel 挂 `decided-by` → 工件挂节点 → kb ingest + 2 条方法论笔记 → 临时任务清理 → 收口 doctor 全绿。**过程中撞出三处真缺陷**：① 任务「发布到 npmjs」假 done（创建后 2 秒被状态机演练走完，演练用了真实标题）——假状态是错信息，比漏更新更坏；② `task todo` 可逆生效但顶层 usage 漏写（未宣传的能力等于没有）——补齐 + demo 回退护栏；③ **CLI 看不到解锁态**（`node_state` 有行，`node list/show` 不返回 state）——节奏纪律要求「解锁后对账」而 CLI 侧无从对账，补 `state`/`unlocked_at`（新增独立 `nodeStateOf`，**刻意不动写路径复用的 `nodeGet`**：多 context 的 LEFT JOIN 会让行数放大，`db.get` 会静默取错行——这类"读方法被写路径复用"的耦合是隐藏陷阱）。方法论收获：技能写得再好，也要在真实数据上跑一遍才知道它缺什么——本轮三条缺陷全部由「执行技能」而非「阅读技能」暴露。
 
 > **执行记录 · 0.44.0（2026-10-17，JSON 通道契约）**：0.43 把**写侧**契约机械化了，本轮补**读侧对称面**。侦察：常用 21 条读命令全绿（纪律守得住），但角落与错误路径抓到两处真问题——① `--json db path` 输出裸路径（成功路径纯净性违规）② **`bad()` 把所有错误写 stdout**（129 个调用方，`--json` 下机器通道被人类文本污染）。修复：json 模式 `bad()` 输出单对象 `{"error":...}`（rc 承载类别）、`db path` 出 `{"path":...}`、bin.ts 两处 usage 转储仅在非 json 模式。契约措辞入 spec「兼容性承诺」（成功与失败同样可整体 parse、error 非空、snake_case 硬约束）。门禁扩 contract 5：31 读 + 6 错误路径，`contract:audit` 37 → **73 项**。工程细节：内联 node 校验器在 bash 里被引号搞坏（首跑 37/73），改为独立 `scripts/json-check.mjs` 后 73/73——**判定逻辑放独立文件、bash 只搬运结论**。
@@ -204,6 +212,30 @@
 
 **依赖**：M5-1 → M5-4；M5-2/M5-3 并行。
 **风险**：① 评估延迟 1-2s/条件——批量树评估不做（非目标）；② 灰带语义与现有 tri-state 输出的组合展示需在 M5-4 定稿（pending 不进 missing_required）；③ token 无则全部 pending——demo 必须断言 offline 路径而非依赖网络。
+
+## M6 — 会话选择分辨率 R16（0.85.0，spec R16，2026-10-18 立项，A2A 工作单 direct-ceb27322）
+
+背景：多项目工作区里并行 Agent 会话互踩共享 `current_project` 全局指针（0.83 用 `--project` 钉住治标）；spec R16 定根治方案——选择会话化 + 多项目未选择 fail-closed。
+
+| # | 任务 | 涉及 | 验收 |
+|---|---|---|---|
+| M6-1 | selection.ts 解析器：flag > env(YGL_PROJECT/YGL_TREE) > 会话键(`current_project@<sid>`) > 全局；selection_source 六态 | core/database/src/selection.ts | 单测 selection.spec ×10 spawn 端到端 |
+| M6-2 | research/produce/task/agent brief/project show 严格门禁（rc=2 单错误对象）+ 工作区级豁免 + 单项目 only | research/pipeline、research/produce、ops/tools | demo 5m ×4；契约 +5（92 项） |
+| M6-3 | webui 未选择态（不回退全局）+ /api/artifact id 直查归属 + 树面板选择来源 | ops/webui.ts | webui.test 17/17 |
+| M6-4 | tree new --project 未知 rc=2 点名；tree use 跨项目 WARN；tree show 新子命令；doctor selection_hygiene | techtree/model、ops/doctor | spec 断言 + doctor 全绿 |
+
+**升级注意**：跨会话不再自动继承选择；旧全局指针仅展示/迁移兜底（doctor 提示）。
+
+## M7 — Cordis 应用深化（0.86 批次，2026-10-18 立项，评审 tmp/review-cordis.md / A2A direct-46df5155 + direct-92887873）
+
+| # | 任务 | 验收 |
+|---|---|---|
+| M7-1 (P0-1) | evalClaim 服务化经 ctx.ops.evalClaim：填实 OpsService 空壳，解 research→ops 跨域 require（REVIEW-0.84.0 F3） | grep 无跨域 require；ctx.ops.evalClaim 有单测；demo 5l 四断言照绿 |
+| M7-2 (P0-2) | TechTreeService 用或删——裁定**删**（cmds.ts:33 直构 TreeStore 是事实真相）；同步收 ygl.bundle.json techtree 条目 + PLUGINS 注册表；同口径核查 WebAppService（web/app/src/index.ts:78，webui 若直调 openStatic 则同删） | 行为零变化；死门面清零；bundle/注册表一致 |
+| M7-3 (P0-3) | webui SSE 改 ctx.on("ygl")——事件桥进自测路径（桥坏了测试能发现） | webui SSE 用例经桥跑绿 |
+| M7-4 (P1/P2) | fork 补 ctx.dispose()（或上游提需求）；settle loop 收敛或 ADR；knownKinds 11 种硬编码收敛到 eventbus 真相源；域间事件化试点（node unlock → research 提醒） | 各带验收回执 |
+
+决策记录：P0 归 0.86 而非挤 0.85.0（0.85 已在发布门禁上）——评审席 dsh/fdc757f6 认可（direct-92887873）。
 
 ## 明确推迟（不进本计划）
 

@@ -206,6 +206,20 @@ usage2 "node link missing arg"  -- $Y node link a
 usage2 "job add without title"  -- $Y job add
 usage2 "source fetch bad url"   -- $Y research source fetch not-a-url
 
+# ── R16 selection resolution: multi-project unselected fails closed;
+#    workspace-level commands stay open; session selection restores.
+echo "── contract 7: R16 会话选择分辨率（多项目未选择 fail-closed）"
+$Y project new audit-b >/dev/null 2>&1
+$Y db sql "DELETE FROM meta WHERE key LIKE 'current_project@%'" >/dev/null 2>&1
+json_err "R16 ambiguous research gate" 2 -- $Y research claim list
+json_err "R16 ambiguous agent brief"   2 -- $Y agent brief
+json_ok  "R16 exemption doctor"        -- $Y doctor
+json_ok  "R16 exemption project list"  -- $Y project list
+json_ok  "R16 exemption calibration --all (workspace scope)" -- $Y research claim calibration --all
+$Y project use audit >/dev/null 2>&1
+json_ok  "R16 session selection restores research" -- $Y research claim list
+$Y db sql "DELETE FROM projects WHERE name='audit-b'" >/dev/null 2>&1
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

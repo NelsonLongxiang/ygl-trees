@@ -219,8 +219,8 @@ describe("webui live server", () => {
       // mutate the workspace: the 1.5s fingerprint tick must push a fresh frame
       const writes = await import("../../../research/pipeline/src/writes");
       const ds = await getOrm(path.join(dir, "unit.db"));
-      const cur = db.metaGet("current_project");
-      const projRow = db.get("SELECT id FROM projects WHERE name=?", [cur]) as any;
+      // R16: selection is session-scoped now; this home has exactly one project
+      const projRow = db.get("SELECT id FROM projects LIMIT 1") as any;
       await writes.taskAdd(ds, projRow.id, "SSE 单测新任务");
       await collect(2, 8000);
       expect(frames.length).toBeGreaterThanOrEqual(2);

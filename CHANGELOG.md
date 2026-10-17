@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.85.0（2026-10-18）会话选择分辨率（R16）+ job --at 修复 + npm SEO
+
+- **升级注意**：跨会话不再自动继承项目选择——`project new`/`project use` 现写**会话键**（`current_project@<sid>`，sid=YGL_SESSION||DSH_SESSION_ID||"default"），旧全局 `current_project` 仅作展示/迁移兜底。多项目工作区里并行会话互踩共享指针的问题（0.83 用 --project 钉住治标）就此根治。
+- **R16.1 选择分辨率**：优先级 显式 flag > env（YGL_PROJECT/YGL_TREE）> 会话键 > 全局键；`project/tree show --json` 增 `selection_source`（flag/env/session/global/only/none）；新增 `tree show`（选择来源 + 节点/边/解锁统计）。
+- **R16.3 严格门禁（fail-closed）**：多项目工作区 + 选择来源 ∈{global,none} 时，`research *`、`produce *`（含 task）、`agent brief`、`project show` 一律 rc=2 单错误对象（点名项目数与前 8 项目名 + 两条出路）；工作区级命令（db/doctor/project list/kb/node/job/rel/config）不受影响；单项目工作区自动命中（source=only）零摩擦。
+- **R16.4 WebUI 未选择态**：多项目未选择不再回退全局——面板显示「未选择项目」+ 可选列表 + 指引；`/api/artifact` 改按 id 直查（join projects 鉴归属，跨项目 id 404）；树面板显示选择来源。
+- **R16.5 树侧护栏**：`tree new --project <未知>` rc=2 点名（原静默落空）；`tree use` 跨项目选择 WARN 不阻断；`tree use --global` 显式写全局。
+- **doctor 2b selection_hygiene**：仅全局指针 + 多项目 → WARN 提示迁移；会话键健康则 pass 并报来源。
+- **`job add --at` 命令面修复（Windows shim 陷阱）**：带空格的一次性计划值（`"YYYY-MM-DD HH:MM"`）两条路径都失效——前置 flag 式经 npm `.cmd` shim 被再切分成散词落入 command（flags.at 空 → "manual"）；尾式回收正则只吃单 token。现尾式正则接受裸 `YYYY-MM-DD HH:MM[:SS]`（含 `T` 连写），shim 无关路径跨平台可解析；job-at.spec.ts ×3（尾式裸/尾式引号/前置式直调）。
+- **npm 可发现性（npm-seo）**：package.json 补 `keywords`（research/ai-agents/tech-tree/knowledge-base/cli/mcp 等 15 个）+ 描述改为英文检索词前置（中文品牌后置）——此前 `npm search research workbench` 完全不命中，keywords 字段 undefined。
+- 测试：selection.spec.ts ×10（spawn 端到端：门禁/豁免/三路放行/ghost 点名/单项目）；demo 5m 段 ×4 → 122；契约 +5（R16 门禁/豁免/会话恢复）→ 92；webui SSE 用例随会话化修正。
+
 ## 0.84.0（2026-10-18）判定落账：claim.eval 事件 + 校准读出
 
 - **链接自动评估修复（截断缺陷）**：`claim link` 的自动置信度评估此前是 fire-and-forget——CLI 短进程在网关调用（3-5s）结算前退出，评估从未落账（工作区 112 次 link 零 `claim.eval` 事件）。现在 await 结算后写事件再打回执。

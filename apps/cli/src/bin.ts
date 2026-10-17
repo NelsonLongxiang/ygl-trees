@@ -153,7 +153,8 @@ ${paint(C.bold, "job", true)}         batch + schedule (drive with cron: job tic
 
 ${paint(C.bold, "tree / node", true)}   tech-tree node model
   tree new <name> [--project p]      create a tree (nodes live in it)
-  tree list | tree use <name>
+  tree list | tree use <name> [--global]
+  tree show [name]                   selection source + node/edge/unlocked stats
 
   node add <key> [--name --kind --tier --cost --tags --payload]
   node link <parent> <child>         [--rel prereq|unlock|excludes|enables]
@@ -713,8 +714,8 @@ export function generateLlmsManifest(): string {
       ["job tick", "run due jobs (drive with cron)"],
     ]],
     ["project", "Project management", [
-      ["project new <name> -q \"<question>\"", "create + select"],
-      ["project use <name> / list / show", "switch / browse"],
+      ["project new <name> -q \"<question>\"", "create + select (session-scoped)"],
+      ["project use <name> [--global] / list / show", "switch / browse (selection_source shown)"],
     ]],
   ];
 

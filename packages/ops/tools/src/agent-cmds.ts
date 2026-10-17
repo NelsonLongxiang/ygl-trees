@@ -7,19 +7,24 @@
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { clip } from "../../../core/text/src/text";
+import { resolveProject, ambiguousProject, projectCount, projectSample, sessionId } from "../../../core/database/src/selection";
 
 /** Build the brief payload (where am I / what exists / what next).
  *  Shared by the `agent brief` command and the WebUI dashboard. */
 export function buildBrief(env: Env): any {
   const { store } = env;
-  const cur = store.db.metaGet("current_project");
+  // R16.1: resolved selection (flag > env > session > global), annotated.
+  const sel = resolveProject(store.db);
+  const cur = sel.name || null;
   const stats = store.stats();
   const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
   const notes = store.kbList().slice(0, 5);
 
   const payload: any = {
     workspace: env.home,
-    current_project: cur || null,
+    current_project: cur,
+    selection_source: sel.source,
+    session: sessionId(),
     counts: stats,
     top_skills: skills.map((s: any) => ({ name: s.name, description: clip(s.description, 120) })),
     recent_notes: notes.map((n: any) => ({ id: n.id, title: n.title, reuse: n.reuse })),
@@ -250,6 +255,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "brief": {
+      // R16.3: agent brief is project-scoped — strict gate (multi-project
+      // workspace + global/none source → fail closed). buildBrief itself
+      // stays ungated: the WebUI uses it for its unselected state panel.
+      const gate = resolveProject(
+        store.db,
+        args.flags.p ?? args.flags.project ? String(args.flags.p ?? args.flags.project) : undefined
+      );
+      if (ambiguousProject(store.db, gate)) {
+        bad(
+          ctx,
+          `ambiguous project: ${projectCount(store.db)} projects in workspace; pass --project <name> or run ygl-trees project use <name>; projects: ${projectSample(store.db).join(", ")}`
+        );
+        return 2;
+      }
       const payload = buildBrief(env);
       const cur = payload.current_project;
       const stats = payload.counts;

@@ -40,7 +40,7 @@ CL=$($Y config get search.limit --json | node -e "let s='';process.stdin.on('dat
 if [ "$CL" = "5" ]; then echo "  ✓ config set/get round-trip"; else echo "  ✗ config: $CL"; exit 1; fi
 $Y config reset search.limit >/dev/null
 S=$($Y project show --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(Object.keys(JSON.parse(s)).join(',')))")
-if [ "$S" = "project,queries,claims" ]; then echo "  ✓ project show (TypeORM pilot) shape ok"; else echo "  ✗ project show shape: $S"; exit 1; fi
+if [ "$S" = "project,queries,claims,selection_source" ]; then echo "  ✓ project show (TypeORM pilot) shape ok"; else echo "  ✗ project show shape: $S"; exit 1; fi
 
 echo "── 2. skill registry (L1/L2/L3)"
 mkdir -p "$YGL_HOME/skills"
@@ -226,10 +226,13 @@ case "$TN" in *"task added"*"tracked-by node:probe-batch/pb1"*) echo "  ✓ task
 TL=$($Y db timeline --actor cli 2>&1)
 case "$TL" in *"actor=cli"*"最近"*) echo "  ✓ db timeline --actor filter + raw tail";; *) echo "  ✗ timeline actor: $TL"; exit 1;; esac
 # ⑤ bare node:<key> with no current tree names both ways out
-$Y db sql "DELETE FROM meta WHERE key='current_tree'" >/dev/null
+#    （R16 后单树会自动命中——先造第二棵树让"未选择"态真实成立）
+$Y tree new no-tree-demo >/dev/null 2>&1
+$Y db sql "DELETE FROM meta WHERE key='current_tree' OR key LIKE 'current_tree@%'" >/dev/null
 RN=$($Y rel add node:pb1 claim:x related 2>&1; echo "rc=$?")
 case "$RN" in *"no current tree — qualify as node:<tree>/pb1"*"rc=1") echo "  ✓ bare node ref with no tree explains itself";; *) echo "  ✗ no-tree error: $RN"; exit 1;; esac
 $Y tree use probe-batch >/dev/null 2>&1
+$Y db sql "DELETE FROM trees WHERE name='no-tree-demo'" >/dev/null
 
 echo "── 5i. 0.82 跨树 ready + 临期 eval 门槛 + doctor --fix 对账（真实用户报告）"
 # ② node ready --all sweeps every tree without tree use / -t
@@ -327,6 +330,26 @@ CALROW=$(echo "$CALJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('e
 CALSH=$(echo "$CALJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).model_lower_1plus>=1?'yes':'no')})")
 [ "$CALSH" = "yes" ] && echo "  ✓ 份额统计（模型低≥1档计数）服务 11-16 校准预测" || { echo "  ✗ share: $CALJ"; exit 1; }
 $Y db sql "DELETE FROM events WHERE id IN ('evdemo841a','evdemo841b')" >/dev/null 2>&1
+
+echo "── 5m. 0.85 会话选择分辨率（多项目未选择即拒绝，选择后放行）"
+# ① 多项目工作区 + 无会话键：research 命令 rc=2 单错误对象
+$Y project new demo-b >/dev/null 2>&1
+$Y db sql "DELETE FROM meta WHERE key LIKE 'current_project@%'" >/dev/null 2>&1
+set +e
+AMB=$($Y research claim list --json 2>&1)
+AMB_RC=$?
+set -e
+AMB_J=$(echo "$AMB" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.error?'ERR':'NOERR')})" 2>/dev/null)
+[ "$AMB_RC" = "2" ] && [ "$AMB_J" = "ERR" ] && echo "  ✓ 未选择即拒绝：rc=2 + 单 JSON 错误对象（ambiguous project）" || { echo "  ✗ ambiguous gate: rc=$AMB_RC j=$AMB_J out=$AMB"; exit 1; }
+# ② 工作区级命令豁免：doctor 照常 rc=0
+$Y doctor >/dev/null 2>&1 && echo "  ✓ 工作区级命令豁免（doctor 未选择也放行）" || { echo "  ✗ doctor gated"; exit 1; }
+# ③ 会话内选择后放行：claim list rc=0，选择来源可对账
+$Y project use techtree >/dev/null 2>&1
+SRC=$($Y project show --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).selection_source||'')})")
+$Y research claim list --json >/dev/null 2>&1 && [ "$SRC" = "session" ] && echo "  ✓ project use 写会话键放行（selection_source=$SRC）" || { echo "  ✗ use/select: src=$SRC"; exit 1; }
+# ④ 收尾：移除第二项目，恢复单项目演示态
+$Y db sql "DELETE FROM projects WHERE name='demo-b'" >/dev/null 2>&1
+echo "  ✓ 演示态恢复（第二项目已移除）"
 
 echo "── 6. tech-tree node model"
 $Y tree new demo

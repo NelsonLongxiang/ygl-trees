@@ -15,10 +15,16 @@ import { buildBrief } from "./agent-cmds";
 import { resolveId } from "./rels";
 import { getOrm } from "../../../core/database/src/orm";
 import { openStatic as openWebApp } from "../../../web/app/src";
+import { resolveProject, resolveTree, projectSample } from "../../../core/database/src/selection";
 
 interface DashboardData {
   brief: any;
   tree: any;
+  /** R16.4: present when no session/env/flag selection resolves — the panel
+   *  renders the 未选择 state with a picker instead of project data. */
+  unselected?: { reason: string; projects: string[] };
+  /** R16.1: how the tree pane's tree was picked (flag/env/session/global/only) */
+  tree_selection_source?: string;
   claims: any[];
   sources: any[];
   /** evidence index: id -> {quote, locator, source_id} (for claim expand) */
@@ -64,8 +70,18 @@ export function gatherData(env: Env): DashboardData {
   // builder the `agent brief` command uses
   data.brief = buildBrief(env);
 
-  const cur = db.metaGet("current_project");
-  if (cur) {
+  // R16.4: webui reads the RESOLVED selection (session-aware); when nothing
+  // resolves, the project pane shows the 未选择 state — never a silent
+  // fallback onto the global pointer's content.
+  const projSel = resolveProject(db);
+  const cur = projSel.name || null;
+  const projAuthorized =
+    projSel.source === "flag" || projSel.source === "env" || projSel.source === "session" || projSel.source === "only";
+  if (!projAuthorized) {
+    // unselected (or global-pointer-only): don't render that project's data
+    data.unselected = { reason: "no project selected", projects: projectSample(db, 20) };
+  }
+  if (cur && projAuthorized) {
     const project = store.projectByName(cur);
     if (project) {
       data.claims = store.claimList(project.id);
@@ -90,7 +106,10 @@ export function gatherData(env: Env): DashboardData {
     }
   }
 
-  const currentTree = db.metaGet("current_tree");
+  // tree pane: resolved selection too (lenient — trees are workspace-level)
+  const treeSel = resolveTree(db);
+  const currentTree = treeSel.name || null;
+  data.tree_selection_source = treeSel.source;
   if (currentTree) {
     const trees = db.all("SELECT * FROM trees WHERE name=? OR id=?", [currentTree, currentTree]);
     if (trees.length) {
@@ -135,7 +154,8 @@ export function gatherData(env: Env): DashboardData {
   );
 
   // R12: task checklist (kind=task artifacts, status in the meta envelope)
-  if (cur) {
+  // R16.4: same authorization rule as the claims pane — no global fallback.
+  if (cur && projAuthorized) {
     const project2 = store.projectByName(cur);
     if (project2) {
       data.tasks = db
@@ -378,6 +398,13 @@ function renderArtifacts(DATA) {
 // ── Claims: grouped by status, click to expand evidence ──
 function renderClaims(DATA) {
   const el = document.getElementById('claims');
+  // R16.4: 未选择 state — no session selection, no global-pointer fallback
+  if (DATA.unselected) {
+    var projs = (DATA.unselected.projects || []).map(function (p) { return esc(p); }).join(' · ');
+    el.innerHTML = '<p class="dim">未选择项目 — 会话内运行 <code>ygl-trees project use &lt;名&gt;</code> 后刷新</p>' +
+      (projs ? '<p class="dim">可选项目：' + projs + '</p>' : '');
+    return;
+  }
   const claims = DATA.claims || [];
   if (!claims.length) {
     el.innerHTML = '<p class="dim">尚无断言（先选择项目：ygl-trees project use &lt;名&gt;）</p>';
@@ -893,7 +920,8 @@ export function createDashboardServer(env: Env) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(gatherData(env)));
     } else if (url === "/api/node") {
-      const tree = u.searchParams.get("tree") || env.db.metaGet("current_tree") || "";
+      // R16.4: tree param falls back to the RESOLVED selection (session-aware)
+      const tree = u.searchParams.get("tree") || resolveTree(env.db).name || "";
       const key = u.searchParams.get("key") || "";
       if (!tree || !key) {
         res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
@@ -909,19 +937,35 @@ export function createDashboardServer(env: Env) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(detail));
     } else if (url === "/api/artifact") {
-      // 0.35: full artifact text for the markdown renderer
+      // 0.35: full artifact text for the markdown renderer.
+      // R16.4: by id direct — artifacts.project_id is NOT NULL (db.ts:147).
+      // Ownership check: an authorized selection (flag/env/session/only) must
+      // match the artifact's project; unselected or cross-project → 404.
       const id = u.searchParams.get("id") || "";
-      const cur = env.db.metaGet("current_project");
-      const row = cur
-        ? env.db.get("SELECT id, kind, title, content, version FROM artifacts WHERE id=? AND project_id=(SELECT id FROM projects WHERE name=?)", [id, cur])
+      const row = id
+        ? env.db.get(
+            `SELECT a.id, a.kind, a.title, a.content, a.version, a.project_id, p.name AS project
+               FROM artifacts a JOIN projects p ON p.id = a.project_id WHERE a.id=?`,
+            [id]
+          )
         : null;
-      if (!row) {
+      const psel = resolveProject(env.db);
+      const authorized = psel.source === "flag" || psel.source === "env" || psel.source === "session" || psel.source === "only";
+      const owned = row && authorized && (psel as any).id === String((row as any).project_id);
+      if (!row || !owned) {
         res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-        res.end(`artifact not found: ${id}`);
+        res.end(
+          !id
+            ? "usage: /api/artifact?id=<id>"
+            : row
+              ? `artifact not accessible under current selection: ${id} (belongs to ${(row as any).project})`
+              : `artifact not found: ${id}`
+        );
         return;
       }
+      const { project_id, ...pub } = row as any;
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(row));
+      res.end(JSON.stringify(pub));
     } else if (url === "/api/task" && req.method === "POST") {
       // R12: advance a task along its state machine from the dashboard
       let body = "";

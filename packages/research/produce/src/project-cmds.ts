@@ -4,6 +4,7 @@
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
 import { getOrm } from "../../../core/database/src/orm";
+import { resolveProject, ambiguousProject, projectSample, projectCount, sessionId } from "../../../core/database/src/selection";
 import * as writes from "../../pipeline/src/writes";
 import { Project } from "../../pipeline/src/entities";
 
@@ -40,7 +41,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const question = String(args.flags.q || args.flags.question || "");
       // Feedback confirmation ②: auto-selecting the new project silently
       // re-points every flag-less command away from prior work — say so.
-      const prior = store.db.metaGet("current_project");
+      // R16.2: selection is session-scoped now; compare against this
+      // session's prior choice.
+      const prior = store.db.metaGet(`current_project@${sessionId()}`);
       const priorHint = prior && prior !== name
         ? `  (prior project '${prior}' is no longer selected — project use ${prior} to switch back)`
         : "";
@@ -64,8 +67,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "list": {
       const rows = store.projectList();
-      const cur = store.db.metaGet("current_project");
-      // keep `name` clean for --json consumers; mark the current project separately
+      // R16: mark by the resolved selection — but only sources that would
+      // AUTHORIZE a project-scoped command (flag/env/session/only). A global
+      // pointer or no selection does not authorize `research *`, so marking a
+      // project current there would contradict the strict gate (review P2).
+      const sel = resolveProject(store.db, undefined);
+      const authorizes =
+        sel.source === "flag" || sel.source === "env" || sel.source === "session" || sel.source === "only";
+      const cur = authorizes ? sel.name : null;
       const marked = rows.map((r: any) => ({ ...r, current: r.name === cur }));
       table(ctx, marked, ["project", "status", "src", "claims", "artifacts", "updated"], [
         "name",
@@ -86,13 +95,41 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `project not found: ${name}`);
         return 1;
       }
-      store.db.metaSet("current_project", name);
+      // R16.2: default writes the session key (parallel sessions no longer
+      // steal each other's selection); --global is the explicit opt-in that
+      // writes the migration-fallback pointer.
+      const scope = args.flags.global === true || args.flags.global === "true" ? "global" : "session";
+      store.db.metaSet(scope === "global" ? "current_project" : `current_project@${sessionId()}`, name);
       logSelectionEvent("project.use", name);
-      ack(ctx, { project: name }, `now using: ${name}`);
+      ack(
+        ctx,
+        { project: name, scope, session: sessionId() },
+        `now using: ${name}  (${scope} selection${scope === "session" ? ` — session ${sessionId().slice(0, 8)}` : ""})`
+      );
       return 0;
     }
     case "show": {
-      const resolved = store.projectResolve((args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined);
+      // R16.3: project show is project-scoped — same strict gate as research.
+      const sel = resolveProject(
+        store.db,
+        args.flags.p ?? args.flags.project ? String(args.flags.p ?? args.flags.project) : undefined
+      );
+      if (ambiguousProject(store.db, sel)) {
+        bad(
+          ctx,
+          `ambiguous project: ${projectCount(store.db)} projects in workspace; pass --project <name> or run ygl-trees project use <name>; projects: ${projectSample(store.db).join(", ")}`
+        );
+        return 2;
+      }
+      if (!sel.name) {
+        bad(ctx, "no project selected; run: ygl-trees project new <name>");
+        return 1;
+      }
+      const resolved = store.projectByName(sel.name);
+      if (!resolved) {
+        bad(ctx, `project not found: ${sel.name}`);
+        return 1;
+      }
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const proj = await ds.getRepository(Project).findOne({
@@ -133,10 +170,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             updated: proj.updated,
           };
           if (ctx.json) {
-            console.log(JSON.stringify({ project, queries, claims }, null, 2));
+            console.log(JSON.stringify({ project, queries, claims, selection_source: sel.source }, null, 2));
             return 0;
           }
-          head(ctx, `Project ${project.name}`);
+          head(ctx, `Project ${project.name}  (selection: ${sel.source})`);
           show(ctx, {
             id: project.id,
             status: project.status,

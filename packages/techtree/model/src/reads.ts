@@ -9,6 +9,7 @@
  *     queries cheap instead of recursing per frame
  */
 import { DB, EDGE_RELS, EDGE_MODES, COND_KINDS } from "../../../core/database/src/db";
+import { resolveTree } from "../../../core/database/src/selection";
 import { nowIso, shortId } from "../../../core/text/src/text";
 import { parseEvalSpec } from "../../eval/src/eval";
 
@@ -26,11 +27,23 @@ export class TreeStore {
   }
 
   treeResolve(name?: string): Row {
-    const key = name || this.db.metaGet("current_tree");
+    // R16.1: flag > env > session key > global. Tree resolution stays
+    // lenient (workspace-level commands don't fail-closed on the pointer).
+    let key = name;
+    if (!key) {
+      const sel = resolveTree(this.db);
+      key = sel.name;
+    }
     if (!key) throw new Error("no tree selected; run: ygl-trees tree new <name>");
     const t = this.treeByName(key);
     if (!t) throw new Error(`tree not found: ${key}`);
     return t;
+  }
+
+  /** Effective selection metadata (source: flag/env/session/global/only/none) —
+   *  for `tree show` annotations and the webui panel (R16.1/R16.4). */
+  treeSelection(name?: string) {
+    return resolveTree(this.db, name);
   }
 
   treeList(): Row[] {
