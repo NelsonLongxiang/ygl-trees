@@ -178,6 +178,28 @@ const q2 = (s: string) => `"${String(s).replace(/["&|<>^]/g, "")}"`;
 export async function installPlugin(home: string, spec: string): Promise<{ name: string; spec: string }> {
   initProfile(home);
   const abs = path.resolve(spec);
+
+  // P0 fix (a2a 7aa5c871): validate local paths BEFORE recording anything —
+  // a bad path previously degraded to basename "plugin" and bricked the home.
+  if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+    // P2 fix: read the real package name, never trust basename
+    const pkgPath = path.join(abs, "package.json");
+    if (!fs.existsSync(pkgPath)) {
+      throw new Error(`local plugin directory has no package.json: ${abs}`);
+    }
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      if (!pkg.name || typeof pkg.name !== "string") {
+        throw new Error(`package.json missing "name" field: ${abs}`);
+      }
+    } catch (e: any) {
+      throw new Error(`invalid package.json in ${abs}: ${e?.message || e}`);
+    }
+  } else if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("\\") || /^[A-Z]:/.test(spec)) {
+    // Looks like a path but doesn't exist — reject before recording
+    throw new Error(`plugin path not found: ${abs}`);
+  }
+
   const installSpec = fs.existsSync(abs) && fs.statSync(abs).isDirectory() ? `link:${abs}` : spec;
   const existing = readUserBundle(home).find((p) => p.spec === installSpec || p.spec === spec);
   if (existing) return existing; // already installed — idempotent

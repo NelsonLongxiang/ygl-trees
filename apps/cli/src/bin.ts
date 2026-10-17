@@ -340,6 +340,22 @@ export async function main(argv: string[]): Promise<number> {
     });
   } catch (e: any) {
     if (e instanceof StartupError) {
+      // P0 fix (a2a 7aa5c871): a bad plugin entry must not brick the home —
+      // plugin remove/install must work even when other plugins fail to load.
+      // If the command is plugin-related, proceed with a degraded boot.
+      if (group === "plugin") {
+        const pluginCmds = await import("../../../packages/ops/tools/src/plugin");
+        const { dbPath } = await import("../../../packages/core/database/src/db");
+        const dbFile2 = dbPath(home);
+        // Minimal env — no plugins, direct DB access
+        const env2: any = {
+          home, dbFile: dbFile2, ctx,
+          db: null, store: null, cordis: null,
+        };
+        out(ctx, paint(C.yellow, "  ! degraded mode: user plugins failed to load — plugin commands only", ctx.color));
+        const pluginAction = action || "list";
+        return pluginCmds.run(env2, pluginAction, rest, args);
+      }
       reportStartupFailure(e, home, VERSION);
       return 1;
     }
