@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C, show } from "../../../core/text/src/fmt";
+import { ok, bad, warn, out, head, table, paint, C, show } from "../../../core/text/src/fmt";
 import { dbPath } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
 
