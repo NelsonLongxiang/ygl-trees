@@ -96,9 +96,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 
   // ---------------------------------------------------------------- node group
+  // UX guard (drift-fix 2026-10-17): `node list <tree>` positional was silently
+  // ignored (fell back to current_tree — user saw the WRONG tree with no hint).
+  // Now: a positional that names an existing tree selects it; anything else
+  // earns an explicit "ignored" notice instead of silent misdirection.
+  let positionalTree: any;
+  if (env.group === "node" && (action === "list" || action === undefined) && !sel && rest[0]) {
+    positionalTree = trees.treeByName(rest[0]);
+    if (positionalTree) rest = rest.slice(1);
+    else if (!ctx.json) {
+      out(ctx, paint(C.yellow, `  ! "${rest[0]}" is not a tree — showing current tree (use -t <tree> to switch)`, ctx.color));
+    }
+  }
   let tree: any;
   try {
-    tree = trees.treeResolve(sel);
+    tree = positionalTree || trees.treeResolve(sel);
   } catch (e: any) {
     bad(ctx, e.message);
     return 1;

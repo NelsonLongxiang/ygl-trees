@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.77.3（2026-10-17）node list 位置参数 UX + 树漂移修正
+- **UX**：node list <tree> 位置参数现在真的选中该树（此前静默忽略并回退 current_tree——巡检中实际踩中）
+- 非树名位置参数给显式提示而非静默误导；-t 标志仍优先
+- 树漂移修正：v2-roadmap 三个已实现节点解锁（time-travel/nl-interface/multi-workspace，138/154=90%）
+
 ## 0.77.2（2026-10-17）JSON 纯净性修复
 - **契约修复**：unknown-group 错误路径的 try 提示不再泄漏到 --json stdout（冷启动之旅实测发现）
 - degraded mode 提示在 json 模式改走 stderr
