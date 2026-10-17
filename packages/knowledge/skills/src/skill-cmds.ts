@@ -150,13 +150,45 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ]);
       return 0;
     case "link": {
-      // One-command symlink: skills/ → .agents/skills/ (or ~/.agents/skills/ with --global)
-      // so host agents (DSH, Claude, etc.) can discover them without manual junction setup.
+      // One-command symlink: skills/ → AI agent's skill directory.
+      // Supported targets:
+      //   (default)     ./.agents/skills/          (project-level, DSH/Claude)
+      //   --global      ~/.agents/skills/          (user-level, DSH/Claude)
+      //   --ai pi       ~/.pi/agent/skills/        (Pi agent)
+      //   --ai claude   ~/.claude/skills/          (Claude Code)
+      //   --ai cursor   ~/.cursor/skills/          (Cursor IDE)
+      //   --ai custom --to <path>                  (any directory)
       const os = require("node:os");
       const globalFlag = args?.flags?.global === true;
-      const targetDir = globalFlag
-        ? path.join(os.homedir(), ".agents", "skills")
-        : path.join(process.cwd(), ".agents", "skills");
+      const aiName = String(args?.flags?.ai || "").toLowerCase();
+      const customTo = String(args?.flags?.to || "");
+
+      // AI agent skill directory registry
+      const AI_SKILL_DIRS: Record<string, () => string> = {
+        pi: () => path.join(os.homedir(), ".pi", "agent", "skills"),
+        claude: () => path.join(os.homedir(), ".claude", "skills"),
+        cursor: () => path.join(os.homedir(), ".cursor", "skills"),
+        windsurf: () => path.join(os.homedir(), ".windsurf", "skills"),
+      };
+
+      let targetDir: string;
+      if (customTo) {
+        // --ai custom --to <path>
+        targetDir = path.resolve(customTo);
+      } else if (aiName && AI_SKILL_DIRS[aiName]) {
+        // --ai <known-agent>
+        targetDir = AI_SKILL_DIRS[aiName]();
+      } else if (aiName && aiName !== "custom") {
+        // --ai <unknown> → error with suggestions
+        bad(ctx, `unknown AI agent: ${aiName}`);
+        out(ctx, `  supported: ${Object.keys(AI_SKILL_DIRS).join(", ")} | custom (with --to <path>)`);
+        return 2;
+      } else {
+        // default or --global
+        targetDir = globalFlag
+          ? path.join(os.homedir(), ".agents", "skills")
+          : path.join(process.cwd(), ".agents", "skills");
+      }
 
       // Find source skills directory (probe upward from cwd, same as repoRoot)
       let skillsDir: string | null = null;
