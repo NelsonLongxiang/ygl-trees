@@ -212,7 +212,17 @@ export async function main(argv: string[]): Promise<number> {
   const args = parse(argv);
   const ctx: Ctx = {
     json: bool(args, "json"),
-    color: !bool(args, "no-color") && process.stdout.isTTY !== false,
+    // Color detection (strict): colors ONLY when we're sure the terminal
+    // supports ANSI. Fixes Linux garbled output when piped/redirected.
+    //   --no-color flag → always off
+    //   NO_COLOR env → off (https://no-color.org convention)
+    //   FORCE_COLOR env → always on (override for exotic terminals)
+    //   isTTY === true → on (real terminal)
+    //   isTTY === false/undefined → off (pipe, redirect, cron, etc.)
+    color:
+      !bool(args, "no-color") &&
+      process.env.NO_COLOR === undefined &&
+      (process.env.FORCE_COLOR !== undefined || process.stdout.isTTY === true),
     quiet: bool(args, "quiet"),
   };
   const group = args._[0];
