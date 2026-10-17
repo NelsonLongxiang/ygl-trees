@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.74.0",
+  "version": "0.75.0",
   "description": "猿光 · 科技树 — database-centric CLI for research → production → knowledge reuse, built for AI agents.",
   "type": "commonjs",
   "main": "dist/apps/cli/index.js",
@@ -28,7 +28,8 @@
     "README.md",
     "docs",
     "CHANGELOG.md",
-    "llms.txt"
+    "llms.txt",
+    "skills"
   ],
   "engines": {
     "node": ">=18"

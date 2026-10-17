@@ -29,7 +29,17 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<number
       }
     }
   }
-  if (!skillsDir) return 0;
+  if (!skillsDir) {
+    // Fail-loud (was silent return 0): the npm package MUST ship skills/ —
+    // if we can't find them, the user deserves to know why agent match
+    // returns nothing. This is a packaging bug indicator, not a valid state.
+    const { out: outFn, paint: paintFn, C: Cf } = require("../../../core/text/src/fmt");
+    if (env.ctx && !env.ctx.json) {
+      outFn(env.ctx, paintFn(Cf.yellow, "  ! built-in skills: 0 found (skills/ not shipped or not in package)", env.ctx.color));
+      outFn(env.ctx, paintFn(Cf.dim, "    this is a packaging bug — skills/ should be in the npm tarball", env.ctx.color));
+    }
+    return 0;
+  }
   const { getOrm } = require("../../../core/database/src/orm");
   const writes = require("../../../research/pipeline/src/writes");
   const { parseFrontmatter } = require("../../../core/text/src/text");
@@ -75,6 +85,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // Auto-import the built-in skills that ship with this package.
       autoImportBuiltinSkills(env, file).then(async (n) => {
         if (n > 0) ok(ctx, `built-in skills:  ${n} imported (agent match ready)`);
+        else warn(ctx, "built-in skills:  0 imported — skills/ directory not found in package");
         // Release the ORM connection so the lock doesn't linger
         try { const { closeOrm } = require("../../../core/database/src/orm"); await closeOrm(); } catch { /* */ }
       });

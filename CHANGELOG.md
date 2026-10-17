@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.75.0（2026-10-17）npm 包修复——skills/ 进 tarball + 乱码修复 + fail-loud
+- **修复（P0）**：npm tarball 现在包含 skills/ 目录——9 个内置技能随包分发，db init 的 "auto-imported" 承诺兑现
+- **修复**：autoImportBuiltinSkills 找不到技能时不再静默返回 0——显式警告 "skills/ directory not found"
+- **修复**：Linux 管道/重定向输出乱码——ANSI 颜色严格检测（isTTY===true 才开色）+ NO_COLOR/FORCE_COLOR 环境变量支持
+- files 字段：dist + ygl.bundle.json + README + docs + CHANGELOG + llms.txt + **skills/**
+
 ## 0.74.0（2026-10-17）export-markdown + v2 测试 + 技能同步
 - **db export-markdown**：一键生成工作区 Markdown 报告（Summary/Projects/Claims/Knowledge/Trees）
 - **v2 功能测试**：6 项新单测覆盖 time-travel/timeline/workspace/obsidian/help-suggestions/llms-sections
