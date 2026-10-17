@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.76.1（2026-10-17）--ai 多 Agent 支持 + ctx.emit 桥接
+- **skill link --ai <agent>**：一键连接到多种 AI Agent 的技能目录——pi(~/.pi/agent/skills/) · claude · cursor · windsurf · custom(--to)
+- **ctx.emit 桥接**：eventbus 内部事件自动转发到 Cordis ctx.emit——插件可用 ctx.on("ygl") 监听（文档承诺兑现）
+- **plugin-authoring.md**：补 ctx.on 事件监听用法
+
 ## 0.76.0（2026-10-17）Cordis 深化——生命周期+事件驱动（A2A 任务 fedc7ab9）
 - **生命周期真实化**：DatabaseService 补 stop() 钩子（关 SQLite + 释放 .ygllock + 关 ORM）；bin.ts finally 走 Service.stop() 链（fallback DB 仍手动收口）；3 项单测证明 boot→stop 后资源释放
 - **事件驱动真实化**：新建 eventbus（EventEmitter 单例）；logEvent 落表后同步 emitEvent（node.unlock/kb.add/claim.resolve 等）；webui SSE 升级为事件驱动即时推送（1.5s 轮询保留为兜底）
