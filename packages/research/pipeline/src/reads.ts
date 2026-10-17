@@ -388,7 +388,11 @@ export class Store {
   }
 
   jobFinish(runId: string, rc: number, output: string): void {
-    this.db.run("UPDATE runs SET finished=?, rc=?, output=? WHERE id=?", [nowIso(), rc, output.slice(0, 8000)]);
+    // 0.83.1: the UPDATE params were missing runId (3 values for 4
+    // placeholders → WHERE id=NULL → silent no-op). Run history (rc/output/
+    // finished) never persisted — only the jobs-row side updated. Caught
+    // while verifying the 0.83 patrol job's captured output.
+    this.db.run("UPDATE runs SET finished=?, rc=?, output=? WHERE id=?", [nowIso(), rc, output.slice(0, 8000), runId]);
     this.db.run("UPDATE jobs SET runs=runs+1, last_run=?, status=? WHERE id=(SELECT job_id FROM runs WHERE id=?)", [
       nowIso(),
       rc === 0 ? "ok" : "failed",

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.83.1（2026-10-17）job 运行史持久化热修
+- **`jobFinish` 漏传 runId（UPDATE 静默 no-op）**：`UPDATE runs SET finished=?,rc=?,output=? WHERE id=?` 的参数数组只有 3 个值——缺失的占位符绑定为 NULL，WHERE id=NULL 匹配 0 行且不报错。后果：**runs 运行史从未落库**（rc/output/finished 恒空，job logs 看到的 rc 全部来自 reaper 兜底）；jobs 侧的 last_run/status 更新正常，掩盖了缺陷。在验证 0.83 到期巡检任务的落库输出时捕获。demo §7 增回归断言（job run 后 runs 表 rc=0 可读回）→ 114
+
 ## 0.83.0（2026-10-17）并发防护：指针钉住 + 半写拒绝 + 帮助面
 - **写命令长旗标钉住**（用户上报①，最重：并发会话两次劫持共享 current-project 指针，资产碎片化跨 3 项目）：`research *` / `produce *`（含 task）/ `project *` 全部接受 `--project <p>` 长旗标，`node *` 接受 `--tree <t>`（短旗标 `-p`/`-t` 不变；`node import --tree` 仍是目标树名，别名不遮蔽）；source/evidence/claim/task 写回执带 `· project <名>` 回显落点——写错项目当场可见，不必事后对账
 - **`source add --query` 半写防护**（上报①：attach 失败仍落源）：引用不存在时**先拒绝后写入**（rc=1 点名、零落地），不再"源已落、链接失败"；attach 落库后失败的路径改报已落 id + `research query attach` 重试指路

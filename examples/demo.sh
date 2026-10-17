@@ -379,6 +379,9 @@ $Y job add "nightly" -- "echo hello" --every 1440
 D=$($Y job add "nightly" -- "echo hello" --every 1440 2>&1)
 case "$D" in *duplicate*) echo "  ✓ job add idempotent";; *) echo "  ✗ job add NOT idempotent: $D"; exit 1;; esac
 $Y job run nightly
+# 0.83.1: run history must persist（jobFinish 曾漏传 runId，UPDATE 静默 no-op）
+JH=$($Y db sql "SELECT rc FROM runs WHERE job_id=(SELECT id FROM jobs WHERE title='nightly') ORDER BY rowid DESC LIMIT 1" --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s)[0];console.log(r&&r.rc===0?'ok':'bad')})")
+[ "$JH" = "ok" ] && echo "  ✓ job run history persists (rc=0 recorded)" || { echo "  ✗ job history: $JH"; exit 1; }
 $Y db stats
 
 echo "── 8. webui"
