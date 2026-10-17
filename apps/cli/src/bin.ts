@@ -259,8 +259,7 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       bad(ctx, `section not found: ${section}`);
-      out(ctx, `  available: ${all.map(s3 => s3.split("
-")[0]).join(" | ")}`);
+      out(ctx, `  available: ${all.map(s3 => s3.split("\n")[0]).join(" | ")}`);
       return 1;
     }
     out(ctx, generateLlmsManifest());
