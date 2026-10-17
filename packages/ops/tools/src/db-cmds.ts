@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C, show } from "../../../core/text/src/fmt";
@@ -91,6 +92,92 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       head(ctx, "Database");
       show(ctx, { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
+      return 0;
+    }
+    case "obsidian": {
+      // v2 feature: export workspace as Obsidian-compatible markdown vault
+      const outDir = rest[0] || path.join(env.home, "obsidian-export");
+      fs.mkdirSync(path.join(outDir, "projects"), { recursive: true });
+      fs.mkdirSync(path.join(outDir, "knowledge"), { recursive: true });
+      fs.mkdirSync(path.join(outDir, "skills"), { recursive: true });
+      fs.mkdirSync(path.join(outDir, "trees"), { recursive: true });
+      fs.mkdirSync(path.join(outDir, "claims"), { recursive: true });
+      let count = 0;
+      const safe = (t: string) => String(t).replace(/[\/:*?"<>|]/g, "_").slice(0, 50);
+      for (const p of db.all("SELECT * FROM projects") as any[]) {
+        fs.writeFileSync(path.join(outDir, "projects", safe(p.name) + ".md"),
+          `---
+type: project
+id: ${p.id}
+---
+
+# ${p.name}
+
+${p.question || ""}
+`);
+        count++;
+      }
+      for (const n of db.all("SELECT * FROM kb_notes") as any[]) {
+        fs.writeFileSync(path.join(outDir, "knowledge", safe(n.title) + ".md"),
+          `---
+type: knowledge
+tags: ${n.tags || ""}
+confidence: ${n.confidence}
+---
+
+# ${n.title}
+
+${n.body}
+`);
+        count++;
+      }
+      for (const sk of db.all("SELECT * FROM skills WHERE enabled=1") as any[]) {
+        fs.writeFileSync(path.join(outDir, "skills", safe(sk.name) + ".md"),
+          `---
+type: skill
+version: ${sk.version}
+---
+
+# ${sk.name}
+
+${String(sk.body).slice(0, 500)}
+`);
+        count++;
+      }
+      for (const t of db.all("SELECT * FROM trees") as any[]) {
+        const nodes = db.all("SELECT * FROM nodes WHERE tree_id=?", [t.id]) as any[];
+        let c = `---
+type: tree
+---
+
+# ${t.name} (${nodes.length} nodes)
+
+`;
+        for (const n of nodes) c += `- **${n.key}** (${n.kind}, tier ${n.tier})
+`;
+        fs.writeFileSync(path.join(outDir, "trees", safe(t.name) + ".md"), c);
+        count++;
+      }
+      for (const cl of db.all("SELECT * FROM claims") as any[]) {
+        const links = db.all("SELECT e.quote FROM claim_evidence ce JOIN evidence e ON ce.evidence_id=e.id WHERE ce.claim_id=?", [cl.id]) as any[];
+        let c2 = `---
+type: claim
+status: ${cl.status}
+confidence: ${cl.confidence}
+---
+
+# ${cl.id}
+
+${cl.text}
+
+## Evidence
+`;
+        for (const l of links) c2 += `- > ${String(l.quote).slice(0, 100)}
+`;
+        fs.writeFileSync(path.join(outDir, "claims", cl.id + ".md"), c2);
+        count++;
+      }
+      ok(ctx, `obsidian vault exported: ${count} files → ${outDir}`);
       return 0;
     }
     case "export": {
