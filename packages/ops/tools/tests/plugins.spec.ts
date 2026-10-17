@@ -9,6 +9,9 @@ import {
 
 let home: string;
 const demoDir = path.resolve("examples/plugin-demo");
+// spawn 真实 pnpm install/remove 的用例在并行负载下会超默认 5s——0.78
+// lifecycle 同款抖动，统一放宽到 30s（发布门禁实测满载时 installPlugin >5s）。
+const T = 30_000;
 
 beforeAll(() => {
   home = path.join(process.cwd(), "tmp", `plugins-unit-${Date.now()}`);
@@ -33,7 +36,7 @@ describe("插件 profile（spec R14 L3）", () => {
     expect(r.spec.startsWith("link:")).toBe(true);
     const bundle = readUserBundle(home);
     expect(bundle).toEqual([{ name: "ygl-plugin-demo", spec: r.spec }]);
-  });
+  }, T);
   it("安装不污染仓库 pnpm-lock.yaml（--ignore-workspace）", () => {
     // tmp/ profiles sit inside the repo workspace; without --ignore-workspace
     // pnpm registered them as importers and leaked tmp/plugins-unit-* blocks
@@ -69,7 +72,7 @@ describe("插件 profile（spec R14 L3）", () => {
     expect(deps["ygl-plugin-demo"]).toBeUndefined();
     await expect(removePlugin(home, "nope")).rejects.toThrow(/not in user bundle/);
     expect(fs.existsSync(userBundleFile(home))).toBe(true);
-  });
+  }, T);
 });
 
 describe("用户层 Entry-option 等价能力（0.40，adopt 能力不 adopt loader）", () => {
@@ -83,7 +86,7 @@ describe("用户层 Entry-option 等价能力（0.40，adopt 能力不 adopt loa
     // empty object clears the block
     setPluginConfig(home, "ygl-plugin-demo", {});
     expect(readUserBundle(home).find((p) => p.name === "ygl-plugin-demo")?.config).toBeUndefined();
-  });
+  }, T);
   it("enabled=false：条目留在 bundle 但不再挂载", async () => {
     setPluginEnabled(home, "ygl-plugin-demo", false);
     expect(readUserBundle(home).find((p) => p.name === "ygl-plugin-demo")?.enabled).toBe(false);
