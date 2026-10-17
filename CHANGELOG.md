@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.82.0（2026-10-17）跨树巡检 + 临期 eval 门槛 + 幻影对账一键修复
+- **`node ready --all`**（用户建议②：12 棵树巡检要 24 条命令——每树 tree use + ready）：一次进程扫全部树的就绪集，无需 tree use / `-t`；`--json` 返回 `[{tree, ready[]}]`，人类输出按树分节
+- **`node cond --due [--days N] [--eval]`**（建议③：w1/d90 检验依赖人记得看）：扫描全部 eval 族条件，提取问题文本中的 `YYYY-MM-DD` 期限，列出 N 天内到期（含逾期）的条件（树/节点/deadline/剩余天数）；`--days` 放宽窗口（默认 7）；`--eval` 逐条组装上下文包送判定模型（三题型按 op 自动选择，离线安全回落 pending）——**判定只报告不仲裁**，通过 ≠ 自动解锁，resolve/unlock 保持人工（与 predict audit 同纪律）；跨树扫描前置于树解析，无当前树也能跑
+- **`doctor --fix` 覆盖 write_integrity**（上报①：幻影写入事件只能围观不能修）：`--fix` 把已知幻影事件标记 `reconciled`（payload 增补时间戳，扫描豁免），审计轨迹保留不删事件；warn 文案指路。实测真实工作区：10-16 恢复实验造成的 10 个幻影（kb 47d0d78b18、source f0ad79350f 等）一键对账回 pass
+- 测试：demo 5i 段 7 断言（跨树 ready / 期限提取 / --days 窗口 / --eval 离线 pending / 幻影 warn→fix→pass 全循环）→ 101；`readme-verify.sh` +2（ready --all、cond --due）→ 41
+
 ## 0.81.0（2026-10-17）命令面五处修正 + task 挂树 + 事件流对账
 - **doctor write_integrity 误报修复**（用户上报①：合法 `kb remove` 后 doctor 报 phantom write fail）：`kb rm` 现在落 `kb.rm` 事件（与 source/evidence 对齐）；check 10 的幽灵扫描加 `NOT EXISTS rm 事件` 豁免，且整体降级 fail→warn——无 rm 事件的缺行可能是 0.81 前的合法删除或 db sql 手工清理，不值得炸掉脚本门禁
 - **`--url` 收任意 scheme**（上报②：a2a:// 被拒，跨 Agent 引用被迫落盘）：正则放宽为 RFC-3986 `<scheme>://`，https/file/session/a2a/… 均可；url_hash 去重照常兜底

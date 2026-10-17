@@ -91,6 +91,9 @@ ygl-trees node link a b --rel excludes              # 互斥分支
 ygl-trees node can steel --state "research_lab_level=3,has_engineer=1"
 ygl-trees node can a b c --state-file probe.json   # 批量判定：一进程测 N 节点（探针冷启动 1s×N → 1s）
 ygl-trees node ready                                # 当前可解锁集合
+ygl-trees node ready --all                          # 跨树扫描就绪集（无需逐树 tree use）
+ygl-trees node cond --due                           # 临期 eval 门槛（问题文本带 YYYY-MM-DD 期限）
+ygl-trees node cond --due --days 30                 # 放宽窗口；--eval 到期自动送判定模型
 ygl-trees node path advanced-alloy                  # 到目标的最省顺序 + 累计成本
 ygl-trees node ancestors bronze                     # 闭包索引，直接父 depth=1
 ygl-trees node timeline demo                        # 单树成长时间线（add/link/unlock 倒序）
@@ -103,6 +106,8 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 `node can` 的输出把三类失败分开列：**必检未满足 / 被排斥 / 可选未满足（不阻塞）**，外加成本系数。
 
 **批量判定 + `--state-file`（0.79.1）**：`node can k1 k2 k3` 一次进程判定多节点（多键自动进批模式，`--json` 返回数组）；`--state-file <json>` 喂状态袋，两种形状——**扁平计数** `{"y_imported": 40}` 全节点共享，或**按节点** `{"a": {"y_imported": 40}, "b": {...}}` 各取各袋。探针脚本从此每树起一次进程而非每节点。
+
+**跨树巡检 + 临期门槛（0.82）**：`node ready --all` 一次扫全部树（12 棵树 24 条命令 → 1 条）；`node cond --due [--days N]` 列出问题文本带 `YYYY-MM-DD` 期限且 N 天内到期（含逾期）的 eval 条件——w1/d90 预测门槛不再依赖人记得看；`--eval` 逐条送判定模型（离线安全回落 pending），**判定只报告不仲裁**（通过 ≠ 自动解锁，resolve/unlock 保持人工，与 predict audit 同纪律）。
 
 **决策模型评估门（spec R8；0.14 布尔 → 0.26 三题型 → 0.27 混批 → 0.80 织物并入）**：语义型必检条件用 eval 题型声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋 + rel 挂接摘要**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）判定：
 
@@ -289,7 +294,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：unit (vitest 172 例) + build (tsc + tsdown) + demo（94 条断言）+ contract:audit（86 项）
+pnpm test          # 四段制回归：unit (vitest 172 例) + build (tsc + tsdown) + demo（101 条断言）+ contract:audit（86 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
@@ -313,7 +318,7 @@ serve。serve 从不取写锁（WAL 并发读写安全），`db unlock` 也以�
 **多会话安全（0.79）**：`tree use` / `project use` 全部落 `tree.use` / `project.use` 事件（带
 `YGL_SESSION` 会话标识）；`agent brief` 的 `selection_changed` 字段暴露最近 10 分钟的选择变更，
 跨会话变更会置顶提示命令带 `-t/-p` 固定上下文。`kb add` 回执自带 `verified` 自检与工作区回显，
-`doctor` 第 10 项回放近 2 天 kb/source/evidence 写事件对账基表，幻影写入当场点名。
+`doctor` 第 10 项回放近 2 天 kb/source/evidence 写事件对账基表，幻影写入当场点名。`doctor --fix`（0.82）把已知幻影标记 `reconciled`（payload 留痕、扫描跳过、审计轨迹保留）——db 恢复/导入实验造成的旧幻影一键对账。
 
 **提交门禁（无 CI 环境的等效方案）**：`.githooks/pre-push` —— push 分支跑 `pnpm test`，
 **push tag 追加 `pnpm pack:check`**；旁路只能显式 `YGL_SKIP_HOOKS=1`。安装一次：

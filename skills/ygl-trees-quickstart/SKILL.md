@@ -58,7 +58,7 @@ ygl-trees llms --json              # 结构化 JSON
 
 ```bash
 ygl-trees doctor           # 10 项健康检查（含锁 pid 存活、幻影写入对账）
-ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁；活 holder 不动）
+ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁 + 幻影事件标记 reconciled；活 holder 不动）
 ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 回显其命令行并拒绝，--force 强清）
 ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
 ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问

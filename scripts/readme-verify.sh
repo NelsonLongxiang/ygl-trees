@@ -55,6 +55,9 @@ chk "predict audit --all" 0 -- $Y research predict audit --offline --all
 printf '{"counts": {"y_imported": 14}}' > "$YGL_HOME/pstate.json"
 chk "can --state-file"    0 -- $Y node can steel --state-file "$YGL_HOME/pstate.json"
 chk "can 批量多键"       0 -- $Y node can steel steel
+# §0.82 命令面
+chk "ready --all"         0 -- $Y node ready --all
+chk "cond --due"          0 -- $Y node cond --due --days 30
 # §plugin
 chk "plugin init"         0 -- $Y plugin init
 chk "plugin install"      0 -- $Y plugin install ./examples/plugin-demo

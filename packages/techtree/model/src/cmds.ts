@@ -25,7 +25,7 @@ import {
   mapChoiceOutcome, mapOutcome, mapScoreOutcome, packEvalChoiceSpec, packEvalScoreSpec, parseEvalSpec,
 } from "../../eval/src/eval";
 import { configGet, configGetBool, configGetNumber } from "../../../ops/tools/src/config";
-import { nowIso, shortId } from "../../../core/text/src/text";
+import { clip, nowIso, shortId } from "../../../core/text/src/text";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db } = env;
@@ -146,6 +146,113 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     else if (!ctx.json) {
       out(ctx, paint(C.yellow, `  ! "${rest[0]}" is not a tree — showing current tree (use -t <tree> to switch)`, ctx.color));
     }
+  }
+  // 0.82 report ③: `node cond --due [--days N] [--eval]` — eval conds whose
+  // question carries a YYYY-MM-DD deadline, due (or overdue) within N days
+  // (default 7). --eval runs the decision model on each; judgment only —
+  // resolve/unlock stay human (same discipline as predict audit). Pre-tree-
+  // resolution like ready --all: --due is inherently cross-tree.
+  if (env.group === "node" && action === "cond" && args?.flags?.due === true) {
+    const days = flagNum("days", 7);
+    const ctxName = flagStr("context", "default");
+    const conds = db.all(
+      `SELECT nc.id, nc.name, nc.op, nc.value, n.key node_key, n.id node_id, t.id tree_id, t.name tree
+         FROM node_conditions nc JOIN nodes n ON n.id=nc.node_id JOIN trees t ON t.id=n.tree_id
+        WHERE nc.op LIKE 'eval%' ORDER BY t.name, n.key`
+    ) as any[];
+    const now = Date.now();
+    const due: any[] = [];
+    for (const c of conds) {
+      const spec = parseEvalSpec(c.value);
+      const q = spec.q || String(c.name);
+      const m = q.match(/(20\d{2})-(\d{2})-(\d{2})/);
+      if (!m) continue;
+      const dl = Date.parse(`${m[1]}-${m[2]}-${m[3]}T23:59:59Z`);
+      if (!Number.isFinite(dl) || dl > now + days * 86400000) continue;
+      due.push({
+        tree: c.tree, tree_id: c.tree_id, node: c.node_key, node_id: c.node_id,
+        name: String(c.name), op: String(c.op), question: q, envelope: spec,
+        deadline: `${m[1]}-${m[2]}-${m[3]}`, days_left: Math.ceil((dl - now) / 86400000),
+      });
+    }
+    due.sort((a: any, b: any) => a.days_left - b.days_left);
+    if (args?.flags?.eval !== true) {
+      if (ctx.json) console.log(JSON.stringify(due, null, 2));
+      else {
+        head(ctx, `临期 eval 门槛 × ${due.length}（${days} 天窗口）`);
+        if (!due.length) out(ctx, paint(C.dim, "  (无临期 eval 条件)", ctx.color));
+        table(
+          ctx,
+          due.map((d: any) => ({ tree: d.tree, node: d.node, cond: d.name, deadline: d.deadline, 剩余天数: d.days_left, question: clip(d.question, 40) })),
+          ["tree", "node", "cond", "deadline", "剩余天数", "question"],
+          ["tree", "node", "cond", "deadline", "剩余天数", "question"]
+        );
+      }
+      return 0;
+    }
+    // --eval: one decision-model request per due cond (ready --eval wiring)
+    const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
+    const cfgToken = configGet(env.db, "decision_model_llm_token").trim();
+    const token = offline ? "" : cfgToken || evalToken();
+    const endpoint = configGet(env.db, "decision_model_llm_api_base").trim() || DEFAULT_ENDPOINT;
+    const passT = configGetNumber(env.db, "eval.pass_threshold");
+    const failT = configGetNumber(env.db, "eval.fail_threshold");
+    return (async (): Promise<number> => {
+      const rows: any[] = [];
+      for (const d of due) {
+        const ctxPkg = trees.evalContext(d.tree_id, d.node, {}, ctxName);
+        const q =
+          d.op === "eval-choice" ? { type: "choice" as const, question: d.question, options: d.envelope.options || {}, answer: d.envelope.answer || "" }
+          : d.op === "eval-score" ? { type: "score" as const, question: d.question, levels: d.envelope.levels || [], min: d.envelope.min ?? 0 }
+          : { type: "boolean" as const, question: d.question };
+        const res = await evalMixed(ctxPkg, [q], token, endpoint);
+        if (!res.ok) {
+          rows.push({ ...d, outcome: "pending", reason: res.error });
+          continue;
+        }
+        const r = res.results[0];
+        const m = d.op === "eval-choice" ? mapChoiceOutcome(r, d.envelope.answer || "", passT, failT)
+          : d.op === "eval-score" ? mapScoreOutcome(r, d.envelope.min ?? 0)
+          : mapOutcome(r, passT, failT);
+        rows.push({ ...d, ...m });
+      }
+      if (ctx.json) console.log(JSON.stringify(rows, null, 2));
+      else {
+        head(ctx, `临期 eval 门槛 — 已判定 × ${rows.length}`);
+        table(
+          ctx,
+          rows.map((d: any) => ({ tree: d.tree, node: d.node, deadline: d.deadline, outcome: d.outcome, p: d.p ?? d.score ?? "", question: clip(d.question, 36) })),
+          ["tree", "node", "deadline", "判定", "p", "question"],
+          ["tree", "node", "deadline", "outcome", "p", "question"]
+        );
+        out(ctx, paint(C.dim, "  判定只报告不仲裁：通过 ≠ 自动解锁（resolve/unlock 保持人工）", ctx.color));
+      }
+      return 0;
+    })();
+  }
+  // 0.82 report ②: `node ready --all` sweeps EVERY tree — no tree use / -t
+  // needed (12 trees used to cost 24 commands). Runs before tree resolution
+  // because --all deliberately ignores the current selection.
+  if (env.group === "node" && action === "ready" && args?.flags?.all === true) {
+    const state = parseState(args);
+    const ctxName = flagStr("context", "default");
+    const all = db.all("SELECT id, name FROM trees ORDER BY created") as any[];
+    const per: any[] = [];
+    for (const t of all) {
+      const rows = trees.ready(t.id, ctxName, state);
+      if (rows.length) per.push({ tree: t.name, ready: rows });
+    }
+    if (ctx.json) {
+      console.log(JSON.stringify(per, null, 2));
+      return 0;
+    }
+    head(ctx, `Ready across ${all.length} trees`);
+    if (!per.length) out(ctx, paint(C.dim, "  (no tree has ready nodes)", ctx.color));
+    for (const p of per) {
+      out(ctx, paint(C.bold, `  ${p.tree} (${p.ready.length})`, ctx.color));
+      table(ctx, p.ready, ["key", "name", "tier", "cost"], ["key", "name", "tier", "cost"]);
+    }
+    return 0;
   }
   let tree: any;
   try {

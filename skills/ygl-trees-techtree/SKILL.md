@@ -41,6 +41,9 @@ ygl-trees node index && ygl-trees node validate
 ygl-trees node can steel --state "lab_level=3,has_eng=1"   # 三类失败分开列+成本系数
 ygl-trees node can a b c --state-file bags.json            # 批量：一进程测 N 节点（探针 1s×N → 1s）
 ygl-trees node ready                                        # 当前可解锁集合
+ygl-trees node ready --all                                  # 跨树扫描（无需逐树 tree use）
+ygl-trees node cond --due [--days 30]                       # 临期 eval 门槛（问题文本带 YYYY-MM-DD 期限）
+ygl-trees node cond --due --eval                            # 到期逐条送判定模型（只报告不仲裁）
 ygl-trees node path steel                                   # 解锁顺序+累计成本（目标恒最后）
 ygl-trees node ancestors bronze                             # 闭包索引直查，depth=1 是直接父
 ygl-trees node unlock mining && ygl-trees node lock mining
@@ -49,6 +52,8 @@ ygl-trees node unlock mining && ygl-trees node lock mining
 - 写入时环守卫：门控边（prereq/unlock）成环当场拒绝
 - `node can` 输出：missing_required（阻塞）/ blocked_by（被排斥）/ missing_optional（不阻塞）
 - `--state-file` 两种形状：扁平 `{"y_imported":40}` 全节点共享；按节点 `{"a":{"y_imported":40}}` 各取各袋；多键 `--json` 返回数组（0.79.1）
+- `ready --all` / `cond --due` 前置于树解析：无当前树也能跑，跨树巡检一条命令（0.82）
+- `cond --due` 提取 eval 问题文本中的 `YYYY-MM-DD`；默认 7 天窗口（含逾期），`--eval` 判定后仍需人工 resolve/unlock——判定 ≠ 仲裁（0.82）
 
 ## 3. 迁移与保真
 

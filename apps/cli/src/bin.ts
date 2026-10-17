@@ -168,6 +168,8 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
                                      (--eval: eval 题型经决策模型判定；
                                       boolean P / choice P(期望答案) / score ±1 灰带)
   node ready [--state k=v] [--eval]  currently unlockable set
+                                     (--all: sweep every tree — no tree use needed)
+  node cond --due [--days n] [--eval]  eval gates with YYYY-MM-DD deadlines due in n days
   node path <key>                    dependency-order path to target (all locked ancestors; OR branches not optimized)
   node parents|children <key>        direct relations
   node ancestors|descendants <key>   transitive, via closure index
@@ -626,7 +628,8 @@ export function generateLlmsManifest(): string {
       ["node cond <key> --name <c> --kind <k> [--op eval] [--value \"<question>\"]", "add condition (eval = decision model gate)"],
       ["node index", "rebuild closure + topo order"],
       ["node can <key> [--state k=v] [--eval]", "can unlock? (required vs optional + cost)"],
-      ["node ready", "currently unlockable set"],
+      ["node ready [--all]", "currently unlockable set (--all: every tree)"],
+      ["node cond --due [--days n] [--eval]", "eval gates with deadlines due in n days"],
       ["node path <key>", "dependency-order path (OR branches not optimized)"],
       ["node unlock <key>", "mark unlocked"],
       ["node list", "list with state column (locked/unlocked)"],

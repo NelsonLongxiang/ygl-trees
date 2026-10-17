@@ -221,21 +221,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // the row did not, the write path lost data (rollback / crash between
   // commit and receipt / a different workspace). This check replays recent
   // write events against the base tables and names the phantom ids.
+  // 0.82 ①: `--fix write_integrity` — doctor --fix marks phantom events
+  // reconciled (payload gains {"reconciled":<iso>}); the scan skips them.
+  // Marking beats deleting: the audit trail stays, the operator said "known".
+  const PHANTOM_SPECS = [
+    { kind: "kb.add", table: "kb_notes", label: "kb", rm: "kb.rm" },
+    { kind: "source.add", table: "sources", label: "source", rm: "source.rm" },
+    { kind: "evidence.add", table: "evidence", label: "evidence", rm: "evidence.rm" },
+  ];
+  const phantomSql = (spec: { kind: string; table: string; rm: string }) =>
+    `SELECT e.entity_id id, e.ts FROM events e
+      WHERE e.kind='${spec.kind}'
+        AND e.ts >= datetime('now', '-2 days')
+        AND e.payload NOT LIKE '%"reconciled"%'
+        AND NOT EXISTS (SELECT 1 FROM ${spec.table} t WHERE t.id = e.entity_id)
+        AND NOT EXISTS (SELECT 1 FROM events r WHERE r.kind='${spec.rm}' AND r.entity_id = e.entity_id)`;
   {
-    const PHANTOM_SPECS = [
-      { kind: "kb.add", table: "kb_notes", label: "kb", rm: "kb.rm" },
-      { kind: "source.add", table: "sources", label: "source", rm: "source.rm" },
-      { kind: "evidence.add", table: "evidence", label: "evidence", rm: "evidence.rm" },
-    ];
     const phantoms: string[] = [];
     for (const spec of PHANTOM_SPECS) {
-      const rows = db.all(
-        `SELECT e.entity_id id, e.ts FROM events e
-          WHERE e.kind='${spec.kind}'
-            AND e.ts >= datetime('now', '-2 days')
-            AND NOT EXISTS (SELECT 1 FROM ${spec.table} t WHERE t.id = e.entity_id)
-            AND NOT EXISTS (SELECT 1 FROM events r WHERE r.kind='${spec.rm}' AND r.entity_id = e.entity_id)`
-      );
+      const rows = db.all(phantomSql(spec));
       for (const r of rows) phantoms.push(`${spec.label} ${r.id} (${String(r.ts).slice(0, 16)})`);
     }
     // 0.81 ①: downgrade to warn — a missing row can also mean a legit delete
@@ -246,7 +250,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       name: "write_integrity",
       status: phantoms.length ? "warn" : "pass",
       detail: phantoms.length
-        ? `${phantoms.length} unexplained write event(s) in last 48h: ${phantoms.slice(0, 3).join(", ")}${phantoms.length > 3 ? " …" : ""} — row missing without an rm event (deleted pre-0.81 or via db sql? otherwise: rollback / different workspace — check receipts' workspace line)`
+        ? `${phantoms.length} unexplained write event(s) in last 48h: ${phantoms.slice(0, 3).join(", ")}${phantoms.length > 3 ? " …" : ""} — row missing without an rm event (deleted pre-0.81 or via db sql? otherwise: rollback / different workspace — check receipts' workspace line; doctor --fix marks known ones reconciled)`
         : "recent write events all match stored rows",
     });
   }
@@ -303,6 +307,29 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (fs.existsSync(lockDir) && holder !== String(process.pid) && !pidAlive(holder)) {
         try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed (holder pid dead)"); } catch { /* */ }
       }
+    }
+    // 0.82 ①: phantom write events → mark reconciled. The operator looked at
+    // the warn, decided the rows are gone for a known reason (db restore /
+    // import experiment / pre-0.81 delete), and wants the warn gone. We
+    // stamp payload.reconciled — the event stays for audit, the scan skips it.
+    for (const spec of PHANTOM_SPECS) {
+      const rows = db.all(phantomSql(spec)) as any[];
+      if (!rows.length) continue;
+      let marked = 0;
+      for (const r of rows) {
+        try {
+          const cur = db.get("SELECT payload FROM events WHERE kind=? AND entity_id=? LIMIT 1", [spec.kind, r.id]) as any;
+          let payload = "{}";
+          try {
+            payload = cur?.payload && String(cur.payload).trim().startsWith("{") ? String(cur.payload) : "{}";
+          } catch { /* */ }
+          const obj = JSON.parse(payload);
+          obj.reconciled = new Date().toISOString();
+          db.run("UPDATE events SET payload=? WHERE kind=? AND entity_id=?", [JSON.stringify(obj), spec.kind, r.id]);
+          marked++;
+        } catch { /* best-effort per event */ }
+      }
+      if (marked) fixes.push(`write_integrity: ${marked} ${spec.label} phantom event(s) marked reconciled (audit trail kept)`);
     }
     if (fixes.length) {
       for (const f of fixes) ok(ctx, `  fixed: ${f}`);
