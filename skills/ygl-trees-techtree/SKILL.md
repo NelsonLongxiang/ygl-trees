@@ -38,6 +38,7 @@ ygl-trees node index && ygl-trees node validate
 
 ```bash
 ygl-trees node can steel --state "lab_level=3,has_eng=1"   # 三类失败分开列+成本系数
+ygl-trees node can a b c --state-file bags.json            # 批量：一进程测 N 节点（探针 1s×N → 1s）
 ygl-trees node ready                                        # 当前可解锁集合
 ygl-trees node path steel                                   # 解锁顺序+累计成本（目标恒最后）
 ygl-trees node ancestors bronze                             # 闭包索引直查，depth=1 是直接父
@@ -46,6 +47,7 @@ ygl-trees node unlock mining && ygl-trees node lock mining
 
 - 写入时环守卫：门控边（prereq/unlock）成环当场拒绝
 - `node can` 输出：missing_required（阻塞）/ blocked_by（被排斥）/ missing_optional（不阻塞）
+- `--state-file` 两种形状：扁平 `{"y_imported":40}` 全节点共享；按节点 `{"a":{"y_imported":40}}` 各取各袋；多键 `--json` 返回数组（0.79.1）
 
 ## 3. 迁移与保真
 

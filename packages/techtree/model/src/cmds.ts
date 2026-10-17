@@ -323,58 +323,50 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     if (sub === "can") {
       if (!key) {
-        bad(ctx, "usage: node can <key> [--context ctx] [--state k=v] [--eval]");
+        bad(ctx, "usage: node can <key...> [--context ctx] [--state k=v] [--state-file file] [--eval]");
         return 2;
       }
-      const state = parseState(args);
-      const ctxName = flagStr("context", "default");
-      let r: any;
+      // 0.79.1 (R297 user report): batch mode — multiple keys judged in ONE
+      // process (probes used to pay ~1s cold start per node), plus
+      // --state-file for JSON state bags (shared or per-node).
+      const keys = [...new Set((rest as string[]).filter(Boolean))];
+      const sharedState = parseState(args);
+      let perKeyBags: Record<string, any> | null = null;
       try {
-        r = trees.canUnlock(tid, key, ctxName, state);
+        perKeyBags = loadStateFile(args, sharedState);
       } catch (e: any) {
-        bad(ctx, enrichNodeNotFound(e?.message || String(e)));
-        return 1;
+        const msg = e?.message || String(e);
+        bad(ctx, msg);
+        return /^usage:/.test(msg) ? 2 : /must contain a JSON object/.test(msg) ? 2 : 1;
       }
-      const evalConds = flagBool("eval")
-        ? trees.condList(tid, key).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
-        : [];
-      if (!evalConds.length) {
-        if (ctx.json) {
-          console.log(JSON.stringify(r, null, 2));
-          return 0;
-        }
-        head(ctx, `can unlock: ${r.key}`);
-        out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
-        if (r.missing_required.length) {
-          out(ctx, paint(C.bold, "  必检未满足", ctx.color));
-          for (const m of r.missing_required) out(ctx, `    - ${m}`);
-        }
-        if (r.blocked_by.length) {
-          out(ctx, paint(C.bold, "  被排斥", ctx.color));
-          for (const b of r.blocked_by) out(ctx, `    - ${b}`);
-        }
-        if (r.missing_optional.length) {
-          out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
-          for (const m of r.missing_optional) out(ctx, `    - ${m}`);
-        }
-        if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
-        return 0;
-      }
-      // R8: decision-model boolean evaluation for op=eval conditions.
-      // Offline-safe: no token / network failure → pending (rc=0).
-      // Credential/endpoint priority (user ruling): CONFIG first —
-      // decision_model_llm_token / decision_model_llm_api_base — then env
-      // AI_GATEWAY_API_KEY / ~/.vercel.ai-gateway.env, then the default
-      // Vercel gateway. Thresholds + offline are config-tunable too;
-      // env YGL_EVAL_OFFLINE still wins over config eval.offline.
+      const stateFor = (k: string): Record<string, any> =>
+        perKeyBags ? (perKeyBags[k] && typeof perKeyBags[k] === "object" && !Array.isArray(perKeyBags[k]) ? perKeyBags[k] : {}) : sharedState;
+      const ctxName = flagStr("context", "default");
+      // eval-family config read once per run (R8 credential priority:
+      // config decision_model_llm_* first, then env AI_GATEWAY_API_KEY)
       const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
       const cfgToken = configGet(env.db, "decision_model_llm_token").trim();
       const token = offline ? "" : cfgToken || evalToken();
       const endpoint = configGet(env.db, "decision_model_llm_api_base").trim() || DEFAULT_ENDPOINT;
       const passT = configGetNumber(env.db, "eval.pass_threshold");
       const failT = configGetNumber(env.db, "eval.fail_threshold");
-      const contextPkg = trees.evalContext(tid, key, state, ctxName);
-      return (async (): Promise<number> => {
+      /** Judge one node: canUnlock (+ eval gates when --eval). Never throws —
+       *  hard failures come back as {key, error}. */
+      const judgeOne = async (k: string): Promise<any> => {
+        let r: any;
+        try {
+          r = trees.canUnlock(tid, k, ctxName, stateFor(k));
+        } catch (e: any) {
+          return { key: k, error: enrichNodeNotFound(e?.message || String(e)) };
+        }
+        const state = stateFor(k);
+        const evalConds = flagBool("eval")
+          ? trees.condList(tid, k).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
+          : [];
+        if (!evalConds.length) return r;
+        // R8: decision-model evaluation for op=eval conditions.
+        // Offline-safe: no token / network failure → pending (rc=0).
+        const contextPkg = trees.evalContext(tid, k, state, ctxName);
         const evaluated: any[] = [];
         let usageIn = 0, usageOut = 0; // R10.4: token spend per run
         for (const c of evalConds) {
@@ -420,7 +412,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           const run = process.env.YGL_RUN_ID || "";
           db.run(
             "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,'info')",
-            [shortId(["eval.gate", "node", key], 12), nowIso(), "cli", "eval.gate", "node", key,
+            [shortId(["eval.gate", "node", k], 12), nowIso(), "cli", "eval.gate", "node", k,
              JSON.stringify({
                conds: evaluated.map((e) => ({ name: e.name, type: e.type, outcome: e.outcome, p: e.p ?? null, score: e.score ?? null })),
                usage: { inputTokens: usageIn, outputTokens: usageOut },
@@ -428,31 +420,76 @@ export function run(env: Env, action: string, rest: string[], args: any): number
              })]
           );
         } catch { /* audit best-effort */ }
+        return r;
+      };
+      const batch = keys.length > 1;
+      return (async (): Promise<number> => {
+        const results = [] as any[];
+        for (const k of keys) results.push(await judgeOne(k));
         if (ctx.json) {
-          console.log(JSON.stringify(r, null, 2));
+          // single key → object (frozen shape); batch → array
+          console.log(JSON.stringify(batch ? results : results[0], null, 2));
+          return results.some((r) => r.error) ? 1 : 0;
+        }
+        if (!batch) {
+          const r = results[0];
+          if (r.error) { bad(ctx, r.error); return 1; }
+          if (!r.evaluated) {
+            head(ctx, `can unlock: ${r.key}`);
+            out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
+            if (r.missing_required.length) {
+              out(ctx, paint(C.bold, "  必检未满足", ctx.color));
+              for (const m of r.missing_required) out(ctx, `    - ${m}`);
+            }
+            if (r.blocked_by.length) {
+              out(ctx, paint(C.bold, "  被排斥", ctx.color));
+              for (const b of r.blocked_by) out(ctx, `    - ${b}`);
+            }
+            if (r.missing_optional.length) {
+              out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
+              for (const m of r.missing_optional) out(ctx, `    - ${m}`);
+            }
+            if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
+            return 0;
+          }
+          head(ctx, `can unlock: ${r.key}`);
+          out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : r.pending.length ? paint(C.yellow, "… 待判定（决策模型 pending）", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
+          if (r.missing_required.length) {
+            out(ctx, paint(C.bold, "  必检未满足", ctx.color));
+            for (const m of r.missing_required) out(ctx, `    - ${m}`);
+          }
+          if (r.pending.length) {
+            out(ctx, paint(C.bold, "  决策模型 pending（灰带/未配置，非终态）", ctx.color));
+            for (const p of r.pending) out(ctx, `    - ${p}`);
+          }
+          if (r.blocked_by.length) {
+            out(ctx, paint(C.bold, "  被排斥", ctx.color));
+            for (const b of r.blocked_by) out(ctx, `    - ${b}`);
+          }
+          if (r.missing_optional.length) {
+            out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
+            for (const m of r.missing_optional) out(ctx, `    - ${m}`);
+          }
+          for (const e of r.evaluated) out(ctx, paint(C.dim, `  eval ${e.name}: P=${e.p ?? "-"} → ${e.outcome}${e.reason ? ` (${e.reason})` : ""}`, ctx.color));
+          if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
           return 0;
         }
-        head(ctx, `can unlock: ${r.key}`);
-        out(ctx, `  ${r.ok ? paint(C.green, "✓ 可解锁", ctx.color) : pendingList.length ? paint(C.yellow, "… 待判定（决策模型 pending）", ctx.color) : paint(C.red, "✗ 不可解锁", ctx.color)}`);
-        if (r.missing_required.length) {
-          out(ctx, paint(C.bold, "  必检未满足", ctx.color));
-          for (const m of r.missing_required) out(ctx, `    - ${m}`);
+        // batch human view: one compact line per node (probe-friendly)
+        const via = perKeyBags ? "per-node --state-file" : Object.keys(sharedState).length ? "shared state" : "";
+        head(ctx, `can unlock × ${results.length}${via ? ` (${via})` : ""}`);
+        for (const r of results) {
+          if (r.error) {
+            out(ctx, `  ${paint(C.red, "✗", ctx.color)} ${r.key}  ${r.error}`);
+            continue;
+          }
+          const mark = r.ok ? paint(C.green, "✓", ctx.color) : r.pending?.length ? paint(C.yellow, "…", ctx.color) : paint(C.red, "✗", ctx.color);
+          const blockers = [
+            ...(r.missing_required || []).map((m: string) => m),
+            ...(r.blocked_by || []).map((b: string) => `excluded:${b}`),
+          ].join(", ");
+          out(ctx, `  ${mark} ${r.key}${r.pending?.length ? " (eval pending)" : ""}${blockers ? `  — ${blockers}` : ""}`);
         }
-        if (pendingList.length) {
-          out(ctx, paint(C.bold, "  决策模型 pending（灰带/未配置，非终态）", ctx.color));
-          for (const p of pendingList) out(ctx, `    - ${p}`);
-        }
-        if (r.blocked_by.length) {
-          out(ctx, paint(C.bold, "  被排斥", ctx.color));
-          for (const b of r.blocked_by) out(ctx, `    - ${b}`);
-        }
-        if (r.missing_optional.length) {
-          out(ctx, paint(C.dim, "  可选未满足（不阻塞）", ctx.color));
-          for (const m of r.missing_optional) out(ctx, `    - ${m}`);
-        }
-        for (const e of evaluated) out(ctx, paint(C.dim, `  eval ${e.name}: P=${e.p ?? "-"} → ${e.outcome}${e.reason ? ` (${e.reason})` : ""}`, ctx.color));
-        if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
-        return 0;
+        return results.some((r) => r.error) ? 1 : 0;
       })().catch((e: any): number => {
         bad(ctx, e?.message || String(e));
         return 1;
@@ -461,6 +498,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     if (sub === "ready") {
       const state = parseState(args);
+      try {
+        // 0.79.1: --state-file flat bag works here too (per-node shape makes
+        // no sense for ready — it judges the whole tree, so flat-only).
+        const bags = loadStateFile(args, state);
+        if (bags) {
+          bad(ctx, "--state-file per-node shape (key→object) only applies to batch `node can k1 k2 …`; ready wants a flat counter object");
+          return 2;
+        }
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        bad(ctx, msg);
+        return /^usage:/.test(msg) || /must contain a JSON object/.test(msg) ? 2 : 1;
+      }
       const ctxName = flagStr("context", "default");
       if (!flagBool("eval")) {
         const rows = trees.ready(tid, ctxName, state);
@@ -810,4 +860,31 @@ function parseState(args: any): Record<string, any> {
     out[k.trim()] = val;
   }
   return out;
+}
+
+/**
+ * 0.79.1 (R297 user report): `--state-file <path.json>` loads the state bag
+ * from JSON instead of inline `--state k=v`. Two accepted shapes:
+ *   flat shared   {"y_imported": 12}            → merged over --state, all keys share it
+ *   per-node map  {"node-a": {"y": 1}, ...}     → each judged node gets its own bag
+ * (disambiguated by "every value is a plain object"). Returns the per-node map
+ * when shape B, null when merged into `shared`. Throws on unreadable/invalid.
+ */
+function loadStateFile(args: any, shared: Record<string, any>): Record<string, any> | null {
+  const sf = args.flags["state-file"];
+  if (sf === undefined) return null; // flag absent → no bags (plain can/ready)
+  if (sf === true || sf === "") throw new Error("usage: --state-file <path.json>");
+  let parsed: any;
+  try {
+    parsed = JSON.parse(require("node:fs").readFileSync(String(sf), "utf8"));
+  } catch (e: any) {
+    throw new Error(`cannot read --state-file ${sf}: ${e?.message || e}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("--state-file must contain a JSON object (flat counters, or per-node key→object map)");
+  }
+  const vals: any[] = Object.values(parsed);
+  if (vals.length && vals.every((v) => v && typeof v === "object" && !Array.isArray(v))) return parsed;
+  Object.assign(shared, parsed);
+  return null;
 }

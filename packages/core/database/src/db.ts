@@ -361,6 +361,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_refs ON skill_refs(skill_id, path);
 export class DB {
   readonly db: Database;
   readonly path: string;
+  /** True when THIS instance acquired the .ygllock (0.79.1) — lock-less
+   *  instances (serve, db unlock) never release a foreign lock. */
+  ownsLock = false;
 
   constructor(file: string, opts?: { lock?: boolean }) {
     this.path = file;
@@ -410,9 +413,17 @@ export class DB {
         // Orphaned lock (holder crashed / exit cleanup failed) — steal now.
         try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
       } else {
+        // 0.79.1 (R297 user report): the old hint guessed "serve? webui
+        // dashboard" — but serve never takes the write lock, so the guess
+        // sent users to kill the wrong process. The lock dir now carries a
+        // `cmd` file (written at acquisition) naming the real holder.
+        let holderCmd = "";
+        try { holderCmd = fs.readFileSync(path.join(lockDir, "cmd"), "utf8").trim(); } catch { /* */ }
         throw new Error(
           `database is locked by another process (pid: ${holder}).\n` +
-          `  this is usually a parallel session or webui serve holding the WRITE lock;\n` +
+          (holderCmd
+            ? `  holder command: ${holderCmd}\n`
+            : `  the holder is almost certainly a parallel CLI session (serve never takes the write lock);\n`) +
           `  read commands still work. The lock self-heals once pid ${holder} exits —\n` +
           `  simply retry after it finishes.\n` +
           `  to clear manually:  ygl-trees db unlock   (checks pid liveness, refuses live holders)\n` +
@@ -421,9 +432,17 @@ export class DB {
       }
     }
     // acquire the lock (best-effort; crash cleanup via stale detection above)
+    let acquired = false;
     if (useLock) try {
       fs.mkdirSync(lockDir, { recursive: true });
       fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
+      acquired = true;
+      // 0.79.1: self-reported holder identity — the collision error and
+      // `db unlock` read this back instead of guessing who holds the lock.
+      try {
+        const cmd = [process.argv0, ...process.argv.slice(1)].join(" ").slice(0, 240);
+        fs.writeFileSync(path.join(lockDir, "cmd"), cmd);
+      } catch { /* identity is best-effort */ }
       // P1 cold-user report (Windows): `process.on("exit")` rmSync can silently
       // fail when the SQLite handle hasn't been released yet (EBUSY on the dir).
       // Two mitigations:
@@ -438,6 +457,10 @@ export class DB {
       process.on("beforeExit", cleanup);
       process.on("exit", cleanup);
     } catch { /* lock creation failure is non-fatal (read-only scenarios) */ }
+    // 0.79.1: ownership flag — lock-less instances (serve, db unlock) must
+    // never release a FOREIGN lock on close/exit (latent since serve existed,
+    // made acute by lock-free `db unlock`).
+    this.ownsLock = acquired;
     this.db = new Database(file);
     this.db.exec("PRAGMA journal_mode=WAL");
     // WAL + NORMAL (sqlite.org recommended pairing): commits skip the per-tx
@@ -448,8 +471,12 @@ export class DB {
     this.migrate();
   }
 
-  /** Release the write lock (called by close() and process exit). */
+  /** Release the write lock (called by close() and process exit).
+   *  Ownership-guarded since 0.79.1: a lock-less instance (serve, db unlock)
+   *  shares the workspace with a foreign holder — its close() must not nuke
+   *  that holder's lock. */
   private releaseLock(): void {
+    if (!this.ownsLock) return;
     try {
       const lockDir = `${this.path}.ygllock`;
       if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
@@ -468,6 +495,15 @@ export class DB {
   static lockHolder(file: string): string {
     try {
       return fs.readFileSync(path.join(`${file}.ygllock`, "pid"), "utf8").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  /** Static: read the holder's self-reported command line ("" when absent). */
+  static lockHolderCmd(file: string): string {
+    try {
+      return fs.readFileSync(path.join(`${file}.ygllock`, "cmd"), "utf8").trim();
     } catch {
       return "";
     }

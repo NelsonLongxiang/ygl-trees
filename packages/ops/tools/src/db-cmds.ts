@@ -113,9 +113,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         // parallel session, and refusing here would deadlock the command
         // against itself. Clear it; the process exits right after anyway.
         const self = Number(holder) === process.pid;
+        // 0.79.1: echo the holder's self-reported command line (R297 report —
+        // guessing "serve?" sent users to kill the wrong process).
+        let holderCmd = "";
+        try { holderCmd = fs.readFileSync(`${lockDir}/cmd`, "utf8").trim(); } catch { /* */ }
         const msg = self
           ? `lock is held by THIS process (pid ${holder}) — acquired during boot; clearing.`
-          : `lock held by LIVE process (pid: ${holder}) — refusing to clear.`;
+          : `lock held by LIVE process (pid: ${holder}${holderCmd ? ` — ${holderCmd}` : ""}) — refusing to clear.`;
         if (self) {
           try {
             fs.rmSync(lockDir, { recursive: true, force: true });
@@ -124,10 +128,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             return 0;
           } catch { /* fall through to the generic clear below */ }
         }
-        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder, cleared: false, reason: "holder alive (use --force to override)" }, null, 2));
+        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder, holder_cmd: holderCmd || null, cleared: false, reason: "holder alive (use --force to override)" }, null, 2));
         else {
           bad(ctx, msg);
-          out(ctx, paint(C.yellow, `  this is a parallel session or webui serve — retry after it exits;`, ctx.color));
+          out(ctx, paint(C.yellow, `  that is a parallel CLI session (serve never takes the write lock) — retry after it exits;`, ctx.color));
           out(ctx, paint(C.yellow, `  the lock self-heals then. --force overrides (corruption risk if writes are in flight).`, ctx.color));
         }
         return 1;

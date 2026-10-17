@@ -123,6 +123,56 @@ UNL=$($Y db unlock 2>&1 || true); case "$UNL" in *"lock cleared"*|*"no lock pres
 SP4=$($Y produce spec "t" --body b --design-type decision 2>&1; echo "rc=$?")
 case "$SP4" in *"belongs to 'produce design'"*"rc=2") echo "  ✓ produce spec rejects --design-type (rc=2)";; *) echo "  ✗ spec flag check failed: $SP4"; exit 1;; esac
 
+echo "── 5g. 0.79.1 lock identity + batch can + predict state bridge (real-user report)"
+# ① serve --help must print usage and start NOTHING (random-port incident)
+SH=$($Y webui serve --help 2>&1; echo "rc=$?")
+case "$SH" in *--port*"rc=0") echo "  ✓ webui serve --help short-circuits (no server)";; *) echo "  ✗ serve --help: $SH"; exit 1;; esac
+# ① a LIVE foreign holder reports its command line, and unlock refuses
+HOLD_JS="$YGL_HOME/holder-791.js"
+cat > "$HOLD_JS" <<'HOLD'
+const fs = require("fs");
+const lock = require("path").join(process.env.YGL_HOME, "ygl-trees.db.ygllock");
+fs.mkdirSync(lock, { recursive: true });
+fs.writeFileSync(require("path").join(lock, "pid"), String(process.pid));
+fs.writeFileSync(require("path").join(lock, "cmd"), "node demo-holder.js (session B)");
+setInterval(() => {}, 1000);
+HOLD
+HOLD_HOME="$YGL_HOME" node "$HOLD_JS" & HPID=$!
+sleep 1.2
+LUK=$($Y db unlock --json 2>&1 || true)
+case "$LUK" in *'"holder_cmd": "node demo-holder.js (session B)"'*'"cleared": false'*)
+  echo "  ✓ db unlock refuses live holder + echoes holder_cmd";; *)
+  echo "  ✗ unlock live-holder failed: $LUK"; kill $HPID 2>/dev/null; exit 1;; esac
+# lock-free process exiting next to the live holder must NOT clear it
+$Y webui export --out "$YGL_HOME/probe.html" >/dev/null 2>&1
+LK2=$(ls "$YGL_HOME/ygl-trees.db.ygllock" 2>/dev/null | tr '\n' ' ')
+case "$LK2" in *pid*) echo "  ✓ lock-less exit preserves foreign lock";; *) echo "  ✗ foreign lock nuked: $LK2"; kill $HPID 2>/dev/null; exit 1;; esac
+kill $HPID 2>/dev/null || true
+wait $HPID 2>/dev/null || true
+# ② batch node can with per-node --state-file bags (probe cold-start cost)
+$Y tree new probe-batch >/dev/null 2>&1
+$Y node add pb0 -t probe-batch >/dev/null 2>&1
+$Y node add pb1 -t probe-batch >/dev/null 2>&1
+$Y node link pb0 pb1 -t probe-batch >/dev/null 2>&1
+$Y node cond pb1 --name y_imported --op ">=" --value 40 -t probe-batch >/dev/null 2>&1
+$Y node unlock pb0 -t probe-batch >/dev/null 2>&1
+printf '{"pb1": {"y_imported": 40}}' > "$YGL_HOME/state-791.json"
+BC=$($Y node can pb0 pb1 --state-file "$YGL_HOME/state-791.json" -t probe-batch 2>&1)
+case "$BC" in *"can unlock × 2"*"✓ pb0"*"✓ pb1") echo "  ✓ batch can + per-node state bag (one process, N nodes)";; *) echo "  ✗ batch can: $BC"; exit 1;; esac
+BC2=$($Y node can pb0 pb1 -t probe-batch --json 2>&1)
+case "$BC2" in \[*\]) echo "  ✓ batch can --json → array";; *) echo "  ✗ batch json shape: $BC2"; exit 1;; esac
+# ③ predict audit: --state suffix-binds nested keys; resolved hidden by default
+$Y research claim add "[预测·7天] 2026-12-31 前 y_imported≥12——state 桥接 demo" >/dev/null
+printf '{"counts": {"y_imported": 14}}' > "$YGL_HOME/pstate-791.json"
+PRS=$($Y research predict audit --state "$YGL_HOME/pstate-791.json" --offline 2>&1)
+case "$PRS" in *y_imported=14/12*) echo "  ✓ predict audit --state suffix-binds counts.y_imported";; *) echo "  ✗ predict --state: $PRS"; exit 1;; esac
+PCID=$($Y research claim list --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).find(x=>x.text.includes('y_imported≥12'));console.log(r?r.id:'missing')})")
+$Y research claim resolve "$PCID" --as supported >/dev/null 2>&1
+PRA=$($Y research predict audit --offline 2>&1)
+case "$PRA" in *resolved*隐藏*) echo "  ✓ resolved prediction hidden by default (--all for terminal table)";; *) echo "  ✗ resolved hiding: $PRA"; exit 1;; esac
+PAA=$($Y research predict audit --offline --all --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).find(x=>x.claim_id==='$PCID');console.log(r?r.verdict:'missing')})")
+if [ "$PAA" = "resolved" ]; then echo "  ✓ --all exposes resolved terminal verdict"; else echo "  ✗ --all resolved: $PAA"; exit 1; fi
+
 echo "── 6. tech-tree node model"
 $Y tree new demo
 for n in mining smelting bronze; do $Y node add "$n"; done

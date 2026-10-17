@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.79.1（2026-10-17）锁身份 + serve --help 短路 + 批量判定 + 回测状态桥
+- **异常①锁归属**：`.ygllock` 记录持有者命令行；撞锁报错、`db unlock`（含 `holder_cmd` JSON 字段）、`doctor` 三处回显真实持有者身份——CLI 撞 CLI 不再被误标为 serve（serve 从不取写锁，报错明示这一点）
+- **异常②**：`webui serve --help` 短路打印用法即退出，不再直接启动服务（随机端口误触发实证）
+- **异常③**：serve 写锁警告改为如实措辞（WAL 并发读写安全，批量写才建议停 serve）
+- **回归修复**：无锁进程（serve / db unlock）退出不再误清并行会话的活锁（ownsLock 所有权守卫——自 serve 时代潜伏的 unconditional releaseLockFor）；`db unlock` 改为无锁模式启动，自身诊断命令不再被诊断对象卡死，其"活 holder 拒绝/--force/死 pid 清理"三条路径首次真正可达
+- **特性①** `node can` 批量判定 + `--state-file <json>`：多键一进程（探针冷启动 1s×N → 1s）；状态袋两种形状——扁平计数共享 / 按节点 `{key: bag}` 各取各袋；多键 `--json` 返回数组；`ready --state-file` 同步支持（扁平）
+- **特性②** `job add` 接探针实证可用（任意命令 + `--every N` 本就支持，README 补闸门探针模式）
+- **特性③（m02806）** predict audit：已 `claim resolve` 的预测默认隐藏（回测终态 resolved），`--all` 查看全表；空表提示
+- **特性④（m02801）** predict audit `--state <file|url>`：外部计数桥接（HTTP 3s 超时 / 本地文件），嵌套对象扁平化（`{counts:{y:12}}` → `counts.y=12`），判据裸键名后缀匹配（`y_imported≥12` ← `counts.y_imported`，实测列显示来源键）；加载失败回落 manual 并警告
+- 修复 `node can` 无 `--state-file` 时误报 usage rc=2 的回归（demo 门禁当场抓获——无标记路径此前未测）
+- 单测 163（+7：state 桥接/后缀匹配/resolved 终态/loadStateSource）、demo 82（+8：5g 锁身份+批量+状态桥）、readme:verify 38（+4）
+
 ## 0.79.0（2026-10-17）真实用户反馈硬化（四异常 + 六特性）
 - **报告②新命令** `db unlock`：清残留 .ygllock——pid 存活检测，死 pid 直接清；活 holder（并行会话/serve）拒绝并解释，`--force` 才强清；自持锁（boot 期间获得）自清不死锁
 - **报告②** doctor 锁检查升级 pid 存活判定：外进程活锁=PASS（多会话正常态），死 pid 才告警；`--fix` 只清死锁（此前会误删并行会话的活锁）

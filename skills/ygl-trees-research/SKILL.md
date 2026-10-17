@@ -57,5 +57,7 @@ ygl-trees produce export <reportId> report.md
 
 - 先 `agent brief --json` 看 next_actions（它会告诉你缺来源/缺证据/缺断言）
 - 每条断言至少一条证据再进报告；contested 的要么补证据要么 resolve
+- 预测断言（`[预测·N天]`）定期 `research predict audit` 回测：本地判据自动测；`--state <file|url>`
+  桥接外部计数（裸键名后缀匹配 `counts.y_imported`）；已 resolve 的默认隐藏（`--all` 查看终态表）
 - `--json` 输出可直接 parse 拿 id；列表命令字段：source(id,title,url,relevance,…)、
   claim(id,text,status,confidence,sup,ref)、evidence(id,source,locator,quote,used_by)

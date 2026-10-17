@@ -239,6 +239,14 @@ export async function main(argv: string[]): Promise<number> {
     process.env.YGL_SERVE = "1";
   }
 
+  // 0.79.1 (R297 user report follow-up): `db unlock` must be callable WHILE
+  // another process holds the lock — otherwise its live-holder refusal and
+  // --force paths are unreachable (boot would collide first). It only touches
+  // the lock dir on the filesystem, never the DB, so boot lock-free.
+  if (group === "db" && action === "unlock") {
+    process.env.YGL_SERVE = "1";
+  }
+
   // P4 fix: --version prints the actual version number (cold-user report);
   // the parser eats --version as a flag, so check flags not positional args.
   if (args.flags.version === true || group === "version") {
@@ -374,8 +382,15 @@ export async function main(argv: string[]): Promise<number> {
       let alive = false;
       try { process.kill(Number(holder), 0); alive = true; } catch (err: any) { alive = err.code === "EPERM"; }
       if (alive) {
-        out(ctx, `  lock held by live process pid ${holder} (serve? webui dashboard)`);
-        out(ctx, `  to run CLI write commands, stop that process first — or use YGL_TEST=1 to bypass`);
+        // 0.79.1 (R297 user report): the old hint guessed "(serve? webui
+        // dashboard)" — serve never takes the write lock, so the guess sent
+        // users to kill the wrong process. Echo the holder's self-reported
+        // command line from the lock dir instead.
+        let holderCmd = "";
+        try { holderCmd = require("node:fs").readFileSync(require("node:path").join(lock, "cmd"), "utf8").trim(); } catch { /* */ }
+        out(ctx, `  lock held by live process pid ${holder}${holderCmd ? `\n  holder command: ${holderCmd}` : " (parallel CLI session — serve never takes the write lock)"}`);
+        out(ctx, `  reads still work; the lock serializes CLI writers and self-heals when pid ${holder} exits`);
+        out(ctx, `  force through (know what you are doing): YGL_TEST=1  ·  inspect/clear: ygl-trees db unlock`);
       } else {
         out(ctx, `  orphaned lock (pid ${holder} is dead) — removing: ${lock}`);
         try { require("node:fs").rmSync(lock, { recursive: true, force: true }); } catch { /* */ }
@@ -391,8 +406,15 @@ export async function main(argv: string[]): Promise<number> {
   const loadedPlugins = booted.loadedPlugins;
   const shutdown = createProcessShutdown(async () => {
     try { db?.close(); } catch { /* best effort */ }
-    // P0-2 belt-and-suspenders: force-release the lock on any exit path
-    try { require("../../../packages/core/database/src/db").DB.releaseLockFor(file); } catch { /* */ }
+    // P0-2 belt-and-suspenders: force-release the lock on any exit path —
+    // but ONLY one this process owns. Unconditional release nuked FOREIGN
+    // locks whenever a lock-less process (serve; db unlock since 0.79.1)
+    // exited next to a live holder.
+    try {
+      const { DB } = require("../../../packages/core/database/src/db");
+      if (db?.ownsLock) DB.releaseLockFor(file);
+      else if (DB.lockHolder(file) === String(process.pid)) DB.releaseLockFor(file);
+    } catch { /* */ }
   });
   process.on("SIGINT", () => shutdown.interrupt(0));
   process.on("SIGTERM", () => shutdown.interrupt(0));

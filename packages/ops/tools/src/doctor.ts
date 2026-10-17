@@ -146,11 +146,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     const mine = lockHolder === String(process.pid);
     const foreignLock = fs.existsSync(lockPath) && !mine;
     const holderAlive = !!lockHolder && pidAlive(lockHolder);
+    // 0.79.1: echo the holder's self-reported command line — naming the real
+    // holder beats guessing (R297 report: "serve?" guess sent users astray).
+    let holderCmd = "";
+    try { holderCmd = fs.readFileSync(`${lockPath}/cmd`, "utf8").trim(); } catch { /* pre-0.79.1 lock */ }
     let status: Check["status"] = "pass";
     let detail = "no stale locks";
     if (foreignLock && holderAlive) {
       status = "pass";
-      detail = `lock held by live pid ${lockHolder} (parallel session / serve) — normal in multi-session use`;
+      detail = `lock held by live pid ${lockHolder}${holderCmd ? ` (${holderCmd.slice(0, 80)})` : " (parallel session)"} — normal in multi-session use`;
     } else if (foreignLock) {
       status = "warn";
       detail = `stale lock (pid ${lockHolder || "?"} dead) — ygl-trees db unlock or doctor --fix clears it`;

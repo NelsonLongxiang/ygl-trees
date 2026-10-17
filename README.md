@@ -88,6 +88,7 @@ ygl-trees node link bronze steel --optional         # 可选，不阻塞
 ygl-trees node link bronze iron --mode OR           # 任一即可
 ygl-trees node link a b --rel excludes              # 互斥分支
 ygl-trees node can steel --state "research_lab_level=3,has_engineer=1"
+ygl-trees node can a b c --state-file probe.json   # 批量判定：一进程测 N 节点（探针冷启动 1s×N → 1s）
 ygl-trees node ready                                # 当前可解锁集合
 ygl-trees node path advanced-alloy                  # 到目标的最省顺序 + 累计成本
 ygl-trees node ancestors bronze                     # 闭包索引，直接父 depth=1
@@ -99,6 +100,8 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 `node import` 校验失败（引用缺失、枚举非法、必检条件缺阈值、门控环）即整体拒绝、零副作用；同名树默认拒绝，`--merge` 按 (tree, key) upsert。
 
 `node can` 的输出把三类失败分开列：**必检未满足 / 被排斥 / 可选未满足（不阻塞）**，外加成本系数。
+
+**批量判定 + `--state-file`（0.79.1）**：`node can k1 k2 k3` 一次进程判定多节点（多键自动进批模式，`--json` 返回数组）；`--state-file <json>` 喂状态袋，两种形状——**扁平计数** `{"y_imported": 40}` 全节点共享，或**按节点** `{"a": {"y_imported": 40}, "b": {...}}` 各取各袋。探针脚本从此每树起一次进程而非每节点。
 
 **决策模型评估门（spec R8；0.14 布尔 → 0.26 三题型 → 0.27 混批）**：语义型必检条件用 eval 题型声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）判定：
 
@@ -128,6 +131,8 @@ claim link      断言 ↔ 证据，自动算 supported / refuted / contested
                 --by-source：传来源 id 一次挂齐其全部证据；误传来源 id 会列出该来源的证据 id
 claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
 predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据自动测（树/kb 计数、npm 版本数），判 hit/miss/pending/manual——只报告不仲裁，给出待 resolve 建议
+                --state <file|url>：外部计数桥接（如 DSH API 快照），判据里的裸键名后缀匹配嵌套键（y_imported≥12 ← counts.y_imported）
+                已 claim resolve 的预测默认隐藏（回测终态），--all 查看全表
 ```
 
 **JSON 纪律**：写命令在 `--json` 下 stdout 只有一个 JSON 对象（重复时带 `duplicate: true`），Agent 可直接 `JSON.parse` 全量输出。
@@ -253,6 +258,7 @@ CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 tok
 
 ```bash
 ygl-trees job add "nightly" -- "ygl-trees produce report" --every 1440
+ygl-trees job add "闸门探针" -- "node ~/.local/lib/ygl-trees/tmp/dsh-tree-probe.mjs" --every 30   # 树自带节奏化监控（0.79.1 实证用法）
 ygl-trees job tick          # cron 每分钟调它，只跑到期的任务
 ygl-trees job logs
 ```
@@ -275,7 +281,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：unit (vitest 156 例) + build (tsc + tsdown) + demo（74 条断言）+ contract:audit（86 项）
+pnpm test          # 四段制回归：unit (vitest 163 例) + build (tsc + tsdown) + demo（82 条断言）+ contract:audit（86 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
@@ -284,11 +290,17 @@ ygl-trees llms          # 结构化能力清单（LLM 参考一次性获取全�
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
 ygl-trees doctor   # 工作区健康检查 10 项（--fix 一键安全修复）（schema/索引/FTS/重复/孤儿/config/锁存活/eval 信封/插件 profile/幻影写入）
-ygl-trees db unlock    # 清残留 .ygllock：查 pid 存活，死 pid 直接清；活 holder（并行会话/serve）拒绝并说明，--force 才强清
+ygl-trees db unlock    # 清残留 .ygllock：查 pid 存活，死 pid 直接清；活 holder（回显其命令行）拒绝并说明，--force 才强清
 ygl-trees node timeline <tree>   # 单树成长时间线（add/link/unlock 事件倒序）
 ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）
+ygl-trees webui serve --help   # 打印用法即退出，不启服务（0.79.1：--help 短路）
 ygl-trees webui export --out d.html   # 零依赖单文件仪表盘（离线可开）
 ```
+
+**锁身份（0.79.1）**：`.ygllock` 里除 pid 外记录**持有者命令行**；撞锁报错、`db unlock`、`doctor`
+三处都会回显真实持有者（如 `node bin.cjs node unlock trend-collector`），不再把 CLI 会话误标成
+serve。serve 从不取写锁（WAL 并发读写安全），`db unlock` 也以无锁模式启动——自己的诊断命令
+不该被诊断对象卡住。
 
 **多会话安全（0.79）**：`tree use` / `project use` 全部落 `tree.use` / `project.use` 事件（带
 `YGL_SESSION` 会话标识）；`agent brief` 的 `selection_changed` 字段暴露最近 10 分钟的选择变更，

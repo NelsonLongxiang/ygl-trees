@@ -968,6 +968,15 @@ export function createDashboardServer(env: Env) {
  *  lifecycle-managed: dispose cleans it automatically. */
 function serve(env: Env, args: any): Promise<number> {
   const { ctx } = env;
+  // 0.79.1 (R297 user report): `webui serve --help` used to fall through and
+  // actually start a server — an accidental extra process. Short-circuit.
+  if (args.flags.help || args.flags.h) {
+    out(ctx, `usage: ygl-trees webui serve [--port N] [--host H]`);
+    out(ctx, paint(C.dim, `  --port N    listen port (default 8642; 0 = pick a free one)`, ctx.color));
+    out(ctx, paint(C.dim, `  --host H    bind address (default 127.0.0.1; 0.0.0.0 opens to LAN)`, ctx.color));
+    out(ctx, paint(C.dim, `  endpoints:  / React client · /classic embedded dashboard · /api/events SSE`, ctx.color));
+    return Promise.resolve(0);
+  }
   // re-check (the server's hasWebApp is scoped to createDashboardServer)
   const reactAvailable = resolveDistRoot() !== null;
   return new Promise<number>((resolve) => {

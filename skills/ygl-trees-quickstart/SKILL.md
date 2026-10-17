@@ -58,9 +58,10 @@ ygl-trees llms --json              # 结构化 JSON
 ```bash
 ygl-trees doctor           # 10 项健康检查（含锁 pid 存活、幻影写入对账）
 ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁；活 holder 不动）
-ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 拒绝并说明，--force 强清）
+ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 回显其命令行并拒绝，--force 强清）
 ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
 ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
+ygl-trees webui serve --help   # 只打印用法不启服务（0.79.1 短路）
 ```
 
 PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
@@ -72,11 +73,12 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 - `kb add` 回执自检（`verified:true`）+ 工作区回显（防写错 home 的"丢笔记"事故）
 - `research claim link <cid> <sid> --by-source`：来源下全部证据一次挂齐；误传来源 id 会列出其证据 id
 
-## 2c. DB 锁行为（0.68）
+## 2c. DB 锁行为（0.68 → 0.79.1）
 
-- CLI 短命令：进程级锁（保护写窗口，退出自动释放）
-- webui serve：无锁（WAL 并发安全，与 CLI 共存）
+- CLI 短命令：进程级锁（保护写窗口，退出自动释放）；锁文件记录**持有者命令行**，撞锁/`db unlock`/`doctor` 都回显真实持有者身份
+- webui serve：无锁（WAL 并发安全，与 CLI 共存；从不取写锁）
 - 死锁自愈：下一进程探测持有者 PID，死则即时清（无需手动 rmdir）
+- 无锁进程（serve / `db unlock` 自身）退出绝不误清并行会话的活锁（0.79.1 所有权守卫）
 - YGL_TEST=1：全旁路（测试并行）
 
 ## 3. 健康检查与任务
@@ -128,6 +130,7 @@ ygl-trees db export <file.sql>          # 全部数据表 + 行数摘要
 ygl-trees db sync pg <url>              # 可刷新 PK-only 镜像
 ygl-trees db migrate pg <url> [--fresh] # 一次性完整保真迁移
 ygl-trees job add <title> -- "<cmd>" --every 60   # cron 每分钟跑 job tick
+ygl-trees job add "闸门探针" -- "node probe.mjs" --every 30   # 树节奏化监控：任意命令皆可（0.79.1 实证）
 ```
 
 禁止双后端同写：ygl-trees 永远只写 SQLite，PG 是单向出口。

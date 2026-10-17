@@ -678,28 +678,41 @@ if (subAction === "list" || subAction === undefined) {
         else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color));
         return 0;
       }
-      const { auditPredictions } = require("./predict");
+      const { auditPredictions, loadStateSource } = require("./predict");
       return (async () => {
-        const rows = await auditPredictions({ claims, db: store.db, npmProbe: args.flags.offline !== true });
+        // 0.79.1 --state bridge: external counter map (JSON file or URL, e.g.
+        // DSH API counts) turns state-referencing criteria auto-measurable.
+        let state: Record<string, number> | null = null;
+        if (args.flags.state) {
+          state = await loadStateSource(String(args.flags.state));
+          if (!state && !ctx.json) {
+            out(ctx, paint(C.yellow, `  ⚠ --state ${args.flags.state} 加载失败（文件/URL 不可读或非 JSON）——相关判据回落 manual`, ctx.color));
+          }
+        }
+        const rows = await auditPredictions({ claims, db: store.db, npmProbe: args.flags.offline !== true, state });
+        const resolvedN = rows.filter((r: any) => r.verdict === "resolved").length;
+        const visible = args.flags.all ? rows : rows.filter((r: any) => r.verdict !== "resolved");
         if (ctx.json) {
           console.log(JSON.stringify(rows, null, 2));
+        } else if (!visible.length) {
+          out(ctx, paint(C.dim, `  全部 ${rows.length} 条预测已结案（resolved）——--all 查看终态表`, ctx.color));
         } else {
-          head(ctx, `prediction audit — ${project.name} (${rows.length} predictions)`);
-          table(ctx, rows, ["claim", "horizon", "deadline", "判据", "实测", "判定", "days"], [
+          head(ctx, `prediction audit — ${project.name} (${visible.length}/${rows.length}${resolvedN && !args.flags.all ? ` · ${resolvedN} resolved 隐藏 (--all)` : ""})`);
+          table(ctx, visible, ["claim", "horizon", "deadline", "判据", "实测", "判定", "days"], [
             "claim_id", "horizon", "deadline", "criterion", "actual", "verdict", "days_left",
           ]);
-          const actionable = rows.filter((r: any) => r.verdict === "hit" || r.verdict === "miss");
+          const actionable = visible.filter((r: any) => r.verdict === "hit" || r.verdict === "miss");
           for (const r of actionable) {
             out(ctx, paint(C.dim, `  → research claim resolve ${r.claim_id} --as ${r.verdict === "hit" ? "supported" : "refuted"}   # ${r.deadline} 已到`, ctx.color));
           }
-          for (const r of rows.filter((x: any) => x.verdict === "manual")) {
+          for (const r of visible.filter((x: any) => x.verdict === "manual")) {
             out(ctx, paint(C.dim, `  · ${r.claim_id}: ${r.hint}`, ctx.color));
           }
         }
         return 0;
       })();
     }
-    bad(ctx, "usage: research predict audit [--offline]");
+    bad(ctx, "usage: research predict audit [--offline] [--state <file|url>] [--all]");
     return 2;
   }
 
