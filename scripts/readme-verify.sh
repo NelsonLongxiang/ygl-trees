@@ -61,6 +61,10 @@ chk "cond --due"          0 -- $Y node cond --due --days 30
 # §0.82.1 命令面
 chk "claim add"           0 -- $Y research claim add "README 校验断言" --confidence A
 chk "claim unresolve"     2 -- $Y research claim unresolve
+# §0.83 并发钉住 + 帮助面（rt 项目由上方 "project new" 检查创建）
+chk "kb add --help"       0 -- $Y kb add --help
+chk "source add --project" 0 -- $Y research source add --title "README 校验" --url "https://ex.com/readme-83" --project rt
+chk "node list --tree"    1 -- $Y node list --tree nonexist-tree
 # §plugin
 chk "plugin init"         0 -- $Y plugin init
 chk "plugin install"      0 -- $Y plugin install ./examples/plugin-demo

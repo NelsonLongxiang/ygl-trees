@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.83.0（2026-10-17）并发防护：指针钉住 + 半写拒绝 + 帮助面
+- **写命令长旗标钉住**（用户上报①，最重：并发会话两次劫持共享 current-project 指针，资产碎片化跨 3 项目）：`research *` / `produce *`（含 task）/ `project *` 全部接受 `--project <p>` 长旗标，`node *` 接受 `--tree <t>`（短旗标 `-p`/`-t` 不变；`node import --tree` 仍是目标树名，别名不遮蔽）；source/evidence/claim/task 写回执带 `· project <名>` 回显落点——写错项目当场可见，不必事后对账
+- **`source add --query` 半写防护**（上报①：attach 失败仍落源）：引用不存在时**先拒绝后写入**（rc=1 点名、零落地），不再"源已落、链接失败"；attach 落库后失败的路径改报已落 id + `research query attach` 重试指路
+- **`--help` 任意深度**（上报②：`kb add --help` 不识别直接 rc=2）：任意子命令带 `--help` 打印所在组的用法切片 rc=0（`--json` 返回 `{help}`），在 flag 校验与 db boot 之前短路；`webui serve --help` 等原有短路兼容
+- **no-db 报错点名工作区根因**（上报③：`db init` 前报错不提示 YGL_HOME）：无库时错误带 `workspace: <path>` 与来源（YGL_HOME 显式 / 默认 ~/.ygl-trees），冷启动错环境一眼可辨
+- **`node can --eval` attachments 快照**（建议④：P 值过了看不出吃了哪些 rel 证据）：输出回显本次判定实际吃到的 rel 挂接——`--json` 增 `eval_attachments[]`，人类视图 `attachments ×N:` 逐条（rel ← type:id 摘要），复现不必翻库；无挂接时字段省略（字节兼容）
+- **job 子命令无锁启动**（建议⑤配套）：`job run/tick` 的子进程带 `YGL_SERVE=1` 启动——此前 runner 自持应用级写锁，任何 `ygl-trees …` 型任务命令必撞自身死锁（rc=1 "locked"）；WAL 并发读 + SQLite 层写串行，与 webui serve 同推理。到期巡检范式：`job add "到期巡检" --every 1440 -- ygl-trees node cond --due --days 30`（真实工作区已挂，30 天窗口即刻命中 w1 三门槛）
+- 测试：demo 5k 段 7 断言（--project 钉住 / 落点校验 / 半写拒绝+零落地 / --help rc=0 / attachments 快照）+ 5h `--tree` 别名断言 → 113；readme-verify +3（kb add --help、source add --project、node list --tree 点名）→ 46
+
 ## 0.82.1（2026-10-17）预测生命周期护栏：挂证据 ≠ 仲裁
 - **`claim link` 不再抢跑预测仲裁**（用户上报③：`--stance supports` 自动把 [预测·…] 断言置 supported，predict audit 判 supported||refuted → resolved——预测刚挂证据就退出跟踪表，实际无人仲裁）：预测前缀断言挂证据时跳过自动晋升，状态保持 unverified 直到显式 `claim resolve` / 到期回测；证据链接与 stance 照常落库，回执明示 `auto_promote: false`（`--json` 返回 `{claim, evidence, stance, status, auto_promote}`）；普通断言的自动推导不变（回归护栏）
 - **`claim unresolve <claimId>`**（建议②：误晋升后无归位命令）：复位通道把断言重置回 unverified（撤销链接副作用 / 抢跑仲裁），幂等（已 unverified → `duplicate:true`），落 `claim.unresolve` 事件留痕——0.82.1 前被误晋升的预测可用它归队

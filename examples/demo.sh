@@ -174,9 +174,13 @@ PAA=$($Y research predict audit --offline --all --json | node -e "let s='';proce
 if [ "$PAA" = "resolved" ]; then echo "  ✓ --all exposes resolved terminal verdict"; else echo "  ✗ --all resolved: $PAA"; exit 1; fi
 
 echo "── 5h. 0.81 command-surface fixes (real-user report)"
-# ③ node list --tree <t> was silently swallowed and listed the CURRENT tree — contract ⑤ wants rc=2
-NL3=$($Y node list --tree probe-batch 2>&1; echo "rc=$?")
-case "$NL3" in *"unknown flag --tree"*"rc=2") echo "  ✓ node list rejects unknown --tree flag (rc=2)";; *) echo "  ✗ node list flag check: $NL3"; exit 1;; esac
+# ③ node list 未知 flag 静默吞掉并列出当前树 → rc=2 点名（--tree 在 0.83 成为合法别名，
+#    这里用仍然未知的 --proj 验证守卫本身）
+NL3=$($Y node list --proj probe-batch 2>&1; echo "rc=$?")
+case "$NL3" in *"unknown flag --proj"*"rc=2") echo "  ✓ node list rejects unknown flag (rc=2)";; *) echo "  ✗ node list flag check: $NL3"; exit 1;; esac
+# 0.83：--tree 长旗标现在是合法树选择别名（曾经是未知 flag 的那个词）
+NL4=$($Y node list --tree probe-batch --json 2>&1 | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);console.log(Array.isArray(a)&&a.some(x=>x.key==='pb1')?'yes':'no')})")
+[ "$NL4" = "yes" ] && echo "  ✓ node list --tree <t> 长旗标别名（0.83）" || { echo "  ✗ --tree alias: $NL4"; exit 1; }
 # ④ cond verbs: `node cond add <key>` used to parse "add" as the key; rm didn't exist
 CV1=$($Y node cond add pb1 --name t_ready --op ">=" --value 5 -t probe-batch 2>&1)
 case "$CV1" in *"condition added: pb1"*) echo "  ✓ node cond add <key> action word";; *) echo "  ✗ cond add: $CV1"; exit 1;; esac
@@ -260,6 +264,35 @@ case "$UR2" in *'"duplicate": true'*) echo "  ✓ unresolve 幂等（already unv
 # 复位后预测仍在默认跟踪表（不被 resolved 隐藏）
 PA=$($Y research predict audit --offline --json -p techtree 2>&1)
 case "$PA" in *"$PRED"*'"verdict": "pending"'*) echo "  ✓ 预测复位后仍在跟踪表（pending，非 resolved）";; *) echo "  ✗ audit: $PA"; exit 1;; esac
+
+echo "── 5k. 0.83 并发防护与帮助面（真实用户报告：指针互踩/半写/--help）"
+# ① --project 长旗标：写命令可钉住目标项目，不依赖共享 current 指针
+$Y project new projB -q "第二个项目（0.83 --project 钉住验证）" >/dev/null 2>&1
+SPB=$($Y research source add --title "pinned-to-B" --url "https://ex.com/83-pin" --project projB --json 2>&1)
+case "$SPB" in *'"url": "https://ex.com/83-pin"'*) echo "  ✓ source add --project projB 长旗标钉住写入";; *) echo "  ✗ --project: $SPB"; exit 1;; esac
+SPB_CNT=$($Y research source list --json -p projB | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).filter(x=>x.title==='pinned-to-B').length)})")
+[ "$SPB_CNT" = "1" ] && echo "  ✓ 资产落在 projB（非共享指针当前项目）" || { echo "  ✗ landed in wrong project: $SPB_CNT"; exit 1; }
+# ① 半写防护：--query 引用不存在 → 拒绝写入（0 源落地），不再先落源再报错
+set +e
+$Y research source add --title "would-be-orphan" --url "https://ex.com/orph" --query "no-such-query" -p techtree >/dev/null 2>&1
+ORPH_RC=$?
+set -e
+[ "$ORPH_RC" = "1" ] && echo "  ✓ 坏 --query 引用 rc=1 拒绝" || { echo "  ✗ half-write rc: $ORPH_RC"; exit 1; }
+ORPH_CNT=$($Y research source list --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).filter(x=>x.title==='would-be-orphan').length)})")
+[ "$ORPH_CNT" = "0" ] && echo "  ✓ 拒绝后无孤儿源落地（半写防护）" || { echo "  ✗ orphan landed: $ORPH_CNT"; exit 1; }
+# ② --help 任意深度：组内子命令直接打组帮助 rc=0（0.81 曾 rc=2）
+set +e
+KH=$($Y kb add --help 2>&1)
+KH_RC=$?
+set -e
+case "$KH" in *"add --title --body|-f"*) [ "$KH_RC" = "0" ] && echo "  ✓ kb add --help 打组帮助 rc=0";; *) echo "  ✗ --help: $KH"; exit 1;; esac
+# ④ can --eval attachments 快照：评估吃了哪些 rel 证据一目了然
+EV83=$($Y research evidence add "$DEVSRC" --quote "0.83 attachments snapshot evidence" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+$Y node cond add pb2 --name snap83 --op eval --value "demo attachments snapshot gate" -t probe-batch >/dev/null 2>&1
+$Y rel add node:probe-batch/pb2 evidence:$EV83 --rel evidenced-by >/dev/null 2>&1
+CAN83=$(YGL_EVAL_OFFLINE=1 $Y node can pb2 -t probe-batch --eval --json 2>&1)
+case "$CAN83" in *'"eval_attachments"'*"$EV83"*) echo "  ✓ can --eval 携带本次 attachments 快照";; *) echo "  ✗ attachments: $CAN83"; exit 1;; esac
+$Y node cond rm pb2 --name snap83 -t probe-batch >/dev/null 2>&1
 
 echo "── 6. tech-tree node model"
 $Y tree new demo

@@ -128,7 +128,17 @@ function execute(env: Env, job: any): void {
   let output = "";
   const started = Date.now();
   try {
-    output = execSync(job.command, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 600_000 });
+    // 0.83: the runner process itself holds the app-level write lock; a job
+    // command that invokes ygl-trees again would collide with its own parent
+    // (self-deadlock — every `ygl-trees …` job failed rc=1 "locked"). Children
+    // boot lock-free like webui serve: WAL already permits concurrent readers
+    // and serializes writers at the SQLite layer.
+    output = execSync(job.command, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 600_000,
+      env: { ...process.env, YGL_SERVE: "1" },
+    });
     rc = 0;
   } catch (e: any) {
     rc = typeof e?.status === "number" ? e.status : 1;

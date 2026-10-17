@@ -211,6 +211,22 @@ export function usage(): string {
   return USAGE;
 }
 
+/** 0.83 (user report ②): `--help` at any depth prints the relevant usage
+ * slice — `kb add --help` used to fall into flag validation rc=2. Renders the
+ * group's own block (found by its bold header line); unknown groups get the
+ * full usage. */
+export function groupHelp(group: string): string {
+  const pfx = paint(C.bold, group, true);
+  const lines = USAGE.split("\n");
+  const start = lines.findIndex((l) => l.startsWith(pfx));
+  if (start < 0) return USAGE;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("\u001b[1m")) { end = i; break; }
+  }
+  return lines.slice(0, 4).join("\n") + "\n\n" + lines.slice(start, end).join("\n").trimEnd();
+}
+
 // ── Main ──
 
 export async function main(argv: string[]): Promise<number> {
@@ -254,6 +270,16 @@ export async function main(argv: string[]): Promise<number> {
   // the parser eats --version as a flag, so check flags not positional args.
   if (args.flags.version === true || group === "version") {
     out(ctx, appVersion());
+    return 0;
+  }
+
+  // 0.83 (user report ②): `--help` at ANY depth prints the group's usage
+  // slice rc=0 — `kb add --help` used to fall into flag validation rc=2.
+  // Fires before dispatch and before db boot: help never touches the db.
+  if (args.flags.help === true && group) {
+    const text = groupHelp(group);
+    if (ctx.json) console.log(JSON.stringify({ help: text.replace(/\u001b\[[0-9;]*m/g, "") }, null, 2));
+    else out(ctx, text);
     return 0;
   }
 
@@ -332,6 +358,10 @@ export async function main(argv: string[]): Promise<number> {
   if (needInit && !require("node:fs").existsSync(file)) {
     bad(ctx, `no database at ${file}`);
     out(ctx, `  run: ygl-trees db init`);
+    // 0.83 (user report ③): name the workspace root cause — a foreign
+    // YGL_HOME (or its absence) is invisible otherwise, and the user chases
+    // the db instead of the environment.
+    out(ctx, `  workspace: ${home}${process.env.YGL_HOME ? "  (from YGL_HOME)" : "  (default ~/.ygl-trees — set YGL_HOME to switch)"}`);
     return 2;
   }
 

@@ -41,7 +41,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // -- project resolution (allow --p override) -----------------------------
   let project: any;
   try {
-    project = store.projectResolve(args.flags.p ? String(args.flags.p) : undefined);
+    project = store.projectResolve((args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined);
   } catch (e: any) {
     bad(ctx, e.message);
     return 1;
@@ -185,13 +185,33 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         tags: String(args.flags.tags || ""),
       };
       const qRef = String(args.flags.query || "");
+      // 0.83 (user report ①): half-write guard — `source add --query X` used
+      // to commit the source FIRST and attach separately; a bad query ref
+      // left the source landed with a pure error receipt (assets fragment
+      // silently). Pre-validate the query ref before ANY write; if the
+      // attach still fails post-write, name the landed source + the retry.
+      if (qRef) {
+        const q = store.db.get(
+          "SELECT id FROM queries WHERE (id=? OR text=?) AND project_id=?",
+          [qRef, qRef, project.id]
+        );
+        if (!q) {
+          bad(ctx, `query not found: ${clip(qRef, 40)} — refusing to write (source add would land without its query link; fix the ref or drop --query)`);
+          return 1;
+        }
+      }
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const r = await writes.sourceAdd(ds, project.id, spec);
-          writeResult(ctx, r as any, (row) => `source added: ${row.id}  ${clip(row.title, 60)}`);
+          writeResult(ctx, r as any, (row) => `source added: ${row.id}  ${clip(row.title, 60)}  · project ${project.name}`);
           if (qRef) {
-            const at = await writes.queryAttach(ds, project.id, qRef, r.row.id);
-            if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.queryText, 40)}"`, ctx.color));
+            try {
+              const at = await writes.queryAttach(ds, project.id, qRef, r.row.id);
+              if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.queryText, 40)}"`, ctx.color));
+            } catch (e: any) {
+              bad(ctx, `source landed as ${r.row.id} but attach failed: ${e?.message} — research query attach ${clip(qRef, 20)} ${r.row.id} to retry`);
+              return 1;
+            }
           }
           return 0;
         })
@@ -383,7 +403,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return runWrite(
         env,
         (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force),
-        (r) => `evidence added: ${r.id}  ${clip(quote, 50)}`
+        (r) => `evidence added: ${r.id}  ${clip(quote, 50)}  · project ${project.name}`
       );
     }
     // R15.3: evidence assess — decision model evaluates evidence quality
@@ -484,7 +504,7 @@ if (subAction === "list" || subAction === undefined) {
       return runWrite(
         env,
         (ds) => writes.claimAdd(ds, project.id, text, confidence, force),
-        (r) => `claim added: ${r.id}  ${clip(text, 60)}`
+        (r) => `claim added: ${r.id}  ${clip(text, 60)}  · project ${project.name}`
       );
     }
     if (subAction === "link") {

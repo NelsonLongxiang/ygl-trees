@@ -54,6 +54,8 @@ ygl-trees node unlock mining && ygl-trees node lock mining
 - `--state-file` 两种形状：扁平 `{"y_imported":40}` 全节点共享；按节点 `{"a":{"y_imported":40}}` 各取各袋；多键 `--json` 返回数组（0.79.1）
 - `ready --all` / `cond --due` 前置于树解析：无当前树也能跑，跨树巡检一条命令（0.82）
 - `cond --due` 提取 eval 问题文本中的 `YYYY-MM-DD`；默认 7 天窗口（含逾期），`--eval` 判定后仍需人工 resolve/unlock——判定 ≠ 仲裁（0.82）
+- **`--tree <t>` 长旗标（0.83）**：node 组树选择别名（与 `-t` 等价）——并发会话互踩 current_tree 时钉住目标；例外：`node import --tree <name>` 是导入目标树名，不是选择器
+- **`can --eval` attachments 快照（0.83）**：`--json` 增 `eval_attachments[]`、人类视图 `attachments ×N:`——本次判定吃了哪些 rel 证据一目了然，P 值复现不必翻库
 
 ## 3. 迁移与保真
 

@@ -109,9 +109,12 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 
 **跨树巡检 + 临期门槛（0.82）**：`node ready --all` 一次扫全部树（12 棵树 24 条命令 → 1 条）；`node cond --due [--days N]` 列出问题文本带 `YYYY-MM-DD` 期限且 N 天内到期（含逾期）的 eval 条件——w1/d90 预测门槛不再依赖人记得看；`--eval` 逐条送判定模型（离线安全回落 pending），**判定只报告不仲裁**（通过 ≠ 自动解锁，resolve/unlock 保持人工，与 predict audit 同纪律）。
 
+**并发钉住 + 半写防护（0.83，真实用户报告）**：并发会话共享 `current_project` 指针互踩导致资产碎片化——研究/产出/树三域写命令全部接受长旗标钉住：`research * --project <p>`、`produce/task * --project <p>`、`node * --tree <t>`（短旗标 `-p`/`-t` 不变）；写回执带 `· project <名>` 回显落点，写错项目当场可见。`source add --query` 引用不存在时**先拒绝后写入**（rc=1、零落地），不再出现"源已落、链接失败"的半写；`job run/tick` 的子命令以无锁环境启动（WAL 并发读），`ygl-trees …` 型任务命令不再与运行器自身死锁。`--help` 在任意深度（如 `kb add --help`）打组帮助 rc=0；`db init` 前的报错提示 `YGL_HOME` 工作区根因；到期巡检可直接挂 job（`job add "到期巡检" --every 1440 -- ygl-trees node cond --due --days 30`）。
+
 **决策模型评估门（spec R8；0.14 布尔 → 0.26 三题型 → 0.27 混批 → 0.80 织物并入）**：语义型必检条件用 eval 题型声明，`node can <key> --eval` 会把**节点元数据 + 直接父（关联）+ 祖先链（闭包索引）+ 条件组 + 已解锁集 + --state 袋 + rel 挂接摘要**组装为上下文包，交给评估模型（TypeSafe jev，经 Vercel AI Gateway）判定：
 
 - **rel 织物并入（0.80）**：节点挂接的 evidence（quote 摘要）/ claim（text+status+confidence）/ kb/source（标题）等 rel 关系（双向，≤12 条，文本截 120 字）自动进上下文包的 `attachments`——「证据挂链」纪律从此对语义门槛可见，不必再 `--state k=v` 手动携带裁决事实（实测 P 0.30 → 0.92 的差距由挂链补平）
+- **attachments 快照（0.83）**：`node can <key> --eval` 的输出（`--json` 的 `eval_attachments[]` + 人类视图 `attachments ×N:`）回显本次判定实际吃到的 rel 挂接——P 值过了也能一眼看出依据是哪几条 evidence/claim，复现不必翻库
 
 - **三题型**：`--op eval`（布尔 P(true)）/ `--op eval-choice`（多选一，判 **P(期望答案)**，`--options "k=desc,..."` + `--answer k`）/ `--op eval-score`（等级评分 `--levels "级0,..."` 2-10 级 + `--min-score n`，判概率加权均值 ±1 灰带）
 - P≥0.7 通过 · P≤0.4 未通过 · **灰带 pending**（过程态，禁作终态，单列不阻塞也不放行）；score 的灰带是 [min−1, min)
@@ -131,7 +134,8 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 ```
 query add       登记检索式
 query attach    检索式 ↔ 来源关联（query list 显示召回数）
-source add      收来源，按 (project, url_hash) 去重；--query 顺带关联
+source add      收来源，按 (project, url_hash) 去重；--query 顺带关联（引用不存在 → 整体拒绝 rc=1，零落地）
+                全组接受 --project <p> 长旗标钉住目标项目（并发会话不依赖共享 current 指针；回执带 · project 回显）
                 --adjudication "<裁决摘要>"：会话内裁决原生载体（url 自动 session://adjudication/<时刻>，摘要兼作标题）；--url 收任意 <scheme>://（https/file/session/a2a/… 跨 Agent 引用免落盘）
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
@@ -296,7 +300,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：unit (vitest 177 例) + build (tsc + tsdown) + demo（106 条断言）+ contract:audit（86 项）
+pnpm test          # 四段制回归：unit (vitest 177 例) + build (tsc + tsdown) + demo（113 条断言）+ contract:audit（86 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性

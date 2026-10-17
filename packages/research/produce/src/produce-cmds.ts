@@ -27,7 +27,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
   let project: any;
   try {
-    project = store.projectResolve(args.flags.p ? String(args.flags.p) : undefined);
+    project = store.projectResolve((args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined);
   } catch (e: any) {
     bad(ctx, e.message);
     return 1;
@@ -161,7 +161,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         .then((row): number | Promise<number> => {
           if (!nodeRef) {
             if (ctx.json) console.log(JSON.stringify(row, null, 2));
-            else ok(ctx, `task added: ${row.id}  ${title}`);
+            else ok(ctx, `task added: ${row.id}  ${title}  · project ${project.name}`);
             return 0;
           }
           // 0.81 ⑦: tasks join the relation fabric — `task add --node` links

@@ -31,7 +31,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const { ctx, db } = env;
   const trees = new TreeStore(db);
 
-  const sel = args.flags.t ? String(args.flags.t) : undefined;
+  // 0.83 (user report ①): --tree long alias alongside -t — pointer-hijack
+  // pinning needs an ergonomic, self-documenting form. EXCEPTION: `node
+  // import --tree <name>` is that command's own target-tree flag (create or
+  // merge destination), never a selector — alias must not shadow it.
+  const treeFlagAliasOk = !(action === "import");
+  const sel = treeFlagAliasOk
+    ? ((args.flags.t ?? args.flags.tree) ? String(args.flags.t ?? args.flags.tree) : undefined)
+    : (args.flags.t ? String(args.flags.t) : undefined);
   const flagNum = (k: string, d: number) => {
     const v = Number(args.flags[k]);
     return Number.isFinite(v) ? v : d;
@@ -536,6 +543,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         r.pending = pendingList;
         r.evaluated = evaluated;
+        // 0.83 (user report ④): snapshot the rel attachments the eval actually
+        // consumed — otherwise a passing P value can't be reproduced without
+        // digging the db. Byte-compat: field only when attachments exist.
+        const atts = (contextPkg as any).attachments;
+        if (Array.isArray(atts) && atts.length) r.eval_attachments = atts;
         r.ok = (r.missing_required as string[]).length === 0 && (r.blocked_by as string[]).length === 0 && pendingList.length === 0;
         try {
           const run = process.env.YGL_RUN_ID || "";
@@ -600,6 +612,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             for (const m of r.missing_optional) out(ctx, `    - ${m}`);
           }
           for (const e of r.evaluated) out(ctx, paint(C.dim, `  eval ${e.name}: P=${e.p ?? "-"} → ${e.outcome}${e.reason ? ` (${e.reason})` : ""}`, ctx.color));
+          // 0.83 ④: what the model actually ate this run (rel fabric snapshot)
+          if (Array.isArray(r.eval_attachments) && r.eval_attachments.length) {
+            out(ctx, paint(C.dim, `  attachments ×${r.eval_attachments.length}:`, ctx.color));
+            for (const a of r.eval_attachments) {
+              const label = a.type === "claim" ? `${a.id}(${a.status})`
+                : a.type === "evidence" ? `${a.id} "${clip(a.quote, 36)}"`
+                : a.type === "kb" || a.type === "source" ? `${a.id} ${clip(a.title, 30)}`
+                : a.type === "node" ? `${a.key ?? a.id}`
+                : String(a.id);
+              out(ctx, paint(C.dim, `    - ${a.rel} ← ${a.type}:${label}`, ctx.color));
+            }
+          }
           if (r.cost_multiplier !== 1) out(ctx, `  成本系数 ${r.cost_multiplier}`);
           return 0;
         }
@@ -803,11 +827,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     if (sub === "list" || sub === undefined) {
       // Contract ⑤ extension (user report: `node list --tree X` silently
       // swallowed the unknown flag and listed the CURRENT tree). node list
-      // takes exactly -t <tree> / --json — any other flag is a typo worth
-      // an explicit rc=2 instead of silent misdirection.
+      // takes exactly -t/--tree <tree> / --json — any other flag is a typo
+      // worth an explicit rc=2 instead of silent misdirection.
       for (const f of Object.keys(args.flags || {})) {
-        if (!["t", "json", "no-color"].includes(f)) {
-          bad(ctx, `unknown flag --${f} for 'node list' — tree selection is '-t <tree>' (positional <tree> also works)`);
+        if (!["t", "tree", "json", "no-color"].includes(f)) {
+          bad(ctx, `unknown flag --${f} for 'node list' — tree selection is '-t|--tree <tree>' (positional <tree> also works)`);
           return 2;
         }
       }

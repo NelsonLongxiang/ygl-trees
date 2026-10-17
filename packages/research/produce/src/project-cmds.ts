@@ -92,7 +92,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "show": {
-      const resolved = store.projectResolve(args.flags.p ? String(args.flags.p) : undefined);
+      const resolved = store.projectResolve((args.flags.p ?? args.flags.project) ? String(args.flags.p ?? args.flags.project) : undefined);
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const proj = await ds.getRepository(Project).findOne({

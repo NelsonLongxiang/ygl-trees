@@ -34,6 +34,7 @@ ygl-trees research source add --adjudication "会话内裁决：三条件已逐�
 
 来源按 `(project, url_hash)` 去重；`--query` 顺带建立召回关联（query list 显示召回数）。
 `--url` 收任意 `<scheme>://`（https/file/session/a2a/…，0.81）——跨 Agent 引用免落盘。
+**并发钉住（0.83）**：全组接受 `--project <p>` 长旗标（与 `-p` 等价）——并发会话共享 current 指针互踩时直接钉住目标项目，回执带 `· project <名>` 回显落点；`--query` 引用不存在 → 整体拒绝 rc=1 零落地（半写防护）。
 
 ## 2. 摘录与断言
 

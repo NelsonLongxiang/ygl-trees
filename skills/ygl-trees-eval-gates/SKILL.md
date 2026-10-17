@@ -66,6 +66,8 @@ ygl-trees node can gate-node --eval --json     # evaluated[] 带 type 字段 + p
 claim（text+status+confidence）、evidence（quote 截 120 字）、kb/source（标题）、node（key+name）、
 其余类型 id-only。裁决链 `decided-by` 挂好后 eval 模型直接可见，不必 `--state k=v` 手动携带事实
 （用户实测：不挂链 P=0.30，挂链后 0.92）。
+**快照回显（0.83）**：`node can <key> --eval` 的输出把本次吃到的 attachments 打回来——`--json` 的
+`eval_attachments[]` + 人类视图 `attachments ×N:` 逐条；P 值依据可复现，不必翻库。
 
 ## 5. 凭证与端点（优先级：config > 环境变量/文件 > 默认网关）
 

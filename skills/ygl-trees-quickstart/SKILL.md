@@ -67,12 +67,16 @@ ygl-trees webui serve --help   # 只打印用法不启服务（0.79.1 短路）
 
 PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
 
-## 2b2. 多会话安全（0.79）
+## 2b2. 多会话安全（0.79 → 0.83）
 
+- **0.83 并发钉住（最重要）**：并发会话共享 current 指针互踩——写命令直接钉住目标：`research * --project <p>`、`produce/task * --project <p>`、`node * --tree <t>`（`node import --tree` 是目标树名，非选择器）；写回执带 `· project <名>` 回显落点
 - `tree use` / `project use` 落 `tree.use` / `project.use` 事件（`YGL_SESSION` 会话标识）
 - `agent brief` 的 `selection_changed`：最近 10 分钟选择变更；跨会话变更置顶提示带 `-t`/`-p`
 - `kb add` 回执自检（`verified:true`）+ 工作区回显（防写错 home 的"丢笔记"事故）
 - `research claim link <cid> <sid> --by-source`：来源下全部证据一次挂齐；误传来源 id 会列出其证据 id
+- `research source add --query` 引用不存在 → 整体拒绝 rc=1 零落地（0.83 半写防护）
+- `--help` 任意深度打组帮助 rc=0（如 `kb add --help`）；job 子命令无锁启动（`ygl-trees …` 型任务命令不再与 runner 死锁）
+- 到期巡检范式：`job add "到期巡检" --every 1440 -- ygl-trees node cond --due --days 30`
 
 ## 2c. DB 锁行为（0.68 → 0.79.1）
 
