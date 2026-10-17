@@ -41,6 +41,12 @@ async function logEvent(mgr: EntityManager, kind: string, entity: string, entity
     payload: p,
     level,
   });
+  // 0.76: cross-domain event bus — notify real-time consumers (SSE/plugins)
+  try {
+    const { emitEvent } = require("../../../core/text/src/eventbus");
+    emitEvent({ kind, entity, entityId, payload: String(payload), ts: new Date().toISOString() });
+  } catch { /* eventbus optional — never block the write path */ }
+
 }
 
 // ================================================================ queries

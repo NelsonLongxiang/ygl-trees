@@ -497,9 +497,19 @@ export async function main(argv: string[]): Promise<number> {
       return 1;
     })
     .finally(() => {
-      // Cordis Context lifecycle: services auto-cleanup on process exit.
-      // For long-running processes, call app.dispose() explicitly.
-      try { db?.close(); } catch { /* best effort */ }
+      // Cordis lifecycle (0.76): Services' stop() hooks clean resources.
+      // This fork has no ctx.dispose() — we call Service.stop() explicitly.
+      // DatabaseService.stop() closes SQLite + releases .ygllock + closes ORM.
+      try {
+        if (booted?.ctx?.database?.stop) {
+          booted.ctx.database.stop(); // service-managed DB cleanup
+        }
+      } catch { /* dispose best-effort */ }
+      // Fallback path: if the service didn't take (bootApp fallback), db was
+      // constructed directly — it's not service-managed, close it here.
+      if (!booted?.ctx?.database) {
+        try { db?.close(); } catch { /* best effort */ }
+      }
     });
 }
 

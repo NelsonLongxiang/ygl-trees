@@ -840,6 +840,22 @@ export function createDashboardServer(env: Env) {
     if (typeof h.unref === "function") h.unref();
   }
 
+  // ── 0.76 Event-driven SSE: subscribe to the cross-domain event bus.
+  // Writes (node unlock, claim resolve, kb add, etc.) now emit instantly —
+  // SSE pushes fresh data on write instead of waiting for the 1.5s tick.
+  // The fingerprint tick above stays as a fallback/degradation path.
+  let unsubBus: (() => void) | null = null;
+  try {
+    const { onEvent } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
+    unsubBus = onEvent((evt) => {
+      if (!sseClients.size) return;
+      // Event received — push immediately (no polling delay)
+      push("data", gatherData(env));
+      // Also push the event itself as a named SSE event for fine-grained consumers
+      push(evt.kind.replace(/\//g, "-"), evt);
+    });
+  } catch { /* eventbus optional — fingerprint tick still covers */ }
+
   const server = http.createServer((req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");
     const url = u.pathname;
@@ -939,7 +955,10 @@ export function createDashboardServer(env: Env) {
     sseClients.clear();
   };
   server.on("close", dropLive);
-  (server as any).closeLive = dropLive;
+  (server as any).closeLive = () => {
+    dropLive();
+    if (unsubBus) { try { unsubBus(); } catch { /* */ } unsubBus = null; }
+  };
   return server;
 }
 

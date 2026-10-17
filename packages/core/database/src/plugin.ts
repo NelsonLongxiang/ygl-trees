@@ -15,6 +15,7 @@ declare module "@deepseek-ai/cordis" {
 
 export class DatabaseService extends Service {
   readonly db: DB;
+  private disposed = false;
 
   constructor(ctx: Context, dbFile: string) {
     super(ctx, "database");
@@ -26,6 +27,25 @@ export class DatabaseService extends Service {
     //   YGL_SERVE=1 — webui serve (long-lived; WAL permits concurrent access)
     const lock = process.env.YGL_TEST !== "1" && process.env.YGL_SERVE !== "1";
     this.db = new DB(dbFile, { lock });
+  }
+
+  /** Lifecycle: Cordis calls this when the Context is disposed — the
+   *  "Services stop with Context, resources auto-clean" promise made real.
+   *  Closes the SQLite handle AND the cached ORM DataSource. */
+  stop(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    try {
+      // Close the cached ORM DataSource if it was opened on this file
+      const { closeOrm } = require("./orm") as typeof import("./orm");
+      // closeOrm is async but stop() is sync in Cordis — fire-and-forget is
+      // safe here because db.close() below releases the file handle the ORM
+      // depends on; the ORM will see a closed connection and GC naturally.
+      closeOrm().catch(() => { /* best-effort; db.close is the real cleanup */ });
+    } catch { /* orm module not loaded — fine */ }
+    try {
+      this.db.close(); // releases .ygllock + closes SQLite handle
+    } catch { /* already closed */ }
   }
 }
 

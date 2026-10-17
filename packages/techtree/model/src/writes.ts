@@ -37,6 +37,12 @@ async function logEvent(
     `INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)`,
     [shortId([kind, entityId], 12), nowIso(), "cli", kind, "node", entityId, body, level]
   );
+  // 0.76: cross-domain event bus — notify real-time consumers (SSE/plugins)
+  try {
+    const { emitEvent } = require("../../../core/text/src/eventbus");
+    emitEvent({ kind, entity: "node", entityId, payload: String(body), ts: new Date().toISOString() });
+  } catch { /* eventbus optional — never block the write path */ }
+
 }
 
 async function reaches(mgr: EntityManager, treeId: string, fromId: string, toId: string): Promise<boolean> {

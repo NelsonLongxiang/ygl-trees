@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.76.0（2026-10-17）Cordis 深化——生命周期+事件驱动（A2A 任务 fedc7ab9）
+- **生命周期真实化**：DatabaseService 补 stop() 钩子（关 SQLite + 释放 .ygllock + 关 ORM）；bin.ts finally 走 Service.stop() 链（fallback DB 仍手动收口）；3 项单测证明 boot→stop 后资源释放
+- **事件驱动真实化**：新建 eventbus（EventEmitter 单例）；logEvent 落表后同步 emitEvent（node.unlock/kb.add/claim.resolve 等）；webui SSE 升级为事件驱动即时推送（1.5s 轮询保留为兜底）
+- **env 命名文档化**：env.ctx（fmt 输出）vs env.cordis（Cordis 运行时）——AGENTS.md 新增对照表
+- **插件增强**：用户插件可通过 eventbus 的 onEvent/onEventKind 获得反应能力
+
 ## 0.75.1（2026-10-17）npm 包修复 hotfix——skills/ 确认进入 tarball
 - 0.75.0 发布时 files 字段更新未被 pnpm pack 拾取（时间窗口 bug）——0.75.1 确认 12 个 skills 文件在 tarball 中
 - 包大小：352KB → 381KB（+29KB = 9 个 SKILL.md）

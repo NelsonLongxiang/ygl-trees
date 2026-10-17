@@ -104,6 +104,16 @@ docs/plugin-authoring.md  用户插件编写指南（契约 / profile / config-e
 CHANGELOG.md           逐版本聚合
 ```
 
+## env 命名约定（0.76）
+
+| 属性 | 含义 | 用途 |
+|---|---|---|
+|  | **fmt 输出上下文**（json/color/quiet） | 所有输出函数的第一个参数 |
+|  | **Cordis Context**（服务/事件/生命周期） | ctx.database / ctx.timer / ctx.emit |
+
+**不要混淆**： 是输出模式标志； 是 Cordis 运行时。
+用户插件拿到的是 （可以 ctx.on 监听事件）；输出用 。
+
 ## 开发规则
 
 1. **Schema 变更**：SCHEMA_SQL + 实体同 commit；bump SCHEMA_VERSION；走九触点
