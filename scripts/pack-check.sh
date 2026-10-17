@@ -33,9 +33,11 @@ mkdir -p "$WORK/consumer"
 cat > "$WORK/consumer/package.json" <<'EOF'
 { "name": "ygl-pack-consumer", "version": "1.0.0", "private": true }
 EOF
-(cd "$WORK/consumer" && npm install "$TGZ" --no-audit --no-fund --registry=https://registry.npmjs.org/ >/dev/null 2>&1) \
+# stderr survives into tmp/npm-packcheck.log — a gate that swallows its own
+# failure reason (npm network blip vs real defect) is anti-diagnostic.
+(cd "$WORK/consumer" && npm install "$TGZ" --no-audit --no-fund --registry=https://registry.npmjs.org/ >"$REPO/tmp/npm-packcheck.log" 2>&1) \
   && pass "installed from tarball (52-package closure resolves)" \
-  || { fail "npm install from tarball failed"; exit 1; }
+  || { fail "npm install from tarball failed (see tmp/npm-packcheck.log)"; exit 1; }
 
 BIN=$(ls "$WORK"/consumer/node_modules/ygl-trees/dist/bundle/bin.cjs \
       "$WORK"/consumer/node_modules/@*/ygl-trees/dist/bundle/bin.cjs 2>/dev/null | head -1)
