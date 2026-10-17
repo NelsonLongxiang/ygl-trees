@@ -19,6 +19,8 @@
 - **F3：taskSetStatus 更新 artifacts.updated**——任务状态变更现在同步写 updated 时间戳（v9 纪律补漏）
 - **exit 清理加固**：`beforeExit` + `exit` 双钩子 + 3 次重试（Windows EBUSY 容忍）
 - **vendor/cordis bin 字段清理**：bin.js 已删但声明残留——移除
+- **发布面补遗（0.68.0 后置修）**：Gitea 私仓补发 `@nelsonlongxiang/ygl-trees@0.68.0`——d950bdf 声称 "+ Gitea" 实未落上（私仓曾停留 0.66.0，npmjs 侧本就 latest）；tarball 直验通过（`.ygllock` 标记物在产物内、无 .npmrc/token 泄露）
+- **pack-check.sh 语法修复 + 名字无关化**（3542ab3）：b62e866 将 `export YGL_TEST=1` 插入 `REPO=$(...)` 命令替换中部，注释吞掉 `&& pwd)` → 子壳永不闭合、脚本必死——0.68.0 的 npmjs 发布实际绕过了发布门禁；修复后 tarball glob/BIN 发现兼容 scoped（Gitea）与 unscoped（npmjs）双名
 
 ## 0.67.0（2026-10-17）WebUI antd 迭代——Ant Design 组件库升级 React 客户端
 - **antd v6 + @ant-design/icons**：专业组件库驱动的富客户端
