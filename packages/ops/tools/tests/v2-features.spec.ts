@@ -29,8 +29,8 @@ describe("v2 features", () => {
   });
 
   it("time-travel: entity counts at timestamp", () => {
-    db.run("INSERT INTO projects(id,name,question,created) VALUES(?,?,?,?)",
-      ["p-tt", "test", "q", "2026-10-16 00:00:00"]);
+    db.run("INSERT INTO projects(id,name,question,created,updated) VALUES(?,?,?,?,?)",
+      ["p-tt", "test", "q", "2026-10-16 00:00:00", "2026-10-16 00:00:00"]);
     const before = db.get("SELECT COUNT(*) as n FROM projects WHERE created <= '2026-10-15'") as any;
     const after = db.get("SELECT COUNT(*) as n FROM projects WHERE created <= '2026-10-17'") as any;
     expect(after.n).toBeGreaterThan(before.n);
