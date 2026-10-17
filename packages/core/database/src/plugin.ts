@@ -55,4 +55,24 @@ export interface DatabaseConfig {
 
 export function apply(ctx: Context, config: DatabaseConfig) {
   new DatabaseService(ctx, config.file);
+  // 0.76 bridge: eventbus (internal) → ctx.emit (Cordis public API).
+  // This makes "ctx.on()/emit()" work as documented — plugins can listen
+  // with ctx.on("ygl", handler) or ctx.on("ygl:node.unlock", handler).
+  // The eventbus remains the internal write-path transport.
+  try {
+    const { onEvent, onEventKind } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
+    const unsub = onEvent((evt) => ctx.emit("ygl", evt));
+    // Also bridge kind-specific channels
+    const kindSubs: Array<() => void> = [unsub];
+    const knownKinds = ["node.unlock", "node.lock", "node.add", "node.link",
+      "kb.add", "kb.rm", "claim.resolve", "claim.add", "task.status",
+      "project.new", "skill.add"];
+    for (const kind of knownKinds) {
+      kindSubs.push(onEventKind(kind, (evt) => ctx.emit(`ygl:${kind}`, evt)));
+    }
+    // Cleanup on Context dispose (best-effort — this fork has no ctx.dispose)
+    (ctx as any).fiber?.collect?.(() => {
+      for (const u of kindSubs) { try { u(); } catch { /* */ } }
+    });
+  } catch { /* eventbus optional */ }
 }

@@ -93,3 +93,22 @@ repo-root/
 | `plugin list` 显示 ✗ 不可解析 | `plugin remove <name>` 后重装；或 `doctor` 看 plugin_profile 项 |
 | 启动报 "N plugin issue(s) during startup" | 读终端给出的 report 路径（`$YGL_HOME/logs/startup-*.log`） |
 | 装了命令组不生效 | 命令组在**下次进程启动**时注册（CLI 每命令独立进程，自然生效） |
+
+
+## 事件监听（0.76+）
+
+插件可以通过 Cordis 标准 `ctx.on` 监听跨域事件：
+
+```typescript
+// 监听全部事件
+ctx.on("ygl", (evt) => {
+  console.log(evt.kind, evt.entityId);  // e.g. "node.unlock" "sn123"
+});
+
+// 监听特定类型
+ctx.on("ygl:node.unlock", (evt) => { /* ... */ });
+ctx.on("ygl:kb.add", (evt) => { /* ... */ });
+ctx.on("ygl:claim.resolve", (evt) => { /* ... */ });
+```
+
+事件在 logEvent 落表后即时发出（事件驱动 SSE 同通道）。支持的事件类型见 `packages/core/text/src/eventbus.ts`。
