@@ -252,8 +252,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (section) {
       const manifest = generateLlmsManifest();
-      const all = manifest.split("
-## ");
+      const all = manifest.split("\n## ");
       const match = all.find(s2 => s2.toLowerCase().startsWith(section.toLowerCase()));
       if (match) {
         out(ctx, "## " + match);
