@@ -108,11 +108,11 @@ CHANGELOG.md           逐版本聚合
 
 | 属性 | 含义 | 用途 |
 |---|---|---|
-|  | **fmt 输出上下文**（json/color/quiet） | 所有输出函数的第一个参数 |
-|  | **Cordis Context**（服务/事件/生命周期） | ctx.database / ctx.timer / ctx.emit |
+| `env.ctx` | **fmt 输出上下文**（json/color/quiet） | 所有输出函数的第一个参数 |
+| `env.cordis` | **Cordis Context**（服务/事件/生命周期） | ctx.database / ctx.timer / ctx.emit |
 
-**不要混淆**： 是输出模式标志； 是 Cordis 运行时。
-用户插件拿到的是 （可以 ctx.on 监听事件）；输出用 。
+**不要混淆**：`env.ctx.json` 是输出模式标志；`env.cordis` 是 Cordis 运行时。
+用户插件拿到的是 `env.cordis`（可以 ctx.on 监听事件）；输出用 `env.ctx`。
 
 ## 开发规则
 
