@@ -7,9 +7,9 @@
 import { Database } from "node-sqlite3-wasm";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { sha1 } from "../../text/src/text";
+import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 /** Shared ORM-opened signal: orm.ts flips this when a DataSource settles.
  * plugin.ts stop() reads it WITHOUT importing orm (which pulls typeorm) so
@@ -341,7 +341,20 @@ CREATE TABLE IF NOT EXISTS events (
   entity    TEXT DEFAULT '',
   entity_id TEXT DEFAULT '',
   payload   TEXT DEFAULT '',
-  level     TEXT NOT NULL DEFAULT 'info'   -- v7 telemetry severity: info|warn|error
+  level     TEXT NOT NULL DEFAULT 'info',  -- v7 telemetry severity: info|warn|error
+  seq       INTEGER                        -- v10/PG-A④: PG-side BIGSERIAL ordering; SQLite NULL (rowid is the native order since 0.87.1)
+);
+
+-- ---------------------------------------------------------------- schema ledger
+-- v10/PG-A③: applied-schema bookkeeping on BOTH backends — the SQLite side
+-- records each applied user_version; the PG side records the mirrored schema
+-- generation. Dual-write (B segment) consults this to gate format changes.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  backend    TEXT NOT NULL,               -- 'sqlite' | 'postgres'
+  version    INTEGER NOT NULL,
+  applied_at TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (backend, version)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sources_project  ON sources(project_id);
@@ -553,9 +566,24 @@ export class DB {
       if ((v > 0 && v < 7) || (v === 0 && tablesPreExist)) this.upgrade6to7();
       if ((v > 0 && v < 8) || (v === 0 && tablesPreExist)) this.upgrade7to8();
       if ((v > 0 && v < 9) || (v === 0 && tablesPreExist)) this.upgrade8to9();
+      if ((v > 0 && v < 10) || (v === 0 && tablesPreExist)) this.upgrade9to10();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
+      // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
+      // applied version; replay-safe)
+      this.db.run(
+        `INSERT OR IGNORE INTO schema_migrations(backend,version,applied_at,note) VALUES('sqlite',?,?,?)`,
+        [SCHEMA_VERSION, nowIso(), 'v10: events.seq + schema_migrations ledger (PG-A foundation)']
+      );
     }
+  }
+
+  /** v9 -> v10 (PG-A foundation, 单5): events gains a nullable seq column
+   * (PG-side BIGSERIAL; SQLite keeps rowid as native order) and the
+   * schema_migrations ledger table lands on both backends. */
+  private upgrade9to10(): void {
+    const hasSeq = this.get("SELECT 1 FROM pragma_table_info('events') WHERE name='seq'");
+    if (!hasSeq) this.db.exec(`ALTER TABLE events ADD COLUMN seq INTEGER`);
   }
 
   /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine

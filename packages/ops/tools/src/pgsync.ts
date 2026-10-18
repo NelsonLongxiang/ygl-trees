@@ -23,7 +23,7 @@ export const MIRROR_TABLES = [
   "meta", "config", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
   "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
   "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
-  "relations", "jobs", "runs", "events",
+  "relations", "jobs", "runs", "events", "schema_migrations",
 ];
 
 /** Base tables whose FTS ngram we recompute — input functions MUST mirror
@@ -132,6 +132,13 @@ export async function syncToPg(db: DB, url: string, only?: string[]): Promise<Sy
     for (const t of tables) {
       result.push({ table: t, rows: await copyTable(client, db, t) });
     }
+    // PG-A③: record the mirrored schema generation in the dual-end ledger
+    const uv = (db.get("PRAGMA user_version") as { user_version?: number })?.user_version ?? 0;
+    await client.query(
+      `INSERT INTO schema_migrations(backend,version,applied_at,note) VALUES('postgres',$1,$2,$3)
+       ON CONFLICT (backend,version) DO UPDATE SET applied_at=excluded.applied_at, note=excluded.note`,
+      [uv, new Date().toISOString(), `mirror sync of sqlite v${uv}`]
+    );
     return { tables: result, server_version: ver, fulltext };
   } finally {
     await client.end();
@@ -146,6 +153,7 @@ export async function syncToPg(db: DB, url: string, only?: string[]): Promise<Sy
 // (no dual-backend writes by design; see docs/pg-compat.md).
 
 const MIGRATE_DDL = `
+CREATE SEQUENCE IF NOT EXISTS events_seq;  -- v10/PG-A④: backing sequence for events.seq (PG-native writes)
 CREATE TABLE meta (key text PRIMARY KEY, value text NOT NULL);
 CREATE TABLE config (
   key text PRIMARY KEY, value text NOT NULL DEFAULT '',
@@ -173,7 +181,9 @@ CREATE TABLE sources (
   url text DEFAULT '', title text NOT NULL DEFAULT '', url_hash text NOT NULL,
   content_hash text NOT NULL DEFAULT '', abstract text DEFAULT '', content text DEFAULT '',
   engine text DEFAULT '', relevance integer NOT NULL DEFAULT 0, confidence text NOT NULL DEFAULT 'B',
-  tags text DEFAULT '', retrieved_at text NOT NULL, UNIQUE (project_id, url_hash));
+  tags text DEFAULT '', retrieved_at text NOT NULL,
+  created text NOT NULL DEFAULT '',            -- v9
+  UNIQUE (project_id, url_hash));
 CREATE TABLE query_sources (
   query_id text NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
   source_id text NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -187,7 +197,9 @@ CREATE TABLE evidence (
 CREATE TABLE claims (
   id text PRIMARY KEY, project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   text text NOT NULL, status text NOT NULL DEFAULT 'unverified', confidence text NOT NULL DEFAULT 'B',
-  content_hash text NOT NULL DEFAULT '', created text NOT NULL, UNIQUE (project_id, content_hash));
+  content_hash text NOT NULL DEFAULT '', created text NOT NULL,
+  updated text NOT NULL DEFAULT '',                -- v9
+  UNIQUE (project_id, content_hash));
 CREATE TABLE claim_evidence (
   claim_id text NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
   evidence_id text NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
@@ -197,6 +209,7 @@ CREATE TABLE artifacts (
   kind text NOT NULL DEFAULT 'section', title text NOT NULL DEFAULT '',
   format text NOT NULL DEFAULT 'markdown', content text NOT NULL DEFAULT '',
   version integer NOT NULL DEFAULT 1, created text NOT NULL,
+  updated text NOT NULL DEFAULT '',                  -- v9
   meta text NOT NULL DEFAULT '');
 CREATE TABLE kb_notes (
   id text PRIMARY KEY, title text NOT NULL, body text NOT NULL DEFAULT '',
@@ -224,6 +237,7 @@ CREATE TABLE node_edges (
   rel text NOT NULL DEFAULT 'prereq', mode text NOT NULL DEFAULT 'AND',
   required integer NOT NULL DEFAULT 1, min_level integer NOT NULL DEFAULT 1,
   weight double precision NOT NULL DEFAULT 1, note text DEFAULT '',
+  created text NOT NULL DEFAULT '',                 -- v9
   UNIQUE (parent_id, child_id, rel));
 CREATE TABLE node_closure (
   tree_id text NOT NULL, ancestor text NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -234,7 +248,8 @@ CREATE TABLE node_conditions (
   name text NOT NULL, kind text NOT NULL DEFAULT 'flag', expr text NOT NULL DEFAULT '',
   op text NOT NULL DEFAULT '>=', value text NOT NULL DEFAULT '',
   required integer NOT NULL DEFAULT 1, effect text NOT NULL DEFAULT 'gate',
-  weight double precision NOT NULL DEFAULT 1, note text DEFAULT '');
+  weight double precision NOT NULL DEFAULT 1, note text DEFAULT '',
+  created text NOT NULL DEFAULT '');                -- v9
 CREATE TABLE node_state (
   tree_id text NOT NULL REFERENCES trees(id) ON DELETE CASCADE,
   context text NOT NULL DEFAULT 'default', node_id text NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -249,6 +264,7 @@ CREATE TABLE relations (
   id text PRIMARY KEY, src_type text NOT NULL, src_id text NOT NULL,
   dst_type text NOT NULL, dst_id text NOT NULL, rel text NOT NULL DEFAULT 'related',
   weight double precision NOT NULL DEFAULT 1,
+  created text NOT NULL DEFAULT '',                 -- v9
   UNIQUE (src_type, src_id, dst_type, dst_id, rel));
 CREATE TABLE jobs (
   id text PRIMARY KEY, title text NOT NULL, command text NOT NULL,
@@ -261,7 +277,11 @@ CREATE TABLE runs (
 CREATE TABLE events (
   id text PRIMARY KEY, ts text NOT NULL, actor text NOT NULL DEFAULT 'cli', kind text NOT NULL,
   entity text DEFAULT '', entity_id text DEFAULT '', payload text DEFAULT '',
-  level text NOT NULL DEFAULT 'info');
+  level text NOT NULL DEFAULT 'info',
+  seq bigint DEFAULT nextval('events_seq'));  -- v10/PG-A④: monotonic order for PG-native writes (nullable: mirrored rows carry NULL)
+CREATE TABLE schema_migrations (   -- v10/PG-A③: applied-schema ledger, both backends
+  backend text NOT NULL, version integer NOT NULL, applied_at text NOT NULL,
+  note text NOT NULL DEFAULT '', PRIMARY KEY (backend, version));
 `;
 
 const MIGRATE_INDEXES = `
@@ -387,6 +407,14 @@ export async function migrateToPg(db: DB, url: string, fresh = false): Promise<M
         if (n !== rows) throw new Error(`count mismatch on ${t}: copied ${rows}, found ${n}`);
         result.push({ table: t, rows });
       }
+      // PG-A③: record the migrated schema generation (replaces the copied
+      // 'sqlite' seed row set with the PG-side graduation record)
+      const uvM = (db.get("PRAGMA user_version") as { user_version?: number })?.user_version ?? 0;
+      await client.query(
+        `INSERT INTO schema_migrations(backend,version,applied_at,note) VALUES('postgres',$1,$2,$3)
+         ON CONFLICT (backend,version) DO UPDATE SET applied_at=excluded.applied_at, note=excluded.note`,
+        [uvM, new Date().toISOString(), `one-time full-fidelity graduation from sqlite v${uvM}`]
+      );
       await client.query("COMMIT");
 
       const fk = (

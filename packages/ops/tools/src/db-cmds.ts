@@ -446,7 +446,7 @@ ${cl.text}
         "meta", "config", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
         "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
         "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
-        "relations", "jobs", "runs", "events",
+        "relations", "jobs", "runs", "events", "schema_migrations",
       ];
       const lines: string[] = [
         "-- ygl-trees full dump",

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.89.0（2026-10-18）PG-A 地基：方言接缝 + FTS 门控 + 双端账表 + events.seq（单5）
+
+- **① orm 方言接缝（schema v10）**：`getPgOrm(url)` 与 `getOrm(dbFile)` 同一实体注册表双轨；`ormDialect()` 供写路径判方言。探针实证：postgres 方言下实体元数据纯净、repo.find 可用。
+- **② FTS5 shadow 方言门控**：research/kb/skill 写路径 7 处 `*_fts` 影子表语句收进 `ftsShadow()` 助手——SQLite 执行、PG 跳过（PG 全文检索是 sync 侧 tsvector 列，非影子表）。同一事务体两方言可跑，为 B 段双写扫清崩溃面。
+- **③ schema_migrations 双端账表**：`(backend,version)` 主键；SQLite 每次 migrate 后 `INSERT OR IGNORE` 记当前版；`db sync pg`/`db migrate pg` 各记 postgres 侧代次（upsert）。`db export` 数据表清单同步收录。
+- **④ events.seq 列**：SQLite 侧可空 INTEGER（rowid 是原生序，0.87.1 排序契约不变）；PG MIGRATE_DDL 侧 `bigint DEFAULT nextval('events_seq')`——PG 原生写入获得单调序（INSERT RETURNING seq=1 实测）。
+- 顺带：MIGRATE_DDL 补齐 v9 时间列漂移（sources/claims/artifacts/node_edges/node_conditions/relations 的 created/updated——drift guard 在 docker 迁移实测中当场拦截，正是其设计目的）；schema v9→v10 升级路径含老库加列。
+- 测试：pg-a.spec ×4（版本+账表幂等/seq 可空/方言判定/v9 老库升级）；docker ygl-pg-test 全链实测（fresh migrate 26 表 + 账表双行 + seq 探针 + pg-orm-probe PASS）；SQLite 四段全绿（206 单测 + demo 123 + contract 93 + readme 53）。
+
 ## 0.88.0（2026-10-18）WebUI 纯 HTML 退役（用户裁定）+ cond 幂等 + unlink 诚实化
 
 - **单3·WebUI 纯 HTML 仪表盘退役（用户亲裁：React 唯一主前端）**：内嵌零依赖 dashboard（`/classic` 路由、单文件 `dashboard.html` 导出、generateHTML 整块 ~570 行）全数退役。① `build` 尾自动拷 `apps/web/dist → dist/apps/web/dist`（新 `scripts/stage-web-dist.mjs`），npm 包开箱即带 React 客户端；② `webui serve` 在 dist 缺失时**诚实拒绝启动**（rc=1，提示构建/重装命令），不再静默回落降级面板；③ `webui export` 改落**服务形态快照** `snapshot.json`（与 `/api/data` 同载荷：meta.generated + brief + claims/sources/evidence/tree/timeline，原子写）；④ 非法非 API 路由 503 带修复指引。README/webui-design.md/spec R13.5/skills/demo §8 连带收口。

@@ -19,6 +19,7 @@ import { CORE_ENTITIES } from "./entities";
 import { ormState } from "./db";
 
 let cached: { file: string; ds: DataSource } | null = null;
+let pgCached: { url: string; ds: DataSource } | null = null;
 
 export async function getOrm(dbFile: string): Promise<DataSource> {
   if (cached && cached.file === dbFile) return cached.ds;
@@ -38,7 +39,33 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
   return ds;
 }
 
-/** Destroy the cached DataSource (tests/scratch dirs cannot be removed on
+/** 0.89 (PG-A ①): dialect seam — the SAME entity registry over PostgreSQL.
+ * Dual-write (B segment) will route PG-side writes through here; A segment
+ * proves the seam (probe + docker smoke) and gates FTS5 shadow writes. */
+export async function getPgOrm(url: string): Promise<DataSource> {
+  if (pgCached && pgCached.url === url) return pgCached.ds;
+  const ds = new DataSource({
+    type: "postgres",
+    url,
+    synchronize: false, // NEVER — schema authority is SCHEMA_SQL / MIGRATE_DDL
+    entities: [...RESEARCH_ENTITIES, ...CORE_ENTITIES],
+  });
+  await ds.initialize();
+  pgCached = { url, ds };
+  ormState.opened = true;
+  return ds;
+}
+
+/** Dialect of the connection a manager belongs to (FTS5 gating, PG-A ②). */
+export function ormDialect(dsOrMgr: any): "sqlite" | "postgres" | "other" {
+  const opts = dsOrMgr?.connection?.options ?? dsOrMgr?.options;
+  const t = String(opts?.type ?? "");
+  if (t === "better-sqlite3" || t === "sqlite") return "sqlite";
+  if (t === "postgres") return "postgres";
+  return "other";
+}
+
+/** Destroy the cached DataSource(s) (tests/scratch dirs cannot be removed on
  *  Windows while a better-sqlite3 handle keeps the file open — EPERM). */
 export async function closeOrm(): Promise<void> {
   if (cached) {
@@ -48,5 +75,13 @@ export async function closeOrm(): Promise<void> {
       /* best effort */
     }
     cached = null;
+  }
+  if (pgCached) {
+    try {
+      await pgCached.ds.destroy();
+    } catch {
+      /* best effort */
+    }
+    pgCached = null;
   }
 }

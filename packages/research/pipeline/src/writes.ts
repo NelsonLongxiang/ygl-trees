@@ -18,6 +18,16 @@ import { DataSource, EntityManager } from "typeorm";
 import { Claim, Evidence, Query, QuerySource, Source } from "./entities";
 import { Event } from "../../../core/database/src/entities";
 import { contentHash, ngram, nowIso, sha1, shortId } from "../../../core/text/src/text";
+import { ormDialect } from "../../../core/database/src/orm";
+
+/** 0.89 (PG-A ②): FTS5 shadow tables are SQLite-only virtual tables — the PG
+ * mirror carries full-text as a tsvector column recomputed at sync time. Gate
+ * every shadow write so the same transaction body runs on both dialects (the
+ * B-segment dual-write would otherwise crash on missing _fts relations). */
+async function ftsShadow(mgr: EntityManager, sql: string, params: unknown[]): Promise<void> {
+  if (ormDialect(mgr) !== "sqlite") return;
+  await mgr.query(sql, params as any[]);
+}
 
 export interface WriteResult {
   row: Record<string, any>;
@@ -119,7 +129,7 @@ export async function sourceAdd(
     // v9: creation timestamp (distinct from retrievedAt which is fetch time)
     s.created = nowIso();
     await mgr.save(s);
-    await mgr.query(`INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)`, [
+    await ftsShadow(mgr, `INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)`, [
       s.id, title, abstract_, content, ngram(`${title} ${abstract_} ${content} ${o.tags || ""}`),
     ]);
     await logEvent(mgr, "source.add", "source", s.id, title);
@@ -162,7 +172,7 @@ export async function evidenceAdd(
     e.contentHash = hash;
     e.created = nowIso();
     await mgr.save(e);
-    await mgr.query(`INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)`, [e.id, quote, ngram(quote)]);
+    await ftsShadow(mgr, `INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)`, [e.id, quote, ngram(quote)]);
     await logEvent(mgr, "evidence.add", "evidence", e.id, quote.slice(0, 60));
     return { row: mapEvidence(e), dup: false };
   });
@@ -323,7 +333,7 @@ export async function kbAdd(
        VALUES(?,?,?,?,?,?,?,0,?,?,?)`,
       [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, now, now]
     );
-    await mgr.query(`INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
+    await ftsShadow(mgr, `INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
       id, o.title, o.tags || "", ngram(`${o.title} ${o.tags || ""} ${o.body}`),
     ]);
     await logEvent(mgr, "kb.add", "kb_note", id, o.title);
@@ -382,7 +392,7 @@ export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promi
          VALUES(?,?,?,?,?,?,?,0,?,?,?)`,
         [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, now, now]
       );
-      await mgr.query(`INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
+      await ftsShadow(mgr, `INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
         id, o.title, o.tags || "", ngram(`${o.title} ${o.tags || ""} ${o.body}`),
       ]);
       await logEvent(mgr, "kb.add", "kb_note", id, o.title);
@@ -501,8 +511,8 @@ export async function skillUpsert(
     const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
     const s = rows[0];
     // FTS shadow refresh in the SAME transaction (delete+reinsert, Store-era discipline)
-    await mgr.query(`DELETE FROM skills_fts WHERE id=?`, [s.id]);
-    await mgr.query(`INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
+    await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [s.id]);
+    await ftsShadow(mgr, `INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
       s.id, s.name, s.description, s.tags, ngram(`${s.name} ${s.description} ${s.tags} ${s.body}`),
     ]);
     await logEvent(mgr, "skill.upsert", "skill", s.id, s.name);
@@ -514,7 +524,7 @@ export async function skillDel(ds: DataSource, name: string): Promise<void> {
   return ds.transaction(async (mgr) => {
     const rows = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [name])) as any[];
     if (!rows.length) throw new Error(`skill not found: ${name}`);
-    await mgr.query(`DELETE FROM skills_fts WHERE id=?`, [rows[0].id]);
+    await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [rows[0].id]);
     await mgr.query(`DELETE FROM skills WHERE id=?`, [rows[0].id]);
   });
 }

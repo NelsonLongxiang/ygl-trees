@@ -27,10 +27,12 @@ afterAll(async () => {
   fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup
 });
 
-describe("schema v9（artifacts.meta 信封 + 时间字段）", () => {
-  it("fresh DB → v9，meta 列存在，时间字段齐备", () => {
-    expect(SCHEMA_VERSION).toBe(9);
-    expect(db.get("PRAGMA user_version")?.user_version).toBe(9);
+describe("schema 版本（artifacts.meta 信封 + 时间字段）", () => {
+  it("fresh DB → 当前 SCHEMA_VERSION（v10 起），meta 列存在，时间字段齐备", () => {
+    // 0.89/PG-A: v10 = events.seq + schema_migrations ledger；本组断言的
+    // meta/时间字段属 v8/v9 面料，随版本上移不失效
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(10);
+    expect(db.get("PRAGMA user_version")?.user_version).toBe(SCHEMA_VERSION);
     expect(db.get("SELECT 1 AS hit FROM pragma_table_info('artifacts') WHERE name='meta'")).toBeTruthy();
   });
 });
