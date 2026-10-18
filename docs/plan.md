@@ -287,6 +287,16 @@
 - **node-sqlite3-wasm 锁家族立档（评审建议）**：0.83 DB.close 65s flake、0.85 终审 65s 超时、0.90.1 P1-2 serve 击毙同族——自定义 VFS mkdir 目录锁在跨进程 WAL 竞争下语义脆弱；0.90.1 起全连接 `PRAGMA busy_timeout=2000`（读等待替代瞬败）。系统性硬化（锁获取快败/读写分离连接）列 0.91 候选。
 - 0.90.0 不单独上 registry：0.90.1 同船发布（工作树已含 P1 修复，单独打 0.90.0 包会泄修复面口径混乱；0.84.1→0.85.0 先例）。两节 CHANGELOG 齐备。
 
+### M10 — 事件族合修（0.91a，2026-10-18 立项，三方批次裁定：评审线 direct-23f13a7d / Cordis 席 direct-032bf3b4 / 监督席 direct-7389f32f）
+
+**ADR：事件发射的提交后语义（post-commit emission）**
+
+- **背景（Cordis 席实地证据）**：research/pipeline/src/writes.ts 与 techtree/model/src/writes.ts 的 logEvent 满足两个缺陷——①发射用 `require("…/eventbus")` 包 try/catch，ESM 宿主（vitest）下 ReferenceError 被静默吞，桥链单测实际测不到 writes 路径（M7-3 在 database/plugin.ts 修过的同一病灶）；②发射在 `ds.transaction` 回调内部即事务提交**前**——回滚后订阅者已见幽灵事件而库无记录（0.84 demo ghost 事件同族风险面）。
+- **决策**：①静态 `import { emitEvent }`（core→core 无环，零加载代价）；②新增 `runTx(ds, fn)` 包装器——events 表 INSERT 留在事务内（审计行随写回滚），总线发射移到 `ds.transaction` 成功 resolve（TypeORM 仅在 commit 后 resolve）之后；`fn` 抛出→事务回滚→pending 袋整体丢弃，零幽灵事件按构造保证；③载荷在 logEvent 调用点快照（防调用方后改对象），字段与 0.76–0.90 格式逐字节一致（`String(payload)` 原语义保留，含 research 路径对象载荷的既有 `"[object Object]"` 形态——冻结不动，避免 SSE/校准消费面漂移）；④两域 cmds.ts 的 5 处裸 INSERT（claim.eval ×2 / tree.use·project.use / eval.gate / eval.ready）统一获得总线发射——autocommit INSERT 返回即已提交，紧跟发射天然满足提交后语义；rels/config/knowledge/produce 的裸 INSERT 归 0.91b 跨包下沉批。
+- **验收三条（direct-032bf3b4 照录）**：①回滚零泄漏（abort→订阅者 0 条+库 0 行，双向断言）；②静态 import 后 vitest 下 writes 路径发射可见（桥链覆盖从 plugin 扩到两处 writes）；③已提交事务的发射内容与现状逐字节一致。
+- **约束**：0.91 全批禁止重放/清洗/回填 events 表（首份校准曲线数据源完整性）；分支 `0.91a-event-family`（worktree D:\workspace\ygl-trees-091a）冻结窗口外开发，**合并/发布压到 10-19 15:00 基线快照之后**（监督席结算 14:00×5 支 + 校准曲线 14:30 + predict list 快照 15:00）。
+- 测试：packages/research/pipeline/tests/emit-postcommit.spec.ts ×4（回滚零泄漏 / research 路径 ESM 可见+字段形状 / techtree 路径同 / 重复写不发（dup 早退语义冻结））。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

@@ -19,6 +19,29 @@ import { Claim, Evidence, Query, QuerySource, Source } from "./entities";
 import { Event } from "../../../core/database/src/entities";
 import { contentHash, ngram, nowIso, sha1, shortId } from "../../../core/text/src/text";
 import { ormDialect } from "../../../core/database/src/orm";
+// 0.91a (Cordis review direct-032bf3b4): static import — the old
+// `require()`-in-try/catch form silently dies under ESM hosts (vitest),
+// the exact disease M7-3 fixed in database/plugin.ts. The bus is core→core
+// with zero dependency cycle, so a static import costs nothing at load.
+import { emitEvent, YglEvent } from "../../../core/text/src/eventbus";
+
+/** 0.91a: run a write transaction with post-commit event flush.
+ *
+ * The events-table INSERT stays INSIDE the transaction (the audit row must
+// roll back with the write), but the cross-domain bus emission moves to
+// AFTER ds.transaction resolves — TypeORM only resolves on commit, so
+// subscribers can never observe an event whose row is not durable. A
+ * rollback (fn throws → transaction rejects) discards the pending bag:
+ * zero ghost events by construction (acceptance ① of the batch). */
+export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promise<T>): Promise<T> {
+  const pending: YglEvent[] = [];
+  const result = await ds.transaction(async (mgr) => {
+    (mgr as any).__yglPendingEvents = pending;
+    return fn(mgr);
+  });
+  for (const ev of pending) emitEvent(ev);
+  return result;
+}
 
 /** 0.89 (PG-A ②): FTS5 shadow tables are SQLite-only virtual tables — the PG
  * mirror carries full-text as a tsvector column recomputed at sync time. Gate
@@ -51,12 +74,14 @@ async function logEvent(mgr: EntityManager, kind: string, entity: string, entity
     payload: p,
     level,
   });
-  // 0.76: cross-domain event bus — notify real-time consumers (SSE/plugins)
-  try {
-    const { emitEvent } = require("../../../core/text/src/eventbus");
-    emitEvent({ kind, entity, entityId, payload: String(payload), ts: new Date().toISOString() });
-  } catch { /* eventbus optional — never block the write path */ }
-
+  // 0.91a: snapshot the payload at log time (callers may mutate objects
+  // after the call) and stash it on the transaction-scoped pending bag —
+  // runTx flushes to the bus after commit. Outside runTx (no pending bag)
+  // emit immediately: a bare INSERT in autocommit mode is already durable.
+  const snap: YglEvent = { kind, entity, entityId, payload: String(payload), ts: new Date().toISOString() };
+  const pending: YglEvent[] | undefined = (mgr as any).__yglPendingEvents;
+  if (pending) pending.push(snap);
+  else emitEvent(snap);
 }
 
 // ================================================================ queries
@@ -69,7 +94,7 @@ export async function queryAdd(
   force = false
 ): Promise<WriteResult> {
   const hash = contentHash(text, force);
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const ex = await mgr.findOne(Query, { where: { projectId, contentHash: hash } });
     if (ex) return { row: mapQuery(ex), dup: true };
     const q = new Query();
@@ -106,7 +131,7 @@ export async function sourceAdd(
 ): Promise<WriteResult & { created: boolean }> {
   const url = o.url || "";
   const urlHash = sha1(url || o.title || "");
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const ex = await mgr.findOne(Source, { where: { projectId, urlHash } });
     if (ex) return { row: mapSource(ex), created: false, dup: true };
     const title = o.title || url || "untitled";
@@ -157,7 +182,7 @@ export async function evidenceAdd(
   force = false
 ): Promise<WriteResult> {
   const hash = contentHash(quote, force);
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
     if (!src) throw new Error(`source not found: ${sourceId}`);
     const ex = await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
@@ -196,7 +221,7 @@ export async function claimAdd(
   channel = ""
 ): Promise<WriteResult> {
   const hash = contentHash(text, force);
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const ex = await mgr.findOne(Claim, { where: { projectId, contentHash: hash } });
     if (ex) return { row: mapClaim(ex), dup: true };
     const c = new Claim();
@@ -230,7 +255,7 @@ export async function claimLink(
   evidenceId: string,
   stance: "supports" | "refutes" = "supports"
 ): Promise<{ status: string; auto_promote: boolean }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     // Resolve both ends before writing: a bad/foreign id must surface as a
     // named not-found, not as a raw FOREIGN KEY constraint failure.
     const c = (await mgr.query(`SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
@@ -275,7 +300,7 @@ export async function claimLink(
  * predictions (and for any claim arbitrated too early). Idempotent: already
  * unverified → duplicate:true, no event spam. */
 export async function claimUnresolve(ds: DataSource, claimId: string): Promise<{ status: string; duplicate: boolean }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const c = (await mgr.query(`SELECT id, status FROM claims WHERE id=?`, [claimId])) as any[];
     if (!c.length) throw new Error(`claim not found: ${claimId}`);
     if (String(c[0]?.status) === "unverified") return { status: "unverified", duplicate: true };
@@ -286,7 +311,7 @@ export async function claimUnresolve(ds: DataSource, claimId: string): Promise<{
 }
 
 export async function claimResolve(ds: DataSource, claimId: string, status: string, note = ""): Promise<void> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     // v9: update the timestamp when the claim is resolved
     await mgr.update(Claim, { id: claimId }, { status, updated: nowIso() } as any);
     await logEvent(mgr, "claim.resolve", "claim", claimId, `${status}${note ? " | " + note : ""}`);
@@ -302,7 +327,7 @@ export async function queryAttach(
   sourceId: string,
   note = ""
 ): Promise<{ dup: boolean; queryText: string; sourceTitle: string; sourceId: string }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const q = await mgr.findOne(Query, { where: [{ id: queryIdOrText, projectId }, { text: queryIdOrText, projectId }] });
     if (!q) throw new Error(`query not found: ${queryIdOrText}`);
     const s = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
@@ -328,7 +353,7 @@ export async function kbAdd(
   o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string; force?: boolean }
 ): Promise<WriteResult> {
   const hash = contentHash(`${o.title}\n${o.body}`, !!o.force);
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM kb_notes WHERE content_hash=?`, [hash])) as any[];
     if (ex.length) return { row: ex[0], dup: true };
     const id = shortId(["kb", o.title], 10);
@@ -380,7 +405,7 @@ export interface KbImportItem {
 }
 
 export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promise<{ added: number; dups: number }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     let added = 0;
     let dups = 0;
     for (const o of items) {
@@ -413,7 +438,7 @@ export async function jobAdd(
   ds: DataSource,
   o: { title: string; command: string; every?: number; at?: string; force?: boolean }
 ): Promise<WriteResult> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM jobs WHERE title=?`, [o.title])) as any[];
     if (ex.length && !o.force) return { row: ex[0], dup: true };
     let title = o.title;
@@ -451,7 +476,7 @@ export async function artifactAdd(
   format = "markdown",
   meta = ""
 ): Promise<{ row: Record<string, any>; version: number }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     // version numbering inside the transaction — no duplicate versions under concurrency
     const max = (await mgr.query(
       `SELECT COALESCE(MAX(version),0) AS m FROM artifacts WHERE project_id=? AND kind=? AND title=?`,
@@ -485,7 +510,7 @@ export async function taskAdd(ds: DataSource, projectId: string, title: string, 
 /** Move a task along its state machine (todo|doing|done); logs task.status. */
 export async function taskSetStatus(ds: DataSource, taskId: string, status: string): Promise<Record<string, any>> {
   if (!(TASK_STATUSES as readonly string[]).includes(status)) throw new Error(`status must be one of ${TASK_STATUSES.join("|")}`);
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT * FROM artifacts WHERE id=? AND kind='task'`, [taskId])) as any[];
     if (!rows.length) throw new Error(`task not found: ${taskId}`);
     let meta: any = {};
@@ -503,7 +528,7 @@ export async function skillUpsert(
   ds: DataSource,
   o: { name: string; description?: string; body?: string; tags?: string; version?: string; origin?: string }
 ): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const now = nowIso();
     await mgr.query(
       `INSERT INTO skills(id,name,version,description,body,tags,origin,created,updated)
@@ -526,7 +551,7 @@ export async function skillUpsert(
 }
 
 export async function skillDel(ds: DataSource, name: string): Promise<void> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [name])) as any[];
     if (!rows.length) throw new Error(`skill not found: ${name}`);
     await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [rows[0].id]);
@@ -535,7 +560,7 @@ export async function skillDel(ds: DataSource, name: string): Promise<void> {
 }
 
 export async function skillEnabled(ds: DataSource, name: string, on: boolean): Promise<boolean> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [name])) as any[];
     if (!rows.length) return false;
     await mgr.query(`UPDATE skills SET enabled=?, updated=? WHERE id=?`, [on ? 1 : 0, nowIso(), rows[0].id]);
@@ -549,7 +574,7 @@ export async function skillRefAdd(
   refPath: string,
   content: string
 ): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const s = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [skillName])) as any[];
     if (!s.length) throw new Error(`skill not found: ${skillName}`);
     const id = shortId(["ref", s[0].id, refPath], 10);
@@ -569,7 +594,7 @@ export async function skillRefAdd(
  *  pointer is demoted to migration fallback and must not be re-pointed
  *  implicitly (parallel sessions used to steal each other's selection). */
 export async function projectCreate(ds: DataSource, name: string, question = ""): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     // Idempotency (frozen contract): re-creating a project selects it instead
     // of failing on the UNIQUE name — "new" is also the switch verb.
     const sessionKey = `current_project@${process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "default"}`;

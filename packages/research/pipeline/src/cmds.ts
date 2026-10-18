@@ -11,6 +11,9 @@ import { getOrm } from "../../../core/database/src/orm";
 import { resolveProject, ambiguousProject, projectSample, projectCount } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
+// 0.91a: bare claim.eval INSERTs gain bus emission — static import per
+// direct-032bf3b4 (require-in-catch silently dies under ESM hosts).
+import { emitEvent } from "../../../core/text/src/eventbus";
 import { Claim, Evidence, Query, Source } from "./entities";
 
 /** Run a write through the TypeORM transactional write service and print
@@ -578,12 +581,17 @@ if (subAction === "list" || subAction === undefined) {
             evidence: evRows,
           });
           if (evalResult.ok) {
+            // 0.91a: bare INSERT gains bus emission (autocommit INSERT
+            // returning == durable, so emit-after is post-commit) with the
+            // exact payload snapshot the audit row carries.
+            const evTs = new Date().toISOString();
+            const evPayload = JSON.stringify({ model_confidence: evalResult.confidence_score, label: evalResult.confidence_label, mode: "auto-on-link", human_status: claimStatus });
             store.db.run(
               "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
-              [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, new Date().toISOString(),
-               process.env.YGL_SESSION || "cli", "claim.eval", "claim", claimId,
-               JSON.stringify({ model_confidence: evalResult.confidence_score, label: evalResult.confidence_label, mode: "auto-on-link", human_status: claimStatus }), "info"]
+              [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, evTs,
+               process.env.YGL_SESSION || "cli", "claim.eval", "claim", claimId, evPayload, "info"]
             );
+            emitEvent({ kind: "claim.eval", entity: "claim", entityId: claimId, payload: evPayload, ts: evTs });
             if (!ctx.json) {
               out(ctx, paint(C.dim, `  [模型] 置信度 ${evalResult.confidence_label} (${evalResult.confidence_score}/5) — ${evalResult.reasoning.slice(0, 60)}`, ctx.color));
             }
@@ -761,12 +769,15 @@ if (subAction === "list" || subAction === undefined) {
       // 0.84.0：判定落账——手动评估也写 claim.eval 事件，校准预测（模型 vs 人工）
       // 需要完整历史，否则每次判定蒸发在 stdout 里。
       if (result.ok) {
+        const evTs = new Date().toISOString();
+        const evPayload = JSON.stringify({ model_confidence: result.confidence_score, label: result.confidence_label, mode: "manual", human_status: claim.status, human_confidence: claim.confidence, evidence_count: evidenceRows.length });
         store.db.run(
           "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
-          [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, new Date().toISOString(),
-           process.env.YGL_SESSION || "cli", "claim.eval", "claim", id,
-           JSON.stringify({ model_confidence: result.confidence_score, label: result.confidence_label, mode: "manual", human_status: claim.status, human_confidence: claim.confidence, evidence_count: evidenceRows.length }), "info"]
+          [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, evTs,
+           process.env.YGL_SESSION || "cli", "claim.eval", "claim", id, evPayload, "info"]
         );
+        // 0.91a: bus emission joins the audit row (post-commit, same snapshot)
+        emitEvent({ kind: "claim.eval", entity: "claim", entityId: id, payload: evPayload, ts: evTs });
       }
       if (ctx.json) {
         console.log(JSON.stringify({

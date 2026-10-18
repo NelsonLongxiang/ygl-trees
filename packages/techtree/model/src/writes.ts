@@ -13,6 +13,22 @@
 import { DataSource, EntityManager } from "typeorm";
 import { EDGE_MODES, EDGE_RELS, COND_KINDS } from "../../../core/database/src/db";
 import { ngram, nowIso, shortId } from "../../../core/text/src/text";
+// 0.91a (Cordis review direct-032bf3b4): static import — same ESM-silent-death
+// fix as M7-3 (database/plugin.ts). See research/pipeline/src/writes.ts.
+import { emitEvent, YglEvent } from "../../../core/text/src/eventbus";
+
+/** 0.91a: transaction wrapper with post-commit bus flush — the audit-row
+ * INSERT stays transactional, the bus emission happens only after commit;
+ * a rollback discards the pending bag (zero ghost events). */
+export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promise<T>): Promise<T> {
+  const pending: YglEvent[] = [];
+  const result = await ds.transaction(async (mgr) => {
+    (mgr as any).__yglPendingEvents = pending;
+    return fn(mgr);
+  });
+  for (const ev of pending) emitEvent(ev);
+  return result;
+}
 
 async function markDirty(mgr: EntityManager, treeId: string): Promise<void> {
   await mgr.query(`INSERT INTO node_index(tree_id,built_at,dirty) VALUES(?,?,1) ON CONFLICT(tree_id) DO UPDATE SET dirty=1`, [
@@ -37,12 +53,11 @@ async function logEvent(
     `INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)`,
     [shortId([kind, entityId], 12), nowIso(), "cli", kind, "node", entityId, body, level]
   );
-  // 0.76: cross-domain event bus — notify real-time consumers (SSE/plugins)
-  try {
-    const { emitEvent } = require("../../../core/text/src/eventbus");
-    emitEvent({ kind, entity: "node", entityId, payload: String(body), ts: new Date().toISOString() });
-  } catch { /* eventbus optional — never block the write path */ }
-
+  // 0.91a: snapshot + transaction-scoped pending bag (see runTx above).
+  const snap: YglEvent = { kind, entity: "node", entityId, payload: String(body), ts: new Date().toISOString() };
+  const pending: YglEvent[] | undefined = (mgr as any).__yglPendingEvents;
+  if (pending) pending.push(snap);
+  else emitEvent(snap);
 }
 
 async function reaches(mgr: EntityManager, treeId: string, fromId: string, toId: string): Promise<boolean> {
@@ -171,7 +186,7 @@ export async function buildIndex(
 // ================================================================ trees & nodes
 
 export async function treeCreate(ds: DataSource, name: string, projectId = "", note = ""): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     // Idempotency (frozen contract): an existing tree name is selected, not a
     // UNIQUE-constraint crash — `tree new <same>` is how a caller switches.
     const existing = (await mgr.query(`SELECT * FROM trees WHERE name=?`, [name])) as any[];
@@ -195,7 +210,7 @@ export async function nodeAdd(
   treeId: string,
   o: { key: string; name?: string; kind?: string; tier?: number; cost?: number; cost_unit?: string; payload?: string; tags?: string }
 ): Promise<{ row: Record<string, any>; created: boolean }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND key=?`, [treeId, o.key])) as any[];
     if (ex.length) return { row: ex[0], created: false };
     const id = shortId(["node", treeId, o.key], 10);
@@ -219,7 +234,7 @@ export async function nodeAdd(
 }
 
 export async function nodeDel(ds: DataSource, treeId: string, keyOrId: string): Promise<void> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!rows.length) throw new Error(`node not found: ${keyOrId}`);
     await mgr.query(`DELETE FROM nodes_fts WHERE id=?`, [rows[0].id]);
@@ -245,7 +260,7 @@ export async function link(
     note?: string;
   } = {}
 ): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const p = (await mgr.query(`SELECT id,key FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, parentKey, parentKey])) as any[];
     if (!p.length) throw new Error(`parent not found: ${parentKey}`);
     const c = (await mgr.query(`SELECT id,key FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, childKey, childKey])) as any[];
@@ -293,7 +308,7 @@ export async function link(
 }
 
 export async function unlink(ds: DataSource, treeId: string, parentKey: string, childKey: string, rel = "prereq"): Promise<void> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const p = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, parentKey, parentKey])) as any[];
     const c = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, childKey, childKey])) as any[];
     if (!p.length || !c.length) throw new Error("node not found");
@@ -336,7 +351,7 @@ export async function condAdd(
     note?: string;
   }
 ): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const n = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!n.length) throw new Error(`node not found: ${keyOrId}`);
     const kind = o.kind || "flag";
@@ -384,7 +399,7 @@ export async function condRemove(
   keyOrId: string,
   name: string
 ): Promise<Record<string, any>> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const n = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!n.length) throw new Error(`node not found: ${keyOrId}`);
     const existing = (await mgr.query(`SELECT * FROM node_conditions WHERE node_id=? AND name=?`, [n[0].id, name])) as any[];
@@ -409,7 +424,7 @@ export async function stateSet(
   context = "default",
   level = 0
 ): Promise<void> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const n = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!n.length) throw new Error(`node not found: ${keyOrId}`);
     await mgr.query(
@@ -427,7 +442,7 @@ export async function stateSet(
 // ================================================================ index & import
 
 export async function rebuildIndex(ds: DataSource, treeId: string): Promise<{ nodes: number; closureRows: number }> {
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     const closureRows = await rebuildClosure(mgr, treeId);
     const built = await buildIndex(mgr, treeId);
     return { nodes: built.topo.length, closureRows };
@@ -515,7 +530,7 @@ export async function importTree(
   const existing = (await ds.query(`SELECT * FROM trees WHERE name=? OR id=?`, [name, name])) as any[];
   if (existing.length && !opts.merge) throw new Error(`tree already exists: ${name} (use --merge to upsert into it)`);
 
-  return ds.transaction(async (mgr) => {
+  return runTx(ds, async (mgr) => {
     let tid: string;
     if (existing.length) tid = existing[0].id;
     else {

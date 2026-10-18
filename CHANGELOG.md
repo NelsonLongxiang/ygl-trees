@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.91.0（2026-10-19）事件族合修（三方批次裁定：direct-23f13a7d / direct-032bf3b4 / direct-7389f32f）
+
+- **事件发射提交后语义（runTx）**：两域写服务（research/pipeline 与 techtree/model 的 writes.ts）的事件总线发射原先在事务提交**前**执行——回滚后订阅者已见幽灵事件而库无记录；且发射用 `require()` 包 try/catch，ESM 宿主下静默死亡（M7-3 同病灶）。现：静态 `import { emitEvent }` + `runTx` 包装器——events 表 INSERT 留在事务内（审计行随写回滚），总线发射移到 commit 之后；`fn` 抛出→pending 袋整体丢弃，零幽灵事件按构造保证（ADR 记 docs/plan.md M10）。
+- **裸 INSERT 统一获得总线发射**：两域 cmds.ts 的 5 处直接 INSERT（claim.eval 自动/手动 ×2、tree.use/project.use 选择事件、eval.gate、eval.ready）此前只写审计行不上总线（SSE 消费者盲区）——现 INSERT 后紧跟同快照发射（autocommit 返回即已提交，天然提交后语义）。rels/config/knowledge/produce 的同类归 0.91b 跨包下沉批。
+- **载荷快照**：发射载荷在 logEvent 调用点快照（防调用方后改对象）；字段与 0.76–0.90 逐字节一致（含 research 路径对象载荷既有形态——冻结不动，避免 SSE/校准消费面漂移）。重复写早退不发射（既有语义冻结）。
+- 测试：emit-postcommit.spec ×4（回滚零泄漏双向断言 / research+techtree 两路径 ESM 可见 / 字节形状 / dup 早退）→ 单测 227。
+- 约束（监督席）：0.91 全批禁止重放/清洗/回填 events 表（首份校准曲线数据源完整性）；分支冻结窗口外开发，合并/发布压到 10-19 15:00 基线快照之后。
+
 ## 0.90.1（2026-10-18）WebUI 评审修复批（review direct-a35d58ae：P1×3 + P2×4 + P3×3）
 
 - **P1-1 `/api/task` 写端点归属校验**：此前未选择/跨项目会话 POST 任意任务 id 都 rc 200 推进成功（`--host 0.0.0.0` 下任意局域网客户端可推进任意项目任务）。现复用 `/api/artifact` 的授权+归属双检（authorized 选择须匹配任务 project_id）→ 404；非法/缺失 status → 400 usage；body 上限 64KB；错误通道统一文本。

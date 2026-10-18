@@ -27,6 +27,9 @@ import {
 } from "../../eval/src/eval";
 import { configGet, configGetBool, configGetNumber } from "../../../ops/tools/src/config";
 import { clip, nowIso, shortId } from "../../../core/text/src/text";
+// 0.91a: selection/eval bare INSERTs gain bus emission — static import per
+// direct-032bf3b4 (require-in-catch silently dies under ESM hosts).
+import { emitEvent } from "../../../core/text/src/eventbus";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db } = env;
@@ -64,19 +67,23 @@ export function run(env: Env, action: string, rest: string[], args: any): number
    *  identity comes from YGL_SESSION (agents that care can set it). */
   function logSelectionEvent(database: any, kind: "tree.use" | "project.use", name: string): void {
     try {
+      const evTs = new Date().toISOString();
+      const evPayload = JSON.stringify({ name, session: process.env.YGL_SESSION || "cli" });
       database.run(
         "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
         [
           `ev${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-          new Date().toISOString(),
+          evTs,
           process.env.YGL_SESSION || "cli",
           kind,
           kind === "tree.use" ? "tree" : "project",
           name,
-          JSON.stringify({ name, session: process.env.YGL_SESSION || "cli" }),
+          evPayload,
           "info",
         ]
       );
+      // 0.91a: bare INSERT gains bus emission (autocommit == post-commit)
+      emitEvent({ kind, entity: kind === "tree.use" ? "tree" : "project", entityId: name, payload: evPayload, ts: evTs });
     } catch { /* telemetry only — never block the selection */
     }
   }
@@ -660,15 +667,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         r.ok = (r.missing_required as string[]).length === 0 && (r.blocked_by as string[]).length === 0 && pendingList.length === 0;
         try {
           const run = process.env.YGL_RUN_ID || "";
+          const evTs = nowIso();
+          const evPayload = JSON.stringify({
+            conds: evaluated.map((e) => ({ name: e.name, type: e.type, outcome: e.outcome, p: e.p ?? null, score: e.score ?? null })),
+            usage: { inputTokens: usageIn, outputTokens: usageOut },
+            ...(run ? { run } : {}),
+          });
           db.run(
             "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,'info')",
-            [shortId(["eval.gate", "node", k], 12), nowIso(), "cli", "eval.gate", "node", k,
-             JSON.stringify({
-               conds: evaluated.map((e) => ({ name: e.name, type: e.type, outcome: e.outcome, p: e.p ?? null, score: e.score ?? null })),
-               usage: { inputTokens: usageIn, outputTokens: usageOut },
-               ...(run ? { run } : {}),
-             })]
+            [shortId(["eval.gate", "node", k], 12), evTs, "cli", "eval.gate", "node", k, evPayload]
           );
+          // 0.91a: bus emission joins the audit row (post-commit, same snapshot)
+          emitEvent({ kind: "eval.gate", entity: "node", entityId: k, payload: evPayload, ts: evTs });
         } catch { /* audit best-effort */ }
         return r;
       };
@@ -849,15 +859,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const all = [...rows, ...promoted];
         try {
           const run = process.env.YGL_RUN_ID || "";
+          const evTs = nowIso();
+          const evPayload = JSON.stringify({
+            promoted: promoted.map((p) => p.key), pending: evalPending.map((p) => p.key),
+            usage: { inputTokens: usageIn, outputTokens: usageOut },
+            ...(run ? { run } : {}),
+          });
           db.run(
             "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,'info')",
-            [shortId(["eval.ready", "tree", tid], 12), nowIso(), "cli", "eval.ready", "tree", tid,
-             JSON.stringify({
-               promoted: promoted.map((p) => p.key), pending: evalPending.map((p) => p.key),
-               usage: { inputTokens: usageIn, outputTokens: usageOut },
-               ...(run ? { run } : {}),
-             })]
+            [shortId(["eval.ready", "tree", tid], 12), evTs, "cli", "eval.ready", "tree", tid, evPayload]
           );
+          // 0.91a: bus emission joins the audit row (post-commit, same snapshot)
+          emitEvent({ kind: "eval.ready", entity: "tree", entityId: tid, payload: evPayload, ts: evTs });
         } catch { /* audit best-effort */ }
         if (ctx.json) {
           console.log(JSON.stringify({ ready: all, eval_pending: evalPending }, null, 2));
