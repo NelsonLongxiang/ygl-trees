@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.89.1（2026-10-18）node cond 缺 --name 静默空回执修复（预测席上报 direct-b1de0e86）
+
+- **缺陷**：`node cond <key> --op eval --value "…"` 缺 `--name` 时落进 list 模式——输出 `(empty)`、rc=0、零落账：成功形回执掩盖 no-op（与 0.88 单2 unlink 同族）。
+- **修复**：add 形 flags（`--op/--value/--options/--answer/--levels/--min-score/--kind/--optional/--effect/--weight` 任一）存在而缺 `--name` → usage rc=2，提示 `condition add requires --name`；裸 `node cond <key>`（list）行为不变。
+- 测试：cond-usage.spec.ts ×4（add 形拒绝×2 / 裸 list 不变 / 带 --name 正常）；基线 210 单测。
+
 ## 0.89.0（2026-10-18）PG-A 地基：方言接缝 + FTS 门控 + 双端账表 + events.seq（单5）
 
 - **① orm 方言接缝（schema v10）**：`getPgOrm(url)` 与 `getOrm(dbFile)` 同一实体注册表双轨；`ormDialect()` 供写路径判方言。探针实证：postgres 方言下实体元数据纯净、repo.find 可用。

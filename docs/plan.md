@@ -252,6 +252,28 @@
 - plugin stop() `require("./orm")` 同款 ESM 修复（评审 0.87 候选补充）：ormState.opened 标志（db.ts）+ dynamic import——保懒加载（typeorm 不进冷启动）且 ESM/CJS 双兼容。
 - `project use` 裸 shell 提示（用户裁定 m07308：环境变量不保险，显式指定最重要）：sid=default 且多项目时非阻断 hint，第一推荐显式 `--project` 钉住，`export YGL_SESSION` 降为次选。
 
+### M8 — 监督席 6 工单批次（0.88.0–0.89.x，2026-10-18，canonical 订单 direct-e487e737）
+
+| # | 单 | 版本 | 状态 |
+|---|---|---|---|
+| 1 | cond add (node_id,name) 幂等（P1） | 0.88.0 | ✓ 已发布+监督核验 PASS |
+| 2 | unlink rel 不匹配诚实化（P1） | 0.88.0 | ✓ 已发布+监督核验 PASS |
+| 3 | WebUI 纯 HTML 退役（P1，用户亲裁） | 0.88.0 | ✓ 已发布+监督核验 PASS |
+| 4 | --help ANSI 泄漏（P2） | 0.88.0 | ✓ 已发布+监督核验 PASS |
+| 5 | PG-A 地基四件（P2，kb 05485b25b5） | 0.89.0 | ✓ |
+| 6 | bizplan eval-choice 门禁 + 定价/履约 ADR（P3） | 工作区数据 | ✓（见下） |
+
+### 0.89.0 执行记录（2026-10-18）
+
+- 单5 PG-A：方言接缝（getPgOrm/ormDialect）+ FTS5 shadow 方言门控（ftsShadow 助手 7 处）+ schema_migrations 双端账表（backend,version 主键）+ events.seq（SQLite 可空/PG nextval 单调）；schema v9→v10 升级路径。docker ygl-pg-test 全链实测（fresh migrate 26 表 + 账表双行 + RETURNING seq=1）。
+- 三次返工教训（记入单5 回执）：bigserial 隐含 NOT NULL 拒绝镜像 NULL；SEQUENCE 必须先于引用列建；drift guard 拦截 MIGRATE_DDL v9 列漂移（guard 按设计工作）。
+- 单6 bizplan（工作区数据侧，无 repo 改动）：platform-position/tta-target 挂 eval-choice 决策门（定位=service_first P=1、TTA 纪律=baseline_ratio P=1）+ 定价/履约 ADR（artifact 5f9858d538/aabfc2951a）decided-by 入织物。**人审推翻一例**：tta-target 的 TTA实测门 eval P=0.86 pass，但业务文档（定价框架.md:68）明确 TTA=岔路口⑤待首周期实测——文档证据优先于模型概率，裁定不解锁（kb ae1c1377e1）。教训：eval 门过≠解锁，解锁是人的决定。
+
+### 0.89.1 执行记录（2026-10-18）
+
+- 预测席上报（direct-b1de0e86）：`node cond <key> --op eval --value q` 缺 --name → 旧行为落 list 模式「(empty)」rc=0 零落账（成功形回执掩盖 no-op，与单2 unlink 同族）。修复：add 形 flags 任一存在而缺 --name → usage rc=2；裸 list 不受影响。cond-usage.spec.ts ×4。
+- 0.90 候选登记：node 组 `<tree>/<key>` 限定形式统一（rel 认、node 组不认的不一致）；M7-4 残项（ctx.dispose/settle loop/域间事件化/跨包 config+rel 下沉，task a2dae0151a）。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

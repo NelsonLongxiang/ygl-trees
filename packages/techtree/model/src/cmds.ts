@@ -434,6 +434,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (validateEnum(ctx, args.flags, "op", [">=", "==", "<=", "!=", "has", "eval", "eval-choice", "eval-score"])) return 2;
       if (validateEnum(ctx, args.flags, "effect", ["gate", "cost_mul"])) return 2;
       const name = flagStr("name");
+      // 0.89.1: `node cond <key> --op eval --value q` without --name used to
+      // fall through to list mode ("(empty)", rc=0, zero writes) — a success-
+      // shaped receipt masking a no-op (same family as the unlink fix, 单2).
+      // Add-shaped flags without --name are a usage error, not a list request.
+      const addShaped = ["op", "value", "options", "answer", "levels", "min-score", "kind", "optional", "effect", "weight"].some((f) => args.flags[f] !== undefined);
+      if (!name && addShaped) {
+        bad(ctx, "usage: node cond add <key> --name <cond> [--kind ..] [--op ..] — condition add requires --name (bare `node cond <key>` lists existing conditions)");
+        return 2;
+      }
       if (!name) {
         table(ctx, trees.condList(tid, k), ["id", "name", "kind", "op", "value", "必检", "effect"], [
           "id",
