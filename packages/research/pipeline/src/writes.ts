@@ -39,7 +39,13 @@ export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promi
     (mgr as any).__yglPendingEvents = pending;
     return fn(mgr);
   });
-  for (const ev of pending) emitEvent(ev);
+  // 0.91a review (direct-55b4ca85): never block the write path — a throwing
+  // subscriber must not surface out of a COMMITTED transaction (the write is
+  // durable; only the notification is lost, same contract as the old
+  // require-in-catch form).
+  try {
+    for (const ev of pending) emitEvent(ev);
+  } catch { /* bus subscribers are best-effort — write already committed */ }
   return result;
 }
 

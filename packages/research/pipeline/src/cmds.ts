@@ -591,7 +591,9 @@ if (subAction === "list" || subAction === undefined) {
               [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, evTs,
                process.env.YGL_SESSION || "cli", "claim.eval", "claim", claimId, evPayload, "info"]
             );
-            emitEvent({ kind: "claim.eval", entity: "claim", entityId: claimId, payload: evPayload, ts: evTs });
+            // 0.91a review (direct-55b4ca85): emission is best-effort — a
+            // throwing subscriber must never fail the (already durable) write.
+            try { emitEvent({ kind: "claim.eval", entity: "claim", entityId: claimId, payload: evPayload, ts: evTs }); } catch { /* audit row is the source of truth */ }
             if (!ctx.json) {
               out(ctx, paint(C.dim, `  [模型] 置信度 ${evalResult.confidence_label} (${evalResult.confidence_score}/5) — ${evalResult.reasoning.slice(0, 60)}`, ctx.color));
             }
@@ -776,8 +778,9 @@ if (subAction === "list" || subAction === undefined) {
           [`${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}`, evTs,
            process.env.YGL_SESSION || "cli", "claim.eval", "claim", id, evPayload, "info"]
         );
-        // 0.91a: bus emission joins the audit row (post-commit, same snapshot)
-        emitEvent({ kind: "claim.eval", entity: "claim", entityId: id, payload: evPayload, ts: evTs });
+        // 0.91a: bus emission joins the audit row (post-commit, same snapshot);
+        // best-effort per direct-55b4ca85 — never fail the durable write
+        try { emitEvent({ kind: "claim.eval", entity: "claim", entityId: id, payload: evPayload, ts: evTs }); } catch { /* audit row is the source of truth */ }
       }
       if (ctx.json) {
         console.log(JSON.stringify({

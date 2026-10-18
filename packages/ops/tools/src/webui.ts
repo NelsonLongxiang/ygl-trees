@@ -16,6 +16,8 @@ import { resolveId } from "./rels";
 import { getOrm } from "../../../core/database/src/orm";
 import { openStatic as openWebApp } from "../../../web/app/src";
 import { resolveProject, resolveTree, projectSample } from "../../../core/database/src/selection";
+// 0.91a (direct-55b4ca85): static import — same ESM-silent-death family fix
+import { onEvent } from "../../../core/text/src/eventbus";
 
 interface DashboardData {
   brief: any;
@@ -347,8 +349,9 @@ export function createDashboardServer(env: Env) {
   if (typeof cordisCtx?.on === "function") {
     unsubBus = cordisCtx.on("ygl", onYglEvent) as unknown as () => void;
   } else {
+    // 0.91a review (direct-55b4ca85): static import — the old require() form
+    // silently died under ESM hosts, leaving only the fingerprint tick.
     try {
-      const { onEvent } = require("../../../core/text/src/eventbus") as typeof import("../../../core/text/src/eventbus");
       unsubBus = onEvent(onYglEvent);
     } catch { /* eventbus optional — fingerprint tick still covers */ }
   }

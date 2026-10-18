@@ -26,7 +26,10 @@ export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promi
     (mgr as any).__yglPendingEvents = pending;
     return fn(mgr);
   });
-  for (const ev of pending) emitEvent(ev);
+  // 0.91a review (direct-55b4ca85): never block the write path (see research runTx)
+  try {
+    for (const ev of pending) emitEvent(ev);
+  } catch { /* bus subscribers are best-effort — write already committed */ }
   return result;
 }
 
