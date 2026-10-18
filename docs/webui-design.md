@@ -1,16 +1,20 @@
 # WebUI 可视化方案
 
-日期：2026-10-16 ｜ 状态：**已实施（0.19.0 export / 0.22.0 serve / 0.24.0 三视图交互）** ｜ 原则：零新依赖 ｜ **设计系统：[DESIGN.md](../DESIGN.md)（0.30.1 起 token 单一事实源，@google/design.md lint）**
+日期：2026-10-16 ｜ 状态：**已实施（0.19.0 export / 0.22.0 serve / 0.24.0 三视图交互 / 0.88.0 React 唯一前端）** ｜ **设计系统：[DESIGN.md](../DESIGN.md)（0.30.1 起 token 单一事实源，@google/design.md lint）**
 
-## 路线
+## 路线（0.88.0 起的现状）
 
-**静态 HTML 导出**：`ygl-trees webui export [--out <file>]` 生成单文件 `dashboard.html`，数据内嵌为 `<script>` JSON，浏览器直接打开——不需要服务器、不需要 npm 依赖、不需要网络。刷新 = 重跑命令。
+**React 客户端 = 唯一前端（用户裁定 0.88 单3）**：`apps/web`（Vite + @xyflow/react + antd + react-markdown）。
+npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-dist.mjs`），隔离安装开箱即用。
 
-**活数据仪表盘（0.22.0）**：`ygl-trees webui serve [--port N]`（默认 8642）启动零依赖 `node:http` 服务器：
-- `/` / `/index.html` — 实时 HTML（内嵌快照立即渲染，`fetch('api/data')` 升级活数据，10s 轮询自动刷新）
-- `/api/data` — 每请求现取 `gatherData()` 的 JSON
+**服务形态快照导出**：`ygl-trees webui export [--out <file>]` 落 `snapshot.json`——与 `/api/data`
+同一载荷（meta.generated + brief + claims/sources/evidence/tree/timeline/...），原子写。可视化在
+`webui serve`，数据在这。原「单文件 dashboard.html」与内嵌零依赖仪表盘、`/classic` 路由已退役。
+
+**活数据仪表盘（0.22.0）**：`ygl-trees webui serve [--port N]`（默认 8642）：
+- `/` — React 客户端（dist 缺失时**拒绝启动** rc=1，诚实报错，不静默回落）
+- `/api/data` `/api/events`（SSE 表指纹推送）`/api/node` `/api/artifact`
 - Ctrl+C / SIGTERM 优雅停机；CLI `finally` 在 server 关闭后才关 db
-- 内嵌 JSON `<` 转 `\u003c` 防 `</script>` 注入
 
 ## 三个视图
 
@@ -51,9 +55,9 @@ src/webui/
     research.ts   管线渲染函数
 ```
 
-CLI 侧：`cmds/webui.ts` → 调用 `agent brief --json` + `node export --json` + `claim list --json` → 注入模板 → 写文件。
+CLI 侧：`ops/tools/src/webui.ts` → `gatherData()` 单一收集器 → serve 各 /api 端点与 export 快照共用。
 
-验证：demo 增加 `webui --out tmp/dashboard.html` + 断言文件存在且包含关键 HTML 标签。
+验证：demo §8 断言 `webui export` 落 snapshot.json 且 meta/brief/claims 载荷可解析（0.88 起）。
 
 ---
 

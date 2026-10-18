@@ -303,7 +303,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 201 例) + demo（122 条断言）+ contract:audit（93 项）
+pnpm test          # 四段制回归：build + unit (vitest 202 例) + demo（123 条断言）+ contract:audit（93 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
@@ -316,7 +316,7 @@ ygl-trees db unlock    # 清残留 .ygllock：查 pid 存活，死 pid 直接清
 ygl-trees node timeline <tree>   # 单树成长时间线（add/link/unlock 事件倒序）
 ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）
 ygl-trees webui serve --help   # 打印用法即退出，不启服务（0.79.1：--help 短路）
-ygl-trees webui export --out d.html   # 零依赖单文件仪表盘（离线可开）
+ygl-trees webui export --out d.json     # 服务形态快照（与 /api/data 同载荷；HTML 仪表盘已于 0.88 退役）
 ```
 
 **锁身份（0.79.1）**：`.ygllock` 里除 pid 外记录**持有者命令行**；撞锁报错、`db unlock`、`doctor`
@@ -337,15 +337,17 @@ serve。serve 从不取写锁（WAL 并发读写安全），`db unlock` 也以�
 
 ## 五c、WebUI
 
-两个界面，同一份数据：
+一个界面，一份载荷：
 
 | 入口 | 是什么 |
 |---|---|
-| `/` | **React 富客户端**（`apps/web`：@xyflow/react 水平树视图 + 时间轴 + react-markdown 产出渲染），`apps/web/dist` 存在时自动挂载 |
-| `/classic` | **零依赖内嵌仪表盘**（单文件、无构建、离线可用）——React 未构建时的回退，也永远可用 |
-| `/api/events` | **SSE 实时通道**：服务端 1.5s 表指纹检测，数据一变即推；客户端零轮询（EventSource 不可用时降级回 10s 轮询） |
+| `/` | **React 客户端**（`apps/web`：@xyflow/react 水平树视图 + 时间轴 + react-markdown 产出渲染）——0.88 起唯一前端，npm 包自带 `dist/apps/web/dist`，开箱即用 |
+| `/api/data` `/api/events` | 数据/实时通道（SSE 表指纹推送；`webui export` 落同一载荷的 JSON 快照） |
 
-**中文友好**：两个界面的标签、空态、面板文案全中文；设计系统单一事实源是 [DESIGN.md](DESIGN.md)（13 色 / 5 字号 / 9 组件，`designmd lint` 全绿）。
+**诚实故障（0.88 单3）**：React dist 缺失时 `webui serve` 直接拒绝启动（rc=1，提示构建/重装命令），
+不再静默回落内嵌 HTML；`/classic` 路由随内嵌仪表盘一并退役。
+
+**中文友好**：界面标签、空态、面板文案全中文；设计系统单一事实源是 [DESIGN.md](DESIGN.md)（13 色 / 5 字号 / 9 组件，`designmd lint` 全绿）。
 
 ```bash
 pnpm --filter @ygl/web build     # 构建 React 客户端（vite）

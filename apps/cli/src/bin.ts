@@ -71,20 +71,24 @@ export function appVersion(): string {
 
 // ── Usage text ──
 // (kept in apps/cli because it's presentation, not domain logic)
+// 0.88 单4: color is a PARAMETER (never hardcoded) — non-TTY pipes get plain
+// text; the old `paint(..., true)` template leaked 16 ANSI lines into
+// redirected --help output.
 
-const USAGE = `
-${paint(C.bold, "ygl-trees", true)}  猿光 · 科技树
-${paint(C.dim, "database-centric CLI: research → production → knowledge reuse", true)}
+function usageText(color: boolean): string {
+  return `
+${paint(C.bold, "ygl-trees", color)}  猿光 · 科技树
+${paint(C.dim, "database-centric CLI: research → production → knowledge reuse", color)}
 
   ygl-trees <group> <action> [args] [options]        add --json for machine output
 
-${paint(C.bold, "config", true)}      user-tunable settings (registry defaults + overrides)
+${paint(C.bold, "config", color)}      user-tunable settings (registry defaults + overrides)
   list                       all keys: value + default + note
   get <key>                  resolved value (config table > default)
   set <key> <value>          validated against registry (type/range); events logged
   reset <key>                drop override → back to default
 
-${paint(C.bold, "db", true)}
+${paint(C.bold, "db", color)}
   init                       create the workspace + schema
   stats                      row counts per table
   path                       print the database file path
@@ -95,18 +99,18 @@ ${paint(C.bold, "db", true)}
   reset                      delete the database (asks nothing, be careful)
   sql "<sql>"                ad-hoc statement (can mutate — power tool, no guardrails)
 
-${paint(C.bold, "skill", true)}        L1 description / L2 body / L3 references
+${paint(C.bold, "skill", color)}        L1 description / L2 body / L3 references
   import <file.md>           import a SKILL.md (frontmatter = L1, body = L2)
   add                        --name --description --body [-f file.md]
   list | show <name> | rm <name> | enable <name> | disable <name>
   match "<query>"            full-text match, prints L1 candidates for an agent
   refs add <skill> <path> --body ...
 
-${paint(C.bold, "project", true)}
+${paint(C.bold, "project", color)}
   new <name> -q "<question>"  create + select
   list | use <name> | show
 
-${paint(C.bold, "research", true)}    collect → screen → extract → claim
+${paint(C.bold, "research", color)}    collect → screen → extract → claim
   query add "<text>"          register a search query
   query attach <qid> <sid>    link source to query (recalled count)
   query list
@@ -124,7 +128,7 @@ ${paint(C.bold, "research", true)}    collect → screen → extract → claim
   claim calibration [--all]   model-vs-human grade gap readout (校准预测判据)
   claim list
 
-${paint(C.bold, "produce", true)}     outline → section → report · spec/design（工程产出）
+${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
   section <title> --body|-f  add a section artifact
   report                     assemble claims+evidence+sections into a report
@@ -132,12 +136,12 @@ ${paint(C.bold, "produce", true)}     outline → section → report · spec/des
   design <title> --body|-f   design artifact (R12) --design-type ui-ux|arch|decision
   list | show <id> | export <id> <file>
 
-${paint(C.bold, "task", true)}          任务清单（todo|doing|done 状态机，R12）
+${paint(C.bold, "task", color)}          任务清单（todo|doing|done 状态机，R12）
   add "<title>" [--note ...] create a task (status todo)
   list [--status todo|doing|done]
   doing|done <id>            move along the state machine（勾销全程留痕）
 
-${paint(C.bold, "kb", true)}          long-term knowledge
+${paint(C.bold, "kb", color)}          long-term knowledge
   add --title --body|-f [--tags --confidence]
   import <dir|file.md>       batch markdown (frontmatter, idempotent, single tx)
   search "<q>" | list | show <id>
@@ -145,11 +149,11 @@ ${paint(C.bold, "kb", true)}          long-term knowledge
   ingest <artifactId>        import a finished artifact
   promote <noteId> [--name]  turn a note into a reusable skill
 
-${paint(C.bold, "job", true)}         batch + schedule (drive with cron: job tick)
+${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
   add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]
   list | run <id> | tick | enable <id> | disable <id> | logs
 
-${paint(C.bold, "tree / node", true)}   tech-tree node model
+${paint(C.bold, "tree / node", color)}   tech-tree node model
   tree new <name> [--project p]      create a tree (nodes live in it)
   tree list | tree use <name> [--global]
   tree show [name]                   selection source + node/edge/unlocked stats
@@ -184,46 +188,55 @@ ${paint(C.bold, "tree / node", true)}   tech-tree node model
   Writes are idempotent (claim/evidence/query/kb/job dedupe by content
   hash); pass --force to keep a deliberate duplicate.
 
-${paint(C.bold, "webui", true)}            dashboard (zero-dependency)
-  export [--out <file>]     single-file dashboard.html (open in browser)
-  serve [--port N]          live dashboard at http://127.0.0.1:N/ (Ctrl+C to stop)
+${paint(C.bold, "webui", color)}            React client (0.88: the only front end)
+  serve [--port N] [--host H] live at http://127.0.0.1:N/ (Ctrl+C to stop)
+  export [--out <file>]     service snapshot.json (same payload as /api/data)
 
-${paint(C.bold, "rel", true)}             关联织物（spec R9：任意两类实体互相挂接）
+${paint(C.bold, "rel", color)}             关联织物（spec R9：任意两类实体互相挂接）
   add <src> <dst> [--rel t]   link two refs: node:key claim:id kb:id artifact:id
                              skill:name evidence:id source:id query:id
   rm <src> <dst> [--rel t]    unlink
   list [--src r] [--dst r]    browse (either side filter, resolves displays)
 
-${paint(C.bold, "plugin", true)}          用户层插件分发（spec R14 L3，业务域扩展位）
+${paint(C.bold, "plugin", color)}          用户层插件分发（spec R14 L3，业务域扩展位）
   init                       create $YGL_HOME/plugins profile
   install <spec>             npm package / git url / local dir (auto link:)
   remove <name> | list       manage the user layer ($YGL_HOME/ygl.user.bundle.json)
   插件契约：export apply(ctx,config) + 可选 commands 贡献 CLI 命令组
 
-${paint(C.bold, "agent", true)}       agent-facing views
+${paint(C.bold, "agent", color)}       agent-facing views
   brief                      current project state + next actions (start here)
   match "<task>"             which skill should handle this task
   log                        recent events
 
 Global: --json  --no-color  --db <file>  --home <dir>
 `;
+}
 
-export function usage(): string {
-  return USAGE;
+export function usage(color = false): string {
+  return usageText(color);
 }
 
 /** 0.83 (user report ②): `--help` at any depth prints the relevant usage
  * slice — `kb add --help` used to fall into flag validation rc=2. Renders the
- * group's own block (found by its bold header line); unknown groups get the
- * full usage. */
-export function groupHelp(group: string): string {
-  const pfx = paint(C.bold, group, true);
-  const lines = USAGE.split("\n");
-  const start = lines.findIndex((l) => l.startsWith(pfx));
-  if (start < 0) return USAGE;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (lines[i].startsWith("\u001b[1m")) { end = i; break; }
+ * group's own block (found by its header line); unknown groups get the
+ * full usage. 0.88 单4: color-aware + ANSI-independent block detection. */
+const stripAnsi = (l: string): string => l.replace(/\u001b\[[0-9;]*m/g, "");
+export function groupHelp(group: string, color = false): string {
+  const lines = usageText(color).split("\n");
+  const plain = lines.map(stripAnsi);
+  // header line: starts at col-0 with the group name (body lines are all
+  // indented ≥2 spaces, so a col-0 match can only be a header; "tree / node"
+  // is the combined block shared by both names)
+  const isHeader = (l: string) =>
+    l === group || l.startsWith(group + " ") || l.startsWith(group + " / ");
+  const start = plain.findIndex(isHeader);
+  if (start < 0) return usageText(color);
+  let end = plain.length;
+  for (let i = start + 1; i < plain.length; i++) {
+    // next block header: any non-indented, non-empty line (headers live at
+    // col-0; body lines are indented ≥2 spaces)
+    if (plain[i] !== "" && !plain[i].startsWith(" ")) { end = i; break; }
   }
   return lines.slice(0, 4).join("\n") + "\n\n" + lines.slice(start, end).join("\n").trimEnd();
 }
@@ -278,7 +291,7 @@ export async function main(argv: string[]): Promise<number> {
   // slice rc=0 — `kb add --help` used to fall into flag validation rc=2.
   // Fires before dispatch and before db boot: help never touches the db.
   if (args.flags.help === true && group) {
-    const text = groupHelp(group);
+    const text = groupHelp(group, ctx.color);
     if (ctx.json) console.log(JSON.stringify({ help: text.replace(/\u001b\[[0-9;]*m/g, "") }, null, 2));
     else out(ctx, text);
     return 0;
@@ -347,7 +360,7 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   if (!group || group === "help" || group === "-h" || group === "--help") {
-    if (!ctx.json) out(ctx, usage());
+    if (!ctx.json) out(ctx, usage(ctx.color));
     return 0;
   }
 
@@ -545,7 +558,7 @@ export async function main(argv: string[]): Promise<number> {
       if (!ctx.json) {
         out(ctx, paint(C.dim, "  try: ygl-trees (no args) for full usage", ctx.color));
       }
-      if (!ctx.json) out(ctx, usage()); // usage text belongs to the human channel
+      if (!ctx.json) out(ctx, usage(ctx.color)); // usage text belongs to the human channel
       return 2;
     }
     const rc = await mod.run(env, action || "", args._.slice(2), args);

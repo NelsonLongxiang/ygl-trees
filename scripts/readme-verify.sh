@@ -49,7 +49,7 @@ chk "job logs"            0 -- $Y job logs
 # §五 Agent / 五b 运维
 chk "agent log"           0 -- $Y agent log
 chk "doctor 9 项"         0 -- $Y doctor
-chk "webui export"        0 -- $Y webui export --out "$YGL_HOME/d.html"
+chk "webui export"        0 -- $Y webui export --out "$YGL_HOME/d.json"
 # §0.79.1 命令面
 chk "serve --help 短路"  0 -- $Y webui serve --help
 chk "predict audit --all" 0 -- $Y research predict audit --offline --all

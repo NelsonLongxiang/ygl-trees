@@ -499,7 +499,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             weight: flagNum("weight", 1),
           }),
         (c): number => {
-          ack(ctx, c, `condition added: ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
+          if ((c as any).duplicate) {
+            ack(ctx, c, `condition exists (duplicate): ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
+          } else {
+            ack(ctx, c, `condition added: ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
+          }
           return 0;
         }
       );

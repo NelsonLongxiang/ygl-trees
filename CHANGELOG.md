@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.88.0（2026-10-18）WebUI 纯 HTML 退役（用户裁定）+ cond 幂等 + unlink 诚实化
+
+- **单3·WebUI 纯 HTML 仪表盘退役（用户亲裁：React 唯一主前端）**：内嵌零依赖 dashboard（`/classic` 路由、单文件 `dashboard.html` 导出、generateHTML 整块 ~570 行）全数退役。① `build` 尾自动拷 `apps/web/dist → dist/apps/web/dist`（新 `scripts/stage-web-dist.mjs`），npm 包开箱即带 React 客户端；② `webui serve` 在 dist 缺失时**诚实拒绝启动**（rc=1，提示构建/重装命令），不再静默回落降级面板；③ `webui export` 改落**服务形态快照** `snapshot.json`（与 `/api/data` 同载荷：meta.generated + brief + claims/sources/evidence/tree/timeline，原子写）；④ 非法非 API 路由 503 带修复指引。README/webui-design.md/spec R13.5/skills/demo §8 连带收口。
+- **单1·`node cond add` 幂等违约修复（P1）**：同内容重跑曾生成 N 行异 id（shortId 含时间戳+随机数非确定）全 rc=0——多行 required=1 会让 `node can` 永锁。现按 `(node_id, name)` 自然键幂等：同内容 → `duplicate:true` 回执（id 稳定）；异内容 → rc=1 点名冲突并给出 `node cond rm` 指引。
+- **单2·`node link` unlink 静默 no-op 修复（P1）**：默认 rel=prereq 的 DELETE 0 行照发成功回执。现先查实际边：rel 不匹配 → rc=1 点名真实 rel（双向查询）并提示 `--rel <rel>`；无边 → rc=1 报 none；命中才删。
+- **单4·`--help` ANSI 泄漏修复（P2）**：usage 模板 17 处 `paint(..., true)` 硬编码颜色——非 TTY 管道下 `--help` 泄漏 16 行色码。改 `usageText(color)` 参数化 + `groupHelp` ANSI 无关的块探测（col-0 头行匹配，不再依赖 `\u001b[1m` 前缀）；demo 增断言「裸 bin + 管道 + 无旗标 → 零 ESC」。
+- 测试：cond-idem.spec ×6（幂等/冲突/required 差异；unlink 三态）+ webui.test 重写（export 快照 ×2 + React-only 路由/S；SSE 用例照绿）→ 全量 201→202（+cond-idem 6，webui 重写 -5）、demo 122→123（+ANSI 断言；快照断言原位替换）。
+
 ## 0.87.1（2026-10-18）事件时间戳格式统一 + 反馈渠道坐实
 
 - **事件 ts 格式分裂修复（数据完整性缺陷，0.12 起潜伏）**：`nowIso()` 名不符实——返回本地时区 `YYYY-MM-DD HH:MM:SS`，而 cmd.run/claim.link 等走 `new Date().toISOString()`。两种格式文本比较时 `T`(0x54) > ` `(0x20)，**所有 ISO 事件永远排在所有空格格式事件之前，与真实时间无关**；cmd.run 累积到 ~177 条后把树域事件整体挤出 `agent log --limit 200` 窗口（demo §10 树域留痕断言失守暴露）。修复三面：① `nowIso()` 改真 ISO UTC（树写/rels/config/Store.log 全部统一）；② 读侧 `agent log`/`db timeline` 尾巴/`Store.tail` 改 `ORDER BY rowid DESC`（插入序 = 真实时序，对历史混合格式数据免疫）；③ agent brief 选路窗口 `datetime('now')` 空格格式与 ISO ts 比较恒真（-10 分钟过滤从未生效）改 JS 计算 ISO 截止。迁移注记：存量库历史行保持原格式（rowid 排序不受影响）；webui 时间线 Date.parse 对新旧格式有 ≤8h 视觉偏移带，仅影响展示排序。

@@ -297,6 +297,21 @@ export async function unlink(ds: DataSource, treeId: string, parentKey: string, 
     const p = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, parentKey, parentKey])) as any[];
     const c = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, childKey, childKey])) as any[];
     if (!p.length || !c.length) throw new Error("node not found");
+    // 0.88 (工单单2·P1): 0 行删除不再静默 rc=0 —— 点名这对节点之间实际存在的
+    // rel（默认 rel=prereq 与用户建边用的 enables/unlock 等不匹配时，旧行为
+    // 是"回执 unlinked 但什么都没删"的假成功）。先查后删，驱动无关。
+    const pre = (await mgr.query(
+      `SELECT 1 AS hit FROM node_edges WHERE parent_id=? AND child_id=? AND rel=?`,
+      [p[0].id, c[0].id, rel]
+    )) as any[];
+    if (!pre.length) {
+      const actual = (await mgr.query(
+        `SELECT rel FROM node_edges WHERE (parent_id=? AND child_id=?) OR (parent_id=? AND child_id=?)`,
+        [p[0].id, c[0].id, c[0].id, p[0].id]
+      )) as any[];
+      const rels = actual.length ? actual.map((x) => x.rel).join(", ") : "none (no edge between these nodes in either direction)";
+      throw new Error(`no ${rel} edge from ${parentKey} to ${childKey} — actual rel(s): ${rels}. Pass --rel <rel> to match`);
+    }
     await mgr.query(`DELETE FROM node_edges WHERE parent_id=? AND child_id=? AND rel=?`, [p[0].id, c[0].id, rel]);
     await rebuildClosure(mgr, treeId);
     await logEvent(mgr, "node.unlink", `${p[0].id}->${c[0].id}`, { tree: treeId, parent: parentKey, child: childKey, rel });
@@ -326,6 +341,26 @@ export async function condAdd(
     if (!n.length) throw new Error(`node not found: ${keyOrId}`);
     const kind = o.kind || "flag";
     if (!(COND_KINDS as readonly string[]).includes(kind)) throw new Error(`kind must be one of ${COND_KINDS.join("|")}`);
+    // 0.88 (工单单1·P1): (node_id, name) 自然键幂等 —— 同内容重跑返回已存在行
+    // + duplicate:true（写幂等契约 ③）；同键异内容拒绝点名（不再静默新建第 N 行：
+    // 多行 required=1 会让 node can 永锁）。对齐 cond rm 的自然键语义。
+    const dup = (await mgr.query(`SELECT * FROM node_conditions WHERE node_id=? AND name=?`, [n[0].id, o.name])) as any[];
+    if (dup.length) {
+      const cur = dup[0];
+      const same =
+        String(cur.kind || "flag") === kind &&
+        String(cur.expr || "") === (o.expr || o.name) &&
+        String(cur.op || ">=") === (o.op || ">=") &&
+        String(cur.value || "") === (o.value || "") &&
+        (cur.required === 1) === (o.required !== false) &&
+        String(cur.effect || "gate") === (o.effect || "gate") &&
+        Number(cur.weight ?? 1) === Number(o.weight ?? 1) &&
+        String(cur.note || "") === (o.note || "");
+      if (same) return { ...cur, duplicate: true } as Record<string, any>;
+      throw new Error(
+        `condition '${o.name}' already exists on ${keyOrId} with different content — remove it first: ygl-trees node cond rm ${keyOrId} --name ${o.name}`
+      );
+    }
     const id = shortId(["cond", n[0].id, o.name], 12);
     await mgr.query(
       `INSERT INTO node_conditions(id,node_id,name,kind,expr,op,value,required,effect,weight,note)

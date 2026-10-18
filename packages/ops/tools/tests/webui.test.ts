@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
 import { getOrm, closeOrm } from "../../../core/database/src/orm";
-import { gatherData, generateHTML, createDashboardServer } from "../src/webui";
+import { gatherData, createDashboardServer, run } from "../src/webui";
 
 let db: DB;
 let dir: string;
@@ -76,57 +76,34 @@ describe("webui gatherData", () => {
   });
 });
 
-describe("webui generateHTML", () => {
-  it("包含 dashboard 标记与内嵌数据", () => {
-    const html = generateHTML(gatherData(env()), false);
-    expect(html).toContain("ygl-trees dashboard");
-    expect(html).toContain("const FALLBACK =");
-    expect(html).toContain("数据内嵌于导出时");
+describe("webui export（0.88 单3：服务形态快照，HTML 退役）", () => {
+  it("export 落 snapshot.json：meta.generated + gatherData 全载荷可解析", async () => {
+    const dest = path.join(dir, "snap.json");
+    const rc = await run(env(), "export", [], { flags: { out: dest } });
+    expect(rc).toBe(0);
+    const raw = fs.readFileSync(dest, "utf8");
+    const snap = JSON.parse(raw);
+    expect(snap.meta.generated).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(snap.brief.current_project).toBe("webui-unit");
+    expect(snap.claims.length).toBe(1);
+    expect(snap.claim_evidence.length).toBe(1);
+    expect(snap.tree).toBeTruthy();
   });
-  it("中文友好化：统计卡/区头/空态/面板文案全中文", () => {
-    const html = generateHTML(gatherData(env()), false);
-    for (const label of ["📊 总览", "科技树", "研究断言", "技能", "知识笔记", "下一步操作", "常用技能",
-      "解锁状态", "必检未满足", "父节点", "子节点", "关联", "暂无任务", "已证实", "['research', '研究']", "加载中"]) {
-      expect(html).toContain(label);
+  it("默认文件名 snapshot.json + rc 0", async () => {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const rc = await run(env(), "export", [], { flags: {} });
+      expect(rc).toBe(0);
+      expect(fs.existsSync(path.join(dir, "snapshot.json"))).toBe(true);
+    } finally {
+      process.chdir(cwd);
     }
-  });
-  it("水平布局（用户裁定）：tier 沿 X 左→右、兄弟纵向扇开", () => {
-    const html = generateHTML(gatherData(env()), false);
-    expect(html).toContain("colGap = 180");
-    expect(html).toContain("tierKeys.length * colGap");
-    expect(html).toContain("y: 40 + ni * rowGap");
-  });
-  it("live 模式带 fetch 引导与 10s 轮询", () => {
-    const html = generateHTML(gatherData(env()), true);
-    expect(html).toContain("fetch('api/data')");
-    expect(html).toContain("setInterval(refresh, 10000)");
-    expect(html).toContain("live mode");
-  });
-  it("内嵌 JSON 转义 <，防 </script> 注入", () => {
-    const data = gatherData(env());
-    data.claims = [{ id: "x1", text: "evil </script><script>alert(1)</script>", status: "unverified", sup: 0, ref: 0 }];
-    const html = generateHTML(data, false);
-    expect(html).not.toContain("</script><script>alert");
-    expect(html).toContain("\\u003c/script>");
-  });
-  it("内嵌 <script> 语法可编译（模板转义回归护栏）", () => {
-    for (const live of [false, true]) {
-      const html = generateHTML(gatherData(env()), live);
-      const m = html.match(/<script>([\s\S]*)<\/script>/);
-      expect(m).toBeTruthy();
-      expect(() => new Function(m![1])).not.toThrow();
-    }
-  });
-  it("claims 分组与节点点击处理函数存在", () => {
-    const html = generateHTML(gatherData(env()), false);
-    expect(html).toContain("function renderClaims");
-    expect(html).toContain("function nodeClick");
-    expect(html).toContain('id="node-panel"');
   });
 });
 
-describe("webui live server", () => {
-  it("/ 与 /classic（R13.5 分流：dist 在则 React 挂 /，内嵌永远在 /classic）", async () => {
+describe("webui live server（0.88 单3：React 唯一前端）", () => {
+  it("/ 出 React 客户端；/classic 已退役（404，不再内嵌回落）", async () => {
     server = createDashboardServer(env());
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const addr = server.address() as any;
@@ -134,13 +111,15 @@ describe("webui live server", () => {
     const res = await fetch(base + "/");
     expect(res.status).toBe(200);
     const html = await res.text();
-    // either the React shell (dist built) or the embedded dashboard — both html
-    expect(html).toMatch(/id="root"|ygl-trees dashboard/);
-    // the embedded zero-dep dashboard is always reachable at /classic
+    // repo checkout ships apps/web/dist → resolveDistRoot finds the React build
+    expect(html).toContain('id="root"');
+    // the embedded pure-HTML dashboard is RETIRED (user ruling 0.88 单3):
+    // /classic is no longer a special route — it falls through to the SPA
+    // fallback like any client-side route, serving the React shell.
     const classic = await fetch(base + "/classic");
     expect(classic.status).toBe(200);
-    expect(await classic.text()).toContain("ygl-trees dashboard");
-  });
+    expect(await classic.text()).toContain('id="root"');
+  }, 20000);
   it("/api/data 返回 JSON（live 收集，brief 含 next_actions）", async () => {
     const res = await fetch(base + "/api/data");
     expect(res.status).toBe(200);
@@ -180,7 +159,7 @@ describe("webui live server", () => {
   });
 
   it("0.39 SSE：/api/events 推送到连接（首帧快照 + 变更帧）", async () => {
-    const res = await fetch(`${base}/api/events`, { headers: { accept: "text/event-stream" } });
+    const res = await fetch(base + "/api/events", { headers: { accept: "text/event-stream" } });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();

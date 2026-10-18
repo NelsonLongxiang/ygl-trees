@@ -157,7 +157,7 @@ case "$LUK" in *'"holder_cmd": "node demo-holder.js (session B)"'*'"cleared": fa
   echo "  ✓ db unlock refuses live holder + echoes holder_cmd";; *)
   echo "  ✗ unlock live-holder failed: $LUK"; kill $HPID 2>/dev/null; exit 1;; esac
 # lock-free process exiting next to the live holder must NOT clear it
-$Y webui export --out "$YGL_HOME/probe.html" >/dev/null 2>&1
+$Y webui export --out "$YGL_HOME/probe-snapshot.json" >/dev/null 2>&1
 LK2=$(ls "$YGL_HOME/ygl-trees.db.ygllock" 2>/dev/null | tr '\n' ' ')
 case "$LK2" in *pid*) echo "  ✓ lock-less exit preserves foreign lock";; *) echo "  ✗ foreign lock nuked: $LK2"; kill $HPID 2>/dev/null; exit 1;; esac
 kill $HPID 2>/dev/null || true
@@ -302,6 +302,11 @@ KH=$($Y kb add --help 2>&1)
 KH_RC=$?
 set -e
 case "$KH" in *"add --title --body|-f"*) [ "$KH_RC" = "0" ] && echo "  ✓ kb add --help 打组帮助 rc=0";; *) echo "  ✗ --help: $KH"; exit 1;; esac
+# ②b 0.88 单4: --help 在非 TTY 管道下必须零 ANSI 色码（曾 paint(...,true) 硬编码泄漏 16 行）
+#    注意用裸 bin（不带 --no-color）——泄漏只在"无旗标 + 管道"组合下暴露
+BIN="${Y%% --no-color}"
+KH_ESC=$("$BIN" kb --help 2>&1 | grep -c $'\x1b' || true)
+[ "$KH_ESC" = "0" ] && echo "  ✓ --help 非 TTY 零 ANSI 色码" || { echo "  ✗ ANSI leak: $KH_ESC lines"; exit 1; }
 # ④ can --eval attachments 快照：评估吃了哪些 rel 证据一目了然
 EV83=$($Y research evidence add "$DEVSRC" --quote "0.83 attachments snapshot evidence" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
 $Y node cond add pb2 --name snap83 --op eval --value "demo attachments snapshot gate" -t probe-batch >/dev/null 2>&1
@@ -442,9 +447,11 @@ JH=$($Y db sql "SELECT rc FROM runs WHERE job_id=(SELECT id FROM jobs WHERE titl
 $Y db stats
 
 echo "── 8. webui"
-$Y webui export --out "$YGL_HOME/dashboard.html" >/dev/null
-if grep -q "ygl-trees dashboard" "$YGL_HOME/dashboard.html" && grep -q "const FALLBACK" "$YGL_HOME/dashboard.html"; then
-  echo "  ✓ webui export: single-file dashboard.html with embedded data"
+# 0.88 单3: export is a service-form snapshot (JSON) — the single-file HTML
+# dashboard is retired; React client is the only front end.
+$Y webui export --out "$YGL_HOME/snapshot.json" >/dev/null
+if node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if(!s.meta?.generated || !s.brief?.counts || !Array.isArray(s.claims)) process.exit(1)" "$YGL_HOME/snapshot.json" 2>/dev/null; then
+  echo "  ✓ webui export: service snapshot.json (meta + brief + claims payload)"
 else
   echo "  ✗ webui export failed"; exit 1
 fi

@@ -63,6 +63,7 @@ ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder �
 ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
 ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
 ygl-trees webui serve --help   # 只打印用法不启服务（0.79.1 短路）
+ygl-trees webui export --out snap.json  # 服务形态快照（0.88：HTML 仪表盘退役，React 唯一前端）
 ```
 
 PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
