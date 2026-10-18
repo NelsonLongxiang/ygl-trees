@@ -1,11 +1,18 @@
 # Changelog
 
+## 0.87.1（2026-10-18）事件时间戳格式统一 + 反馈渠道坐实
+
+- **事件 ts 格式分裂修复（数据完整性缺陷，0.12 起潜伏）**：`nowIso()` 名不符实——返回本地时区 `YYYY-MM-DD HH:MM:SS`，而 cmd.run/claim.link 等走 `new Date().toISOString()`。两种格式文本比较时 `T`(0x54) > ` `(0x20)，**所有 ISO 事件永远排在所有空格格式事件之前，与真实时间无关**；cmd.run 累积到 ~177 条后把树域事件整体挤出 `agent log --limit 200` 窗口（demo §10 树域留痕断言失守暴露）。修复三面：① `nowIso()` 改真 ISO UTC（树写/rels/config/Store.log 全部统一）；② 读侧 `agent log`/`db timeline` 尾巴/`Store.tail` 改 `ORDER BY rowid DESC`（插入序 = 真实时序，对历史混合格式数据免疫）；③ agent brief 选路窗口 `datetime('now')` 空格格式与 ISO ts 比较恒真（-10 分钟过滤从未生效）改 JS 计算 ISO 截止。迁移注记：存量库历史行保持原格式（rowid 排序不受影响）；webui 时间线 Date.parse 对新旧格式有 ≤8h 视觉偏移带，仅影响展示排序。
+- **Issues 反馈渠道建立**：新增 `.github/ISSUE_TEMPLATE/bug_report.md`（环境/复现步骤/实际 vs 期望，提示附 `ygl-trees --version` 与 `ygl-trees doctor` 输出）与 `feature_request.md`（场景/痛点/期望/替代方案）双模板；README 新增「反馈」节链接 [Gitee Issues](https://gitee.com/NelsonLongXiang/ygl-trees/issues)。
+- 顺带清理：遗留 0.86.0 tarball 移出仓库根。
+- 测试基线不变（201/122/93）；demo §10 断言即本修复的回归防线。
+
 ## 0.87.0（2026-10-18）显式优先：裸 shell 提示 + stop() ESM 修复
 
 - **`project use` 裸 shell 提示（用户裁定：环境变量不保险，显式指定最重要）**：无会话身份（无 YGL_SESSION/DSH_SESSION_ID）的裸 shell 落 "default" 会话键——并行终端开不同项目会互踩。现在 sid=default 且多项目时 `project use` 打非阻断 hint，**第一推荐显式 `--project` 钉住**（可 grep、可审计、行为与文本一一对应），`export YGL_SESSION` 隔离降为次选；JSON 模式不泄漏提示文本。DSH 会话（自带 DSH_SESSION_ID）不受影响、无提示。
 - **plugin stop() 的 `require("./orm")` 同款 ESM 修复（评审 direct-80e781dc 补充）**：与 0.86 事件桥同款模式——ESM 宿主下 require 未定义被 try/catch 静默吞，closeOrm 从不执行。改 `ormState.opened` 标志（db.ts，orm 落账时置位）+ dynamic import：未用 ORM 的运行零开销（typeorm 不进冷启动），用过则可靠清理。
 - plan.md M7 执行记录补评审证据引用（tmp/review-cordis.md）。
-- 测试：selection.spec +1（裸 shell 提示出现 + 会话 shell 不出现 + JSON 纯净；坑：DSH 宿主注入的 DSH_SESSION_ID 也须剥除才构成"裸"）→ 全量 202。
+- 测试：selection.spec +1（裸 shell 提示出现 + 会话 shell 不出现 + JSON 纯净；坑：DSH 宿主注入的 DSH_SESSION_ID 也须剥除才构成"裸"）→ 全量 201（0.87.0 收口时 README 误记 202，0.87.1 对齐）。
 
 ## 0.86.0（2026-10-18）Cordis 深化：evalClaim 服务化 + 删壳服务 + 事件桥真修
 

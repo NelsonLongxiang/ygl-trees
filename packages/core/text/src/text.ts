@@ -6,11 +6,12 @@ const CJK_RUN_RE = new RegExp(`[${CJK}]+|[^\\s${CJK}]+`, "gu");
 const CJK_ONLY_RE = new RegExp(`^[${CJK}]+$`, "u");
 
 export function nowIso(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
-    d.getMinutes()
-  )}:${p(d.getSeconds())}`;
+  // 0.87.1: TRUE ISO-8601 UTC. The original implementation returned a
+  // local-time "YYYY-MM-DD HH:MM:SS" string while sibling writers used
+  // new Date().toISOString() — text-comparing the two formats ranks every
+  // ISO row after every space-format row regardless of real time, which
+  // silently corrupted ORDER BY ts windows (agent log, event tails).
+  return new Date().toISOString();
 }
 
 export function stampId(): string {

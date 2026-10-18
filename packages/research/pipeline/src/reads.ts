@@ -19,7 +19,7 @@ export class Store {
   }
 
   tail(limit = 20): Row[] {
-    return this.db.all("SELECT ts,actor,kind,entity,entity_id,payload FROM events ORDER BY ts DESC, rowid DESC LIMIT ?", [
+    return this.db.all("SELECT ts,actor,kind,entity,entity_id,payload FROM events ORDER BY rowid DESC LIMIT ?", [
       limit,
     ]);
   }

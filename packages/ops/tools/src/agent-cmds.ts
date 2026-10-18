@@ -39,12 +39,17 @@ export function buildBrief(env: Env): any {
   // itself usually means a parallel session re-pointed current_tree /
   // current_project — exactly the 0.76 "node not found" incident class.
   try {
-    const recent = store.db.all(
-      `SELECT kind, entity_id, ts, payload FROM events
+  // 0.87.1: cutoff computed in JS as ISO — SQLite datetime('now') returns
+  // space-format UTC, and text-comparing it against ISO ts rows is always
+  // true ('T' > ' '), so the -10 minutes window never filtered anything.
+  const selCutoff = new Date(Date.now() - 10 * 60_000).toISOString();
+  const recent = store.db.all(
+    `SELECT kind, entity_id, ts, payload FROM events
         WHERE kind IN ('tree.use','project.use')
-          AND ts >= datetime('now','-10 minutes')
-        ORDER BY ts DESC LIMIT 5`
-    ) as any[];
+          AND ts >= ?
+        ORDER BY rowid DESC LIMIT 5`,
+    [selCutoff]
+  ) as any[];
     if (recent.length) {
       payload.selection_changed = recent.map((r) => ({
         kind: r.kind,
@@ -365,7 +370,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         sql += " AND payload LIKE ?";
         params.push(`%"run":"${run}"%`);
       }
-      sql += " ORDER BY ts DESC LIMIT ?";
+      sql += " ORDER BY rowid DESC LIMIT ?";
       params.push(Number(args.flags.limit || 30));
       const rows = env.db.all(sql, params);
       if (ctx.json) {

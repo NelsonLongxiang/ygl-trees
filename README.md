@@ -303,7 +303,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 202 例) + demo（122 条断言）+ contract:audit（93 项）
+pnpm test          # 四段制回归：build + unit (vitest 201 例) + demo（122 条断言）+ contract:audit（93 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
@@ -385,7 +385,11 @@ ygl-trees webui serve --port 8642
 node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",{recursive:true});for(const s of fs.readdirSync("skills"))fs.symlinkSync(p.resolve("skills",s),p.join(".agents/skills",s),"junction")'
 ```
 
-## 八、文档地图
+## 八、反馈
+
+用得顺手或踩了坑都欢迎留痕：[Gitee Issues](https://gitee.com/NelsonLongXiang/ygl-trees/issues)——仓库自带**问题反馈**与**功能建议**两套模板（`.github/ISSUE_TEMPLATE/`），报 bug 时带上 `ygl-trees --version` 与 `ygl-trees doctor` 输出最省事。
+
+## 九、文档地图
 
 | 文档 | 内容 |
 |---|---|
@@ -404,6 +408,6 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 | [docs/release.md](docs/release.md) | 发布流程（pre-push 门禁 / `pnpm publish` 纪律 / Windows shim 陷阱 / 标签与 Release） |
 | [docs/bun-compat.md](docs/bun-compat.md) | Bun 目标运行时兼容方案（Windows 受阻：fs.openSync O_CREAT 上游缺陷 + 迁移清单） |
 
-## 九、许可
+## 十、许可
 
 MIT

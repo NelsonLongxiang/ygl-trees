@@ -284,7 +284,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       `, params) as any[];
       if (!days.length) { ok(ctx, "no events yet"); return 0; }
       const tail = conds.length
-        ? (db.all(`SELECT ts, actor, kind, entity_id FROM events${where} ORDER BY ts DESC LIMIT 20`, params) as any[])
+        ? (db.all(`SELECT ts, actor, kind, entity_id FROM events${where} ORDER BY rowid DESC LIMIT 20`, params) as any[])
         : [];
       // F2 fix: --json outputs pure JSON (frozen contract ④)
       if (ctx.json) {
