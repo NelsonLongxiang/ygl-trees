@@ -1001,6 +1001,11 @@ if (subAction === "list" || subAction === undefined) {
     return 2;
   }
 
+  // 0.91.0 (cold-run friction log): bare group = usage display (rc 0);
+  // unknown subaction = usage ERROR (rc 2) — the frozen exit-code contract.
+  if (action) {
+    bad(ctx, `unknown research subcommand: ${action}`);
+  }
   out(
     ctx,
     paint(
@@ -1009,5 +1014,5 @@ if (subAction === "list" || subAction === undefined) {
       ctx.color
     )
   );
-  return 0;
+  return action ? 2 : 0;
 }

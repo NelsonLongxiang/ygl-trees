@@ -1124,6 +1124,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
   }
 
+  // 0.91.0 (cold-run friction log): bare group = usage display (rc 0);
+  // unknown subaction = usage ERROR (rc 2) — the frozen exit-code contract.
+  if (action) {
+    bad(ctx, `unknown ${env.group} subcommand: ${action}`);
+  }
   out(
     ctx,
     paint(
@@ -1132,7 +1137,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ctx.color
     )
   );
-  return 0;
+  return action ? 2 : 0;
 }
 
 function parseState(args: any): Record<string, any> {

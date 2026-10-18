@@ -136,8 +136,10 @@ export function buildTools(): McpTool[] {
   ];
 }
 
-/** Run the MCP server on stdio. */
-export function serveMcp(): void {
+/** Run the MCP server on stdio. `version` is the host CLI's package version
+ * (bin.ts appVersion()) — the server must advertise what it actually is;
+ * the hardcoded stamp went stale at 0.69.0 (cold-run friction log 2026-10-18). */
+export function serveMcp(version: string): void {
   const tools = buildTools();
   const rl = readline.createInterface({ input: process.stdin });
 
@@ -159,7 +161,7 @@ export function serveMcp(): void {
         respond(id, {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "ygl-trees", version: "0.69.0" },
+          serverInfo: { name: "ygl-trees", version },
         });
         break;
       case "tools/list":

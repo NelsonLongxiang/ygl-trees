@@ -27,6 +27,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const { ctx, db, store } = env;
   const checks: Check[] = [];
 
+  // 0.91.0 (cold-run friction log): doctor is a single-purpose group — an
+  // unknown positional is a usage error (rc 2), not a silently-ignored token.
+  if (action) {
+    bad(ctx, `doctor takes no subcommands (got '${action}') — flags only: --json / --fix / --strict`);
+    return 2;
+  }
+
   // ── 1. Schema version ──
   const sv = db.get("PRAGMA user_version")?.user_version ?? 0;
   const LATEST = SCHEMA_VERSION; // single source of truth in db.ts (v7 era)

@@ -347,6 +347,12 @@ export async function main(argv: string[]): Promise<number> {
       out(ctx, `  available: ${all.map(s3 => s3.split("\n")[0]).join(" | ")}`);
       return 1;
     }
+    // 0.91.0 (cold-run friction log): llms is flag-driven — a positional is
+    // a usage error, not a silently-ignored token.
+    if (action) {
+      bad(ctx, `llms takes no positional arguments (got '${action}') — use --json / --section <name>`);
+      return 2;
+    }
     out(ctx, generateLlmsManifest());
     return 0;
   }
@@ -355,8 +361,14 @@ export async function main(argv: string[]): Promise<number> {
   // Designed by the unified three-pillar theory (R8 research); each tool
   // routes to CLI --json, inheriting frozen contracts.
   if (group === "mcp") {
+    // 0.91.0 (cold-run friction log): mcp is a single-purpose group — guard
+    // the usage contract instead of silently starting a server for typos.
+    if (action) {
+      bad(ctx, `mcp takes no subcommands (got '${action}') — it starts the stdio server`);
+      return 2;
+    }
     const { serveMcp } = await import("../../../packages/ops/tools/src/mcp");
-    serveMcp();
+    serveMcp(appVersion());
     return new Promise<number>(() => { /* server runs until stdin closes */ });
   }
 
