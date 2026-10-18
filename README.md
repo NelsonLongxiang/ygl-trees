@@ -143,11 +143,14 @@ source add      收来源，按 (project, url_hash) 去重；--query 顺带关�
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
 claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）
+                --channel <台账通道>（0.90）：预测注册时登记结算数据通道（github-issues|review-rounds|npm-registry|manual…），结算防通道错配
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
                 --by-source：传来源 id 一次挂齐其全部证据；误传来源 id 会列出该来源的证据 id
                 [预测·…] 断言不自动晋升（0.82.1）：挂证据≠仲裁，状态保持 unverified 直到显式 resolve / 到期回测
 claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
 claim unresolve 复位通道：把断言重置回 unverified（撤销链接副作用 / 抢跑仲裁），幂等 duplicate:true
+predict list    结算投影（0.90）：全部 [预测·] 断言一表出 outcome（未结算/1/0/ND）+ channel + 期限；
+                结算三段式 note（evidence --note 尾部 `outcome=1|0, brier=…, settler=…`）解析出 brier/settler——校准曲线 SQL 直出
 predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据自动测（树/kb 计数、npm 版本数），判 hit/miss/pending/manual——只报告不仲裁，给出待 resolve 建议
                 --state <file|url>：外部计数桥接（如 DSH API 快照），判据里的裸键名后缀匹配嵌套键（y_imported≥12 ← counts.y_imported）
                 已 claim resolve 的预测默认隐藏（回测终态），--all 查看全表
@@ -303,7 +306,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 210 例) + demo（123 条断言）+ contract:audit（93 项）
+pnpm test          # 四段制回归：build + unit (vitest 218 例) + demo（125 条断言）+ contract:audit（94 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性

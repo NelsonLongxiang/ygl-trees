@@ -530,10 +530,14 @@ if (subAction === "list" || subAction === undefined) {
         return 2;
       }
       const confidence = String(args.flags.confidence || configGet(env.db, "default_confidence"));
+      // 0.90 (direct-ce9eaf7a): predictions register the ledger channel they
+      // settle against — free string, suggested vocabulary
+      // github-issues|review-rounds|npm-registry|downloads-api|manual.
+      const channel = String(args.flags.channel || "");
       return runWrite(
         env,
-        (ds) => writes.claimAdd(ds, project.id, text, confidence, force),
-        (r) => `claim added: ${r.id}  ${clip(text, 60)}  · project ${project.name}`
+        (ds) => writes.claimAdd(ds, project.id, text, confidence, force, channel),
+        (r) => `claim added: ${r.id}  ${clip(text, 60)}${channel ? `  · channel ${channel}` : ""}  · project ${project.name}`
       );
     }
     if (subAction === "link") {
@@ -885,6 +889,56 @@ if (subAction === "list" || subAction === undefined) {
   // Measures locally-measurable criteria, reports hit/miss/pending/manual —
   // never auto-resolves (arbitration stays human, frozen contract).
   if (sub === "predict") {
+    // 0.90 (direct-ce7e561b ②): settlement projection — every [预测·] claim
+    // with outcome (未结算/1/0/ND), parsed settlement note tail
+    // (`outcome=1|0, brier=…, settler=…`) and registered channel. The
+    // calibration curve becomes SQL-direct: no re-parsing of prose.
+    if (subAction === "list") {
+      const claims = store.db.all(
+        `SELECT c.id, c.text, c.status, c.created, c.channel FROM claims c
+          WHERE c.project_id=? AND c.text LIKE '[预测·%' ORDER BY c.created`,
+        [project.id]
+      ) as any[];
+      if (!claims.length) {
+        if (ctx.json) console.log("[]");
+        else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color));
+        return 0;
+      }
+      // settlement notes: latest tail-segment match per claim wins
+      const evRows = store.db.all(
+        `SELECT ce.claim_id, e.note, e.created FROM claim_evidence ce
+           JOIN evidence e ON e.id=ce.evidence_id ORDER BY e.created`
+      ) as any[];
+      const settled = new Map<string, { brier: string; settler: string }>();
+      for (const r of evRows) {
+        const m = /outcome=(1|0), brier=([\d.]+), settler=([^\s]+)\s*$/.exec(r.note || "");
+        if (m) settled.set(r.claim_id, { brier: m[2], settler: m[3] });
+      }
+      const { parsePrediction } = require("./predict");
+      const outcomeOf = (s: string): string =>
+        s === "supported" ? "1" : s === "refuted" ? "0" : s === "contested" ? "ND" : "未结算";
+      const rows = claims.map((c: any) => {
+        const { horizon, deadline } = parsePrediction(c.text, c.created);
+        const s = settled.get(c.id);
+        return {
+          claim_id: c.id, text: c.text, horizon, deadline, status: c.status,
+          outcome: outcomeOf(c.status), brier: s?.brier ?? null, settler: s?.settler ?? null,
+          channel: c.channel || "", created: c.created,
+        };
+      });
+      if (ctx.json) {
+        console.log(JSON.stringify(rows, null, 2));
+        return 0;
+      }
+      const visible = args.flags.all ? rows : rows.filter((r: any) => r.outcome === "未结算");
+      head(ctx, `predict list — ${project.name} (${visible.length}/${rows.length}${rows.length !== visible.length ? " · 已结案隐藏 (--all)" : ""})`);
+      table(ctx, visible, ["claim", "deadline", "outcome", "brier", "settler", "channel"], ["claim_id", "deadline", "outcome", "brier", "settler", "channel"]);
+      const noChannel = rows.filter((r: any) => r.outcome === "未结算" && !r.channel);
+      if (noChannel.length) {
+        out(ctx, paint(C.yellow, `  ⚠ ${noChannel.length} 条未结算预测未登记 channel（claim add --channel github-issues|review-rounds|…）——结算时可能通道错配`, ctx.color));
+      }
+      return 0;
+    }
     if (subAction === "audit") {
       const claims = store.db.all(
         "SELECT id, text, status, created FROM claims WHERE project_id=? AND text LIKE '[预测·%' ORDER BY created",
@@ -929,7 +983,7 @@ if (subAction === "list" || subAction === undefined) {
         return 0;
       })();
     }
-    bad(ctx, "usage: research predict audit [--offline] [--state <file|url>] [--all]");
+    bad(ctx, "usage: research predict list [--all] · research predict audit [--offline] [--state <file|url>] [--all]");
     return 2;
   }
 

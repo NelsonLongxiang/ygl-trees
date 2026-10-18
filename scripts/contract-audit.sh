@@ -220,6 +220,13 @@ $Y project use audit >/dev/null 2>&1
 json_ok  "R16 session selection restores research" -- $Y research claim list
 $Y db sql "DELETE FROM projects WHERE name='audit-b'" >/dev/null 2>&1
 
+# ── 0.90 predict list projection: JSON array + machine-readable settlement.
+echo "── contract 8: 0.90 predict list 投影（channel/outcome/三段式 note）"
+PC90=$($Y research claim add "[预测·14天] 2027-01-01 前 审计投影——npm 版本 ≥99" --channel review-rounds --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.id||j.row?.id||'')})")
+PLJ=$($Y research predict list --json 2>/dev/null)
+case "$PLJ" in *"$PC90"*'"outcome": "未结算"'*'"channel": "review-rounds"'*) pass "predict list JSON 投影（channel + outcome）";; *) fail "predict list projection" "$PLJ";; esac
+$Y db sql "DELETE FROM claims WHERE id='$PC90'" >/dev/null 2>&1
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

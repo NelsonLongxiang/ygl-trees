@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.90.0（2026-10-18）结算投影批：predict list + channel 字段 + 限定形式统一（direct-ce7e561b / direct-ce9eaf7a）
+
+- **`research predict list`（结算投影）**：全部 `[预测·]` 断言一表出——outcome（未结算/1/0/ND，由 status 映射：supported→1 / refuted→0 / contested→ND）、horizon/deadline（复用 audit 解析）、channel、brier、settler。`--all` 含已结案；默认只列未结算。未登记 channel 的未结算预测给出错配警告行。**校准曲线 SQL 直出**：结算三段式 note（evidence `--note` 尾部 `outcome=1|0, brier=…, settler=…`）在 list 层解析为机器可读字段（不动 schema，note 尾部格式约定；多笔结算取最新）。
+- **`claim add --channel <台账通道>`（通道字段，v11）**：预测注册时登记结算数据通道（github-issues|review-rounds|npm-registry|downloads-api|manual…，自由字符串）——2026-10-18 39c93624f6 通道错配（评审轮计数被当代采 GitHub issues）的实例防线；schema v11（claims.channel 列 + 账表行）。顺带修复：claim add 不带 --channel 时 TypeORM 显式绑 NULL 触发 NOT NULL 违约（实体属性须总是赋值）。
+- **`node:<tree>/<key>` 限定形式统一（node 组）**：`node show/can/unlock/cond/timeline…` 接受 `node:<tree>/<key>`、`<tree>/<key>`（跨树定位，覆盖当前树/-t）与 `node:<key>`（裸前缀剥离）；`node link` 跨树引用显式拒绝 rc=2 点名两树（边保持单树）。与 rel 组的 `node:tree/key` 写法对齐。
+- 测试：predict-list.spec ×4（channel 登记/三段式解析/refuted-contested 映射/v11 账表）+ node-qual.spec ×4（跨树解析/裸前缀/拒绝跨树 link/覆盖 -t）→ 单测 210→218；demo 5j2（×2：投影 + 三段式解析）→ 125；contract 8（predict list JSON 投影）→ 94。
+
 ## 0.89.1（2026-10-18）node cond 缺 --name 静默空回执修复（预测席上报 direct-b1de0e86）
 
 - **缺陷**：`node cond <key> --op eval --value "…"` 缺 `--name` 时落进 list 模式——输出 `(empty)`、rc=0、零落账：成功形回执掩盖 no-op（与 0.88 单2 unlink 同族）。

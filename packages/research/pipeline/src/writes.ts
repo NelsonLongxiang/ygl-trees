@@ -192,7 +192,8 @@ export async function claimAdd(
   projectId: string,
   text: string,
   confidence = "B",
-  force = false
+  force = false,
+  channel = ""
 ): Promise<WriteResult> {
   const hash = contentHash(text, force);
   return ds.transaction(async (mgr) => {
@@ -204,6 +205,9 @@ export async function claimAdd(
     c.text = text;
     c.status = "unverified";
     c.confidence = confidence;
+    // always assign: TypeORM binds explicit NULL for unset entity props,
+    // bypassing the SQL DEFAULT and tripping claims.channel NOT NULL.
+    c.channel = channel || "";
     c.contentHash = hash;
     c.created = nowIso(); (c as any).updated = nowIso();
     await mgr.save(c);
@@ -216,6 +220,7 @@ function mapClaim(c: Claim): Record<string, any> {
   return {
     id: c.id, project_id: c.projectId, text: c.text, status: c.status,
     confidence: c.confidence, content_hash: c.contentHash, created: c.created,
+    channel: c.channel || "",
   };
 }
 

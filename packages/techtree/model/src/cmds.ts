@@ -330,10 +330,44 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     bad(ctx, e.message);
     return 1;
   }
-  const tid = tree.id;
+  let tid = tree.id;
 
   if (env.group === "node") {
     const sub = action;               // add | link | can | ready | ...
+    // 0.90 ③ (direct-ce7e561b): accept qualified node refs — `node:<tree>/<key>`
+    // and `<tree>/<key>` retarget the tree; `node:<key>` sheds its prefix.
+    // Keys and tree names never contain '/', so the first slash unambiguously
+    // splits when the head names an existing tree. Cross-tree link refs are
+    // refused (edges stay single-tree); a qualified ref overrides -t.
+    const unqualify = (s: string): { ref: string; treeName?: string } => {
+      let ref = String(s ?? "");
+      if (ref.startsWith("node:")) ref = ref.slice(5);
+      const i = ref.indexOf("/");
+      if (i > 0) {
+        const head = ref.slice(0, i);
+        const t = db.get("SELECT name FROM trees WHERE name=? OR id=?", [head, head]) as any;
+        if (t) return { ref: ref.slice(i + 1), treeName: t.name };
+      }
+      return { ref };
+    };
+    if (rest[0] !== undefined) {
+      const q = unqualify(rest[0]);
+      if (q.treeName && q.treeName !== tree.name) {
+        const t2 = db.get("SELECT * FROM trees WHERE name=?", [q.treeName]) as any;
+        if (!t2) { bad(ctx, `tree not found: ${q.treeName}`); return 1; }
+        tree = t2; tid = t2.id; rest[0] = q.ref;
+      } else if (q.ref !== rest[0]) {
+        rest[0] = q.ref;
+      }
+    }
+    if (sub === "link" && rest[1] !== undefined) {
+      const q2 = unqualify(rest[1]);
+      if (q2.treeName && q2.treeName !== tree.name) {
+        bad(ctx, `cross-tree link refused: '${rest[1]}' lives in tree '${q2.treeName}' but the parent is in '${tree.name}' — edges stay single-tree`);
+        return 2;
+      }
+      if (q2.ref !== rest[1]) rest[1] = q2.ref;
+    }
     const key = rest[0];
 
     if (sub === "add") {

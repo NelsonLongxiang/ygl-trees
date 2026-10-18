@@ -281,6 +281,18 @@ case "$UR2" in *'"duplicate": true'*) echo "  ✓ unresolve 幂等（already unv
 PA=$($Y research predict audit --offline --json -p techtree 2>&1)
 case "$PA" in *"$PRED"*'"verdict": "pending"'*) echo "  ✓ 预测复位后仍在跟踪表（pending，非 resolved）";; *) echo "  ✗ audit: $PA"; exit 1;; esac
 
+echo "── 5j2. 0.90 predict list 投影 + channel 字段 + 结算三段式 note（direct-ce7e561b/ce9eaf7a）"
+# ① 注册即登记台账通道 → 结算时防通道错配（39c93624f6 实例）
+P90=$($Y research claim add "[预测·14天] 2027-01-01 前 demo 投影断言——npm 版本 ≥99" --channel npm-registry --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+PL90=$($Y research predict list --json -p techtree)
+case "$PL90" in *"$P90"*'"outcome": "未结算"'*'"channel": "npm-registry"'*) echo "  ✓ predict list 投影：channel 登记 + outcome 未结算";; *) echo "  ✗ predict list: $PL90"; exit 1;; esac
+# ② 结算三段式 note 尾部（outcome=…, brier=…, settler=…）→ 机器可读，校准曲线 SQL 直出
+E90=$($Y research evidence add "$DEVSRC" --quote "demo settlement quote" --note "outcome=0, brier=0.25, settler=dsh/ae07421e" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+YGL_EVAL_OFFLINE=1 $Y research claim link "$P90" "$E90" >/dev/null 2>&1
+$Y research claim resolve "$P90" --as refuted -p techtree >/dev/null 2>&1
+PL91=$($Y research predict list --json --all -p techtree)
+case "$PL91" in *'"outcome": "0"'*'"brier": "0.25"'*'"settler": "dsh/ae07421e"'*) echo "  ✓ 结算三段式 note 解析（outcome=0 + brier + settler）";; *) echo "  ✗ settle parse: $PL91"; exit 1;; esac
+
 echo "── 5k. 0.83 并发防护与帮助面（真实用户报告：指针互踩/半写/--help）"
 # ① --project 长旗标：写命令可钉住目标项目，不依赖共享 current 指针
 $Y project new projB -q "第二个项目（0.83 --project 钉住验证）" >/dev/null 2>&1

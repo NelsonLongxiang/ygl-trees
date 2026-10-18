@@ -219,6 +219,11 @@ export class Claim {
   @Column({ name: "confidence", type: "text" })
   confidence!: string;
 
+  /** 0.90: prediction ledger channel (github-issues|review-rounds|npm-registry…).
+   *  Empty for non-prediction claims; settlement validates the feed matches. */
+  @Column({ name: "channel", type: "text", nullable: true })
+  channel?: string;
+
   @Column({ name: "content_hash", type: "text" })
   contentHash!: string;
 

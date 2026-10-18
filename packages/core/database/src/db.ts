@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /** Shared ORM-opened signal: orm.ts flips this when a DataSource settles.
  * plugin.ts stop() reads it WITHOUT importing orm (which pulls typeorm) so
@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS claims (
   status       TEXT NOT NULL DEFAULT 'unverified', -- unverified|supported|refuted|contested
   confidence   TEXT NOT NULL DEFAULT 'B',
   content_hash TEXT NOT NULL DEFAULT '',           -- sha1(text): idempotent writes
+  channel      TEXT NOT NULL DEFAULT '',           -- 0.90 prediction ledger channel (github-issues|review-rounds|npm-registry|downloads-api|manual…)
   created      TEXT NOT NULL,
   updated      TEXT NOT NULL DEFAULT ''
 );
@@ -567,13 +568,14 @@ export class DB {
       if ((v > 0 && v < 8) || (v === 0 && tablesPreExist)) this.upgrade7to8();
       if ((v > 0 && v < 9) || (v === 0 && tablesPreExist)) this.upgrade8to9();
       if ((v > 0 && v < 10) || (v === 0 && tablesPreExist)) this.upgrade9to10();
+      if ((v > 0 && v < 11) || (v === 0 && tablesPreExist)) this.upgrade10to11();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
       // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
       // applied version; replay-safe)
       this.db.run(
         `INSERT OR IGNORE INTO schema_migrations(backend,version,applied_at,note) VALUES('sqlite',?,?,?)`,
-        [SCHEMA_VERSION, nowIso(), 'v10: events.seq + schema_migrations ledger (PG-A foundation)']
+        [SCHEMA_VERSION, nowIso(), 'v11: claims.channel (prediction ledger channel — direct-ce9eaf7a) · v10: events.seq + schema_migrations ledger']
       );
     }
   }
@@ -584,6 +586,14 @@ export class DB {
   private upgrade9to10(): void {
     const hasSeq = this.get("SELECT 1 FROM pragma_table_info('events') WHERE name='seq'");
     if (!hasSeq) this.db.exec(`ALTER TABLE events ADD COLUMN seq INTEGER`);
+  }
+
+  /** v10 -> v11 (0.90 通道字段, direct-ce9eaf7a): predictions register the
+   *  ledger channel they settle against (github-issues|review-rounds|…) so
+   *  settlement can't count the wrong feed — the 39c93624f6 mismatch class. */
+  private upgrade10to11(): void {
+    const has = this.get("SELECT 1 FROM pragma_table_info('claims') WHERE name='channel'");
+    if (!has) this.db.exec(`ALTER TABLE claims ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
   }
 
   /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine

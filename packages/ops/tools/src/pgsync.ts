@@ -199,6 +199,7 @@ CREATE TABLE claims (
   text text NOT NULL, status text NOT NULL DEFAULT 'unverified', confidence text NOT NULL DEFAULT 'B',
   content_hash text NOT NULL DEFAULT '', created text NOT NULL,
   updated text NOT NULL DEFAULT '',                -- v9
+  channel text NOT NULL DEFAULT '',                -- v11 prediction ledger channel
   UNIQUE (project_id, content_hash));
 CREATE TABLE claim_evidence (
   claim_id text NOT NULL REFERENCES claims(id) ON DELETE CASCADE,

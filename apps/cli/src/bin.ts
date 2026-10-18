@@ -119,7 +119,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   source list | search "<q>" | show <id> | rm <id>
   evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
   evidence list
-  claim add "<text>" [--confidence A|B|C]
+  claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>]
   claim link <claimId> <evidenceId> [--stance supports|refutes]
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
   claim resolve <claimId> --as supported|refuted|contested [--note]
@@ -127,6 +127,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   claim evaluate <claimId>    decision-model confidence from linked evidence (persisted)
   claim calibration [--all]   model-vs-human grade gap readout (校准预测判据)
   claim list
+  predict list [--all]        settlement projection: outcome 未结算/1/0/ND + channel + 结算三段式 note（brier/settler）
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
