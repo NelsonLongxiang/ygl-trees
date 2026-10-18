@@ -24,12 +24,19 @@ export interface DashboardData {
     next_actions: string[];
     project?: { name: string; question: string | null; sources: number; evidence: number; claims: number; verified_claims: number; artifacts: number };
     top_skills?: Array<{ name: string; description: string }>;
+    selection_source?: string;
+    session?: string;
   };
   tree: TreeData | null;
+  tree_selection_source?: string;
+  /** R16.4 (0.90.1): present when no authorized project selection resolves —
+   * the dashboard renders the 未选择 pane instead of project content. */
+  unselected?: { reason: string; projects: Array<{ name: string }> };
   claims: Array<{ id: string; text: string; status: string; sup: number; ref: number }>;
   tasks: Array<{ id: string; title: string; status: string }>;
   artifacts: Array<{ id: string; kind: string; title: string; version: number; created: string }>;
   timeline: Array<{ day: string; research: number; tree: number; eval: number; other: number }>;
+  knowledge_graph?: { nodes: Array<{ id: string; label: string; type: string; color: string }>; edges: Array<{ source: string; target: string; label: string }> };
 }
 
 export async function fetchDashboard(): Promise<DashboardData> {

@@ -80,7 +80,13 @@ export default function App() {
           {data?.brief?.project && (
             <Tag color="green" style={{ marginLeft: "auto" }}>
               {data.brief.project.name}
+              {data.brief.selection_source && (
+                <span style={{ opacity: 0.65, marginLeft: 6 }}>· {data.brief.selection_source}</span>
+              )}
             </Tag>
+          )}
+          {!data?.brief?.project && data?.unselected && (
+            <Tag color="orange" style={{ marginLeft: "auto" }}>未选择项目</Tag>
           )}
         </Header>
 
@@ -114,6 +120,36 @@ export default function App() {
                   </Col>
                 ))}
               </Row>
+
+              {/* ── R16.4 未选择态（0.90.1 P1-3）：无授权项目选择时的明确指引 ── */}
+              {data.unselected && (
+                <Card
+                  title={<><NodeIndexOutlined /> 未选择项目</>}
+                  size="small"
+                  style={{ marginBottom: 16 }}
+                >
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="当前会话未选择研究项目"
+                    description={
+                      <>
+                        <Text>项目内容（断言 / 任务 / 工件）在选择项目前不展示——不会回退到全局指针。选择方式（在运行 serve 的终端会话内）：</Text>
+                        <div style={{ marginTop: 8 }}>
+                          <Text code>ygl-trees project use &lt;name&gt;</Text>
+                          <Text type="secondary" style={{ marginLeft: 12 }}>选择后刷新本页</Text>
+                        </div>
+                        <div style={{ marginTop: 8 }}>
+                          <Text type="secondary">可选项目（{data.unselected.projects.length}）：</Text>
+                          {data.unselected.projects.map((p: { name: string }, i: number) => (
+                            <Tag key={p.name} style={{ marginTop: 4 }}>{p.name}</Tag>
+                          ))}
+                        </div>
+                      </>
+                    }
+                  />
+                </Card>
+              )}
 
               {/* ── 项目进度 ── */}
               {data.brief.project && (
@@ -158,14 +194,14 @@ export default function App() {
               </Card>
 
               {/* ── 知识图谱 ── */}
-              {(data as any).knowledge_graph?.nodes?.length > 0 && (
+              {data.knowledge_graph && data.knowledge_graph.nodes.length > 0 && (
                 <Card
                   title={<><NodeIndexOutlined /> 知识图谱</>}
-                  extra={<Text type="secondary">{(data as any).knowledge_graph.nodes.length} 实体 · {(data as any).knowledge_graph.edges.length} 关系</Text>}
+                  extra={<Text type="secondary">{data.knowledge_graph.nodes.length} 实体 · {data.knowledge_graph.edges.length} 关系</Text>}
                   style={{ marginBottom: 16 }}
                 >
                   <Suspense fallback={<Card loading style={{ height: 300 }} />}>
-                    <KnowledgeGraph graph={(data as any).knowledge_graph} />
+                    <KnowledgeGraph graph={data.knowledge_graph} />
                   </Suspense>
                 </Card>
               )}

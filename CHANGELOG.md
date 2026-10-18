@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.90.1（2026-10-18）WebUI 评审修复批（review direct-a35d58ae：P1×3 + P2×4 + P3×3）
+
+- **P1-1 `/api/task` 写端点归属校验**：此前未选择/跨项目会话 POST 任意任务 id 都 rc 200 推进成功（`--host 0.0.0.0` 下任意局域网客户端可推进任意项目任务）。现复用 `/api/artifact` 的授权+归属双检（authorized 选择须匹配任务 project_id）→ 404；非法/缺失 status → 400 usage；body 上限 64KB；错误通道统一文本。
+- **P1-2 SSE tick/onYglEvent 异常隔离 + busy_timeout**：并发 CLI 写触发 `SQLite3Error: database is locked` 时 uncaught 异常直接击毙 serve 进程（实测复现）。两路推送整体 try/catch——失败帧丢弃、进程存活；所有连接 `PRAGMA busy_timeout=2000`（读等待替代瞬败，同族缓解 0.83 DB.close flake）。回归用例：外部进程持写锁 2.5s + SSE 连接 + 断言 server 存活。
+- **P1-3 React 客户端「未选择态」面板（R16.4 验收补齐）**：服务端载荷早已就位而客户端不读——未选择态只见空面板。App.tsx 新增未选择面板（可选项目清单 + `project use` 指引 + 头部 Tag），api.ts 类型补齐（unselected/tree_selection_source/knowledge_graph/selection_source）。
+- **P2-1**：未选择态 `brief.project` 服务端剥除——全局指针项目不再泄漏进首页进度卡（"never a silent fallback"）。
+- **P2-2（R19 立档）**：知识图谱为工作区级视图但端点标签携带断言/证据原文——未选择态不渲染；授权态 claim/evidence/artifact 端点按项目过滤（node/kb 工作区级保留）；relations 取最近 200 条（rowid 序）。决策记 docs/webui-design.md。
+- **P2-3（诚实修正）**：研究管线视图随 0.88 纯 HTML 退役而下线，React 客户端尚未重建——webui-design.md 撤 ✅ 标注，列 0.91 路线图。
+- **P3**：静态资源缓存头（hash 资产 immutable / shell no-cache）；`openStatic` 前缀守卫加 path.sep（dist-* 兄弟目录加固）；/api/task body 上限。
+- 测试：webui 12→17（+5：task 400×2 / 未选择+跨项目 404 / 合法推进 200 / 未选择态载荷 / 持锁存活）→ 单测 223；demo 125；契约 94。
+- 评审线残项转 0.91：token 双源统一（P3-1）、emitEvent 事务内预提交（P3-7）、研究管线视图 React 重建（P2-3）、node-sqlite3-wasm 锁家族系统性硬化（plan.md 立档）。
+
 ## 0.90.0（2026-10-18）结算投影批：predict list + channel 字段 + 限定形式统一（direct-ce7e561b / direct-ce9eaf7a）
 
 - **`research predict list`（结算投影）**：全部 `[预测·]` 断言一表出——outcome（未结算/1/0/ND，由 status 映射：supported→1 / refuted→0 / contested→ND）、horizon/deadline（复用 audit 解析）、channel、brier、settler。`--all` 含已结案；默认只列未结算。未登记 channel 的未结算预测给出错配警告行。**校准曲线 SQL 直出**：结算三段式 note（evidence `--note` 尾部 `outcome=1|0, brier=…, settler=…`）在 list 层解析为机器可读字段（不动 schema，note 尾部格式约定；多笔结算取最新）。

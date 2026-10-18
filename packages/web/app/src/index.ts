@@ -56,7 +56,9 @@ export function openStatic(urlPath: string): StaticFile | null {
   if (!root) return null;
   const clean = urlPath.split("?")[0].replace(/^\/+/, "");
   let file = path.resolve(root, clean === "" ? "index.html" : clean);
-  if (!file.startsWith(root)) file = path.join(root, "index.html"); // traversal → shell
+  // 0.90.1 P3-4 (review direct-a35d58ae): prefix guard must include the
+  // separator — a bare startsWith(root) would admit sibling dist-* dirs.
+  if (!file.startsWith(root + path.sep) && file !== root) file = path.join(root, "index.html"); // traversal → shell
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     file = path.join(root, "index.html"); // SPA fallback
     if (!fs.existsSync(file)) return null;

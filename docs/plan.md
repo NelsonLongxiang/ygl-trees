@@ -274,6 +274,19 @@
 - 预测席上报（direct-b1de0e86）：`node cond <key> --op eval --value q` 缺 --name → 旧行为落 list 模式「(empty)」rc=0 零落账（成功形回执掩盖 no-op，与单2 unlink 同族）。修复：add 形 flags 任一存在而缺 --name → usage rc=2；裸 list 不受影响。cond-usage.spec.ts ×4。
 - 0.90 候选登记：node 组 `<tree>/<key>` 限定形式统一（rel 认、node 组不认的不一致）；M7-4 残项（ctx.dispose/settle loop/域间事件化/跨包 config+rel 下沉，task a2dae0151a）。
 
+### M9 — 结算投影 + WebUI 评审修复（0.90.0–0.90.1，2026-10-18，direct-ce7e561b / direct-ce9eaf7a / direct-a35d58ae）
+
+| 项 | 版本 | 状态 |
+|---|---|---|
+| predict list 结算投影（outcome/channel/brier/settler）+ claims.channel v11 | 0.90.0 | ✓（tag 已推） |
+| node: 限定形式统一（跨树解析/覆盖 -t/拒绝跨树 link） | 0.90.0 | ✓ |
+| WebUI P1×3：/api/task 归属校验 / tick 异常隔离+busy_timeout / React 未选择态 | 0.90.1 | ✓ |
+| WebUI P2×4：brief.project 剥除 / KG 授权+项目过滤（R19 立档）/ 管线视图诚实降级 0.91 / 测试 17 | 0.90.1 | ✓ |
+
+- **R19 决策（webui-design.md）**：知识图谱为工作区级视图，端点标签携带断言/证据原文——未选择态不渲染、授权态按项目过滤（claim/evidence/artifact），node/kb 工作区级保留。
+- **node-sqlite3-wasm 锁家族立档（评审建议）**：0.83 DB.close 65s flake、0.85 终审 65s 超时、0.90.1 P1-2 serve 击毙同族——自定义 VFS mkdir 目录锁在跨进程 WAL 竞争下语义脆弱；0.90.1 起全连接 `PRAGMA busy_timeout=2000`（读等待替代瞬败）。系统性硬化（锁获取快败/读写分离连接）列 0.91 候选。
+- 0.90.0 不单独上 registry：0.90.1 同船发布（工作树已含 P1 修复，单独打 0.90.0 包会泄修复面口径混乱；0.84.1→0.85.0 先例）。两节 CHANGELOG 齐备。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

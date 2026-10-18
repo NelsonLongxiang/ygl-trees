@@ -18,6 +18,10 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 
 ## 三个视图
 
+### 0. 未选择态（R16.4，0.90.1 P1-3）
+- 无授权项目选择时（多项目工作区 + 无会话/环境/旗标选择）：不展示任何项目内容，渲染「未选择项目」面板——可选项目清单 + `project use` 指引；不回退全局指针（brief.project 服务端剥除）。
+- 知识图谱同规则：未选择态为空；授权态按项目过滤 claim/evidence/artifact 端点（node/kb 工作区级保留）——**R19 决策（0.90.1 P2-2）**：知识图谱为工作区级视图，其端点标签携带断言/证据原文，故授权与项目过滤是内容边界，非可选装饰。
+
 ### 1. Agent Brief 仪表盘（首页）
 - 数据源：`agent brief --json` 输出
 - 显示：当前项目、counts（sources/evidence/claims/artifacts/kb/skills）、next_actions、健康度提示
@@ -30,9 +34,10 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 - 布局：Kahn 拓扑序已存 node_index，直接映射 Y 轴
 
 ### 3. 研究管线视图
-- 数据源：`research claim list --json` + `research evidence list --json`
-- 渲染：claim 卡片（状态色：supported 绿/refuted 红/contested 黄/unverified 灰），点击展开证据链接列表 ✅（0.24.0：状态分组 + 展开证据原文/stance/locator）
-- 布局：按状态分组的水流式 ✅
+- 数据源：`research claim list --json` + `research evidence list --json`（载荷已按 R16 授权域收集）
+- 渲染：claim 卡片（状态色：supported 绿/refuted 红/contested 黄/unverified 灰），点击展开证据链接列表
+- 布局：按状态分组的水流式
+- **状态（0.90.1 诚实修正，review direct-a35d58ae P2-3）**：0.88 单3 退役纯 HTML 面板时该视图随之下线，React 客户端尚未重建——此前标注的 ✅ 属于已退役的 HTML 实现。列 **0.91 路线图**（claims/evidence 载荷已在推送，只欠渲染组件）。
 
 ## 技术约束
 

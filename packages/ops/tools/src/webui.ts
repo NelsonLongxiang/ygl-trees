@@ -83,6 +83,10 @@ export function gatherData(env: Env): DashboardData {
   if (!projAuthorized) {
     // unselected (or global-pointer-only): don't render that project's data
     data.unselected = { reason: "no project selected", projects: projectSample(db, 20) };
+    // 0.90.1 P2-1 (review direct-a35d58ae): buildBrief resolves the global
+    // pointer too — strip brief.project so the unselected pane never leaks
+    // the global project's name/progress ("never a silent fallback").
+    if ((data.brief as any)?.project) delete (data.brief as any).project;
   }
   if (cur && projAuthorized) {
     const project = store.projectByName(cur);
@@ -182,34 +186,49 @@ return { id: r.id, title: r.title, status: meta.status || "todo" };
     }
   }
 
-  // R19: knowledge graph — entities and relations from the rel fabric
+  // R19 (0.90.1 P2-2, review direct-a35d58ae): knowledge graph is a
+  // WORKSPACE-LEVEL view, but its endpoint labels carry claim/evidence text
+  // — so it only renders under an AUTHORIZED selection, and label-bearing
+  // endpoints (claim/evidence/artifact) outside the selected project are
+  // dropped; nodes/trees and kb stay (workspace-level by design).
   const kgNodes: any[] = [];
   const kgEdges: any[] = [];
   const kgMap = new Map<string, any>();
-  try {
-    const rels = db.all("SELECT src_type, src_id, dst_type, dst_id, rel FROM relations LIMIT 200") as any[];
-    const colors: Record<string, string> = {
-      node: "#7c9885", claim: "#6a994e", kb: "#8b7355",
-      evidence: "#daa520", artifact: "#5b8db8", skill: "#9b7cb8",
-    };
-    for (const r of rels) {
-      for (const side of ["src", "dst"]) {
-        const type = r[`${side}_type`]; const id = r[`${side}_id`];
-        const key = `${type}:${id}`;
-        if (kgMap.has(key)) continue;
-        let label = id;
-        try {
-          if (type === "node") { const n = db.get("SELECT name FROM nodes WHERE id=?", [id]) as any; if (n) label = n.name; }
-          else if (type === "claim") { const c = db.get("SELECT substr(text,1,40) AS t FROM claims WHERE id=?", [id]) as any; if (c) label = c.t; }
-          else if (type === "kb") { const k = db.get("SELECT title FROM kb_notes WHERE id=?", [id]) as any; if (k) label = k.title.slice(0, 40); }
-          else if (type === "evidence") { const e = db.get("SELECT substr(quote,1,40) AS q FROM evidence WHERE id=?", [id]) as any; if (e) label = e.q; }
-          else if (type === "artifact") { const a = db.get("SELECT title FROM artifacts WHERE id=?", [id]) as any; if (a) label = a.title; }
-        } catch { /* best-effort */ }
-        kgMap.set(key, { id: key, label, type, color: colors[type] || "#999" });
+  const kgInProject = (type: string, id: string): boolean => {
+    try {
+      if (type === "claim") return !!db.get("SELECT 1 FROM claims WHERE id=? AND project_id=?", [id, projSel.id]);
+      if (type === "evidence") return !!db.get("SELECT 1 FROM evidence WHERE id=? AND project_id=?", [id, projSel.id]);
+      if (type === "artifact") return !!db.get("SELECT 1 FROM artifacts WHERE id=? AND project_id=?", [id, projSel.id]);
+      return true; // node / kb / skill / unknown: workspace-level
+    } catch { return false; }
+  };
+  if (projAuthorized) {
+    try {
+      const rels = db.all("SELECT src_type, src_id, dst_type, dst_id, rel FROM relations ORDER BY rowid DESC LIMIT 200") as any[];
+      const colors: Record<string, string> = {
+        node: "#7c9885", claim: "#6a994e", kb: "#8b7355",
+        evidence: "#daa520", artifact: "#5b8db8", skill: "#9b7cb8",
+      };
+      for (const r of rels) {
+        if (!kgInProject(r.src_type, r.src_id) || !kgInProject(r.dst_type, r.dst_id)) continue;
+        for (const side of ["src", "dst"]) {
+          const type = r[`${side}_type`]; const id = r[`${side}_id`];
+          const key = `${type}:${id}`;
+          if (kgMap.has(key)) continue;
+          let label = id;
+          try {
+            if (type === "node") { const n = db.get("SELECT name FROM nodes WHERE id=?", [id]) as any; if (n) label = n.name; }
+            else if (type === "claim") { const c = db.get("SELECT substr(text,1,40) AS t FROM claims WHERE id=?", [id]) as any; if (c) label = c.t; }
+            else if (type === "kb") { const k = db.get("SELECT title FROM kb_notes WHERE id=?", [id]) as any; if (k) label = k.title.slice(0, 40); }
+            else if (type === "evidence") { const e = db.get("SELECT substr(quote,1,40) AS q FROM evidence WHERE id=?", [id]) as any; if (e) label = e.q; }
+            else if (type === "artifact") { const a = db.get("SELECT title FROM artifacts WHERE id=?", [id]) as any; if (a) label = a.title; }
+          } catch { /* best-effort */ }
+          kgMap.set(key, { id: key, label, type, color: colors[type] || "#999" });
+        }
+        kgEdges.push({ source: `${r.src_type}:${r.src_id}`, target: `${r.dst_type}:${r.dst_id}`, label: r.rel });
       }
-      kgEdges.push({ source: `${r.src_type}:${r.src_id}`, target: `${r.dst_type}:${r.dst_id}`, label: r.rel });
-    }
-  } catch { /* graph data best-effort */ }
+    } catch { /* graph data best-effort */ }
+  }
   (data as any).knowledge_graph = { nodes: Array.from(kgMap.values()), edges: kgEdges };
 
   return data;
@@ -287,11 +306,17 @@ export function createDashboardServer(env: Env) {
   };
   const tick = () => {
     if (!sseClients.size) return;
-    const fp = fingerprint();
-    if (fp !== lastFp) {
-      lastFp = fp;
-      push("data", gatherData(env));
-    }
+    // 0.90.1 P1-2 (review direct-a35d58ae): concurrent CLI writes can raise
+    // SQLITE_BUSY on this read connection mid-gather — a failed frame is
+    // DROPPED, never fatal: serve exists precisely because other processes
+    // write while the panel stays alive.
+    try {
+      const fp = fingerprint();
+      if (fp !== lastFp) {
+        lastFp = fp;
+        push("data", gatherData(env));
+      }
+    } catch { /* skip this frame */ }
   };
   // lifecycle-managed when the timer plugin is loaded (vendor ammo), else raw
   const timerCtx: any = (env as any).cordis;
@@ -311,10 +336,13 @@ export function createDashboardServer(env: Env) {
   const cordisCtx: any = (env as any).cordis;
   const onYglEvent = (evt: any) => {
     if (!sseClients.size) return;
-    // Event received — push immediately (no polling delay)
-    push("data", gatherData(env));
-    // Also push the event itself as a named SSE event for fine-grained consumers
-    push(String(evt.kind || "ygl").replace(/\//g, "-"), evt);
+    // 0.90.1 P1-2: same isolation as tick — one bad gather must not kill serve
+    try {
+      // Event received — push immediately (no polling delay)
+      push("data", gatherData(env));
+      // Also push the event itself as a named SSE event for fine-grained consumers
+      push(String(evt.kind || "ygl").replace(/\//g, "-"), evt);
+    } catch { /* skip this frame */ }
   };
   if (typeof cordisCtx?.on === "function") {
     unsubBus = cordisCtx.on("ygl", onYglEvent) as unknown as () => void;
@@ -355,7 +383,15 @@ export function createDashboardServer(env: Env) {
       }
       const f = openWebApp(url);
       if (f) {
-        res.writeHead(200, { "content-type": f.mime });
+        const headers: Record<string, string> = { "content-type": f.mime };
+        // 0.90.1 P3-3: hashed build assets are immutable; the shell must
+        // always revalidate so upgrades are picked up on refresh.
+        if (/\/assets\/.+\.[0-9a-f]{8,}\.(js|css|woff2?|png|svg)$/.test(url)) {
+          headers["cache-control"] = "public, max-age=31536000, immutable";
+        } else {
+          headers["cache-control"] = "no-cache";
+        }
+        res.writeHead(200, headers);
         res.end(f.body);
         return;
       }
@@ -414,22 +450,48 @@ export function createDashboardServer(env: Env) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(pub));
     } else if (url === "/api/task" && req.method === "POST") {
-      // R12: advance a task along its state machine from the dashboard
+      // R12: advance a task along its state machine from the dashboard.
+      // 0.90.1 P1-1 (review direct-a35d58ae): write endpoints are fail-closed
+      // like reads — ownership mirrors /api/artifact (authorized selection
+      // must match the task's project); unselected/cross-project → 404,
+      // malformed body or status → 400. Body capped (64 KB) for sanity.
       let body = "";
-      req.on("data", (c: any) => (body += c));
+      let overflow = false;
+      req.on("data", (c: any) => {
+        body += c;
+        if (body.length > 64 * 1024) { overflow = true; try { req.destroy(); } catch { /* */ } }
+      });
       req.on("end", () => {
         (async () => {
           try {
+            if (overflow) throw new Error("request body too large");
             const { id, status } = JSON.parse(body || "{}");
-            const next = ({ todo: "doing", doing: "done", done: "done" } as any)[String(status)] || "doing";
+            if (!id || !["todo", "doing", "done"].includes(String(status))) {
+              res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+              res.end('usage: POST /api/task {"id":"<task id>","status":"todo|doing|done"}');
+              return;
+            }
+            const row = env.db.get(
+              "SELECT id, project_id FROM artifacts WHERE id=? AND kind='task'",
+              [String(id)]
+            ) as any;
+            const psel = resolveProject(env.db);
+            const authorized = psel.source === "flag" || psel.source === "env" || psel.source === "session" || psel.source === "only";
+            const owned = row && authorized && (psel as any).id === String(row.project_id);
+            if (!row || !owned) {
+              res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+              res.end(!row ? `task not found: ${id}` : `task not accessible under current selection: ${id}`);
+              return;
+            }
+            const next = ({ todo: "doing", doing: "done", done: "done" } as any)[String(status)];
             const ds = await getOrm(env.db.path);
             const { taskSetStatus } = await import("../../../research/pipeline/src/writes");
             const r = await taskSetStatus(ds, String(id), next);
             res.writeHead(200, { "content-type": "application/json" });
             res.end(JSON.stringify(r));
           } catch (e: any) {
-            res.writeHead(400, { "content-type": "application/json" });
-            res.end(JSON.stringify({ error: String(e?.message || e) }));
+            res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+            res.end(String(e?.message || e));
           }
         })();
       });

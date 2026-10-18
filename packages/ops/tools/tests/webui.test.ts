@@ -212,3 +212,118 @@ describe("webui live server（0.88 单3：React 唯一前端）", () => {
     }
   }, 20000);
 });
+
+describe("webui 0.90.1 P1/P2（review direct-a35d58ae）", () => {
+  // SECOND project + task fixtures are created HERE (file order = execution
+  // order): everything above already ran under the single-project home.
+  const SID = "webui-0901";
+  let betaId = "";
+  let betaTaskId = "";
+  let ownTaskId = "";
+
+  beforeAll(async () => {
+    const prevSession = process.env.YGL_SESSION;
+    process.env.YGL_SESSION = SID;
+    try {
+      const writes = await import("../../../research/pipeline/src/writes");
+      const ds = await getOrm(path.join(dir, "unit.db"));
+      const beta = await writes.projectCreate(ds, "beta-x", "跨项目探针");
+      betaId = (beta.row ?? beta).id;
+      const t1 = await writes.taskAdd(ds, betaId, "beta 任务（不该被推进）");
+      betaTaskId = (t1.row ?? t1).id;
+      const own = db.get("SELECT id FROM projects WHERE name='webui-unit'") as any;
+      const t2 = await writes.taskAdd(ds, own.id, "自有任务（可推进）");
+      ownTaskId = (t2.row ?? t2).id;
+    } finally {
+      if (prevSession === undefined) delete process.env.YGL_SESSION;
+      else process.env.YGL_SESSION = prevSession;
+    }
+  });
+
+  it("P1-1：非法/缺失 status → 400（文本通道）", async () => {
+    const r1 = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: ownTaskId }) });
+    expect(r1.status).toBe(400);
+    expect(await r1.text()).toContain("usage");
+    const r2 = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: ownTaskId, status: "weird" }) });
+    expect(r2.status).toBe(400);
+  });
+
+  it("P1-1：未选择与跨项目 POST → 404 fail-closed", async () => {
+    const prevSession = process.env.YGL_SESSION;
+    process.env.YGL_SESSION = SID;
+    try {
+      // unselected: two projects, no session key (projectCreate SELECTS the
+      // new project via session key — clear it first), no global pointer
+      db.metaSet(`current_project@${SID}`, "");
+      const r1 = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: betaTaskId, status: "todo" }) });
+      expect(r1.status).toBe(404);
+      // session selects webui-unit → beta's task is cross-project → 404
+      db.metaSet(`current_project@${SID}`, "webui-unit");
+      const r2 = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: betaTaskId, status: "todo" }) });
+      expect(r2.status).toBe(404);
+      expect(await r2.text()).toContain("not accessible");
+    } finally {
+      db.metaSet(`current_project@${SID}`, "");
+      if (prevSession === undefined) delete process.env.YGL_SESSION;
+      else process.env.YGL_SESSION = prevSession;
+    }
+  });
+
+  it("P1-1：授权选择内合法推进 → 200 todo→doing", async () => {
+    const prevSession = process.env.YGL_SESSION;
+    process.env.YGL_SESSION = SID;
+    try {
+      db.metaSet(`current_project@${SID}`, "webui-unit");
+      const r = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: ownTaskId, status: "todo" }) });
+      expect(r.status).toBe(200);
+      const j = await r.json();
+      expect(j).toMatchObject({ from: "todo", to: "doing" });
+    } finally {
+      db.metaSet(`current_project@${SID}`, "");
+      if (prevSession === undefined) delete process.env.YGL_SESSION;
+      else process.env.YGL_SESSION = prevSession;
+    }
+  });
+
+  it("P2-1/P2-2：未选择态 brief.project 剥除 + knowledge_graph 空 + unselected 载荷", () => {
+    const prevSession = process.env.YGL_SESSION;
+    process.env.YGL_SESSION = SID;
+    try {
+      const d = gatherData(env());
+      expect(d.unselected).toBeTruthy();
+      expect(d.unselected!.projects.length).toBe(2);
+      expect((d.brief as any).project).toBeUndefined();
+      expect((d as any).knowledge_graph).toMatchObject({ nodes: [], edges: [] });
+    } finally {
+      if (prevSession === undefined) delete process.env.YGL_SESSION;
+      else process.env.YGL_SESSION = prevSession;
+    }
+  });
+
+  it("P1-2：外部进程持写锁期间 tick 不击毙 server（弃拍降级）", async () => {
+    // hold the write lock from ANOTHER process for ~2.5s while an SSE client
+    // is connected — the 1.5s tick must survive SQLITE_BUSY (dropped frame),
+    // not crash the server (review direct-a35d58ae crash stack).
+    const holder = await new Promise<number>((resolve) => {
+      const { spawn } = require("node:child_process");
+      const child = spawn(process.execPath, ["-e", `
+        const { DB } = require(${JSON.stringify(path.resolve(__dirname, "../../../../dist/packages/core/database/src/db.js"))});
+        const d = new DB(${JSON.stringify(path.join(dir, "unit.db"))});
+        d.exec("BEGIN IMMEDIATE");
+        setTimeout(() => { try { d.exec("COMMIT"); } catch (e) {} d.close(); }, 2500);
+      `], { stdio: "ignore" });
+      child.on("spawn", () => resolve(child.pid ?? 0));
+      if (child.pid) resolve(child.pid);
+    });
+    const res = await fetch(base + "/api/events", { headers: { accept: "text/event-stream" } });
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read(); // connect snapshot
+    // let ≥2 ticks fire under lock contention, then prove the server lives
+    await new Promise((r) => setTimeout(r, 3500));
+    await reader.cancel().catch(() => {});
+    const alive = await fetch(base + "/api/data");
+    expect(alive.status).toBe(200);
+    const j = await alive.json();
+    expect(j).toHaveProperty("brief.counts");
+  }, 20000);
+});
