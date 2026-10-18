@@ -16,6 +16,14 @@
 
 ## Command Surface
 
+### scenarios
+
+pick a walkthrough by use case (docs/scenarios.md)
+
+```bash
+工程迭代/预测回测/证据调研/知识复利/协作治理/采纳追踪                                # six standard flows, each: entry → commands → exit → criteria → anti-patterns
+```
+
 ### agent
 
 Agent-facing views (START HERE)
@@ -207,6 +215,7 @@ ygl-trees agent match "my task"  # which skill to use
 
 ## More
 
+- docs/scenarios.md: six scenario walkthroughs — pick by use case (engineering / prediction / research / knowledge / governance / adoption)
 - DESIGN.md: design system tokens (colors/type/components)
 - docs/spec.md: full spec R1-R15
 - docs/plugin-authoring.md: write your own plugins

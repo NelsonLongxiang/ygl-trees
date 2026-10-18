@@ -7,6 +7,7 @@
 - **载荷快照**：发射载荷在 logEvent 调用点快照（防调用方后改对象）；字段与 0.76–0.90 逐字节一致（含 research 路径对象载荷既有形态——冻结不动，避免 SSE/校准消费面漂移）。重复写早退不发射（既有语义冻结）。
 - 测试：emit-postcommit.spec ×4（回滚零泄漏双向断言 / research+techtree 两路径 ESM 可见 / 字节形状 / dup 早退）→ 单测 227。
 - **用法退出码契约补齐（运营线冷跑 direct-f4357a11）**：18 个命令组全量探针发现 6 个组未知子命令返回 rc=0（research/tree/node/doctor/mcp/llms——契约规定用法错误 rc=2）；bare 组调用（无子命令）保持用法展示 rc=0 不变。usage-rc.spec ×3 锁面。
+- **场景权威目录（task 1c929e9cdc，用户裁定四建议全采）**：docs/scenarios.md 六场景标准走法（长周期工程迭代/预测回测/证据先行调研/知识复利/多 agent 协作治理/成长采纳追踪），每场景五件套：入口→最小命令序列→出口（落账）→验收判据→常见反模式，全部带 demo §N 交叉引用或工作区实战标注（诚实区分）。产品面索引三处落位：`--help` 头部指引行、`agent brief` scenarios 行、`llms` scenarios 节+docs 索引首行。
 - **MCP serverInfo 版本戳修复**：`initialize` 应答硬编码 "0.69.0"（目录提交硬伤）——改为 bin.ts 运行时传入 appVersion()，spec 断言与 package.json 一致。
 - 约束（监督席）：0.91 全批禁止重放/清洗/回填 events 表（首份校准曲线数据源完整性）；分支冻结窗口外开发，合并/发布压到 10-19 15:00 基线快照之后。
 

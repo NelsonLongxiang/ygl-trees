@@ -81,6 +81,7 @@ ${paint(C.bold, "ygl-trees", color)}  猿光 · 科技树
 ${paint(C.dim, "database-centric CLI: research → production → knowledge reuse", color)}
 
   ygl-trees <group> <action> [args] [options]        add --json for machine output
+  ${paint(C.dim, "new here? docs/scenarios.md — six walkthroughs by use case (工程/预测/调研/知识/治理/采纳)", color)}
 
 ${paint(C.bold, "config", color)}      user-tunable settings (registry defaults + overrides)
   list                       all keys: value + default + note
@@ -644,6 +645,9 @@ export function generateLlmsManifest(): string {
   L.push(`## Command Surface`);
   L.push("");
   const groups: Array<[string, string, Array<[string, string]>]> = [
+    ["scenarios", "pick a walkthrough by use case (docs/scenarios.md)", [
+      ["工程迭代/预测回测/证据调研/知识复利/协作治理/采纳追踪", "six standard flows, each: entry → commands → exit → criteria → anti-patterns"],
+    ]],
     ["agent", "Agent-facing views (START HERE)", [
       ["agent brief", "current state + next actions"],
       ["agent match \"<task>\"", "which skill handles this task"],
@@ -775,6 +779,7 @@ export function generateLlmsManifest(): string {
   L.push("");
   L.push(`## More`);
   L.push("");
+  L.push(`- docs/scenarios.md: six scenario walkthroughs — pick by use case (engineering / prediction / research / knowledge / governance / adoption)`);
   L.push(`- DESIGN.md: design system tokens (colors/type/components)`);
   L.push(`- docs/spec.md: full spec R1-R15`);
   L.push(`- docs/plugin-authoring.md: write your own plugins`);

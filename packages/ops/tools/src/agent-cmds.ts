@@ -287,6 +287,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       head(ctx, "ygl-trees brief");
       out(ctx, `  workspace   ${env.home}`);
       out(ctx, `  project     ${cur || paint(C.dim, "(none)", ctx.color)}`);
+      out(ctx, paint(C.dim, `  scenarios   docs/scenarios.md — 按用途选走法（工程/预测/调研/知识/治理/采纳）`, ctx.color));
       if (payload.project) {
         const p = payload.project;
         out(
