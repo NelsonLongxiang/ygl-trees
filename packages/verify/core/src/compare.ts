@@ -12,10 +12,27 @@ import type { CompareSpec } from "./contract";
 export type CompareOutcome = { equal: boolean } | { error: string };
 
 /** 货币化：四舍五入到最小单位整数（分）。非数/NaN → null（由调用方判错）。 */
+
+/**
+ * exact 域的最小单位换算：值必须能**精确**表示在该 scale 上（允许浮点表示误差 1e-6 分）。
+ * 1290.404 在 scale=2 下不可精确表示 → null（调用方判 ERROR），而不是四舍五入后"通过"。
+ */
+function exactMinorUnits(v: unknown, scale: number): number | null {
+  const raw = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : null;
+  if (raw === null || !Number.isFinite(raw)) return null;
+  const scaled = raw * Math.pow(10, scale);
+  const rounded = Math.round(scaled);
+  if (Math.abs(scaled - rounded) > 1e-6) return null;
+  return rounded;
+}
+
 /** window 型：把 ISO 字符串或 Date 归一成 epoch ms（数字不当日期，避免把金额误判为时间）。 */
+const ISO_8601 = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+
 function toEpochMs(v: unknown): number | null {
   if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.getTime() : null;
   if (typeof v === "string") {
+    if (!ISO_8601.test(v.trim())) return null; // '2026/07/01'、'2026-07-01 10:00:00'(无时区) 一律不收
     const ms = Date.parse(v);
     return Number.isFinite(ms) ? ms : null;
   }
@@ -92,10 +109,13 @@ export function compareValues(left: unknown, right: unknown, spec: CompareSpec):
   switch (spec.mode) {
     case "exact": {
       if (currency !== undefined && scale !== undefined) {
-        const l = toMinorUnits(left, scale);
-        const r = toMinorUnits(right, scale);
-        if (l === null || r === null) return { error: `non-numeric value under currency compare (${String(left)} vs ${String(right)})` };
-        return { equal: l === r };
+        // exact 域禁止静默舍入：1290.404 与 1290.40 化到分都是 129040，会被误判"不差一分"
+        const li = exactMinorUnits(left, scale);
+        const ri = exactMinorUnits(right, scale);
+        if (li === null || ri === null) {
+          return { error: `value is not representable at scale ${scale} under exact compare (${String(left)} vs ${String(right)}) — use tolerance_abs if rounding is acceptable` };
+        }
+        return { equal: li === ri };
       }
       const ls = asString(left);
       const rs = asString(right);
@@ -164,6 +184,7 @@ export function compareValues(left: unknown, right: unknown, spec: CompareSpec):
       const ls = asString(left);
       const rs = asString(right);
       if (ls === null || rs === null) return { error: "regex requires string values" };
+      if (rs.length > 200) return { error: `regex pattern too long (${rs.length} > 200) — pathological backtracking risk` };
       try {
         return { equal: new RegExp(rs).test(ls) };
       } catch (e) {

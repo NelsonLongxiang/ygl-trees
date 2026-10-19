@@ -1,0 +1,6 @@
+{
+  "cases": 1,
+  "matrix": "compare",
+  "mode": "exact",
+  "note": "W2：1290.404 化到分是 129040，若静默舍入会与 1290.40 同值而误判 PASS"
+}

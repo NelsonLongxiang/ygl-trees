@@ -152,6 +152,33 @@ verify export <spec> --out <file>                                   # 构建原�
 
 **rc 契约**：`0`=跑完出报告（含 FAIL/NM/ERROR 结论）、`1`=运行错误、`2`=用法错误。判定在报告不在退出码。
 
+**注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。
+
+
+## 4.5 review 层契约（B6 可验收形态）
+
+review（agent 型）与 fact 型同样有可验收形状，不是"再问一次模型"：
+
+```jsonc
+// ReviewFinding（复核器必须逐条给出，缺一条即不通过）
+{ "vu_id": "V2", "question": "faithful|decidable|not-vacuous",
+  "verdict": "ok|reject|unclear", "reason": "…",
+  "anchor": { "quote": "<材料原文逐字片段>", "locator": "p1 第 2 行 / sheet!B7" } }
+```
+
+机械判定（引擎侧，fail-closed）：
+
+| 情形 | 结论 |
+|---|---|
+| 任一问 `reject` | FAIL |
+| 任一问 `unclear` 或该问缺失 | NEEDS-MATERIAL |
+| 同一问出现互相矛盾的结论 | NEEDS-MATERIAL |
+| `faithful` 无 anchor、或引文在冻结材料里不能逐字复读 | NEEDS-MATERIAL / FAIL |
+| rubric 检查点（`pass_if: all`）没有 `ok` findings 覆盖 | NEEDS-MATERIAL |
+| 没有冻结材料文本（materialsText） | NEEDS-MATERIAL（盲审没有材料=没断言） |
+
+盲审约束进接口类型：`ReviewRequest.blind` 是常量 `true`，请求体只含「冻结材料 + 待审 VU + 圈数」，**不含**构造理由、修订历史、历史结论。review 轮次建议 ≤3（§4.3）。
+
 ## 5. 封包元数据（footer，评审 B3）
 
 ```

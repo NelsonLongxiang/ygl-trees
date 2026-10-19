@@ -1,0 +1,6 @@
+{
+  "cases": 1,
+  "matrix": "compare",
+  "mode": "window",
+  "note": "W1：2026/07/01 走 Date.parse 能过，但按本地时区解释 → 判决不可复现，故 ERROR"
+}

@@ -180,3 +180,91 @@ describe("engine: 评审 a–f 实现缺口守卫", () => {
     ).rejects.toThrow(/time function|as_of/i);
   });
 });
+
+describe("review 层（B6 可验收形态）", () => {
+  const agentVu = () => unit({
+    id: "V2",
+    role: "assert",
+    title: "材料自审",
+    checker: {
+      type: "agent",
+      rubric: [{ id: "R1", point: "金额口径一致", evidence_required: "引用材料中的金额行" }],
+      pass_if: "all",
+    },
+    expected_from: { quote: "q", locator: "l" },
+  } as Partial<VerifyUnit> & Pick<VerifyUnit, "id" | "checker">);
+
+  const materials = "运费对账单：本批次合计 1290.40 元，共 3 张发票。";
+
+  const findings = (over: Record<string, unknown> = {}) => ([
+    { vu_id: "V2", question: "faithful", verdict: "ok", reason: "rubric:R1 引文一致", anchor: { quote: "本批次合计 1290.40 元", locator: "材料 p1 第 2 行" }, ...over },
+    { vu_id: "V2", question: "decidable", verdict: "ok", reason: "可判：金额可比" },
+    { vu_id: "V2", question: "not-vacuous", verdict: "ok", reason: "非空转：有具体金额与张数" },
+  ]) as never;
+
+  const reviewRunner = (out: unknown[]) => ({
+    async review() {
+      return out as never;
+    },
+  });
+
+  it("三问都 ok + 锚点逐字复读 + rubric 覆盖 → PASS", async () => {
+    const r = await runVerify(spec([agentVu()]), {
+      runner: fakeRunner({}),
+      materialsText: materials,
+      reviewRunner: reviewRunner(findings()),
+    });
+    expect(r.summary.pass).toBe(1);
+    expect(r.overall).toBe("PASS");
+  });
+
+  it("任一问 reject → FAIL（不是 NEEDS-MATERIAL）", async () => {
+    const out = findings();
+    (out as Array<Record<string, unknown>>)[1] = { vu_id: "V2", question: "decidable", verdict: "reject", reason: "期望值不可判：材料未给汇率口径" };
+    const r = await runVerify(spec([agentVu()]), { runner: fakeRunner({}), materialsText: materials, reviewRunner: reviewRunner(out) });
+    expect(r.overall).toBe("FAIL");
+    expect(r.vu[0].verdict).toBe("FAIL");
+  });
+
+  it("任一问 unclear → NEEDS-MATERIAL", async () => {
+    const out = findings();
+    (out as Array<Record<string, unknown>>)[2] = { vu_id: "V2", question: "not-vacuous", verdict: "unclear", reason: "材料缺附件，无法判断是否空转" };
+    const r = await runVerify(spec([agentVu()]), { runner: fakeRunner({}), materialsText: materials, reviewRunner: reviewRunner(out) });
+    expect(r.vu[0].verdict).toBe("NEEDS-MATERIAL");
+  });
+
+  it("锚点引文与冻结材料不一致 → FAIL（锚错格子不许过）", async () => {
+    const out = findings();
+    (out as Array<Record<string, unknown>>)[0] = {
+      vu_id: "V2", question: "faithful", verdict: "ok", reason: "rubric:R1",
+      anchor: { quote: "本批次合计 1920.40 元", locator: "材料 p1 第 2 行" },
+    };
+    const r = await runVerify(spec([agentVu()]), { runner: fakeRunner({}), materialsText: materials, reviewRunner: reviewRunner(out) });
+    expect(r.vu[0].verdict).toBe("FAIL");
+    expect(JSON.stringify(r.vu[0].evidence)).toContain("verbatim");
+  });
+
+  it("缺问 / 无锚点 / 无材料 → 一律不落 PASS", async () => {
+    const missingQ = await runVerify(spec([agentVu()]), {
+      runner: fakeRunner({}), materialsText: materials,
+      reviewRunner: reviewRunner(findings().slice(0, 2)),
+    });
+    expect(missingQ.vu[0].verdict).toBe("NEEDS-MATERIAL");
+
+    const noAnchor = findings();
+    (noAnchor as Array<Record<string, unknown>>)[0] = { vu_id: "V2", question: "faithful", verdict: "ok", reason: "rubric:R1" };
+    const r2 = await runVerify(spec([agentVu()]), { runner: fakeRunner({}), materialsText: materials, reviewRunner: reviewRunner(noAnchor) });
+    expect(r2.vu[0].verdict).toBe("NEEDS-MATERIAL");
+
+    const r3 = await runVerify(spec([agentVu()]), { runner: fakeRunner({}), reviewRunner: reviewRunner(findings()) });
+    expect(r3.vu[0].verdict).toBe("NEEDS-MATERIAL");
+    expect(JSON.stringify(r3.vu[0].evidence)).toContain("materials");
+  });
+
+  it("rubric 检查点没有 ok 结论 → NEEDS-MATERIAL（覆盖不足不算过）", async () => {
+    const out = findings();
+    (out as Array<Record<string, unknown>>)[0] = { ...(out as Array<Record<string, unknown>>)[0], reason: "看起来一致" };
+    const r = await runVerify(spec([agentVu()]), { runner: fakeRunner({}), materialsText: materials, reviewRunner: reviewRunner(out) });
+    expect(r.vu[0].verdict).toBe("NEEDS-MATERIAL");
+  });
+});

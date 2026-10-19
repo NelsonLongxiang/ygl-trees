@@ -1,0 +1,6 @@
+{
+  "cases": 1,
+  "matrix": "compare",
+  "mode": "tolerance_rel",
+  "note": "W3：分母取期望侧 r；r=0 退化为 l==0，此例 l=0.001 → FAIL"
+}

@@ -114,6 +114,49 @@ export interface RubricItem {
   evidence_required: string;
 }
 
+
+/* ── review 层契约（B6 可验收形态）────────────────────────────────────────────
+ * 自审/复核不是"再问一次模型"：它有一份可验收的形状——三问、锚点逐字复读、盲审、
+ * 结论落 findings 数组（fail-closed：任何 reject / unclear / 缺项都不落 PASS）。
+ */
+
+/** §2.1 三问：每一问都必须有明确结论，不能"看起来没问题"就算过。 */
+export type ReviewQuestion = "faithful" | "decidable" | "not-vacuous";
+
+export type ReviewVerdict = "ok" | "reject" | "unclear";
+
+/** 锚点复读：quote 必须逐字出现在冻结材料里，locator 指向可复核的位置。 */
+export interface ReviewAnchor {
+  quote: string;
+  locator: string;
+}
+
+export interface ReviewFinding {
+  vu_id: string;
+  question: ReviewQuestion;
+  verdict: ReviewVerdict;
+  reason: string;
+  /** faithful 结论必须带锚点（引擎会做逐字复读校验） */
+  anchor?: ReviewAnchor;
+}
+
+/**
+ * 盲审请求：只含「冻结材料 + 待审 VU」，**不含**构造理由、修订历史、历史结论。
+ * blind 字段是常量 true——接口层面就不给传构造上下文的口子。
+ */
+export interface ReviewRequest {
+  vu: VerifyUnit;
+  /** 冻结材料全文（提交材料原文，不含任何解释性文字） */
+  materials: string;
+  submission_dir?: string;
+  blind: true;
+  round: number;
+}
+
+export interface ReviewRunner {
+  review(req: ReviewRequest): Promise<ReviewFinding[]>;
+}
+
 export interface AgentChecker {
   type: "agent";
   rubric: RubricItem[];

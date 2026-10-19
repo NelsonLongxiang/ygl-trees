@@ -1,0 +1,50 @@
+{
+  "contract_version": "0.4",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "units": [],
+  "spec_id": "spec_compare_exact_rounding",
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "severity": "S1",
+      "title": "exact 域不接受不可精确表示的值",
+      "source_clause": "每笔金额与基准一致，不差一分",
+      "checker": {
+        "type": "sql-pair",
+        "left": {
+          "table": "l",
+          "key": "k",
+          "value": "v"
+        },
+        "right": {
+          "table": "r",
+          "key": "k",
+          "value": "v"
+        },
+        "compare": {
+          "mode": "exact",
+          "currency": "CNY",
+          "scale": 2,
+          "cardinality": "1:1"
+        }
+      },
+      "expected_from": {
+        "quote": "每笔金额与基准一致，不差一分",
+        "locator": "corpus/compare-matrix"
+      }
+    }
+  ]
+}

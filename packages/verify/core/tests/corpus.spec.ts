@@ -10,14 +10,20 @@ describe("corpus: 七型语料骨架（契约 §3，G2 起点）", () => {
     }
   });
 
-  it("compare 矩阵：八种 mode 全部有语料，正负例成对", () => {
+  it("compare 矩阵：八种 mode 全部有语料（负例与非法形态各自成例）", () => {
     const cases = loadCases();
     const modes = new Set(cases.map((c) => String((c.meta as { mode?: string }).mode ?? "")).filter(Boolean));
     for (const m of ["exact", "tolerance_abs", "tolerance_rel", "window", "subset", "superset", "range", "regex"]) {
       expect(modes.has(m), `compare mode without corpus case: ${m}`).toBe(true);
     }
-    expect(cases.length).toBeGreaterThanOrEqual(25);
+    expect(cases.length).toBeGreaterThanOrEqual(28);
+    // 负例（业务违规 → FAIL）与非法形态（不可判 → ERROR）是两种不同的"不通过"，都要有例子
     expect(cases.filter((c) => String(c.name).includes("-fail")).length).toBeGreaterThanOrEqual(2);
+    const errorCases = cases.filter((c) => {
+      const rep = String(c.name);
+      return rep.includes("non-iso") || rep.includes("rounding");
+    });
+    expect(errorCases.length).toBeGreaterThanOrEqual(2);
   });
 
   it("红队案例各自钉死拒绝理由（G3：逐例断言，不做 join 匹配）", () => {

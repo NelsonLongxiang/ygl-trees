@@ -14,6 +14,7 @@ import { basename, join, relative } from "node:path";
 
 import { compareValues, validateCompareSpec } from "./compare";
 import type {
+  AgentChecker,
   Checker,
   FactCheckerType,
   CompareSpec,
@@ -22,6 +23,9 @@ import type {
   Verdict,
   VerifyReport,
   VerifySpec,
+  ReviewFinding,
+  ReviewQuestion,
+  ReviewRunner,
   VerifyUnit,
   VuResult,
 } from "./contract";
@@ -43,7 +47,11 @@ export interface VerifyOptions {
   /** 允许执行的 command argv[0] 白名单；未给则 command 型返回 ERROR */
   commandAllowlist?: string[];
   /** review 层执行器（agent 型）；缺省 = fact-only，agent 型给 ERROR */
-  reviewRunner?: (vu: VerifyUnit, submissionDir?: string) => Promise<{ pass: boolean; evidence: Record<string, unknown>; needsMaterial?: boolean }>;
+  reviewRunner?: ReviewRunner;
+  /** 冻结材料全文（review 层盲审输入；没有它 agent 型只能判 NEEDS-MATERIAL） */
+  materialsText?: string;
+  /** review 圈数（写进报告；同一 VU 的多轮复核取最后一轮） */
+  reviewRound?: number;
   nowIso?: () => string;
   engineVersion?: string;
   mode?: "sealed" | "open";
@@ -188,6 +196,19 @@ async function runFactChecker(
         }
         return m;
       };
+      const sourcesOf = () => {
+        const tableSides: string[] = [];
+        for (const side of [c.left, c.right]) {
+          if ("table" in side) tableSides.push(side.table);
+        }
+        return tableSides.map((t) => {
+          try {
+            return { table: t, rows: runner.tableRows(t) };
+          } catch {
+            return { table: t, rows: -1 };
+          }
+        });
+      };
       const leftMap = group(left, lk, lv);
       const rightMap = group(right, rk, rv);
       // 基数守卫：重复键默认 ERROR（1:N 需显式 agg）
@@ -224,8 +245,12 @@ async function runFactChecker(
         const r = reduce(rvals);
         const outcome = compareValues(l, r, compareSpec);
         if ("error" in outcome) {
-          violations.push({ key: k, left: l, right: r, diff: outcome.error });
-          continue;
+          // 比较本身失败（类型/精度/形态不合法）是构造问题，不是"业务违规"——判 ERROR 而不是 FAIL
+          return {
+            verdict: "ERROR",
+            witness: witness(keys.length, violations.length, sourcesOf(), fingerprint),
+            evidence: { reason: `comparison is not well-formed at key ${k}: ${outcome.error}`, key: k, left: l, right: r },
+          };
         }
         if (!outcome.equal) {
           const ln = typeof l === "number" ? l : Number(l);
@@ -233,17 +258,7 @@ async function runFactChecker(
           violations.push({ key: k, left: l, right: r, diff: Number.isFinite(ln) && Number.isFinite(rn) ? Number((ln - rn).toFixed(6)) : "mismatch" });
         }
       }
-      const tableSides: string[] = [];
-      for (const side of [c.left, c.right]) {
-        if ("table" in side) tableSides.push(side.table);
-      }
-      const sources = tableSides.map((t) => {
-        try {
-          return { table: t, rows: runner.tableRows(t) };
-        } catch {
-          return { table: t, rows: -1 };
-        }
-      });
+      const sources = sourcesOf();
       // matched = 违规对数（与契约示例 rows_matched=3 对齐，r3 意见 1）
       const w = witness(keys.length, violations.length, sources, fingerprint);
       if (keys.length === 0) return { verdict: "NEEDS-MATERIAL", witness: w, evidence: { reason: "no keys to compare — empty source" } };
@@ -336,10 +351,19 @@ async function runFactChecker(
       if (!opts.reviewRunner) {
         return { verdict: "ERROR", evidence: { reason: "review layer not available in fact-only mode (sealed build without --with-review)" } };
       }
+      if (!opts.materialsText) {
+        return { verdict: "NEEDS-MATERIAL", evidence: { reason: "review layer needs frozen materials (materialsText) — a blind review without materials asserts nothing" } };
+      }
+      const checker = c as AgentChecker;
       try {
-        const r = await opts.reviewRunner(vu, opts.submissionDir);
-        if (r.needsMaterial) return { verdict: "NEEDS-MATERIAL", evidence: r.evidence };
-        return { verdict: r.pass ? "PASS" : "FAIL", evidence: r.evidence };
+        const findings = await opts.reviewRunner.review({
+          vu,
+          materials: opts.materialsText,
+          submission_dir: opts.submissionDir,
+          blind: true,
+          round: opts.reviewRound ?? 1,
+        });
+        return judgeReview(checker, vu, findings, opts.materialsText);
       } catch (e) {
         return { verdict: "ERROR", evidence: { reason: (e as Error).message } };
       }
@@ -347,6 +371,67 @@ async function runFactChecker(
     default:
       return { verdict: "ERROR", evidence: { reason: `unknown checker type: ${String((c as { type?: string }).type)}` } };
   }
+}
+
+
+/** 盲审结论的机械判定：缺项 / 矛盾 / 锚点不复读，一律不落 PASS（B6）。 */
+function judgeReview(
+  checker: AgentChecker,
+  vu: VerifyUnit,
+  findings: ReviewFinding[],
+  materials: string,
+): { verdict: VuResult["verdict"]; evidence: Record<string, unknown> } {
+  const byQuestion = new Map<string, ReviewFinding>();
+  for (const f of findings ?? []) {
+    if (f.vu_id !== vu.id) continue;
+    // 同一问重复出现且结论不一致 = 复核自身不稳定，交回人工材料环节
+    const prev = byQuestion.get(f.question);
+    if (prev && prev.verdict !== f.verdict) {
+      return { verdict: "NEEDS-MATERIAL", evidence: { reason: `conflicting review conclusions on "${f.question}"`, findings } };
+    }
+    byQuestion.set(f.question, f);
+  }
+
+  const required: ReviewQuestion[] = ["faithful", "decidable", "not-vacuous"];
+  const missing = required.filter((q) => !byQuestion.has(q));
+  if (missing.length > 0) {
+    return { verdict: "NEEDS-MATERIAL", evidence: { reason: `review is incomplete: no conclusion on ${missing.join(", ")}`, findings } };
+  }
+
+  const rejected = [...byQuestion.values()].filter((f) => f.verdict === "reject");
+  if (rejected.length > 0) {
+    return { verdict: "FAIL", evidence: { reason: `review rejected: ${rejected.map((f) => f.question).join(", ")}`, findings } };
+  }
+  const unclear = [...byQuestion.values()].filter((f) => f.verdict === "unclear");
+  if (unclear.length > 0) {
+    return { verdict: "NEEDS-MATERIAL", evidence: { reason: `review unclear: ${unclear.map((f) => f.question).join(", ")}`, findings } };
+  }
+
+  // 锚点复读：faithful 必须引原文，且引文要能在冻结材料里逐字找到（空白归一后）
+  const faithful = byQuestion.get("faithful")!;
+  if (!faithful.anchor || !faithful.anchor.quote || !faithful.anchor.locator) {
+    return { verdict: "NEEDS-MATERIAL", evidence: { reason: "faithful conclusion carries no anchor (quote + locator)", findings } };
+  }
+  if (!containsVerbatim(materials, faithful.anchor.quote)) {
+    return { verdict: "FAIL", evidence: { reason: "anchor quote does not appear verbatim in the frozen materials (mis-transcription or wrong cell)", findings } };
+  }
+
+  // rubric 覆盖：pass_if=all 时每个检查点都要有"ok"结论
+  const rubric = checker.rubric ?? [];
+  const need = checker.pass_if === "all" || checker.pass_if === undefined ? rubric.map((r) => r.id) : checker.pass_if;
+  const covered = new Set(findings.filter((f) => f.verdict === "ok").map((f) => String(f.reason.match(/^rubric:([^\s]+)/)?.[1] ?? "")));
+  const uncovered = need.filter((id) => !covered.has(id));
+  if (uncovered.length > 0) {
+    return { verdict: "NEEDS-MATERIAL", evidence: { reason: `rubric points without an ok finding: ${uncovered.join(", ")}`, findings } };
+  }
+
+  return { verdict: "PASS", evidence: { findings } };
+}
+
+/** 逐字复读：只归一空白，不做同义替换/模糊匹配——"大致一样"不算复读。 */
+function containsVerbatim(haystack: string, needle: string): boolean {
+  const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+  return norm(haystack).includes(norm(needle));
 }
 
 function walk(dir: string): string[] {
@@ -467,7 +552,7 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   // R13：as_of 必须锚定——时间函数在构造期拒绝（NOW()/CURRENT_TIMESTAMP 无法重放）
   // 形态：now( / now () / CURRENT_TIMESTAMP（关键字可无括号）/ CURRENT_DATE / CURRENT_TIME；
   // 词边界两侧都排掉标识符（current_timestamp_utc 不算），注释先剥（注释里的 now 不误伤）。
-  const timeFn = /(^|[^A-Za-z0-9_])(now\s*\(|(current_timestamp|current_date|current_time)(?![A-Za-z0-9_]))/i;
+  const timeFn = /(^|[^A-Za-z0-9_])(now\s*\(|'now'|"now"|(current_timestamp|current_date|current_time)(?![A-Za-z0-9_]))/i;
   for (const vu of spec.vu) {
     const c = vu.checker as { sql?: string; scope_sql?: string; as_of?: unknown };
     const text = stripSqlComments(`${c.sql ?? ""} ${c.scope_sql ?? ""}`);
