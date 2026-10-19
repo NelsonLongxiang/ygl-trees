@@ -18,6 +18,7 @@ import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 import type { Env } from "../../../core/database/src/types";
 import { bad, C, out, paint, table } from "../../../core/text/src/fmt";
 import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
+import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { prepareSpec } from "../../../verify/core/src/prepare";
@@ -231,6 +232,14 @@ function loadKeyTable(env: Env, args: any): SigningKeyTable | null {
     try {
       const table = JSON.parse(readFileSync(file, "utf8")) as SigningKeyTable;
       if (!table || typeof table !== "object" || typeof table.keys !== "object") throw new Error("keys must be an object");
+      // 自检（r16 P2②）：key_id 必须是 sha256(public_key)，防贴错行导致「指纹与公钥不对应」——
+      // 认表不认报文的前提是表自己是自洽的。
+      for (const [keyId, entry] of Object.entries(table.keys)) {
+        const pub = String((entry as any)?.public_key ?? "");
+        if (!/^[0-9a-f]{64}$/.test(pub)) throw new Error(`key ${keyId} has a malformed public_key (expect 64 hex)`);
+        const derived = fingerprintOfRawPublicKey(Buffer.from(pub, "hex"));
+        if (derived !== keyId) throw new Error(`key table inconsistency: entry ${keyId} carries a public key whose fingerprint is ${derived}`);
+      }
       return table;
     } catch (e: any) {
       throw new Error(`cannot read signing key table ${file}: ${e?.message || e}`);
@@ -377,7 +386,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         // as_of 由调用方（= 这里）给：默认冻结时刻；--as-of 可显式钉快照时点
         asOf: { kind: "snapshot", value: String(args.flags["as-of"] || new Date().toISOString()) },
         engineVersion: "0.1.0",
-        corpusVersion: "1.0",
+        corpusVersion: CORPUS_VERSION,
         knownMaterialHashes: knownMaterialHashes(env, materialId),
       }).then((res): number => {
         if (draft) {
@@ -597,6 +606,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             // 签验：签名封包必须验过（认表不认报文）；unsigned 旧二进制不拦。
             const recorded = (reg as any).signature;
             if (recorded?.signed && !recorded?.verified) problems.push(`binary signature was never verified: ${String(recorded.key_id ?? "").slice(0, 16)}…`);
+            const workspaceBin = join(p.binaries, `${binaryKey(bin)}.bin`);
+            if (existsSync(workspaceBin)) {
+              // r16 P2①：文件名之外再核内容身份——把 binaries/<sha>.bin 换成同 key 签名的另一封包，
+              // 文件名仍然对得上，但字节不是报告指名的那个构建。
+              try {
+                const probe = readSealedBinary(readFileSync(workspaceBin));
+                if (probe.binary_sha256 !== bin) problems.push(`binary identity mismatch: workspace copy is ${probe.binary_sha256.slice(0, 16)}… but the report names ${String(bin).slice(0, 16)}…`);
+              } catch (e: any) {
+                problems.push(`cannot read workspace binary: ${e?.message || e}`);
+              }
+            }
             if (recorded?.signed) {
               const table = expectKeyTable(args) ?? loadKeyTable(env, args);
               const binPath = join(p.binaries, `${binaryKey(bin)}.bin`);

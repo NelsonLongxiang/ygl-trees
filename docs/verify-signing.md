@@ -37,10 +37,21 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
 {
   "scheme": "ed25519",
   "keys": {
-    "<key_id>": { "public_key": "<64 hex>", "created": "2026-10-20", "retired_at": "2026-12-01" }
+    "80a978faf42e13605148a9a2ff38de14b3b693b23547756db95419f43b8e3632": {
+      "public_key": "32e9eb5b205d4b7c30338dfcd44ef51c242670b315269304f9b0c8b211dd8327",
+      "created": "2026-10-20",
+      "label": "ygl-trees release key #1"
+    }
   }
 }
 ```
+
+> 首签记录（2026-10-20）：key #1 签发封包 `yglverify`（spec `spec_efb9a6a40450` v3，Cordis 漂移守卫 5 判据），
+> `binary_sha256 = sha256:0e6859cb6e7431b116fac203daf54ba7c44d8e7c35084eba0968c53c2206c973`；
+> `verify signature` rc=0 → `verify register` 落 `registrations/0e6859cb….json` → 封包直跑 `run_first_signed`
+> （overall PASS 5/5，报告 `verifier.{signature,signing_scheme:ed25519,public_key_fingerprint}` 齐）→
+> `verify report import` `imported:true` → `verify archive --with binary`（`arc_8b717422ca3a`，6 项）→
+> `verify archive verify` `{ok:true}`。私钥在本机 `$YGL_HOME/verify/keys/production.seed`（0600），不进仓库。
 
 - 验签**只认这张表**：`key_id` 必须命中且未 `retired_at`，签名必须能验过；任一条不满足即拒绝。
   **公钥不得只从报告/封包自带材料自证**——那等于让被验方自己出证词。
@@ -66,6 +77,14 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
 任何一步失败都点名到具体项（`sealed spec_sha256 mismatch` / `signature does not verify against the published key` / `key <id>… is retired`）。
 **失败不回落开放模式**：尾部像封包就按封包处理，rc=1，不降级。
 
+### 4.1 字段拼写与「run 不验签」
+
+- footer 字段名是 **`sig_alg`**（不是 `alg`）、**`key_id`**、**`sig`**；报告侧对应
+  `verifier.signing_scheme` / `verifier.public_key_fingerprint` / `verifier.signature`（contract 1.1）。
+- **`run` 只验完整性，不验签名**：封包 `run` 打开时校验布局/规范性/三条哈希（spec/engine/build），
+  不需要密钥表，因此离线可跑；**真伪性**（谁签的、能不能信）走 `verify signature` / `register` / `report import` 链。
+  换句话说：`run` 过了只证明「这份报告确实是这个封包的字节产的」，不证明「这个封包来自可信构建方」。
+
 ## 5. 登记与归档里的签名
 
 - `verify register <sealed>`：先走上面 1–7，再写 `registrations/<binary_key>.json`，其中
@@ -73,6 +92,12 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
   签名的封包**没有可信表就拒绝登记**（rc=1）；unsigned 旧封包按 `signed=false` 登记。
 - `verify report import`：登记的构建若 `signed=true`，会**重新**从工作区 `binaries/<key>.bin` 验一遍签，
   并核对报告 `verifier.public_key_fingerprint === footer.key_id`；验不过 → `imported:false`。
+  - 因此 import 一台**可信密钥表**是必需的（`--keys` / `YGL_VERIFY_KEYS` / `$YGL_HOME/verify/keys/signing-keys.json`），
+    否则签名构建的报告只能重算 payload、无法完成身份链。
+  - 工作区二进制还会做**内容身份**核对：`sha256(binaries/<key>.bin) === report.verifier.binary_sha256`；
+    文件名相同但字节被换过 → `binary identity mismatch`。
+  - `verify register --no-copy` 不写 `binaries/<key>.bin`，此后签名构建的 import 会因「拿不到字节复验」失败——
+    要保留可复核能力就别用 `--no-copy`（或用 `--keys` + 重新 register）。
 - `verify archive --with binary`：把登记 + 二进制副本收进归档，`archive verify` 重算全链时一并核对。
 
 ## 6. 事故处置

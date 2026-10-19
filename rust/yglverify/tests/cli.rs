@@ -191,3 +191,24 @@ fn sealing_a_sealed_binary_is_refused() {
         .expect("spawn");
     assert_eq!(output.status.code(), Some(2));
 }
+
+#[test]
+fn seal_accepts_seed_file_with_trailing_newline() {
+    // 生产种子的常见形态：64 hex + 尾随换行（编辑器/echo 写入）。必须与裸 hex 等价。
+    let dir = temp_dir("seed-newline");
+    let seed: [u8; 32] = [7u8; 32];
+    let seed_hex = seed.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let seed_path = dir.join("production.seed");
+    fs::write(&seed_path, format!("{seed_hex}\n")).unwrap();
+    let spec = cases_dir().join("sql-find-violation").join("spec.json");
+    let out = dir.join("sealed-mt");
+    let output = Command::new(env!("CARGO_BIN_EXE_yglverify"))
+        .args(["seal", "--spec", spec.to_str().unwrap(), "--out", out.to_str().unwrap(), "--key", seed_path.to_str().unwrap()])
+        .output()
+        .expect("spawn seal");
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let bytes = fs::read(&out).unwrap();
+    let (footer, _, _) = yglverify::sealed::open_sealed(&bytes).unwrap();
+    assert_eq!(footer.sig_alg, "ed25519");
+    assert_eq!(footer.sig.as_ref().map(|s| s.len()), Some(88));
+}

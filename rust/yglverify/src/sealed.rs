@@ -8,7 +8,7 @@
 //! [engine binary][spec json（JCS 规范形式）][footer json（JCS 规范形式）][footer_len: u32]
 //! ```
 //! footer（contract 1.1 起）：`{magic, format_version, engine_sha256, spec_offset, spec_length,
-//! spec_sha256, build_sha256, engine_version, corpus_version, alg, key_id, signature?}`。
+//! spec_sha256, build_sha256, engine_version, corpus_version, sig_alg, key_id, sig?}`。
 //! - `build_sha256 = sha256(engine_bytes || spec_bytes)`（footer 自身不参与，构建侧可带外登记）
 //! - `engine_sha256 = sha256(engine_bytes)`
 //! - 签名对象 = `"YGLVERIFY-SEAL-v1\0" || u32le(len(JCS(footer_without_signature))) || JCS(footer_without_signature)`

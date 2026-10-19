@@ -135,4 +135,32 @@ describe("封包签名与篡改矩阵（footer v1）", () => {
       public_key_fingerprint: sealed.footer.key_id ?? null,
     }, table)).toMatchObject({ ok: false, problem: expect.stringContaining("retired") });
   });
+
+  it("遗留 0.98.0 形态：serde 字段序 + 非规范 spec + 无 format_version，按 unsigned 读回（r16 P1）", () => {
+    // 0.98.0 由 Rust serde 序列化 footer（字段序不是 JCS 字典序），spec 也是原样落盘（可能带缩进）。
+    // 这类字节必须仍能读回——否则 docs/verify-signing.md §2 的「旧封包按 unsigned 读取」是空话。
+    const engine = Buffer.from("engine-bytes-098", "utf8");
+    const specBytes = Buffer.from(JSON.stringify(SPEC, null, 2), "utf8");
+    const footerText = JSON.stringify({
+      magic: SEALED_MAGIC,
+      spec_offset: engine.length,
+      spec_length: specBytes.length,
+      spec_sha256: sha256hex(specBytes),
+      build_sha256: sha256hex(Buffer.concat([engine, specBytes])),
+      engine_version: "0.1.0",
+      corpus_version: "1.0",
+    });
+    const footerBytes = Buffer.from(footerText, "utf8");
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(footerBytes.length, 0);
+    const sealed = readSealedBinary(Buffer.concat([engine, specBytes, footerBytes, len]));
+    expect(sealed.legacy).toBe(true);
+    expect(sealed.footer.format_version).toBeUndefined();
+    expect(sealed.footer.sig).toBeUndefined();
+    // 签名核验对 legacy 一律返回 not signed（不假称已验证），且不因「非规范」被拒。
+    expect(verifyAgainstTable(Buffer.from(sealed.canonical_footer_without_signature, "utf8"), {
+      signature: null, signing_scheme: null, public_key_fingerprint: null,
+    }, GOOD_TABLE())).toMatchObject({ ok: false, problem: expect.stringContaining("not signed") });
+  });
+
 });

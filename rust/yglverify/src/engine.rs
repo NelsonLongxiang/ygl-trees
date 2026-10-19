@@ -31,7 +31,7 @@ pub struct VerifyOptions<'a> {
     pub mode: Option<String>,
     /// 封包二进制的 sha256（报告身份锚；open 模式为 None）
     pub binary_sha256: Option<String>,
-    /// 封包签名身份（contract 1.1）：来自 footer 的 alg/key_id/signature，open 模式为 None
+    /// 封包签名身份（contract 1.1）：来自 footer 的 sig_alg/sig（key_id 即公钥指纹），open 模式为 None
     pub signature: Option<String>,
     pub signing_scheme: Option<String>,
     pub public_key_fingerprint: Option<String>,

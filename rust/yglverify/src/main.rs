@@ -203,7 +203,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return runtime_error(e),
     };
-    let mut value = match serde_json::to_value(&report) {
+    let value = match serde_json::to_value(&report) {
         Ok(v) => v,
         Err(e) => return runtime_error(format!("cannot serialize report: {e}")),
     };
@@ -326,13 +326,18 @@ fn read_seed(path: &str) -> Result<[u8; 32], String> {
     let raw = fs::read(path).map_err(|e| format!("cannot read key {path}: {e}"))?;
     let mut seed = [0u8; 32];
     let text = String::from_utf8_lossy(&raw).trim().to_string();
-    if raw.len() == 64 && text.chars().all(|c| c.is_ascii_hexdigit()) {
+    // 允许文件尾部换行（编辑器/echo 常见）：hex 形态按"去掉空白后 64 字符"判，裸字节形态按"trim 后仍是 32 字节"判。
+    if text.len() == 64 && text.chars().all(|c| c.is_ascii_hexdigit()) {
         let decoded = hex::decode(&text).map_err(|e| format!("key {path} is not valid hex: {e}"))?;
         seed.copy_from_slice(&decoded);
         return Ok(seed);
     }
     if raw.len() == 32 {
         seed.copy_from_slice(&raw);
+        return Ok(seed);
+    }
+    if raw.len() == 33 && (raw[32] == 10 || raw[32] == 13) { // 32 字节裸种子 + 尾随换行
+        seed.copy_from_slice(&raw[..32]);
         return Ok(seed);
     }
     Err(format!(

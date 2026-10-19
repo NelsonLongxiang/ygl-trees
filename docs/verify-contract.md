@@ -326,6 +326,7 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
 ```
 
 - `seal --spec <spec.json> --out <file>` 产出封包：拷贝当前开放的二进制 + 内嵌 spec + footer；**已封包的二进制拒绝二次 seal（rc=2）**。
+- **legacy（无 `format_version`）读取纪律**：0.98.0 及以前的 footer 由 serde 序列化（字段序不是 JCS 字典序）、spec 也可能带缩进，因此「raw == JCS(parse)」规范形断言**只对 `format_version` 存在的 footer 与 spec 生效**；legacy 仍逐项校验 magic / 布局 / `spec_sha256` / `build_sha256`（若有 `engine_sha256` 也比），并按 **unsigned** 报告身份（`register` 记 `signature.signed=false`，绝不假称已验证）。
 - `run` 解析顺序：先看自身是否封包 → 封包且给了 `--spec` 一律 **rc=2**（改规范必须重打二进制）；封包且没给 `--spec` 用内嵌规范，报告 `verifier.mode="sealed"`、`verifier.binary_sha256 = "sha256:" + H(整个封包文件)`；开放构建仍可 `--spec`（`mode="open"`、无 `binary_sha256`）。
 - 篡改检测 fail-closed：spec 字节与 `spec_sha256` 不符、或 `engine||spec` 与 `build_sha256` 不符 → **rc=1 点名**；尾部结构是封包但校验不过时**不得**当开放构建继续跑（`looks_sealed` 判别）。
 - `self-check` 在封包构建上多打一行 `sealed-spec: ok (<spec_id> v<n>, build <build_sha256>, corpus <version>)`；开放构建打 `sealed-spec: skip (open build)`。

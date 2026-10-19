@@ -235,7 +235,13 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
     const reg = join(root, "registrations", `${key}.json`);
     if (existsSync(reg)) push("verifier/registration.json", readFileSync(reg), "registration");
     const bin = join(root, "binaries", `${key}.bin`);
-    if (existsSync(bin)) push("verifier/binary/yglverify", readFileSync(bin), "binary");
+    if (existsSync(bin)) {
+      const bytes = readFileSync(bin);
+      // r16 P2①：归档只收「报告指名的那个构建」——文件名是 sha，但工作区副本可能被换过。
+      const got = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+      if (got !== binSha) throw new Error(`workspace binary ${short(binSha)} has different bytes (${short(got)}) — refusing to archive a binary that is not the one in the report`);
+      push("verifier/binary/yglverify", bytes, "binary");
+    }
     if (!existsSync(reg) && !existsSync(bin)) throw new Error(`cannot archive binary ${short(binSha)}: neither registration nor binary bytes in workspace`);
   }
 

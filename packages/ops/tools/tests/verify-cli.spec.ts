@@ -320,4 +320,65 @@ describe.skipIf(!hasBundle)("verify 封包链（register → import → archive 
     expect(check.rc).toBe(0);
     expect(JSON.parse(check.out)).toMatchObject({ ok: true, archive_id: arc.archive_id });
   });
+
+  it("import 拒绝被换过的工作区二进制（文件名相同、字节不同；r16 P2①）", () => {
+    const bin = join(home, "sealed-swap");
+    writeFileSync(bin, sealedBytes("spec_swap", 1));
+    const reg = JSON.parse(run(["verify", "register", bin, "--json"]).out) as { binary_sha256: string; binary_path: string };
+    // 用另一份封包覆盖工作区副本：文件路径仍按注册时的 sha 命名，但字节不是报告指名的那个构建。
+    writeFileSync(reg.binary_path, sealedBytes("spec_swap", 2));
+    const report = {
+      contract_version: "1.1",
+      run_id: "run_swap",
+      started: "2026-07-31T00:00:00.000Z",
+      finished: "2026-07-31T00:00:01.000Z",
+      spec_id: "spec_swap",
+      verifier: {
+        mode: "sealed",
+        binary_sha256: reg.binary_sha256,
+        engine_version: "0.1.0",
+        spec_version: 1,
+        corpus_version: "1.0",
+        sealed_review: false,
+      },
+      as_of: { kind: "material-extract", captured_at: "2026-07-31T00:00:00.000Z" },
+      summary: { pass: 1, fail: 0, needs_material: 0, error: 0 },
+      overall: "PASS",
+      reason: "all 1 assert units passed",
+      vu: [
+        {
+          id: "V1",
+          role: "assert",
+          verdict: "PASS",
+          severity: "S2",
+          source_clause: "账单总额须等于申报总额。",
+          checker_type: "sql",
+          witness: { rows_scanned: 1, rows_matched: 0 },
+        },
+      ],
+      exceptions: [],
+    } as unknown as VerifyReport;
+    const file = join(home, "report-swap.json");
+    writeFileSync(file, JSON.stringify({ ...report, payload_sha256: payloadHash(report) }, null, 2), "utf8");
+    const r = run(["verify", "report", "import", file, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.out).toContain("binary identity mismatch");
+  });
+
+  it("密钥表自检：key_id 必须是 sha256(public_key)（r16 P2②）", () => {
+    const sealed = join(home, "sealed-for-keys");
+    writeFileSync(sealed, sealedBytes("spec_keys", 1));
+    const table = join(home, "keys-bad.json");
+    writeFileSync(
+      table,
+      JSON.stringify({
+        scheme: "ed25519",
+        keys: { ["0".repeat(64)]: { public_key: "1".repeat(64), created: "2026-10-20" } },
+      }),
+      "utf8",
+    );
+    const r = run(["verify", "signature", sealed, "--keys", table, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.out).toContain("key table inconsistency");
+  });
 });

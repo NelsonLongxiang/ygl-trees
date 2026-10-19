@@ -1,15 +1,27 @@
 # Changelog
 
+## 0.99.1
+
+**升级注意**：无契约变化（`contract_version 1.1`、`corpus_version 1.1` 不变）。本版是 0.99.0 签名批的收尾补丁：修一处版本透传缺陷，补首签实证与运维文档两条口径澄清。
+
+- **修 `verify prepare` 的 `corpus_version` 漏传**：此前硬编码 `"1.0"` 写进 `spec.verifier`（与语料 `1.1` 不一致，报告/归档版本链会错位）。`packages/verify/core/src/contract.ts` 新增 `CORPUS_VERSION` 常量，`prepareSpec` 默认值与 `verify prepare` CLI 都改用它。
+- **`seal --key` 容错**：种子文件允许尾随换行（64 hex 或 32 字节裸种子，末尾多一个换行都可）；此前报 `must be 32 raw bytes or 64 hex chars (got 65 bytes)`。补 Rust 用例 `seal_accepts_seed_file_with_trailing_newline`（Rust 测试 31）。
+- **首签实证（2026-10-20）**：生产 key #1（`key_id = 80a978fa…e3632`，私钥在本机 `$YGL_HOME/verify/keys/production.seed`，不进仓库）签发 Cordis 漂移守卫封包（spec `spec_efb9a6a40450` v3）：`verify signature` rc=0 → `register` → 封包直跑 `run_first_signed`（overall PASS 5/5，报告带 `verifier.signature/signing_scheme/public_key_fingerprint`）→ `report import` `imported:true` → `archive --with binary`（`arc_8b717422ca3a`，6 项）→ `archive verify {ok:true}`。密钥表与首签记录落 `docs/verify-signing.md` §3。
+- **r16 复核修复（302cb119）**：①**legacy 封包可读回**——规范形断言（raw == JCS）只对 `format_version` 存在的 footer 生效；真实 0.98.0 形态（serde 字段序 + 非规范 spec + 无 `format_version`/`engine_sha256`）按 unsigned 读回，magic/布局/三条哈希仍逐项校验（补用例 `遗留 0.98.0 形态…`，此前"legacy 按 unsigned 读取"的承诺不成立）；②**二进制内容身份**——`report import` 与 `archive --with binary` 在文件名之外再核 `sha256(工作区字节) === report.verifier.binary_sha256`，把 `binaries/<sha>.bin` 换成同 key 签名的另一封包会被点名 `binary identity mismatch`；③**密钥表自检**——载入时校验 `key_id === sha256(public_key)`，贴错行即报 `key table inconsistency`。
+- **文档两条口径**：`docs/verify-signing.md` 新增 §4.1——①footer 字段名是 `sig_alg`/`key_id`/`sig`（不是 `alg`），报告侧对应 `signing_scheme`/`public_key_fingerprint`/`signature`；②**`run` 只验完整性不验签名**（离线可跑，真伪性走 `verify signature`/`register`/`import` 链）。
+- 测试：unit **398**（+3：legacy 读回 / 二进制身份 / 密钥表自检）/ Rust **31**（+1）/ demo 128 / contract 100 / readme 54。
+
 ## 0.99.0（2026-10-20）封包签名（ed25519）+ 契约 1.1
 
-- **封包签名（footer v1）**：`yglverify seal --key <seed>` 在 footer 里写 `format_version` / `engine_sha256` / `alg:"ed25519"` / `key_id` / `signature`；签名输入 = `JCS(去掉 signature 的 footer)`，`alg`/`key_id` 在签名输入内、`signature` 不在。同一 spec、同一引擎字节、同一种子 → TS `signFooter` 与 Rust `seal` 的签名**逐字节相同**（`packages/verify/core/tests/seal-parity.spec.ts`，RFC 8032 §7.1 公开测试种子）。
+- **封包签名（footer v1）**：`yglverify seal --key <seed>` 在 footer 里写 `format_version` / `engine_sha256` / `sig_alg:"ed25519"` / `key_id` / `sig`；签名输入 = `JCS(去掉 sig 的 footer)`，`sig_alg`/`key_id` 在签名输入内、`sig` 不在。同一 spec、同一引擎字节、同一种子 → TS `signFooter` 与 Rust `seal` 的签名**逐字节相同**（`packages/verify/core/tests/seal-parity.spec.ts`，RFC 8032 §7.1 公开测试种子）。
 - **验签认表不认报文**：`key_id = sha256(32 字节公钥)`；`verify signature <sealed> [--keys <file>] [--expect-key <hex|file>]` 只认 `--keys`/`YGL_VERIFY_KEYS`/`$YGL_HOME/verify/keys/signing-keys.json` 里的未退役密钥——公钥不得只从报告/封包自带材料自证，签名构建没有可信表就不通过。轮换**只增不换**（旧 key 标 `retired_at` 保留）。
 - **登记与导入接上签名**：`verify register` 对签名构建先验签再落 `registrations/`（登记里记 `signature:{signed,verified,scheme,key_id}`）；`verify report import` 对已登记的签名构建**重新**从工作区二进制验一遍，并核对报告 `verifier.public_key_fingerprint === footer.key_id`；验不过 → `imported:false`（实测篡改工作区二进制副本后 import 当场点名 `binary signature does not verify`）。
 - **报告自描述（contract 1.1）**：`verifier` 增 `signature` / `signing_scheme` / `public_key_fingerprint` 三个可选字段；`contract_version` 与 `corpus_version` 同时升 1.1（33 份语料 spec 仅版本字段变化，digest `4cac21b4f5bc…`，差异表见 `packages/verify/core/CHANGELOG.md`）。
-- **篡改矩阵**：spec 字节、engine 字节、footer 非规范（raw ≠ JCS(parse)）、签名字节、未知/退役 key、未知 `format_version`、legacy 无签名字段——七向各自点名拒绝，Rust 单测与 TS 单测两侧都覆盖；旧 0.98.0 封包按 unsigned 读取（不假称已验证）。
+- **篡改矩阵**：spec 字节、engine 字节、footer 非规范（raw ≠ JCS(parse)）、签名字节、未知/退役 key、未知 `format_version`、legacy 无签名字段——七向各自点名拒绝；TS 侧逐向单测覆盖，Rust 侧 `sealed.rs` 覆盖 spec/engine/规范形/format_version/签名五向（Rust 无验签路径）；旧 0.98.0 封包按 unsigned 读取（不假称已验证）。
 - **未签名构建显式告警**：`seal` 不带 `--key` 仍可打包（供测试/内部），但 stderr 打 `warning: sealing without --key produces an unsigned build`。
 - 文档：新增 [docs/verify-signing.md](docs/verify-signing.md)（信任边界、密钥表、验签顺序、事故处置、非目标）；契约 §5 实现形态与 §6 状态补 v1.4 行。
 - 测试：unit **395**（+9：signature ×5、seal-parity ×1、sealed-signature 篡改矩阵 ×3）、Rust **28**、demo 128、contract 100。
+`）。
 
 ## 0.98.0（2026-10-20）构造面无损试跑 + file 排除集 + r14 三项收口
 

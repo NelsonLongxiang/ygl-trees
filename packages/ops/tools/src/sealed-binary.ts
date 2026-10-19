@@ -69,7 +69,9 @@ export function readSealedBinary(bytes: Buffer): SealedBinary {
     throw new Error(`sealed footer format_version ${String(footer.format_version)} is not supported (expects ${SEALED_FORMAT_VERSION})`);
   }
   // 规范形断言（fdc757f6 裁定②）：verify 侧同样执行，非规范即点名拒绝。
-  if (canonicalStringify(footer as never) !== footerRaw.toString("utf8")) {
+  // legacy（footer 无 format_version，0.98.0 及以前用 serde 字段序）豁免本断言——那时还没这条纪律，
+  // 但 magic/布局/三条哈希仍逐项校验（r16 P1：真实 0.98.0 封包必须能按 unsigned 读回）。
+  if (!legacy && canonicalStringify(footer as never) !== footerRaw.toString("utf8")) {
     throw new Error("sealed footer is not canonical (raw != JCS(parse)) — refusing to trust a non-canonical footer");
   }
   const specStart = footer.spec_offset;
@@ -93,7 +95,7 @@ export function readSealedBinary(bytes: Buffer): SealedBinary {
   } catch (e: any) {
     throw new Error(`embedded spec is not JSON: ${e?.message || e}`);
   }
-  if (canonicalStringify(spec as never) !== specText) {
+  if (!legacy && canonicalStringify(spec as never) !== specText) {
     throw new Error("sealed spec is not canonical (raw != JCS(parse)) — the embedded spec was re-serialized");
   }
   const bare: SealedFooter = { ...footer };

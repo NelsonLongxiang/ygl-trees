@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 
 import { validateCompareSpec } from "./compare";
-import { CONTRACT_VERSION } from "./contract";
+import { CONTRACT_VERSION, CORPUS_VERSION } from "./contract";
 import { containsVerbatim, renderPredicate, renderScan } from "./engine";
 import type {
   Checker,
@@ -424,7 +424,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     domain: opts.domain ?? "prepared",
     created: now(),
     runtime_min: "1",
-    verifier: { engine_version: opts.engineVersion ?? "0.1.0", corpus_version: opts.corpusVersion ?? "1.0" },
+    verifier: { engine_version: opts.engineVersion ?? "0.1.0", corpus_version: opts.corpusVersion ?? CORPUS_VERSION },
     // 条件④：as_of 由调用方给（快照口径必须指向真库副本的那个时刻，不是"现在"）
     as_of: opts.asOf,
     vu: kept.map((k) => k.vu),
