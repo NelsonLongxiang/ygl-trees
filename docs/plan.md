@@ -316,7 +316,13 @@
 
 ### M13 — spec-validator 验证规范驱动器（2026-10-19 立项 m11350，设计阶段）
 
-**用户目标（verbatim m11350）**：「构建一套预处理的规范驱动spec 的验证器，供人工业务专家填写的，由agent 进行驱动验证，最终交付确定性的结果工具」；**m11362 补充裁定：需要前端支持**（业务专家主界面=浏览器）。设计全文 docs/spec-validator.md（§7 前端层：表单编辑器/VU 确认视图/报告看板三视图 + /api/verify/* 六端点 + SSE 进度走既有 ygl 通道）。核心立场：agent 出现在预处理（人话→判据结构化）与采证编排，**判定零概率**（verdict ∈ PASS/FAIL/NEEDS-HUMAN/ERROR，全带证据，重放一致）。血统：.157 ops-handbook 四问判据+S1/S2/S3+零未处置（实战祖先）；patrol/telemetry 引擎复用；毕业通道反向接缝（verify→patrol graduate）。待裁定六点（表单载体已因前端裁定收窄为 WebUI 主+Markdown 辅双轨）：命令名（verify vs spec 重名）/检查器首版范围/VU 存储（artifacts 起步 vs v13 新表）/PG 直连时机/前后端批序（推荐后端先行）。
+**用户目标（verbatim m11350）**：「构建一套预处理的规范驱动spec 的验证器，供人工业务专家填写的，由agent 进行驱动验证，最终交付确定性的结果工具」。后续裁定：m11362 需要前端支持（材料提交入口）→ m11390 专家给的是模糊材料（一段话+图片/表格/PDF/压缩包）→ m11558 **零人工确认**（agent 构造+自审，专家不签字）→ m11628 存在形态=规范数据+通用运行时 → m11659/m11703 **交付物=单静态二进制 CLI，spec 内嵌封包不可变更**。
+
+设计全文 docs/spec-validator.md（§4 零人工确认三重机械防线/§5 七型检查器闭集+§5.2 overall 聚合+§5.3 CompareSpec+§5.4 scope witness/§5.5 管线角色/§7 WebUI 三视图/§8.5 存在形态/§8.5.1 封包二进制+外部锚链/§11 语言放置/§12 运营性选择）；契约 docs/verify-contract.md（spec/report/corpus 三 JSON）。
+
+核心立场：agent 只出现在构造（材料→VU）与自审（独立上下文复核+锚点复读+红队语料），**判定零概率**（fact 层逐字重放，verdict ∈ PASS/FAIL/NEEDS-MATERIAL/ERROR，总判定=assert 独立合取）；材料问题（NEEDS-MATERIAL）与判据不满足（FAIL）严格分开，二者都不算通过。血统：.157 ops-handbook 四问判据/S1-S2-S3+零未处置；patrol/telemetry 引擎复用；毕业反向接缝（verify→patrol graduate）。
+
+评审：fdc757f6（direct-30389fca）CHANGES C1-C3 已并入；302cb119（direct-7510b90f）CHANGES B1-B6 阻塞已并入，C1-C7 随首批闭环。开工序：契约冻结 1.0 → fact 引擎+空洞防护 → prepare（清单/守卫/盲审/红队）→ 管线拓扑 → .157 端到端 → 封包器前置进 M13-1b。批次：M13-1（TS 构造面+语料，0.96.0）→ M13-1b（Rust 二进制 yglverify，0.97.0）→ M13-2（WebUI 三视图，0.98.0）。
 
 ## 明确推迟（不进本计划）
 

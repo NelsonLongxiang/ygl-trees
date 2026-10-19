@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>M13 spec-validator · 架构设计 · 工程实践 · 生产演示</title>
+<title>M13 spec-validator · 架构设计 · 工程实践 · 生产演示（演示稿）</title>
 <style>
 :root {
   --bg: #0d1117; --surface: #161b22; --surface-2: #1c2128; --border: #30363d;
@@ -199,6 +199,7 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
 </style>
 </head>
 <body>
+<div style="background:#1c2128;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:8px 24px;text-align:center">演示稿 · 规范以 <a href="./spec-validator.md" style="color:#58a6ff">docs/spec-validator.md</a> 为准（本页为阅读版，不与规范正文同步演进）</div>
 
 <header class="hero">
   <div class="wrap">
@@ -208,7 +209,7 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
     <div class="meta">
       <span class="chip blue"><b>v0.96</b> 设计稿</span>
       <span class="chip green">真 + 产物</span>
-      <span class="chip">Node/TS · Python · Rust(后置)</span>
+      <span class="chip">Node/TS · Python · Rust（交付形态）</span>
       <span class="chip">2026-10-19</span>
     </div>
   </div>
@@ -269,7 +270,7 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
   <pre><span class="c">// 对账三连例：上游 FAIL 的行集正是下游要消费的证据</span>
 V1 (sql)      : 拉超期未对账账单             → outputs: { rows: rowset }
 V2 (sql-pair) : <span class="b">$V1.rows</span> 逐行 vs 报价基准      → outputs: { violations: rowset }
-V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FAIL 带样例行</pre>
+V3 (count)    : <span class="b">$V2.violations</span> == 0        → 0 行=PASS；&gt;0 → FAIL 带样例行</pre>
   <div class="grid c3">
     <div class="card"><h4><span class="icon">⌁</span>拓扑执行</h4><p>执行序 = 拓扑序；成环在 prepare 阶段拒绝（复用科技树 DAG 引擎的拓扑排序与环检测）。</p></div>
     <div class="card"><h4><span class="icon">⤵</span>级联语义</h4><p>上游 FAIL → 输出照常产生；上游 ERROR → 下游标 ERROR 只断依赖分支，独立分支照跑。</p></div>
@@ -381,7 +382,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     <tr><td>4</td><td><strong>进程边界</strong></td><td>语言间只经子进程 + JSON，禁跨语言 FFI 纠缠；每个组件可独立测试、独立发布</td></tr>
     <tr><td>5</td><td><strong>门禁随语言</strong></td><td>Node = vitest + contract:audit；Python = pytest + ruff（提取黄金样本）；Rust = cargo test + clippy</td></tr>
     <tr><td>6</td><td><strong>提取值带锚点</strong></td><td>每个从材料提取的值都有出处（文件 · 页/sheet/行/区域），构造追溯视图可见</td></tr>
-    <tr><td>7</td><td><strong>模型只在前置</strong></td><td>所有模型调用在 prepare 一次性完成并冻结进 VU；run 阶段零模型调用</td></tr>
+    <tr><td>7</td><td><strong>模型只在前置</strong></td><td>模型调用只在 prepare（构造+自审）冻结进 VU；run 阶段 fact 层零模型，review 层只对照冻结 rubric 读冻结提交物</td></tr>
   </table>
 
   <h3><span class="n">2.1</span>代码落点</h3>
@@ -498,8 +499,8 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     <div class="demo-body">
       <div class="stats">
         <div class="stat tot"><div class="v">7</div><div class="l">验证项</div></div>
-        <div class="stat pass"><div class="v">3</div><div class="l">PASS</div></div>
-        <div class="stat fail"><div class="v">3</div><div class="l">FAIL · 处置清单</div></div>
+        <div class="stat pass"><div class="v">2</div><div class="l">PASS</div></div>
+        <div class="stat fail"><div class="v">4</div><div class="l">FAIL · 处置清单</div></div>
         <div class="stat hum"><div class="v">1</div><div class="l">NEEDS-MATERIAL</div></div>
       </div>
       <p class="dim" style="font-size:13px;margin:6px 0 14px">spec v2 · run 72a4 · 2026-10-19 22:41 · 数据快照 db:ygl@2026-10-19T22:40 · 可重放 ✓</p>
@@ -516,7 +517,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
           <div class="chain">
             <span class="step">判据：<b>每张运费发票金额与订单应付对得上</b></span>
             <span class="step">基准：<b>报价基准.xlsx · Sheet1 · R5C3 → 2.35/kg</b></span>
-            <span class="step">管线：<b>V1 圈定 → V3 判定</b></span>
+            <span class="step">管线：<b>V1/V2 判定 → V3 汇总</b></span>
             <span class="step">重放：<b>同输入必同结论</b></span>
           </div>
         </div>
@@ -538,11 +539,16 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
 
       <div class="report-item hum">
         <div class="top"><span class="badge b-hum">NEEDS-MATERIAL</span><span class="name">V7 · 合同条款适用性（材料未给适用条款页）</span><span class="num" style="color:var(--warning)">已转 task #41（补充材料）</span></div>
-        <div class="evidence"><p style="font-size:13px">「合同条款是否覆盖本次运费调整」——机器判不了，已自动开 task 交给业务专家裁决。</p></div>
+        <div class="evidence"><p style="font-size:13px">「合同条款是否覆盖本次运费调整」——机器判不了，已自动开 task 要补充材料（专家不签字，只补材料）。</p></div>
+      </div>
+
+      <div class="report-item fail">
+        <div class="top"><span class="badge b-fail">FAIL</span><span class="name">V3 · 异常判定汇总</span><span class="num" style="color:var(--danger)">V1+V2 均有违规 → 汇总 FAIL</span></div>
+        <div class="evidence"><p style="font-size:13px">count 型：<b>$V1.rows &gt; 0 OR $V2.rows &gt; 0</b> → FAIL（拓扑序：V1/V2 先执行，V3 汇总）。</p></div>
       </div>
 
       <div class="report-item pass">
-        <div class="top"><span class="badge b-pass">PASS</span><span class="name">V3 · 判定汇总 / V5 · 数据源可达 / V6 · 附件完整性</span><span class="num" style="color:var(--success)">3 项 ✓</span></div>
+        <div class="top"><span class="badge b-pass">PASS</span><span class="name">V5 · 数据源可达 / V6 · 附件完整性</span><span class="num" style="color:var(--success)">2 项 ✓</span></div>
         <div class="evidence"><p style="font-size:13px">数据源连接正常（PG 直连 Odoo 库）· 3 份附件全部可追溯 · 管线拓扑 7 级无环。</p></div>
       </div>
     </div>

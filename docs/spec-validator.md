@@ -109,7 +109,12 @@
 
 1. **可审计构造**：VU 必须携带 source_clause（判据原文 verbatim，不得转述）+ expected_from 锚点。报告展示「判据原文 ↔ 检查器 ↔ 证据」全链——事后任何人都能复核（复核是可选动作，不是通过门槛）。
 2. **独立上下文自审**：第二个 agent（全新上下文，只拿到「材料 + VU 清单」而无构造理由）逐条回答三个问题——**忠实**（这条 VU 真是那段判据的意思吗）/ **可判**（输入数据可达吗）/ **非空转**（这个检查器真能失败吗）。任一不合格 → 构造 agent 修订（≤3 轮）；仍不合格 → 该 VU 判 `NEEDS-MATERIAL`（不给通过）。
-3. **抗弛构造守卫**（机械规则，写死在 checker 校验里，违反即拒绝构造）：
+3. **自审的可验收契约（评审 B6）**：三问不够——must-meet 四条：
+   - **锚点复读**：reviewer 必须逐字引用冻结材料在锚点处的原文（文本/xlsx 可字符串比对；图片要求裁剪区 + OCR 文本且数值出现在其中）；引不出 → 该 VU 不通过自审；
+   - **盲审**：每轮全新上下文，不带上一轮结论/修订史；「≤3 轮」每轮独立；
+   - **红队语料**：≥8 例故意松弛/错误规格（恒真谓词、错列、同源期望、把含税读成未税）必须 **100% 被拒**，否则自审层不验收；
+   - **异模型族优先**：reviewer 模型族与构造模型不同（至少不同温度），降低共同误读相关性。
+4. **抗弛构造守卫**（机械规则，写死在 checker 校验里，违反即拒绝构造）：
    - **空转拒绝**：checker 两侧同源（同表同列自比、条件恒真 `WHERE 1=1`、期望值来自与实测值同一锚点）→ 拒绝；
    - **无条件拒绝**：sql 型无 WHERE 或只在视图上聚合 → 拒绝；
    - **覆盖率检查**：每条 source_clause 至少映射一个 VU，或显式声明该判据不可机器判定（进 NEEDS-MATERIAL 并说明缺什么材料）——判据不许静默消失；
@@ -165,7 +170,7 @@ VU := (环境查询值, 附件提取值, 上游输出 $Vx.out) → { verdict, ev
 
 V1 (sql)      : 「拉超期未对账账单」      → outputs: {rows: rowset}
 V2 (sql-pair) : 「$V1.rows 逐行 vs 报价基准」 → inputs: $V1.rows → outputs: {violations: rowset}
-V3 (count)    : 「$V2.violations == 0」   → verdict FAIL 带样例行
+V3 (count)    : 「$V2.violations == 0」   → 0 行=PASS；>0 → FAIL 并带样例行
 ```
 
 - **引用语法**：`$Vx.<output>` 出现在下游 checker 的参数位（sql 的 WHERE IN、sql-pair 的一侧、count 的集合源）。
@@ -174,6 +179,51 @@ V3 (count)    : 「$V2.violations == 0」   → verdict FAIL 带样例行
 - **verdict 传播（评审 C1 补）**：`source` 节点恒 PASS（取数失败=ERROR）；下游 `assert` 的判定**独立成立**，不因上游 FAIL 而自动 FAIL（上游行集正是它的输入）；总判定只做 `assert` ∧，`source` 与 trace 不进 summary 分母。
 - **确定性保持**：组合是纯数据流——同输入同输出同判定；报告=管线执行 trace（每级展示收到什么、产出什么、判了什么）。
 - **与科技树同构**：spec 内 VU 图是 mini-DAG，树引擎的闭包/拓扑/环检测直接复用；跨 spec 组合（一个 spec 的报告作为另一个 spec 的输入）未来走 artifact 引用，首版不做。
+
+## 5.2 整体判定与 severity（评审 B1——判定聚合）
+
+**overall ∈ {PASS, FAIL, NEEDS-MATERIAL, ERROR}**，折叠规则（写死，报告头与 `--json` 单对象都带 `overall` + `reason`）：
+
+```
+overall = FAIL  if 任一 role=assert 的 verdict=FAIL
+        = NEEDS-MATERIAL if 无 FAIL 且任一 assert=NEEDS-MATERIAL
+        = ERROR if 无 FAIL/NM 且任一 assert=ERROR
+        = PASS  otherwise
+```
+
+优先级 **FAIL > NEEDS-MATERIAL > ERROR > PASS**——「业务不对」压过「没判成」压过「环境故障」。`source` 节点不参与（§5.1）。混合态必须在报告首屏可见（例：2 FAIL + 1 NEEDS-MATERIAL → overall=FAIL，但 NEEDS-MATERIAL 条目单独列出、附补材料清单）。
+
+**severity 权属**：S1/S2/S3 在构造阶段按判据语气赋值（材料/规范中「必须/不得」→ S1，「应」→ S2，「建议」→ S3），自审只允许上调不允许下调；severity **不改变 overall 数学**，只决定报告呈现顺序、处置队列优先级与是否自动开 task（S1 FAIL/NM 自动开）。
+
+## 5.3 比较契约 CompareSpec（评审 B5——数值/单位/基数/NULL）
+
+所有比较器只认一个 `CompareSpec`，字段闭集：
+
+```json
+{ "mode": "abs|rel|window|exact|subset|superset|range|regex",
+  "value": 0.01, "unit": "day", "currency": "CNY", "scale": 2,
+  "cardinality": "1:1|1:N|N:1", "null": "error|equal|ignore" }
+```
+
+- **货币**：`currency` + `scale` 必填，比较一律换算成**最小单位整数**（分）后比，禁止浮点直比；小数位超出 `scale` → 构造拒绝。
+- **sql-pair 基数**：默认 `1:1`；键重复（1:N fan-out）**默认 ERROR 点名**，需要聚合时显式 `cardinality:"1:N"` + `agg:"sum|max|min"`。
+- **NULL 语义**：默认 `null:"error"`（NULL vs 0 不相等，也不当作缺失静默放过）；`null:"equal"` 仅在判据原文明确时使用。
+- **count / exists 语义**（评审 B5 修正）：**业务数据源查询语义**，不是 ygl 事件账本——`count` = `SELECT count(*) FROM <table> WHERE <pred>` 在 `as_of` 窗口内；`exists` = 查询返回 ≥1 行。ygl 事件账本语义仅在 workspace 模式的 telemetry 检查器里保留（封包模式不可用，构造时点明）。
+
+## 5.4 scope witness（评审 B2——防空洞通过）
+
+每个 fact 检查器**必须**输出：
+
+```json
+"witness": { "rows_scanned": 42, "rows_matched": 2,
+             "sources": [{"table":"freight_invoices","rows":42}],
+             "schema_fingerprint": "sha256:…" }
+```
+
+- `rows_scanned = 0` → **NEEDS-MATERIAL**（表空/选错表/谓词全 NULL 都不许落 PASS）；
+- 期望非空但 `rows_matched = 0` → NEEDS-MATERIAL（要么数据缺，要么查询写错）；
+- prepare 冻结 schema fingerprint（表/列/类型），run 不一致 → **ERROR**（schema 漂移=环境不满足契约）；
+- 证据行 canonical 排序（主键升序，NULL 置末）——否则「逐字重放」不成立。
 
 ## 6. 交付契约：真 + 产物（m11429 用户裁定）
 
@@ -233,6 +283,7 @@ verify submit                      # 材料提交（标题+一段话+附件登�
 verify prepare <spec-id>           # 提取+翻译+自审 → 可执行 VU 集（无人确认环节）
 verify run <spec-id> [--db <path|url>]   # 跑全部检查器 → 报告
 verify report <run-id>             # 复核历史报告
+verify report import <report.json> # 封包跑回的报告入库（校验 binary_sha256/spec_version/payload_sha256）
 verify trace <spec-id>             # 构造追溯（判据↔检查器↔自审结论，只读）
 verify list                        # 规范清单与状态
 ```
@@ -274,14 +325,25 @@ verify list                        # 规范清单与状态
 - **自检**：启动即校验自身指纹（文件被改动 → 拒绝执行，ERROR）；`self-check` 打印 engine/spec/corpus 三版本与两个哈希。
 - **报告头**记录 `binary_sha256` + `spec_version` + `engine_version` + `corpus_version`——「这份报告是哪个验证器、在哪个规范版本上跑出来的」永远可查。
 - **规范源文件 `.yglverify.json` 降为构建输入**，不直接交付；交付目录里只有一个可执行文件（加业务自己的数据与提交物）。
-- **运行时输入只剩三类**：数据源（SQLite 文件 / PG URL）、提交物附件（业务数据）、输出路径。基准材料的**冻结期望值**已在 spec 里（prepare 时提取并带锚点），所以基准材料原件不需要随包。
+- **两阶段冻结（评审 B4，唯一正确的冻结边界）**：
+  - **阶段一 · 基准材料（提交时冻结）**：报价单/规则文档等「标尺」在 `verify submit` 时登记为 source，prepare 从中提取期望值并**把值 + 锚点 + 原文引文冻结进 spec**——之后基准原件换版不影响既有 spec（旧报告锚点永不断链）。
+  - **阶段二 · 提交物（run 时以字节校验）**：账单/截图等「靶子」在 submit 时登记附件（content-addressed），**spec 冻结其 `sha256`**；run 时要求传入同一批字节，先校验哈希才交给检查器/review 层——「同一批字节」是硬条件，哈希不符即 ERROR，换文件不成立。
+- **附件存储（评审 B4 实测结论）**：现有 `source` 只按 `sha1(text)` 存 UTF-8 正文（`writes.ts:139,152`，且 `url_hash` 重复早返回），**没有二进制入库路径**——附件必须走 **content-addressed blob**：`{sha256, size, mime, path/object}`，同路径换内容 = 新 blob 行（按 sha256 去重）。落点二选一：`sources` 增列（九触点）或新表 `attachments`（推荐，语义干净）；附件不参与 FTS。
+- **运行时输入只剩三类**：数据源（SQLite 文件 / PG URL）、**提交物字节（哈希校验）**、输出路径（`agent` 型另加网关凭证，见下）。基准材料的冻结值已在 spec 里，原件不需要随包。
 - **通用模式仍保留**（开发用）：未封包的引擎支持 `--spec`，报告头标 `sealed: false`；交付场景一律用封包二进制。
 - **安全边界不变**：`command` 是唯一可执行面（显式白名单，默认关闭）；`sql` 只读前缀门；附件只读；封包载荷是只读数据，不是代码。
 - **封包 × `agent` 型（评审 C2）**：`agent` 型 run 时要调判定网关，而第三方机器没有凭证——**`build` 默认拒绝含 `agent` VU 的 spec（封包 = fact-only）**；显式 `--with-review` 才允许，且运行时输入**增加第四类：网关凭证（运行时传入，不入库）**，报告标注 `sealed.review=on`。封包限制在 `self-check` 里明示。
 - **威胁模型（评审 C3-i，必须诚实写明）**：指纹在文件内，**能改二进制的人可以改 spec 并重算尾纹**；构建可复现意味着「同引擎 + 新 spec」就是一份合法的新封包。所以「不可变更」的真实承诺是 **tamper-evidence（防意外漂移、防顺手替换），不是 tamper-proofness（不防持有者恶意伪造）**。验真动作 = **带外比对 `binary_sha256`**（发哈希的通道 ≠ 发二进制的通道）：`self-check --expect <sha256>` 给接收方一条机械核对通道；需要更高门槛时用 ed25519 对尾纹签名（公钥带外分发，`--key` 封包）。
 - **报告首屏（评审小项升格硬规则）**：报告第一屏固定为「**判据原文（source_clause verbatim）↔ verdict ↔ 证据**」全对照表——自审无法消除的共同误读，在这里暴露给一定会看的人；这是零人工确认下残余风险的唯一可见面。
 
-**构建 → 交付 → 回收入库**：TS 构造面产出 spec（submit/prepare/自审）→ `yglverify build` 封包 → 交付单文件 → 业务方在其环境中 `run` 出报告 → `verify report import` 把报告（含 binary_sha256）回收入 workspace，版本链闭合。
+**外部锚链（评审 B3——自校验是循环论证，必须对质二进制之外的期望值）**：
+
+1. **构建登记**：`yglverify build` 完成时，同步往 workspace 写一条登记 artifact（kind=verify-binary）：`{spec_id, spec_version, engine_version, corpus_version, platform, binary_sha256, build_at, signature?}`——**这份登记就是封包的外部期望值**，与二进制分开发布（登记进 ygl 工作区/服务端，二进制交给业务方）。
+2. **import 校验**：`verify report import <report.json>` 必须做三件事才入库——①`binary_sha256` 命中登记；②`spec_version` 与登记一致；③报告 `payload_sha256` 与文件内容一致（防 import 前被手改）。任一不符 → 拒绝入库并点名「unknown verifier / version mismatch / payload tampered」，落进报告审计环。
+3. **尾纹计算域（footer 定义，防循环）**：文件布局 = `[engine 字节][spec 字节][footer]`；footer = `magic("YGLVF1") | offset(uint64) | length(uint64) | spec_sha256 | engine_version | corpus_version | build_sha256`，其中 **`build_sha256 = H(engine || spec)`——不含 footer 自身**（含自身即自指循环）。`self-check` 重算这三段并对质，任何一段改动即 ERROR。
+4. **签名（可选更高门槛）**：`--key ed25519.pem` 对 `build_sha256` 签名，公钥带外分发；登记条目带 signature，import 时验签。无签名时 tamper-evidence 靠 ①+③ 与带外哈希比对。
+
+**构建 → 交付 → 回收入库**：TS 构造面产出 spec（submit/prepare/自审）→ `yglverify build` 封包（并写登记 artifact）→ 交付单文件 → 业务方在其环境中 `run` 出报告 → `verify report import` 校验哈希+版本+payload 后回收入 workspace，版本链闭合。
 
 ## 9. 与树/毕业协议的接缝（复用而非新建）
 
