@@ -249,6 +249,14 @@ describe("verify 服务面：HTTP 契约", () => {
     expect(body.files[0].sha256).toBe(ref.sha256);
   });
 
+  it("blob PUT 超 64 MiB → HTTP 413 JSON（sink 层之外再钉一条直连用例，r19 N5）", async () => {
+    // 65 MiB 全 0 缓冲；服务端边收边计，超限立刻回 413（不是断连）
+    const huge = Buffer.alloc(65 * 1024 * 1024);
+    const r = await fetch(`${base}/api/verify/blob?name=huge.bin`, { method: "PUT", body: huge });
+    expect(r.status).toBe(413);
+    expect(((await r.json()) as any).error).toContain("blob too large");
+  }, 60_000);
+
   it("归档清单端点存在，报告可按 spec 过滤", async () => {
     const arch = await fetch(`${base}/api/verify/archives`);
     expect(arch.status).toBe(200);

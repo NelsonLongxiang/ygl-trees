@@ -90,6 +90,23 @@ describe("blob 仓：内容寻址与幂等", () => {
     expect(fs.existsSync(fresh)).toBe(true);
   });
 
+  it("同内容并发收尾：dest 已被别人落位时 finish 仍幂等成功（不是 500）", () => {
+    const r = root();
+    const body = Buffer.from("duplicate-upload-body");
+    const a = createBlobSink(r);
+    a.write(body);
+    const first = a.finish("a.csv");
+    // 第二个 sink 同一内容：rename 会撞 dest，必须回同一 ref 而非抛错
+    const b = createBlobSink(r);
+    b.write(body);
+    const second = b.finish("b.csv");
+    expect(second.sha256).toBe(first.sha256);
+    expect(readBlob(r, first.sha256).toString()).toBe("duplicate-upload-body");
+    const incoming = path.join(r, "blobs", ".incoming");
+    const left = fs.existsSync(incoming) ? fs.readdirSync(incoming).filter((f) => f.endsWith(".part")) : [];
+    expect(left).toHaveLength(0);
+  });
+
   it("非法 sha256 拼路径直接拒绝（防穿越）", () => {
     const r = root();
     expect(() => blobPath(r, "../../etc/passwd")).toThrow(/64 lowercase hex/);

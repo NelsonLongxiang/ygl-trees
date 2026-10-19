@@ -156,6 +156,9 @@ export function listReports(env: Env, specId?: string): ReportRow[] {
   return readdirSync(p.reports)
     .filter((f) => f.endsWith(".json"))
     .map((f) => readJson<any>(join(p.reports, f)))
+    // 坏报告静默跳过是**显式决定**（r19 N2 WONTFIX）：一条损坏/半写的 report.json 不该让整块
+    // 看板 500——单条诊断由 `verify report <run>` 点名（它会把解析错误打出来），这里只保证列表可用。
+    // 若将来要在 UI 加「N 条损坏」脚注，从本函数旁路收集计数再做，不要把错误塞进 ReportRow。
     .filter((r): r is any => !!r && !!r.run_id)
     .map((r) => {
       const side = readJson<any>(join(p.archives, `${r.run_id}.json`));

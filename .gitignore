@@ -11,3 +11,4 @@ vendor/cordis/bin.js
 
 # Rust 构建产物（M13-1b yglverify）
 rust/**/target/
+*.tgz

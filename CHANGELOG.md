@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.101.1
+
+**热修（发布后 P3）**：`createBlobSink().finish()` 的 `renameSync` 缺并发护栏——两个并发 PUT 同内容时，胜者落位后败者在 Windows 上抛 `EEXIST/EPERM` → 500，而语义上应幂等 200。修法与 `putBlob` 同款：`try/catch` → 清临时文件 → `dest` 已存在即返 ref；补「同内容并发收尾」回归（8 例）。
+
+- **r19 非阻塞项（302cb119）**：N1 端点计数订正（0.100.0 = 6 读 + 1 写；0.101.0 = 7 读 + 2 写）；N2 坏报告静默丢弃 **显式 WONTFIX**（单条损坏不应拖垮整块看板，`verify report <run>` 会点名解析错误，后续可在 UI 加脚注）；N3 `.gitignore` 补 `*.tgz`；N4 评审证据链移入 `docs/reviews/` 并加索引；N5 补 blob PUT 的 HTTP 413 直接用例。
+
+**热修（发布后 P3）**：`createBlobSink().finish()`，代码实际是 >200（`blob-store.ts` 的 `clientMimeOf`）——代码无需动，口径以代码为准。
+
+无契约变更；`contract_version` / `corpus_version` 仍 1.1。
+
 ## 0.101.0
 
 **升级注意**：`contract_version` / `corpus_version` 均不变（1.1），已发规范与归档包继续可验。新增 HTTP 写端点与 blob 仓，CLI 命令面零破坏。

@@ -142,7 +142,14 @@ export function createBlobSink(verifyRoot: string): {
       const dest = blobPath(verifyRoot, sha256);
       if (!existsSync(dest)) {
         mkdirSync(join(dest, ".."), { recursive: true });
-        renameSync(tmp, dest);
+        try {
+          renameSync(tmp, dest);
+        } catch (e) {
+          // 并发 PUT 同内容：胜者落位后败者 rename 在 Windows 上抛 EEXIST/EPERM。
+          // 语义上应幂等 200——清掉临时文件，dest 已存在即算成功（与 putBlob 同款护栏）。
+          try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
+          if (!existsSync(dest)) throw e;
+        }
       } else {
         rmSync(tmp, { force: true });
       }
