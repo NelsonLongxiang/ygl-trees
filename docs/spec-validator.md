@@ -19,51 +19,67 @@
        ——交付——> 结果报告：每项 PASS / FAIL / NEEDS-HUMAN / ERROR + 证据
 ```
 
-## 3. 表单（业务专家面——零 SQL、零代码）
+## 3. 材料提交（业务专家面——模糊输入是常态，不是例外）
 
-Markdown 模板（`verify form` 输出空白模板）：
+**专家的真实输入不是结构化表单，是业务材料**：一段话 + 任意附件（图片/表格/PDF/扫描件）。设计原则随之翻正：
 
-```markdown
-# 验证规范：FBA 头程运费对账（v1）
-meta:
-  领域: 物流对账
-  填写人: 张三
-  日期: 2026-10-19
+> **结构化是预处理的输出，不是专家的输入义务。**
 
-### V1 发票金额一致性
-- 判据: 每张运费发票金额与对应订单应付金额一致
-- 容差: ±0.01 元
-- 数据: Odoo 运费发票 + 采购订单
-- 严重度: S1
+提交形态（WebUI 表单编辑器 / `verify submit` CLI）：
 
-### V2 超期未对账
-- 判据: 账单入库后 7 天内必须完成对账
-- 数据: 对账记录
-- 严重度: S2
+```
+标题：FBA 头程运费对账
+一段话（意图/判据，自由文本）：
+  「每张运费发票金额要跟订单应付对得上；附的是这批的报价基准和几张账单截图；
+   超过一周没对账的要暴露出来」
+附件：
+  报价基准.xlsx   （期望值表——基准价在文件里，不在专家脑子里）
+  账单截图-1.png  （图片型业务资料）
+  合同条款.pdf    （规则出处）
 ```
 
-专家只声明三件事：**什么算对（判据）、容差在哪、数据在哪**。不写查询、不写代码。
+附件注册为 source（file://），可追溯、可重放。专家零 SQL、零代码、零字段义务——写不清楚的部分交给预处理，判定不了的会在确认环节被点名。
 
-## 4. 预处理（agent 辅助，人保真）
+## 4. 预处理（agent 辅助，人保真——模糊消解器）
 
-`verify prepare <form.md>` → 把每项翻译成**验证单元（VU）**：
+`verify prepare <spec>` → 三步：**提取 → 翻译 → 待确认清单**。
+
+### 4.1 提取（值从哪来——三源）
+
+| 值来源 | 说明 | 例 |
+|---|---|---|
+| **材料提取值** | agent 读附件挖出的数字/规则（xlsx 解析、PDF 抽取、图片走视觉模型），**每个值带出处锚点**（哪份文件·哪页/哪sheet哪行/哪区域） | 基准价 2.35/kg ← 报价基准.xlsx·Sheet1·R5C3 |
+| **专家显式值** | 一段话里明确给出的数/期限 | 「7 天内」→ 容差窗口 7d |
+| **运行时查询值** | 验证时才从数据库取（当前态） | Odoo 运费发票金额 |
+
+提取值在 prepare 阶段**一次性冻结进 VU**（静态期望值）——run 阶段零模型调用，确定性不受附件模糊性影响。
+
+### 4.2 翻译（一段话 → 候选 VU）
+
+每条候选 VU：
 
 ```json
 {
   "id": "V1", "title": "发票金额一致性", "severity": "S1",
-  "source_clause": "每张运费发票金额与对应订单应付金额一致（容差 ±0.01）",
+  "source_clause": "每张运费发票金额与对应订单应付金额一致（来自提交材料+报价基准.xlsx）",
   "checker": {
     "type": "sql-pair",
     "left":  {"table": "freight_invoices", "key": "order_id", "value": "amount"},
     "right": {"table": "purchase_orders",  "key": "id",       "value": "payable_amount"},
     "tolerance": 0.01
+  },
+  "expected_from": {
+    "kind": "runtime-query",
+    "note": "两侧均为运行时查询"
   }
 }
 ```
 
 - **判据原文永远伴随 VU**（source_clause）——翻译可审计、可回放。
+- **每个期望值带出处**（expected_from）：专家显式 / 材料提取（source_id + 锚点：文件·页/sheet/行/区域）/ 运行时查询。确认视图左列判据原文+材料出处，右列翻译出的 checker——专家能看到「基准价 2.35 来自报价基准.xlsx Sheet1 R5C3」再决定 ✓/✗。
 - 翻译产物必须**专家过目确认**（`verify prepare` 产出待确认清单，`verify confirm <id>` 后才可跑）——「由 agent 驱动但人保真」的接缝。
-- 模型在此阶段只做两件事：分类判据→建议 checker 类型；把数据描述→表/列引用（需数据 schema 可达）。
+- 模型在此阶段做三件事：①读附件提取值/规则（表格解析、PDF 抽取、图片走视觉模型）②分类判据→建议 checker 类型 ③把数据描述→表/列引用（需数据 schema 可达）。**全部模型调用前压到 prepare，一次性；run 阶段零模型**。
+- 模糊消解梯度：一段话里能翻成六型×七域的→候选 VU；翻不动的→标 `human`（专家亲验）；材料本身是基准数据的→提取冻结为期望值表（文件表 vs 数据库表的对账模式）。
 
 ## 5. 检查器类型（确定性枚举——闭集）
 
@@ -92,8 +108,8 @@ meta:
 
 业务专家的主界面就是浏览器，不是 CLI。React 客户端（apps/web，现有 webui serve 承载）新增三个视图：
 
-1. **表单编辑器**（专家填写面）：结构化表单——每项验证：标题/判据人话/容差/严重度/数据描述；字段化输入直接产出结构化数据（**绕过 Markdown 解析歧义**——表单是主入口，Markdown 模板保留给 CLI/power 用户）。草稿自动保存（artifact kind=verify-spec, status=draft）。
-2. **VU 确认视图**（人保真面）：prepare 产物左右对照——左列判据原文（source_clause），右列翻译出的 checker（类型+表+列+容差），逐项 ✓ 确认 / ✗ 驳回（带理由，驳回项回到待翻译池）。专家确认后 spec 进 runnable 态。
+1. **材料提交视图**（专家填写面，m11390 修正）：**标题 + 一段话 + 附件上传**（图片/表格/PDF 拖拽区）——不是结构化字段表单；结构化是预处理的产物，不是专家的输入义务。附件上传即注册 source（file://，归属当前项目）。草稿自动保存（artifact kind=verify-spec, status=draft）。
+2. **VU 确认视图**（人保真面）：prepare 产物左右对照——左列判据原文 + **材料出处**（期望值锚点：报价基准.xlsx·Sheet1·R5C3；图片值标注提取区域），右列翻译出的 checker（类型+表+列+容差+期望值来源），逐项 ✓ 确认 / ✗ 驳回（带理由，驳回项回到待翻译池）。专家确认后 spec 进 runnable 态。
 3. **报告看板**（结果交付面）：四态分组板（PASS/FAIL/NEEDS-HUMAN/ERROR 色分——复用 DESIGN.md token 家族：success/danger/warning/secondary），每项可展开证据明细（违规行数、样例行、两侧数值）；NEEDS-HUMAN 一键转 task；历史 run 对比（同规范两轮 diff——回归可视化）。
 
 **服务端端点**（webui.ts，R16 选择门 + P1-1 归属校验同规）：
@@ -112,9 +128,9 @@ SSE 实时进度走既有 ctx.on("ygl") 公共通道（verify.report / verify.pr
 ## 8. 命令族（CLI 面，与 WebUI 同一后端）
 
 ```
-verify form                        # 输出空白表单模板
-verify prepare <form.md>           # agent 辅助翻译 → VU 清单（待确认）
-verify confirm <spec-id>           # 专家过目确认（VU 忠实于判据）
+verify submit                      # 材料提交向导（标题+一段话+附件登记为 source）
+verify prepare <spec-id>           # 提取+翻译 → 候选 VU 清单（待确认）
+verify confirm <spec-id>           # 专家过目确认（VU 忠实于判据与材料）
 verify run <spec-id> [--db <path|url>]   # 跑全部检查器 → 报告
 verify report <run-id>             # 复核历史报告
 verify list                        # 规范清单与状态
@@ -130,9 +146,10 @@ verify list                        # 规范清单与状态
 
 ## 10. 待裁定点（实现前需拍板）
 
-1. **表单载体**（m11362 前端裁定后收窄）：**WebUI 结构化表单为主入口**（直接产出结构化数据，零解析歧义）+ Markdown 模板保留给 CLI/power 用户——推荐此双轨。
+1. **提交载体**（m11362+m11390 两次裁定后收窄）：**WebUI 材料提交视图为主入口**（标题+一段话+附件上传）+ CLI `verify submit`/Markdown 留 power 用户——模糊输入（图片/表格/PDF）是常态，结构化是预处理输出。
 2. **命令名**：`verify`（推荐，避开 produce spec 重名）vs `checklist` vs 顶层 `spec`。
 3. **第一版检查器范围**：sql / sql-pair / count / exists / command / human 全上，还是先 sql + sql-pair + human 三件最小闭环？——推荐全上（sql/count 引擎已在 patrol/telemetry 现成，边际成本低）。
 4. **VU 存储**：新表 verify_specs/verify_units（schema v13）vs 复用 artifacts（kind=verify-spec，VU 存 meta JSON）——推荐 artifacts 起步（九触点成本减半），查询面成型再升表。
 5. **多数据源连接**：第一版是否带 PG（.157 直连）——推荐带（地基已在），但连接串安全（不入库，运行时传入）。
-6. **前端批序**（m11362 新增）：CLI 后端先行（M13-1 命令族+检查器+报告，可独立验收）→ WebUI 三视图（M13-2 表单编辑器/VU 确认/报告看板）——推荐此序（前端依赖后端契约稳定，避免双头改）；若要并行则 WebUI 先做表单编辑器（依赖最少）。
+6. **前端批序**（m11362 新增）：CLI 后端先行（M13-1 命令族+检查器+报告，可独立验收）→ WebUI 三视图（M13-2 材料提交/VU 确认/报告看板）——推荐此序（前端依赖后端契约稳定，避免双头改）；若要并行则 WebUI 先做材料提交视图（依赖最少）。
+7. **附件提取通道**（m11390 新增）：xlsx/csv 表格解析（纯库，如 xlsx 包）；PDF 文本抽取（pdf-parse 类）；图片值提取走**视觉模型**（Vercel AI Gateway 同通道，prepare 一次性）——推荐第一版表格+图片先上、PDF 视样本再定；提取值全部带出处锚点。
