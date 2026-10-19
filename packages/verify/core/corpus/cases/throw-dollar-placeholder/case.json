@@ -1,0 +1,11 @@
+{
+  "checker": "sql",
+  "domain": "governance",
+  "tags": [
+    "red",
+    "throw",
+    "no-placeholder"
+  ],
+  "expects": "构造期抛错：sql 文本不支持 $ 占位展开",
+  "expect_throw": "not supported"
+}

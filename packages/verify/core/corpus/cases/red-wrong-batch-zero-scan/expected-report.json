@@ -1,0 +1,18 @@
+{
+  "overall": "NEEDS-MATERIAL",
+  "summary": {
+    "pass": 0,
+    "fail": 0,
+    "needs_material": 1,
+    "error": 0
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "verdict": "NEEDS-MATERIAL",
+      "witness": {
+        "rows_scanned": 0
+      }
+    }
+  ]
+}

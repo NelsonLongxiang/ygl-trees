@@ -20,9 +20,9 @@ import { SqliteRunner } from "../src/sqlite-runner";
 export interface CorpusCase {
   name: string;
   dir: string;
-  meta: Record<string, unknown>;
+  meta: Record<string, unknown> & { expect_throw?: string };
   spec: VerifySpec;
-  expected: ExpectedProjection;
+  expected?: ExpectedProjection;
 }
 
 export interface ExpectedProjection {
@@ -43,12 +43,14 @@ export function loadCases(root = CASES_DIR): CorpusCase[] {
     if (!e.isDirectory()) continue;
     const dir = join(root, e.name);
     const read = (f: string) => JSON.parse(readFileSync(join(dir, f), "utf8"));
+    const meta = read("case.json") as CorpusCase["meta"];
+    const hasExpected = existsSync(join(dir, "expected-report.json"));
     cases.push({
       name: e.name,
       dir,
-      meta: read("case.json"),
+      meta,
       spec: read("spec.json") as VerifySpec,
-      expected: read("expected-report.json") as ExpectedProjection,
+      expected: hasExpected ? (read("expected-report.json") as ExpectedProjection) : undefined,
     });
   }
   return cases.sort((a, b) => a.name.localeCompare(b.name));
@@ -88,6 +90,22 @@ export async function runCase(c: CorpusCase): Promise<CaseRun> {
   }
 }
 
+/** 红队案例：期望在构造/运行期抛错（G3 门禁的"必须拒绝"面）。 */
+export async function runThrowCase(c: CorpusCase, pattern: string): Promise<CaseRun> {
+  try {
+    const run = await runCase(c);
+    return { name: c.name, report: run.report, diffs: [`expected throw /${pattern}/, but run completed with ${run.report.overall}`] };
+  } catch (e) {
+    const msg = (e as Error).message;
+    const ok = new RegExp(pattern, "i").test(msg);
+    return {
+      name: c.name,
+      report: { overall: "ERROR" } as unknown as VerifyReport,
+      diffs: ok ? [] : [`throw message did not match /${pattern}/: ${msg}`],
+    };
+  }
+}
+
 export function diff(expected: ExpectedProjection, report: VerifyReport): string[] {
   const out: string[] = [];
   if (report.overall !== expected.overall) out.push(`overall: expected ${expected.overall}, got ${report.overall}`);
@@ -115,6 +133,8 @@ export function diff(expected: ExpectedProjection, report: VerifyReport): string
 
 export async function runCorpus(root = CASES_DIR): Promise<CaseRun[]> {
   const runs: CaseRun[] = [];
-  for (const c of loadCases(root)) runs.push(await runCase(c));
+  for (const c of loadCases(root)) {
+    runs.push(c.meta.expect_throw ? await runThrowCase(c, c.meta.expect_throw) : await runCase(c));
+  }
   return runs;
 }

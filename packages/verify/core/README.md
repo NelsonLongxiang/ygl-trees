@@ -29,6 +29,8 @@ console.log(report.overall, report.summary);        // 判定在报告里，不�
 
 ## 语料（corpus）
 
+红队案例用 `case.json` 的 `expect_throw: "<regex>"` 表达「必须被拒绝」（不写期望报告）。
+
 `corpus/cases/<case>/` 每例含 `case.json`（元数据/标签）、`db.sql`（SQLite 种子，文本可 review）、
 `spec.json`、`expected-report.json`（**期望投影**：overall/summary/verdict/witness 口径）。
 `corpus/run.ts` 逐例物化数据库、跑引擎、与期望投影比对——七型各有至少一例，
@@ -38,5 +40,5 @@ console.log(report.overall, report.summary);        // 判定在报告里，不�
 
 ## 状态
 
-M13-1 骨架：契约 v0.4、引擎 + SQLite runner + 语料骨架（8 例）、19 测试全绿。
+M13-1 骨架：契约 v0.4、引擎 + SQLite runner + 语料骨架（15 例：七型 8 + 红队 7）、19 测试全绿。
 未做：prepare/自审链、命令面（CLI）、封包器（M13-1b）、Rust 二进制。

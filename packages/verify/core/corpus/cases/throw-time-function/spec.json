@@ -1,0 +1,35 @@
+{
+  "contract_version": "0.4",
+  "spec_id": "spec_throw-time-function",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "V1",
+      "severity": "S1",
+      "source_clause": "clause",
+      "expected_from": {
+        "quote": "quote",
+        "locator": "doc:1"
+      },
+      "checker": {
+        "type": "sql",
+        "sql": "select * from freight_invoice where batch='2026-10' and rowid < current_timestamp",
+        "fail_when": "rows>0"
+      }
+    }
+  ]
+}

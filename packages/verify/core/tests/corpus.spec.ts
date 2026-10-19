@@ -10,9 +10,16 @@ describe("corpus: 七型语料骨架（契约 §3，G2 起点）", () => {
     }
   });
 
+  it("红队案例覆盖四类构造期拒绝（G3 起点）", () => {
+    const throws = loadCases().filter((c) => Boolean(c.meta.expect_throw));
+    expect(throws.length).toBeGreaterThanOrEqual(3);
+    const patterns = throws.map((c) => String(c.meta.expect_throw));
+    expect(patterns.join("|")).toMatch(/no assert|time function|not supported/);
+  });
+
   it("每个案例的实跑结果与 expected-report.json 投影一致", async () => {
     const runs = await runCorpus();
-    expect(runs.length).toBeGreaterThanOrEqual(7);
+    expect(runs.length).toBeGreaterThanOrEqual(12);
     const bad = runs.filter((r) => r.diffs.length);
     expect(bad.map((r) => `${r.name}: ${r.diffs.join("; ")}`)).toEqual([]);
   });

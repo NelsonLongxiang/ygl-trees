@@ -1,0 +1,10 @@
+{
+  "checker": "sql-pair",
+  "domain": "freight-audit",
+  "tags": [
+    "red",
+    "duplicate-key",
+    "error"
+  ],
+  "expects": "ERROR：cardinality 1:1 但左表 K1 重复两行"
+}

@@ -448,16 +448,16 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   const now = opts.nowIso ?? (() => new Date().toISOString());
   const started = now();
   const runId = `run_${randomBytes(8).toString("hex")}`;
-  const orderResult = topoOrder(spec.vu);
-  if ("cycle" in orderResult) {
-    throw new Error(`pipeline cycle detected among: ${orderResult.cycle.join(", ")}`);
-  }
   // N2：sql 文本不支持占位展开（$vu: 只允许出现在 count.from / sql-pair 的侧引用）
   for (const vu of spec.vu) {
     const c = vu.checker as { sql?: string; scope_sql?: string };
     if (/\$/.test(`${c.sql ?? ""} ${c.scope_sql ?? ""}`)) {
       throw new Error(`${vu.id}: "$" in sql text is not supported — pipeline refs belong to count.from / sql-pair sides (no placeholder expansion)`);
     }
+  }
+  const orderResult = topoOrder(spec.vu);
+  if ("cycle" in orderResult) {
+    throw new Error(`pipeline cycle detected among: ${orderResult.cycle.join(", ")}`);
   }
   // R13：as_of 必须锚定——时间函数在构造期拒绝（NOW()/CURRENT_TIMESTAMP 无法重放）
   const timeFn = /\b(now\s*\(|current_timestamp|current_date|current_time)\b/i;

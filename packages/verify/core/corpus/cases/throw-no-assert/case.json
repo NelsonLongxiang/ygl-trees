@@ -1,0 +1,11 @@
+{
+  "checker": "sql",
+  "domain": "governance",
+  "tags": [
+    "red",
+    "throw",
+    "no-assert"
+  ],
+  "expects": "构造期抛错：只有 source 没有 assert 的规范不得判 PASS",
+  "expect_throw": "no assert"
+}

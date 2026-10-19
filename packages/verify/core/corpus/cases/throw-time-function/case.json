@@ -1,0 +1,11 @@
+{
+  "checker": "sql",
+  "domain": "governance",
+  "tags": [
+    "red",
+    "throw",
+    "as-of"
+  ],
+  "expects": "构造期抛错：SQL 含 CURRENT_TIMESTAMP 不可重放",
+  "expect_throw": "time function"
+}

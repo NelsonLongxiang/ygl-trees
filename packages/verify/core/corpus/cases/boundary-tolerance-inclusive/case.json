@@ -1,0 +1,10 @@
+{
+  "checker": "sql-pair",
+  "domain": "freight-audit",
+  "tags": [
+    "boundary",
+    "tolerance",
+    "pass"
+  ],
+  "expects": "PASS：|差| = 0.01 恰在容差边界（含）"
+}

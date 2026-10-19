@@ -1,0 +1,10 @@
+{
+  "checker": "sql",
+  "domain": "freight-audit",
+  "tags": [
+    "red",
+    "zero-scan",
+    "needs-material"
+  ],
+  "expects": "NEEDS-MATERIAL：批次字面量写错，扫到 0 行不得判 PASS"
+}

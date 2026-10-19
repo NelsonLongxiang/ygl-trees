@@ -1,0 +1,10 @@
+{
+  "checker": "sql",
+  "domain": "freight-audit",
+  "tags": [
+    "red",
+    "vacuous",
+    "error"
+  ],
+  "expects": "ERROR：找违规 sql 无 WHERE 且无 scope_sql"
+}
