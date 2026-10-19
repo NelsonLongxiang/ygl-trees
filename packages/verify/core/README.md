@@ -1,3 +1,8 @@
+---
+description: "Spec-driven deterministic verifier core: seven checker types, $vu pipeline refs, scope witness, verdict folding, corpus harness"
+kind: "package-reference"
+---
+
 # @ygl/verify-core
 
 M13 **spec-validator** 的 TS 参考实现：把「业务专家的一段话 + 附件」冻结成可重放的验证规范（spec），
