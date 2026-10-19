@@ -64,6 +64,15 @@ describe("verify self-check（递归验证 L0–L6 单入口）", () => {
     expect(res.items.find((i) => i.id === "corpus")!.detail).toContain("--corpus");
   });
 
+  it("G3 空 archives 目录 → skip（不是 ok）", async () => {
+    const archives = mkdtempSync(join(tmpdir(), "ygl-empty-archives-"));
+    scratch.push(archives);
+    const res = await selfCheck({ corpusDir: CORPUS, runCases: false, archivesDir: archives, archiveVerifier: () => ({ ok: true, problems: [] }) });
+    const item = res.items.find((i) => i.id === "archives")!;
+    expect(item.status).toBe("skip");
+    expect(item.detail).toMatch(/no archived runs/);
+  });
+
   it("归档校验注入：坏包 → archives 项失败", async () => {
     const dir = copyCorpus();
     const archives = mkdtempSync(join(tmpdir(), "ygl-archives-"));

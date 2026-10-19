@@ -152,6 +152,8 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
   const reportPath = join(root, "reports", `${opts.runId}.json`);
   if (!existsSync(reportPath)) throw new Error(`report not found for run: ${opts.runId}`);
   const report = readJsonFile<VerifyReport>(reportPath);
+  // G4（评审 r12）：没有 payload_sha256 的报告归档出来必然过不了自校验链——入口 fail-closed。
+  if (!report.payload_sha256) throw new Error(`report ${opts.runId} has no payload_sha256 — refusing to archive an unverifiable report`);
   const specId = report.spec_id;
   if (!specId) throw new Error(`report ${opts.runId} has no spec_id — cannot archive`);
   const specDir = join(root, "specs", specId);
@@ -216,7 +218,9 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
     if (!existsSync(reg) && !existsSync(bin)) throw new Error(`cannot archive binary ${short(binSha)}: neither registration nor binary bytes in workspace`);
   }
 
-  const created = opts.created ?? new Date().toISOString();
+  // G1（评审 r12）：created 缺省不能取 now()——同一 run 两次归档会得到不同 zip_sha256，
+  // 与契约 §7.3「同输入同字节」矛盾。默认从 report.finished 派生（报告不可变 → 归档字节确定）。
+  const created = opts.created ?? (report.finished || new Date().toISOString());
   const filename = archiveFileName({ domain: spec.domain, title: spec.title, specId: spec.spec_id, specVersion: spec.spec_version, created, runId: opts.runId });
   const itemsSorted = [...items].sort((a, b) => Buffer.compare(Buffer.from(a.path, "utf8"), Buffer.from(b.path, "utf8")));
   const base = {
@@ -351,6 +355,8 @@ export function verifyArchiveBytes(buf: Buffer): ArchiveVerifyResult {
       if (report.overall !== foldOverall(folded)) problems.push(`report overall mismatch: report ${String(report.overall)}, recomputed ${foldOverall(folded)}`);
       if (report.contract_version !== manifest.contract_version) problems.push(`contract_version mismatch: report ${report.contract_version}, manifest ${manifest.contract_version}`);
       if (report.verifier?.corpus_version !== manifest.corpus_version) problems.push(`corpus_version mismatch between report and manifest`);
+      // G5（评审 r12）：manifest 写了 engine_version 就必须在链路里比对，不能只写不比
+      if (report.verifier?.engine_version !== manifest.engine_version) problems.push(`engine_version mismatch: report ${String(report.verifier?.engine_version)}, manifest ${String(manifest.engine_version)}`);
       if (report.run_id !== manifest.run_id) problems.push(`run_id mismatch: report ${report.run_id}, manifest ${manifest.run_id}`);
     }
   } else {

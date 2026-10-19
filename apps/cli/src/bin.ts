@@ -136,6 +136,8 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
   list | report <run-id> | trace <spec-id> | export <spec-id>
   report import <report.json>          import a sealed-run report (payload/binary/version checks)
+  archive <run-id|spec-id> | archive verify <file>   take-away archive (default after run) / re-verify chain
+  self-check [--corpus <dir>] [--no-cases]           recursive gate: vectors → digest → shapes → cases → archives
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims

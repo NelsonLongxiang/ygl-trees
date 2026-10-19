@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.97.1（2026-10-20）归档诚实性修复（评审 r12 G1–G5）
+
+- **G1 归档确定性**：`manifest.created` 缺省从 `report.finished` 派生，不再取 `now()`——同一 run 反复归档字节一致，`zip_sha256` 可复算；契约 §7.3 写明。此前同一 run 两次归档会得到不同 zip（`created` 每次都变），与「同输入同字节」自相矛盾。
+- **G4 归档入口 fail-closed**：报告缺 `payload_sha256` 直接拒绝归档，不产出「一验就红」的包。
+- **G5 engine_version 进校验链**：`verify archive verify` 比对 `manifest.engine_version` 与 `report.verifier.engine_version`，不再只写不比。
+- **G3 空 archives 目录 → SKIP**：`verify self-check` 的 archives 项在目录为空时报 skip，不再报 ok（没有可验对象 ≠ 验过）。
+- **G2 `--help` 补齐**：verify 组帮助加上 `archive` / `archive verify` / `self-check` 三行。
+- 测试：unit 374（新增 archive ×3：确定性/无 payload 拒绝/engine_version 点名；selfcheck ×1：空目录 skip）。
+- 评审席侧残留（非阻塞，已记录）：`R7` 快照清理只做 TTL、`R9` registrations 暂无写入方（M13-1b 封包侧补）。
+
 ## 0.97.0（2026-10-20）归档包 + 递归自校验：产物可带走、校验器可被校验
 
 - **归档是默认动作（`verify archive`，契约 §7）**：`verify run` 结束即归档，`--no-archive` 才关。文件名有语法（`yglverify-<domain>-<slug>-v<n>-<utc>-r<run8>.yglverify.zip`，domain/slug 都可退化），包内目录唯一（`manifest/report/spec/prepare?/trace?/materials/<id>/files/<sha12>-<name>`，深度 ≤4、全 ASCII 化、原名进 `items[].original_name`）。**报告不可变**：归档身份写侧车 `$YGL_HOME/verify/archives/<run_id>.json`，不改 `report.json`（否则 payload_sha256 自毁）。

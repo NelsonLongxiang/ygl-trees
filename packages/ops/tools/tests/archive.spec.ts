@@ -223,6 +223,45 @@ describe("buildArchive + verifyArchiveBytes（§7.4）", () => {
   });
 });
 
+describe("r12 残余 G1/G4/G5（确定性与 fail-closed）", () => {
+  it("G1 未显式给 created 时，同一 run 两次归档字节一致", () => {
+    const root = scratch();
+    const { runId } = seedRun(root);
+    const a = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
+    const b = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
+    expect(b.zip_sha256).toBe(a.zip_sha256);
+    expect(b.path).toBe(a.path);
+    // created 从 report.finished 派生（不是 now()）
+    expect(a.manifest.created).toBe("2026-10-20T00:00:01.000Z");
+  });
+
+  it("G4 报告没有 payload_sha256 → 拒绝归档（不产出必红的包）", () => {
+    const root = scratch();
+    const { runId } = seedRun(root);
+    const reportPath = join(root, "reports", `${runId}.json`);
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    delete report.payload_sha256;
+    writeFileSync(reportPath, JSON.stringify(report, null, 2));
+    expect(() => buildArchive({ verifyRoot: root, runId, with: ["materials"] })).toThrow(/payload_sha256/);
+  });
+
+  it("G5 归档内 report 的 engine_version 与 manifest 不一致 → 点名", () => {
+    const root = scratch();
+    const { runId } = seedRun(root);
+    const built = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
+    const entries = readZipStore(readFileSync(built.path));
+    const tampered = entries.map((e) => {
+      if (e.path !== "report.json") return e;
+      const report = JSON.parse(e.data.toString("utf8"));
+      report.verifier.engine_version = "9.9.9";
+      return { path: e.path, data: Buffer.from(JSON.stringify(report, null, 2)) };
+    });
+    const res = verifyArchiveBytes(writeZipStore(tampered));
+    expect(res.ok).toBe(false);
+    expect(res.problems.some((p) => /engine_version mismatch/.test(p))).toBe(true);
+  });
+});
+
 describe("归档侧车登记（报告保持不可变）", () => {
   it("appendRegistry 后 unarchivedRuns 不再列出该 run", () => {
     const root = scratch();

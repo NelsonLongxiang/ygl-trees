@@ -324,12 +324,15 @@ verifier/binary/yglverify    (仅 --with binary 且存在字节)
 store-only zip（不压缩）、条目按路径字节序、mtime 固定 `1980-01-01T00:00:00Z`、外部属性 `0644`、无目录条目/extra/comment
 → 同输入同字节，`zip_sha256` 跨平台可复算。`archive_sha256 = sha256(canonical(manifest 去掉 archive_id/archive_sha256))`，
 `archive_id = arc_<archive_sha256 前 12>`。
+`manifest.created` 缺省取 `report.finished`（报告不可变 → 同一 run 反复归档字节相同）；显式 `created` 才改变文件名里的时间戳。
+`buildArchive` 拒绝没有 `payload_sha256` 的报告（否则产出必然过不了 §7.4 链）。
 
 ### 7.4 校验链（`verify archive verify`）
 
 条目路径规范 → 每条 item 的 sha256/size → `archive_sha256` 重算 → 未声明条目点名 →
 `report.payload_sha256` 重算 → summary/overall **按 VU 结果重算**并与报告比 → `contract_version`/`corpus_version`/`spec_version`/`run_id` 一致 →
-`materials_sha256` 与 spec 一致。任一环失败 rc=1 并点名文件；判定结论（PASS/FAIL）不在归档校验里表达。
+`materials_sha256` 与 spec 一致；`manifest.engine_version` 与 `report.verifier.engine_version` 一致。
+任一环失败 rc=1 并点名文件；判定结论（PASS/FAIL）不在归档校验里表达。
 
 ### 7.5 rc 与默认策略
 
@@ -353,6 +356,8 @@ verify self-check [--corpus <dir>] [--no-cases] [--limit N] [--json]
 | `shapes` | L3 | `corpus/shapes/*.shape.txt` 存在且每行符合 `path:type` | skip |
 | `corpus-cases` | L2 | 实跑全部语料（含红队）并比对 expected 投影；`--no-cases` 显式关 | skip |
 | `archives` | L6 | 逐侧车重算归档校验链（`archive verify` 同一实现） | skip |
+
+`archives` 在**目录为空**时也报 SKIP（没有可验对象 ≠ 验过），只有真的逐包重算过才报 ok。
 
 **SKIP 不等于 OK**：没有语料时报 SKIP 并在详情里说明缺少路径（`--corpus` / `YGL_VERIFY_CORPUS`），
 不允许静默显示通过——发布产物不含 `corpus/`，这正是该命令在出厂形态下必须诚实的地方。

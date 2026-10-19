@@ -143,7 +143,8 @@ function checkShapes(dir: string): SelfCheckItem {
 /** 归档包：逐侧车重算校验链（由调用方注入，避免 verify-core 依赖 ops）。 */
 function checkArchives(dir: string, verifier: (zipPath: string) => { ok: boolean; problems: string[] }): SelfCheckItem {
   const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
-  if (!files.length) return { id: "archives", status: "ok", detail: "no archived runs" };
+  // G3（评审 r12）：目录为空 = 没东西可验，是 skip 不是 ok。
+  if (!files.length) return { id: "archives", status: "skip", detail: `no archived runs in ${dir}` };
   const bad: string[] = [];
   let checked = 0;
   for (const f of files) {
@@ -222,11 +223,25 @@ export async function selfCheck(opts: SelfCheckOptions = {}): Promise<SelfCheckR
     }
   }
 
-  if (opts.archivesDir && opts.archiveVerifier && existsSync(opts.archivesDir)) {
-    try {
-      items.push(checkArchives(opts.archivesDir, opts.archiveVerifier));
-    } catch (e) {
-      items.push({ id: "archives", status: "fail", detail: (e as Error).message });
+  if (opts.archivesDir && opts.archiveVerifier) {
+    // 评审 fdc757f6 P3：不要把 existsSync 的另一个 stat 当成唯一门——高并发下 fresh 目录
+    // 可能撞上文件系统时序（实测 1/374 误走 else）。直接读目录，ENOENT 才是"没有目录"。
+    const readable = (() => {
+      try {
+        readdirSync(opts.archivesDir);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    if (readable) {
+      try {
+        items.push(checkArchives(opts.archivesDir, opts.archiveVerifier));
+      } catch (e) {
+        items.push({ id: "archives", status: "fail", detail: (e as Error).message });
+      }
+    } else {
+      items.push({ id: "archives", status: "skip", detail: `no archives dir: ${opts.archivesDir}` });
     }
   } else {
     items.push({ id: "archives", status: "skip", detail: "no archives dir / verifier injected" });
