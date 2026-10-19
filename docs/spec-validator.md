@@ -112,15 +112,35 @@ V3 (count)    : 「$V2.violations == 0」   → verdict FAIL 带样例行
 - **确定性保持**：组合是纯数据流——同输入同输出同判定；报告=管线执行 trace（每级展示收到什么、产出什么、判了什么）。
 - **与科技树同构**：spec 内 VU 图是 mini-DAG，树引擎的闭包/拓扑/环检测直接复用；跨 spec 组合（一个 spec 的报告作为另一个 spec 的输入）未来走 artifact 引用，首版不做。
 
-## 6. 结果契约（确定性核心）
+## 6. 交付契约：真 + 产物（m11429 用户裁定）
+
+**交付 = 一定为真的结论 + 可持有的产物。**
+
+### 6.1 真（判定纪律）
 
 - 每项 verdict ∈ {PASS, FAIL, NEEDS-HUMAN, ERROR}：
-  - PASS/FAIL **必须带证据**（违规行数、样例行、两侧数值）；
-  - NEEDS-HUMAN 带原因（判据语义型 / 数据不可达 / 容差无法机判）；
-  - ERROR = 检查器自身失败（表不存在、连接失败）——与 FAIL 严格分开（数据问题≠判据不满足）。
-- **重放一致性**：同一数据快照重跑，报告逐字段一致（检查器全确定性；时间戳仅入 meta 不入判定）。
-- 报告形态：artifact（kind=verify-report）+ `verify.report` 事件 + 控制台汇总（N 项：x PASS / y FAIL / z NEEDS-HUMAN / w ERROR）。
-- NEEDS-HUMAN 项 → 自动落 task（复用 artifacts kind=task 状态机，零新表）。
+  - PASS/FAIL 是**事实陈述**——必须带证据（违规行数、样例行、两侧数值），且**可重放**（同一数据快照+同一 spec 版本重跑，逐字段一致；时间戳仅入 meta 不入判定）；
+  - **NEEDS-HUMAN / ERROR 是诚实的非真态**——判据语义型/数据不可达/检查器自身失败，绝不冒充真假（与 FAIL 严格分开：数据问题 ≠ 判据不满足）；
+  - 只有可证伪、可复验的结论才允许交付——「一定为真」的工程含义。
+- 报告不可变：每个 run 一个 artifact（kind=verify-report），永不覆写、永不清洗。
+
+### 6.2 产物（专家拿走的东西）
+
+1. **验证报告**（处置清单优先：FAIL 项=工作清单，含单号/差值/判据原文/基准出处/管线 trace）
+2. **证据包**（可追溯锚点全链：判据原文→附件出处→违规行→两侧数值）
+3. **规范资产**（已确认的 spec——可重跑、可毕业 patrol、可挂树）
+4. **人工项 task**（NEEDS-HUMAN 自动落账，零未处置）
+
+## 6.5 版本管理（m11429 用户裁定：验证器必须版本化）
+
+| 对象 | 版本语义 | 机制 |
+|---|---|---|
+| **spec（规范）** | 每次 confirm 产生新版本（v1→v2…）；修订=新 draft→重新 prepare/confirm | artifacts.version 自增；旧版本只读保留 |
+| **run（报告）** | 钉住 spec 版本 + 附件 source id 快照 | 报告头记 {spec_id, spec_version, sources[], db 快照标识}——重放=同版本+同输入 |
+| **附件（基准文件）** | 不可变 source：报价基准换版=新 source 行，**旧报告的锚点永不断链** | source 本就 append-only（file:// + 哈希 id） |
+| **毕业（patrol）** | 毕业产物记 spec 版本来源 | graduation 引用 {spec_id, version} |
+
+对比视图的版本对：同数据两版规范（判据修订影响面）/ 同规范两次 run（数据漂移）——报告看板的 diff 就是这两个轴。
 
 ## 7. 前端支持（WebUI，用户裁定 m11362）
 
@@ -128,7 +148,7 @@ V3 (count)    : 「$V2.violations == 0」   → verdict FAIL 带样例行
 
 1. **材料提交视图**（专家填写面，m11390 修正）：**标题 + 一段话 + 附件上传**（图片/表格/PDF 拖拽区）——不是结构化字段表单；结构化是预处理的产物，不是专家的输入义务。附件上传即注册 source（file://，归属当前项目）。草稿自动保存（artifact kind=verify-spec, status=draft）。
 2. **VU 确认视图**（人保真面）：prepare 产物左右对照——左列判据原文 + **材料出处**（期望值锚点：报价基准.xlsx·Sheet1·R5C3；图片值标注提取区域），右列翻译出的 checker（类型+表+列+容差+期望值来源），逐项 ✓ 确认 / ✗ 驳回（带理由，驳回项回到待翻译池）。专家确认后 spec 进 runnable 态。
-3. **报告看板**（结果交付面）：四态分组板（PASS/FAIL/NEEDS-HUMAN/ERROR 色分——复用 DESIGN.md token 家族：success/danger/warning/secondary），每项可展开证据明细（违规行数、样例行、两侧数值）；NEEDS-HUMAN 一键转 task；历史 run 对比（同规范两轮 diff——回归可视化）。
+3. **报告看板**（结果交付面，m11428+m11429 修正）：**处置清单优先**（FAIL 例外项=工作清单置顶，四态统计退居摘要行）——每项可展开证据明细（判据原文/基准出处/违规行/两侧数值/管线 trace）；NEEDS-HUMAN 一键转 task；版本对比视图（同规范两次 run=数据漂移轴；两版规范同数据=判据修订影响轴）。
 
 **服务端端点**（webui.ts，R16 选择门 + P1-1 归属校验同规）：
 
