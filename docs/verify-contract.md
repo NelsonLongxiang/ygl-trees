@@ -109,6 +109,8 @@
 | `exists`（expect=true，找存在） | 源表行数 | 命中行数（0/1+） | **NEEDS-MATERIAL**（引擎装配期降级，非检查器内判） | **FAIL** | `expect` |
 | `exists`（expect=false，找不存在） | 源表行数 | 命中行数 | **NEEDS-MATERIAL** | **PASS** | `expect` |
 | `file` | 提交物文件总数 | glob 命中的文件数 | **NEEDS-MATERIAL**（目录为空） | `min`/`require` 缺省时 **PASS**；`min>0`/`require` 命中缺失 → **FAIL** | `min`/`max`/`require` |
+
+> **file 型 v1 能力边界（裁定 A/B/C 之 B）**：只判**结构/签名/清单**类事实——文件存在性、命中数量、行数、sha256、页数。**不做 OCR、不做内容语义理解**（图片里的金额、PDF 里的条款都不读）。带内容级判据的用例在报告里标 `dim: "content-pending-M13-2"`，不得算作已覆盖。
 | `command`（**执行事实，不属 fact 层**，不进 §2.1 折叠判据；见 md §6.1） | — | — | 仅以 `expect_exit`/`stdout_matches` 判 | 同左 | `expect_exit` |
 | `agent` | —（review 层） | — | 缺凭证/无 review runner → **ERROR** | 由 rubric 判 | `rubric`/`pass_if` |
 - 证据行 **canonical 排序**（主键升序、NULL 置末）——否则「逐字重放」不成立。
@@ -178,6 +180,13 @@ review（agent 型）与 fact 型同样有可验收形状，不是"再问一次�
 | 没有冻结材料文本（materialsText） | NEEDS-MATERIAL（盲审没有材料=没断言） |
 
 盲审约束进接口类型：`ReviewRequest.blind` 是常量 `true`，请求体只含「冻结材料 + 待审 VU + 圈数」，**不含**构造理由、修订历史、历史结论。review 轮次建议 ≤3（§4.3）。
+
+## 4.6 语料版本纪律（裁定 A/B/C 之 C）
+
+- 每个 ygl-trees 版本 = 一次**冻结语料快照** + G2/G3/G4 全量跑（不按日历排期）。
+- 语料**只增不改**：已冻结案例的文件内容是否定不得的（改了就再也证明不了旧版本行为）；要改 = 升 `corpus_version` 并在 CHANGELOG 记差异。
+- `contract_version` 钉 `1.0` 时同时钉 `corpus_version`；此后二者各自独立自增，报告里两个版本号都记。
+- 真实网关凭证在 M13-1b（封包 fact-only 闭环）之前**不接**：review/prepare 层的模型调用一律走注入接口，测试用假 runner。
 
 ## 5. 封包元数据（footer，评审 B3）
 
