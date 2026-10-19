@@ -309,6 +309,11 @@
 - **T6 skills 两件（0.93 剩余）**：repo-research 标准形（主推②：给开源项目建研究树——mp-skills 深读是首例，GLOSSARY/two-loads/tracer-bullet 票制可迁移）；ops-patterns（.157 ops-handbook 三机制提炼：采纳监测/预测回测/SOP 边界巡检→patrol/遥测门/结算日历映射）。human-capability 推 0.94（human-agent-eng 探针两周观察期后提炼）。
 - **T7 scenarios.md 重构（0.93 剩余）**：「三树主×一协议」骨架重排六场景，每场景挂对应树主与协议环节。
 
+### M12 — 硬化与收尾批（0.94.0 + 0.95.0，2026-10-19）
+
+- **0.94.0 锁家族终章（1e66b90/42b9c52）**：open 阶段 `.ygllock` 活持有者有界等待（`YGL_LOCK_RETRY_MS` 默认 8000ms；0=旧行为）——busy_timeout 只护句柄建立后，0.83/0.85/0.90.1 反复现身的家族连根；holderAlive 判活（kill0/EPERM=活，ESRCH/自身=死）；锁重试 spec ×4（opt-in 教训：spec 直构必须传 {lock:true}）。预审 direct-e164d3dc 通过；两条 µs 级理论窗（TOCTOU/waitForLockDir）按评审裁定**不开事项**（advisory 层预存+句柄层兜底+单用户成本收益）。产品论纲落盘（scenarios.md 一协议×三树主×六场景 + graduation-protocol.md + skills×2）。
+- **0.95.0 毕业三件套 demo + tags 读面（6ce4da2）**：demo §9g ×3（supported 断言→source --tags sop→rel executes）——0.94 P3 承诺兑现；顺带修真缺口：source list/search 投影漏 tags（毕业协议消费方式「按 tags=sop 拉源」CLI 读面不可能）——cmds.ts list 投影+reads.ts sourceList+sourceSearch 三处；tags 本就落库进 FTS。踩坑：source add 是纯旗标命令（位置 URL→rc=2）；tags 存逗号串非数组。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）
