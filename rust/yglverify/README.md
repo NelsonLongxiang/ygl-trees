@@ -8,20 +8,23 @@ M13 的**交付形态**：单静态二进制，spec 进、报告出。TS 侧（`
 | 能力 | 状态 |
 |---|---|
 | canonical JSON（JCS 子集）+ sha256 | ✅ 与 `corpus/canonical/vectors.json` 12/12 逐字节一致 |
-| 契约类型（spec/report/checker） | ⬜ |
-| compare 八模式 | ⬜ |
-| sqlite 只读 runner | ⬜ |
-| 七型检查器 + 折叠 + witness | ⬜ |
-| 语料 parity（33 例） | ⬜ |
-| `run --spec --db --json` / `self-check` / `--version` | 部分（`--version`） |
+| 契约类型（spec/report/checker） | ✅ `src/contract.rs`（`parse_spec` 版本守卫） |
+| compare 八模式 | ✅ `src/compare.rs`（货币最小单位整数、容差/窗口/集合/区间/正则） |
+| sqlite 只读 runner | ✅ `src/sqlite.rs`（read-only + query_only + 单语句 + schema 指纹） |
+| 七型检查器 + 折叠 + witness | ✅ sql / sql-pair / count / exists / file / command；agent 属 review 层 → ERROR（fact-only 二进制） |
+| 语料 parity（33 例） | ✅ 30 例报告投影逐项一致 + 3 例构造期拒绝（`tests/corpus_parity.rs`） |
+| `run --spec --db --json` / `self-check` / `--version` | ✅ 三命令；`self-check` 校验内嵌 canonical 向量（12/12） |
+| 封包形态（内嵌 spec + footer 指纹，拒绝 `--spec`） | ⬜ 下一步 |
 
 ## 跑测试
 
 ```bash
 cd rust/yglverify
-cargo test          # canonical 单测 + 跨实现向量 parity（直接读 TS 侧冻结的 vectors.json）
+cargo test          # canonical 向量 + 谓词渲染 + 33 例语料投影 + CLI 契约（22 例）
 cargo build --release
 ./target/release/yglverify --version
+./target/release/yglverify run --spec <spec.json> --db <snapshot.sqlite> --json
+./target/release/yglverify self-check
 ```
 
 ## 纪律

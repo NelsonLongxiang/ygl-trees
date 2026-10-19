@@ -39,7 +39,8 @@
     "readme:verify": "bash scripts/readme-verify.sh",
     "contract:audit": "bash scripts/contract-audit.sh",
     "ratchet": "node scripts/ratchet.mjs",
-    "verify:run": "node scripts/verify-run.mjs"
+    "verify:run": "node scripts/verify-run.mjs",
+    "test:rust": "cargo test --manifest-path rust/yglverify/Cargo.toml"
   },
   "files": [
     "dist",

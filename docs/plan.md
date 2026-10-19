@@ -329,6 +329,7 @@
 
 **0.97.1（同日）**：评审 302cb119 r12 的 G1–G5 全部修复——归档 `created` 从 `report.finished` 派生（同一 run 反复归档字节一致）、无 `payload_sha256` 报告拒绝归档、`engine_version` 进校验链、空 archives 目录报 SKIP、`--help` 补 archive/self-check；并采纳 fdc757f6 P3 把 selfcheck 的 archives 目录门从 `existsSync` 换成 `readdirSync`（高并发下 stat 时序敏感）。G6（并发 flake）本机两轮 374/374 全绿，未能复现。
 **0.98.0 进行中**：验证席三席合并结论 ① 落地——`pnpm verify:run`（submit → prepare → run 串接，rc 只表达过程错误、`--json` 单对象，readme:verify 54/54）；归档 `created` 改为 fail-closed（报告缺 `finished` 时不回退 now()，评审 302cb119 残留 nit）；M13-1b Rust crate 补 `contract.rs`（契约镜像）+ `compare.rs`（八模式逐条对齐）+ `tests/parity.rs`（33 份冻结语料 spec 全部可解析、八模式语义断言），cargo test 12/12。
+M13-1b 执行面补齐：`engine.rs`（七型 fact 检查器 + witness + 拓扑 + 折叠）与 `sqlite.rs`（只读 runner）落地，**33 例语料 parity 通过**（30 例报告投影逐项一致 + 3 例构造期拒绝），`yglverify run --spec --db --json` / `self-check` / `--version` 三命令可用（rc 只表达过程：FAIL 仍 rc=0），Rust 测试 22/22。封包形态（内嵌 spec + footer 指纹、拒绝 `--spec`）为下一步。
 ③ `--draft` 干跑、④ walk ignore globs 进池；② command 型判据按裁定排 M13-1b parity 冻结之后（契约先行、runner 钩子不放开封包 allowlist）。
 
 后续项（fdc757f6 ①，不阻断）：Cordis 试炼场加 V6 `count(白名单对无 package.json 依赖背书)==0`——白名单与 `package.json` 依赖目前是两个真相源。

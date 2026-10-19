@@ -24,6 +24,18 @@ pub enum Verdict {
     Error,
 }
 
+impl Verdict {
+    /// 报告里的字面量（serde rename 同值——报告与判定共用一份字符串）。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Verdict::Pass => "PASS",
+            Verdict::Fail => "FAIL",
+            Verdict::NeedsMaterial => "NEEDS-MATERIAL",
+            Verdict::Error => "ERROR",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompareSpec {
     pub mode: String,

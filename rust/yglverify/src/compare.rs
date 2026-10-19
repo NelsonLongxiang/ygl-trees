@@ -237,6 +237,11 @@ fn to_epoch_ms(v: &Value) -> Option<i64> {
     Some(local_ms - offset_min * 60_000)
 }
 
+/// 公开给谓词渲染用的同位换算（`normalizeIsoLiteral` 的 Rust 侧）。
+pub fn iso_to_utc_millis(s: &str) -> Option<i64> {
+    to_epoch_ms(&Value::String(s.to_string()))
+}
+
 fn mode_is(spec: &CompareSpec, want: &str) -> bool {
     spec.mode == want
 }
