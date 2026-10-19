@@ -228,11 +228,11 @@ verify list                        # 规范清单与状态
 | 形态 | 是什么 | 谁用 | 版本钉法 |
 |---|---|---|---|
 | **规范工件** | verify-spec artifact：VU 集合 + 判据原文 + 出处锚点 + rubric，JSON，workspace 内自增版本 | 系统内部真相源 | spec_id + version |
-| **单文件导出** | `verify export <spec>` → 一个 `.yglverify.json`（自包含：VU + 冻结期望值 + 数据源声明 + spec_version） | 交给第三方、存档、跨环境重放 | 文件内嵌 spec_version + runtime_min |
+| **单文件导出** | `verify export <spec>` → `.yglverify.json`（VU + 冻结期望值 + 数据源声明 + spec_version）——**构建输入，不直接交付** | 封包的原料、存档、跨环境重放 | 文件内嵌 spec_version + runtime_min |
 | **运行时** | ygl-trees 的 `verify` 命令组（发布产物 bundle 内）；同一引擎执行所有规范 | 所有场景 | ygl-trees 版本号 |
 | **服务面** | `webui serve` 的 `/api/verify/*` + 三视图 | 业务专家的浏览器 | 同运行时 |
 | **agent 面** | CLI `--json` / MCP 工具：submit/prepare/run/report 结构化调用 | 驱动验证的 agent | 同运行时 |
-| **独立分发** | `verify export --bundle` → 自包含目录（spec + 附件 + 数据源声明）；**二进制 CLI 见下节（m11659 升为交付形态）** | 无 ygl 环境的第三方 | 二进制与 spec 双钉 |
+| **封包二进制** | `yglverify build` → 引擎 + 内嵌 spec + 指纹合成单文件；**spec 不可变更**（m11703） | 无 ygl 环境的业务方 / 第三方 | 二进制哈希即验证器版本 |
 
 **为什么是数据+运行时，不是逐规范生成程序**：
 
@@ -245,24 +245,22 @@ verify list                        # 规范清单与状态
 
 **运行环境**：任何装了 ygl-trees 的机器 + 规范声明的数据源可达（SQLite 文件路径 / PG URL / workspace 内附件 source）。连接串运行时传入、不入库。
 
-### 8.5.1 交付形态：二进制 CLI（m11659 用户裁定）
+### 8.5.1 交付形态：封包二进制（m11659 + m11703 用户裁定）
 
-> 用户原话（m11659）：「交付的程序 为二进制 cli」。
+> m11659：「交付的程序 为二进制 cli」；m11703：「包括 spec 本身都是验证器的一部分，也是二进制程序里面，不可变更」。
 
-**交付物 = 单一静态二进制 `yglverify`**（Rust，musl 静态链接，零运行时依赖），面向「没有 ygl-trees 环境」的业务方/第三方——拿到二进制 + 一份 spec 就能在自己的数据上重放验证。
+**交付物 = 单一封包二进制：spec 内嵌其中，不可变更。** 拿到文件的人无法替换、改写或追加规范——能改二进制就改了它的哈希，而哈希写在报告里，审计可对质。
 
-- **职责边界**：二进制只做**执行面**（spec JSON 进 → 报告 JSON 出）；**构造面**留在 TS——材料提交、prepare（提取/翻译/自审）、WebUI、workspace 集成、报告入库。二进制不知道 agent 的存在，也不调用任何构造模型。
-- **契约先行 + 黄金语料门禁**：TS 实现是参考实现；Rust 二进制必须通过同一 corpus（spec + fixture 库 + 期望报告，逐字一致除时间戳）才算合格——**二进制不被信任，直到语料全绿**。任何一侧行为变更都必须先改 corpus。
-- **二进制命令面**：
-  ```
-  yglverify run --spec <spec.json> [--db <sqlite-path> | --pg <url>] [--out report.json] [--json]
-  yglverify self-check          # 版本、语料完整性、数据源连通性
-  yglverify --version           # engine_version（Cargo 版本）
-  ```
-- **交付包形态**：`yglverify`（单文件）+ `spec.json` + `attachments/`（可选；manifest 带相对路径 + sha256）+ 报告输出目录；`yglverify export --bundle` 打成 tar.gz 供分发。
-- **版本钉法**：报告头记录 `engine_version`（二进制版）+ `spec_version` + `corpus_version`；spec 内声明 `runtime_min`，低于即**拒绝执行**（ERROR，不是 FAIL——是环境不满足契约，不是业务有问题）。
-- **安全边界不变**：`command` 是唯一可执行面（显式白名单，默认关闭）；`sql` 只读前缀门；`attachments` 只读（不写回、不执行）。二进制不需要网络（agent 型检查器除外，且该型在离线模式下直接 NEEDS-MATERIAL）。
-- **与 workspace 的接缝**：构造面 `verify export` 产出 spec；二进制跑完的报告由 `verify report import <report.json>` 回收入库（记录 run_id/engine_version/spec_version，报告不可变）。
+- **封包（build/seal）**：`yglverify build --spec spec.json --out yglverify-<name>` —— 引擎字节 + spec 载荷 + 尾部指纹（`spec_sha256`、`engine_version`、`corpus_version`、`build_sha256`）合成一个文件。封包是字节拼接，不需要 Rust 工具链，秒级完成；同引擎字节 + 同 spec 字节 → 同二进制字节（可复现构建）。
+- **运行**：`yglverify-<name> run [--db <sqlite> | --pg <url>] [--out report.json] [--json]` —— **封包模式不接受 `--spec`**（拒绝外部规范输入，这是「不可变更」的执行面保证）。
+- **自检**：启动即校验自身指纹（文件被改动 → 拒绝执行，ERROR）；`self-check` 打印 engine/spec/corpus 三版本与两个哈希。
+- **报告头**记录 `binary_sha256` + `spec_version` + `engine_version` + `corpus_version`——「这份报告是哪个验证器、在哪个规范版本上跑出来的」永远可查。
+- **规范源文件 `.yglverify.json` 降为构建输入**，不直接交付；交付目录里只有一个可执行文件（加业务自己的数据与提交物）。
+- **运行时输入只剩三类**：数据源（SQLite 文件 / PG URL）、提交物附件（业务数据）、输出路径。基准材料的**冻结期望值**已在 spec 里（prepare 时提取并带锚点），所以基准材料原件不需要随包。
+- **通用模式仍保留**（开发用）：未封包的引擎支持 `--spec`，报告头标 `sealed: false`；交付场景一律用封包二进制。
+- **安全边界不变**：`command` 是唯一可执行面（显式白名单，默认关闭）；`sql` 只读前缀门；附件只读；封包载荷是只读数据，不是代码。
+
+**构建 → 交付 → 回收入库**：TS 构造面产出 spec（submit/prepare/自审）→ `yglverify build` 封包 → 交付单文件 → 业务方在其环境中 `run` 出报告 → `verify report import` 把报告（含 binary_sha256）回收入 workspace，版本链闭合。
 
 ## 9. 与树/毕业协议的接缝（复用而非新建）
 
@@ -314,6 +312,6 @@ verify list                        # 规范清单与状态
 | E | FAIL 是否自动开 task | 首版只在报告呈现（例外清单），不自动开（避免噪音）；NEEDS-MATERIAL 自动开（已定） | 影响 task 表噪音 |
 | F | 报告导出 | 首版 WebUI 看板 + CLI 文本；PDF/HTML 导出后置 | 业务专家对质/汇报场景 |
 | G | 毕业阈值（patrol 化） | 同结果稳定 3 轮 + 跨度 ≥1 个月；首版不实现，只留接口 | 不阻塞首版 |
-| H | 二进制命名与交付包（m11659 新增） | `yglverify` + 目录包（spec.json + attachments/ + 报告）；`export --bundle` 出 tar.gz | 决定分发包形态与 CI 产物 |
+| H | 封包与交付包（m11659+m11703） | 交付物 = 单个封包二进制（spec 内嵌、不可变更）；`yglverify build --spec … --out …` 封包；业务数据与提交物运行时传入 | 决定分发包形态与 CI 产物（每 spec 一个二进制哈希） |
 
 其余九条（命令名/七检查器/artifacts 存储/PG/管线组合/自审形态）均为推荐默认，风险低可逆，开工即按推荐执行；语言切分已由 m11659 钉为「TS 构造面 + Rust 二进制执行面」。

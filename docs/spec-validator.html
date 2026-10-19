@@ -345,15 +345,15 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   </table>
 
   <h3><span class="n">1.7</span>验证器的存在形态</h3>
-  <p><strong>验证器不是「写出来的程序」，是「规范数据 + 通用运行时」</strong>——像 SQL 查询之于数据库：规范是数据，引擎是程序，两钉（spec 版本 × 运行时版本）即重放。</p>
+  <p><strong>交付物是封包二进制：spec 内嵌其中，不可变更</strong>（m11703）。引擎一份、规范当数据装进去——像 SQL 查询之于数据库，但交付时装订成一本盖了钢印的册子：换规范=换钢印=换哈希，报告里记着这枚钢印。</p>
   <table>
     <tr><th>形态</th><th>是什么</th><th>谁用</th></tr>
     <tr><td><strong>规范工件</strong></td><td>verify-spec artifact：VU 集合 + 判据原文 + 锚点 + rubric（JSON，workspace 内自增版本）</td><td>系统内部真相源</td></tr>
-    <tr><td><strong>单文件导出</strong></td><td><code>verify export</code> → 一个 <code>.yglverify.json</code>（自包含：VU + 冻结期望值 + 数据源声明）</td><td>跨环境重放 / 存档 / 交给第三方</td></tr>
+    <tr><td><strong>单文件导出</strong></td><td><code>verify export</code> → <code>.yglverify.json</code>（VU + 冻结期望值 + 数据源声明）——<strong>封包的原料，不直接交付</strong></td><td>封包输入 / 存档</td></tr>
     <tr><td><strong>运行时</strong></td><td>ygl-trees 的 <code>verify</code> 命令组；同一引擎执行所有规范</td><td>所有场景</td></tr>
     <tr><td><strong>服务面</strong></td><td><code>webui serve</code> 的 /api/verify/* + 三视图</td><td>业务专家的浏览器</td></tr>
     <tr><td><strong>agent 面</strong></td><td>CLI --json / MCP 工具结构化调用</td><td>驱动验证的 agent</td></tr>
-    <tr><td><strong>二进制 CLI</strong><br><span class="dim">交付形态（m11659）</span></td><td><code>yglverify</code> 单静态二进制：<code>run --spec spec.json [--db|--pg] [--json]</code> / <code>self-check</code>；只做执行面（spec 进、报告出），构造面留在 TS</td><td>无 ygl 环境的业务方 / 第三方</td></tr>
+    <tr><td><strong>封包二进制</strong><br><span class="dim">交付形态（m11659 + m11703）</span></td><td><code>yglverify build --spec … --out yglverify-&lt;name&gt;</code>：引擎字节 + spec 载荷 + 指纹（spec_sha256 / engine / corpus / build_sha256）合成单文件。运行时 <code>run [--db|--pg] [--json]</code>，<strong>拒绝 --spec</strong>；启动自校验指纹；报告头记 binary_sha256</td><td>无 ygl 环境的业务方 / 第三方</td></tr>
   </table>
   <p class="dim">为什么不做「逐规范生成程序」：①引擎代码一份，判定逻辑不随规范漂移；②spec 与运行时版本正交可钉；③零代码生成（材料→VU 是数据翻译）；④<strong>规范是数据，所以它做不了坏事</strong>——<code>command</code> 型是唯一可执行面，<code>sql</code> 只读前缀门，规范没有任意代码执行权。</p>
   <p class="dim">运行契约：<code>verify run --json</code> → 单对象 <code>{run_id, spec_version, summary:{pass,fail,needs_material,error}, report_path}</code>。<strong>退出码只表达过程</strong>：rc=0 验证已执行出报告（PASS/FAIL 都算成功跑完），rc=1 运行错误，rc=2 用法错误——FAIL 是有效结论，不是工具坏了。</p>
@@ -564,7 +564,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   <table>
     <tr><th>批次</th><th>内容</th><th>验收</th><th>版本</th></tr>
     <tr><td><strong>M13-1</strong></td><td>TS 构造面：submit / prepare / run / report / trace / list；七型检查器；管线拓扑；版本化；SQLite + PG；<strong>黄金语料 corpus</strong></td><td>全门禁绿（unit + contract + demo）；.157 运费对账端到端跑通；语料可重放</td><td>0.96.0</td></tr>
-    <tr><td><strong>M13-1b</strong></td><td><strong>Rust 二进制 <code>yglverify</code></strong>：run / self-check / --version；只做执行面；与 TS 参考实现同吃一份黄金语料</td><td>语料双实现逐字一致（除时间戳）；win/linux 双平台构建；交付包 tar.gz</td><td>0.97.0</td></tr>
+    <tr><td><strong>M13-1b</strong></td><td><strong>Rust 引擎 + 封包器</strong>：<code>run</code> / <code>build --spec</code>（封包）/ <code>self-check</code> / <code>--version</code>；只做执行面；与 TS 参考实现同吃一份黄金语料</td><td>语料双实现逐字一致（除时间戳）；封包二进制自校验+拒绝 --spec；win/linux 双平台构建</td><td>0.97.0</td></tr>
     <tr><td><strong>M13-2</strong></td><td>WebUI 三视图（材料提交 / 构造追溯 / 报告看板）+ Python 提取适配器（真实样本）</td><td>浏览器端到端可用；黄金样本测试</td><td>0.98.0</td></tr>
     <tr><td>M13-3</td><td>毕业通道（验证 → patrol）；报告导出（PDF/HTML）</td><td>毕业产物可追溯；导出可用于对质</td><td>0.99+</td></tr>
   </table>
