@@ -5,7 +5,7 @@
  * 只认这里的形状。checker 是标签联合：`type` 决定其余键（评审 fdc757f6 ①）。
  */
 
-export const CONTRACT_VERSION = "0.4"; // 未冻结：冻结时随语料收敛一次 pin 到 1.0
+export const CONTRACT_VERSION = "1.0"; // 冻结（2026-10-19，fdc757f6 持闸放行；此后形状变更走 1.0→1.1 升版，不得静默改内文）
 
 export type Verdict = "PASS" | "FAIL" | "NEEDS-MATERIAL" | "ERROR";
 export type VuRole = "assert" | "source";
@@ -80,6 +80,12 @@ export interface Predicate {
   agg?: PredicateAgg[];
   /** 判据条件树（AND/OR/NOT 可嵌套）；找违规型（fail_when=rows>0）必须给出（否则就是整表非空冒充） */
   where?: PredicateGroup;
+  /**
+   * 扫描域过滤（AND/OR/NOT，可选）：只限定「这次检查看哪一批数据」（如 batch='2026-07'），
+   * **不是判据**。域进 findSql 与 scopeSql 两侧，witness.rows_scanned 才是「看了多少行」；
+   * 若把批次条件塞进 where，干净批次会扫出 0 行被判空洞（M13-1 端到端实测）。
+   */
+  scan?: PredicateGroup;
 }
 
 export interface SqlCheckerBase {
@@ -358,6 +364,10 @@ export type VuResult = VuResultSource | VuResultFact | VuResultNonFact;
 export interface VerifyReport {
   contract_version: string;
   run_id: string;
+  /** 产出该报告的 spec（run 期从 spec 复制；导出的报告必须自描述） */
+  spec_id?: string;
+  /** 数据来源（A 裁定：报告记快照来源 + sha256；纯语料跑无此键） */
+  data_source?: { kind: string; sha256: string; source?: string; captured_at: string };
   started: string;
   finished: string;
   verifier: {

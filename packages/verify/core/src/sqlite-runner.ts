@@ -6,7 +6,9 @@
  */
 import { createHash } from "node:crypto";
 
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+
+import { openDatabaseSync } from "./sqlite-bindings";
 
 import { extractTables, type QueryRunner, type Row } from "./engine";
 
@@ -20,7 +22,7 @@ export class SqliteRunner implements QueryRunner {
   private tableCache = new Map<string, number>();
 
   constructor(path: string, opts: SqliteRunnerOptions = {}) {
-    this.db = new DatabaseSync(path, { readOnly: true });
+    this.db = openDatabaseSync(path, { readOnly: true });
     if (opts.queryOnly !== false) {
       try {
         this.db.exec("PRAGMA query_only = ON");

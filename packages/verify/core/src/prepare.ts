@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 
 import { validateCompareSpec } from "./compare";
+import { CONTRACT_VERSION } from "./contract";
 import { containsVerbatim, renderPredicate, renderScan } from "./engine";
 import type {
   Checker,
@@ -80,8 +81,8 @@ export interface RejectedCandidate {
 }
 
 export interface PrepareOptions {
-  /** 条件④：冻结时刻（快照口径），缺省 = 调用时刻 */
-  asOf?: VerifySpec["as_of"];
+  /** 条件④：冻结时刻（快照口径）——必须由调用方给；快照容不得「现在」 */
+  asOf: VerifySpec["as_of"];
   /** 条件④：同一材料的第 N 次冻结由调用方递增 */
   specVersion?: number;
   engineVersion?: string;
@@ -167,6 +168,7 @@ function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "pre
     return (node.conditions ?? []).flatMap(collect);
   };
   wanted.push(...collect(pred.where as unknown));
+  wanted.push(...collect(pred.scan as unknown));
   for (const a of pred.agg ?? []) if (a.col) wanted.push(a.col);
   for (const raw of wanted) {
     const col = String(raw).includes(".") ? String(raw).split(".")[1] : String(raw);
@@ -192,7 +194,7 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
       return "sql predicate must not carry agg — an aggregate is always one row; use sql-pair with two predicate sides";
     }
     const text = JSON.stringify(predicate);
-    if (text.includes("$")) return '"$" in predicate text is not supported — pipeline refs belong to count.from / sql-pair sides';
+    if (text.includes("$vu:")) return '"$vu:" refs are not allowed inside a predicate — pipeline refs belong to count.from / sql-pair sides';
     try {
       const rendered = renderPredicate(predicate);
       if (hasTimeFunction(rendered.findSql)) return "predicate renders a time function (now()/current_timestamp) — not replayable";
@@ -238,7 +240,7 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
       if (text.includes("$vu:")) return '"$vu:" refs are not allowed inside a predicate — pipeline refs belong to count.from / sql-pair sides';
       try {
         const rendered = renderScan(pred);
-        if (hasTimeFunction(rendered.whereSql)) return "predicate renders a time function (now()/current_timestamp) — not replayable";
+        if (hasTimeFunction(rendered.whereSql) || hasTimeFunction(rendered.scanSql)) return "predicate renders a time function (now()/current_timestamp) — not replayable";
       } catch (e) {
         return (e as Error).message;
       }
@@ -249,16 +251,12 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
     }
   }
   if (c.requires_execution !== undefined) {
-    if (checker.type !== "agent") return 'requires_execution is only meaningful for agent checkers — a fact checker must be re-runnable without side effects';
+    return "requires_execution is only meaningful for agent checkers, which M13-1 rejects — fact checkers are re-runnable by construction";
   }
-  if (checker.type === "agent" && c.requires_execution === false) {
-    return "agent checker runs a model and therefore requires_execution; drop the flag or set it to true";
+  if (checker.type === "agent") {
+    return "agent checkers are out of scope for M13-1 (fact-only closed set) — prepare emits fact checkers; review-layer specs land with M13-1b";
   }
   if (checker.type === "command") return "command checkers are not allowed in prepared specs (execution surface) unless explicitly enabled";
-  if (checker.type === "agent") {
-    const rubric = checker.rubric ?? [];
-    if (rubric.length === 0) return "agent checker needs at least one rubric point";
-  }
   const compare = (checker as { compare?: unknown }).compare;
   if (compare) {
     const errs = validateCompareSpec(compare as never);
@@ -403,7 +401,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
 
   const spec: VerifySpec = {
-    contract_version: "0.4",
+    contract_version: CONTRACT_VERSION,
     spec_id: opts.specId ?? `spec_${materialsSha.slice(0, 12)}`,
     // 条件④：版本由调用方递增（同一材料的第 N 次冻结），缺省 1 只对首次成立
     spec_version: opts.specVersion ?? 1,
@@ -411,13 +409,14 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     domain: opts.domain ?? "prepared",
     created: now(),
     runtime_min: "1",
-    verifier: { engine_version: opts.engineVersion ?? "0.1.0", corpus_version: opts.corpusVersion ?? "1" },
+    verifier: { engine_version: opts.engineVersion ?? "0.1.0", corpus_version: opts.corpusVersion ?? "1.0" },
     // 条件④：as_of 由调用方给（快照口径必须指向真库副本的那个时刻，不是"现在"）
-    as_of: opts.asOf ?? { kind: "snapshot", value: now() },
+    as_of: opts.asOf,
     vu: kept.map((k) => k.vu),
     // fdc F3：附件级 sha256 落到 spec——同一文本不同二进制不能过重放
     attachments: (opts.materialIndex?.files ?? []).map((f) => ({ role: "baseline" as const, path: f.path, sha256: f.sha256, mime: f.mime, size: f.size ?? 0 })),
-    sealed: { review: true },
+    // M13-1 冻结的是 fact 层：review 层（agent 复核）随 M13-1b 进入，报告标 sealed_review=false
+    sealed: { review: false },
     materials_sha256: materialsSha,
   } as VerifySpec;
 

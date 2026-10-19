@@ -17,7 +17,7 @@ describe("corpus 冻结快照（裁定 C：跟版本不跟日历）", () => {
       digest: string;
       entries: Array<{ path: string; sha256: string }>;
     };
-    expect(manifest.corpus_version).toMatch(/^\d+$/);
+    expect(manifest.corpus_version).toMatch(/^\d+\.\d+$/);
     expect(manifest.digest).toBe(digest);
     expect(manifest.entries).toEqual(entries);
     expect(entries.length).toBeGreaterThan(100);

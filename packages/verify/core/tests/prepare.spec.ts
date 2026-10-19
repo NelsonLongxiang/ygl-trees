@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { prepareSpec, type PrepareCandidate, type PrepareRunner } from "../src/prepare";
 import type { ReviewFinding, ReviewRunner } from "../src/contract";
 
+/** 条件④：as_of 必须由调用方给（快照口径），测试统一钉一个确定时刻 */
+const AS_OF = { kind: "snapshot" as const, value: "2026-07-01T00:00:00.000Z" };
+
 const MATERIAL = `运费对账材料（2026-07）
 账单合计 1,290.40 元，申报合计 1,290.40 元。
 第七行：账单金额 1290.40 元。
@@ -60,6 +63,7 @@ const goodCandidate = (overrides: Partial<PrepareCandidate> = {}): PrepareCandid
 describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () => {
   it("P1/P2/P3 全过 + 红队过 → ready，spec 带 materials_sha256 与版本", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -74,6 +78,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("P1：source_clause 不是材料原文 → 拒（防编造判据）", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate({ source_clause: "账单合计必须等于申报合计" })]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -85,6 +90,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("P1：锚点 locator 不在材料索引声明的位置 → 拒（锚错格子）", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -96,6 +102,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("P1：不可判措辞（应尽量/建议）→ 拒", async () => {
     const res = await prepareSpec(MATERIAL + "应尽量核对全部单据。", {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate({ source_clause: "应尽量核对全部单据" })]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -107,6 +114,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("P2：手写 sql 一律拒（机械 spec 只能用谓词 AST）", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate({ checker: { type: "sql", sql: "select * from bills where batch='2026-07'" } })]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -118,6 +126,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("P2：schema 探针里不存在的表/列 → 拒", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -129,6 +138,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("P3：盲审 reject / 缺问 / 锚点非原文 都不落 ready", async () => {
     const reject = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf((id) => [
         { vu_id: id, question: "faithful", verdict: "reject", reason: "anchor 指向小计而非单价" },
@@ -141,6 +151,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(reject.rejected[0].stage).toBe("P3");
 
     const missing = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf((id) => [{ vu_id: id, question: "faithful", verdict: "ok", reason: "ok", anchor: { quote: "账单合计 1,290.40 元", locator: "bills!B7" } }]),
       redteam: () => [],
@@ -149,6 +160,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(missing.rejected[0].reason).toMatch(/self-review incomplete/);
 
     const wrongAnchor = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf((id) => [
         { vu_id: id, question: "faithful", verdict: "ok", reason: "ok", anchor: { quote: "账单合计 1290.4 元", locator: "bills!B7" } },
@@ -162,18 +174,19 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
   });
 
   it("无盲审器 → 不落 ready（自审是构造契约的一半）", async () => {
-    const res = await prepareSpec(MATERIAL, { runner: runnerOf([goodCandidate()]), redteam: () => [] });
+    const res = await prepareSpec(MATERIAL, { asOf: AS_OF, runner: runnerOf([goodCandidate()]), redteam: () => [] });
     expect(res.verdict).toBe("error");
     expect(res.diagnostics[0].stage).toBe("P3");
   });
 
   it("无红队门禁 → 不落 ready；红队失败 → ERROR", async () => {
-    const noGate = await prepareSpec(MATERIAL, { runner: runnerOf([goodCandidate()]), reviewer: reviewerOf(okReview) });
+    const noGate = await prepareSpec(MATERIAL, { asOf: AS_OF, runner: runnerOf([goodCandidate()]), reviewer: reviewerOf(okReview) });
     expect(noGate.verdict).toBe("error");
     expect(noGate.diagnostics[0].stage).toBe("P4");
     expect(noGate.spec).toBeUndefined();
 
     const failed = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf(okReview),
       redteam: () => ["恒真谓词未被拒绝"],
@@ -184,13 +197,14 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
   });
 
   it("材料为空 → needs-material（P0）", async () => {
-    const res = await prepareSpec("   ", { runner: runnerOf([]), reviewer: reviewerOf(okReview), redteam: () => [] });
+    const res = await prepareSpec("   ", { asOf: AS_OF, runner: runnerOf([]), reviewer: reviewerOf(okReview), redteam: () => [] });
     expect(res.verdict).toBe("needs-material");
     expect(res.diagnostics[0].stage).toBe("P0");
   });
 
   it("E5①：count/exists 的 sql 形态一律拒（只允许机械谓词）", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([
         goodCandidate({ checker: { type: "count", sql: "select count(*) as n from bills", op: "==", value: 1 } as never }),
         goodCandidate({ checker: { type: "exists", sql: "select 1 from bills" } as never }),
@@ -204,6 +218,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("E5②：sql-pair 谓词侧也要过 schema 探针（聚合列写错不许出 spec）", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate()]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -215,6 +230,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("E5③：requires_execution 只属于 agent 型（事实检查器必须可重跑）", async () => {
     const res = await prepareSpec(MATERIAL, {
+    asOf: AS_OF,
       runner: runnerOf([goodCandidate({ requires_execution: true })]),
       reviewer: reviewerOf(okReview),
       redteam: () => [],
@@ -224,6 +240,7 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
 
   it("E5④：$ 守卫收窄为 $vu:（金额字面量 '$50' 不误伤）", async () => {
     const res = await prepareSpec(MATERIAL + "备注写 $50。", {
+    asOf: AS_OF,
       runner: runnerOf([
         goodCandidate({
           source_clause: "备注写 $50",

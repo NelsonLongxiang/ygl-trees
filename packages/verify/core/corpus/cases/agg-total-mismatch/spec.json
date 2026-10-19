@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.4",
+  "contract_version": "1.0",
   "spec_id": "spec__name__",
   "spec_version": 1,
   "verifier": { "engine_version": "0.1.0", "corpus_version": "1" },

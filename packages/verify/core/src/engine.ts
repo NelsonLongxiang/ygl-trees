@@ -13,6 +13,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 import { canonicalStringify } from "./canonical";
+import { CONTRACT_VERSION } from "./contract";
 import { compareValues, ISO_DATETIME_TZ, validateCompareSpec, withOffsetMinutes } from "./compare";
 import type {
   AgentChecker,
@@ -721,9 +722,19 @@ export interface RenderedPredicate {
  * find 与 scope **共享同一 where 子句字符串**，物理上不可能伪造扫描面。
  */
 /** 谓词渲染的公共部分：from 与 where（find/scope/count/exists 共用，保证同源） */
-export function renderScan(pred: Predicate): { from: string; whereSql: string } {
+export function renderScan(pred: Predicate): { from: string; whereSql: string; scanSql: string } {
   const from = ident(pred.from, "from");
-  return { from, whereSql: renderWhere(pred.where) };
+  const scanSql = renderWhere(pred.scan);
+  const whereSql = renderWhere(andGroups(pred.scan, pred.where));
+  return { from, whereSql, scanSql };
+}
+
+/** 域过滤 AND 判据 —— 两侧共用同一渲染器，保证 scope 与 find 的差异只在判据本身 */
+function andGroups(...groups: Array<PredicateGroup | undefined>): PredicateGroup | undefined {
+  const live = groups.filter((g): g is PredicateGroup => g !== undefined);
+  if (live.length === 0) return undefined;
+  if (live.length === 1) return live[0];
+  return { op: "and", conditions: live };
 }
 
 /** 聚合列的渲染 + 规则校验（r8 F1）：别名唯一、count 之外必须给列、select 不得与 agg 混排 */
@@ -765,9 +776,11 @@ export function renderPredicate(pred: Predicate): RenderedPredicate {
     throw new Error("predicate.select must list at least one column (or use agg for an aggregate query)");
   }
   const select = cols.join(", ");
+  // 域过滤（scan）进两侧；判据（where）只进 find —— rows_scanned 是「看了多少行」
+  const { scanSql } = renderScan(pred);
   return {
     findSql: `SELECT ${select} FROM ${from}${whereSql}`,
-    scopeSql: `SELECT count(*) AS n FROM ${from}${whereSql}`,
+    scopeSql: `SELECT count(*) AS n FROM ${from}${scanSql}`,
   };
 }
 
@@ -849,6 +862,10 @@ export function foldOverall(results: VuResult[]): { overall: Verdict; reason: st
 }
 
 export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<VerifyReport> {
+  // 契约钉版：1.0 引擎只跑 1.0 spec。旧 spec 不会"大概能跑"——形状变了必须升版重出。
+  if (spec.contract_version !== CONTRACT_VERSION) {
+    throw new Error(`unsupported contract_version ${String(spec.contract_version)} — this engine implements ${CONTRACT_VERSION}`);
+  }
   const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };
   const now = opts.nowIso ?? (() => new Date().toISOString());
   const started = now();
@@ -999,6 +1016,7 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   const report: VerifyReport = {
     contract_version: spec.contract_version,
     run_id: runId,
+    spec_id: spec.spec_id,
     started,
     finished: now(),
     verifier: {

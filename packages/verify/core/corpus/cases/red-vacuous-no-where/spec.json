@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.4",
+  "contract_version": "1.0",
   "spec_id": "spec_red-vacuous-no-where",
   "spec_version": 1,
   "verifier": {

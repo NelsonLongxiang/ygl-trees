@@ -10,7 +10,7 @@
  * 必须升 corpus_version 并在 CHANGELOG 记差异后重写清单。
  */
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,7 +44,11 @@ const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(imp
 if (isMain) {
   const { entries, digest } = corpusDigest();
   const write = process.argv.includes("--write");
-  const next = { corpus_version: "1", digest, entries };
+  const versionArg = process.argv.find((a) => a.startsWith("--version="))?.slice("--version=".length);
+  // 版本号由维护者用 --version 显式给（默认沿用现有清单，永不静默回退）
+  const prev = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : null;
+  const version = versionArg ?? prev?.corpus_version ?? "1.0";
+  const next = { corpus_version: String(version), digest, entries };
   if (write) {
     writeFileSync(manifestPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
     console.log(`wrote ${relative(process.cwd(), manifestPath)} (${entries.length} files, digest ${digest.slice(0, 16)}…)`);

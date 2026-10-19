@@ -90,6 +90,8 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 - **纯聚合形态**（r8 F1）：`agg` 非空时 `select` 必须为空数组——列与聚合混排需要 GROUP BY，而 AST 里没有 GROUP BY，渲染出的 `SELECT batch, SUM(x)` 在 PG 非法。纯聚合适用于总额对账：两侧都用 `agg:sum` 的 sql-pair 谓词侧比较总额。
 - **sql-pair 的谓词侧**（r8 F1）：`{ "predicate": {...} }` 是最新形态，值列 = 该谓词唯一的 agg 列，key 缺省为常量 `"total"`；两侧都用谓词即"总额对总额"。谓词侧必须恰好一列 agg、且查询只产出一行。
 - **count / exists 也接受谓词形态**（r8 F2）：`{"type":"count","predicate":{...},"op":"==","value":N}` 由引擎渲染 `SELECT count(*)`；`{"type":"exists","predicate":{...},"expect":true}` 渲染 `SELECT 1 ... WHERE`。手写 SQL 形态仍是评审例外，不属于机械生成面。
+- **谓词形态的扫描域 `scan`**（1.0 定稿）：`Predicate.scan` 是「这次检查看哪一批数据」的域过滤（AND/OR/NOT），渲染进 `findSql` 与 `scopeSql` 两侧；`where` 只描述判据、只进 `findSql`。因此 `witness.rows_scanned` 的含义是**域内检查过的行数**，`rows_matched` 是命中判据的行数。把批次条件写进 `where` 会让干净批次扫出 0 行被判 NEEDS-MATERIAL（M13-1 端到端实测到的错误用法）。
+- **零扫描判定**：fact 型 PASS 且 `rows_scanned === 0` → 降级 NEEDS-MATERIAL（「扫了 0 行」只能说明没数据，不能说明合规）。
 - **时间字面量规范化**（r8 F4/F5）：带偏移的 ISO 时间（`+08:00` / `+0800` / `Z`）在渲染时统一折成 UTC `Z`——SQLite 里日期是字符串，`BETWEEN '+08:00'` 是字典序比较，与时间序不等价；折成 Z 后同一 spec 在任何机器上给同一结论，Rust 侧同口径。无时区的时间字面量仍拒绝（W1b）。
 - 标识符守门：列名/表名只允许裸标识符（可 `表.列`），表达式与子查询一律构造期拒绝；字符串值按 `''` 转义。
 - **找违规型（`fail_when:"rows>0"`）必须给 where**，否则整表非空就能冒充"扫过本批"。
@@ -171,7 +173,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 
 > **file 型 v1 能力边界（裁定 A/B/C 之 B）**：只判**结构/签名/清单**类事实——文件存在性、命中数量、行数、sha256、页数。**不做 OCR、不做内容语义理解**（图片里的金额、PDF 里的条款都不读）。带内容级判据的用例在报告里标 `dim: "content-pending-M13-2"`，不得算作已覆盖。
 - 证据行 **canonical 排序**（主键升序、NULL 置末）——否则「逐字重放」不成立。
-- **规范化算法**（评审 R10）：报告与语料比对一律走 **JCS 子集**（RFC 8785）：①对象键按 UTF-16 码元升序 ②数字只允许安全整数与定点小数（禁 NaN/Infinity/科学计数法输出差异）③时间统一 RFC 3339 UTC 毫秒 ④字符串 NFC ⑤数组保序。TS 与 Rust 必须共用同一 serializer——TS 实现是 `packages/verify/core/src/canonical.ts`（`canonicalStringify`/`canonicalTimestamp`），跨实现向量在 `packages/verify/core/corpus/canonical/vectors.json`（**只增不改**，改 = 升版本），Rust 侧必须逐条对上。对象里值为 `undefined` 的键视同不存在（与 `JSON.stringify` 的可选字段语义一致）；数组里的 `undefined` 拒绝。
+- **规范化算法**（评审 R10）：报告与语料比对一律走 **JCS 子集**（RFC 8785）：①对象键按 UTF-16 码元升序 ②数字按 ECMAScript `Number::toString` 形态输出（含 `1e+21`/`1e-7`，`-0` 归一为 `0`），NaN/Infinity 拒绝——即 JCS 原口径，不用"定点小数"限制③时间统一 RFC 3339 UTC 毫秒 ④字符串 NFC ⑤数组保序。TS 与 Rust 必须共用同一 serializer——TS 实现是 `packages/verify/core/src/canonical.ts`（`canonicalStringify`/`canonicalTimestamp`），跨实现向量在 `packages/verify/core/corpus/canonical/vectors.json`（**只增不改**，改 = 升版本），Rust 侧必须逐条对上。对象里值为 `undefined` 的键视同不存在（与 `JSON.stringify` 的可选字段语义一致）；数组里的 `undefined` 拒绝。**相对 RFC 8785 的三条有意偏离**（r10 F4，均写进 vectors 与测试）：①字符串先做 NFC 再转义（JCS 要求原样，但我们的材料来自 OCR/多语言文档，不归一同一句话就有两种哈希）②对象里 `undefined` 整键省略（JCS 未定义，不省略则"字段在内存里有但没值"会让哈希随实现漂）③只接受纯对象（Date/Map/类实例直接拒绝，JCS 对它们没有通用投影——把 `Date` 序列化成 `{}` 是伪装成功）。
 - `schema_fingerprint` **方言相关**：SQLite 按 `sqlite_master` 表名+规范化 DDL 元组排序哈希；PG 按 `information_schema.columns` 的 (table,column,type,notnull) 元组排序哈希。prepare 冻结的值只能与同方言 run 比对，跨方言比对一律 ERROR。
 - `payload_sha256`：整份报告除该字段外的规范化哈希（import 前可校验文件未被手改，评审 B3）。
 - 报告**不可变**：重跑生成新 `run_id`。
@@ -261,7 +263,8 @@ build_sha256 = H(engine || spec)          # 不含 footer 自身（含自身即�
 
 ## 6. 状态
 
-- v0.5：r9 评审 E1–E5 落文与修复（sql-pair 谓词侧键名/同族守卫、空批聚合对 NEEDS-MATERIAL、sql/count/exists 禁 agg、±hh 偏移归一、prepare P2 白名单与 schema 全量校验、`$vu:` 收窄、附件 sha256 进 spec、P3/P4 配置错误归 `error`）+ JCS canonical 落地实现与跨实现向量 + §1.6 prepare 五阶段规则表。**仍未冻结**。
+- **v1.0（冻结，2026-10-19）**：v0.5 之后并入 r10 评审 F1–F6（prepare sql 分支 `$vu:` 收窄、window 的 `±hh` 偏移归一、M13-1 拒 agent 型 + `sealed.review=false`、as_of 必由调用方给、canonical 拒非纯对象、数字口径改 ES 形态并写明三条相对 RFC 8785 的有意偏离）；引擎入口加契约版本守卫（1.0 引擎只跑 1.0 spec）；报告增 `spec_id` / `data_source` 两个可选自描述字段。**冻结**：`contract_version = "1.0"`、`corpus_version = "1.0"`；此后形状变更走 1.0→1.1 升版，不得静默改 1.0 内文。
+- v0.5：r9 评审 E1–E5 落文与修复（sql-pair 谓词侧键名/同族守卫、空批聚合对 NEEDS-MATERIAL、sql/count/exists 禁 agg、±hh 偏移归一、prepare P2 白名单与 schema 全量校验、`$vu:` 收窄、附件 sha256 进 spec、P3/P4 配置错误归 `error`）+ JCS canonical 落地实现与跨实现向量 + §1.6 prepare 五阶段规则表。
 - v0.4：评审 R7–R13 落文（CompareSpec 单一形状 + ε 规则 / 零匹配按型 / task 副作用统一 / JCS canonical + 方言相关指纹 / as_of 时间函数构造期拒绝）+ 实现缺口 a–f 修复（source 失败级联 ERROR、`$vu:` 命名空间、schema 漂移 ERROR、glob 根目录、无 assert 拒绝、witness 口径重写）。
 - v0.3：评审 302cb119 R1/R2/R3/R4 契约面落文（witness 语义表 / count from-sql 互斥 / attachments 新表裁定 / VuResult witness 类型强制）。
 - v0.2：已并入 fdc757f6 D0 快检三条（sql-pair 互斥 / 命令名统一 / 七型形状齐为冻结前置）与 302cb119 B1/B2/B3/B5 契约面（overall+severity / witness / footer+登记 / CompareSpec+as_of）。**未冻结**。

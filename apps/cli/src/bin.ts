@@ -530,7 +530,7 @@ export async function main(argv: string[]): Promise<number> {
     const mod = DOMAIN_MODULES[group];
     if (!mod) {
       // Help guidance: suggest closest match for unknown commands
-      const known = ["agent","research","produce","kb","skill","tree","node","task","rel","plugin","webui","db","doctor","config","job","patrol","project","mcp","llms","version","help"];
+      const known = ["agent","research","produce","kb","skill","tree","node","task","rel","plugin","webui","db","doctor","config","job","patrol","verify","project","mcp","llms","version","help"];
       const aliases: Record<string, string> = {
         database: "db", data: "db", sqlite: "db",
         knowledge: "kb", notes: "kb", notebook: "kb",
@@ -748,6 +748,13 @@ export function generateLlmsManifest(): string {
     ["job", "Batch scheduling", [
       ["job add <title> -- \"<cmd>\" [--every <min>]", "create scheduled job"],
       ["job tick", "run due jobs (drive with cron)"],
+    ]],
+    ["verify", "Spec validator (M13): material → spec → report", [
+      ["verify submit --title <t> --text <file|-> [--attach <f>]", "freeze material (text + attachments w/ sha256)"],
+      ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap>", "extract → translate → blind self-review → freeze spec"],
+      ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
+      ["verify list / report <run-id> / trace <spec-id> / export <spec-id>", "catalog, reports, construction trace, .yglverify.json"],
+      ["verify report import <report.json>", "import a sealed-run report (payload/binary/spec_version checks)"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [
       ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],

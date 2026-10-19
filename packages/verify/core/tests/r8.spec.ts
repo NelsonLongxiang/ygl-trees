@@ -32,7 +32,7 @@ afterAll(() => runner.close());
 
 function spec(vu: VerifyUnit[]): VerifySpec {
   return {
-    contract_version: "0.4",
+    contract_version: "1.0",
     spec_id: "spec_r8",
     spec_version: 1,
     verifier: { engine_version: "0.1.0", corpus_version: "1" },
@@ -202,7 +202,8 @@ describe("r9 E1–E4：谓词侧键、空批、agg 归属、偏移形态", () =>
   });
 
   it("E3：空批总额对总额 → NEEDS-MATERIAL（不是 PASS）", async () => {
-    const side = (batch: string) => ({ predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents", as: "total" }], where: { op: "and" as const, conditions: [{ col: "batch", op: "=" as const, value: batch }] } } });
+    // 批次属于扫描域（scan）而不是判据（where）：空批 = 域里没有行 → NEEDS-MATERIAL
+    const side = (batch: string) => ({ predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents", as: "total" }], scan: { op: "and" as const, conditions: [{ col: "batch", op: "=" as const, value: batch }] } } });
     const r = await runVerify(
       spec([unit({ id: "V1", checker: { type: "sql-pair", left: side("2099-01"), right: side("2099-01"), compare: { mode: "exact" } } })]),
       { runner },

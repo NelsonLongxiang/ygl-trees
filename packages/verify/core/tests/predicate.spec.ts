@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPredicate, runVerify, type QueryRunner, type Row } from "../src/engine";
+import { renderPredicate, renderScan, runVerify, type QueryRunner, type Row } from "../src/engine";
 import type { Predicate, VerifySpec, VerifyUnit } from "../src/contract";
 
 function fakeRunner(tables: Record<string, Row[]>, sqlSink?: string[]): QueryRunner {
@@ -27,7 +27,7 @@ function unit(id: string, checker: VerifyUnit["checker"]): VerifyUnit {
 
 function spec(vu: VerifyUnit[], extra: Partial<VerifySpec> = {}): VerifySpec {
   return {
-    contract_version: "0.4",
+    contract_version: "1.0",
     spec_id: "spec_predicate",
     spec_version: 1,
     title: "predicate",
@@ -50,12 +50,19 @@ const pred: Predicate = {
 };
 
 describe("谓词 AST 渲染（同源生成）", () => {
-  it("find 与 scope 共享逐字相同的 WHERE 子句", () => {
+  it("find 含判据、scope 只含扫描域（rows_scanned 是看了多少行）", () => {
     const r = renderPredicate(pred);
     expect(r.findSql).toContain("FROM bills WHERE");
-    expect(r.scopeSql).toContain("FROM bills WHERE");
-    const whereOf = (sql: string) => sql.slice(sql.indexOf(" WHERE "));
-    expect(whereOf(r.scopeSql)).toBe(whereOf(r.findSql));
+    // 判据（amount < 0）只进 find：干净表 find 命中 0 行不等于「没扫到数据」
+    expect(r.scopeSql).toBe("SELECT count(*) AS n FROM bills");
+    // 扫描域（scan）进两侧、且逐字同渲染器
+    const base = { from: "bills", select: ["id"], where: { op: "and" as const, conditions: [{ col: "amount", op: "<" as const, value: 0 }] } };
+    const withScan = renderPredicate({ ...base, scan: { op: "and", conditions: [{ col: "batch", op: "=", value: "2026-07" }] } });
+    expect(withScan.scopeSql).toBe("SELECT count(*) AS n FROM bills WHERE (batch = '2026-07')");
+    expect(withScan.findSql).toBe("SELECT id FROM bills WHERE ((batch = '2026-07') AND (amount < 0))");
+    // 域与判据同一渲染器：差异只在「有没有判据」
+    expect(renderScan(base).whereSql).toBe(" WHERE (amount < 0)");
+    expect(renderScan({ ...base, scan: { op: "and", conditions: [{ col: "batch", op: "=", value: "2026-07" }] } }).scanSql).toBe(" WHERE (batch = '2026-07')");
   });
 
   it("AND/OR/NOT 嵌套渲染成括号分组", () => {

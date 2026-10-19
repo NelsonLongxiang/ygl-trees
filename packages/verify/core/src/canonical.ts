@@ -36,6 +36,12 @@ export function canonicalStringify(value: unknown): string {
       if (Array.isArray(value)) {
         return `[${value.map((v) => canonicalStringify(v)).join(",")}]`;
       }
+      // r10 F6：只序列化"纯对象"。Date/Map/类实例走 Object.keys 会得到 "{}"，
+      // 那是把"没听懂"伪装成"空对象"——直接拒绝比静默产出错哈希强。
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null) {
+        throw new Error(`canonical JSON rejects non-plain object (${Object.prototype.toString.call(value)})`);
+      }
       const obj = value as Record<string, unknown>;
       const keys = Object.keys(obj).sort();
       const parts: string[] = [];

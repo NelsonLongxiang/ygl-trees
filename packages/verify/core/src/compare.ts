@@ -49,7 +49,8 @@ function toEpochMs(v: unknown): number | null {
     const t = v.trim();
     // '2026/07/01'（非 ISO）与 '2026-07-01 10:00:00'（有时间无时区，W1b）一律不收
     if (!ISO_DATE_ONLY.test(t) && !ISO_DATETIME_TZ.test(t)) return null;
-    const ms = Date.parse(v);
+    // r10 F2：ISO_DATETIME_TZ 收 ±hh 但 Date.parse("+08")=NaN —— 先补成 ±hh:mm
+    const ms = Date.parse(withOffsetMinutes(t));
     return Number.isFinite(ms) ? ms : null;
   }
   return null;

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.4",
+  "contract_version": "1.0",
   "spec_id": "spec_boundary-tolerance-inclusive",
   "spec_version": 1,
   "verifier": {
