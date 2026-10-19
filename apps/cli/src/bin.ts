@@ -134,6 +134,7 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
   prepare <material-id>                extract → blind self-review → freeze spec (rc=0 only when ready)
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
+  register <sealed-binary>            register a sealed build (footer chain → registrations/ + binaries/)
   list | report <run-id> | trace <spec-id> | export <spec-id>
   report import <report.json>          import a sealed-run report (payload/binary/version checks)
   archive <run-id|spec-id> | archive verify <file>   take-away archive (default after run) / re-verify chain
@@ -762,6 +763,7 @@ export function generateLlmsManifest(): string {
       ["verify submit --title <t> --text <file|-> [--attach <f>]", "freeze material (text + attachments w/ sha256)"],
       ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap>", "extract → translate → blind self-review → freeze spec"],
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
+      ["verify register <sealed-binary>", "register a sealed yglverify build (footer chain → registrations/ + binaries/)"],
       ["verify list / report <run-id> / trace <spec-id> / export <spec-id>", "catalog, reports, construction trace, .yglverify.json"],
       ["verify report import <report.json>", "import a sealed-run report (payload/binary/spec_version checks)"],
       ["verify archive <run-id|spec-id> / archive verify <file>", "archive bundle (report+spec+materials) / recompute the full hash chain"],

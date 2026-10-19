@@ -25,8 +25,9 @@ import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
+import { binaryKey, readSealedBinary } from "./sealed-binary";
 
-const KINDS = ["materials", "specs", "reports", "registrations"] as const;
+const KINDS = ["materials", "specs", "reports", "registrations", "binaries"] as const;
 
 function paths(env: Env) {
   const root = join(env.home, "verify");
@@ -37,6 +38,7 @@ function paths(env: Env) {
     specs: join(root, "specs"),
     reports: join(root, "reports"),
     registrations: join(root, "registrations"),
+    binaries: join(root, "binaries"),
   };
 }
 
@@ -498,7 +500,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         }
         const bin = report.verifier.binary_sha256;
-        const regFile = join(p.registrations, `${bin ?? "unsigned"}.json`);
+        const regFile = join(p.registrations, `${bin ? binaryKey(bin) : "unsigned"}.json`);
         if (bin) {
           if (!existsSync(regFile)) problems.push(`unknown verifier: binary ${String(bin).slice(0, 16)}… has no build registration`);
           else {
@@ -513,10 +515,37 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
           return 1;
         }
+        // 封包报告自带规范字节：注册过的二进制把内嵌 spec 落回 specs/，否则归档/导出
+        // 会因为「spec 不在工作区」无解——报告 + 二进制是自描述包，工作区只是缓存。
+        let specRestored: string | null = null;
+        if (bin) {
+          const key = binaryKey(bin);
+          const binPath = join(p.binaries, `${key}.bin`);
+          const specId = report.spec_id;
+          const specPath = specId ? join(p.specs, specId, "spec.json") : null;
+          if (binPath && existsSync(binPath) && specPath && !existsSync(specPath)) {
+            try {
+              const embedded = readSealedBinary(readFileSync(binPath));
+              mkdirSync(dirname(specPath), { recursive: true });
+              writeFileSync(specPath, embedded.spec_text, "utf8");
+              specRestored = specPath;
+            } catch (e: any) {
+              problems.push(`registered binary ${short(key)} is unreadable: ${e?.message || e}`);
+            }
+          }
+        }
+        if (problems.length) {
+          if (ctx.json) console.log(JSON.stringify({ imported: false, problems }));
+          else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
+          return 1;
+        }
         const stored = join(p.reports, `${report.run_id ?? `imported_${short(sha256(readFileSync(file)))}`}.json`);
         writeJson(stored, report);
-        if (ctx.json) console.log(JSON.stringify({ imported: true, run_id: report.run_id, report_path: stored }));
-        else out(ctx, `  ✓ report imported: ${report.run_id} → ${stored}`);
+        if (ctx.json) console.log(JSON.stringify({ imported: true, run_id: report.run_id, report_path: stored, spec_restored: specRestored }));
+        else {
+          out(ctx, `  ✓ report imported: ${report.run_id} → ${stored}`);
+          if (specRestored) out(ctx, `    spec restored from the sealed binary: ${specRestored}`);
+        }
         return 0;
       }
       const file = join(p.reports, `${target}.json`);
@@ -613,6 +642,68 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
     }
 
+    case "register": {
+      const file = rest[0];
+      if (!file) {
+        bad(ctx, "usage: verify register <sealed-binary> [--no-copy]");
+        return 2;
+      }
+      if (!existsSync(file)) {
+        bad(ctx, `sealed binary not found: ${file}`);
+        return 1;
+      }
+      const bytes = readFileSync(file);
+      let sealed: ReturnType<typeof readSealedBinary>;
+      try {
+        sealed = readSealedBinary(bytes);
+      } catch (e: any) {
+        bad(ctx, `not a sealed yglverify binary: ${e?.message || e}`);
+        return 1;
+      }
+      const spec = sealed.spec as VerifySpec;
+      const key = binaryKey(sealed.binary_sha256);
+      const regPath = join(p.registrations, `${key}.json`);
+      const reg = {
+        binary_sha256: sealed.binary_sha256,
+        binary_key: key,
+        spec_id: spec.spec_id,
+        spec_version: spec.spec_version,
+        engine_version: sealed.footer.engine_version,
+        corpus_version: sealed.footer.corpus_version,
+        build_sha256: sealed.footer.build_sha256,
+        spec_sha256: sealed.footer.spec_sha256,
+        platform: process.platform,
+        arch: process.arch,
+        size: bytes.length,
+        registered_at: new Date().toISOString(),
+      };
+      writeJson(regPath, reg);
+      let copied: string | null = null;
+      if (args.flags["no-copy"] !== true) {
+        copied = join(p.binaries, `${key}.bin`);
+        writeFileSync(copied, bytes);
+      }
+      if (ctx.json) {
+        console.log(
+          JSON.stringify({
+            registered: true,
+            binary_sha256: sealed.binary_sha256,
+            registration: regPath,
+            binary_path: copied,
+            spec_id: reg.spec_id,
+            spec_version: reg.spec_version,
+            engine_version: reg.engine_version,
+            corpus_version: reg.corpus_version,
+          }),
+        );
+      } else {
+        out(ctx, `  ✓ registered ${short(key)} — spec ${reg.spec_id} v${reg.spec_version}, engine ${reg.engine_version}`);
+        out(ctx, `    registration: ${regPath}${copied ? `
+    binary:       ${copied}` : ""}`);
+      }
+      return 0;
+    }
+
     case "trace": {
       const specId = rest[0];
       if (!specId) {
@@ -659,7 +750,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `unknown verify action: ${action}`);
         return 2;
       }
-      out(ctx, "usage: verify submit|prepare|run|list|report|report import|trace|export|archive|archive verify|self-check");
+      out(ctx, "usage: verify submit|prepare|run|register|list|report|report import|trace|export|archive|archive verify|self-check");
       return 0;
     }
   }

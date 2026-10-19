@@ -281,6 +281,8 @@ footer = { magic:"YGLVF1", spec_offset, spec_length, spec_sha256,
 - `run` 解析顺序：先看自身是否封包 → 封包且给了 `--spec` 一律 **rc=2**（改规范必须重打二进制）；封包且没给 `--spec` 用内嵌规范，报告 `verifier.mode="sealed"`、`verifier.binary_sha256 = "sha256:" + H(整个封包文件)`；开放构建仍可 `--spec`（`mode="open"`、无 `binary_sha256`）。
 - 篡改检测 fail-closed：spec 字节与 `spec_sha256` 不符、或 `engine||spec` 与 `build_sha256` 不符 → **rc=1 点名**；尾部结构是封包但校验不过时**不得**当开放构建继续跑（`looks_sealed` 判别）。
 - `self-check` 在封包构建上多打一行 `sealed-spec: ok (<spec_id> v<n>, build <build_sha256>, corpus <version>)`；开放构建打 `sealed-spec: skip (open build)`。
+- `verify register <sealed-binary>` 解析 footer 并复算两条哈希（spec_sha256 / build_sha256），写 `registrations/<key>.json`（spec_id/version、engine、corpus、platform、size）与 `binaries/<key>.bin` 副本；`<key>` 是去掉 `sha256:` 前缀的十六进制（冒号在 Windows 文件名非法）。
+- `verify report import` 在登记命中时，若 `specs/<spec_id>/spec.json` 不在工作区，就从 `binaries/<key>.bin` 的封包里恢复内嵌 spec（报告 + 二进制是自描述包，工作区只是缓存）；随后 `verify archive --with binary` 可把登记/二进制一起收进归档并重算全链。
 - 签名（ed25519）与带外登记仍未实现，属 M13-1b 收尾项。
 
 ## 6. 状态

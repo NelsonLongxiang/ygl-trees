@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { canonicalStringify } from "../../../verify/core/src/canonical";
 import type { AsOfRef, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { payloadHash } from "../../../verify/core/src/engine";
+import { binaryKey } from "./sealed-binary";
 import { readZipStore, writeZipStore, type ZipEntry } from "./zip-store";
 
 export const ARCHIVE_FORMAT_VERSION = "1.0";
@@ -54,8 +55,9 @@ const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 /** 归档文件名语法：yglverify-<domain>-<slug>-v<n>-<utcstamp>-r<run8>.yglverify.zip */
 export const ARCHIVE_NAME_RE = /^yglverify-([a-z][a-z0-9]{1,15})-([a-z0-9]+(?:-[a-z0-9]+)*)-v(\d{1,4})-(\d{8}T\d{6}Z)-r([0-9a-f]{8})\.yglverify\.zip$/;
 
-export function slugifyTitle(title: string, specId: string): string {
-  const folded = title
+export function slugifyTitle(title: string | undefined, specId: string): string {
+  // 最小 spec 可以没有 title（契约里 title/domain 都是可选）：名字退化到 spec_id，不许崩
+  const folded = String(title ?? "")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -73,11 +75,11 @@ export function utcStamp(iso: string): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
-export function archiveFileName(input: { domain: string; title: string; specId: string; specVersion: number; created: string; runId: string }): string {
+export function archiveFileName(input: { domain?: string | null; title?: string | null; specId: string; specVersion: number; created: string; runId: string }): string {
   const domain = String(input.domain || "general").toLowerCase().replace(/[^a-z0-9]/g, "");
   const safeDomain = /^[a-z][a-z0-9]{1,15}$/.test(domain) ? domain : "general";
   const run8 = input.runId.replace(/^run_/, "").replace(/[^0-9a-f]/g, "").slice(0, 8) || "00000000";
-  return `yglverify-${safeDomain}-${slugifyTitle(input.title, input.specId)}-v${input.specVersion}-${utcStamp(input.created)}-r${run8}${ARCHIVE_EXT}`;
+  return `yglverify-${safeDomain}-${slugifyTitle(input.title ?? undefined, input.specId)}-v${input.specVersion}-${utcStamp(input.created)}-r${run8}${ARCHIVE_EXT}`;
 }
 
 /** 包内单段文件名消毒：ASCII 化、保留 sha 前缀、Windows 保留名规避。 */
@@ -211,9 +213,10 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
   if (withKinds.includes("binary")) {
     const binSha = report.verifier.binary_sha256;
     if (!binSha) throw new Error("cannot archive binary: report has no verifier.binary_sha256 (open-mode report)");
-    const reg = join(root, "registrations", `${binSha}.json`);
+    const key = binaryKey(binSha);
+    const reg = join(root, "registrations", `${key}.json`);
     if (existsSync(reg)) push("verifier/registration.json", readFileSync(reg), "registration");
-    const bin = join(root, "binaries", `${binSha}.bin`);
+    const bin = join(root, "binaries", `${key}.bin`);
     if (existsSync(bin)) push("verifier/binary/yglverify", readFileSync(bin), "binary");
     if (!existsSync(reg) && !existsSync(bin)) throw new Error(`cannot archive binary ${short(binSha)}: neither registration nor binary bytes in workspace`);
   }
