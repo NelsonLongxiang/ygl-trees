@@ -440,8 +440,6 @@ export class DB {
     if (useLock && fs.existsSync(lockDir)) {
       let holder = "unknown";
       try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
-      // Same-process re-entry backstop (0.65.0 self-deadlock lesson).
-      const mine = holder === String(process.pid);
       // PID liveness (P1 cold-user report): the 15-minute mtime window was a
       // blunt proxy — on Windows the exit-time rmSync can silently fail (EBUSY
       // from an un-released handle), leaving an orphaned lock whose mtime is
@@ -450,36 +448,61 @@ export class DB {
       //   signal 0 = pure existence check (does NOT kill the process)
       //   EPERM   = exists but permission-denied (Windows ACL) — still alive
       //   ESRCH   = no such process — dead, steal the lock
-      let holderAlive: boolean;
-      if (mine) holderAlive = false; // our own stale entry — always steal
-      else {
+      const holderAlive = (pid: string): boolean => {
+        if (pid === String(process.pid)) return false; // our own stale entry
         try {
-          process.kill(Number(holder), 0);
-          holderAlive = true;
+          process.kill(Number(pid), 0);
+          return true;
         } catch (e: any) {
-          holderAlive = e.code === "EPERM"; // EPERM = alive (Windows), ESRCH = dead
+          return e.code === "EPERM"; // EPERM = alive (Windows), ESRCH = dead
         }
-      }
-      if (!holderAlive) {
+      };
+      if (!holderAlive(holder)) {
         // Orphaned lock (holder crashed / exit cleanup failed) — steal now.
         try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
       } else {
-        // 0.79.1 (R297 user report): the old hint guessed "serve? webui
-        // dashboard" — but serve never takes the write lock, so the guess
-        // sent users to kill the wrong process. The lock dir now carries a
-        // `cmd` file (written at acquisition) naming the real holder.
-        let holderCmd = "";
-        try { holderCmd = fs.readFileSync(path.join(lockDir, "cmd"), "utf8").trim(); } catch { /* */ }
-        throw new Error(
-          `database is locked by another process (pid: ${holder}).\n` +
-          (holderCmd
-            ? `  holder command: ${holderCmd}\n`
-            : `  the holder is almost certainly a parallel CLI session (serve never takes the write lock);\n`) +
-          `  read commands still work. The lock self-heals once pid ${holder} exits —\n` +
-          `  simply retry after it finishes.\n` +
-          `  to clear manually:  ygl-trees db unlock   (checks pid liveness, refuses live holders)\n` +
-          `  last resort:         rmdir "${lockDir}"`
-        );
+        // 0.94 lock-family hardening (task 68d051ae71, incident family:
+        // 0.83 DB.close flake · 0.85 终审 65s · 0.90.1 P1-2 · 评审线 02:40
+        // pid-49244 撞锁): busy_timeout (set below) only helps AFTER the
+        // SQLite handle exists — the app-level .ygllock is checked BEFORE
+        // that, so a short parallel writer (1-3s CLI command) failed this
+        // open instantly. Bounded wait instead: transient holders clear
+        // within the window and this open proceeds transparently; only a
+        // holder that outlives the window surfaces as the error below.
+        // Sync sleep via Atomics.wait — same blocking-wait contract as
+        // busy_timeout, fine at CLI construction time.
+        const retryMs = (() => {
+          const n = Number(process.env.YGL_LOCK_RETRY_MS);
+          return Number.isFinite(n) && n >= 0 ? n : 8000;
+        })();
+        const deadline = Date.now() + retryMs;
+        let live = true;
+        while ((live = fs.existsSync(lockDir) && holderAlive(holder)) && Date.now() < deadline) {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+        }
+        if (live && fs.existsSync(lockDir)) {
+          // 0.79.1 (R297 user report): the old hint guessed "serve? webui
+          // dashboard" — but serve never takes the write lock, so the guess
+          // sent users to kill the wrong process. The lock dir carries a
+          // `cmd` file (written at acquisition) naming the real holder.
+          let holderCmd = "";
+          try { holderCmd = fs.readFileSync(path.join(lockDir, "cmd"), "utf8").trim(); } catch { /* */ }
+          throw new Error(
+            `database is locked by another process (pid: ${holder}, waited ${retryMs}ms).\n` +
+            (holderCmd
+              ? `  holder command: ${holderCmd}\n`
+              : `  the holder is almost certainly a parallel CLI session (serve never takes the write lock);\n`) +
+            `  read commands still work. The lock self-heals once pid ${holder} exits —\n` +
+            `  simply retry after it finishes.\n` +
+            `  to clear manually:  ygl-trees db unlock   (checks pid liveness, refuses live holders)\n` +
+            `  last resort:         rmdir "${lockDir}"`
+          );
+        }
+        // holder exited (or its exit cleanup removed the dir) — steal any
+        // residual dir and take the lock below.
+        if (fs.existsSync(lockDir)) {
+          try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
+        }
       }
     }
     // acquire the lock (best-effort; crash cleanup via stale detection above)

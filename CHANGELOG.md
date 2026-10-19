@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.94.0（2026-10-19）锁家族硬化 + 产品论纲落盘（三树主 × 一协议）
+
+- **open 阶段锁重试层（锁家族终章，68d051ae71）**：`.ygllock` 活持有者原先在 DB 构造期瞬时失败（busy_timeout 只护 SQLite 句柄建立后的写等待，护不到 open 阶段——0.83 DB.close 65s / 0.85 终审 65s / 0.90.1 P1-2 同族多例）。现构造器有界等待：活持有者 → `YGL_LOCK_RETRY_MS`（默认 8000ms，0=禁用回旧行为）deadline 内 250ms 轮询；等满仍活 → informative throw（waited Nms + holder cmd + 解锁指引）；持有者已死 → 立即清残留锁落穿拿锁。CLI 排队语义与 busy_timeout 对齐；锁重试 spec ×4（transient 等待/stubborn 超时偷不死锁/死持有者即时偷/RETRY_MS=0 逃生口）。
+- **产品论纲落盘（scenarios.md 重构）**：目录升级「一协议 × 三树主 × 六场景」——三树主表（业务树→ops-patterns 技能 + .157 八树锚点 / 仓库树→repo-research 技能 + mp-skills 首例 / 能力树→human-capability 探针 + human-agent-eng 锚点）+ 协议串联段（场景 1-4=协议四段，5/6 横切）；新树主准入三件套（入口技能/实战锚点/协议接缝说明）。
+- **毕业协议文档化（docs/graduation-protocol.md）**：ygl 断言（supported+证据齐）→ 执行系统 SOP → 上岗的接缝契约——ygl 侧只做研究与判定（artifact kind=sop + `source add --tags sop` + `rel executes` 词汇），执行归执行系统（.157 intention_parser→本体→sop-renderer→Odoo）；「replace-esm 抵制」裁定成文。
+- **场景技能 ×2（skills/ 随包）**：ygl-trees-repo-research（主推②：外部项目建构成作者意图树——意图/现状/机制三层断言 + t5 未来节点可回测预测）；ygl-trees-ops-patterns（主推①：自动运维三件套——采纳监测/预测回测/patrol 边界巡检，从 .157 ops-handbook 实战提炼）。
+- 测试：lock-retry.spec ×4；unit 258 / demo 125 / contract 100。
+
 ## 0.93.0（2026-10-19）业务接线批（.157 ops-handbook 借鉴 + 0.93 立项 m10310）
 
 - **遥测门（T1，cond op=telemetry）**：节点条件可绑定事件遥测——`node cond add <key> --name <n> --op telemetry --value "kb.add:7d>=3"`（kind[:窗口] 比较符 数量）；canUnlock 注入 `telemetry:<kind>[:<win>]` 计数袋（窗口 d/h/s 换算，events 表计数）；求值失闭（count 非 number 或语法不匹配→false）。业务语义：「这条 SOP 本周被知识沉淀 ≥3 次」成为可机判的解锁条件。
