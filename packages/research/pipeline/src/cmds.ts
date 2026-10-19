@@ -43,10 +43,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const subAction = rest[0];
 
   // -- project resolution (R16: flag > env > session > global; strict gate) --
-  // R16.3 exemption: `claim calibration --all` is workspace-scoped (project may
-  // be null) — the strict gate must not block the one research subcommand that
-  // legitimately spans projects. predict audit --all stays project-scoped.
-  const workspaceWide = subAction === "calibration" && args.flags.all === true;
+  // R16.3 exemption: `claim calibration --all` and `predict list --all` are
+  // workspace-scoped (project may be null) — the strict gate must not block
+  // the research subcommands that legitimately span projects.
+  // predict audit --all stays project-scoped (0.85 review ruling).
+  const workspaceWide =
+    args.flags.all === true &&
+    (subAction === "calibration" || (sub === "predict" && subAction === "list"));
   let project: any;
   const sel = resolveProject(
     store.db,
@@ -885,10 +888,18 @@ if (subAction === "list" || subAction === undefined) {
             text: clip(c.text, 60),
             status: c.status,
             confidence: c.confidence,
+            // 0.91.0 单T2: channel joins the projection — it is the settlement
+            // ledger's classification axis; hiding it here leaves the ledger
+            // half-blind (null explicit, snake_case frozen).
+            channel: (c as any).channel ?? null,
             sup: (c.claimEvidence ?? []).filter((ce) => ce.stance === "supports").length,
             ref: (c.claimEvidence ?? []).filter((ce) => ce.stance === "refutes").length,
           }));
-          table(ctx, rows, ["id", "text", "status", "conf", "sup", "ref"], ["id", "text", "status", "confidence", "sup", "ref"]);
+          if (ctx.json) {
+            console.log(JSON.stringify(rows, null, 2));
+            return 0;
+          }
+          table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref"], ["id", "text", "status", "confidence", "channel", "sup", "ref"]);
           return 0;
         })
         .catch((e: any): number => {
@@ -908,10 +919,20 @@ if (subAction === "list" || subAction === undefined) {
     // (`outcome=1|0, brier=…, settler=…`) and registered channel. The
     // calibration curve becomes SQL-direct: no re-parsing of prose.
     if (subAction === "list") {
-      const claims = store.db.all(
-        `SELECT c.id, c.text, c.status, c.created, c.channel FROM claims c
-          WHERE c.project_id=? AND c.text LIKE '[预测·%' ORDER BY c.created`,
-        [project.id]
+      // --all (gate-exempted above) = workspace scan, matching calibration
+      // --all semantics; without it, single-project view (settled hidden).
+      const ws = args.flags.all === true;
+      const claims = (
+        ws
+          ? store.db.all(
+              `SELECT c.id, c.text, c.status, c.created, c.channel FROM claims c
+                WHERE c.text LIKE '[预测·%' ORDER BY c.created`
+            )
+          : store.db.all(
+              `SELECT c.id, c.text, c.status, c.created, c.channel FROM claims c
+                WHERE c.project_id=? AND c.text LIKE '[预测·%' ORDER BY c.created`,
+              [project.id]
+            )
       ) as any[];
       if (!claims.length) {
         if (ctx.json) console.log("[]");
@@ -945,7 +966,7 @@ if (subAction === "list" || subAction === undefined) {
         return 0;
       }
       const visible = args.flags.all ? rows : rows.filter((r: any) => r.outcome === "未结算");
-      head(ctx, `predict list — ${project.name} (${visible.length}/${rows.length}${rows.length !== visible.length ? " · 已结案隐藏 (--all)" : ""})`);
+      head(ctx, `predict list — ${ws ? "workspace" : project.name} (${visible.length}/${rows.length}${rows.length !== visible.length ? " · 已结案隐藏 (--all)" : ""})`);
       table(ctx, visible, ["claim", "deadline", "outcome", "brier", "settler", "channel"], ["claim_id", "deadline", "outcome", "brier", "settler", "channel"]);
       const noChannel = rows.filter((r: any) => r.outcome === "未结算" && !r.channel);
       if (noChannel.length) {

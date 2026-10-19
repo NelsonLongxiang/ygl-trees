@@ -225,6 +225,23 @@ echo "── contract 8: 0.90 predict list 投影（channel/outcome/三段式 no
 PC90=$($Y research claim add "[预测·14天] 2027-01-01 前 审计投影——npm 版本 ≥99" --channel review-rounds --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.id||j.row?.id||'')})")
 PLJ=$($Y research predict list --json 2>/dev/null)
 case "$PLJ" in *"$PC90"*'"outcome": "未结算"'*'"channel": "review-rounds"'*) pass "predict list JSON 投影（channel + outcome）";; *) fail "predict list projection" "$PLJ";; esac
+# 单T1 (direct-ef742b29): predict list --all is workspace-scoped — unselected rc=0.
+# audit home has 2 projects (audit + audit-b deleted only AFTER contract 7) —
+# but audit-b is gone by now, so seed a throwaway second project to make the
+# unselected state genuinely ambiguous, then clear ALL selection keys.
+$Y project new audit-t2 >/dev/null 2>&1
+$Y db sql "DELETE FROM meta WHERE key LIKE 'current_project@%'" >/dev/null 2>&1
+PLW=$($Y research predict list --all --json 2>/dev/null); PLC=$?
+if [ "$PLC" = "0" ]; then
+  case "$PLW" in *"$PC90"*) pass "predict list --all 工作区豁免（未选择 rc=0 跨项目可见）";; *) fail "predict list --all workspace" "$PLW";; esac
+else
+  fail "predict list --all rc" "rc=$PLC"
+fi
+# 单T2: claim list projection carries channel (explicit, null or set).
+$Y project use audit >/dev/null 2>&1
+CLJ=$($Y research claim list --json 2>/dev/null)
+case "$CLJ" in *'"channel": "review-rounds"'*|*'"channel": null'*) pass "claim list 投影含 channel";; *) fail "claim list channel" "$CLJ";; esac
+$Y db sql "DELETE FROM projects WHERE name='audit-t2'" >/dev/null 2>&1
 $Y db sql "DELETE FROM claims WHERE id='$PC90'" >/dev/null 2>&1
 
 rm -rf "$WS"

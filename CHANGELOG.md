@@ -9,7 +9,9 @@
 - **用法退出码契约补齐（运营线冷跑 direct-f4357a11）**：18 个命令组全量探针发现 6 个组未知子命令返回 rc=0（research/tree/node/doctor/mcp/llms——契约规定用法错误 rc=2）；bare 组调用（无子命令）保持用法展示 rc=0 不变。usage-rc.spec ×3 锁面。
 - **场景权威目录（task 1c929e9cdc，用户裁定四建议全采）**：docs/scenarios.md 六场景标准走法（长周期工程迭代/预测回测/证据先行调研/知识复利/多 agent 协作治理/成长采纳追踪），每场景五件套：入口→最小命令序列→出口（落账）→验收判据→常见反模式，全部带 demo §N 交叉引用或工作区实战标注（诚实区分）。产品面索引三处落位：`--help` 头部指引行、`agent brief` scenarios 行、`llms` scenarios 节+docs 索引首行。
 - **MCP serverInfo 版本戳修复**：`initialize` 应答硬编码 "0.69.0"（目录提交硬伤）——改为 bin.ts 运行时传入 appVersion()，spec 断言与 package.json 一致。
-- 约束（监督席）：0.91 全批禁止重放/清洗/回填 events 表（首份校准曲线数据源完整性）；分支冻结窗口外开发，合并/发布压到 10-19 15:00 基线快照之后。
+- **predict list --all 工作区豁免（评审线晨单 direct-ef742b29 T1）**：`--all` 落到 R16 严格门禁的豁免面（与 calibration --all 同构）——多项目未选择的 `predict list --all` 原 rc=2 ambiguous，阻塞首份校准曲线结算；现 rc=0 工作区扫描。不带 `--all` 单项目作用域 fail-closed 行为不变（spec 双断言）。
+- **claim list 投影补 channel（单T2）**：claims 表 v11 有 channel 但 `claim list` 投影不见（结算台账的分类轴半盲）；现 rows 显式携带 `channel`（null 显式，snake_case 冻结），--json 直出数组、人类表加列。
+- 约束（监督席）：0.91 全批禁止重放/清洗/回填 events 表（首份校准曲线数据源完整性）；分支冻结窗口外开发，合并/发布压到 10-19 15:00 基线快照之后。测试：emit-postcommit ×4 + usage-rc ×3 + predict-list ×6（+T1/T2）→ 单测 232；contract 96。
 
 ## 0.90.1（2026-10-18）WebUI 评审修复批（review direct-a35d58ae：P1×3 + P2×4 + P3×3）
 

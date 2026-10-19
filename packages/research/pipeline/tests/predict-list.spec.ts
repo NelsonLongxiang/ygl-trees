@@ -69,6 +69,40 @@ describe.skipIf(!HAS_BIN)("0.90 predict list projection", () => {
     expect(row.horizon).toBe("14天");
   });
 
+  // 0.91.0 单T1 (direct-ef742b29): predict list --all is workspace-scoped —
+  // the R16 strict gate must exempt it exactly like calibration --all, or a
+  // multi-project workspace without a selection gets rc 2 (settlement blocked).
+  it("predict list --all spans the workspace (unselected multi-project → rc 0)", () => {
+    run(["project", "new", "beta"]);
+    const addB = jrun(["research", "claim", "add", "[预测·7天] 2027-02-01 前 beta 指标", "--json", "--channel", "manual", "-p", "beta"]);
+    expect(addB.rc).toBe(0);
+    const idB = addB.j?.id ?? addB.j?.row?.id;
+    // clear ALL selection keys → bare shell (session keys + global)
+    const d = db();
+    d.prepare("DELETE FROM meta WHERE key LIKE 'current_project@%' OR key = 'current_project'").run();
+    d.close();
+    const list = run(["research", "predict", "list", "--all", "--json"]);
+    expect(list.rc).toBe(0);
+    const rows = JSON.parse(list.stdout);
+    expect(Array.isArray(rows)).toBe(true);
+    const ids = rows.map((x: any) => x.claim_id);
+    expect(ids).toContain(idB); // beta row visible with no selection at all
+    // and a plain project-scoped call without selection still fails closed
+    const noAll = run(["research", "predict", "list", "--json"]);
+    expect(noAll.rc).toBe(2);
+  });
+
+  // 0.91.0 单T2: claim list projection carries channel (null explicit).
+  it("claim list projection includes channel (null when unset)", () => {
+    const list = jrun(["research", "claim", "list", "--json", "-p", "alpha"]);
+    expect(list.rc).toBe(0);
+    const rows = list.j as any[];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect("channel" in r).toBe(true);
+    const channeled = rows.find((r) => r.channel === "npm-registry");
+    expect(channeled).toBeTruthy();
+  });
+
   it("parses the settlement note tail into brier + settler (outcome 1)", () => {
     const e = jrun(["research", "evidence", "add", sidShared, "--quote", "spec settle quote", "--json", "--note", "outcome=1, brier=0.0225, settler=dsh/ae07421e", "-p", "alpha"]);
     const eid = e.j?.id ?? e.j?.row?.id;
