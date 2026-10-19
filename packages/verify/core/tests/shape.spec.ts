@@ -51,10 +51,10 @@ function assertShape(file: string, sample: unknown) {
   expect(lines).toBe(readFileSync(path, "utf8"));
 }
 
-describe("契约形状守卫：spec/report 字段集合冻结（contract 1.0）", () => {
+describe("契约形状守卫：spec/report 字段集合冻结（contract 1.1）", () => {
   it("VerifySpec 形状与冻结快照一致", () => {
     const spec: VerifySpec = {
-      contract_version: "1.0",
+      contract_version: "1.1",
       spec_id: "spec_shape0001",
       spec_version: 1,
       title: "shape sample",
@@ -88,7 +88,7 @@ describe("契约形状守卫：spec/report 字段集合冻结（contract 1.0）"
     db.exec("CREATE TABLE bills(id TEXT, amount_cents INTEGER); INSERT INTO bills VALUES ('A',100);");
     db.close();
     const spec: VerifySpec = {
-      contract_version: "1.0",
+      contract_version: "1.1",
       spec_id: "spec_shape0002",
       spec_version: 1,
       title: "shape sample report",

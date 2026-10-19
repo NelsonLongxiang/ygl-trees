@@ -298,6 +298,7 @@ review（agent 型）与 fact 型同样有可验收形状，不是"再问一次�
 - 每个 ygl-trees 版本 = 一次**冻结语料快照** + G2/G3/G4 全量跑（不按日历排期）。
 - 语料**只增不改**：已冻结案例的文件内容是否定不得的（改了就再也证明不了旧版本行为）；要改 = 升 `corpus_version` 并在 CHANGELOG 记差异。
 - `contract_version` 钉 `1.0` 时同时钉 `corpus_version`；此后二者各自独立自增，报告里两个版本号都记。
+  （2026-10-20 起二者均为 `1.1`：contract 1.1 是封包签名身份字段，corpus 1.1 是 33 份 spec 随契约升版重铸。）
 - 时间字面量纪律（W1b）：`window` 只接受「纯日期」或「带时区的 datetime」；`'2026-07-01 10:00:00'` 这类无时区时间戳构造期 ERROR（否则 Date.parse 按本机时区解释，换台机器窗口就漂）。
 - 真实网关凭证在 M13-1b（封包 fact-only 闭环）之前**不接**：review/prepare 层的模型调用一律走注入接口，测试用假 runner。
 
@@ -317,9 +318,11 @@ build_sha256 = H(engine || spec)          # 不含 footer 自身（含自身即�
 **1.0 实现形态（Rust `yglverify`，2026-10-20）**——上面是语义布局，实际字节是：
 
 ```
-[engine 字节][spec json][footer json][footer_len: u32 LE]
-footer = { magic:"YGLVF1", spec_offset, spec_length, spec_sha256,
-           build_sha256, engine_version, corpus_version }
+[engine 字节][spec json (JCS)][footer json (JCS)][footer_len: u32 LE]
+footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
+           spec_sha256, engine_sha256, build_sha256,
+           engine_version, corpus_version,
+           sig_alg:"ed25519", key_id, sig }          # 后三项可选；无 format_version = legacy unsigned
 ```
 
 - `seal --spec <spec.json> --out <file>` 产出封包：拷贝当前开放的二进制 + 内嵌 spec + footer；**已封包的二进制拒绝二次 seal（rc=2）**。
@@ -328,10 +331,16 @@ footer = { magic:"YGLVF1", spec_offset, spec_length, spec_sha256,
 - `self-check` 在封包构建上多打一行 `sealed-spec: ok (<spec_id> v<n>, build <build_sha256>, corpus <version>)`；开放构建打 `sealed-spec: skip (open build)`。
 - `verify register <sealed-binary>` 解析 footer 并复算两条哈希（spec_sha256 / build_sha256），写 `registrations/<key>.json`（spec_id/version、engine、corpus、platform、size）与 `binaries/<key>.bin` 副本；`<key>` 是去掉 `sha256:` 前缀的十六进制（冒号在 Windows 文件名非法）。
 - `verify report import` 在登记命中时，若 `specs/<spec_id>/spec.json` 不在工作区，就从 `binaries/<key>.bin` 的封包里恢复内嵌 spec（报告 + 二进制是自描述包，工作区只是缓存）；随后 `verify archive --with binary` 可把登记/二进制一起收进归档并重算全链。
-- 签名（ed25519）与带外登记仍未实现，属 M13-1b 收尾项。
+- **签名（1.1 起）**：签名输入 = `JCS(去掉 sig 的 footer)`；`sig_alg`/`key_id` 在签名输入内、`sig` 不在。
+  `key_id = sha256(32 字节原始公钥)` 小写 hex。验签**认表不认报文**：`key_id` 必须命中 `docs/verify-signing.md` 密钥表且未 `retired_at`，
+  签名必须验过；公钥不得只由报告/封包自带材料自证。轮换只增不换（旧 key 标 `retired_at` 保留）。
+  `verify signature <sealed>` 验签（0=过，1=不过/不是封包，2=用法）；`register` 对签名构建先验签再登记，
+  `report import` 对已登记签名构建重新验签并核对报告 `verifier.public_key_fingerprint`；验签失败一律 rc=1，不回落开放模式。
+  细节与事故处置见 [verify-signing.md](./verify-signing.md)。
 
 ## 6. 状态
 
+- **v1.4（2026-10-20）**：`contract_version` 升 **1.1**、`corpus_version` 升 **1.1**——报告 `verifier` 增 `signature` / `signing_scheme` / `public_key_fingerprint` 三个可选字段；封包 footer 增 `format_version` / `engine_sha256` / `sig_alg` / `key_id` / `sig`（语义布局与字节布局合一，§5）。TS 与 Rust 各自实现 ed25519，固定种子下签名逐字节一致（`seal-parity.spec.ts`）；五向篡改矩阵（spec 字节 / engine 字节 / 非规范 footer / 签名字节 / 未知或退役 key / format_version）全部点名拒绝。语料 digest 因 33 份 spec 的 `contract_version` 升版而变：`4cac21b4f5bc…`（差异仅版本字段，见 `packages/verify/core/CHANGELOG.md`）。
 - **v1.3（2026-10-20）**：双实现 parity 从「投影一致」升级为「整份报告逐字节」——`rust-parity.spec.ts` 33 例剥 `data_source` 后 `canonicalStringify` 全等，且把环境锚注入 TS 侧后两边重算的 `payload_sha256` 三方相等；Rust 侧补齐 `data_source`、`guard`、`artifacts`、`exceptions`、`evidence.rows`/`rendered`、`reason` 折叠文案与真实 `started/finished`（`--now` 可钉）。`contract_version` 仍 1.0（Rust 追平 TS，不是形状变更）。
 - **v1.2（2026-10-20）**：Rust `yglverify` 补封包形态（§5 实现形态：`seal` / 内嵌 spec / 拒绝 `--spec` / 双哈希篡改检测 / `self-check` 的 `sealed-spec` 行）；`contract_version` 仍 1.0（交付形态，不是 spec/report 形状变更）。
 - **v1.1（2026-10-20）**：新增 §7 归档包（命名语法 / 包内目录 / 确定性 zip / 校验链 / 侧车登记），`verify run` 默认归档；`contract_version` 仍 1.0（归档是命令面能力，不是 spec/report 形状变更）。

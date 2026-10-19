@@ -25,7 +25,9 @@ import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
-import { binaryKey, readSealedBinary } from "./sealed-binary";
+import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
+import type { SigningKeyTable } from "../../../verify/core/src/signature";
+import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 
 const KINDS = ["materials", "specs", "reports", "registrations", "binaries"] as const;
 
@@ -211,13 +213,51 @@ const ACTION_FLAGS: Record<string, string[]> = {
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version"],
   run: ["db", "submission", "no-archive"],
   list: ["unarchived"],
-  report: ["out"],
+  report: ["out", "keys", "expect-key"],
   trace: [],
   export: ["out"],
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
-  register: [],
+  register: ["keys", "expect-key", "no-copy"],
+  signature: ["keys", "expect-key"],
 };
+
+/** 密钥表：--keys > $YGL_VERIFY_KEYS > $YGL_HOME/verify/keys/signing-keys.json；都没有返回 null。 */
+function loadKeyTable(env: Env, args: any): SigningKeyTable | null {
+  const explicit = args.flags.keys ? String(args.flags.keys) : process.env.YGL_VERIFY_KEYS;
+  const candidates = explicit ? [explicit] : [join(verifyRoot(env), "keys", "signing-keys.json")];
+  for (const file of candidates) {
+    if (!existsSync(file)) continue;
+    try {
+      const table = JSON.parse(readFileSync(file, "utf8")) as SigningKeyTable;
+      if (!table || typeof table !== "object" || typeof table.keys !== "object") throw new Error("keys must be an object");
+      return table;
+    } catch (e: any) {
+      throw new Error(`cannot read signing key table ${file}: ${e?.message || e}`);
+    }
+  }
+  if (explicit) throw new Error(`signing key table not found: ${explicit}`);
+  return null;
+}
+
+/** --expect-key <64hex|file>：单键「钉死」通道（不做信任表，只认这一把）。 */
+function expectKeyTable(args: any): SigningKeyTable | null {
+  if (!args.flags["expect-key"]) return null;
+  const raw = String(args.flags["expect-key"]);
+  let hexText = raw;
+  if (existsSync(raw)) {
+    const bytes = readFileSync(raw);
+    hexText = bytes.length === 32 ? bytes.toString("hex") : bytes.toString("utf8").trim();
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(hexText)) throw new Error("--expect-key must be 64 hex chars (raw ed25519 public key) or a 32-byte key file");
+  const key = Buffer.from(hexText, "hex");
+  const fp = fingerprintOfRawPublicKey(key);
+  return { scheme: SIGNING_SCHEME, keys: { [fp]: { public_key: hexText.toLowerCase(), created: "expect-key" } } };
+}
+
+function verifyRoot(env: Env): string {
+  return paths(env).root;
+}
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx } = env;
@@ -554,6 +594,26 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             if (reg.spec_version !== undefined && report.verifier.spec_version !== undefined && reg.spec_version !== report.verifier.spec_version) problems.push(`version mismatch: report spec_version ${report.verifier.spec_version} ≠ registered ${reg.spec_version}`);
             if (reg.engine_version !== undefined && reg.engine_version !== report.verifier.engine_version) problems.push(`version mismatch: report engine_version ${report.verifier.engine_version} ≠ registered ${reg.engine_version}`);
             if (reg.corpus_version !== undefined && reg.corpus_version !== report.verifier.corpus_version) problems.push(`version mismatch: report corpus_version ${report.verifier.corpus_version} ≠ registered ${reg.corpus_version}`);
+            // 签验：签名封包必须验过（认表不认报文）；unsigned 旧二进制不拦。
+            const recorded = (reg as any).signature;
+            if (recorded?.signed && !recorded?.verified) problems.push(`binary signature was never verified: ${String(recorded.key_id ?? "").slice(0, 16)}…`);
+            if (recorded?.signed) {
+              const table = expectKeyTable(args) ?? loadKeyTable(env, args);
+              const binPath = join(p.binaries, `${binaryKey(bin)}.bin`);
+              if (!existsSync(binPath)) problems.push("binary not found in the workspace: the signed build cannot be re-verified (re-register it)");
+              else {
+                try {
+                  const sealed = readSealedBinary(readFileSync(binPath));
+                  const verdict = verifySealSignature(sealed, table);
+                  if (!verdict.ok) problems.push(`binary signature does not verify: ${verdict.problems.join("; ")}`);
+                  if (report.verifier.public_key_fingerprint && sealed.footer.key_id && report.verifier.public_key_fingerprint !== sealed.footer.key_id) {
+                    problems.push("key mismatch: report public_key_fingerprint ≠ sealed binary key_id");
+                  }
+                } catch (e: any) {
+                  problems.push(`cannot re-verify signed binary: ${e?.message || e}`);
+                }
+              }
+            }
           }
         }
         if (problems.length) {
@@ -709,6 +769,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       const spec = sealed.spec as VerifySpec;
+      // 签验：认表不认报文（302cb119 签名批口径 ④）——签名的封包没有可信表就拒绝登记；
+      // 旧 unsigned 封包（0.98.0 产物）按 unsigned 处理并告警，不 fail。
+      let sig: { signed: boolean; ok: boolean; problems: string[] } = { signed: false, ok: false, problems: [] };
+      const table = expectKeyTable(args) ?? loadKeyTable(env, args);
+      try {
+        sig = verifySealSignature(sealed, table);
+      } catch (e: any) {
+        bad(ctx, `cannot verify seal signature: ${e?.message || e}`);
+        return 1;
+      }
+      if (sig.signed && !sig.ok) {
+        bad(ctx, `sealed binary signature does not verify: ${sig.problems.join("; ")}`);
+        return 1;
+      }
       const key = binaryKey(sealed.binary_sha256);
       const regPath = join(p.registrations, `${key}.json`);
       const reg = {
@@ -723,6 +797,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         platform: process.platform,
         arch: process.arch,
         size: bytes.length,
+        format_version: sealed.footer.format_version ?? null,
+        signature: {
+          signed: sig.signed,
+          verified: sig.ok,
+          scheme: sealed.footer.sig_alg ?? null,
+          key_id: sealed.footer.key_id ?? null,
+        },
         registered_at: new Date().toISOString(),
       };
       writeJson(regPath, reg);
@@ -750,6 +831,45 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     binary:       ${copied}` : ""}`);
       }
       return 0;
+    }
+
+    case "signature": {
+      const file = rest[0];
+      if (!file) {
+        bad(ctx, "usage: verify signature <sealed-binary> [--expect-key <hex|file>] [--keys <file>]");
+        return 2;
+      }
+      if (!existsSync(file)) {
+        bad(ctx, `sealed binary not found: ${file}`);
+        return 1;
+      }
+      let sealed: ReturnType<typeof readSealedBinary>;
+      try {
+        sealed = readSealedBinary(readFileSync(file));
+      } catch (e: any) {
+        bad(ctx, `not a sealed yglverify binary: ${e?.message || e}`);
+        return 1;
+      }
+      const table = expectKeyTable(args) ?? loadKeyTable(env, args);
+      const verdict = verifySealSignature(sealed, table);
+      const payload = {
+        file,
+        binary_sha256: sealed.binary_sha256,
+        format_version: sealed.footer.format_version ?? null,
+        signed: verdict.signed,
+        verified: verdict.ok,
+        signing_scheme: sealed.footer.sig_alg ?? null,
+        public_key_fingerprint: sealed.footer.key_id ?? null,
+        problems: verdict.problems,
+      };
+      if (ctx.json) console.log(JSON.stringify(payload));
+      else {
+        out(ctx, `  ${file}`);
+        out(ctx, `  binary   ${sealed.binary_sha256}`);
+        out(ctx, `  signed   ${verdict.signed ? (verdict.ok ? "yes (verified)" : "yes (NOT verified)") : "no"}`);
+        for (const p of verdict.problems) out(ctx, paint(C.dim, `  · ${p}`, ctx.color));
+      }
+      return verdict.signed && verdict.ok ? 0 : 1;
     }
 
     case "trace": {

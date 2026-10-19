@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "spec_id": "spec_throw_as_of_unanchored",
   "spec_version": 1,
   "verifier": {

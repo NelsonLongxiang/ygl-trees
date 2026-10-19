@@ -3,6 +3,21 @@
 本文件记录 **契约版本** 与 **语料版本** 的演进差异。ygl-trees 主仓 CHANGELOG 记产品版本；这里只记「验证器语义」的变更，
 因为报告的可重放性依赖这两个版本号，而它们与产品版本不是同一根时间轴。
 
+## contract_version 1.1 + corpus_version 1.1（2026-10-20，封包签名）
+
+- **形状变更（可选字段，向后兼容）**：报告 `verifier` 增 `signature`（base64）/ `signing_scheme`（`"ed25519"`）/
+  `public_key_fingerprint`（`sha256(32 字节公钥)` 小写 hex）。字段缺省表示该构建未签名（open 模式或 legacy 封包）。
+  因为「字段集合冻结」的机械守卫（`tests/shape.spec.ts`）认报告形状，新增字段必须升 `contract_version`——升到 `1.1`。
+- **封包 footer 扩展**：`format_version` / `engine_sha256` / `alg` / `key_id` / `signature`；无 `format_version` 的旧封包
+  按 legacy unsigned 读。签名输入 = `JCS(去掉 signature 的 footer)`（`alg`/`key_id` 在输入内）。
+- **语料差异**：33 份 `cases/*/spec.json` 的 `contract_version` 由 `"1.0"` 升 `"1.1"`（语义零变化），
+  digest `388604230680f9…` → `4cac21b4f5bc3edd…`（129 文件）。
+
+| 时点 | digest | 说明 |
+|---|---|---|
+| v1.0 冻结 | `388604230680f9606635caf1d55403703347097ef0337a1aba8337fdaaa076f0` | 129 文件，spec `contract_version: "1.0"` |
+| v1.1（本次） | `4cac21b4f5bc3edd…` | 129 文件，逐文件仅 `contract_version` 字段 1.0→1.1；案例与语义零变化 |
+
 ## contract_version 1.0 + corpus_version 1.0（2026-10-19，冻结）
 
 冻结依据：docs/verify-contract.md 顶部三条冻结条件全部满足——① 评审席 fdc757f6（direct-30389fca）与 302cb119

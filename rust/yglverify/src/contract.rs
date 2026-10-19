@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CONTRACT_VERSION: &str = "1.0";
+pub const CONTRACT_VERSION: &str = "1.1";
 
 pub fn is_known_contract(version: &str) -> bool {
     version == CONTRACT_VERSION
@@ -377,6 +377,14 @@ pub struct ReportVerifier {
     pub spec_version: i64,
     pub corpus_version: String,
     pub sealed_review: bool,
+    /// 封包签名（contract 1.1）：签署的 footer 规范字节的 ed25519 签名，base64。
+    /// 封包自身不验签（无公钥），真实性在导入/分发侧按仓库密钥表验证。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_scheme: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_key_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

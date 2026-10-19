@@ -65,6 +65,10 @@ export interface VerifyOptions {
   /** 可钉 run_id（双实现 parity / 重放）；缺省随机——报告不是必须逐字节可复现的运行产物吗？
    *  是：语料与 parity 场景必须给钉值，线上运行保留随机以免撞名。 */
   runId?: string;
+  /** 封包签名身份（contract 1.1）：来自 footer 的 signature/signing_scheme/key_id；open 模式无 */
+  signature?: string;
+  signingScheme?: string;
+  publicKeyFingerprint?: string;
 }
 
 const EMPTY_SCHEMA = "sha256:unknown";
@@ -1036,6 +1040,9 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
       spec_version: spec.spec_version,
       corpus_version: spec.verifier.corpus_version,
       sealed_review: spec.sealed.review,
+      ...(opts.signature ? { signature: opts.signature } : {}),
+      ...(opts.signingScheme ? { signing_scheme: opts.signingScheme } : {}),
+      ...(opts.publicKeyFingerprint ? { public_key_fingerprint: opts.publicKeyFingerprint } : {}),
     },
     as_of: spec.as_of,
     summary,

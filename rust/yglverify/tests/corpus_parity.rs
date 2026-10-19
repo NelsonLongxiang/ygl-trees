@@ -46,6 +46,9 @@ fn run_case(dir: &Path) -> Result<Value, String> {
         engine_version: Some("0.1.0".to_string()),
         mode: Some("open".to_string()),
         binary_sha256: None,
+        signature: None,
+        signing_scheme: None,
+        public_key_fingerprint: None,
         data_source: None,
     };
     let report = run_verify(&spec, &opts);
@@ -171,7 +174,7 @@ fn corpus_reports_match_expected_projection() {
 #[test]
 fn topo_order_rejects_cycles() {
     let spec: Value = serde_json::json!({
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "spec_id": "spec_cycle",
         "spec_version": 1,
         "verifier": { "engine_version": "0.1.0", "corpus_version": "1.0" },

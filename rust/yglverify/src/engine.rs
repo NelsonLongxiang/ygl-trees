@@ -31,6 +31,10 @@ pub struct VerifyOptions<'a> {
     pub mode: Option<String>,
     /// 封包二进制的 sha256（报告身份锚；open 模式为 None）
     pub binary_sha256: Option<String>,
+    /// 封包签名身份（contract 1.1）：来自 footer 的 alg/key_id/signature，open 模式为 None
+    pub signature: Option<String>,
+    pub signing_scheme: Option<String>,
+    pub public_key_fingerprint: Option<String>,
     /// 报告里的数据源锚（快照副本的 sha256/来源）——CLI 接线，引擎不猜
     pub data_source: Option<crate::contract::DataSource>,
 }
@@ -1065,6 +1069,9 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
             spec_version: spec.spec_version,
             corpus_version: spec.verifier.corpus_version.clone(),
             sealed_review: spec.sealed.review,
+            signature: opts.signature.clone(),
+            signing_scheme: opts.signing_scheme.clone(),
+            public_key_fingerprint: opts.public_key_fingerprint.clone(),
         },
         as_of: spec.as_of.clone(),
         summary,

@@ -34,7 +34,7 @@ function unit(partial: Partial<VerifyUnit> & Pick<VerifyUnit, "id" | "checker">)
 
 function spec(vu: VerifyUnit[]): VerifySpec {
   return {
-    contract_version: "1.0",
+    contract_version: "1.1",
     spec_id: "spec_test",
     spec_version: 1,
     verifier: { engine_version: "0.1.0", corpus_version: "1.0" },

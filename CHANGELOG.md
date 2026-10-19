@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.99.0（2026-10-20）封包签名（ed25519）+ 契约 1.1
+
+- **封包签名（footer v1）**：`yglverify seal --key <seed>` 在 footer 里写 `format_version` / `engine_sha256` / `alg:"ed25519"` / `key_id` / `signature`；签名输入 = `JCS(去掉 signature 的 footer)`，`alg`/`key_id` 在签名输入内、`signature` 不在。同一 spec、同一引擎字节、同一种子 → TS `signFooter` 与 Rust `seal` 的签名**逐字节相同**（`packages/verify/core/tests/seal-parity.spec.ts`，RFC 8032 §7.1 公开测试种子）。
+- **验签认表不认报文**：`key_id = sha256(32 字节公钥)`；`verify signature <sealed> [--keys <file>] [--expect-key <hex|file>]` 只认 `--keys`/`YGL_VERIFY_KEYS`/`$YGL_HOME/verify/keys/signing-keys.json` 里的未退役密钥——公钥不得只从报告/封包自带材料自证，签名构建没有可信表就不通过。轮换**只增不换**（旧 key 标 `retired_at` 保留）。
+- **登记与导入接上签名**：`verify register` 对签名构建先验签再落 `registrations/`（登记里记 `signature:{signed,verified,scheme,key_id}`）；`verify report import` 对已登记的签名构建**重新**从工作区二进制验一遍，并核对报告 `verifier.public_key_fingerprint === footer.key_id`；验不过 → `imported:false`（实测篡改工作区二进制副本后 import 当场点名 `binary signature does not verify`）。
+- **报告自描述（contract 1.1）**：`verifier` 增 `signature` / `signing_scheme` / `public_key_fingerprint` 三个可选字段；`contract_version` 与 `corpus_version` 同时升 1.1（33 份语料 spec 仅版本字段变化，digest `4cac21b4f5bc…`，差异表见 `packages/verify/core/CHANGELOG.md`）。
+- **篡改矩阵**：spec 字节、engine 字节、footer 非规范（raw ≠ JCS(parse)）、签名字节、未知/退役 key、未知 `format_version`、legacy 无签名字段——七向各自点名拒绝，Rust 单测与 TS 单测两侧都覆盖；旧 0.98.0 封包按 unsigned 读取（不假称已验证）。
+- **未签名构建显式告警**：`seal` 不带 `--key` 仍可打包（供测试/内部），但 stderr 打 `warning: sealing without --key produces an unsigned build`。
+- 文档：新增 [docs/verify-signing.md](docs/verify-signing.md)（信任边界、密钥表、验签顺序、事故处置、非目标）；契约 §5 实现形态与 §6 状态补 v1.4 行。
+- 测试：unit **395**（+9：signature ×5、seal-parity ×1、sealed-signature 篡改矩阵 ×3）、Rust **28**、demo 128、contract 100。
+
 ## 0.98.0（2026-10-20）构造面无损试跑 + file 排除集 + r14 三项收口
 
 - **`verify prepare --draft`**：跑完 P0–P5 只给结论，**不写** `spec.json`/`prepare.json`/`trace.json`、不消耗 `spec_version`。构造面调参不再污染版本号（此前每次试跑都推进 spec 版本，回滚只能删目录）。

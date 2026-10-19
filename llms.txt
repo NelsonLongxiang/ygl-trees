@@ -1,4 +1,4 @@
-# ygl-trees v0.98.0 — AI Agent Research Workbench
+# ygl-trees v0.99.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -195,7 +195,8 @@ Spec validator (M13): material → spec → report
 verify submit --title <t> --text <file|-> [--attach <f>]     # freeze material (text + attachments w/ sha256)
 verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--draft] # extract → translate → blind self-review → freeze spec (--draft = dry run, writes nothing)
 verify run <spec-id> --db <snapshot.sqlite>                  # run checkers on a snapshot copy → report (rc=0 even on FAIL)
-verify register <sealed-binary>                              # register a sealed yglverify build (footer chain → registrations/ + binaries/)
+verify register <sealed-binary> [--keys <file>]              # register a sealed yglverify build (footer chain + signature → registrations/ + binaries/)
+verify signature <sealed-binary> [--expect-key <hex|file>]   # verify the seal's ed25519 footer signature against the repository key table
 verify list / report <run-id> / trace <spec-id> / export <spec-id> # catalog, reports, construction trace, .yglverify.json
 verify report import <report.json>                           # import a sealed-run report (payload/binary/spec_version checks)
 verify archive <run-id|spec-id> [--with …] [--snapshot <db>] # archive bundle (report+spec+materials; --snapshot for cross-impl runs)

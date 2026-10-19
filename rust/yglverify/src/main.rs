@@ -22,7 +22,7 @@ use serde_json::Value;
 use yglverify::canonical;
 use yglverify::contract::{parse_spec, DataSource};
 use yglverify::engine::{run_verify, VerifyOptions};
-use yglverify::sealed::{open_sealed, read_sealed_file, seal_bytes, sha256_hex};
+use yglverify::sealed::{open_sealed, read_sealed_file, seal_bytes_with_key, sha256_hex};
 use yglverify::sqlite::SqliteRunner;
 
 const USAGE: &str = "\
@@ -128,13 +128,20 @@ fn cmd_run(args: &[String]) -> ExitCode {
     } else {
         None
     };
+    let mut sealed_sig: (Option<String>, Option<String>, Option<String>) = (None, None, None);
     let (spec_text, mode, binary_sha) = match (&sealed, parsed.spec.as_deref()) {
         (Some((footer, spec)), None) => {
             let sha = sealed_bytes
                 .as_ref()
                 .map(|b| format!("sha256:{}", sha256_hex(b)))
                 .unwrap_or_default();
-            let _ = footer;
+            // 签名身份进报告（contract 1.1）：alg/key_id/signature 来自 footer；
+            // 二进制自己不做信任判断（没有可信公钥，内嵌公钥=自证）。
+            sealed_sig = (
+                footer.sig.clone(),
+                if footer.sig_alg == "none" { None } else { Some(footer.sig_alg.clone()) },
+                if footer.key_id.is_empty() { None } else { Some(footer.key_id.clone()) },
+            );
             (spec.clone(), "sealed".to_string(), Some(sha))
         }
         (Some(_), Some(_)) => {
@@ -187,6 +194,9 @@ fn cmd_run(args: &[String]) -> ExitCode {
         engine_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         mode: Some(mode.clone()),
         binary_sha256: binary_sha.clone(),
+        signature: sealed_sig.0.clone(),
+        signing_scheme: sealed_sig.1.clone(),
+        public_key_fingerprint: sealed_sig.2.clone(),
         data_source,
     };
     let report = match run_verify(&spec, &opts) {
@@ -224,6 +234,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
 fn cmd_seal(args: &[String]) -> ExitCode {
     let mut spec_path: Option<String> = None;
     let mut out: Option<String> = None;
+    let mut key_path: Option<String> = None;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -239,6 +250,13 @@ fn cmd_seal(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => out = Some(v.clone()),
                     None => return usage_error("--out requires a path"),
+                }
+            }
+            "--key" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => key_path = Some(v.clone()),
+                    None => return usage_error("--key requires a seed file (32 bytes raw or 64 hex chars)"),
                 }
             }
             other => return usage_error(&format!("unknown flag: {other}")),
@@ -273,7 +291,17 @@ fn cmd_seal(args: &[String]) -> ExitCode {
     if open_sealed(&engine).is_ok() {
         return usage_error("this binary is already sealed — seal the open build instead");
     }
-    let sealed = match seal_bytes(&engine, &spec_text, env!("CARGO_PKG_VERSION"), &spec.verifier.corpus_version) {
+    let seed = match key_path.as_deref() {
+        None => {
+            eprintln!("warning: sealing without --key produces an unsigned build (no signature to verify)");
+            None
+        }
+        Some(path) => match read_seed(path) {
+            Ok(seed) => Some(seed),
+            Err(e) => return runtime_error(e),
+        },
+    };
+    let sealed = match seal_bytes_with_key(&engine, &spec_text, env!("CARGO_PKG_VERSION"), &spec.verifier.corpus_version, seed) {
         Ok(b) => b,
         Err(e) => return runtime_error(e),
     };
@@ -291,6 +319,26 @@ fn cmd_seal(args: &[String]) -> ExitCode {
     };
     println!("sealed {} (spec {} v{}, build {})", out, spec.spec_id, spec.spec_version, footer.build_sha256);
     ExitCode::SUCCESS
+}
+
+/// 读封包签名种子：64 hex 字符 或 32 字节裸文件。
+fn read_seed(path: &str) -> Result<[u8; 32], String> {
+    let raw = fs::read(path).map_err(|e| format!("cannot read key {path}: {e}"))?;
+    let mut seed = [0u8; 32];
+    let text = String::from_utf8_lossy(&raw).trim().to_string();
+    if raw.len() == 64 && text.chars().all(|c| c.is_ascii_hexdigit()) {
+        let decoded = hex::decode(&text).map_err(|e| format!("key {path} is not valid hex: {e}"))?;
+        seed.copy_from_slice(&decoded);
+        return Ok(seed);
+    }
+    if raw.len() == 32 {
+        seed.copy_from_slice(&raw);
+        return Ok(seed);
+    }
+    Err(format!(
+        "key {path} must be 32 raw bytes or 64 hex chars (got {} bytes)",
+        raw.len()
+    ))
 }
 
 fn cmd_self_check(args: &[String]) -> ExitCode {

@@ -13,6 +13,8 @@ hex = "0.4"
 unicode-normalization = "0.1"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
+ed25519-dalek = "2"
+base64 = "0.22"
 
 
 [[bin]]

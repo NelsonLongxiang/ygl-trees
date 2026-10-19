@@ -32,7 +32,7 @@ afterAll(() => runner.close());
 
 function spec(vu: VerifyUnit[]): VerifySpec {
   return {
-    contract_version: "1.0",
+    contract_version: "1.1",
     spec_id: "spec_r8",
     spec_version: 1,
     verifier: { engine_version: "0.1.0", corpus_version: "1" },

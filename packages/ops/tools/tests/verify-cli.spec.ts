@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import type { VerifyReport } from "../../../verify/core/src/contract";
+import { canonicalStringify } from "../../../verify/core/src/canonical";
 import { payloadHash } from "../../../verify/core/src/engine";
 
 /**
@@ -210,8 +211,8 @@ describe.skipIf(!hasBundle)("verify 封包链（register → import → archive 
   /** 构造一个合法的封包字节：`[engine][spec][footer json][u32]`（与 rust/src/sealed.rs 同布局）。 */
   function sealedBytes(specId = "spec_cli", specVersion = 1): Buffer {
     const engine = Buffer.from("FAKE-ENGINE-BYTES", "utf8");
-    const specText = JSON.stringify({
-      contract_version: "1.0",
+    const specText = canonicalStringify({
+      contract_version: "1.1",
       spec_id: specId,
       spec_version: specVersion,
       verifier: { engine_version: "0.1.0", corpus_version: "1.0" },
@@ -222,7 +223,7 @@ describe.skipIf(!hasBundle)("verify 封包链（register → import → archive 
     });
     const spec = Buffer.from(specText, "utf8");
     const footer = Buffer.from(
-      JSON.stringify({
+      canonicalStringify({
         magic: "YGLVF1",
         spec_offset: engine.length,
         spec_length: spec.length,
@@ -262,7 +263,7 @@ describe.skipIf(!hasBundle)("verify 封包链（register → import → archive 
     writeFileSync(bin, sealedBytes("spec_import", 2));
     const reg = JSON.parse(run(["verify", "register", bin, "--json"]).out) as { binary_sha256: string };
     const report = {
-      contract_version: "1.0",
+      contract_version: "1.1",
       run_id: "run_import",
       started: "2026-07-31T00:00:00.000Z",
       finished: "2026-07-31T00:00:01.000Z",

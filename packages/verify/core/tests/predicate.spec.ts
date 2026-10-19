@@ -27,7 +27,7 @@ function unit(id: string, checker: VerifyUnit["checker"]): VerifyUnit {
 
 function spec(vu: VerifyUnit[], extra: Partial<VerifySpec> = {}): VerifySpec {
   return {
-    contract_version: "1.0",
+    contract_version: "1.1",
     spec_id: "spec_predicate",
     spec_version: 1,
     title: "predicate",

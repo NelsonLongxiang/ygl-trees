@@ -38,7 +38,7 @@ function fileUnit(checker: FileChecker): VerifyUnit {
 
 function specWith(checker: FileChecker): VerifySpec {
   return {
-    contract_version: "1.0",
+    contract_version: "1.1",
     spec_id: "spec_file_ignore",
     spec_version: 1,
     verifier: { engine_version: "0.1.0", corpus_version: "1.0" },

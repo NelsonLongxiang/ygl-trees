@@ -42,7 +42,7 @@ function seedRun(root: string): { runId: string; specId: string } {
   );
 
   const spec: VerifySpec = {
-    contract_version: "1.0",
+    contract_version: "1.1",
     spec_id: specId,
     spec_version: 3,
     title: "运费账单对账",
@@ -61,7 +61,7 @@ function seedRun(root: string): { runId: string; specId: string } {
   writeFileSync(join(root, "specs", specId, "prepare.json"), JSON.stringify({ material_id: matId, materials_sha256: sha("materials") }, null, 2));
 
   const report = {
-    contract_version: "1.0",
+    contract_version: "1.1",
     run_id: runId,
     spec_id: specId,
     started: "2026-10-20T00:00:00.000Z",

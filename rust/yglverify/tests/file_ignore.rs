@@ -27,7 +27,7 @@ fn spec_with(ignore: &[&str]) -> String {
     let ignore_json: Vec<String> = ignore.iter().map(|s| format!("\"{s}\"")).collect();
     format!(
         r#"{{
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "spec_id": "spec_file_ignore",
   "spec_version": 1,
   "verifier": {{ "engine_version": "0.1.0", "corpus_version": "1" }},
@@ -68,6 +68,9 @@ fn ignored_files_leave_the_scan_surface_but_still_satisfy_require() {
         engine_version: Some("0.1.0".to_string()),
         mode: Some("open".to_string()),
         binary_sha256: None,
+        signature: None,
+        signing_scheme: None,
+        public_key_fingerprint: None,
         data_source: None,
     };
     let report = run_verify(&spec, &opts).unwrap();
@@ -96,6 +99,9 @@ fn everything_ignored_is_needs_material_not_pass() {
         engine_version: Some("0.1.0".to_string()),
         mode: Some("open".to_string()),
         binary_sha256: None,
+        signature: None,
+        signing_scheme: None,
+        public_key_fingerprint: None,
         data_source: None,
     };
     let report = run_verify(&spec, &opts).unwrap();

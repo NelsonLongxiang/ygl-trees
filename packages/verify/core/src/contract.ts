@@ -5,7 +5,7 @@
  * 只认这里的形状。checker 是标签联合：`type` 决定其余键（评审 fdc757f6 ①）。
  */
 
-export const CONTRACT_VERSION = "1.0"; // 冻结（2026-10-19，fdc757f6 持闸放行；此后形状变更走 1.0→1.1 升版，不得静默改内文）
+export const CONTRACT_VERSION = "1.1"; // 1.0 冻结 2026-10-19（fdc757f6 持闸放行）；1.1（2026-10-20）新增报告 verifier.signature/signing_scheme/public_key_fingerprint 三个可选字段（封包签名身份），其余形状不变。升版纪律：形状变更走 1.1→1.2，不得静默改内文
 
 export type Verdict = "PASS" | "FAIL" | "NEEDS-MATERIAL" | "ERROR";
 export type VuRole = "assert" | "source";
@@ -382,6 +382,11 @@ export interface VerifyReport {
     spec_version: number;
     corpus_version: string;
     sealed_review: boolean;
+    /** 封包签名（contract 1.1）：签署 footer 规范字节的 ed25519 签名（base64）。
+     *  封包自身不验签；真实性在导入/分发侧按仓库密钥表验证（§5）。 */
+    signature?: string;
+    signing_scheme?: string;
+    public_key_fingerprint?: string;
   };
   as_of: AsOfRef;
   summary: { pass: number; fail: number; needs_material: number; error: number };
