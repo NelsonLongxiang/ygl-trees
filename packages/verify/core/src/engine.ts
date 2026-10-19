@@ -62,6 +62,9 @@ export interface VerifyOptions {
   engineVersion?: string;
   mode?: "sealed" | "open";
   binarySha256?: string;
+  /** 可钉 run_id（双实现 parity / 重放）；缺省随机——报告不是必须逐字节可复现的运行产物吗？
+   *  是：语料与 parity 场景必须给钉值，线上运行保留随机以免撞名。 */
+  runId?: string;
 }
 
 const EMPTY_SCHEMA = "sha256:unknown";
@@ -868,7 +871,7 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };
   const now = opts.nowIso ?? (() => new Date().toISOString());
   const started = now();
-  const runId = `run_${randomBytes(8).toString("hex")}`;
+  const runId = opts.runId ?? `run_${randomBytes(8).toString("hex")}`;
   // N2：sql 文本不支持占位展开（$vu: 只允许出现在 count.from / sql-pair 的侧引用）
   for (const vu of spec.vu) {
     const c = vu.checker as { sql?: string; scope_sql?: string };

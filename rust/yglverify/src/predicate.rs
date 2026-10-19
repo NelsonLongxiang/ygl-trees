@@ -44,7 +44,7 @@ fn normalize_iso_literal(v: &str) -> Result<String, String> {
     }
 }
 
-fn format_iso_utc(ms: i64) -> String {
+pub fn format_iso_utc(ms: i64) -> String {
     let days = ms.div_euclid(86_400_000);
     let rem = ms.rem_euclid(86_400_000);
     let (y, m, d) = civil_from_days(days);

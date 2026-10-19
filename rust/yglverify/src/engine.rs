@@ -31,6 +31,8 @@ pub struct VerifyOptions<'a> {
     pub mode: Option<String>,
     /// 封包二进制的 sha256（报告身份锚；open 模式为 None）
     pub binary_sha256: Option<String>,
+    /// 报告里的数据源锚（快照副本的 sha256/来源）——CLI 接线，引擎不猜
+    pub data_source: Option<crate::contract::DataSource>,
 }
 
 fn get(row: &Row, key: &str) -> Value {
@@ -255,7 +257,7 @@ pub fn run_fact_checker(
                         vu,
                         Verdict::NeedsMaterial,
                         Some(w),
-                        Some(json!({ "reason": "zero rows scanned — wrong table or empty data", "rendered": { "findSql": rendered.find_sql } })),
+                        Some(json!({ "reason": "zero rows scanned — wrong table or empty data", "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql } })),
                     );
                 }
                 let bad = if fail_when == "rows>0" { find_rows.len() } else if find_rows.is_empty() { 1 } else { 0 };
@@ -264,10 +266,15 @@ pub fn run_fact_checker(
                         vu,
                         Verdict::Fail,
                         Some(w),
-                        Some(json!({ "violations": bad, "rows_total": find_rows.len(), "rendered": { "findSql": rendered.find_sql } })),
+                        Some(json!({
+                            "violations": bad,
+                            "rows": canonical_rows(&find_rows, 1).into_iter().take(5).collect::<Vec<_>>(),
+                            "rows_total": find_rows.len(),
+                            "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql }
+                        })),
                     );
                 }
-                return vu_result(vu, Verdict::Pass, Some(w), Some(json!({ "rows": 0, "rendered": { "findSql": rendered.find_sql } })));
+                return vu_result(vu, Verdict::Pass, Some(w), Some(json!({ "rows": find_rows.len(), "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql } })));
             }
 
             if c.authored.as_deref() == Some("mechanical") {
@@ -315,9 +322,18 @@ pub fn run_fact_checker(
             }
             let violations = if fail_when == "rows>0" { rows.len() } else if rows.is_empty() { 1 } else { 0 };
             if violations > 0 {
-                return vu_result(vu, Verdict::Fail, Some(w), Some(json!({ "violations": violations, "rows_total": rows.len() })));
+                return vu_result(
+                    vu,
+                    Verdict::Fail,
+                    Some(w),
+                    Some(json!({
+                        "violations": violations,
+                        "rows": canonical_rows(&rows, 1).into_iter().take(5).collect::<Vec<_>>(),
+                        "rows_total": rows.len()
+                    })),
+                );
             }
-            vu_result(vu, Verdict::Pass, Some(w), Some(json!({ "rows": 0 })))
+            vu_result(vu, Verdict::Pass, Some(w), Some(json!({ "rows": rows.len() })))
         }
         Checker::SqlPair(c) => {
             let spec_errs = validate_compare_spec(&c.compare);
@@ -649,7 +665,7 @@ pub fn run_fact_checker(
                 Some(json!({ "exit": exit, "expected_exit": expect_exit, "stdout": stdout.chars().take(2000).collect::<String>() })),
             )
         }
-        Checker::Agent(_) => err(vu, "review layer (agent) is not available in the fact-only binary (sealed build without --with-review)"),
+        Checker::Agent(_) => err(vu, "review layer not available in fact-only mode (sealed build without --with-review)"),
     }
 }
 
@@ -757,20 +773,28 @@ pub fn topo_order(vu: &[VerifyUnit]) -> Result<Vec<VerifyUnit>, String> {
 /// 折叠：FAIL > NEEDS-MATERIAL > ERROR > PASS；只算 role=assert（source 不参与折叠）。
 pub fn fold_overall(results: &[VuResult]) -> (Verdict, String) {
     let asserted: Vec<&VuResult> = results.iter().filter(|r| r.role.as_deref() != Some("source")).collect();
+    // reason 文案与 TS foldOverall 逐字一致（评审 r13 ②：三处口径不一是伪装成 parity 的裂缝）
+    let ids = |v: Verdict, with_sev: bool| -> String {
+        asserted
+            .iter()
+            .filter(|r| r.verdict == v)
+            .map(|r| if with_sev { format!("{}({})", r.id, r.severity) } else { r.id.clone() })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if asserted.iter().any(|r| r.verdict == Verdict::Fail) {
+        return (Verdict::Fail, format!("{} FAIL", ids(Verdict::Fail, true)));
+    }
+    if asserted.iter().any(|r| r.verdict == Verdict::NeedsMaterial) {
+        return (Verdict::NeedsMaterial, format!("{} need material", ids(Verdict::NeedsMaterial, false)));
+    }
+    if asserted.iter().any(|r| r.verdict == Verdict::Error) {
+        return (Verdict::Error, format!("{} errored", ids(Verdict::Error, false)));
+    }
     if asserted.is_empty() {
-        return (Verdict::Error, "spec has no assert units to fold".into());
+        return (Verdict::NeedsMaterial, "no assert units — spec asserts nothing".into());
     }
-    let count = |v: Verdict| asserted.iter().filter(|r| r.verdict == v).count();
-    if count(Verdict::Fail) > 0 {
-        return (Verdict::Fail, format!("{} unit(s) failed", count(Verdict::Fail)));
-    }
-    if count(Verdict::NeedsMaterial) > 0 {
-        return (Verdict::NeedsMaterial, format!("{} unit(s) need material", count(Verdict::NeedsMaterial)));
-    }
-    if count(Verdict::Error) > 0 {
-        return (Verdict::Error, format!("{} unit(s) errored", count(Verdict::Error)));
-    }
-    (Verdict::Pass, format!("{} unit(s) passed", asserted.len()))
+    (Verdict::Pass, format!("all {} assert units passed", asserted.len()))
 }
 
 pub fn summary_of(results: &[VuResult]) -> Summary {
@@ -858,7 +882,9 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
     let mut outputs: HashMap<String, Vec<Row>> = HashMap::new();
     let mut results: Vec<VuResult> = Vec::new();
     let mut skipped: BTreeSet<String> = BTreeSet::new();
-    let started = opts.now_iso.clone().unwrap_or_else(|| "1970-01-01T00:00:00.000Z".into());
+    // started/finished 是真时刻（评审 fdc757f6 ④⑤：Rust 侧曾恒为 1970，报告两个实现就对不齐）；
+    // 语料 parity 用 --now 固定，真实运行用系统时钟。
+    let started = opts.now_iso.clone().unwrap_or_else(now_iso);
 
     for vu in &order {
         let refs: BTreeSet<String> = {
@@ -877,23 +903,15 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
             }
             set
         };
-        if refs.iter().any(|r| skipped.contains(r)) {
-            skipped.insert(vu.id.clone());
-            results.push(err(vu, "upstream unit errored — downstream check skipped (cascade)"));
-            continue;
-        }
         // source 型：真正取数（下游按引用消费）；取数失败 → ERROR 且级联（不参与折叠）
         if vu.role == "source" {
             match fetch_source_rows(vu, opts.runner) {
                 Ok(rows) => {
                     let n = rows.len();
                     outputs.insert(vu.id.clone(), rows);
-                    results.push(vu_result(
-                        vu,
-                        Verdict::Pass,
-                        None,
-                        Some(json!({ "rows": n, "note": "PASS-by-construction (source; not folded — downstream failure surfaces as ERROR)" })),
-                    ));
+                    let mut r = vu_result(vu, Verdict::Pass, None, Some(json!({ "rows": n })));
+                    r.trace = Some("PASS-by-construction (source; not folded — downstream failure surfaces as ERROR)".into());
+                    results.push(r);
                 }
                 Err(e) => {
                     skipped.insert(vu.id.clone());
@@ -910,9 +928,57 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
             }
             continue;
         }
-        let result = run_fact_checker(vu, opts.runner, opts, &outputs);
-        if result.verdict == Verdict::Error {
-            skipped.insert(vu.id.clone());
+        let mut result = run_fact_checker(vu, opts.runner, opts, &outputs);
+        // 级联（评审 a）：引用了取数失败/构造错误的单元 → 下游一律 ERROR
+        let broken: Vec<String> = refs
+            .iter()
+            .filter(|r| results.iter().any(|x| &x.id == *r && x.verdict == Verdict::Error))
+            .cloned()
+            .collect();
+        if !broken.is_empty() {
+            result.verdict = Verdict::Error;
+            let mut ev = result.evidence.clone().unwrap_or_else(|| json!({}));
+            if let Some(obj) = ev.as_object_mut() {
+                obj.insert("reason".into(), json!(format!("upstream source failed: {}", broken.join(", "))));
+            }
+            result.evidence = Some(ev);
+        }
+        // schema 漂移（评审 c）：prepare 冻结的指纹与本次运行不一致 → ERROR
+        if let Some(frozen) = &spec.schema_fingerprint {
+            let current = opts.runner.schema_fingerprint().unwrap_or_default();
+            if &current != frozen {
+                result.verdict = Verdict::Error;
+                let mut ev = result.evidence.clone().unwrap_or_else(|| json!({}));
+                if let Some(obj) = ev.as_object_mut() {
+                    obj.insert("schema_drift".into(), json!({ "frozen": frozen, "current": current }));
+                    obj.insert("reason".into(), json!("schema_drift: fingerprint differs from the one frozen at prepare"));
+                }
+                result.evidence = Some(ev);
+            }
+        }
+        let ct = vu.checker.type_name();
+        // 装配期守卫：PASS 必须带非零扫描（防空洞通过；command/agent 不适用）
+        if result.verdict == Verdict::Pass {
+            let zero = result.witness.as_ref().map(|w| w.rows_scanned == 0).unwrap_or(false);
+            if zero && ct != "command" && ct != "agent" {
+                result.verdict = Verdict::NeedsMaterial;
+                let mut ev = result.evidence.clone().unwrap_or_else(|| json!({}));
+                if let Some(obj) = ev.as_object_mut() {
+                    obj.insert("degraded_from".into(), json!("PASS"));
+                    obj.insert("reason".into(), json!("zero rows scanned — cannot assert PASS (vacuous prevention)"));
+                }
+                result.evidence = Some(ev);
+            }
+        }
+        result.guard = Some(json!({ "leniency_checks": ["not-same-source", "has-where", "falsifiable"] }));
+        // 契约要求 fact 型 VuResult 必带 witness（TS 用零值兜底）；ERROR 早退路径尤其容易漏。
+        if matches!(ct, "sql" | "sql-pair" | "count" | "exists" | "file") && result.witness.is_none() {
+            result.witness = Some(ScopeWitness {
+                rows_scanned: 0,
+                rows_matched: 0,
+                sources: Vec::new(),
+                schema_fingerprint: opts.runner.schema_fingerprint().unwrap_or_default(),
+            });
         }
         if result.verdict == Verdict::Pass {
             if let Some(rows) = pipeline_rows(vu, opts.runner) {
@@ -922,6 +988,36 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         results.push(result);
     }
 
+    // schema 指纹二次汇总：witness 里与冻结值不一致的单元同样降级（TS 同口径）
+    if let Some(frozen) = &spec.schema_fingerprint {
+        for r in results.iter_mut() {
+            if let Some(w) = &r.witness {
+                if &w.schema_fingerprint != frozen {
+                    r.verdict = Verdict::Error;
+                    let mut ev = r.evidence.clone().unwrap_or_else(|| json!({}));
+                    if let Some(obj) = ev.as_object_mut() {
+                        obj.insert("schema_drift".into(), json!(true));
+                        obj.insert("expected_schema".into(), json!(frozen));
+                        obj.insert("seen".into(), json!(w.schema_fingerprint));
+                    }
+                    r.evidence = Some(ev);
+                }
+            }
+        }
+    }
+    let exceptions: Vec<Value> = results
+        .iter()
+        .filter(|r| r.role.as_deref() == Some("assert") && (r.verdict == Verdict::Fail || r.verdict == Verdict::NeedsMaterial))
+        .map(|r| {
+            let row_count = r
+                .evidence
+                .as_ref()
+                .and_then(|e| e.get("violations"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            json!({ "vu": r.id, "severity": r.severity, "row_count": row_count })
+        })
+        .collect();
     let (overall, reason) = fold_overall(&results);
     let summary = summary_of(&results);
     let run_id = opts
@@ -932,9 +1028,10 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         contract_version: CONTRACT_VERSION.to_string(),
         run_id,
         spec_id: Some(spec.spec_id.clone()),
-        data_source: None,
+        data_source: opts.data_source.clone(),
         started: started.clone(),
-        finished: started,
+        // 与 TS 同口径：--now 钉住时 started/finished 都用它（可重放报告必须字节稳定）
+        finished: opts.now_iso.clone().unwrap_or_else(now_iso),
         verifier: ReportVerifier {
             mode: opts.mode.clone().unwrap_or_else(|| "open".into()),
             binary_sha256: opts.binary_sha256.clone(),
@@ -948,9 +1045,11 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         overall,
         reason,
         vu: results,
-        exceptions: Vec::new(),
+        exceptions,
         payload_sha256: None,
-        artifacts: None,
+        artifacts: Some(json!({
+            "attachment_sha256": spec.attachments.iter().map(|a| a.sha256.clone()).collect::<Vec<_>>()
+        })),
     };
     let mut value = serde_json::to_value(&report).map_err(|e| e.to_string())?;
     if let Some(obj) = value.as_object_mut() {
@@ -993,4 +1092,50 @@ fn pipeline_rows(vu: &VerifyUnit, runner: &SqliteRunner) -> Option<Vec<Row>> {
         }
         _ => None,
     }
+}
+
+/// 当前 UTC 时刻（RFC3339 毫秒）——与 TS `new Date().toISOString()` 同形。
+fn now_iso() -> String {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    crate::predicate::format_iso_utc(ms)
+}
+
+/// TS `String(value)` 口径（排序键用）。
+fn value_to_key(v: &Value) -> String {
+    match v {
+        Value::Null => "null".into(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn row_to_json(row: &Row) -> Value {
+    let mut map = serde_json::Map::new();
+    for (k, v) in row {
+        map.insert(k.clone(), v.clone());
+    }
+    Value::Object(map)
+}
+
+/// 按前 `key_cols` 列的字符串键排序（TS canonicalRows 同口径：键串以 NUL 连接）。
+fn canonical_rows(rows: &[Row], key_cols: usize) -> Vec<Value> {
+    let mut keyed: Vec<(String, Value)> = rows
+        .iter()
+        .map(|r| {
+            let k = r
+                .iter()
+                .take(key_cols)
+                .map(|(_, v)| value_to_key(v))
+                .collect::<Vec<_>>()
+                .join("\u{0}");
+            (k, row_to_json(r))
+        })
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.into_iter().map(|(_, v)| v).collect()
 }

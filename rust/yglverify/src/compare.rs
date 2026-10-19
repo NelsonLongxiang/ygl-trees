@@ -77,6 +77,12 @@ fn set_of(v: &Value) -> Option<Vec<String>> {
 fn json_scalar(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
+        // TS 的 String(120) 是 "120"；serde 会打成 "120.0"。错误文案必须逐字一致（parity 门）。
+        Value::Number(n) => n
+            .as_f64()
+            .filter(|f| f.fract() == 0.0 && f.abs() < 1e21)
+            .map(|f| format!("{:.0}", f))
+            .unwrap_or_else(|| n.to_string()),
         other => other.to_string(),
     }
 }

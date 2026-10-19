@@ -46,6 +46,7 @@ fn run_case(dir: &Path) -> Result<Value, String> {
         engine_version: Some("0.1.0".to_string()),
         mode: Some("open".to_string()),
         binary_sha256: None,
+        data_source: None,
     };
     let report = run_verify(&spec, &opts);
     let _ = fs::remove_file(&db_path);

@@ -287,6 +287,7 @@ footer = { magic:"YGLVF1", spec_offset, spec_length, spec_sha256,
 
 ## 6. 状态
 
+- **v1.3（2026-10-20）**：双实现 parity 从「投影一致」升级为「整份报告逐字节」——`rust-parity.spec.ts` 33 例剥 `data_source` 后 `canonicalStringify` 全等，且把环境锚注入 TS 侧后两边重算的 `payload_sha256` 三方相等；Rust 侧补齐 `data_source`、`guard`、`artifacts`、`exceptions`、`evidence.rows`/`rendered`、`reason` 折叠文案与真实 `started/finished`（`--now` 可钉）。`contract_version` 仍 1.0（Rust 追平 TS，不是形状变更）。
 - **v1.2（2026-10-20）**：Rust `yglverify` 补封包形态（§5 实现形态：`seal` / 内嵌 spec / 拒绝 `--spec` / 双哈希篡改检测 / `self-check` 的 `sealed-spec` 行）；`contract_version` 仍 1.0（交付形态，不是 spec/report 形状变更）。
 - **v1.1（2026-10-20）**：新增 §7 归档包（命名语法 / 包内目录 / 确定性 zip / 校验链 / 侧车登记），`verify run` 默认归档；`contract_version` 仍 1.0（归档是命令面能力，不是 spec/report 形状变更）。
 - **v1.0（冻结，2026-10-19）**：v0.5 之后并入 r10 评审 F1–F6（prepare sql 分支 `$vu:` 收窄、window 的 `±hh` 偏移归一、M13-1 拒 agent 型 + `sealed.review=false`、as_of 必由调用方给、canonical 拒非纯对象、数字口径改 ES 形态并写明三条相对 RFC 8785 的有意偏离）；引擎入口加契约版本守卫（1.0 引擎只跑 1.0 spec）；报告增 `spec_id` / `data_source` 两个可选自描述字段。**冻结**：`contract_version = "1.0"`、`corpus_version = "1.0"`；此后形状变更走 1.0→1.1 升版，不得静默改 1.0 内文。

@@ -9,7 +9,7 @@
 //!                 [--now <rfc3339>] [--mode open|sealed]
 //!   yglverify --version
 //!   yglverify canonical-check
-//!   yglverify seal --spec <spec.json> --out <file>   # 产出封包二进制（内嵌 spec）
+//!   yglverify seal --spec <spec.json> --out <sealed-binary>   # 产出封包二进制（内嵌 spec）
 //!   yglverify self-check [--corpus <dir>]
 
 use std::fs;
@@ -20,7 +20,7 @@ use std::process::ExitCode;
 use serde_json::Value;
 
 use yglverify::canonical;
-use yglverify::contract::parse_spec;
+use yglverify::contract::{parse_spec, DataSource};
 use yglverify::engine::{run_verify, VerifyOptions};
 use yglverify::sealed::{open_sealed, read_sealed_file, seal_bytes, sha256_hex};
 use yglverify::sqlite::SqliteRunner;
@@ -30,6 +30,7 @@ usage:
   yglverify run --spec <file|-> --db <snapshot.sqlite> [--json] [--out <report.json>]
                 [--attachments <dir>] [--command-allow <bin>]... [--run-id <id>]
                 [--now <rfc3339>] [--mode open|sealed]
+  yglverify seal --spec <spec.json> --out <sealed-binary>
   yglverify self-check [--corpus <dir>]
   yglverify canonical-check
   yglverify --version";
@@ -156,6 +157,27 @@ fn cmd_run(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return runtime_error(e),
     };
+    // 数据源锚（评审 r13 ③）：报告必须能说清"这份判定跑在哪个快照上"，
+    // 否则 `verify archive --with snapshot` 与重放都断链。sha256 由二进制自己算。
+    let (ds_sha, ds_at) = match std::fs::read(&parsed.db) {
+        Ok(bytes) => (
+            format!("sha256:{}", sha256_hex(&bytes)),
+            parsed.now.clone().unwrap_or_else(|| {
+                let ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                yglverify::predicate::format_iso_utc(ms)
+            }),
+        ),
+        Err(e) => return runtime_error(format!("cannot read --db {}: {e}", parsed.db)),
+    };
+    let data_source = Some(DataSource {
+        kind: "sqlite-snapshot".into(),
+        sha256: ds_sha,
+        source: Some(parsed.db.clone()),
+        captured_at: ds_at,
+    });
     let opts = VerifyOptions {
         runner: &runner,
         submission_dir: parsed.attachments.as_deref(),
@@ -165,6 +187,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
         engine_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         mode: Some(mode.clone()),
         binary_sha256: binary_sha.clone(),
+        data_source,
     };
     let report = match run_verify(&spec, &opts) {
         Ok(r) => r,

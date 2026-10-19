@@ -223,6 +223,21 @@ pub enum Checker {
 }
 
 impl Checker {
+    /// 报告里的 checker_type（与 serde 标签同值）。
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Checker::Sql(_) => "sql",
+            Checker::SqlPair(_) => "sql-pair",
+            Checker::Count(_) => "count",
+            Checker::Exists(_) => "exists",
+            Checker::File(_) => "file",
+            Checker::Command(_) => "command",
+            Checker::Agent(_) => "agent",
+        }
+    }
+}
+
+impl Checker {
     pub fn kind(&self) -> &'static str {
         match self {
             Checker::Sql(_) => "sql",
