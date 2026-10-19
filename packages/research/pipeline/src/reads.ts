@@ -55,8 +55,11 @@ export class Store {
 
   // ================================================================ sources
   sourceList(projectId: string, minRelevance = -1): Row[] {
+    // 0.95: tags joined into the projection — graduation-protocol.md consumes
+    // "sources with tags=sop"; a projection that hides tags makes the
+    // documented SOP pull impossible from the read surface.
     return this.db.all(
-      "SELECT id,title,url,engine,relevance,confidence,retrieved_at FROM sources WHERE project_id=? AND relevance>=? ORDER BY relevance DESC, retrieved_at DESC",
+      "SELECT id,title,url,engine,relevance,confidence,tags,retrieved_at FROM sources WHERE project_id=? AND relevance>=? ORDER BY relevance DESC, retrieved_at DESC",
       [projectId, minRelevance]
     );
   }
@@ -66,7 +69,7 @@ export class Store {
       table: "sources_fts",
       join: "sources s ON s.id=f.id",
       idCol: "id",
-      cols: ["s.id", "s.title", "s.url", "s.relevance", "s.confidence"],
+      cols: ["s.id", "s.title", "s.url", "s.relevance", "s.confidence", "s.tags"],
       where: "s.project_id=?",
       params: [projectId],
       q,

@@ -479,6 +479,18 @@ RC1=0; $Y rel add node:zzz kb:"$K" >/dev/null 2>&1 || RC1=$?
 RC2=0; $Y rel add bogus:zzz kb:"$K" >/dev/null 2>&1 || RC2=$?
 if [ "$RC1" = "1" ] && [ "$RC2" = "2" ]; then echo "  ✓ 引用语义：404→rc1 坏类型→rc2"; else echo "  ✗ rc 语义: $RC1/$RC2"; exit 1; fi
 
+echo "── 9g. 毕业三件套（graduation protocol：supported 断言 → SOP 源 → executes 边）"
+GC=$($Y research claim add "SOP 候选：对账差异先查 run_id 再查 actor 归因" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).id))")
+$Y research claim resolve "$GC" --as supported -p techtree >/dev/null
+GS=$($Y research claim list --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const c=JSON.parse(s).find(x=>x.id===process.argv[1]);console.log(c?c.status:'missing')})" "$GC")
+if [ "$GS" = "supported" ]; then echo "  ✓ 断言 supported（毕业前置：判据可机读）"; else echo "  ✗ graduation claim: $GS"; exit 1; fi
+SOP=$($Y research source add --url "https://example.com/sop/recon-playbook" --title "对账 SOP v1（毕业协议演示）" --tags sop --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+ST=$($Y research source list --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const x=JSON.parse(s).find(r=>r.id===process.argv[1]);console.log(x&&typeof x.tags==='string'&&x.tags.split(',').map(t=>t.trim()).includes('sop'))})" "$SOP")
+if [ "$ST" = "true" ]; then echo "  ✓ source --tags sop 落账（执行体词汇）"; else echo "  ✗ sop source: $ST"; exit 1; fi
+$Y rel add node:steel source:"$SOP" --rel executes >/dev/null
+GE=$($Y rel list --src node:steel --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(x=>x.rel==='executes'))})")
+if [ "$GE" = "true" ]; then echo "  ✓ executes 边：能力位 ↔ SOP 源（接缝契约）"; else echo "  ✗ executes edge"; exit 1; fi
+
 echo "── 10. telemetry（spec R10：树域留痕 + cmd.run + level）"
 NA=$($Y agent log --limit 200 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.some(e=>e.kind==='node.add')&&r.some(e=>e.kind==='node.link'))})")
 if [ "$NA" = "true" ]; then echo "  ✓ 树域留痕：node.add/node.link 进 events（0.12 例外已推翻）"; else echo "  ✗ 树域留痕缺失"; exit 1; fi

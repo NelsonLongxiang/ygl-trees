@@ -34,7 +34,7 @@
 
 ## 四、验收（0.94 时）
 
-- demo 断言：毕业三件套全序列（resolve → source --tags sop → rel executes → rel list 复核）——**0.95 补**（0.94 仅落约定与词汇，断言未兑现，预审 direct-e164d3dc P3 明示延期）。
+- demo 断言：毕业三件套全序列（resolve → source --tags sop → rel executes → rel list 复核）——**0.95 已落**（demo.sh §9g ×3 断言；顺带修复 source list/search 投影漏 tags 的读面缺口）。
 - skills/ygl-trees-relating 增 executes 词条。
 - .157 侧一次真实试点（候选：bill-audit 树某 supported 断言 → SOP 草案 → 专家团渲染）。
 

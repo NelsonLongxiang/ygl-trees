@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.95.0（2026-10-19）毕业三件套 demo 落地 + source tags 读面修复
+
+- **毕业三件套 demo 序列（0.94 P3 承诺兑现）**：demo.sh §9g——supported 断言（判据可机读）→ `source add --tags sop`（执行体词汇落账）→ `rel executes`（能力位↔SOP 源接缝边）三断言全绿；docs/graduation-protocol.md 自指验收条款闭合（demo 125→128）。
+- **source 读面 tags 修复（demo 抓出的真缺口）**：`source list`/`source search` 投影漏掉 tags——毕业协议写明的消费方式「按 tags=sop 拉源」在 CLI 读面上不可能。修复三处：cmds.ts list 投影 + reads.ts sourceList SQL + sourceSearch cols；tags 一直有落库（FTS 也索引），只是读面看不见。
+- 测试：demo 128 / contract 100 / readme 53；unit 258 不变（无新命令面，断言由 demo 承载）。
+
 ## 0.94.0（2026-10-19）锁家族硬化 + 产品论纲落盘（三树主 × 一协议）
 
 - **open 阶段锁重试层（锁家族终章，68d051ae71）**：`.ygllock` 活持有者原先在 DB 构造期瞬时失败（busy_timeout 只护 SQLite 句柄建立后的写等待，护不到 open 阶段——0.83 DB.close 65s / 0.85 终审 65s / 0.90.1 P1-2 同族多例）。现构造器有界等待：活持有者 → `YGL_LOCK_RETRY_MS`（默认 8000ms，0=禁用回旧行为）deadline 内 250ms 轮询；等满仍活 → informative throw（waited Nms + holder cmd + 解锁指引）；持有者已死 → 立即清残留锁落穿拿锁。CLI 排队语义与 busy_timeout 对齐；锁重试 spec ×4（transient 等待/stubborn 超时偷不死锁/死持有者即时偷/RETRY_MS=0 逃生口）。

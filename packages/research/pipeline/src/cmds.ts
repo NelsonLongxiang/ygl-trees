@@ -340,6 +340,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             engine: s.engine,
             relevance: s.relevance,
             confidence: s.confidence,
+            tags: s.tags || "",
             retrieved_at: s.retrievedAt,
           }));
           table(ctx, rows, ["id", "title", "engine", "rel", "conf", "retrieved"], [
