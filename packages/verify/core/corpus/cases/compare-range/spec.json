@@ -1,0 +1,50 @@
+{
+  "contract_version": "0.4",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "units": [],
+  "spec_id": "spec_compare_range",
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "severity": "S1",
+      "title": "金额落在 100..110 区间",
+      "source_clause": "单笔金额区间",
+      "checker": {
+        "type": "sql-pair",
+        "left": {
+          "table": "l",
+          "key": "k",
+          "value": "v"
+        },
+        "right": {
+          "table": "r",
+          "key": "k",
+          "value": "v"
+        },
+        "compare": {
+          "mode": "range",
+          "value": 100,
+          "value_max": 110,
+          "cardinality": "1:1"
+        }
+      },
+      "expected_from": {
+        "quote": "单笔金额区间",
+        "locator": "corpus/compare-matrix"
+      }
+    }
+  ]
+}

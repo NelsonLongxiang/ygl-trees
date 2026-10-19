@@ -1,0 +1,19 @@
+{
+  "overall": "FAIL",
+  "summary": {
+    "pass": 0,
+    "fail": 1,
+    "needs_material": 0,
+    "error": 0
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "verdict": "FAIL",
+      "witness": {
+        "rows_scanned": 1,
+        "rows_matched": 1
+      }
+    }
+  ]
+}

@@ -10,6 +10,16 @@ describe("corpus: 七型语料骨架（契约 §3，G2 起点）", () => {
     }
   });
 
+  it("compare 矩阵：八种 mode 全部有语料，正负例成对", () => {
+    const cases = loadCases();
+    const modes = new Set(cases.map((c) => String((c.meta as { mode?: string }).mode ?? "")).filter(Boolean));
+    for (const m of ["exact", "tolerance_abs", "tolerance_rel", "window", "subset", "superset", "range", "regex"]) {
+      expect(modes.has(m), `compare mode without corpus case: ${m}`).toBe(true);
+    }
+    expect(cases.length).toBeGreaterThanOrEqual(25);
+    expect(cases.filter((c) => String(c.name).includes("-fail")).length).toBeGreaterThanOrEqual(2);
+  });
+
   it("红队案例各自钉死拒绝理由（G3：逐例断言，不做 join 匹配）", () => {
     const throws = loadCases().filter((c) => Boolean(c.meta.expect_throw));
     expect(throws.length).toBeGreaterThanOrEqual(6);

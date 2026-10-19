@@ -6,5 +6,7 @@
     "tolerance",
     "currency"
   ],
-  "expects": "PASS：按 order_id 比对，容差 0.01 CNY，全部在容差内"
+  "expects": "PASS：按 order_id 比对，容差 0.01 CNY，全部在容差内",
+  "matrix": "compare",
+  "mode": "tolerance_abs"
 }
