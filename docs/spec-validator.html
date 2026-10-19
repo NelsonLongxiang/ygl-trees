@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M13 spec-validator · 架构设计 · 工程实践 · 生产演示</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface-2: #1c2128; --border: #30363d;
+  --border-dim: #21262d; --text: #e6edf3; --text-dim: #8b949e; --text-bright: #f0f6fc;
+  --primary: #58a6ff; --tertiary: #79c0ff; --success: #3fb950; --danger: #f85149;
+  --warning: #d29922; --purple: #bc8cff; --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 100px; }
+
+/* header */
+header.hero {
+  padding: 64px 0 40px; border-bottom: 1px solid var(--border-dim); margin-bottom: 8px;
+  background: radial-gradient(1200px 300px at 20% 0%, rgba(88,166,255,.08), transparent 60%);
+}
+.hero .kicker { color: var(--primary); font: 600 12px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+.hero h1 { font-size: 40px; font-weight: 750; letter-spacing: -.02em; margin: 14px 0 12px; color: var(--text-bright); }
+.hero h1 .accent { color: var(--primary); }
+.hero .sub { color: var(--text-dim); font-size: 17px; max-width: 760px; }
+.hero .meta { margin-top: 22px; display: flex; gap: 10px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font: 12px var(--mono); }
+.chip b { color: var(--text); font-weight: 600; }
+.chip.green { border-color: rgba(63,185,80,.4); color: var(--success); }
+.chip.blue { border-color: rgba(88,166,255,.4); color: var(--primary); }
+
+/* nav */
+nav.toc { position: sticky; top: 0; z-index: 20; background: rgba(13,17,23,.92); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-dim); }
+nav.toc .inner { max-width: 1080px; margin: 0 auto; padding: 0 28px; display: flex; gap: 4px; overflow-x: auto; }
+nav.toc a { color: var(--text-dim); text-decoration: none; font-size: 13.5px; padding: 13px 12px 11px;
+  border-bottom: 2px solid transparent; white-space: nowrap; }
+nav.toc a:hover { color: var(--text); }
+nav.toc a.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* sections */
+section { padding-top: 56px; }
+.sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; }
+.sec-num { font: 700 13px var(--mono); color: var(--primary); letter-spacing: .1em; }
+.sec-head h2 { font-size: 28px; font-weight: 700; letter-spacing: -.015em; color: var(--text-bright); }
+.sec-desc { color: var(--text-dim); margin-bottom: 28px; max-width: 820px; }
+h3 { font-size: 19px; font-weight: 650; margin: 40px 0 12px; color: var(--text-bright); }
+h3 .n { color: var(--text-dim); font: 600 13px var(--mono); margin-right: 8px; }
+p { margin: 10px 0; color: #c9d1d9; }
+p.dim { color: var(--text-dim); }
+strong { color: var(--text-bright); font-weight: 650; }
+code { font-family: var(--mono); font-size: .88em; background: var(--surface-2);
+  border: 1px solid var(--border-dim); padding: 1px 6px; border-radius: 5px; color: var(--tertiary); }
+a { color: var(--primary); }
+
+/* callout */
+.callout { border: 1px solid var(--border); border-left: 3px solid var(--primary); background: var(--surface);
+  border-radius: 8px; padding: 16px 20px; margin: 18px 0; }
+.callout.warn { border-left-color: var(--warning); }
+.callout.good { border-left-color: var(--success); }
+.callout .t { font-weight: 650; color: var(--text-bright); margin-bottom: 4px; font-size: 14.5px; }
+.callout p { margin: 4px 0; font-size: 14px; }
+
+/* cards */
+.grid { display: grid; gap: 14px; margin: 18px 0; }
+.grid.c2 { grid-template-columns: repeat(2, 1fr); }
+.grid.c3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 860px) { .grid.c2, .grid.c3 { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+.card h4 { font-size: 15px; font-weight: 650; color: var(--text-bright); margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px; }
+.card p { font-size: 13.5px; color: var(--text-dim); margin: 4px 0; }
+.card .icon { width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 13px; background: rgba(88,166,255,.12); color: var(--primary); flex: none; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+th { text-align: left; font: 600 12px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-dim); padding: 9px 12px; border-bottom: 1px solid var(--border); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border-dim); vertical-align: top; color: #c9d1d9; }
+tr:hover td { background: rgba(88,166,255,.03); }
+td .mono { font-family: var(--mono); font-size: 12.5px; color: var(--tertiary); }
+
+/* code block */
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 16px 18px;
+  overflow-x: auto; margin: 16px 0; font: 13px/1.7 var(--mono); color: #c9d1d9; }
+pre .c { color: #6e7681; } pre .k { color: var(--purple); } pre .s { color: #a5d6ff; }
+pre .g { color: var(--success); } pre .r { color: var(--danger); } pre .y { color: var(--warning); }
+pre .b { color: var(--primary); }
+
+/* pipeline diagram */
+.flow { display: flex; align-items: stretch; gap: 0; margin: 26px 0; flex-wrap: wrap; }
+.flow .stage { flex: 1 1 200px; min-width: 200px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px; position: relative; }
+.flow .stage + .stage { margin-left: 26px; }
+.flow .stage + .stage::before { content: "→"; position: absolute; left: -24px; top: 50%; transform: translateY(-50%);
+  color: var(--primary); font-size: 20px; font-weight: 700; }
+.flow .stage .who { font: 700 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--primary); }
+.flow .stage .what { font-weight: 650; margin: 6px 0 4px; color: var(--text-bright); font-size: 15px; }
+.flow .stage .how { font-size: 12.5px; color: var(--text-dim); }
+@media (max-width: 860px) { .flow .stage + .stage { margin-left: 0; margin-top: 26px; }
+  .flow .stage + .stage::before { left: 50%; top: -24px; transform: translateX(-50%) rotate(90deg); } }
+
+/* badges */
+.badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font: 600 11.5px var(--mono); letter-spacing: .03em; }
+.b-pass { background: rgba(63,185,80,.14); color: var(--success); border: 1px solid rgba(63,185,80,.35); }
+.b-fail { background: rgba(248,81,73,.14); color: var(--danger); border: 1px solid rgba(248,81,73,.35); }
+.b-hum  { background: rgba(210,153,34,.14); color: var(--warning); border: 1px solid rgba(210,153,34,.35); }
+.b-err  { background: rgba(139,148,158,.14); color: var(--text-dim); border: 1px solid rgba(139,148,158,.35); }
+
+/* demo mock */
+.demo-frame { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 20px 0;
+  background: var(--surface); }
+.demo-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--surface-2);
+  border-bottom: 1px solid var(--border); }
+.demo-bar .dot { width: 11px; height: 11px; border-radius: 50%; }
+.demo-bar .url { margin-left: 10px; font: 12px var(--mono); color: var(--text-dim); background: var(--bg);
+  border: 1px solid var(--border-dim); padding: 3px 12px; border-radius: 6px; flex: 1; max-width: 420px; }
+.demo-body { padding: 22px 24px; }
+.demo-body h5 { font-size: 15px; font-weight: 650; color: var(--text-bright); margin-bottom: 14px; }
+
+.field { margin-bottom: 14px; }
+.field label { display: block; font: 600 12px var(--mono); color: var(--text-dim); letter-spacing: .05em;
+  text-transform: uppercase; margin-bottom: 6px; }
+.field .input { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 10px 13px;
+  color: var(--text); font-size: 14px; }
+.field .textarea { min-height: 84px; line-height: 1.7; }
+
+.attach { display: flex; gap: 10px; flex-wrap: wrap; }
+.attach .file { display: flex; align-items: center; gap: 9px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 13px; font-size: 13px; }
+.attach .file .ext { font: 700 10px var(--mono); padding: 2px 6px; border-radius: 4px; }
+.ext-xlsx { background: rgba(63,185,80,.15); color: var(--success); }
+.ext-png  { background: rgba(188,140,255,.15); color: var(--purple); }
+.ext-pdf  { background: rgba(248,81,73,.15); color: var(--danger); }
+.attach .file .anchor { color: var(--text-dim); font: 11px var(--mono); }
+
+.btn { display: inline-block; background: var(--primary); color: #0d1117; font-weight: 650; font-size: 13.5px;
+  padding: 9px 20px; border-radius: 8px; border: none; cursor: default; }
+.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+/* vu list */
+.vu { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 10px; background: var(--bg); overflow: hidden; }
+.vu-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+.vu-head .id { font: 700 12px var(--mono); color: var(--primary); }
+.vu-head .title { font-weight: 600; font-size: 14px; flex: 1; }
+.vu-body { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--border-dim); }
+@media (max-width: 860px) { .vu-body { grid-template-columns: 1fr; } }
+.vu-col { padding: 13px 16px; font-size: 13px; }
+.vu-col:first-child { border-right: 1px solid var(--border-dim); }
+.vu-col .h { font: 600 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 7px; }
+.vu-col p { margin: 3px 0; color: #c9d1d9; font-size: 13px; }
+.vu-col .anchor-line { color: var(--tertiary); font: 12px var(--mono); }
+
+/* report */
+.report-item { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 12px; background: var(--bg); }
+.report-item.fail { border-left: 3px solid var(--danger); }
+.report-item.pass { border-left: 3px solid var(--success); }
+.report-item.hum  { border-left: 3px solid var(--warning); }
+.report-item .top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+.report-item .top .name { font-weight: 650; font-size: 14px; flex: 1; }
+.report-item .top .num { font: 700 13px var(--mono); }
+.report-item .evidence { border-top: 1px solid var(--border-dim); padding: 12px 16px; font-size: 13px; }
+.report-item .evidence table { margin: 6px 0; font-size: 12.5px; }
+.report-item .evidence th { padding: 5px 10px; }
+.report-item .evidence td { padding: 6px 10px; }
+.chain { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chain .step { font: 11.5px var(--mono); background: var(--surface); border: 1px solid var(--border);
+  padding: 3px 9px; border-radius: 5px; color: var(--text-dim); }
+.chain .step b { color: var(--tertiary); font-weight: 600; }
+
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
+@media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.stat .v { font: 700 26px var(--mono); }
+.stat .l { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.stat.fail .v { color: var(--danger); } .stat.pass .v { color: var(--success); }
+.stat.hum .v { color: var(--warning); } .stat.tot .v { color: var(--text-bright); }
+
+/* footer */
+footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border-dim);
+  color: var(--text-dim); font-size: 13px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+@media print {
+  body { background: #fff; color: #111; }
+  nav.toc { display: none; }
+  .card, .vu, .report-item, .stat, pre, table { break-inside: avoid; }
+  :root { --bg: #fff; --surface: #f6f8fa; --surface-2: #eef1f4; --text: #111; --text-dim: #555;
+    --text-bright: #000; --border: #ddd; --border-dim: #e5e5e5; }
+  pre { white-space: pre-wrap; }
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">M13 · spec-validator</div>
+    <h1>规范驱动的<span class="accent">确定性验证器</span></h1>
+    <p class="sub">业务专家用一段话和一堆业务资料填写；agent 做预处理与采证编排；<strong>判定永远零概率</strong>。交付的是「一定为真」的结论和可持有的产物。</p>
+    <div class="meta">
+      <span class="chip blue"><b>v0.96</b> 设计稿</span>
+      <span class="chip green">真 + 产物</span>
+      <span class="chip">Node/TS · Python · Rust(后置)</span>
+      <span class="chip">2026-10-19</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc"><div class="inner">
+  <a href="#arch" class="active">一 · 架构设计</a>
+  <a href="#eng">二 · 工程实践</a>
+  <a href="#demo">三 · 生产演示</a>
+  <a href="#road">四 · 路线</a>
+</div></nav>
+
+<!-- ============ 1. ARCHITECTURE ============ -->
+<section id="arch"><div class="wrap">
+  <div class="sec-head"><span class="sec-num">01</span><h2>架构设计</h2></div>
+  <p class="sec-desc">三段流：人提交模糊材料 → agent 预处理成机器判据 → 确定性检查器跑出可重放的结论。结构化是预处理的输出，不是专家的输入义务。</p>
+
+  <h3><span class="n">1.1</span>三段流</h3>
+  <div class="flow">
+    <div class="stage">
+      <div class="who">人 · 业务专家</div>
+      <div class="what">材料提交</div>
+      <div class="how">标题 + 一段话 + 附件（xlsx / png / pdf）。零 SQL、零代码、零字段义务。</div>
+    </div>
+    <div class="stage">
+      <div class="who">agent · 预处理</div>
+      <div class="what">提取 → 翻译</div>
+      <div class="how">读附件提值（带出处锚点）；一段话翻译成候选验证单元；专家逐项确认。</div>
+    </div>
+    <div class="stage">
+      <div class="who">agent · 驱动</div>
+      <div class="what">确定性检查</div>
+      <div class="how">六型检查器拓扑执行；模型调用全部前压，run 阶段零模型。</div>
+    </div>
+    <div class="stage">
+      <div class="who">交付</div>
+      <div class="what">真 + 产物</div>
+      <div class="how">结论可重放 + 证据包 + 可重跑的规范资产 + 人工项 task。</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="t">核心立场：判定零概率</div>
+    <p>模型只出现在预处理（人话 → 判据结构化）与采证编排。verdict ∈ {PASS, FAIL, NEEDS-HUMAN, ERROR}，语义判不了的判据在预处理阶段就标 <code>human</code>——<strong>不让模型给概率冒充结论</strong>。</p>
+  </div>
+
+  <h3><span class="n">1.2</span>VU = 纯函数，规范 = 管线</h3>
+  <p>每条验证单元（VU）是一个纯函数，输入 → <code>{ verdict, evidence, outputs }</code>。输出带类型，可被下游引用——<strong>一个验证器的结果是另一个验证器的输入</strong>。</p>
+  <pre><span class="c">// 对账三连例：上游 FAIL 的行集正是下游要消费的证据</span>
+V1 (sql)      : 拉超期未对账账单             → outputs: { rows: rowset }
+V2 (sql-pair) : <span class="b">$V1.rows</span> 逐行 vs 报价基准      → outputs: { violations: rowset }
+V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FAIL 带样例行</pre>
+  <div class="grid c3">
+    <div class="card"><h4><span class="icon">⌁</span>拓扑执行</h4><p>执行序 = 拓扑序；成环在 prepare 阶段拒绝（复用科技树 DAG 引擎的拓扑排序与环检测）。</p></div>
+    <div class="card"><h4><span class="icon">⤵</span>级联语义</h4><p>上游 FAIL → 输出照常产生；上游 ERROR → 下游标 ERROR 只断依赖分支，独立分支照跑。</p></div>
+    <div class="card"><h4><span class="icon">≡</span>纯数据流</h4><p>同输入同输出同判定。报告 = 管线执行 trace：每级收到什么、产出什么、判了什么。</p></div>
+  </div>
+
+  <h3><span class="n">1.3</span>检查器闭集 × 比较域</h3>
+  <div class="grid c2">
+    <div>
+      <table>
+        <tr><th>检查器类型</th><th>判定来源</th></tr>
+        <tr><td><code>sql</code></td><td>违规行数（SELECT 前缀门 + 分号拒绝）</td></tr>
+        <tr><td><code>sql-pair</code></td><td>两表按键值比对，容差 ±ε</td></tr>
+        <tr><td><code>count</code></td><td>计数阈值（telemetry 同语法）</td></tr>
+        <tr><td><code>exists</code></td><td>存在性</td></tr>
+        <tr><td><code>command</code></td><td>退出码 / stdout 字面匹配</td></tr>
+        <tr><td><code>human</code></td><td>人（<strong>不做假确定性</strong>）</td></tr>
+      </table>
+    </div>
+    <div>
+      <table>
+        <tr><th>比较域</th><th>容差形态</th></tr>
+        <tr><td>数值</td><td>±绝对值 / ±百分比</td></tr>
+        <tr><td>字符串</td><td>精确 / 包含 / 正则</td></tr>
+        <tr><td>日期时间</td><td>窗口（±N 天）</td></tr>
+        <tr><td>布尔</td><td>—</td></tr>
+        <tr><td>集合</td><td>子集 / 交集为空 / 差集点名</td></tr>
+        <tr><td>计数</td><td>阈值区间</td></tr>
+        <tr><td>比例</td><td>两条 SQL 互比，百分比容差</td></tr>
+      </table>
+    </div>
+  </div>
+  <p class="dim">闭集纪律：新增检查器类型 = 破坏性变更（走 schema 版本）。六型 × 七域之外的判据，预处理一律标 <code>human</code>，不会静默漏判。</p>
+
+  <h3><span class="n">1.4</span>语言放置：判定核心是数据，不是代码</h3>
+  <table>
+    <tr><th>层</th><th>语言</th><th>为什么</th><th>工程形态</th></tr>
+    <tr><td><strong>产品壳</strong><br><span class="dim">CLI / 存储 / 版本 / WebUI / API / 事件</span></td>
+        <td><strong>Node · TypeScript</strong></td>
+        <td>Cordis 运行时、artifacts / source 数据模型、R16 门禁、React 前端全在此；SQL 型检查器是数据不是代码</td>
+        <td>npm 包（现有 bundle）</td></tr>
+    <tr><td><strong>提取层</strong><br><span class="dim">xlsx / PDF 解析、OCR、视觉前处理</span></td>
+        <td><strong>Python</strong></td>
+        <td>文档解析生态最强；<strong>.157 的运费审计链就是 Python</strong>（audit_freight_bill.py 一脉），血统直接复用</td>
+        <td>子进程 · JSON 契约</td></tr>
+    <tr><td><strong>确定性内核</strong><br><span class="dim">独立可分发二进制、百万行比对</span></td>
+        <td><strong>Rust</strong>（后置）</td>
+        <td>单静态二进制零运行时漂移；判据触发：毕业规模跑不动 or 外发分发需求坐实</td>
+        <td>cargo 产物 · 同一 JSON 契约</td></tr>
+  </table>
+
+  <h3><span class="n">1.5</span>前后端契约</h3>
+  <p>业务专家的主界面是浏览器。React 客户端（现有 <code>webui serve</code> 承载）三个视图，六个端点：</p>
+  <div class="grid c3">
+    <div class="card"><h4><span class="icon">✎</span>材料提交</h4><p>标题 + 一段话 + 附件拖拽。附件即注册为可追溯 source。草稿自动保存。</p></div>
+    <div class="card"><h4><span class="icon">⇄</span>VU 确认</h4><p>左列判据原文 + 材料出处；右列翻译出的检查器。逐项 ✓ / ✗。</p></div>
+    <div class="card"><h4><span class="icon">▤</span>报告看板</h4><p><strong>处置清单优先</strong>：FAIL 例外项置顶；证据可展开；版本对比双轴。</p></div>
+  </div>
+  <pre><span class="k">GET</span>  /api/verify/specs          <span class="c"># 规范清单（draft / prepared / runnable / done）</span>
+<span class="k">POST</span> /api/verify/spec           <span class="c"># 材料保存</span>
+<span class="k">POST</span> /api/verify/prepare        <span class="c"># 提取 + 翻译（服务端调判定网关，同 claim evaluate 通道）</span>
+<span class="k">POST</span> /api/verify/confirm        <span class="c"># 逐项确认 / 驳回</span>
+<span class="k">POST</span> /api/verify/run            <span class="c"># 跑验证（长跑返回 run-id + SSE 进度）</span>
+<span class="k">GET</span>  /api/verify/report/&lt;runId&gt; <span class="c"># 报告载荷</span></pre>
+
+  <h3><span class="n">1.6</span>版本管理：重放可追溯</h3>
+  <table>
+    <tr><th>对象</th><th>版本语义</th><th>机制</th></tr>
+    <tr><td><strong>spec 规范</strong></td><td>每次 confirm 自增（v1 → v2 …），旧版只读保留</td><td>artifacts.version 自增</td></tr>
+    <tr><td><strong>run 报告</strong></td><td>钉住 spec 版本 + 附件 source 快照——重放 = 同版本 + 同输入</td><td>报告头记 <code>{spec_id, spec_version, sources[], db 快照}</code></td></tr>
+    <tr><td><strong>附件基准</strong></td><td>不可变 source：换版 = 新行，<strong>旧报告锚点永不断链</strong></td><td>source append-only</td></tr>
+    <tr><td><strong>毕业产物</strong></td><td>记录出身 <code>{spec_id, version}</code></td><td>graduation 引用</td></tr>
+  </table>
+</div></section>
+
+<!-- ============ 2. ENGINEERING ============ -->
+<section id="eng"><div class="wrap">
+  <div class="sec-head"><span class="sec-num">02</span><h2>工程实践</h2></div>
+  <p class="sec-desc">确定性不是一句口号，是七条可检查的工程纪律。</p>
+
+  <div class="callout good">
+    <div class="t">交付契约：真 + 产物</div>
+    <p><strong>真</strong> = 只有可证伪、可复验的结论才交付：PASS/FAIL 是事实陈述（带证据 + 同版本同输入重放逐字段一致）；NEEDS-HUMAN / ERROR 是<strong>诚实的非真态</strong>，绝不冒充真假。</p>
+    <p><strong>产物</strong> = 专家拿走四件：处置清单报告（FAIL 置顶）+ 证据包（锚点全链）+ 规范资产（可重跑 / 可毕业 / 可挂树）+ 人工项 task（零未处置）。</p>
+  </div>
+
+  <table>
+    <tr><th>#</th><th>纪律</th><th>可检查的形态</th></tr>
+    <tr><td>1</td><td><strong>可重放</strong></td><td>同一数据快照 + 同一 spec 版本重跑，报告逐字段一致；时间戳仅入 meta 不入判定</td></tr>
+    <tr><td>2</td><td><strong>报告不可变</strong></td><td>每 run 一个 artifact（kind=verify-report），永不覆写、永不清洗</td></tr>
+    <tr><td>3</td><td><strong>契约先行</strong></td><td>spec / VU / 报告三 JSON schema 是唯一接口真相；任何语言实现同一契约即可互换</td></tr>
+    <tr><td>4</td><td><strong>进程边界</strong></td><td>语言间只经子进程 + JSON，禁跨语言 FFI 纠缠；每个组件可独立测试、独立发布</td></tr>
+    <tr><td>5</td><td><strong>门禁随语言</strong></td><td>Node = vitest + contract:audit；Python = pytest + ruff（提取黄金样本）；Rust = cargo test + clippy</td></tr>
+    <tr><td>6</td><td><strong>提取值带锚点</strong></td><td>每个从材料提取的值都有出处（文件 · 页/sheet/行/区域），确认视图可见</td></tr>
+    <tr><td>7</td><td><strong>模型只在前置</strong></td><td>所有模型调用在 prepare 一次性完成并冻结进 VU；run 阶段零模型调用</td></tr>
+  </table>
+
+  <h3><span class="n">2.1</span>代码落点</h3>
+  <table>
+    <tr><th>组件</th><th>落点</th><th>要点</th></tr>
+    <tr><td>命令族</td><td><span class="mono">packages/ops/tools/src/verify-cmds.ts</span></td><td>submit / prepare / confirm / run / report / list</td></tr>
+    <tr><td>检查器引擎</td><td><span class="mono">packages/research/pipeline/src/verify-*.ts</span></td><td>六型执行 + 管线拓扑 + 级联语义</td></tr>
+    <tr><td>spec 存储</td><td>artifacts（kind=verify-spec / verify-report）</td><td>零新表起步；查询面成型再升 v13</td></tr>
+    <tr><td>报告渲染</td><td><span class="mono">packages/ops/tools/src/webui.ts</span> + <span class="mono">apps/web/src/Verify*.tsx</span></td><td>R16 选择门 + 归属校验同规</td></tr>
+    <tr><td>提取适配器</td><td><span class="mono">scripts/verify-extract/*.py</span></td><td>子进程 JSON 契约；黄金样本测试</td></tr>
+  </table>
+
+  <h3><span class="n">2.2</span>测试金字塔</h3>
+  <div class="grid c3">
+    <div class="card"><h4><span class="icon">1</span>单元</h4><p>检查器逐型、管线拓扑/环检测、版本解析、级联语义。纯函数，无 DB。</p></div>
+    <div class="card"><h4><span class="icon">2</span>契约</h4><p>spec/VU/报告三 schema 的 round-trip；JSON 纯度；rc 契约（0/1/2 分类）。</p></div>
+    <div class="card"><h4><span class="icon">3</span>Demo</h4><p>端到端：真实附件 → prepare → confirm → run → 报告断言。每条新能力至少一条 demo 断言。</p></div>
+  </div>
+
+  <h3><span class="n">2.3</span>风险与默认裁定</h3>
+  <table>
+    <tr><th>#</th><th>选择</th><th>默认</th></tr>
+    <tr><td>A</td><td>首发验收靶子</td><td>.157 运费对账（Odoo PG + Python 审计链）</td></tr>
+    <tr><td>B</td><td>真实附件样本</td><td>用户取 1-2 个真实业务件；无样本则首版只做表格解析</td></tr>
+    <tr><td>C</td><td>批次节奏</td><td>M13-1 后端 → 0.96.0；M13-2 前端 → 0.97.0</td></tr>
+    <tr><td>D</td><td>spec 粒度</td><td>1 spec = 1 业务问题域（含 N 条 VU）</td></tr>
+    <tr><td>E</td><td>FAIL 自动开 task</td><td>否（报告呈现，人决定）；NEEDS-HUMAN 自动开</td></tr>
+    <tr><td>F</td><td>报告导出</td><td>后置（PDF / HTML 进 0.98 候选）</td></tr>
+    <tr><td>G</td><td>毕业阈值</td><td>3 轮同结果 + 跨度 ≥ 1 月；首版只留接口</td></tr>
+  </table>
+</div></section>
+
+<!-- ============ 3. DEMO ============ -->
+<section id="demo"><div class="wrap">
+  <div class="sec-head"><span class="sec-num">03</span><h2>生产演示</h2></div>
+  <p class="sec-desc">真实场景：.157 跨境电商的 FBA 头程运费对账。业务专家（物流财务）提交材料，agent 预处理，确定性检查器跑出结论 —— 下面是端到端的产品形态（演示数据）。</p>
+
+  <h3><span class="n">3.1</span>业务专家提交</h3>
+  <div class="demo-frame">
+    <div class="demo-bar"><span class="dot" style="background:#f85149"></span><span class="dot" style="background:#d29922"></span><span class="dot" style="background:#3fb950"></span>
+      <span class="url">ygl-trees webui · /verify/new</span></div>
+    <div class="demo-body">
+      <h5>新建验证规范</h5>
+      <div class="field"><label>标题</label><div class="input">FBA 头程运费对账 · 2026-10 批次</div></div>
+      <div class="field"><label>判据（用你自己的话说）</label>
+        <div class="input textarea">每张运费发票金额要跟订单应付对得上；附的是这批的报价基准和几张账单截图。超过一周没对账的单子要暴露出来。</div></div>
+      <div class="field"><label>业务资料</label>
+        <div class="attach">
+          <span class="file"><span class="ext ext-xlsx">XLSX</span> 报价基准.xlsx <span class="anchor">Sheet1 · 12 行</span></span>
+          <span class="file"><span class="ext ext-png">PNG</span> 账单截图-1.png <span class="anchor">1280×720</span></span>
+          <span class="file"><span class="ext ext-pdf">PDF</span> 合同条款.pdf <span class="anchor">3 页</span></span>
+        </div>
+      </div>
+      <button class="btn">提交并预处理</button>
+      <button class="btn ghost" style="margin-left:8px">存草稿</button>
+    </div>
+  </div>
+
+  <h3><span class="n">3.2</span>预处理产物（VU 确认视图）</h3>
+  <p class="dim">左列：判据原文 + 期望值出处锚点。右列：候选检查器。专家逐项 ✓ / ✗。</p>
+
+  <div class="vu">
+    <div class="vu-head"><span class="id">V1</span><span class="title">发票金额与订单应付一致</span><span class="badge b-pass" style="cursor:default">✓ 已确认</span></div>
+    <div class="vu-body">
+      <div class="vu-col"><div class="h">判据原文 · 材料出处</div>
+        <p>「每张运费发票金额要跟订单应付对得上」</p>
+        <p class="anchor-line">↳ 期望值来源：报价基准.xlsx · Sheet1 · R5C3（2.35 / kg）</p></div>
+      <div class="vu-col"><div class="h">翻译出的检查器</div>
+        <p><code>sql-pair</code> · 左：freight_invoices(order_id, amount)</p>
+        <p style="color:var(--purple)">右：purchase_orders(id, payable_amount) · 容差 ±0.01</p>
+        <p class="anchor-line" style="color:var(--text-dim)">输出 rows: rowset（供下游 V2 消费）</p></div>
+    </div>
+  </div>
+
+  <div class="vu">
+    <div class="vu-head"><span class="id">V2</span><span class="title">超期未对账暴露</span><span class="badge b-pass" style="cursor:default">✓ 已确认</span></div>
+    <div class="vu-body">
+      <div class="vu-col"><div class="h">判据原文 · 值来源</div>
+        <p>「超过一周没对账的单子要暴露出来」</p>
+        <p class="anchor-line">↳ 专家显式值：「一周」→ 7d 窗口</p></div>
+      <div class="vu-col"><div class="h">翻译出的检查器</div>
+        <p><code>sql</code> · 账单入库 &gt; 7d 且 status=open</p>
+        <p class="anchor-line" style="color:var(--text-dim)">输出 rows: rowset（供 V3 消费）</p></div>
+    </div>
+  </div>
+
+  <div class="vu">
+    <div class="vu-head"><span class="id">V3</span><span class="title">异常判定汇总</span><span class="badge b-pass" style="cursor:default">✓ 已确认</span></div>
+    <div class="vu-body">
+      <div class="vu-col"><div class="h">判据原文 · 管线引用</div>
+        <p>「上面两类问题都要判 FAIL」</p>
+        <p class="anchor-line">↳ 输入：<b>$V1.rows</b> + <b>$V2.rows</b>（拓扑序执行）</p></div>
+      <div class="vu-col"><div class="h">翻译出的检查器</div>
+        <p><code>count</code> · <b>$V1.rows</b> &gt; 0 OR <b>$V2.rows</b> &gt; 0 → FAIL</p></div>
+    </div>
+  </div>
+
+  <div class="vu">
+    <div class="vu-head"><span class="id">V4</span><span class="title">计价基准提取 · 重量单价</span><span class="badge b-hum" style="cursor:default">⧗ 待确认</span></div>
+    <div class="vu-body">
+      <div class="vu-col"><div class="h">判据原文 · 材料出处</div>
+        <p>「每公斤 2.35 元」（来自报价基准）</p>
+        <p class="anchor-line">↳ 视觉提取：账单截图-1.png · 表格区域 R3·C5 → 2.35</p></div>
+      <div class="vu-col"><div class="h">翻译出的检查器</div>
+        <p><code>sql</code> · freight_invoices.rate_per_kg vs <strong>2.35</strong>（提取冻结值）</p>
+        <p class="anchor-line" style="color:var(--warning)">专家需确认：截图值 = 报价基准值</p></div>
+    </div>
+  </div>
+
+  <h3><span class="n">3.3</span>运行报告（处置清单交付）</h3>
+  <div class="demo-frame">
+    <div class="demo-bar"><span class="dot" style="background:#f85149"></span><span class="dot" style="background:#d29922"></span><span class="dot" style="background:#3fb950"></span>
+      <span class="url">ygl-trees webui · /verify/report/run-72a4</span></div>
+    <div class="demo-body">
+      <div class="stats">
+        <div class="stat tot"><div class="v">7</div><div class="l">验证项</div></div>
+        <div class="stat pass"><div class="v">3</div><div class="l">PASS</div></div>
+        <div class="stat fail"><div class="v">3</div><div class="l">FAIL · 处置清单</div></div>
+        <div class="stat hum"><div class="v">1</div><div class="l">NEEDS-HUMAN</div></div>
+      </div>
+      <p class="dim" style="font-size:13px;margin:6px 0 14px">spec v2 · run 72a4 · 2026-10-19 22:41 · 数据快照 db:ygl@2026-10-19T22:40 · 可重放 ✓</p>
+
+      <div class="report-item fail">
+        <div class="top"><span class="badge b-fail">FAIL</span><span class="name">V1 · 发票金额与订单应付</span><span class="num" style="color:var(--danger)">3 张 · 差 412.50 元</span></div>
+        <div class="evidence">
+          <table>
+            <tr><th>发票号</th><th>订单应付</th><th>发票金额</th><th>差额</th></tr>
+            <tr><td>INV-2026-1187</td><td>1,204.00</td><td style="color:var(--danger)">1,290.40</td><td style="color:var(--danger)">+86.40</td></tr>
+            <tr><td>INV-2026-1203</td><td>2,880.00</td><td style="color:var(--danger)">3,141.30</td><td style="color:var(--danger)">+261.30</td></tr>
+            <tr><td>INV-2026-1221</td><td>640.00</td><td style="color:var(--danger)">704.80</td><td style="color:var(--danger)">+64.80</td></tr>
+          </table>
+          <div class="chain">
+            <span class="step">判据：<b>每张运费发票金额与订单应付对得上</b></span>
+            <span class="step">基准：<b>报价基准.xlsx · Sheet1 · R5C3 → 2.35/kg</b></span>
+            <span class="step">管线：<b>V1 圈定 → V3 判定</b></span>
+            <span class="step">重放：<b>同输入必同结论</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-item fail">
+        <div class="top"><span class="badge b-fail">FAIL</span><span class="name">V2 · 超期未对账</span><span class="num" style="color:var(--danger)">5 张 · 最长超期 12 天</span></div>
+        <div class="evidence">
+          <p style="font-size:13px">账单号 BL-2026-0912 / 0918 / 0923 / 0926 / 0930 —— 入库 &gt; 7 天未对账（最早 2026-10-07 入库）。</p>
+        </div>
+      </div>
+
+      <div class="report-item fail">
+        <div class="top"><span class="badge b-fail">FAIL</span><span class="name">V4 · 重量计价基准一致性</span><span class="num" style="color:var(--danger)">2 张单价不符</span></div>
+        <div class="evidence">
+          <p style="font-size:13px">INV-2026-1187 单价 2.47（应为 2.35）· INV-2026-1221 单价 2.21（应为 2.35）。<b>提取值来源：报价基准.xlsx · Sheet1 · R5C3。</b></p>
+        </div>
+      </div>
+
+      <div class="report-item hum">
+        <div class="top"><span class="badge b-hum">NEEDS-HUMAN</span><span class="name">V7 · 合同条款适用性（语义判据）</span><span class="num" style="color:var(--warning)">已转 task #41</span></div>
+        <div class="evidence"><p style="font-size:13px">「合同条款是否覆盖本次运费调整」——机器判不了，已自动开 task 交给业务专家裁决。</p></div>
+      </div>
+
+      <div class="report-item pass">
+        <div class="top"><span class="badge b-pass">PASS</span><span class="name">V3 · 判定汇总 / V5 · 数据源可达 / V6 · 附件完整性</span><span class="num" style="color:var(--success)">3 项 ✓</span></div>
+        <div class="evidence"><p style="font-size:13px">数据源连接正常（PG 直连 Odoo 库）· 3 份附件全部可追溯 · 管线拓扑 7 级无环。</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="t">这份报告对业务专家意味着什么</div>
+    <p><strong>不是统计数字，是可行动的答案：</strong>3 张发票共差 412.50 元、单号在这、每张差多少、判据是专家自己写的那句话、基准是他自己给的文件。<strong>敢签字</strong>——这就是「一定为真」。</p>
+  </div>
+
+  <h3><span class="n">3.4</span>处置闭环</h3>
+  <div class="grid c3">
+    <div class="card"><h4><span class="icon">→</span>发现</h4><p>FAIL 3 项 → 处置清单置顶；NEEDS-HUMAN 1 项 → 自动 task。</p></div>
+    <div class="card"><h4><span class="icon">⚒</span>处置</h4><p>业务方修数据（供应商发票更正 / 超期单完成对账）。</p></div>
+    <div class="card"><h4><span class="icon">↻</span>复核</h4><p>同 spec 重跑 → run 版本对比（数据漂移轴）；绿了即闭环。稳定 3 轮 → 毕业成 patrol 每日巡检。</p></div>
+  </div>
+</div></section>
+
+<!-- ============ 4. ROADMAP ============ -->
+<section id="road"><div class="wrap">
+  <div class="sec-head"><span class="sec-num">04</span><h2>路线</h2></div>
+  <table>
+    <tr><th>批次</th><th>内容</th><th>验收</th><th>版本</th></tr>
+    <tr><td><strong>M13-1</strong></td><td>CLI 后端：submit / prepare / confirm / run / report / list；六型检查器；管线拓扑；版本化；SQLite + PG</td><td>全门禁绿（unit + contract + demo）；.157 运费对账端到端跑通</td><td>0.96.0</td></tr>
+    <tr><td><strong>M13-2</strong></td><td>WebUI 三视图（材料提交 / VU 确认 / 报告看板）+ Python 提取适配器（真实样本）</td><td>浏览器端到端可用；黄金样本测试</td><td>0.97.0</td></tr>
+    <tr><td>M13-3</td><td>毕业通道（验证 → patrol）；报告导出（PDF/HTML）</td><td>毕业产物可追溯；导出可用于对质</td><td>0.98+</td></tr>
+    <tr><td>触发式</td><td>Rust 确定性内核（判据：规模或外发需求坐实）</td><td>同一 JSON 契约下与 Node 实现字节级同结果</td><td>—</td></tr>
+  </table>
+</div></section>
+
+<footer><div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:0">
+  <span>ygl-trees · M13 spec-validator · 设计稿 v0.96</span>
+  <span>判定零概率 · 真 + 产物 · 可重放</span>
+</div></footer>
+
+<script>
+// nav active on scroll
+const links = [...document.querySelectorAll('nav.toc a')];
+const secs = links.map(a => document.querySelector(a.getAttribute('href')));
+const onScroll = () => {
+  const y = window.scrollY + 120;
+  let idx = 0;
+  secs.forEach((s, i) => { if (s && s.offsetTop <= y) idx = i; });
+  links.forEach((a, i) => a.classList.toggle('active', i === idx));
+};
+window.addEventListener('scroll', onScroll, { passive: true });
+onScroll();
+</script>
+</body>
+</html>
