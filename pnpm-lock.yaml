@@ -172,6 +172,9 @@ importers:
       '@ygl/core-text':
         specifier: workspace:~
         version: link:../../core/text
+      '@ygl/research-pipeline':
+        specifier: workspace:~
+        version: link:../../research/pipeline
       '@ygl/techtree-model':
         specifier: workspace:~
         version: link:../../techtree/model
