@@ -21,6 +21,11 @@ const REPO = resolve(__dirname, "../../../..");
 const CASES = resolve(REPO, "packages/verify/core/corpus/cases");
 const RUST_BIN = join(REPO, "rust/yglverify/target/release", process.platform === "win32" ? "yglverify.exe" : "yglverify");
 const hasRust = existsSync(RUST_BIN);
+// 缺 release 产物默认 skip（本地不便）；但 CI/收口时用 YGL_REQUIRE_RUST=1 把 skip 变成红灯，
+// 否则「没有二进制」会被当成 parity 通过（r14 R2）。
+if (!hasRust && process.env.YGL_REQUIRE_RUST === "1") {
+  throw new Error(`YGL_REQUIRE_RUST=1 but ${RUST_BIN} is missing — run: cargo build --release --manifest-path rust/yglverify/Cargo.toml`);
+}
 const NOW = "2026-10-19T00:00:00.000Z";
 const scratch = hasRust ? mkdtempSync(join(tmpdir(), "ygl-rust-parity-")) : "";
 
@@ -94,8 +99,14 @@ describe.skipIf(!hasRust)("双实现 parity（整份报告逐字节）", () => {
       const tsWithDs = { ...(tsReport as unknown as Record<string, unknown>), data_source: (rustRaw as { data_source?: unknown }).data_source };
       const tsPayload = payloadHash(tsWithDs as unknown as VerifyReport);
       const rustCore = payloadHash(JSON.parse(JSON.stringify(rustRaw)) as unknown as VerifyReport);
-      if (tsPayload !== rustCore || typeof rustPayload !== "string") {
+      if (tsPayload !== rustCore || typeof rustPayload !== "string" || rustPayload !== rustCore) {
         diffs.push(`${name}: payload recomputation differs (ts=${tsPayload} rustCore=${rustCore} rust=${String(rustPayload)})`);
+      }
+      // r14 R1：data_source 格式也是契约面——曾出现 TS 裸 hex / Rust sha256: 前缀的分歧，
+      // 而 parity 又把该字段剥掉，正好是盲区。两实现都必须写规范形态。
+      const ds = (rustRaw as { data_source?: { sha256?: string } }).data_source;
+      if (!ds?.sha256 || !/^sha256:[0-9a-f]{64}$/.test(ds.sha256)) {
+        diffs.push(`${name}: data_source.sha256 is not in "sha256:<64 hex>" form (${String(ds?.sha256)})`);
       }
       if (canonicalStringify(ts) !== canonicalStringify(rustReport)) {
         const a = canonicalStringify(ts);

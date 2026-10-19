@@ -35,6 +35,19 @@ afterAll(() => {
 });
 
 describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
+  it("未知旗标是用法错误（--attachment 不再静默落空）", () => {
+    expect(run(["db", "init"]).rc).toBe(0);
+    const text = join(home, "material.txt");
+    writeFileSync(text, "账单总额须等于申报总额。\n", "utf8");
+    const attach = join(home, "bill.xlsx");
+    writeFileSync(attach, Buffer.from("fake-xlsx"));
+    // 真旗标是 --attach；--attachment 曾经被解析器静默吞掉，结果是 files:[] 却 rc=0
+    const r = run(["verify", "submit", "--title", "t", "--text", text, "--attachment", attach, "--json"]);
+    expect(r.rc).toBe(2);
+    const obj = JSON.parse(r.out) as { error: string };
+    expect(obj.error).toMatch(/unknown flag.*--attachment/);
+  });
+
   it("submit 落冻结材料并回单对象（含 text_sha256）", () => {
     expect(run(["db", "init"]).rc).toBe(0);
     const text = join(home, "material.txt");

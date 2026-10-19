@@ -186,6 +186,11 @@ export interface FileChecker {
   require?: string[];
   /** 校验和清单：path → sha256 */
   sha256?: Record<string, string>;
+  /**
+   * 排除 glob（相对提交物根、POSIX 分隔）。被排除的文件不进扫描面（scanned/matched），
+   * 但 `require` / `sha256` 仍按字面路径校验。禁绝对路径、`..` 段与通吃 glob（星号通配一切）。
+   */
+  ignore?: string[];
 }
 
 export interface CommandChecker {

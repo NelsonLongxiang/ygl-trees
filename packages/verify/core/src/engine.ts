@@ -451,9 +451,12 @@ async function runFactChecker(
         return { verdict: "ERROR", evidence: { reason: 'glob "*" matches everything and proves nothing — construct rejected' } };
       }
       const all = walk(dir);
+      const relOf = (p: string) => relative(dir, p).split("\\").join("/");
+      const ignoreRes = (c.ignore ?? []).map(globToRegExp);
+      const visible = all.filter((p) => !ignoreRes.some((r) => r.test(relOf(p))));
       const re = globToRegExp(c.glob);
-      const matched = all.filter((p) => re.test(relative(dir, p).split("\\").join("/")));
-      const w = witness(all.length, matched.length, [], fingerprint);
+      const matched = visible.filter((p) => re.test(relOf(p)));
+      const w = witness(visible.length, matched.length, [], fingerprint);
       const problems: string[] = [];
       if (c.min !== undefined && matched.length < c.min) problems.push(`expected >=${c.min} files, got ${matched.length}`);
       if (c.max !== undefined && matched.length > c.max) problems.push(`expected <=${c.max} files, got ${matched.length}`);
@@ -470,7 +473,12 @@ async function runFactChecker(
         }
       }
       if (all.length === 0) return { verdict: "NEEDS-MATERIAL", witness: w, evidence: { reason: "submission directory is empty" } };
-      return { verdict: problems.length ? "FAIL" : "PASS", witness: w, evidence: { files: all.length, matched: matched.length, problems: problems.slice(0, 5) } };
+      if (visible.length === 0) return { verdict: "NEEDS-MATERIAL", witness: w, evidence: { reason: "every file was excluded by ignore globs — nothing left to scan" } };
+      return {
+        verdict: problems.length ? "FAIL" : "PASS",
+        witness: w,
+        evidence: { files: visible.length, matched: matched.length, ignored: all.length - visible.length, problems: problems.slice(0, 5) },
+      };
     }
     case "command": {
       const allow = opts.commandAllowlist;

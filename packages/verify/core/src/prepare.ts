@@ -16,6 +16,7 @@ import { CONTRACT_VERSION } from "./contract";
 import { containsVerbatim, renderPredicate, renderScan } from "./engine";
 import type {
   Checker,
+  FileChecker,
   Predicate,
   ReviewFinding,
   ReviewRunner,
@@ -248,6 +249,20 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
         const schemaErr = checkPredicateSchema(pred, schema, checker.type);
         if (schemaErr) return schemaErr;
       }
+    }
+  }
+  // ④ walk ignore globs：排除面只减扫描域，构造期就把「通吃 / 越界」形态拒掉
+  if (checker.type === "file") {
+    const fc = checker as FileChecker;
+    if (fc.glob === "*" || fc.glob === "**" || fc.glob === "**/*") {
+      return 'file glob "*" matches everything and proves nothing';
+    }
+    for (const ig of fc.ignore ?? []) {
+      if (typeof ig !== "string" || ig.trim() === "") return "file ignore entries must be non-empty strings";
+      if (ig.startsWith("/") || /^[A-Za-z]:/.test(ig) || ig.split(/[\/]/).includes("..")) {
+        return `file ignore entry ${JSON.stringify(ig)} must be a relative path without ".."`;
+      }
+      if (ig === "*" || ig === "**" || ig === "**/*") return "file ignore glob may not match everything";
     }
   }
   if (c.requires_execution !== undefined) {

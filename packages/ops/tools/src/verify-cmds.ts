@@ -153,7 +153,7 @@ function snapshotCopy(dbPath: string): { path: string; sha256: string; source: s
   pruneSnapshots(dir);
   const target = join(dir, `${basename(dbPath)}.${Date.now()}.sqlite`);
   copyFileSync(dbPath, target);
-  return { path: target, sha256: sha256(readFileSync(target)), source: basename(dbPath) };
+  return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath) };
 }
 
 function specDir(env: Env, specId: string): string {
@@ -204,9 +204,32 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
   return res.ok ? 0 : 1;
 }
 
+/** 每个动作认识的旗标。--json/--no-color 等全局旗标在 GLOBAL_FLAGS 里（bin 层解析）。 */
+const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
+const ACTION_FLAGS: Record<string, string[]> = {
+  submit: ["title", "text", "attach"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft"],
+  run: ["db", "submission", "now", "run-id", "attachments", "command-allow", "mode"],
+  list: ["unarchived"],
+  report: ["out"],
+  trace: [],
+  export: ["out"],
+  archive: ["with", "out", "snapshot"],
+  "self-check": ["corpus", "cases", "no-cases", "limit"],
+  register: [],
+};
+
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx } = env;
   const p = paths(env);
+  // 未知旗标是用法错误（rc=2）：静默吞掉会让 `--attachment` 这种拼写落成 files:[]，
+  // 提交物缺附件却一路跑到 PASS 边缘——构造期静默比报错危险得多（验证席回灌 ①）。
+  const allowed = new Set([...(ACTION_FLAGS[action] ?? []), ...GLOBAL_FLAGS]);
+  const unknown = Object.keys(args.flags ?? {}).filter((k) => !allowed.has(k));
+  if (unknown.length) {
+    bad(ctx, `unknown flag${unknown.length > 1 ? "s" : ""} for verify ${action}: ${unknown.map((k) => `--${k}`).join(" ")}`);
+    return 2;
+  }
 
   switch (action) {
     case "submit": {
@@ -272,7 +295,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const reviewsPath = String(args.flags.reviews || "");
       const dbPath = String(args.flags.db || "");
       if (!materialId || !candidatesPath || !reviewsPath || !dbPath) {
-        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N]");
+        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft]");
         return 2;
       }
       let material: MaterialRecord;
@@ -299,6 +322,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       const schemaProbe = probeOf(schema.ddl);
       const prevVersion = latestVersionOf(env, materialId);
+      // ③ --draft：干跑——跑完整 P0–P5，但不落盘（不写 spec/prepare/trace，不消耗 spec_version）
+      const draft = args.flags.draft === true;
       return prepareSpec(text, {
         runner: fileRunner(candidatesFile.candidates ?? []),
         reviewer: fileReviewer(reviewsFile.reviews ?? []),
@@ -315,6 +340,27 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         corpusVersion: "1.0",
         knownMaterialHashes: knownMaterialHashes(env, materialId),
       }).then((res): number => {
+        if (draft) {
+          const payload = {
+            draft: true,
+            verdict: res.verdict,
+            spec_id: res.spec?.spec_id,
+            spec_version: res.spec?.spec_version,
+            rounds: res.rounds,
+            units: res.units.length,
+            rejected: res.rejected.length,
+            materials_sha256: res.materials_sha256,
+            diagnostics: res.diagnostics,
+          };
+          if (ctx.json) {
+            console.log(JSON.stringify(payload));
+            return res.verdict === "ready" ? 0 : 1;
+          }
+          out(ctx, `  · draft ${res.verdict}: ${res.units.length} candidate unit(s), ${res.rounds} round(s), ${res.rejected.length} rejected — nothing written`);
+          for (const d of res.diagnostics) out(ctx, paint(C.dim, `    [${d.stage}] ${d.message}`, ctx.color));
+          for (const r of res.rejected.slice(0, 5)) out(ctx, paint(C.dim, `    · [${r.stage}] ${r.reason}`, ctx.color));
+          return res.verdict === "ready" ? 0 : 1;
+        }
         const dir = specDir(env, `spec_${short(sha256(materialId))}`);
         mkdirSync(dir, { recursive: true });
         writeJson(join(dir, "prepare.json"), {
@@ -571,7 +617,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "archive": {
       const target = rest[0];
       if (!target) {
-        bad(ctx, "usage: verify archive <run-id|spec-id> [--with materials|snapshot|binary|all] [--out <file>] | verify archive verify <file>");
+        bad(ctx, "usage: verify archive <run-id|spec-id> [--with materials|snapshot|binary|all] [--snapshot <db>] [--out <file>] | verify archive verify <file>");
         return 2;
       }
       if (target === "verify") {
@@ -619,6 +665,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           runId,
           with: archiveWithOf(args.flags.with),
           out: args.flags.out ? String(args.flags.out) : undefined,
+          // 跨实现报告（Rust 直跑）没有 retained 快照：允许显式交同一份 --db 字节，校验 sha 后入包
+          snapshotSource: args.flags.snapshot ? String(args.flags.snapshot) : undefined,
         });
         appendRegistry(p.root, runId, { id: String(report.spec_id), version: report.verifier.spec_version }, {
           archive_id: built.manifest.archive_id,

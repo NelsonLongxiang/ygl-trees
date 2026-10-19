@@ -173,6 +173,9 @@ pub struct FileChecker {
     pub require: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<std::collections::BTreeMap<String, String>>,
+    /// 排除 glob（相对提交物根、POSIX 分隔）；被排除的不进扫描面，但 require/sha256 仍按字面校验。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

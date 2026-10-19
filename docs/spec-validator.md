@@ -145,6 +145,8 @@
 
 **闭集纪律**：新增 type = 破坏性变更（走 schema 版本）。判定输出永远不含概率；语义判不了且无 rubric 可依的判据在构造阶段就该落 NEEDS-MATERIAL，不许硬编成 `agent` 或塞进 sql 糊弄。
 
+**执行面闭集 ≠ 构造面发射集**（0.98.0 口径澄清）：七型是**引擎能执行**的闭集；`verify prepare` 目前只**发射** `sql` / `sql-pair` / `count` / `exists` 四型（P2 闸拒 `file`/`command`/`agent`），其余三型只能以手写 spec + 评审例外的形态进入执行面。两者分开读，别把「引擎支持」当成「构造器会产出」。
+
 ### 5.1 VU 角色：`assert` 与 `source`（评审 C1——语义地基）
 
 每个 VU 必须声明 `role`，这是**四态契约能说清话的前提**（评审 direct-5fbe6d54 C1）：

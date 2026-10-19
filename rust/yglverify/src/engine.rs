@@ -575,16 +575,29 @@ pub fn run_fact_checker(
                 return err(vu, "glob \"*\" matches everything and proves nothing — construct rejected");
             }
             let all = walk_files(Path::new(dir));
-            let re = glob_to_regex(&c.glob);
-            let matched: Vec<PathBuf> = all
+            let rel_of = |p: &PathBuf| p.strip_prefix(dir).unwrap_or(p).to_string_lossy().replace('\\', "/");
+            let ignore_res: Vec<Option<regex::Regex>> = c
+                .ignore
+                .clone()
+                .unwrap_or_default()
+                .iter()
+                .map(|g| glob_to_regex(g))
+                .collect();
+            let visible: Vec<PathBuf> = all
                 .iter()
                 .filter(|p| {
-                    let rel = p.strip_prefix(dir).unwrap_or(p).to_string_lossy().replace('\\', "/");
-                    re.as_ref().map(|r| r.is_match(&rel)).unwrap_or(false)
+                    let rel = rel_of(p);
+                    !ignore_res.iter().any(|r| r.as_ref().map(|x| x.is_match(&rel)).unwrap_or(false))
                 })
                 .cloned()
                 .collect();
-            let w = witness(all.len() as i64, matched.len() as i64, Vec::new(), &fingerprint);
+            let re = glob_to_regex(&c.glob);
+            let matched: Vec<PathBuf> = visible
+                .iter()
+                .filter(|p| re.as_ref().map(|r| r.is_match(&rel_of(p))).unwrap_or(false))
+                .cloned()
+                .collect();
+            let w = witness(visible.len() as i64, matched.len() as i64, Vec::new(), &fingerprint);
             let mut problems: Vec<String> = Vec::new();
             if let Some(min) = c.min {
                 if (matched.len() as u64) < min {
@@ -621,11 +634,24 @@ pub fn run_fact_checker(
             if all.is_empty() {
                 return vu_result(vu, Verdict::NeedsMaterial, Some(w), Some(json!({ "reason": "submission directory is empty" })));
             }
+            if visible.is_empty() {
+                return vu_result(
+                    vu,
+                    Verdict::NeedsMaterial,
+                    Some(w),
+                    Some(json!({ "reason": "every file was excluded by ignore globs — nothing left to scan" })),
+                );
+            }
             vu_result(
                 vu,
                 if problems.is_empty() { Verdict::Pass } else { Verdict::Fail },
                 Some(w),
-                Some(json!({ "files": all.len(), "matched": matched.len(), "problems": problems.iter().take(5).collect::<Vec<_>>() })),
+                Some(json!({
+                    "files": visible.len(),
+                    "matched": matched.len(),
+                    "ignored": all.len() - visible.len(),
+                    "problems": problems.iter().take(5).collect::<Vec<_>>()
+                })),
             )
         }
         Checker::Command(c) => {

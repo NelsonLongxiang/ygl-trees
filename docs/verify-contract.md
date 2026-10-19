@@ -111,8 +111,47 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | **P4** 红队门禁 | 由调用方注入（要真库/真附件/真对抗样本）；未注入**不落 ready**（CLI 可退化为"空库最小红队"） | 失败 → `error`，且**不落可冻结 spec**（`spec` 省略） |
 | **P5** 冻版 | `as_of` 由调用方给（快照口径）；`attachments` 从 `material_index.files` 映射（带**文件级 sha256/size**，防同一文本不同二进制重放）；`spec_version` 由调用方递增；`engine_version`/`corpus_version` 取构建版本 | `ready` 才产出 frozen spec |
 
+**发射集（当前 = 四型 fact）**：prepare 的 P2 闸只放行 `sql` / `sql-pair` / `count` / `exists`；`file` / `command` / `agent` 的构造面尚未开放（P2 直接拒），它们只在引擎执行面可用（手写 spec + 评审例外）。七型是**引擎闭集**，不是构造面闭集——两者口径分开读（验证席回灌 ②）。
+
 > **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
+
+## 1.7 file 检查的排除集（`ignore`，0.98.0）
+
+```jsonc
+{ "type": "file", "glob": "*.pdf", "min": 2, "require": ["invoice.pdf"],
+  "ignore": ["*.tmp", "draft/**"] }
+```
+
+- `ignore` 是相对提交物根（POSIX 分隔）的 glob 数组，`*` 不跨目录、`**/` 可匹配零层或任意层（与 CLI 的 walk 同实现）；`**` 单独作通配一切会被 P2 拒。
+- 被排除的文件**不进扫描面**：`witness.rows_scanned`/`rows_matched` 只统计可见文件，`evidence.ignored` 记排除数量。这样"临时文件混进来"不会稀释分母。
+- `require` 与 `sha256` 仍按**字面路径**校验——即使该路径被 ignore 命中，缺文件/哈希不符照样 FAIL（排除是缩小扫描面，不是豁免义务）。
+- 全部文件被排除 → NEEDS-MATERIAL（`every file was excluded by ignore globs — nothing left to scan`），不判 PASS。
+- 构造期拒绝：绝对路径、含 `..` 段、空字符串、通吃 glob。
+
+## 1.8 CLI 的文件形态（构造面输入，0.98.0）
+
+`verify prepare` 不做模型调用，构造面产物由调用方（agent）以文件注入。三种文件都是**单对象或裸数组都收**：
+
+```jsonc
+// --candidates：模型提议的判据（P1/P2 会逐条机械校验）
+{ "candidates": [{
+  "source_clause": "账单总额须等于申报总额。",              // 必须在材料里逐字出现
+  "anchor": { "quote": "账单总额须等于申报总额。", "locator": "material.md#I1" },
+  "checker": { "type": "sql-pair",
+    "left":  { "predicate": { "from": "bills", "select": [], "agg": [{ "fn": "sum", "col": "amount_cents", "as": "total" }], "scan": { "op": "and", "conditions": [{ "col": "batch", "op": "=", "value": "2026-07" }] } } },
+    "right": { "table": "declared", "key": "id", "value": "total" },
+    "compare": { "mode": "exact", "currency": "CNY", "scale": 2 } },
+  "expected_from": { "kind": "material-extract", "source_id": "materials", "quote": "…", "anchor": "material.md#I1" }
+}]}
+// --reviews：盲审结论（每候选三条 findings；缺一条就判"自审不完整"）
+{ "reviews": [[{ "vu_id": "V1", "question": "faithful", "verdict": "ok", "reason": "…", "anchor": { "quote": "…", "locator": "material.md#I1" }, "checkpoint": "anchor-verbatim" }]] }
+// --db：schema 探针用的库（只读打开；也可用 --attachments 目录 + 空库）
+```
+
+- `--candidates`/`--reviews` 读不到/JSON 解析失败 → rc=1 并点名文件；`verdict` 三态见 §1.6。
+- `--draft`（0.98.0）：只跑 P0–P5 给结论，**不写** `spec.json`/`prepare.json`/`trace.json`、不消耗 `spec_version`；rc 仍按 verdict（ready=0 / 非 ready=1）。用于「先看机器能不能接受这批候选」，避免试错污染版本号。
+- 未知旗标一律 rc=2 并点名（`unknown flag for verify submit: --attachment`）——构造期静默比报错危险（`--attachment` 曾静默落成 `files: []`）。
 
 ## 2. 报告（report，`report.json`）
 
@@ -357,6 +396,7 @@ store-only zip（不压缩）、条目按路径字节序、mtime 固定 `1980-01
 `archive` 成功 rc=0；run 时归档失败不改写报告但 rc=1（`--json` 带 `archive_error`）；`--no-archive` 仅跳过归档。
 默认落点 `$YGL_HOME/verify/archives/<filename>`（`--out` 覆盖）——归档不写调用者 cwd，仓库不会被 `*.yglverify.zip` 污染。
 `verify list --unarchived` 列出「有报告无侧车」的 run——不阻塞 run，但交付判据可要求为空。
+**跨实现快照（r14 R1）**：`archive --with snapshot` 默认只认工作区里 retained 的快照（`$YGL_HOME/verify/snapshots/<sha>.sqlite`，sha 从报告 `data_source.sha256` 派生，统一 `sha256:<hex>` 形态）。Rust 直跑的报告没有 retained 快照，此时用 `--snapshot <db>` 显式交同一份字节：归档前按报告 sha 校验，不符 `--snapshot … does not match report.data_source.sha256 (report <a>, file <b>)` 直接拒，不产半包。
 
 ### 7.6 `verify self-check`（递归验证单入口）
 

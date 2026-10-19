@@ -122,6 +122,10 @@ pub fn read_sealed_file(path: &Path) -> Result<Option<(Footer, String)>, String>
 }
 
 /// 尾部结构像封包吗？（用于区分「未封包」与「封包被篡改」——后者必须报错而不是当开放模式）
+///
+/// r14 R3：只看「能解析出 Footer 且 magic 正确」会让两类破坏 fail-open——magic 字节坏、footer JSON 语法坏
+/// 都会被判成「未封包」，然后按开放模式跑并接受 --spec（rc=2 而不是 rc=1）。
+/// 判定改成结构性候选：长度窗口合法，且（含 MAGIC 字样 或 窗口是 `{...}` 形态）。
 pub fn looks_sealed(bytes: &[u8]) -> bool {
     if bytes.len() < TRAILER_LEN + 8 {
         return false;
@@ -131,10 +135,14 @@ pub fn looks_sealed(bytes: &[u8]) -> bool {
         return false;
     }
     let start = bytes.len() - TRAILER_LEN - footer_len;
-    match serde_json::from_slice::<Footer>(&bytes[start..bytes.len() - TRAILER_LEN]) {
-        Ok(f) => f.magic == MAGIC,
-        Err(_) => false,
+    let window = &bytes[start..bytes.len() - TRAILER_LEN];
+    if let Ok(f) = serde_json::from_slice::<Footer>(window) {
+        if f.magic == MAGIC {
+            return true;
+        }
     }
+    let text = String::from_utf8_lossy(window);
+    text.contains(MAGIC) || (text.trim_start().starts_with('{') && text.trim_end().ends_with('}'))
 }
 
 #[cfg(test)]
@@ -156,5 +164,28 @@ mod tests {
         let idx = engine.len() + 2;
         tampered[idx] = b'X';
         assert!(open_sealed(&tampered).unwrap_err().contains("spec_sha256"));
+    }
+
+    /// r14 R3：footer 的 magic 字节坏 / JSON 语法坏，都必须仍被认成「封包被改」（rc=1），
+    /// 而不是当开放模式继续跑（那会把篡改降级成用法错误 rc=2）。
+    #[test]
+    fn corrupted_footer_still_counts_as_sealed_candidate() {
+        let engine = b"ENGINE-BYTES".to_vec();
+        let spec = r#"{"contract_version":"1.0"}"#;
+        let sealed = seal_bytes(&engine, spec, "0.1.0", "1.0").unwrap();
+        let footer_len = u32::from_le_bytes(sealed[sealed.len() - TRAILER_LEN..].try_into().unwrap()) as usize;
+        let footer_start = sealed.len() - TRAILER_LEN - footer_len;
+
+        let mut bad_magic = sealed.clone();
+        let at = footer_start + String::from_utf8_lossy(&sealed[footer_start..]).find("YGLVF1").unwrap();
+        bad_magic[at] = b'X';
+        assert!(looks_sealed(&bad_magic), "broken magic must still look sealed");
+        assert!(open_sealed(&bad_magic).is_err());
+
+        let mut bad_json = sealed.clone();
+        let brace = footer_start + String::from_utf8_lossy(&sealed[footer_start..]).find('{').unwrap();
+        bad_json[brace] = b'[';
+        assert!(looks_sealed(&bad_json), "broken footer JSON must still look sealed");
+        assert!(open_sealed(&bad_json).is_err());
     }
 }

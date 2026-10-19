@@ -137,9 +137,14 @@ export interface BuildArchiveOptions {
   verifyRoot: string;
   runId: string;
   with?: ArchiveWith[];
-  /** 输出文件路径；缺省 = 当前目录 + 规范文件名 */
+  /** 输出文件路径；缺省 = $YGL_HOME/verify/archives/<规范文件名> */
   out?: string;
   created?: string;
+  /**
+   * 快照源文件（r14 R1）：跨实现报告（如 Rust 直跑）不会在工作区留 retained 快照，
+   * 由调用方交同一份 --db 字节；入包前按报告 data_source.sha256 校验，不符即拒绝。
+   */
+  snapshotSource?: string;
 }
 
 export interface BuildArchiveResult {
@@ -202,12 +207,25 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
   }
 
   if (withKinds.includes("snapshot")) {
-    const sha = report.data_source?.sha256;
-    if (!sha) throw new Error("cannot archive snapshot: report has no data_source.sha256");
+    const shaRaw = report.data_source?.sha256;
+    if (!shaRaw) throw new Error("cannot archive snapshot: report has no data_source.sha256");
+    // 契约统一 "sha256:<hex>"（r14 R1：TS 曾写裸 hex、Rust 写前缀，跨实现归档断链）；
+    // 保留裸 hex 候选只是为读得懂旧工作区，不再是写入形态。
+    const sha = shaRaw.replace(/^sha256:/, "");
     const candidates = [join(root, "snapshots", `${sha}.sqlite`), join(root, "snapshots", `${short(sha)}.sqlite`)];
     const found = candidates.find((p) => existsSync(p));
-    if (!found) throw new Error(`snapshot ${short(sha)} is not retained in the workspace (${join(root, "snapshots")})`);
-    push(`snapshot/${short(sha)}.sqlite`, readFileSync(found), "snapshot");
+    if (found) {
+      push(`snapshot/${short(sha)}.sqlite`, readFileSync(found), "snapshot");
+    } else if (opts.snapshotSource) {
+      const bytes = readFileSync(opts.snapshotSource);
+      const got = createHash("sha256").update(bytes).digest("hex");
+      if (got !== sha) {
+        throw new Error(`--snapshot ${opts.snapshotSource} does not match report.data_source.sha256 (report ${short(sha)}, file ${short(got)})`);
+      }
+      push(`snapshot/${short(sha)}.sqlite`, bytes, "snapshot");
+    } else {
+      throw new Error(`snapshot ${short(sha)} is not retained in the workspace (${join(root, "snapshots")}); pass --snapshot <db> to archive the exact bytes`);
+    }
   }
 
   if (withKinds.includes("binary")) {
@@ -410,7 +428,7 @@ export function verifyArchiveFile(path: string): ArchiveVerifyResult {
 export function retainSnapshot(verifyRoot: string, snapshot: { path: string; sha256: string }): string {
   const dir = join(verifyRoot, "snapshots");
   mkdirSync(dir, { recursive: true });
-  const target = join(dir, `${snapshot.sha256}.sqlite`);
+  const target = join(dir, `${snapshot.sha256.replace(/^sha256:/, "")}.sqlite`);
   if (!existsSync(target)) copyFileSync(snapshot.path, target);
   return target;
 }

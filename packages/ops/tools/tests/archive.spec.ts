@@ -73,7 +73,8 @@ function seedRun(root: string): { runId: string; specId: string } {
     reason: "",
     vu: [],
     exceptions: [],
-    data_source: { kind: "sqlite-snapshot", sha256: sha("db"), source: "db.sqlite", captured_at: "2026-10-20T00:00:00.000Z" },
+    // r14 R1：契约统一 "sha256:<hex>"（TS 曾写裸 hex、Rust 写前缀 → 跨实现归档断链）
+    data_source: { kind: "sqlite-snapshot", sha256: `sha256:${sha("db")}`, source: "db.sqlite", captured_at: "2026-10-20T00:00:00.000Z" },
   } as unknown as VerifyReport;
   report.payload_sha256 = payloadHash(report);
   mkdirSync(join(root, "reports"), { recursive: true });
@@ -212,6 +213,34 @@ describe("buildArchive + verifyArchiveBytes（§7.4）", () => {
     const r3 = verifyArchiveBytes(writeZipStore([renamed, ...entries.filter((e) => e.path !== "manifest.json")]));
     expect(r3.ok).toBe(false); // manifest 改了 → archive_sha256 不再匹配
     expect(r3.problems.some((p) => /archive_sha256 mismatch/.test(p))).toBe(true);
+  });
+
+  it("跨实现快照：retained 缺失时用 --snapshot 源，sha 不符即拒（r14 R1）", () => {
+    const root = scratch();
+    const { runId } = seedRun(root);
+    // 报告已经带 data_source（seedRun 里），但工作区没有 snapshots/ 目录——Rust 直跑就是这种形态。
+    const dbFile = join(root, "src.sqlite");
+    writeFileSync(dbFile, Buffer.from("SQLite format 3 fake-snapshot"));
+
+    const wrong = join(root, "wrong.sqlite");
+    writeFileSync(wrong, Buffer.from("not the snapshot"));
+    expect(() => buildArchive({ verifyRoot: root, runId, with: ["snapshot"], snapshotSource: wrong })).toThrow(/does not match report\.data_source\.sha256/);
+
+    // 没有源也没有 retained → 指名怎么补
+    expect(() => buildArchive({ verifyRoot: root, runId, with: ["snapshot"] })).toThrow(/pass --snapshot <db>/);
+
+    // 正确字节：sha 与报告一致才允许入包，且归档链要能重新校验
+    const reportPath = join(root, "reports", `${runId}.json`);
+    const report = JSON.parse(readFileSync(reportPath, "utf8")) as VerifyReport;
+    report.data_source = { kind: "sqlite-snapshot", sha256: `sha256:${require("node:crypto").createHash("sha256").update(readFileSync(dbFile)).digest("hex")}`, source: "src.sqlite", captured_at: "2026-10-20T00:00:00.000Z" };
+    report.payload_sha256 = payloadHash(report);
+    writeFileSync(reportPath, JSON.stringify(report, null, 2));
+
+    const built = buildArchive({ verifyRoot: root, runId, with: ["snapshot"], snapshotSource: dbFile });
+    expect(built.manifest.with).toContain("snapshot");
+    const res = verifyArchiveBytes(readFileSync(built.path));
+    expect(res.ok).toBe(true);
+    expect(res.problems).toEqual([]);
   });
 
   it("材料缺失时 buildArchive 报可读错误（fail-closed，不产半包）", () => {
