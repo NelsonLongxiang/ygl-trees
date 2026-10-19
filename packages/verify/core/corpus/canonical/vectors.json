@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "note": "canonical JSON（RFC 8785 JCS 子集）跨实现向量：TS 与 Rust 必须逐字节一致。新增向量只增不改（升 version 并记 CHANGELOG 差异）。",
+  "cases": [
+    { "name": "key-order-utf16", "input": { "b": 1, "a": 2, "B": 3 }, "expected": "{\"B\":3,\"a\":2,\"b\":1}" },
+    { "name": "numbers-es-form", "input": { "n": [1, 1.0, 1e21, 1e-7, 0.1, -0] }, "expected": "{\"n\":[1,1,1e+21,1e-7,0.1,0]}" },
+    { "name": "safe-integer", "input": 9007199254740992, "expected": "9007199254740992" },
+    { "name": "string-escapes", "input": { "s": "a\"b\\c\n\t\u001f" }, "expected": "{\"s\":\"a\\\"b\\\\c\\n\\t\\u001f\"}" },
+    { "name": "unicode-nfc", "input": { "s": "cafe\u0301" }, "expected": "{\"s\":\"café\"}" },
+    { "name": "unicode-cjk-ascii-out", "input": { "s": "运费对账" }, "expected": "{\"s\":\"运费对账\"}" },
+    { "name": "nested-mixed", "input": { "z": { "y": [1, { "x": null }] }, "a": true }, "expected": "{\"a\":true,\"z\":{\"y\":[1,{\"x\":null}]}}" },
+    { "name": "empty-containers", "input": { "o": {}, "a": [] }, "expected": "{\"a\":[],\"o\":{}}" },
+    { "name": "booleans-null", "input": [true, false, null], "expected": "[true,false,null]" },
+    { "name": "timestamp-rfc3339-ms", "input": { "as_of": "2026-10-19T00:00:00.000Z" }, "expected": "{\"as_of\":\"2026-10-19T00:00:00.000Z\"}" },
+    { "name": "deep-nesting-order", "input": { "b": { "d": 1, "c": 2 }, "a": { "f": 3, "e": 4 } }, "expected": "{\"a\":{\"e\":4,\"f\":3},\"b\":{\"c\":2,\"d\":1}}" },
+    { "name": "array-order-preserved", "input": [3, 1, 2], "expected": "[3,1,2]" }
+  ]
+}

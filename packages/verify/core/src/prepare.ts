@@ -28,6 +28,8 @@ export interface MaterialFile {
   path: string;
   sha256: string;
   mime: string;
+  /** 附件字节数（fdc F3：落 spec.attachments.size） */
+  size?: number;
   /** 提取出的文本（xlsx 逐行、pdf 逐页、图片 OCR）；用于逐字复读与 locator 归属 */
   text?: string;
   /** 该文本里可被引用的 locator 集合（如 "bills!B7"、"p3"） */
@@ -78,6 +80,12 @@ export interface RejectedCandidate {
 }
 
 export interface PrepareOptions {
+  /** 条件④：冻结时刻（快照口径），缺省 = 调用时刻 */
+  asOf?: VerifySpec["as_of"];
+  /** 条件④：同一材料的第 N 次冻结由调用方递增 */
+  specVersion?: number;
+  engineVersion?: string;
+  corpusVersion?: string;
   runner: PrepareRunner;
   /** 盲审器；缺失时不允许落 ready（review 层是构造正确性的一半） */
   reviewer?: ReviewRunner;
@@ -144,6 +152,29 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex): s
   return null;
 }
 
+/** P2 子步骤：谓词里的表/列必须在探针里存在（E5②/E5⑤：sql、sql-pair、count、exists 共用） */
+function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "predicate"): string | null {
+  const table = pred.from;
+  const cols = schema.tables[table];
+  if (!cols) {
+    return `${label}.from ${JSON.stringify(table)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
+  }
+  const wanted = [...pred.select];
+  const collect = (n: unknown): string[] => {
+    if (!n || typeof n !== "object") return [];
+    const node = n as { col?: string; conditions?: unknown[] };
+    if (typeof node.col === "string") return [node.col];
+    return (node.conditions ?? []).flatMap(collect);
+  };
+  wanted.push(...collect(pred.where as unknown));
+  for (const a of pred.agg ?? []) if (a.col) wanted.push(a.col);
+  for (const raw of wanted) {
+    const col = String(raw).includes(".") ? String(raw).split(".")[1] : String(raw);
+    if (!cols.includes(col)) return `${label} column ${JSON.stringify(raw)} is not in ${table} (columns: ${cols.slice(0, 10).join(", ")})`;
+  }
+  return null;
+}
+
 /** P2：只允许谓词 AST；形状/时间函数/占位符/schema 归属全部构造期校验 */
 function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
   const checker = c.checker as Checker;
@@ -156,6 +187,10 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
     }
     if (!sqlChecker.predicate) return "sql checker needs a predicate";
     const predicate = sqlChecker.predicate as Predicate;
+    // r9 E2：sql 型是行集检查器，带 agg 就恒定一行——聚合对必须写成 sql-pair 双侧谓词
+    if ((predicate.agg ?? []).length > 0) {
+      return "sql predicate must not carry agg — an aggregate is always one row; use sql-pair with two predicate sides";
+    }
     const text = JSON.stringify(predicate);
     if (text.includes("$")) return '"$" in predicate text is not supported — pipeline refs belong to count.from / sql-pair sides';
     try {
@@ -165,26 +200,8 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
       return (e as Error).message;
     }
     if (schema) {
-      const table = predicate.from;
-      const cols = schema.tables[table];
-      if (!cols) {
-        return `predicate.from ${JSON.stringify(table)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
-      }
-      const wanted = [...predicate.select];
-      const where = predicate.where as unknown;
-      const collect = (n: unknown): string[] => {
-        if (!n || typeof n !== "object") return [];
-        const node = n as { col?: string; conditions?: unknown[] };
-        if (typeof node.col === "string") return [node.col];
-        return (node.conditions ?? []).flatMap(collect);
-      };
-      wanted.push(...collect(where));
-      const agg = predicate.agg ?? [];
-      for (const a of agg) if (a.col) wanted.push(a.col);
-      for (const raw of wanted) {
-        const col = String(raw).includes(".") ? String(raw).split(".")[1] : String(raw);
-        if (!cols.includes(col)) return `predicate column ${JSON.stringify(raw)} is not in ${table} (columns: ${cols.slice(0, 10).join(", ")})`;
-      }
+      const schemaErr = checkPredicateSchema(predicate, schema);
+      if (schemaErr) return schemaErr;
     }
   }
 
@@ -200,24 +217,42 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
       } catch (e) {
         return `sql-pair ${name}: ${(e as Error).message}`;
       }
+      // E5②：谓词侧同样要过 schema 探针（否则聚合列写错只会跑出 NULL）
+      if (schema) {
+        const schemaErr = checkPredicateSchema(pred, schema, `sql-pair ${name}`);
+        if (schemaErr) return schemaErr;
+      }
     }
     const errs = validateCompareSpec(pair.compare as never);
     if (errs.length) return `invalid compare spec: ${errs.join("; ")}`;
   }
 
-  // F2：count/exists 的谓词形态也只走同一渲染器（禁手写 sql）
+  // E5①：count/exists 只允许谓词形态——手写 sql 在 prepare 里没有合法来源
   if (checker.type === "count" || checker.type === "exists") {
+    if ((checker as { sql?: string }).sql) {
+      return `${checker.type} sql form is not allowed in prepared specs — use the predicate form (mechanical generation only)`;
+    }
     const pred = (checker as { predicate?: Predicate }).predicate;
     if (pred) {
       const text = JSON.stringify(pred);
-      if (text.includes("$")) return '"$" in predicate text is not supported — pipeline refs belong to count.from / sql-pair sides';
+      if (text.includes("$vu:")) return '"$vu:" refs are not allowed inside a predicate — pipeline refs belong to count.from / sql-pair sides';
       try {
         const rendered = renderScan(pred);
         if (hasTimeFunction(rendered.whereSql)) return "predicate renders a time function (now()/current_timestamp) — not replayable";
       } catch (e) {
         return (e as Error).message;
       }
+      if (schema) {
+        const schemaErr = checkPredicateSchema(pred, schema, checker.type);
+        if (schemaErr) return schemaErr;
+      }
     }
+  }
+  if (c.requires_execution !== undefined) {
+    if (checker.type !== "agent") return 'requires_execution is only meaningful for agent checkers — a fact checker must be re-runnable without side effects';
+  }
+  if (checker.type === "agent" && c.requires_execution === false) {
+    return "agent checker runs a model and therefore requires_execution; drop the flag or set it to true";
   }
   if (checker.type === "command") return "command checkers are not allowed in prepared specs (execution surface) unless explicitly enabled";
   if (checker.type === "agent") {
@@ -299,7 +334,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
   if (!opts.reviewer) {
     return {
-      verdict: "needs-material",
+      verdict: "error",
       units: [],
       rejected,
       rounds: 0,
@@ -370,15 +405,18 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   const spec: VerifySpec = {
     contract_version: "0.4",
     spec_id: opts.specId ?? `spec_${materialsSha.slice(0, 12)}`,
-    spec_version: 1,
+    // 条件④：版本由调用方递增（同一材料的第 N 次冻结），缺省 1 只对首次成立
+    spec_version: opts.specVersion ?? 1,
     title: opts.title ?? "prepared spec",
     domain: opts.domain ?? "prepared",
     created: now(),
     runtime_min: "1",
-    verifier: { engine_version: "0.1.0", corpus_version: "1" },
-    as_of: { kind: "snapshot", value: now() },
+    verifier: { engine_version: opts.engineVersion ?? "0.1.0", corpus_version: opts.corpusVersion ?? "1" },
+    // 条件④：as_of 由调用方给（快照口径必须指向真库副本的那个时刻，不是"现在"）
+    as_of: opts.asOf ?? { kind: "snapshot", value: now() },
     vu: kept.map((k) => k.vu),
-    attachments: [],
+    // fdc F3：附件级 sha256 落到 spec——同一文本不同二进制不能过重放
+    attachments: (opts.materialIndex?.files ?? []).map((f) => ({ role: "baseline" as const, path: f.path, sha256: f.sha256, mime: f.mime, size: f.size ?? 0 })),
     sealed: { review: true },
     materials_sha256: materialsSha,
   } as VerifySpec;
@@ -386,8 +424,8 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   // P4：红队门禁（调用方注入；未注入 = 未验证，不得落 ready）
   if (!opts.redteam) {
     return {
-      verdict: "needs-material",
-      spec,
+      verdict: "error",
+      spec: undefined, // 条件③：未过红队一律不落可冻结 spec
       units: spec.vu,
       rejected,
       rounds: round,
@@ -399,7 +437,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   if (failures.length) {
     return {
       verdict: "error",
-      spec,
+      spec: undefined, // 条件③：红队失败不落盘，冻结是单向门
       units: spec.vu,
       rejected,
       rounds: round,

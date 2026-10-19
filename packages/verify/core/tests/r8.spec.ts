@@ -99,7 +99,7 @@ describe("r8 F1：agg 是活特性（只聚合、别名唯一、禁止混排）"
           checker: {
             type: "sql-pair",
             left: { predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents" }, { fn: "count" }] } },
-            right: { table: "expected", key: "batch", value: "amount_cents" },
+            right: { predicate: { from: "expected", select: [], agg: [{ fn: "sum", col: "amount_cents" }] } },
             compare: { mode: "exact" },
           },
         }),
@@ -167,6 +167,71 @@ describe("r8 F3/F4/F5：元素同型、is null 不带值、时区规范化", () 
     const a = await runVerify(spec([unit({ id: "V1", checker: checker("2026-07-01T00:00:00+08:00") })]), { runner });
     const b = await runVerify(spec([unit({ id: "V1", checker: checker("2026-06-30T16:00:00Z") })]), { runner });
     expect(a.vu[0].verdict).toBe(b.vu[0].verdict);
+    expect(a.vu[0].evidence?.count).toBe(b.vu[0].evidence?.count);
+  });
+});
+
+describe("r9 E1–E4：谓词侧键、空批、agg 归属、偏移形态", () => {
+  it("E1：谓词侧键名正确（两侧 total 相对，PASS；不再出现 undefined 键）", async () => {
+    const side = { predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents", as: "total" }], where: { op: "and" as const, conditions: [{ col: "batch", op: "=" as const, value: "2026-07" }] } } };
+    const r = await runVerify(
+      spec([unit({ id: "V1", checker: { type: "sql-pair", left: side, right: { predicate: { ...side.predicate } }, compare: { mode: "exact" } } })]),
+      { runner },
+    );
+    expect(r.vu[0].verdict).toBe("PASS");
+    expect(r.vu[0].witness?.rows_matched).toBe(0);
+  });
+
+  it("E1：谓词侧与 rowset 侧混用 → ERROR（键空间不相交）", async () => {
+    const r = await runVerify(
+      spec([
+        unit({
+          id: "V1",
+          checker: {
+            type: "sql-pair",
+            left: { predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents" }] } },
+            right: { table: "expected", key: "batch", value: "amount_cents" },
+            compare: { mode: "exact" },
+          },
+        }),
+      ]),
+      { runner },
+    );
+    expect(r.vu[0].verdict).toBe("ERROR");
+    expect(String(r.vu[0].evidence?.reason)).toMatch(/same shape family/);
+  });
+
+  it("E3：空批总额对总额 → NEEDS-MATERIAL（不是 PASS）", async () => {
+    const side = (batch: string) => ({ predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents", as: "total" }], where: { op: "and" as const, conditions: [{ col: "batch", op: "=" as const, value: batch }] } } });
+    const r = await runVerify(
+      spec([unit({ id: "V1", checker: { type: "sql-pair", left: side("2099-01"), right: side("2099-01"), compare: { mode: "exact" } } })]),
+      { runner },
+    );
+    expect(r.vu[0].verdict).toBe("NEEDS-MATERIAL");
+    expect(String(r.vu[0].evidence?.reason)).toMatch(/zero rows/);
+  });
+
+  it("E2：sql 型带 agg → ERROR；count 谓词带 agg → ERROR", async () => {
+    const sqlAgg = await runVerify(
+      spec([unit({ id: "V1", checker: { type: "sql", predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents" }], where: { op: "and", conditions: [{ col: "batch", op: "=", value: "2026-07" }] } }, fail_when: "rows>0" } })]),
+      { runner },
+    );
+    expect(sqlAgg.vu[0].verdict).toBe("ERROR");
+    expect(String(sqlAgg.vu[0].evidence?.reason)).toMatch(/belongs to sql-pair/);
+
+    const countAgg = await runVerify(
+      spec([unit({ id: "V1", checker: { type: "count", predicate: { from: "bills", select: [], agg: [{ fn: "sum", col: "amount_cents" }] }, op: "==", value: 1 } })]),
+      { runner },
+    );
+    expect(countAgg.vu[0].verdict).toBe("ERROR");
+    expect(String(countAgg.vu[0].evidence?.reason)).toMatch(/must not carry agg/);
+  });
+
+  it("E4：+08（只有小时偏移）不再 NaN——与 +08:00 结论一致", async () => {
+    const mk = (value: string) => ({ type: "count" as const, predicate: { from: "bills", select: [] as string[], where: { op: "and" as const, conditions: [{ col: "created", op: ">=" as const, value }] } }, op: "==" as const, value: 2 });
+    const a = await runVerify(spec([unit({ id: "V1", checker: mk("2026-07-01T00:00:00+08") })]), { runner });
+    const b = await runVerify(spec([unit({ id: "V1", checker: mk("2026-07-01T00:00:00+08:00") })]), { runner });
+    expect(a.vu[0].verdict).toBe("PASS");
     expect(a.vu[0].evidence?.count).toBe(b.vu[0].evidence?.count);
   });
 });

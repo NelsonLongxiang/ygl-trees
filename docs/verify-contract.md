@@ -96,6 +96,21 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 - 渲染结果 `rendered.find_sql` / `rendered.scope_sql` 写进报告 evidence，与 witness 对账。
 - `authored:"mechanical"` 的手写 sql 直接 ERROR（机械 spec 只能用 predicate）；手写 sql 形态必须自带 `scope_sql` 或 WHERE。
 
+## 1.6 prepare 流水线（P0–P5，评审 302cb119 拍板条件）
+
+构造面 = **模型只提议、机器只接受机械形态**。五阶段全在 `packages/verify/core/src/prepare.ts`，每阶段拒绝都进 `rejected[]`（带 `stage` 与原因），不静默丢。
+
+| 阶段 | 门 | 失败后果 |
+|---|---|---|
+| **P0** 材料冻结 | 材料非空；`materials_sha256` 由调用方文本算出；命中 `knownMaterialHashes` 只记 diagnostic（v1 是提示不是拦截） | 空材料 → `needs-material` |
+| **P1** 判据抽取 | `source_clause` 与 `anchor.quote` 都必须在冻结材料里**逐字**存在；`anchor.locator` 必须由 `material_index` 声明；含不可判词（应尽量/建议/合理/酌情/视情况/适当）→ 拒 | 记 `rejected[stage=P1]` |
+| **P2** 翻译成 VU | 只允许**谓词 AST**（手写 `sql` 一律拒；count/exists 的 `sql` 形态也拒）；`$vu:` 只允许出现在 `count.from` 与 sql-pair 侧，谓词内出现 → 拒（金额字面量 `$50` 不误伤）；渲染不得含时间函数；schema 探针**全量**校验表/列（sql、sql-pair 双侧、count、exists）；agent 必须带非空 rubric；`requires_execution` 只属于 agent 型；compare 走同一 `validateCompareSpec` | 记 `rejected[stage=P2]` |
+| **P3** 盲审 | 复用 run 期 `ReviewRunner`（`blind:true`）：三问 fid/decidable/not-vacuous 缺一不可，未知 verdict/同问矛盾/reject/unclear/引用别的 VU 的 ok/锚点非逐字 → 都不 ready；**上限 3 轮**，每轮新上下文，出现可冻候选即收敛 | 记 `rejected[stage=P3]`；无 reviewer → `error` |
+| **P4** 红队门禁 | 由调用方注入（要真库/真附件/真对抗样本）；未注入**不落 ready**（CLI 可退化为"空库最小红队"） | 失败 → `error`，且**不落可冻结 spec**（`spec` 省略） |
+| **P5** 冻版 | `as_of` 由调用方给（快照口径）；`attachments` 从 `material_index.files` 映射（带**文件级 sha256/size**，防同一文本不同二进制重放）；`spec_version` 由调用方递增；`engine_version`/`corpus_version` 取构建版本 | `ready` 才产出 frozen spec |
+
+`verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
+
 ## 2. 报告（report，`report.json`）
 
 ```json
@@ -145,16 +160,18 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | `exists`（expect=true，找存在） | 源表行数 | 命中行数（0/1+） | **NEEDS-MATERIAL**（引擎装配期降级，非检查器内判） | **FAIL** | `expect` |
 | `exists`（expect=false，找不存在） | 源表行数 | 命中行数 | **NEEDS-MATERIAL** | **PASS** | `expect` |
 | `file` | 提交物文件总数 | glob 命中的文件数 | **NEEDS-MATERIAL**（目录为空） | `min`/`require` 缺省时 **PASS**；`min>0`/`require` 命中缺失 → **FAIL** | `min`/`max`/`require` |
+| `command`（**执行事实，不属 fact 层**，不进 §2.1 折叠判据；见 md §6.1） | — | — | 仅以 `expect_exit`/`stdout_matches` 判 | 同左 | `expect_exit` |
+| `agent` | —（review 层） | — | 缺凭证/无 review runner → **ERROR** | 由 rubric 判 | `rubric`/`pass_if` |
+
+> **聚合对（sql-pair 双侧聚合，r9 E3）**：两侧都是谓词聚合时必须各自先算 scope——任一侧 `rows_scanned=0` → **NEEDS-MATERIAL**（批号打错/漏批时两侧 SUM 都是 NULL，「同构缺失」不能判相等）。谓词侧与 rowset 侧混用 → 构造期 **ERROR**（键空间不相交）。
 
 > **review 层字段口径**：`ReviewFinding.checkpoint` 是 rubric 检查点 id 的正式通道（reason 前缀 `rubric:<id>` 仅为兼容）；只有**同一 VU** 的 ok findings 能覆盖检查点（跨 VU 冒领按未覆盖处理）。`spec.materials_sha256` 给出时，run 会在开 review 前复核材料哈希，不一致 → ERROR（W15）。
 >
 > **锚点 locator 校验（W8）**：引擎保证 quote 在冻结材料里逐字复读、locator 非空；quote 是否落在 locator 指向的 span 内，需 prepare 阶段带 material_index 才可判，v1 在报告里标注 `anchor_locator_unverified`，M13-2 收敛。
 
 > **file 型 v1 能力边界（裁定 A/B/C 之 B）**：只判**结构/签名/清单**类事实——文件存在性、命中数量、行数、sha256、页数。**不做 OCR、不做内容语义理解**（图片里的金额、PDF 里的条款都不读）。带内容级判据的用例在报告里标 `dim: "content-pending-M13-2"`，不得算作已覆盖。
-| `command`（**执行事实，不属 fact 层**，不进 §2.1 折叠判据；见 md §6.1） | — | — | 仅以 `expect_exit`/`stdout_matches` 判 | 同左 | `expect_exit` |
-| `agent` | —（review 层） | — | 缺凭证/无 review runner → **ERROR** | 由 rubric 判 | `rubric`/`pass_if` |
 - 证据行 **canonical 排序**（主键升序、NULL 置末）——否则「逐字重放」不成立。
-- **规范化算法**（评审 R10）：报告与语料比对一律走 **JCS 子集**（RFC 8785）：①对象键按 UTF-16 码元升序 ②数字只允许安全整数与定点小数（禁 NaN/Infinity/科学计数法输出差异）③时间统一 RFC 3339 UTC 毫秒 ④字符串 NFC ⑤数组保序。TS 与 Rust 必须共用同一 serializer（`stableStringify` 与 Rust 侧对齐测试进 G4）。
+- **规范化算法**（评审 R10）：报告与语料比对一律走 **JCS 子集**（RFC 8785）：①对象键按 UTF-16 码元升序 ②数字只允许安全整数与定点小数（禁 NaN/Infinity/科学计数法输出差异）③时间统一 RFC 3339 UTC 毫秒 ④字符串 NFC ⑤数组保序。TS 与 Rust 必须共用同一 serializer——TS 实现是 `packages/verify/core/src/canonical.ts`（`canonicalStringify`/`canonicalTimestamp`），跨实现向量在 `packages/verify/core/corpus/canonical/vectors.json`（**只增不改**，改 = 升版本），Rust 侧必须逐条对上。对象里值为 `undefined` 的键视同不存在（与 `JSON.stringify` 的可选字段语义一致）；数组里的 `undefined` 拒绝。
 - `schema_fingerprint` **方言相关**：SQLite 按 `sqlite_master` 表名+规范化 DDL 元组排序哈希；PG 按 `information_schema.columns` 的 (table,column,type,notnull) 元组排序哈希。prepare 冻结的值只能与同方言 run 比对，跨方言比对一律 ERROR。
 - `payload_sha256`：整份报告除该字段外的规范化哈希（import 前可校验文件未被手改，评审 B3）。
 - 报告**不可变**：重跑生成新 `run_id`。
@@ -244,6 +261,7 @@ build_sha256 = H(engine || spec)          # 不含 footer 自身（含自身即�
 
 ## 6. 状态
 
+- v0.5：r9 评审 E1–E5 落文与修复（sql-pair 谓词侧键名/同族守卫、空批聚合对 NEEDS-MATERIAL、sql/count/exists 禁 agg、±hh 偏移归一、prepare P2 白名单与 schema 全量校验、`$vu:` 收窄、附件 sha256 进 spec、P3/P4 配置错误归 `error`）+ JCS canonical 落地实现与跨实现向量 + §1.6 prepare 五阶段规则表。**仍未冻结**。
 - v0.4：评审 R7–R13 落文（CompareSpec 单一形状 + ε 规则 / 零匹配按型 / task 副作用统一 / JCS canonical + 方言相关指纹 / as_of 时间函数构造期拒绝）+ 实现缺口 a–f 修复（source 失败级联 ERROR、`$vu:` 命名空间、schema 漂移 ERROR、glob 根目录、无 assert 拒绝、witness 口径重写）。
 - v0.3：评审 302cb119 R1/R2/R3/R4 契约面落文（witness 语义表 / count from-sql 互斥 / attachments 新表裁定 / VuResult witness 类型强制）。
 - v0.2：已并入 fdc757f6 D0 快检三条（sql-pair 互斥 / 命令名统一 / 七型形状齐为冻结前置）与 302cb119 B1/B2/B3/B5 契约面（overall+severity / witness / footer+登记 / CompareSpec+as_of）。**未冻结**。

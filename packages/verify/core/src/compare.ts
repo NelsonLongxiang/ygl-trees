@@ -29,8 +29,19 @@ function exactMinorUnits(v: unknown, scale: number): number | null {
 /** window 型：把 ISO 字符串或 Date 归一成 epoch ms（数字不当日期，避免把金额误判为时间）。 */
 // W1b：日期可以只有日期段；但**只要出现时间就必须带时区**（Z 或 ±hh:mm）。
 // 否则 Date.parse 会按本机时区解释——同一 spec 换台机器窗口就漂（UTC+8 实测漂 8 小时）。
-const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const ISO_DATETIME_TZ = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+/** 只有日期没有时间（可作为"整天"锚点） */
+export const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * 带时区的 ISO 8601 时间（W1b/F4 单一定义）：
+ * 偏移接受 `Z` / `+08:00` / `+0800` / `+08` 三种写法——PG 三种都会吐出来，
+ * 但**必须带时区**：无时区的 datetime 会被本机时区解释，换机器窗口就漂。
+ */
+export const ISO_DATETIME_TZ = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/;
+
+/** `+08` → `+08:00`：只有小时偏移的写法在 Date.parse 里是 NaN，先补分钟 */
+export function withOffsetMinutes(v: string): string {
+  return v.replace(/([+-]\d{2})$/, "$1:00");
+}
 
 function toEpochMs(v: unknown): number | null {
   if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.getTime() : null;

@@ -12,7 +12,8 @@ import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
-import { compareValues, validateCompareSpec } from "./compare";
+import { canonicalStringify } from "./canonical";
+import { compareValues, ISO_DATETIME_TZ, validateCompareSpec, withOffsetMinutes } from "./compare";
 import type {
   AgentChecker,
   Checker,
@@ -135,6 +136,9 @@ async function runFactChecker(
       // ---- 谓词形态（prepare 机械生成）：sql/scope_sql 由渲染器产出 ----
       if ("predicate" in c && c.predicate) {
         const pred = c.predicate;
+        if ((pred.agg ?? []).length > 0) {
+          return { verdict: "ERROR", evidence: { reason: "predicate.agg belongs to sql-pair predicate sides only — a plain sql rowset with agg is always one row and proves nothing (r9 E2)" } };
+        }
         if (failWhen === "rows>0" && !pred.where) {
           return { verdict: "ERROR", evidence: { reason: "predicate has no where clause — a full-table scan cannot prove the intended batch (vacuous-pass risk)" } };
         }
@@ -233,14 +237,15 @@ async function runFactChecker(
           if (aggs.length !== 1) {
             throw new Error("sql-pair predicate side needs exactly one agg column (that column is the compared value)");
           }
-          renderPredicate(side.predicate); // 先跑一次校验（agg/别名/where 规则）
           const alias = aggAliasOf(side.predicate);
-          const { findSql } = renderPredicate(side.predicate);
+          const { findSql } = renderPredicate(side.predicate); // 单次渲染，兼做 agg/别名/where 规则校验
           const rows = runner.query(findSql);
           if (rows.length !== 1) {
             throw new Error(`sql-pair predicate side must yield exactly one row (aggregate), got ${rows.length}`);
           }
-          return [{ key: side.key ?? "total", value: rows[0][alias] }];
+          // 键列名 = side.key（缺省 "total"），值 = 该键常量；与 sideKey/sideVal 访问口径一致（r9 E1）
+          const kName = side.key ?? "total";
+          return [{ [kName]: kName, value: rows[0][alias] }];
         }
         if ("from" in side) {
           const ref = refId(side.from);
@@ -254,6 +259,24 @@ async function runFactChecker(
       const compareSpec: CompareSpec = c.compare;
       const specErrs = validateCompareSpec(compareSpec);
       if (specErrs.length) return { verdict: "ERROR", evidence: { reason: `invalid compare spec: ${specErrs.join("; ")}` } };
+      const isPredicateSide = (sd: typeof c.left): boolean => "predicate" in sd && Boolean((sd as { predicate?: unknown }).predicate);
+      if (isPredicateSide(c.left) !== isPredicateSide(c.right)) {
+        return { verdict: "ERROR", evidence: { reason: "sql-pair sides must be the same shape family — an aggregate predicate side cannot be paired with a rowset side (key spaces do not intersect)" } };
+      }
+      // E3：聚合对的空批守卫——两侧 SUM 都是 NULL 时「同构缺失」会被误判为相等
+      for (const sd of [c.left, c.right]) {
+        if (!isPredicateSide(sd)) continue;
+        const pred = (sd as { predicate: Predicate }).predicate;
+        const { scopeSql } = renderPredicate(pred);
+        const scopeRows = runner.query(scopeSql);
+        const n = Number(Object.values(scopeRows[0] ?? {})[0]);
+        if (!Number.isInteger(n) || n < 0) {
+          return { verdict: "ERROR", evidence: { reason: `aggregate side scope is not a non-negative integer (got ${JSON.stringify(Object.values(scopeRows[0] ?? {})[0])})` } };
+        }
+        if (n === 0) {
+          return { verdict: "NEEDS-MATERIAL", witness: witness(0, 0, [], fingerprint), evidence: { reason: "aggregate side scanned zero rows — wrong batch or empty data (r9 E3)" } };
+        }
+      }
       let left: Row[];
       let right: Row[];
       try {
@@ -375,6 +398,9 @@ async function runFactChecker(
         n = upstream.length;
         scanned = upstream.length;
       } else if ("predicate" in c && c.predicate) {
+        if ((c.predicate.agg ?? []).length > 0) {
+          return { verdict: "ERROR", evidence: { reason: "count predicate must not carry agg — the count itself is the aggregate (r9 E2)" } };
+        }
         const { from, whereSql } = renderScan(c.predicate);
         const rows = runner.query(`SELECT count(*) AS n FROM ${from}${whereSql}`);
         n = rows.length > 0 ? Number(Object.values(rows[0])[0]) : 0;
@@ -401,6 +427,9 @@ async function runFactChecker(
     case "exists": {
       let sql: string;
       if ("predicate" in c && c.predicate) {
+        if ((c.predicate.agg ?? []).length > 0) {
+          return { verdict: "ERROR", evidence: { reason: "exists predicate must not carry agg (r9 E2)" } };
+        }
         const { from, whereSql } = renderScan(c.predicate);
         sql = `SELECT 1 FROM ${from}${whereSql}`;
       } else {
@@ -604,17 +633,14 @@ function ident(name: string, what: string): string {
   return parts.join(".");
 }
 
-/** 带时区的 ISO 8601（r8 F4：PG 常见输出含 +08 / +0800 形态） */
-const ISO_OFFSET = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2}|[+-]\d{2})$/;
-
 /**
  * 时间字面量规范化（r8 F5）：带偏移的时间统一折成 UTC Z。
  * 原因：SQLite 里日期是字符串，`BETWEEN '2026-07-01T00:00:00+08:00' AND ...` 是字典序比较，
  * 与真实时间序不等价；折成 Z 后同一 spec 在任何机器上给出同一结论（Rust 侧同口径）。
  */
 function normalizeIsoLiteral(v: string): string {
-  if (!ISO_OFFSET.test(v)) return v;
-  const ms = Date.parse(v.replace(" ", "T"));
+  if (!ISO_DATETIME_TZ.test(v)) return v;
+  const ms = Date.parse(withOffsetMinutes(v.replace(" ", "T")));
   if (!Number.isFinite(ms)) throw new Error(`predicate literal ${JSON.stringify(v)} looks like an ISO datetime but cannot be parsed`);
   return new Date(ms).toISOString();
 }
@@ -1039,13 +1065,7 @@ function executeSourceRows(vu: VerifyUnit, opts: VerifyOptions, runner: QueryRun
 export function payloadHash(report: VerifyReport): string {
   const clone = { ...report } as Record<string, unknown>;
   delete clone.payload_sha256;
-  return `sha256:${createHash("sha256").update(stableStringify(clone)).digest("hex")}`;
-}
-
-function stableStringify(v: unknown): string {
-  if (v === null || typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
-  const obj = v as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+  // 序列化走 canonical JSON（N4/R10）：键序、数字形态、Unicode 都逐字节确定，
+  // 与 Rust 实现共用同一套规则（corpus/canonical/vectors.json 是跨实现锚）。
+  return `sha256:${createHash("sha256").update(canonicalStringify(clone)).digest("hex")}`;
 }
