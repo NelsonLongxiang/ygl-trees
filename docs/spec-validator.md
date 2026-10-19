@@ -114,6 +114,8 @@
    - **无条件拒绝**：sql 型无 WHERE 或只在视图上聚合 → 拒绝；
    - **覆盖率检查**：每条 source_clause 至少映射一个 VU，或显式声明该判据不可机器判定（进 NEEDS-MATERIAL 并说明缺什么材料）——判据不许静默消失；
    - **fail-closed**：材料不足以锚定任何检查 → NEEDS-MATERIAL，绝不落 PASS。
+   - **per-type 最小强度（评审 C3-ii）**：`sql-pair` 的 tolerance 必须落在合法数值域（ε≤0 或未设上界=空转，拒绝）；`count` 的判据不得恒真（`>= 0` 之类拒绝）；`file` 的 glob 不得匹配任意名（`*`/`**` 裸用拒绝）；`agent` 的 rubric 必须含**可证伪检查点**（全称肯定句如「格式规范」=空转，须写「字段 X 缺失即 FAIL」这类可失败项）；`sql` 无 WHERE/仅视图聚合拒绝（已有）。
+   - **typed tolerance（§4.1 补全）**：容差三单位——`abs`（绝对数值）、`percent`（百分比）、`day`（时间窗口，如「7 天内」→ `{kind:"day", value:7}`）；单位与比较域必须匹配（数值域塞 day 拒绝）。
 
 自审与修订过程全部写进 spec 的 meta（谁在第几轮改了什么），报告可追溯。
 
@@ -133,9 +135,24 @@
 
 - **fact 层**：确定性事实——同输入同判，逐字重放；
 - **review 层**（`agent`）：模型审阅——输出布尔但**标注来源**，证据=rubric 逐项检查+提交物原文引文，事后可人工复核推翻（复核不是通过门槛）；不冒充事实；
-- **NEEDS-MATERIAL 是诚实非真态**（§6）：判不了 → 不给通过，绝不静默落 PASS。
+- **NEEDS-MATERIAL 是诚实非真态**（§6）：判不了 → 不给通过，绝不静默落 PASS；**提交物本身不可读**（文件坏了/加密/格式不认）归 NEEDS-MATERIAL（补材料可解），**不是 ERROR**（评审小项边界）。
 
 **闭集纪律**：新增 type = 破坏性变更（走 schema 版本）。判定输出永远不含概率；语义判不了且无 rubric 可依的判据在构造阶段就该落 NEEDS-MATERIAL，不许硬编成 `agent` 或塞进 sql 糊弄。
+
+### 5.1 VU 角色：`assert` 与 `source`（评审 C1——语义地基）
+
+每个 VU 必须声明 `role`，这是**四态契约能说清话的前提**（评审 direct-5fbe6d54 C1）：
+
+| role | 语义 | verdict | 计入总判定？ |
+|---|---|---|---|
+| **`assert`**（断言，默认） | 检查器违规行 = 业务不合规 → FAIL | PASS / FAIL / NEEDS-MATERIAL / ERROR | **是** |
+| **`source`**（数据源/投影） | 只负责把数据取出来给下游用（`$Vx.out`），自身不判定 | **恒 PASS-by-construction**（取数失败才是 ERROR） | **否** |
+
+- **总判定 = 所有 `assert` 节点独立合取**：任一 `assert` FAIL → 总 FAIL；`source` 节点不参与总判定，只作为数据管线的一环在 trace 里呈现。
+- **逐条计数不折叠**：V1 FAIL、V2 消费 `$V1.rows` 后 PASS 时，报告分别记两条（V1 FAIL / V2 PASS），summary 的 `fail` 计数以 assert 节点为准——不允许「下游过了就当上游没问题」。
+- **空转守卫**：`source` 节点**未被任何下游引用** = 空转 → 构造拒绝（写了等于没写）。
+
+这条必须钉在语料与双实现门禁之前（Rust 面按同一语义实现），否则两面对「V1 到底断言什么」各写各的。
 
 **`agent` 型的 run 时行为**：rubric 与提交物快照在 prepare 阶段**已冻结**，run 时模型只按冻结 rubric 对照冻结提交物——输入确定性封死，输出标注 review 层；同一 rubric+同一提交物重跑原则上同判（允许抖动，报告标注并给复核通道）。fact 层在 run 时零模型。
 
@@ -154,6 +171,7 @@ V3 (count)    : 「$V2.violations == 0」   → verdict FAIL 带样例行
 - **引用语法**：`$Vx.<output>` 出现在下游 checker 的参数位（sql 的 WHERE IN、sql-pair 的一侧、count 的集合源）。
 - **执行序 = 拓扑序**：复用科技树引擎的 DAG 语义（拓扑排序 + 环检测）——规范内引用成环在 prepare 阶段拒绝（同 `node validate`）。
 - **级联语义**：上游 FAIL → 其 outputs 仍然产生（FAIL 的行集正是下游要消费的证据）；上游 ERROR（表不存在/连接断）→ 下游标 ERROR（原因=上游不可用），不装死也不中断独立分支。
+- **verdict 传播（评审 C1 补）**：`source` 节点恒 PASS（取数失败=ERROR）；下游 `assert` 的判定**独立成立**，不因上游 FAIL 而自动 FAIL（上游行集正是它的输入）；总判定只做 `assert` ∧，`source` 与 trace 不进 summary 分母。
 - **确定性保持**：组合是纯数据流——同输入同输出同判定；报告=管线执行 trace（每级展示收到什么、产出什么、判了什么）。
 - **与科技树同构**：spec 内 VU 图是 mini-DAG，树引擎的闭包/拓扑/环检测直接复用；跨 spec 组合（一个 spec 的报告作为另一个 spec 的输入）未来走 artifact 引用，首版不做。
 
@@ -259,6 +277,9 @@ verify list                        # 规范清单与状态
 - **运行时输入只剩三类**：数据源（SQLite 文件 / PG URL）、提交物附件（业务数据）、输出路径。基准材料的**冻结期望值**已在 spec 里（prepare 时提取并带锚点），所以基准材料原件不需要随包。
 - **通用模式仍保留**（开发用）：未封包的引擎支持 `--spec`，报告头标 `sealed: false`；交付场景一律用封包二进制。
 - **安全边界不变**：`command` 是唯一可执行面（显式白名单，默认关闭）；`sql` 只读前缀门；附件只读；封包载荷是只读数据，不是代码。
+- **封包 × `agent` 型（评审 C2）**：`agent` 型 run 时要调判定网关，而第三方机器没有凭证——**`build` 默认拒绝含 `agent` VU 的 spec（封包 = fact-only）**；显式 `--with-review` 才允许，且运行时输入**增加第四类：网关凭证（运行时传入，不入库）**，报告标注 `sealed.review=on`。封包限制在 `self-check` 里明示。
+- **威胁模型（评审 C3-i，必须诚实写明）**：指纹在文件内，**能改二进制的人可以改 spec 并重算尾纹**；构建可复现意味着「同引擎 + 新 spec」就是一份合法的新封包。所以「不可变更」的真实承诺是 **tamper-evidence（防意外漂移、防顺手替换），不是 tamper-proofness（不防持有者恶意伪造）**。验真动作 = **带外比对 `binary_sha256`**（发哈希的通道 ≠ 发二进制的通道）：`self-check --expect <sha256>` 给接收方一条机械核对通道；需要更高门槛时用 ed25519 对尾纹签名（公钥带外分发，`--key` 封包）。
+- **报告首屏（评审小项升格硬规则）**：报告第一屏固定为「**判据原文（source_clause verbatim）↔ verdict ↔ 证据**」全对照表——自审无法消除的共同误读，在这里暴露给一定会看的人；这是零人工确认下残余风险的唯一可见面。
 
 **构建 → 交付 → 回收入库**：TS 构造面产出 spec（submit/prepare/自审）→ `yglverify build` 封包 → 交付单文件 → 业务方在其环境中 `run` 出报告 → `verify report import` 把报告（含 binary_sha256）回收入 workspace，版本链闭合。
 
@@ -298,6 +319,7 @@ verify list                        # 规范清单与状态
 3. **门禁随语言**：Node=vitest/contract:audit（现有四段制）；Python=pytest+ruff（提取层自己的黄金样本测试：已知附件→期望提取值）；Rust=cargo test+clippy——全部门禁汇总进 ygl-trees 的 pnpm test 编排。
 4. **发布单元分离**：npm（壳）/脚本随包或独立仓（提取）/二进制 artifact（内核）——互不绑架升级节奏。
 5. **语言准入判据**：新语言进入（含 Go 等）必须声明组件归属 + 契约遵守 + 门禁接入，无例外。
+6. **四向 parity 门禁（评审小项）**：黄金语料矩阵 = {SQLite, PG} × {TS 参考实现, Rust 二进制} 四向逐字一致（除时间戳）——双实现门禁不能只测单方言。
 
 9. **M13 语言切分**（m11443 新增、m11659 重排）：**M13-1 全 Node**（构造面：submit/prepare/自审/export/运行时刻引擎/黄金语料 corpus）；**M13-1b Rust 二进制**（同一契约的执行面，语料双实现门禁，交付 `yglverify`）；提取层 Python 适配器随 M13-1 的 prepare 接口预留（command 边界），真实附件样本到位后接入；WebUI 三视图随 M13-2。
 
@@ -315,3 +337,5 @@ verify list                        # 规范清单与状态
 | H | 封包与交付包（m11659+m11703） | 交付物 = 单个封包二进制（spec 内嵌、不可变更）；`yglverify build --spec … --out …` 封包；业务数据与提交物运行时传入 | 决定分发包形态与 CI 产物（每 spec 一个二进制哈希） |
 
 其余九条（命令名/七检查器/artifacts 存储/PG/管线组合/自审形态）均为推荐默认，风险低可逆，开工即按推荐执行；语言切分已由 m11659 钉为「TS 构造面 + Rust 二进制执行面」。
+
+**评审记录**：评审席 dsh/fdc757f6（task direct-30389fca，意见 tmp/review-m13-spec-validator.md）判 **CHANGES**，三条必改已并入——C1 角色语义 → §5.1 + §5.5；C2 封包×agent → §8.5.1；C3 威胁模型 + per-type 守卫 → §8.5.1 + §4.3。小项（agent 不可读=NEEDS-MATERIAL、报告首屏全对照硬规则、四向 parity）亦已落文。
