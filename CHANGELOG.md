@@ -6,7 +6,7 @@
 
 - **r19 非阻塞项（302cb119）**：N1 端点计数订正（0.100.0 = 6 读 + 1 写；0.101.0 = 7 读 + 2 写）；N2 坏报告静默丢弃 **显式 WONTFIX**（单条损坏不应拖垮整块看板，`verify report <run>` 会点名解析错误，后续可在 UI 加脚注）；N3 `.gitignore` 补 `*.tgz`；N4 评审证据链移入 `docs/reviews/` 并加索引；N5 补 blob PUT 的 HTTP 413 直接用例。
 
-**热修（发布后 P3）**：`createBlobSink().finish()`，代码实际是 >200（`blob-store.ts` 的 `clientMimeOf`）——代码无需动，口径以代码为准。
+**回执勘误**：0.101.0 回执写附件 mime 上限「>128 字符弃」，代码实际是 **200**（`blob-store.ts` 的 `clientMimeOf`）——代码无需动，口径以代码为准；勘误同步进 plan 记录。
 
 无契约变更；`contract_version` / `corpus_version` 仍 1.1。
 
@@ -16,7 +16,7 @@
 
 - **M13-2 第二批：附件内容寻址仓**（`packages/ops/tools/src/blob-store.ts`）。附件原始字节落 `$YGL_HOME/verify/blobs/<sha 前 2 位>/<sha256>`，材料记录只记 `{path,sha256,mime,size,stored,blob:true}` 引用；`verify submit --attach` 与 WebUI 上传共用同一写入函数，同一份文件重复提交只占一份磁盘。归档 `--with materials` 从仓按 sha 取字节（缺 blob 点名拒产半包），旧工作区未标 `blob` 的条目继续读材料目录副本。
 - **HTTP 写入面**：`PUT /api/verify/blob?name=&mime=` 收原始字节（服务端按实收字节算 sha256，不信 `Content-Length`；客户端声明的 mime 只记录，实际 mime 按扩展名定）；超 64 MiB 回 413 JSON（不再只断连）；`.incoming/*.part` 孤儿在启动与上传前按 mtime 清 6 小时以上残留；`POST /api/verify/material` 接 `attachments:[{sha256,name}]`，引用未入仓 blob → 400，非 JSON → 415。
-- **服务面补齐（r18 P2）**：`GET /api/verify/archives`（侧车展开）与 `GET /api/verify/reports?spec=`（按规范过滤）；订正 0.100.0 记录里「7 个只读端点」的误写——当版实为 5 读 + 1 写。
+- **服务面补齐（r18 P2）**：`GET /api/verify/archives`（侧车展开）与 `GET /api/verify/reports?spec=`（按规范过滤）；订正 0.100.0 记录里「7 个只读端点」的误写——当版实为 **6 读 + 1 写**（specs/spec/reports/report/materials/material；本条原写「5 读」漏计 materials 与 material 两个端点，0.101.1 的 N1 订正已含此括注）。
 - **安全修复（r18 P1）**：`/api/verify/{spec,report,material}` 的 id 此前直接拼路径，`?run=../../leak` 可读到 verify 根外文件。改为 id 白名单 `^[A-Za-z0-9_-]{1,128}$` + 解析后包含性断言，越界与不存在一律 404（不区分，避免探测）；补五条穿越探针（含 `%2e%2e%2f`）回归。
 - **上传门（r18 P3）**：`createDashboardServer` 默认 **拒绝** 上传；serve 仅在回环绑定显式开，`YGL_VERIFY_ALLOW_UPLOAD=1/0` 可强制开关；门的是端点本身（403 JSON），不是只藏 UI 按钮。
 - **WebUI**：材料提交视图接附件上传（`Upload` 原始字节 PUT → 只提单引用），追溯/看板视图区分「加载失败」与「空态」——失败不再显示成「还没有规范」。

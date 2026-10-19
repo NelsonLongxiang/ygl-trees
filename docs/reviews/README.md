@@ -25,6 +25,7 @@
 | `REVIEW-spec-validator-m13-r17.md` | 0.99.1 复核 | P1/P2 修复实证通过 |
 | `REVIEW-spec-validator-m13-r18.md` | 0.100.0 复核 | **CHANGES**：P1 路径穿越 + P2 端点缺失 + P3 三项 |
 | `REVIEW-spec-validator-m13-r19.md` | 0.101.0 复核 | PASS；N1–N5 非阻塞项（计数订正、坏报告 WONTFIX、tgz ignore、评审入库、413 用例） |
+| `REVIEW-spec-validator-m13-r20.md` | 0.101.1 复核 | PASS：N1–N5 落点属实 + blob 并发热修实证；D1/D2 文档返工、D3 并发 flake 样本 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |
 
