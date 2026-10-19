@@ -1,0 +1,6 @@
+{
+  "cases": 1,
+  "matrix": "compare",
+  "mode": "exact",
+  "note": "per-row 币种（货币符号随行携带）首版不支持：比较期不做隐式 FX 归一，构造期直接 ERROR（fdc757f6 裁定 4）"
+}
