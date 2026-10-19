@@ -228,3 +228,63 @@ describe("W9/W10/W11/W13/W15/W16 加固", () => {
     expect(containsVerbatim("总额 1290.40", "总额 1290.4 元")).toBe(false);
   });
 });
+
+describe("r11 R4：scan 域与 $ 字面量（engine 级）", () => {
+  it("干净批：scan 限定批次后 find 零命中仍是 PASS，且 rows_scanned = 域内行数（不是 0）", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { openDatabaseSync } = await import("../src/sqlite-bindings");
+    const { SqliteRunner } = await import("../src/sqlite-runner");
+    const dir = mkdtempSync(join(tmpdir(), "ygl-scan-"));
+    const dbPath = join(dir, "s.sqlite");
+    const db = openDatabaseSync(dbPath);
+    db.exec(
+      "CREATE TABLE bills(id TEXT, amount_cents INTEGER, batch TEXT);" +
+        "INSERT INTO bills VALUES ('A1',100,'2026-07'),('A2',200,'2026-07'),('B1',-50,'2026-08');",
+    );
+    db.close();
+    const real = new SqliteRunner(dbPath);
+    const report = await runVerify(
+      spec([
+        unit("V1", {
+          type: "sql",
+          predicate: {
+            from: "bills",
+            select: ["id", "amount_cents"],
+            scan: { op: "and", conditions: [{ col: "batch", op: "=", value: "2026-07" }] },
+            where: { op: "and", conditions: [{ col: "amount_cents", op: "<", value: 0 }] },
+          },
+        }),
+      ]),
+      { runner: real, nowIso: () => "2026-10-19T00:00:00.000Z" },
+    );
+    // 2026-08 的违规行不在域内：本批干净 → PASS；但扫描面证明了"看过这一批"
+    expect(report.overall).toBe("PASS");
+    const v = report.vu[0] as { verdict: string; witness?: { rows_scanned: number; rows_matched: number } };
+    expect(v.verdict).toBe("PASS");
+    expect(v.witness?.rows_scanned).toBe(2);
+    expect(v.witness?.rows_matched).toBe(0);
+    real.close();
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  it("谓词字面量里的 '$'（如 '$50'、'US$'）不触发占位符守卫", async () => {
+    const rows: Row[] = [{ id: "A1", currency: "USD", note: "$50" }];
+    const report = await runVerify(
+      spec([
+        unit("V1", {
+          type: "sql",
+          predicate: {
+            from: "bills",
+            select: ["id"],
+            where: { op: "and", conditions: [{ col: "note", op: "=", value: "$50" }] },
+          },
+        }),
+      ]),
+      { runner: fakeRunner({ bills: rows }), nowIso: () => "2026-10-19T00:00:00.000Z" },
+    );
+    expect(report.vu[0].verdict).toBe("FAIL"); // 命中一行 → 找违规成立
+    expect(JSON.stringify(report)).not.toContain("not supported");
+  });
+});

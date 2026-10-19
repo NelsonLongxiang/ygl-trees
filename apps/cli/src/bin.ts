@@ -130,6 +130,13 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   claim list
   predict list [--all]        settlement projection: outcome 未结算/1/0/ND + channel + 结算三段式 note（brier/settler）
 
+${paint(C.bold, "verify", color)}      spec validator (M13): material → spec → report
+  submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
+  prepare <material-id>                extract → blind self-review → freeze spec (rc=0 only when ready)
+  run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
+  list | report <run-id> | trace <spec-id> | export <spec-id>
+  report import <report.json>          import a sealed-run report (payload/binary/version checks)
+
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
   section <title> --body|-f  add a section artifact

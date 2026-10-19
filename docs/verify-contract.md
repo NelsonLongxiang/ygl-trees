@@ -111,6 +111,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | **P4** 红队门禁 | 由调用方注入（要真库/真附件/真对抗样本）；未注入**不落 ready**（CLI 可退化为"空库最小红队"） | 失败 → `error`，且**不落可冻结 spec**（`spec` 省略） |
 | **P5** 冻版 | `as_of` 由调用方给（快照口径）；`attachments` 从 `material_index.files` 映射（带**文件级 sha256/size**，防同一文本不同二进制重放）；`spec_version` 由调用方递增；`engine_version`/`corpus_version` 取构建版本 | `ready` 才产出 frozen spec |
 
+> **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
 
 ## 2. 报告（report，`report.json`）
@@ -155,7 +156,9 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 
 | checker | `rows_scanned` 口径 | `rows_matched` 口径 | 空范围（scanned=0） | 零匹配（matched=0） | 依据字段 |
 |---|---|---|---|---|---|
-| `sql`（fail_when=rows>0，找违规） | `scope_sql` 行数；无 scope_sql 时回退源表行数（构造守卫要求 sql 自带 WHERE，否则 ERROR） | 违规行数 | **NEEDS-MATERIAL** | **PASS**（无违规） | `fail_when`/`scope_sql` |
+| `sql`（**谓词形态**，r11 R1） | **域内行数**：与 find 同一次渲染的 `scan` 域（无 scan 时 = 源表行数；find 判据 `where` 不进 scope） | 违规行数 | **NEEDS-MATERIAL** | **PASS**（无违规） | `predicate.scan`/`fail_when` |
+| `sql`（**手写形态** + `scope_sql`） | `scope_sql` 返回的单行单列非负整数 | 违规行数 | **NEEDS-MATERIAL** | **PASS**（无违规） | `fail_when`/`scope_sql` |
+| `sql`（**手写形态**，无 `scope_sql`） | 源表行数回退（构造守卫要求 sql 自带 WHERE，否则 ERROR） | 违规行数 | **NEEDS-MATERIAL** | **PASS**（无违规） | `fail_when` |
 | `sql`（fail_when=rows==0，找缺失） | 源表行数合计 | 命中行数 | **NEEDS-MATERIAL** | **FAIL**（应存在） | `fail_when` |
 | `sql-pair` | 两侧键并集数 | **违规对数**（与契约示例 `rows_matched:3` 对齐） | **NEEDS-MATERIAL**（无可比键） | **PASS 当且仅当 violations=0**；键集不相交 → **FAIL** | `compare`/`cardinality` |
 | `count`（from/sql） | 上游行数或源表行数 | 计数结果 | **NEEDS-MATERIAL** | 由 `op`+`value` 判定（0 本身是合法计数） | `op`/`value` |
@@ -166,6 +169,8 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | `agent` | —（review 层） | — | 缺凭证/无 review runner → **ERROR** | 由 rubric 判 | `rubric`/`pass_if` |
 
 > **聚合对（sql-pair 双侧聚合，r9 E3）**：两侧都是谓词聚合时必须各自先算 scope——任一侧 `rows_scanned=0` → **NEEDS-MATERIAL**（批号打错/漏批时两侧 SUM 都是 NULL，「同构缺失」不能判相等）。谓词侧与 rowset 侧混用 → 构造期 **ERROR**（键空间不相交）。
+
+> **count/exists 谓词形态的扫描面（1.0 已知局限，r11 R2）**：`count`/`exists` 的谓词形态当前用 `SELECT count(*) FROM <from><where>` 直接取数，witness 的 `rows_scanned` 取的是**该次查询的扫描行数**（即源表/域行数），而不是「判据命中数」。因此在「期望 0 命中」的场景里，`sql` 形态仍可能出现「0 行 ⇒ 无违规行可看」的空转嫌疑——这个口径 1.0 冻结不改，1.1 收紧为「谓词形态的 count/exists 与 sql 形态同规则：先算 scan 域行数，域为空即 NEEDS-MATERIAL」。
 
 > **review 层字段口径**：`ReviewFinding.checkpoint` 是 rubric 检查点 id 的正式通道（reason 前缀 `rubric:<id>` 仅为兼容）；只有**同一 VU** 的 ok findings 能覆盖检查点（跨 VU 冒领按未覆盖处理）。`spec.materials_sha256` 给出时，run 会在开 review 前复核材料哈希，不一致 → ERROR（W15）。
 >

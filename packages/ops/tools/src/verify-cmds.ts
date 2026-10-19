@@ -11,7 +11,7 @@
  * 运行契约：rc 只表达过程——0=跑完出报告（PASS/FAIL 都是有效结论），1=运行错误，2=用法错误。
  */
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
@@ -78,7 +78,7 @@ function fileReviewer(reviews: Array<{ source_clause: string; findings: Array<Om
 }
 
 /** P4 最小红队（fdc757f6 裁定①配套）：空快照上不得 ERROR、不得空洞 PASS。 */
-function minimalRedTeam(spec: VerifySpec, schemaSql: string[]): (s: VerifySpec) => Promise<string[]> {
+function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<string[]> {
   return async (s: VerifySpec) => {
     const db = openDatabaseSync(":memory:");
     try {
@@ -120,11 +120,32 @@ function schemaOf(dbPath: string): { ddl: string[]; fingerprint: string } {
 }
 
 /** run 只碰副本（裁定 A）：把快照复制到临时文件，报告记来源 + sha256。 */
+const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** 清理过期快照副本（r11 R7）：只删自己目录里超过 7 天的文件。 */
+function pruneSnapshots(dir: string): number {
+  let removed = 0;
+  const now = Date.now();
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    try {
+      if (now - statSync(p).mtimeMs > SNAPSHOT_TTL_MS) {
+        unlinkSync(p);
+        removed++;
+      }
+    } catch {
+      /* 并发删除/占用不影响本次 run */
+    }
+  }
+  return removed;
+}
+
 function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string } {
   const stat = statSync(dbPath);
   if (!stat.isFile()) throw new Error(`--db must point to a SQLite file (snapshot copy), not a directory: ${dbPath}`);
   const dir = join(process.env.TEMP || process.env.TMPDIR || ".", "ygl-verify-snapshots");
   mkdirSync(dir, { recursive: true });
+  pruneSnapshots(dir);
   const target = join(dir, `${basename(dbPath)}.${Date.now()}.sqlite`);
   copyFileSync(dbPath, target);
   return { path: target, sha256: sha256(readFileSync(target)), source: basename(dbPath) };
@@ -239,7 +260,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return prepareSpec(text, {
         runner: fileRunner(candidatesFile.candidates ?? []),
         reviewer: fileReviewer(reviewsFile.reviews ?? []),
-        redteam: minimalRedTeam(null as never, schema.ddl),
+        redteam: minimalRedTeam(schema.ddl),
         materialIndex,
         schemaProbe,
         specId: `spec_${short(sha256(materialId))}`,
@@ -400,8 +421,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (bin) {
           if (!existsSync(regFile)) problems.push(`unknown verifier: binary ${String(bin).slice(0, 16)}… has no build registration`);
           else {
-            const reg = readJson<{ spec_version?: number }>(regFile);
+            const reg = readJson<{ spec_version?: number; engine_version?: string; corpus_version?: string }>(regFile);
             if (reg.spec_version !== undefined && report.verifier.spec_version !== undefined && reg.spec_version !== report.verifier.spec_version) problems.push(`version mismatch: report spec_version ${report.verifier.spec_version} ≠ registered ${reg.spec_version}`);
+            if (reg.engine_version !== undefined && reg.engine_version !== report.verifier.engine_version) problems.push(`version mismatch: report engine_version ${report.verifier.engine_version} ≠ registered ${reg.engine_version}`);
+            if (reg.corpus_version !== undefined && reg.corpus_version !== report.verifier.corpus_version) problems.push(`version mismatch: report corpus_version ${report.verifier.corpus_version} ≠ registered ${reg.corpus_version}`);
           }
         }
         if (problems.length) {

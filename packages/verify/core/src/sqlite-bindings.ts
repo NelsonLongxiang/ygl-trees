@@ -23,5 +23,7 @@ export function sqliteModule(): SqliteModule {
 /** 构造 DatabaseSync（与 `import { DatabaseSync }` 同形，但延迟到调用点）。 */
 export function openDatabaseSync(path: string, opts?: { readOnly?: boolean }): DatabaseSync {
   const { DatabaseSync: Ctor } = sqliteModule();
-  return new Ctor(path, opts as never);
+  // node:sqlite 对显式 undefined 的 options 报 "The options argument must be an object"，
+  // 所以只在真给了 options 时才传第二个参数。
+  return opts ? new Ctor(path, opts as never) : new Ctor(path);
 }

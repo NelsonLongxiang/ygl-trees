@@ -763,12 +763,13 @@ export interface RenderedPredicate {
 }
 
 /**
- * 从同一谓词 AST 渲染两段查询（裁定「同源生成」，r5 S2）：
- * find 与 scope **共享同一 where 子句字符串**，物理上不可能伪造扫描面。
+ * 从同一谓词 AST 渲染两段查询（裁定「同源生成」，r5 S2 / R3）：
+ * scan 域**同一次渲染**进两侧（find 与 scope 的 FROM/域过滤逐字相同），where 判据只进 find，
+ * rows_scanned 因此是「域内看了多少行」而不是「判据命中多少行」。
  * 纯聚合形态（agg 非空、select 为空）产出 `SELECT SUM(x) AS sum_x ...`，报告可比对聚合值（r8 F1）。
  */
 export function renderPredicate(pred: Predicate): RenderedPredicate {
-  const { from, whereSql } = renderScan(pred);
+  const { from, whereSql, scanSql } = renderScan(pred);
   const aggs = renderAggs(pred);
   const plain = pred.select.map((c) => ident(c, "select column"));
   const cols = [...plain, ...aggs];
@@ -776,8 +777,6 @@ export function renderPredicate(pred: Predicate): RenderedPredicate {
     throw new Error("predicate.select must list at least one column (or use agg for an aggregate query)");
   }
   const select = cols.join(", ");
-  // 域过滤（scan）进两侧；判据（where）只进 find —— rows_scanned 是「看了多少行」
-  const { scanSql } = renderScan(pred);
   return {
     findSql: `SELECT ${select} FROM ${from}${whereSql}`,
     scopeSql: `SELECT count(*) AS n FROM ${from}${scanSql}`,

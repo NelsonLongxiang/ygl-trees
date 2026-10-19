@@ -324,6 +324,8 @@
 
 评审：fdc757f6（direct-30389fca）CHANGES C1-C3 已并入；302cb119（direct-7510b90f）CHANGES B1-B6 阻塞已并入，C1-C7 随首批闭环。开工序：契约冻结 1.0 → fact 引擎+空洞防护 → prepare（清单/守卫/盲审/红队）→ 管线拓扑 → .157 端到端 → 封包器前置进 M13-1b。批次：M13-1（TS 构造面+语料，0.96.0）→ M13-1b（Rust 二进制 yglverify，0.97.0）→ M13-2（WebUI 三视图，0.98.0）。
 
+**执行记录 · 0.96.0（M13-1 收口，2026-10-20）**：verify 命令面落地（submit/prepare/run/list/report/trace/export/report import）——`run` 只碰 sqlite 快照副本并在报告记 `data_source`，rc 只表达过程；prepare 只有 `ready` 才 rc=0。契约钉 `CONTRACT_VERSION="1.0"`（引擎入口版本守卫）+ 语料钉 `corpus_version="1.0"`（129 文件 digest `38860423…f0`，差异表进 `packages/verify/core/CHANGELOG.md`）；新增 `Predicate.scan` 扫描域（where 只进 find、scan 进 find+scope，witness=域内行数），修掉「干净表 find 零命中 → scope 零行 → PASS 被空洞守卫打成 NEEDS-MATERIAL」的假阳性。评审 r10 F1-F6、r11 R1-R9 全部闭环（302cb119 r11 PASS 并接受 scan 为 1.0 定稿；fdc757f6 钉版复核通过、0.96.0 无阻断）。配套：度量棘轮 `pnpm ratchet`（bundle/前端体积/冷启动只降不升，基线 `ratchet-baseline.json`）+ 契约形状守卫 `shape.spec.ts`（快照首行钉 contract_version，升版必须重铸）+ `docs/measurement-ratchet.md` 方法论。测试 347 / demo 128 / contract 100 / readme 53。下一步 M13-1b：Rust 二进制 `yglverify`，双实现 parity 以 freeze digest + shapes 快照为唯一真值。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

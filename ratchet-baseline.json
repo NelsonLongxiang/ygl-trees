@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "node": "v24.12.0",
+  "platform": "win32",
+  "measured_at": "2026-10-19T16:05:05.643Z",
+  "metrics": {
+    "bundle_bytes": {
+      "value": 507800,
+      "tolerance_rel": 0.02,
+      "measured_at": "2026-10-19T16:05:03.182Z"
+    },
+    "web_dist_bytes": {
+      "value": 1224386,
+      "tolerance_rel": 0.02,
+      "measured_at": "2026-10-19T16:05:03.184Z"
+    },
+    "cold_start_ms": {
+      "value": 481,
+      "tolerance_rel": 0.3,
+      "measured_at": "2026-10-19T16:05:05.643Z"
+    }
+  }
+}

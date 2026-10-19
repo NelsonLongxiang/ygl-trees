@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.96.0（2026-10-20）M13-1 spec validator：verify 命令面 + 契约/语料钉 1.0 + 度量棘轮
+
+- **verify 命令面（M13-1 落地，主推④ 的机器判定入口）**：`submit`（冻结材料：正文 + 附件 sha256/size/mime）→ `prepare`（候选 → P0–P5 流水线：逐字锚点 → 机械形态校验 → 盲审三问 → 红队 → 冻版）→ `run`（**只碰 sqlite 快照副本**，报告记 `data_source{kind,sha256,source,captured_at}`）→ `list`/`report`/`trace`/`export`/`report import`（校验 payload_sha256 + 构建登记 + 三版本一致）。rc 只表达过程：发现 FAIL 的报告仍 rc=0，判定看 `overall`；`prepare` 只有 `ready` 才 rc=0。
+- **契约钉 1.0**：`CONTRACT_VERSION = "1.0"`（引擎入口版本守卫，不匹配直接拒绝）；新增 `Predicate.scan` 扫描域（`where` 只进 find、`scan` 进 find+scope，`witness.rows_scanned` = 域内检查行数）；报告增 `spec_id` 与 `data_source`。**语料钉 1.0**：129 文件 digest `388604230680f9606635caf1d55403703347097ef0337a1aba8337fdaaa076f0`，`packages/verify/core/CHANGELOG.md` 记冻结依据与 8 条不兼容变更（版本守卫 / sealed.review=false / 拒 agent 型 / as_of 必填 / window 偏移归一 / canonical 只收纯对象 / scan 域口径 / count-exists 谓词扫描面已知局限）。
+- **度量棘轮（`pnpm ratchet`，docs/measurement-ratchet.md）**：`scripts/ratchet.mjs` + `ratchet-baseline.json` 钉三条确定性度量——bundle 字节（容差 2%）、前端 dist 字节（2%）、`--version` 冷启动中位数（30%）；**变好自动收紧基线，变坏超容差 rc=1**，`--write` 才认账重设。刻意不测单测/demo 总时长（并行负载下测的是机器忙闲）。已挂进 `pnpm test` 末段。
+- **形状守卫**：`packages/verify/core/tests/shape.spec.ts` 对 `VerifySpec`/`VerifyReport` 的字段路径+类型做快照（快照首行钉 `contract_version`）——契约 1.0「不得静默改内文」有了机械门；升 1.1 必须重铸快照并进评审。
+- **修一个真缺陷（JSON 纯净）**：verify 命令面曾顶层 `import node:sqlite`，让**每条命令**的 stderr 都带 ExperimentalWarning（demo 的 2>&1 捕获因此变红）。改为 `sqlite-bindings.ts` 惰性 require，未触达 verify 的命令零噪音。
+- **r10/r11 评审修复**：`$` 守卫收窄 `$vu:`（`$50` 不再误伤）；window 时间偏移归一（`+08`→`+08:00`）；agent 型在 prepare P2 直接拒（M13-1 fact-only）；`as_of` 必填；canonical 拒非纯对象；`--help` 补 verify 组；快照临时库 7 天自清理；`report import` 补 engine/corpus 版本校验。
+- 测试：unit 347 / demo 128 / contract 100 / readme 53；新 `verify-cli.spec.ts` ×6（rc 三态 + JSON 纯净 + import 形状）、`shape.spec.ts` ×2、predicate R4 ×2。
+
 ## 0.95.0（2026-10-19）毕业三件套 demo 落地 + source tags 读面修复
 
 - **毕业三件套 demo 序列（0.94 P3 承诺兑现）**：demo.sh §9g——supported 断言（判据可机读）→ `source add --tags sop`（执行体词汇落账）→ `rel executes`（能力位↔SOP 源接缝边）三断言全绿；docs/graduation-protocol.md 自指验收条款闭合（demo 125→128）。
