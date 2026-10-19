@@ -221,6 +221,30 @@ verify list                        # 规范清单与状态
 
 数据面：ygl 工作区 db（默认）+ 任意 SQLite 文件路径 + PG URL（**复用 0.89 的 getPgOrm 方言地基**——.157 的 Odoo/PG 直连即在此）。
 
+## 8.5 验证器的存在形态（验证器是什么东西——m11628）
+
+**核心裁定：验证器 = 规范数据（spec）+ 通用运行时（引擎）**，不做「一个规范编译成一个程序」。
+
+| 形态 | 是什么 | 谁用 | 版本钉法 |
+|---|---|---|---|
+| **规范工件** | verify-spec artifact：VU 集合 + 判据原文 + 出处锚点 + rubric，JSON，workspace 内自增版本 | 系统内部真相源 | spec_id + version |
+| **单文件导出** | `verify export <spec>` → 一个 `.yglverify.json`（自包含：VU + 冻结期望值 + 数据源声明 + spec_version） | 交给第三方、存档、跨环境重放 | 文件内嵌 spec_version + runtime_min |
+| **运行时** | ygl-trees 的 `verify` 命令组（发布产物 bundle 内）；同一引擎执行所有规范 | 所有场景 | ygl-trees 版本号 |
+| **服务面** | `webui serve` 的 `/api/verify/*` + 三视图 | 业务专家的浏览器 | 同运行时 |
+| **agent 面** | CLI `--json` / MCP 工具：submit/prepare/run/report 结构化调用 | 驱动验证的 agent | 同运行时 |
+| **独立分发**（后置） | `verify export --bundle` → 自包含目录（spec + 最小引擎 + 数据源配置）；再往后 Rust 静态二进制 | 无 ygl 环境的第三方 | 二进制与 spec 双钉 |
+
+**为什么是数据+运行时，不是逐规范生成程序**：
+
+1. **确定性可审计**——引擎代码一份、七型闭集，判定逻辑不随规范漂移；报告出错能定位到引擎或规范其中一层；
+2. **版本正交**——spec 版本 × 运行时版本，两钉即重放；生成式程序无法这样钉；
+3. **零代码生成**——材料→VU 是数据翻译，不经编译器，不存在「生成的代码没人看得懂」；
+4. **安全边界**——规范没有任意代码执行权：`command` 型是唯一可执行面（显式声明+白名单），`sql` 型只读前缀门。**规范是数据，所以它做不了坏事**——这本身是「验证器不可被构造得能越权」的结构保证。
+
+**运行契约（agent/CI 友好）**：`verify run --json` 输出单对象 `{run_id, spec_version, summary:{pass,fail,needs_material,error}, report_path}`。**退出码只表达过程**：`rc=0`=验证已执行出报告（无论 PASS/FAIL——FAIL 是有效结论，不是程序错误）；`rc=1`=运行错误；`rc=2`=用法错误。判定在报告里，不在退出码里——agent 驱动时不会把「有问题的业务」误判成「工具坏了」。
+
+**运行环境**：任何装了 ygl-trees 的机器 + 规范声明的数据源可达（SQLite 文件路径 / PG URL / workspace 内附件 source）。连接串运行时传入、不入库。
+
 ## 9. 与树/毕业协议的接缝（复用而非新建）
 
 - 验证规范可挂树节点：`rel add node:<tree>/<key> artifact:<spec-id> --rel decided-by`（规范=节点的验收判据）。

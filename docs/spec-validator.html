@@ -343,6 +343,20 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     <tr><td><strong>附件基准</strong></td><td>不可变 source：换版 = 新行，<strong>旧报告锚点永不断链</strong></td><td>source append-only</td></tr>
     <tr><td><strong>毕业产物</strong></td><td>记录出身 <code>{spec_id, version}</code></td><td>graduation 引用</td></tr>
   </table>
+
+  <h3><span class="n">1.7</span>验证器的存在形态</h3>
+  <p><strong>验证器不是「写出来的程序」，是「规范数据 + 通用运行时」</strong>——像 SQL 查询之于数据库：规范是数据，引擎是程序，两钉（spec 版本 × 运行时版本）即重放。</p>
+  <table>
+    <tr><th>形态</th><th>是什么</th><th>谁用</th></tr>
+    <tr><td><strong>规范工件</strong></td><td>verify-spec artifact：VU 集合 + 判据原文 + 锚点 + rubric（JSON，workspace 内自增版本）</td><td>系统内部真相源</td></tr>
+    <tr><td><strong>单文件导出</strong></td><td><code>verify export</code> → 一个 <code>.yglverify.json</code>（自包含：VU + 冻结期望值 + 数据源声明）</td><td>跨环境重放 / 存档 / 交给第三方</td></tr>
+    <tr><td><strong>运行时</strong></td><td>ygl-trees 的 <code>verify</code> 命令组；同一引擎执行所有规范</td><td>所有场景</td></tr>
+    <tr><td><strong>服务面</strong></td><td><code>webui serve</code> 的 /api/verify/* + 三视图</td><td>业务专家的浏览器</td></tr>
+    <tr><td><strong>agent 面</strong></td><td>CLI --json / MCP 工具结构化调用</td><td>驱动验证的 agent</td></tr>
+    <tr><td><strong>独立分发</strong>（后置）</td><td><code>verify export --bundle</code> 自包含目录；再往后 Rust 静态二进制</td><td>无 ygl 环境的第三方</td></tr>
+  </table>
+  <p class="dim">为什么不做「逐规范生成程序」：①引擎代码一份，判定逻辑不随规范漂移；②spec 与运行时版本正交可钉；③零代码生成（材料→VU 是数据翻译）；④<strong>规范是数据，所以它做不了坏事</strong>——<code>command</code> 型是唯一可执行面，<code>sql</code> 只读前缀门，规范没有任意代码执行权。</p>
+  <p class="dim">运行契约：<code>verify run --json</code> → 单对象 <code>{run_id, spec_version, summary:{pass,fail,needs_material,error}, report_path}</code>。<strong>退出码只表达过程</strong>：rc=0 验证已执行出报告（PASS/FAIL 都算成功跑完），rc=1 运行错误，rc=2 用法错误——FAIL 是有效结论，不是工具坏了。</p>
 </div></section>
 
 <!-- ============ 2. ENGINEERING ============ -->
