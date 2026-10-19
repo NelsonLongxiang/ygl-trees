@@ -304,6 +304,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     </div>
   </div>
   <p class="dim">闭集纪律：新增检查器类型 = 破坏性变更（走 schema 版本）。七型 × 七域之外的判据一律标 <code>NEEDS-MATERIAL</code>（点名缺什么材料），不会静默漏判也不会静默通过。<strong>两层真承诺</strong>：fact 层逐字重放；review 层标注来源+给事后复核通道。</p>
+  <p class="dim"><strong>每条 VU 声明角色（评审 C1）</strong>：<code>role: assert</code> 参与总判定（违规行 = FAIL）；<code>role: source</code> 只取数给下游（<code>$Vx.out</code>），恒 PASS-by-construction、不计入总判定——总判定 = 所有 assert 节点独立合取；source 未被下游引用 = 空转，构造拒绝。防弛守卫另有 per-type 最小强度（tolerance 合法域 / count 不得恒真 / file glob 不得全匹配 / rubric 须含可证伪检查点）。</p>
 
   <h3><span class="n">1.4</span>语言放置：判定核心是数据，不是代码</h3>
   <table>
@@ -357,6 +358,8 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   </table>
   <p class="dim">为什么不做「逐规范生成程序」：①引擎代码一份，判定逻辑不随规范漂移；②spec 与运行时版本正交可钉；③零代码生成（材料→VU 是数据翻译）；④<strong>规范是数据，所以它做不了坏事</strong>——<code>command</code> 型是唯一可执行面，<code>sql</code> 只读前缀门，规范没有任意代码执行权。</p>
   <p class="dim">运行契约：<code>verify run --json</code> → 单对象 <code>{run_id, spec_version, summary:{pass,fail,needs_material,error}, report_path}</code>。<strong>退出码只表达过程</strong>：rc=0 验证已执行出报告（PASS/FAIL 都算成功跑完），rc=1 运行错误，rc=2 用法错误——FAIL 是有效结论，不是工具坏了。</p>
+  <p class="dim"><strong>封包限制（评审 C2）</strong>：<code>agent</code> 型 run 时要调判定网关，第三方机器没有凭证——<code>build</code> 默认拒绝含 agent VU 的 spec（封包 = fact-only），显式 <code>--with-review</code> 才允许，并多一类运行时输入（网关凭证，不入库）。</p>
+  <p class="dim"><strong>威胁模型（评审 C3，诚实写明）</strong>：指纹在文件内，能改二进制的人可以改 spec 并重算尾纹；构建可复现意味着「同引擎 + 新 spec」就是一份合法新封包。所以「不可变更」的真实承诺是 <strong>tamper-evidence（防意外漂移/顺手替换）而非 tamper-proofness（不防持有者恶意伪造）</strong>。验真 = 带外比对 <code>binary_sha256</code>（<code>self-check --expect &lt;sha&gt;</code>），更高门槛用 ed25519 对尾纹签名。报告首屏固定「判据原文 ↔ verdict ↔ 证据」全对照——这是零人工确认下残余风险的唯一可见面。</p>
 </div></section>
 
 <!-- ============ 2. ENGINEERING ============ -->
