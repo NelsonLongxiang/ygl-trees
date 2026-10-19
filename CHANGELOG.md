@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.97.2（2026-10-20）同字节重发（npm 版本元数据传播延迟消歧）
+
+**内容与 0.97.1 完全一致，仅版本号不同。** 0.97.1 发布后 npmjs 的版本元数据约 16 分钟后才可解析
+（tarball shasum `63e12145…`，registry time 17:57Z），期间外部复核探针 404；补发又撞上 npm 11 的
+staged-publish 冲突（`Cannot publish over previously staged version`）。为消除「到底发出去没有」的歧义，
+以 0.97.2 重发同内容，0.97.1 已 `npm deprecate` 指向本版。
+
+运维结论：**`npm publish` 打印 `+ pkg@version` 不等于 registry 已可解析**——版本元数据也传播，
+验收要直查 `https://registry.npmjs.org/<pkg>/<version>`，别只看 `npm view`。
+
 ## 0.97.1（2026-10-20）归档诚实性修复（评审 r12 G1–G5）
 
 - **G1 归档确定性**：`manifest.created` 缺省从 `report.finished` 派生，不再取 `now()`——同一 run 反复归档字节一致，`zip_sha256` 可复算；契约 §7.3 写明。此前同一 run 两次归档会得到不同 zip（`created` 每次都变），与「同输入同字节」自相矛盾。
