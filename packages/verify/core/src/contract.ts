@@ -31,19 +31,82 @@ export interface CompareSpec {
   null?: "error" | "equal" | "ignore";
 }
 
-export interface SqlChecker {
+export type PredicateOp =
+  | "="
+  | "!="
+  | ">"
+  | ">="
+  | "<"
+  | "<="
+  | "in"
+  | "between"
+  | "is null"
+  | "is not null";
+
+export interface PredicateCondition {
+  /** 列名；可带表限定（bills.amount），但必须是裸标识符组合，不得是表达式 */
+  col: string;
+  op: PredicateOp;
+  /** `in` 传数组、`between` 传两元素数组；`is null`/`is not null` 不需要值 */
+  value?: string | number | number[] | string[];
+}
+
+/** 谓词节点：叶子是条件，组节点做 AND/OR/NOT 嵌套（NOT 也是一组，内部按 AND 连接后整体取反） */
+export type PredicateNode = PredicateCondition | PredicateGroup;
+
+export interface PredicateGroup {
+  op: "and" | "or" | "not";
+  conditions: PredicateNode[];
+}
+
+export interface PredicateAgg {
+  fn: "count" | "sum" | "min" | "max";
+  /** 列名；count(*) 时省略 */
+  col?: string;
+  /** 渲染后的别名（报告里可追溯） */
+  as?: string;
+}
+
+export interface Predicate {
+  /** 表/视图名（裸标识符） */
+  from: string;
+  /** 取数列（裸标识符）；缺省 select * 会拒绝（审计看不出取了什么） */
+  select: string[];
+  /** 聚合列（可选）；给出时按 as 或 agg 名产出单列 */
+  agg?: PredicateAgg[];
+  /** 判据条件树（AND/OR/NOT 可嵌套）；找违规型（fail_when=rows>0）必须给出（否则就是整表非空冒充） */
+  where?: PredicateGroup;
+}
+
+export interface SqlCheckerBase {
   type: "sql";
+  /** 期望行数语义：none（只看违规行）/ nonempty（必须至少一行） */
+  expect?: "none" | "nonempty";
+  /** 违规判定：rows>0 即 FAIL（默认），或 rows==0 即 FAIL */
+  fail_when?: "rows>0" | "rows==0";
+  /** 来源标记：prepare 机械生成的 spec 只允许 mechanical；manual 须在报告的非机械清单里列出 */
+  authored?: "mechanical" | "manual";
+}
+
+/** 手写 SQL 形态（authoring 例外）：必须自带 scope_sql 证明扫描面 */
+export interface RawSqlChecker extends SqlCheckerBase {
   sql: string;
   /**
    * 扫描面查询（r3 意见 2）：找违规型必须能证明「扫的是本批范围」而不是整表非空。
    * 给出时 scanned = 本查询行数；未给出时回退源表行数，且构造守卫要求 sql 自带 WHERE。
    */
   scope_sql?: string;
-  /** 期望行数语义：none（只看违规行）/ nonempty（必须至少一行） */
-  expect?: "none" | "nonempty";
-  /** 违规判定：rows>0 即 FAIL（默认），或 rows==0 即 FAIL */
-  fail_when?: "rows>0" | "rows==0";
+  predicate?: never;
 }
+
+/** 谓词形态（机械生成的默认形态）：sql/scope_sql 由引擎渲染，不允许手写 */
+export interface PredicateChecker extends SqlCheckerBase {
+  predicate: Predicate;
+  sql?: never;
+  scope_sql?: never;
+}
+
+export type SqlChecker = RawSqlChecker | PredicateChecker;
 
 export type PairSide =
   | { from: string; key: string; value: string }
@@ -132,6 +195,8 @@ export interface ReviewAnchor {
 }
 
 export interface ReviewFinding {
+  /** rubric 检查点 id（W10）：优先于 reason 里的 "rubric:<id>" 前缀协议 */
+  checkpoint?: string;
   vu_id: string;
   question: ReviewQuestion;
   verdict: ReviewVerdict;
@@ -216,6 +281,8 @@ export interface VerifySpec {
   attachments: AttachmentRef[];
   /** prepare 冻结的 schema 指纹；run 时与 witness 比对，不一致 → ERROR（评审 c） */
   schema_fingerprint?: string;
+  /** 冻结材料的 sha256（W15）；runVerify 在开 review 前复核 materialsText，不一致 → ERROR */
+  materials_sha256?: string;
   sealed: { review: boolean };
 }
 

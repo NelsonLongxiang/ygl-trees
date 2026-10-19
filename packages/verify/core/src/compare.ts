@@ -27,12 +27,17 @@ function exactMinorUnits(v: unknown, scale: number): number | null {
 }
 
 /** window 型：把 ISO 字符串或 Date 归一成 epoch ms（数字不当日期，避免把金额误判为时间）。 */
-const ISO_8601 = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+// W1b：日期可以只有日期段；但**只要出现时间就必须带时区**（Z 或 ±hh:mm）。
+// 否则 Date.parse 会按本机时区解释——同一 spec 换台机器窗口就漂（UTC+8 实测漂 8 小时）。
+const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATETIME_TZ = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function toEpochMs(v: unknown): number | null {
   if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.getTime() : null;
   if (typeof v === "string") {
-    if (!ISO_8601.test(v.trim())) return null; // '2026/07/01'、'2026-07-01 10:00:00'(无时区) 一律不收
+    const t = v.trim();
+    // '2026/07/01'（非 ISO）与 '2026-07-01 10:00:00'（有时间无时区，W1b）一律不收
+    if (!ISO_DATE_ONLY.test(t) && !ISO_DATETIME_TZ.test(t)) return null;
     const ms = Date.parse(v);
     return Number.isFinite(ms) ? ms : null;
   }

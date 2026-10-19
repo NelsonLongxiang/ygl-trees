@@ -28,6 +28,10 @@ import type {
   ReviewRunner,
   VerifyUnit,
   VuResult,
+  Predicate,
+  PredicateCondition,
+  PredicateGroup,
+  PredicateNode,
 } from "./contract";
 
 export type Row = Record<string, unknown>;
@@ -75,6 +79,13 @@ function rowsScannedFromSql(runner: QueryRunner, sql: string): { scanned: number
 
 /** 粗提取 SQL 源表（FROM/JOIN）——witness 用；解析失败不阻断执行。 */
 /** 剥掉 SQL 注释——守卫要判断"代码里到底有没有"，不能把注释里的字样当真。 */
+/** 取这个 sql 型 checker 的"实际查询文本"：谓词形态返回渲染后的 find 查询 */
+export function sqlTextOf(c: Checker): string | undefined {
+  if (c.type !== "sql") return undefined;
+  if ("predicate" in c && c.predicate) return renderPredicate(c.predicate).findSql;
+  return c.sql;
+}
+
 function stripSqlComments(sql: string): string {
   return sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
 }
@@ -97,9 +108,14 @@ function witness(scanned: number, matched: number, sources: Array<{ table: strin
   return { rows_scanned: scanned, rows_matched: matched, sources, schema_fingerprint: fingerprint };
 }
 
+/** 引擎内部：把 spec 级的冻结哈希带给检查器（不暴露给调用方） */
+interface FactContext extends VerifyOptions {
+  expectedMaterialsSha?: string;
+}
+
 async function runFactChecker(
   vu: VerifyUnit,
-  opts: VerifyOptions,
+  opts: FactContext,
   outputs: Map<string, Row[]>,
 ): Promise<{ verdict: Verdict; witness?: ScopeWitness; evidence?: Record<string, unknown>; guard?: string[] }> {
   const c: Checker = vu.checker;
@@ -115,13 +131,63 @@ async function runFactChecker(
   switch (c.type) {
     case "sql": {
       const failWhen = c.fail_when ?? "rows>0";
+
+      // ---- 谓词形态（prepare 机械生成）：sql/scope_sql 由渲染器产出 ----
+      if ("predicate" in c && c.predicate) {
+        const pred = c.predicate;
+        if (failWhen === "rows>0" && !pred.where) {
+          return { verdict: "ERROR", evidence: { reason: "predicate has no where clause — a full-table scan cannot prove the intended batch (vacuous-pass risk)" } };
+        }
+        let rendered: RenderedPredicate;
+        try {
+          rendered = renderPredicate(pred);
+        } catch (e) {
+          return { verdict: "ERROR", evidence: { reason: (e as Error).message } };
+        }
+        let findRows: Row[];
+        let scopeRows: Row[];
+        try {
+          findRows = runner.query(rendered.findSql);
+          scopeRows = runner.query(rendered.scopeSql);
+        } catch (e) {
+          return { verdict: "ERROR", evidence: { reason: `rendered query failed: ${(e as Error).message}`, rendered } };
+        }
+        if (scopeRows.length !== 1 || Object.values(scopeRows[0] ?? {}).length !== 1) {
+          return { verdict: "ERROR", evidence: { reason: "rendered scope query must return one row and one column", rendered } };
+        }
+        const n = Number(Object.values(scopeRows[0])[0]);
+        if (!Number.isInteger(n) || n < 0) {
+          return { verdict: "ERROR", evidence: { reason: `rendered scope count is not a non-negative integer (got ${JSON.stringify(Object.values(scopeRows[0])[0])})`, rendered } };
+        }
+        const sources = rowsScannedFromSql(runner, rendered.findSql).sources;
+        const w1 = witness(n, findRows.length, sources, fingerprint);
+        if (n === 0) return { verdict: "NEEDS-MATERIAL", witness: w1, evidence: { reason: "zero rows scanned — wrong table or empty data", rendered } };
+        const bad = failWhen === "rows>0" ? findRows.length : findRows.length === 0 ? 1 : 0;
+        if (bad > 0) {
+          return {
+            verdict: "FAIL",
+            witness: w1,
+            evidence: { violations: bad, rows: canonicalRows(findRows, Object.keys(findRows[0] ?? {}).slice(0, 1)).slice(0, 5), rows_total: findRows.length, rendered },
+          };
+        }
+        return { verdict: "PASS", witness: w1, evidence: { rows: findRows.length, rendered } };
+      }
+
+      // ---- 手写 SQL 形态：prepare 产物禁止（authored=manual 只留给存量/评审例外） ----
+      if (c.authored === "mechanical") {
+        return { verdict: "ERROR", evidence: { reason: "authored=mechanical is inconsistent with hand-written sql — mechanical specs must use predicate" } };
+      }
+      const rawSql = c.sql;
+      if (typeof rawSql !== "string") {
+        return { verdict: "ERROR", evidence: { reason: "sql checker needs either predicate or sql text" } };
+      }
       // 构造守卫（r3 意见 2）：找违规型必须能证明扫的是本批范围——
       // 要么给 scope_sql，要么 sql 自带 WHERE（否则「整表非空」冒充「扫过本批」）。
-      const sqlNoComments = stripSqlComments(c.sql);
+      const sqlNoComments = stripSqlComments(rawSql);
       if (failWhen === "rows>0" && !c.scope_sql && !/\bwhere\b/i.test(sqlNoComments)) {
         return { verdict: "ERROR", evidence: { reason: "find-violation sql has no WHERE and no scope_sql — cannot prove the scan covers the intended batch (vacuous-pass risk)" } };
       }
-      const rows = runner.query(c.sql);
+      const rows = runner.query(rawSql);
       let scanned: number;
       let sources: Array<{ table: string; rows: number }>;
       if (c.scope_sql) {
@@ -144,9 +210,9 @@ async function runFactChecker(
         } catch (e) {
           return { verdict: "ERROR", evidence: { reason: `scope_sql failed: ${(e as Error).message}` } };
         }
-        sources = rowsScannedFromSql(runner, c.sql).sources;
+        sources = rowsScannedFromSql(runner, rawSql).sources;
       } else {
-        const scope = rowsScannedFromSql(runner, c.sql);
+        const scope = rowsScannedFromSql(runner, rawSql);
         scanned = scope.scanned;
         sources = scope.sources;
       }
@@ -159,6 +225,7 @@ async function runFactChecker(
       }
       return { verdict: "PASS", witness: w, evidence: { rows: rows.length } };
     }
+
     case "sql-pair": {
       const readSide = (side: typeof c.left): Row[] => {
         if ("from" in side) {
@@ -354,6 +421,13 @@ async function runFactChecker(
       if (!opts.materialsText) {
         return { verdict: "NEEDS-MATERIAL", evidence: { reason: "review layer needs frozen materials (materialsText) — a blind review without materials asserts nothing" } };
       }
+      // W15：材料哈希绑定——spec 声明了 materials_sha256 就必须逐字对上，否则 review 审的不是冻结材料
+      if (opts.expectedMaterialsSha) {
+        const got = createHash("sha256").update(opts.materialsText, "utf8").digest("hex");
+        if (got !== opts.expectedMaterialsSha) {
+          return { verdict: "ERROR", evidence: { reason: `materials hash mismatch: spec expects ${opts.expectedMaterialsSha}, got ${got}` } };
+        }
+      }
       const checker = c as AgentChecker;
       try {
         const findings = await opts.reviewRunner.review({
@@ -381,8 +455,12 @@ function judgeReview(
   findings: ReviewFinding[],
   materials: string,
 ): { verdict: VuResult["verdict"]; evidence: Record<string, unknown> } {
+  const ALLOWED = new Set(["ok", "reject", "unclear"]);
   const byQuestion = new Map<string, ReviewFinding>();
   for (const f of findings ?? []) {
+    if (!ALLOWED.has(String(f.verdict))) {
+      return { verdict: "ERROR", evidence: { reason: `review finding has an unknown verdict ${JSON.stringify(f.verdict)} (allowed: ok|reject|unclear)`, findings } };
+    }
     if (f.vu_id !== vu.id) continue;
     // 同一问重复出现且结论不一致 = 复核自身不稳定，交回人工材料环节
     const prev = byQuestion.get(f.question);
@@ -418,8 +496,17 @@ function judgeReview(
 
   // rubric 覆盖：pass_if=all 时每个检查点都要有"ok"结论
   const rubric = checker.rubric ?? [];
+  if (rubric.length === 0) {
+    // W9：没有检查点的 agent 型 = 没有判据，不能因为"没要求"就免检通过
+    return { verdict: "NEEDS-MATERIAL", evidence: { reason: "agent checker declares no rubric points — there is nothing a reviewer could check", findings } };
+  }
   const need = checker.pass_if === "all" || checker.pass_if === undefined ? rubric.map((r) => r.id) : checker.pass_if;
-  const covered = new Set(findings.filter((f) => f.verdict === "ok").map((f) => String(f.reason.match(/^rubric:([^\s]+)/)?.[1] ?? "")));
+  // W13：只认同一个 VU 的 ok 结论（跨 VU 的 ok 不能冒领检查点）；W10：checkpoint 字段优先，reason 前缀是兼容协议
+  const covered = new Set(
+    findings
+      .filter((f) => f.verdict === "ok" && f.vu_id === vu.id)
+      .map((f) => String(f.checkpoint ?? f.reason.match(/^rubric:([^\s]+)/)?.[1] ?? "")),
+  );
   const uncovered = need.filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     return { verdict: "NEEDS-MATERIAL", evidence: { reason: `rubric points without an ok finding: ${uncovered.join(", ")}`, findings } };
@@ -428,9 +515,12 @@ function judgeReview(
   return { verdict: "PASS", evidence: { findings } };
 }
 
-/** 逐字复读：只归一空白，不做同义替换/模糊匹配——"大致一样"不算复读。 */
-function containsVerbatim(haystack: string, needle: string): boolean {
-  const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+/**
+ * 逐字复读：NFC 归一 + 空白折叠，不做同义替换/模糊匹配——"大致一样"不算复读。
+ * 与契约 §5.2 的 canonical 口径一致（W16）：Unicode NFC 先行，然后把连续空白折成一个空格。
+ */
+export function containsVerbatim(haystack: string, needle: string): boolean {
+  const norm = (t: string) => t.normalize("NFC").replace(/\s+/g, " ").trim();
   return norm(haystack).includes(norm(needle));
 }
 
@@ -464,6 +554,101 @@ function globToRegExp(glob: string): RegExp {
 }
 
 /** 从 VU 的 checker JSON 中提取 $Vx 引用（管线依赖）。 */
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** 标识符守门：只允许裸列名/表名（可选表限定 a.b），禁止表达式与子查询进判据 */
+function ident(name: string, what: string): string {
+  const parts = String(name).split(".");
+  if (parts.length > 2 || parts.some((x) => !IDENT.test(x))) {
+    throw new Error(`predicate ${what} must be a bare identifier (optionally table-qualified), got ${JSON.stringify(name)}`);
+  }
+  return parts.join(".");
+}
+
+/** 字面量渲染：数字走白名单字符串，字符串按 '' 转义（永不拼接外部 SQL 片段） */
+function literal(v: string | number): string {
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) throw new Error(`predicate literal is not a finite number: ${v}`);
+    return String(v);
+  }
+  return `'${v.replace(/'/g, "''")}'`;
+}
+
+function renderCondition(w: PredicateCondition): string {
+  const col = ident(w.col, "where column");
+  switch (w.op) {
+    case "is null":
+    case "is not null":
+      return `${col} ${w.op.toUpperCase()}`;
+    case "in": {
+      if (!Array.isArray(w.value) || w.value.length === 0) {
+        throw new Error(`predicate where ${col} in (...) needs a non-empty array value`);
+      }
+      return `${col} IN (${w.value.map((v) => literal(v)).join(", ")})`;
+    }
+    case "between": {
+      if (!Array.isArray(w.value) || w.value.length !== 2) {
+        throw new Error(`predicate where ${col} between needs a two-element array value`);
+      }
+      return `${col} BETWEEN ${literal(w.value[0])} AND ${literal(w.value[1])}`;
+    }
+    default: {
+      if (w.value === undefined || Array.isArray(w.value)) {
+        throw new Error(`predicate where ${col} ${w.op} needs a scalar value`);
+      }
+      return `${col} ${w.op} ${literal(w.value)}`;
+    }
+  }
+}
+
+/** 递归渲染谓词树：条件叶 / AND-OR 组 / NOT 组（NOT 内部按 AND 连接后整体取反） */
+function renderNode(n: PredicateNode): string {
+  if ("op" in n && (n.op === "and" || n.op === "or" || n.op === "not")) {
+    const group = n as PredicateGroup;
+    if (group.conditions.length === 0) throw new Error("predicate group has no conditions");
+    const parts = group.conditions.map((c) => renderNode(c));
+    if (group.op === "not") return `NOT (${parts.join(" AND ")})`;
+    return `(${parts.join(` ${group.op.toUpperCase()} `)})`;
+  }
+  return renderCondition(n as PredicateCondition);
+}
+
+function renderWhere(where?: PredicateGroup): string {
+  if (!where) return "";
+  return ` WHERE ${renderNode(where)}`;
+}
+
+export interface RenderedPredicate {
+  findSql: string;
+  scopeSql: string;
+}
+
+/**
+ * 从同一谓词 AST 渲染两段查询（裁定「同源生成」，r5 S2）：
+ * find 与 scope **共享同一 where 子句字符串**，物理上不可能伪造扫描面。
+ */
+export function renderPredicate(pred: Predicate): RenderedPredicate {
+  const from = ident(pred.from, "from");
+  if (!Array.isArray(pred.select) || pred.select.length === 0) {
+    throw new Error("predicate.select must list at least one column (audit needs to know what was read)");
+  }
+  const plain = pred.select.map((c) => ident(c, "select column"));
+  const aggs = (pred.agg ?? []).map((a) => {
+    const col = a.col ? ident(a.col, "agg column") : "*";
+    if (col === "*" && a.fn !== "count") throw new Error(`predicate agg ${a.fn} needs a column (only count allows *)`);
+    const alias = ident(a.as ?? `${a.fn}_${a.col ?? "all"}`, "agg alias");
+    return `${a.fn.toUpperCase()}(${col}) AS ${alias}`;
+  });
+  const cols = [...plain, ...aggs];
+  if (cols.length === 0) throw new Error("predicate.select must list at least one column");
+  const select = cols.join(", ");
+  const whereSql = renderWhere(pred.where);
+  return {
+    findSql: `SELECT ${select} FROM ${from}${whereSql}`,
+    scopeSql: `SELECT count(*) AS n FROM ${from}${whereSql}`,
+  };
+}
+
 export function refsOf(c: Checker): string[] {
   const refs = new Set<string>();
   const visit = (v: unknown) => {
@@ -535,6 +720,7 @@ export function foldOverall(results: VuResult[]): { overall: Verdict; reason: st
 }
 
 export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<VerifyReport> {
+  const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };
   const now = opts.nowIso ?? (() => new Date().toISOString());
   const started = now();
   const runId = `run_${randomBytes(8).toString("hex")}`;
@@ -603,7 +789,7 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
     }
     let outcome: Awaited<ReturnType<typeof runFactChecker>>;
     try {
-      outcome = await runFactChecker(vu, opts, outputs);
+      outcome = await runFactChecker(vu, fopts, outputs);
     } catch (e) {
       outcome = { verdict: "ERROR", evidence: { reason: (e as Error).message } };
     }
@@ -657,7 +843,8 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
       });
     }
     if (vu.checker.type === "sql" && (vu.outputs?.rows === "rowset") && !outputs.has(vu.id)) {
-      outputs.set(vu.id, safeQuery(opts.runner, vu.checker.sql));
+      const st = sqlTextOf(vu.checker);
+      if (st) outputs.set(vu.id, safeQuery(opts.runner, st));
     }
   }
   const summary = { pass: 0, fail: 0, needs_material: 0, error: 0 };
@@ -734,8 +921,10 @@ function safeQuery(runner: QueryRunner, sql: string): Row[] {
 
 function executeSourceRows(vu: VerifyUnit, opts: VerifyOptions, runner: QueryRunner): { rows: Row[]; error?: string } {
   if (vu.checker.type === "sql") {
+    const st = sqlTextOf(vu.checker);
+    if (!st) return { rows: [], error: "sql checker needs either predicate or sql text" };
     try {
-      return { rows: runner.query(vu.checker.sql) };
+      return { rows: runner.query(st) };
     } catch (e) {
       return { rows: [], error: (e as Error).message };
     }

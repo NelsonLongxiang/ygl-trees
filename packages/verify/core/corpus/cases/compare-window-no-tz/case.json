@@ -1,0 +1,6 @@
+{
+  "cases": 1,
+  "matrix": "compare",
+  "mode": "window",
+  "note": "W1b：有时间段但无时区的 datetime 会被 Date.parse 按本机时区解释（UTC+8 漂 8h）→ 构造期 ERROR"
+}

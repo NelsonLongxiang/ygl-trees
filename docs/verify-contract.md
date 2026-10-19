@@ -53,12 +53,43 @@
 - **`scope_sql`**（评审 r3 追补，已反灌契约）：`sql` 型找违规时用于证明「扫的是本批范围」的旁路查询——必须返回**单行单列非负整数**（通常是 `select count(*) …`），引擎取其值作为 `rows_scanned`；多行/多列/非整数 → **ERROR**（N1）。无 `scope_sql` 时回退源表行数，且要求 `sql` 自带 WHERE。
 - **CompareSpec**（评审 B5 + R7 单一形状）`compare`：`mode ∈ exact|tolerance_abs|tolerance_rel|window|subset|superset|range|regex`；`currency`+`scale` 必填则按最小单位整数比较（禁浮点直比）；`cardinality ∈ 1:1|1:N|N:1`（默认 1:1，重复键→ERROR 点名；`1:N` 须带 `agg`）；`null ∈ error|equal|ignore`（默认 error）。
   - **ε 规则**：`exact` **不带 ε**（带 `value` 即构造错误）；`tolerance_abs`/`tolerance_rel`/`window` 的 ε **必须 0 < ε**（ε=0 就是 exact，混用即空转）；`range` 用 `value`=下界、`value_max`=上界。
+  - **相对容差分母（W3）**：`tolerance_rel` 判 |l−r| ≤ ε·|r|，**分母取期望侧 r**；r=0 时退化为 l==0。换分母等于换判据，属破坏性变更。
+  - **时间字面量（W1b）**：`window` 只收纯日期 `YYYY-MM-DD` 或**带时区**的 datetime（`Z` / `±hh:mm`）；无时区时间戳构造期 ERROR。
   - **unit 只属 window**，取值 `d|h|s`；其余模式带 `unit` 即构造错误。
 - `expected_from`：值三源之一——`material-extract`（带 `anchor` + **`quote` 原文复读**，锚点可机械核对）、`explicit`（专家显式给出）、`runtime-query`（运行时查询）；prepare 时冻结。
 - **附件两阶段**（评审 B4）：`baseline` 在 submit 冻结（值进 spec）；`submission` 的字节在 run 时校验 `sha256`（同路径换内容=新附件行）；附件走 content-addressed blob（sha256/size/mime），不参与 FTS。
 - **附件落点裁定**（评审 R3，冻结前置）：**新表 `attachments`**（走九触点：SCHEMA_SQL/实体/迁移/写服务/读服务/导出/清理/测试/文档），**不在 `sources` 增列**——`sources` 只按 `sha1(text)` 存 UTF-8 正文且 `url_hash` 重复早返回（`writes.ts:139,152`），没有二进制按字节入库的路径；把附件塞进 source 会让「同一路径换内容」静默复用旧行。spec 的 `attachments[].sha256` 即 `attachments.content_sha256` 的外部锚。
 - `as_of`（评审 C2）：所有时间窗口与 `now()` 必须锚定——`kind: snapshot`（SQLite 用文件哈希，PG 用只读事务快照 id）。
 - `sealed.review`：封包是否允许 review 层（默认 false；`--with-review` 置 true）。
+
+## 1.5 谓词 AST（机械生成的唯一取数形态）
+
+prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored:"manual"` 只在评审放行的存量/例外场景）。
+引擎从**同一个 AST** 渲染 find 与 scope 两段查询，二者共享逐字相同的 WHERE 子句——这是"扫描面不可伪造"的实现方式。
+
+```jsonc
+{ "type": "sql", "fail_when": "rows>0",
+  "predicate": {
+    "from": "bills",
+    "select": ["id", "batch"],
+    "agg": [{"fn": "sum", "col": "amount_cents", "as": "total"}],
+    "where": { "op": "and", "conditions": [
+      { "col": "batch", "op": "=", "value": "2026-07" },
+      { "op": "or", "conditions": [
+        { "col": "bills.amount_cents", "op": ">", "value": 100000 },
+        { "col": "status", "op": "in", "value": ["hold", "void"] }
+      ]}
+    ]}
+  }}
+```
+
+- 条件 op 闭集：`= != > >= < <= in between is null is not null`；`in` 传非空数组，`between` 传两元素数组。
+- 组节点 `and|or|not` 可嵌套；`not` 内部按 AND 连接后整体取反。
+- `agg` 支持 `count|sum|min|max`（count 可省略 col）；别名进报告，便于审计。
+- 标识符守门：列名/表名只允许裸标识符（可 `表.列`），表达式与子查询一律构造期拒绝；字符串值按 `''` 转义。
+- **找违规型（`fail_when:"rows>0"`）必须给 where**，否则整表非空就能冒充"扫过本批"。
+- 渲染结果 `rendered.find_sql` / `rendered.scope_sql` 写进报告 evidence，与 witness 对账。
+- `authored:"mechanical"` 的手写 sql 直接 ERROR（机械 spec 只能用 predicate）；手写 sql 形态必须自带 `scope_sql` 或 WHERE。
 
 ## 2. 报告（report，`report.json`）
 
@@ -109,6 +140,10 @@
 | `exists`（expect=true，找存在） | 源表行数 | 命中行数（0/1+） | **NEEDS-MATERIAL**（引擎装配期降级，非检查器内判） | **FAIL** | `expect` |
 | `exists`（expect=false，找不存在） | 源表行数 | 命中行数 | **NEEDS-MATERIAL** | **PASS** | `expect` |
 | `file` | 提交物文件总数 | glob 命中的文件数 | **NEEDS-MATERIAL**（目录为空） | `min`/`require` 缺省时 **PASS**；`min>0`/`require` 命中缺失 → **FAIL** | `min`/`max`/`require` |
+
+> **review 层字段口径**：`ReviewFinding.checkpoint` 是 rubric 检查点 id 的正式通道（reason 前缀 `rubric:<id>` 仅为兼容）；只有**同一 VU** 的 ok findings 能覆盖检查点（跨 VU 冒领按未覆盖处理）。`spec.materials_sha256` 给出时，run 会在开 review 前复核材料哈希，不一致 → ERROR（W15）。
+>
+> **锚点 locator 校验（W8）**：引擎保证 quote 在冻结材料里逐字复读、locator 非空；quote 是否落在 locator 指向的 span 内，需 prepare 阶段带 material_index 才可判，v1 在报告里标注 `anchor_locator_unverified`，M13-2 收敛。
 
 > **file 型 v1 能力边界（裁定 A/B/C 之 B）**：只判**结构/签名/清单**类事实——文件存在性、命中数量、行数、sha256、页数。**不做 OCR、不做内容语义理解**（图片里的金额、PDF 里的条款都不读）。带内容级判据的用例在报告里标 `dim: "content-pending-M13-2"`，不得算作已覆盖。
 | `command`（**执行事实，不属 fact 层**，不进 §2.1 折叠判据；见 md §6.1） | — | — | 仅以 `expect_exit`/`stdout_matches` 判 | 同左 | `expect_exit` |
@@ -186,6 +221,7 @@ review（agent 型）与 fact 型同样有可验收形状，不是"再问一次�
 - 每个 ygl-trees 版本 = 一次**冻结语料快照** + G2/G3/G4 全量跑（不按日历排期）。
 - 语料**只增不改**：已冻结案例的文件内容是否定不得的（改了就再也证明不了旧版本行为）；要改 = 升 `corpus_version` 并在 CHANGELOG 记差异。
 - `contract_version` 钉 `1.0` 时同时钉 `corpus_version`；此后二者各自独立自增，报告里两个版本号都记。
+- 时间字面量纪律（W1b）：`window` 只接受「纯日期」或「带时区的 datetime」；`'2026-07-01 10:00:00'` 这类无时区时间戳构造期 ERROR（否则 Date.parse 按本机时区解释，换台机器窗口就漂）。
 - 真实网关凭证在 M13-1b（封包 fact-only 闭环）之前**不接**：review/prepare 层的模型调用一律走注入接口，测试用假 runner。
 
 ## 5. 封包元数据（footer，评审 B3）
