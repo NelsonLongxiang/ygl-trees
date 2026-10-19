@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.92.0（2026-10-19）管线视图 React 重建 + 视觉 token 单源化（canvas 工单 direct-0f20e882 单A/单B）
+
+- **管线视图 React 重建（单A，webui-design.md §3 接替 0.88 退役的 HTML 实现）**：apps/web/src/Pipeline.tsx——按状态四列水流（已证实/有争议/未验证/已反驳），claim 卡 3px 状态色左沿 + 支持/反驳计数 + 证据折叠列表（stance 着色 + 引文摘录 + locator）；渲染验证 ×6（renderToStaticMarkup 方案，零新依赖——不引 jsdom/testing-library）；R19 同口径双重不渲染（服务端未授权不填 claims/claim_evidence/evidence 三键 + App 挂载门）；api.ts DashboardData 补三键类型化（含 sources，禁 as any）。
+- **视觉 token 单源化（单B，评审线 direct-33a94151 发现的双主色漂移）**：DESIGN.md 为唯一源——App.tsx 六处漂移全清（antd colorPrimary 曾是 #7c9885 sage green 而 tokens.css 是 #58a6ff，注释还谎称一致）；statColors 七色彩虹改语义家族（claims=success/evidence=warning/sources+kb=secondary/其余 tertiary）；KnowledgeGraph 边色/背景 token 化；**服务端 KG 色板统一**（webui.ts 七色彩虹 + #999 兜底 → 语义 token + secondary 兜底）。
+- **漂移守卫（apps/web/tests/tokens.spec.ts ×7）**：解析 DESIGN.md frontmatter 为真相源——tokens.css 13 色逐键同步 / tokens.ts 映射断言 / App.tsx 零裸 hex / KnowledgeGraph+webui.ts 全 hex ∈ token 集 / statColors 值域守卫；改调色板只能从 DESIGN.md 起改，两面自动失配报警。
+- 实测：web 套件 21/21；live serve 真工作区 KG 91 节点 colors 全 token（#58a6ff/#8b949e/#79c0ff/#d29922）；Cordis 预审独立 serve 探针（scratch 种子工作区）复验通过（direct-001047e4）。
+
 ## 0.91.0（2026-10-19）事件族合修（三方批次裁定：direct-23f13a7d / direct-032bf3b4 / direct-7389f32f）
 
 - **事件发射提交后语义（runTx）**：两域写服务（research/pipeline 与 techtree/model 的 writes.ts）的事件总线发射原先在事务提交**前**执行——回滚后订阅者已见幽灵事件而库无记录；且发射用 `require()` 包 try/catch，ESM 宿主下静默死亡（M7-3 同病灶）。现：静态 `import { emitEvent }` + `runTx` 包装器——events 表 INSERT 留在事务内（审计行随写回滚），总线发射移到 commit 之后；`fn` 抛出→pending 袋整体丢弃，零幽灵事件按构造保证（ADR 记 docs/plan.md M10）。

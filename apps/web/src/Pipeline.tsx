@@ -68,7 +68,7 @@ export default function Pipeline({
   const grouped = useMemo(() => {
     const g: Record<string, PipelineClaim[]> = {};
     for (const c of claims) {
-      const k = STATUS_ORDER.includes(c.status as any) ? c.status : "unverified";
+      const k = (STATUS_ORDER as readonly string[]).includes(c.status) ? c.status : "unverified";
       (g[k] ??= []).push(c);
     }
     return g;
