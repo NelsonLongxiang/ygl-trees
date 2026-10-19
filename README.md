@@ -309,6 +309,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ```bash
 pnpm test          # 四段制回归：build + unit (vitest 374 例) + demo（128 条断言）+ contract:audit（100 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
+pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
 ygl-trees --version    # 打印版本号

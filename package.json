@@ -38,7 +38,8 @@
     "pack:check": "bash scripts/pack-check.sh",
     "readme:verify": "bash scripts/readme-verify.sh",
     "contract:audit": "bash scripts/contract-audit.sh",
-    "ratchet": "node scripts/ratchet.mjs"
+    "ratchet": "node scripts/ratchet.mjs",
+    "verify:run": "node scripts/verify-run.mjs"
   },
   "files": [
     "dist",

@@ -52,6 +52,7 @@ chk "doctor 9 项"         0 -- $Y doctor
 chk "webui export"        0 -- $Y webui export --out "$YGL_HOME/d.json"
 # §0.79.1 命令面
 chk "serve --help 短路"  0 -- $Y webui serve --help
+chk "verify:run --help"   0 -- node scripts/verify-run.mjs --help
 chk "predict audit --all" 0 -- $Y research predict audit --offline --all
 printf '{"counts": {"y_imported": 14}}' > "$YGL_HOME/pstate.json"
 chk "can --state-file"    0 -- $Y node can steel --state-file "$YGL_HOME/pstate.json"

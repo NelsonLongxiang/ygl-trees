@@ -220,7 +220,10 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
 
   // G1（评审 r12）：created 缺省不能取 now()——同一 run 两次归档会得到不同 zip_sha256，
   // 与契约 §7.3「同输入同字节」矛盾。默认从 report.finished 派生（报告不可变 → 归档字节确定）。
-  const created = opts.created ?? (report.finished || new Date().toISOString());
+  // 302cb119 残留 nit：report.finished 缺失时不能回退 now()（那等于把不确定性写进归档身份），
+  // fail-closed 要求调用方显式给 created。
+  const created = opts.created ?? report.finished;
+  if (!created) throw new Error("report has no finished timestamp; pass created explicitly (archive identity must be deterministic)");
   const filename = archiveFileName({ domain: spec.domain, title: spec.title, specId: spec.spec_id, specVersion: spec.spec_version, created, runId: opts.runId });
   const itemsSorted = [...items].sort((a, b) => Buffer.compare(Buffer.from(a.path, "utf8"), Buffer.from(b.path, "utf8")));
   const base = {
