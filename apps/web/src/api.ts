@@ -33,6 +33,11 @@ export interface DashboardData {
    * the dashboard renders the 未选择 pane instead of project content. */
   unselected?: { reason: string; projects: Array<{ name: string }> };
   claims: Array<{ id: string; text: string; status: string; sup: number; ref: number }>;
+  /** 0.92 单A（管线视图）：claim↔evidence 链接与证据引文——服务端按授权域
+   * 收集（R19：未选择时不填），此处类型化承载，渲染组件读这些键。 */
+  claim_evidence?: Array<{ claim_id: string; evidence_id: string; stance: string }>;
+  evidence?: Array<{ id: string; quote: string; locator?: string | null; source_id: string }>;
+  sources?: Array<{ id: string; url: string; note?: string | null }>;
   tasks: Array<{ id: string; title: string; status: string }>;
   artifacts: Array<{ id: string; kind: string; title: string; version: number; created: string }>;
   timeline: Array<{ day: string; research: number; tree: number; eval: number; other: number }>;

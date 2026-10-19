@@ -37,7 +37,7 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 - 数据源：`research claim list --json` + `research evidence list --json`（载荷已按 R16 授权域收集）
 - 渲染：claim 卡片（状态色：supported 绿/refuted 红/contested 黄/unverified 灰），点击展开证据链接列表
 - 布局：按状态分组的水流式
-- **状态（0.90.1 诚实修正，review direct-a35d58ae P2-3）**：0.88 单3 退役纯 HTML 面板时该视图随之下线，React 客户端尚未重建——此前标注的 ✅ 属于已退役的 HTML 实现。列 **0.91 路线图**（claims/evidence 载荷已在推送，只欠渲染组件）。
+- **状态（0.92 单A React 重建完成，direct-0f20e882 队列工单）**：apps/web/src/Pipeline.tsx——按状态四列水流（已证实/有争议/未验证/已反驳），claim 卡 3px 状态色左沿 + 支持/反驳计数 + 证据折叠列表（stance 着色 + 引文摘录）；状态色全部走 DESIGN.md token（tokens.ts，单B 纪律）；渲染验证 apps/web/tests/pipeline.spec.tsx ×6（renderToStaticMarkup，不引 jsdom）；R19 同口径——claims/claim_evidence/evidence 三键由服务端授权域收集，未选择态不填、组件不挂载（双重不渲染）。0.88 退役的 HTML 实现由本组件正式接替。
 
 ## 技术约束
 

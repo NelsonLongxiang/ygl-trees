@@ -16,6 +16,7 @@ import { C, themeTokens, statColors } from "./tokens";
 const TreeFlow = lazy(() => import("./TreeFlow"));
 const Artifacts = lazy(() => import("./Artifacts"));
 const KnowledgeGraph = lazy(() => import("./KnowledgeGraph"));
+const Pipeline = lazy(() => import("./Pipeline"));
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -165,6 +166,25 @@ export default function App() {
                       <Text code>→ {a}</Text>
                     </div>
                   ))}
+                </Card>
+              )}
+
+              {/* ── 研究管线（0.92 单A：webui-design.md §3 React 重建）──
+                  R19 同口径：claims/claim_evidence/evidence 由服务端按授权域收集，
+                  未选择态下这些键不填——本块天然不渲染（与任务/工件同一门）。 */}
+              {data.claims?.length > 0 && (
+                <Card
+                  title={<><CheckCircleOutlined /> 研究管线</>}
+                  extra={<Text type="secondary">{data.claims.length} 断言 · {data.evidence?.length ?? 0} 证据引文</Text>}
+                  style={{ marginBottom: 16 }}
+                >
+                  <Suspense fallback={<Card loading style={{ height: 300 }} />}>
+                    <Pipeline
+                      claims={data.claims}
+                      claimEvidence={data.claim_evidence ?? []}
+                      evidence={data.evidence ?? []}
+                    />
+                  </Suspense>
                 </Card>
               )}
 
