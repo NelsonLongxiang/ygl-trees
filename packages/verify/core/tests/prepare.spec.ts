@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { prepareSpec, type PrepareCandidate, type PrepareRunner } from "../src/prepare";
-import type { ReviewFinding, ReviewRunner } from "../src/contract";
+import { CORPUS_VERSION, type ReviewFinding, type ReviewRunner } from "../src/contract";
 
 /** 条件④：as_of 必须由调用方给（快照口径），测试统一钉一个确定时刻 */
 const AS_OF = { kind: "snapshot" as const, value: "2026-07-01T00:00:00.000Z" };
@@ -72,6 +72,8 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(res.spec?.vu).toHaveLength(1);
     expect(res.spec?.materials_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(res.spec?.spec_version).toBe(1);
+    // r17 P3②：prepare 必须写当前语料版本（曾硬编码 "1.0" 而 manifest 已 1.1）
+    expect(res.spec?.verifier.corpus_version).toBe(CORPUS_VERSION);
     expect(res.units[0].checker.type).toBe("sql-pair");
     expect(res.diagnostics.some((d) => d.stage === "P5")).toBe(true);
   });

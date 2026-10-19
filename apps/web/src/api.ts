@@ -102,3 +102,149 @@ export async function fetchNode(tree: string, key: string): Promise<NodeDetail |
   if (!r.ok) return null;
   return r.json();
 }
+
+/** ── 验证器服务面（M13-2）──────────────────────────────────────────────
+ * 三视图的数据形状：规范清单 / 构造追溯 / 报告看板。服务端只读文件工件，
+ * 唯一写入面是 POST api/verify/material（材料草稿）。 */
+export interface VerifySpecRow {
+  spec_id: string;
+  spec_version: number;
+  title: string;
+  domain: string;
+  created: string;
+  units: number;
+  verdict: string;
+  rounds: number;
+  material: string;
+  runs: number;
+  last_overall: string;
+  last_run: string;
+}
+
+export interface VerifyReportRow {
+  run_id: string;
+  spec_id: string;
+  spec_version: number;
+  overall: string;
+  reason: string;
+  summary: { pass: number; fail: number; needs_material: number; error: number };
+  started: string;
+  finished: string;
+  mode: string;
+  binary_sha256: string;
+  archived: number;
+}
+
+export interface VerifyMaterialRow {
+  material_id: string;
+  title: string;
+  created: string;
+  text_sha256: string;
+  files: number;
+}
+
+export async function fetchVerifySpecs(): Promise<VerifySpecRow[]> {
+  const r = await fetch("api/verify/specs");
+  if (!r.ok) throw new Error(`api/verify/specs ${r.status}`);
+  return r.json();
+}
+
+export async function fetchVerifyReports(): Promise<VerifyReportRow[]> {
+  const r = await fetch("api/verify/reports");
+  if (!r.ok) throw new Error(`api/verify/reports ${r.status}`);
+  return r.json();
+}
+
+export async function fetchVerifyMaterials(): Promise<VerifyMaterialRow[]> {
+  const r = await fetch("api/verify/materials");
+  if (!r.ok) throw new Error(`api/verify/materials ${r.status}`);
+  return r.json();
+}
+
+export interface VerifySpecDetail {
+  spec: {
+    spec_id: string;
+    spec_version: number;
+    title?: string;
+    domain?: string;
+    sealed?: { review?: boolean };
+    vu: Array<{
+      id: string;
+      role?: string;
+      title?: string;
+      severity?: string;
+      source_clause?: string;
+      checker?: { type?: string; mode?: string; expect?: unknown };
+      expected_from?: { quote?: string; anchor?: string };
+    }>;
+  };
+  prepare: {
+    verdict?: string;
+    rounds?: number;
+    material_id?: string;
+    units?: number;
+    rejected?: Array<{ source_clause?: string; stage?: string; reason?: string }>;
+  } | null;
+  trace: unknown;
+}
+
+export async function fetchVerifySpec(id: string): Promise<VerifySpecDetail | null> {
+  const r = await fetch(`api/verify/spec?id=${encodeURIComponent(id)}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function fetchVerifyMaterial(id: string): Promise<{ record: VerifyMaterialRow; text: string } | null> {
+  const r = await fetch(`api/verify/material?id=${encodeURIComponent(id)}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export interface VerifyReportDetail {
+  report: {
+    run_id: string;
+    overall: string;
+    reason: string;
+    summary: { pass: number; fail: number; needs_material: number; error: number };
+    started: string;
+    finished: string;
+    data_source?: { kind: string; sha256: string; source?: string; captured_at?: string };
+    verifier?: {
+      mode?: string;
+      spec_version?: number;
+      engine_version?: string;
+      corpus_version?: string;
+      binary_sha256?: string;
+      signing_scheme?: string;
+      public_key_fingerprint?: string;
+    };
+    vu: Array<{
+      id: string;
+      verdict: string;
+      severity?: string;
+      checker_type?: string;
+      source_clause?: string;
+      evidence?: Record<string, unknown>;
+      trace?: string[];
+    }>;
+    exceptions?: Array<{ vu: string; severity?: string; row_count?: number }>;
+  };
+  archives: Array<{ archive_id: string; filename: string; with?: string[] }>;
+}
+
+export async function fetchVerifyReport(run: string): Promise<VerifyReportDetail | null> {
+  const r = await fetch(`api/verify/report?run=${encodeURIComponent(run)}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function submitVerifyMaterial(input: { title: string; text: string }): Promise<{ material_id: string; text_sha256: string }> {
+  const r = await fetch("api/verify/material", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(String((body as any)?.error || `api/verify/material ${r.status}`));
+  return body as { material_id: string; text_sha256: string };
+}

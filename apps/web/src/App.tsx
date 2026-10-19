@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   ExperimentOutlined, BookOutlined, DatabaseOutlined, FileTextOutlined,
-  ApartmentOutlined, PartitionOutlined, CheckCircleOutlined, ClockCircleOutlined,
+  ApartmentOutlined, PartitionOutlined, CheckCircleOutlined, ClockCircleOutlined, SafetyCertificateOutlined,
   NodeIndexOutlined,
 } from "@ant-design/icons";
 import { subscribeDashboard, type DashboardData } from "./api";
@@ -17,6 +17,7 @@ const TreeFlow = lazy(() => import("./TreeFlow"));
 const Artifacts = lazy(() => import("./Artifacts"));
 const KnowledgeGraph = lazy(() => import("./KnowledgeGraph"));
 const Pipeline = lazy(() => import("./Pipeline"));
+const Verify = lazy(() => import("./Verify"));
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -187,6 +188,17 @@ export default function App() {
                   </Suspense>
                 </Card>
               )}
+
+              {/* ── 验证器三视图（M13-2）：材料提交 / 构造追溯只读审计 / 报告看板 ── */}
+              <Card
+                title={<><SafetyCertificateOutlined /> 验证器</>}
+                extra={<Text type="secondary">spec-validator · 构造追溯只读 · 报告看板</Text>}
+                style={{ marginBottom: 16 }}
+              >
+                <Suspense fallback={<Card loading style={{ height: 300 }} />}>
+                  <Verify />
+                </Suspense>
+              </Card>
 
               {/* ── 科技树 ── */}
               <Card

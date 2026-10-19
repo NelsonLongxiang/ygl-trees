@@ -31,6 +31,14 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
   （`packages/verify/core/tests/seal-parity.spec.ts` 机械断言；ed25519 本身是确定性的）。
 - 旧封包（0.98.0 及以前，footer 无 `format_version`）按 **unsigned** 读取：不假称已验证，登记里 `signature.signed=false`。
 
+未签名（unsigned / legacy）封包的语义边界，写清楚免得被当成等价物：
+- **完整性可验、身份未证**：布局 / `spec_sha256` / `build_sha256` / `engine_sha256` 仍逐项校验，
+  所以「这份报告是这个封包产的」可证；但「这个封包来自谁」不可证——没有签名就没有身份断言。
+- **降级不保留身份**：把 v1 签名封包的 `format_version` / `sig` 字段剥掉，字节就变了、`binary_sha256` 随之改变，
+  于是同一份代码的「已签」与「降级后」是两个不同的登记对象（前者可验身份，后者只可验完整性）。
+- 因此**发布物应当要求 signed 登记**：`register` 对 unsigned 只是容忍（历史封包必须能读回），
+  不是背书；`verify signature` 对 unsigned 返回 rc=1 的语义是「无签名可验」，不是「坏了」。
+
 ## 3. 密钥表（`docs/verify-signing.md` 即表，认表不认报文）
 
 ```json
@@ -98,7 +106,7 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
     文件名相同但字节被换过 → `binary identity mismatch`。
   - `verify register --no-copy` 不写 `binaries/<key>.bin`，此后签名构建的 import 会因「拿不到字节复验」失败——
     要保留可复核能力就别用 `--no-copy`（或用 `--keys` + 重新 register）。
-- `verify archive --with binary`：把登记 + 二进制副本收进归档，`archive verify` 重算全链时一并核对。
+- `verify archive --with binary`：把登记 + 二进制副本收进归档。`archive verify` 做的是**哈希链与签名登记项的一致性**（条目 sha256 / manifest / 报告 payload / 登记里的 `binary_sha256`），它**没有密钥表输入、不重验签名**；真伪性仍走 `verify signature --keys <file>`（或 `--expect-key`）。
 
 ## 6. 事故处置
 
@@ -108,7 +116,7 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
 | `key_id` 不在表内 | 构建方没按纪律登记公钥；补表（新行，不覆盖旧行）或拒绝该构建 |
 | 私钥疑似泄露 | 立即在表里给该 key 标 `retired_at` + 换新 key，并在 CHANGELOG 记「从某日期起旧 key 不再被接受」；已发出的报告可重签构建 |
 | `format_version` 不支持 | 用与封包同代的验签器；跨代验签一律拒绝，不做"尽力解析" |
-| 归档 `archive verify` 签名项不过 | 归档包里的二进制副本被改过 → 从发布渠道重取二进制，重签登记 |
+| 归档 `archive verify` 报哈希链不一致 | 归档包里的二进制副本或报告被改过 → 从发布渠道重取二进制，重新登记；需要身份结论时另跑 `verify signature` + 可信密钥表 |
 
 ## 7. 非目标（写清楚，避免误读）
 

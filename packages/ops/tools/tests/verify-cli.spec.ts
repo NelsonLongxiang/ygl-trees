@@ -365,6 +365,92 @@ describe.skipIf(!hasBundle)("verify 封包链（register → import → archive 
     expect(r.out).toContain("binary identity mismatch");
   });
 
+  it("archive --with binary 拒绝被换过的工作区二进制（r17 P3①）", () => {
+    const sealed = join(home, "sealed-archswap");
+    writeFileSync(sealed, sealedBytes("spec_archswap", 1));
+    const reg = JSON.parse(run(["verify", "register", sealed, "--json"]).out) as {
+      binary_sha256: string;
+      binary_path: string;
+      registration: string;
+    };
+    // 先造一份指名该构建的报告（payload 自洽），再把工作区副本换成同 key 的另一封包。
+    const report = {
+      contract_version: "1.1",
+      run_id: "run_archswap",
+      started: "2026-07-31T00:00:00.000Z",
+      finished: "2026-07-31T00:00:02.000Z",
+      spec_id: "spec_archswap",
+      verifier: {
+        mode: "sealed",
+        binary_sha256: reg.binary_sha256,
+        engine_version: "0.1.0",
+        spec_version: 1,
+        corpus_version: "1.1",
+        sealed_review: false,
+      },
+      as_of: { kind: "material-extract", captured_at: "2026-07-31T00:00:00.000Z" },
+      summary: { pass: 1, fail: 0, needs_material: 0, error: 0 },
+      overall: "PASS",
+      reason: "all 1 assert units passed",
+      vu: [
+        {
+          id: "V1",
+          role: "assert",
+          verdict: "PASS",
+          severity: "S2",
+          source_clause: "账单总额须等于申报总额。",
+          checker_type: "sql",
+          witness: { rows_scanned: 1, rows_matched: 0 },
+        },
+      ],
+      exceptions: [],
+    } as unknown as VerifyReport;
+    // archive 会收 spec.json，先把它放到规范目录（最小合法形状）。
+    const specDir = join(home, "verify", "specs", "spec_archswap");
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(
+      join(specDir, "spec.json"),
+      JSON.stringify(
+        {
+          contract_version: "1.1",
+          spec_id: "spec_archswap",
+          spec_version: 1,
+          title: "归档身份用例",
+          domain: "general",
+          created: "2026-07-31T00:00:00.000Z",
+          as_of: { kind: "material-extract", captured_at: "2026-07-31T00:00:00.000Z" },
+          sealed: { review: false },
+          attachments: [],
+          vu: [
+            {
+              id: "V1",
+              role: "assert",
+              title: "账单总额",
+              severity: "S2",
+              source_clause: "账单总额须等于申报总额。",
+              checker: { type: "sql", sql: "SELECT 1 WHERE 0", expect: "no rows" },
+              expected_from: { kind: "material-extract", anchor: "m#1" },
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    const reportsDir = join(home, "verify", "reports");
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(
+      join(reportsDir, "run_archswap.json"),
+      JSON.stringify({ ...report, payload_sha256: payloadHash(report) }, null, 2),
+      "utf8"
+    );
+    writeFileSync(reg.binary_path, sealedBytes("spec_archswap", 2));
+    const r = run(["verify", "archive", "run_archswap", "--with", "binary", "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.out).toContain("refusing to archive");
+  });
+
   it("密钥表自检：key_id 必须是 sha256(public_key)（r16 P2②）", () => {
     const sealed = join(home, "sealed-for-keys");
     writeFileSync(sealed, sealedBytes("spec_keys", 1));

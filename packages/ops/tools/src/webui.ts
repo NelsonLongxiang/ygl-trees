@@ -18,6 +18,7 @@ import { openStatic as openWebApp } from "../../../web/app/src";
 import { resolveProject, resolveTree, projectSample } from "../../../core/database/src/selection";
 // 0.91a (direct-55b4ca85): static import — same ESM-silent-death family fix
 import { onEvent } from "../../../core/text/src/eventbus";
+import { createMaterialDraft, handleVerifyApi, VERIFY_BODY_LIMIT } from "./verify-web";
 
 interface DashboardData {
   brief: any;
@@ -504,6 +505,42 @@ export function createDashboardServer(env: Env) {
         })();
       });
       return;
+    } else if (url.startsWith("/api/verify/")) {
+      // M13-2 服务面：三视图的数据源。只读为主，唯一写入面是材料草稿
+      // （POST /api/verify/material）。构造追溯没有 ✓/✗ 端点——它是事后审计面。
+      const send = (status: number, body: unknown) => {
+        res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify(body));
+      };
+      if (url === "/api/verify/material" && req.method === "POST") {
+        let body = "";
+        let overflow = false;
+        req.on("data", (c: any) => {
+          body += c;
+          if (body.length > VERIFY_BODY_LIMIT) { overflow = true; try { req.destroy(); } catch { /* */ } }
+        });
+        req.on("end", () => {
+          try {
+            if (overflow) return send(400, { error: "request body too large" });
+            const parsed = JSON.parse(body || "{}");
+            // 附件上传尚未实现：显式拒收，而不是静默丢弃（静默丢弃会伪装成"材料齐全"）。
+            if (parsed && parsed.attachments !== undefined) {
+              return send(400, {
+                error: "attachments are not accepted by the WebUI yet — use CLI: ygl-trees verify submit --attach <file>",
+              });
+            }
+            const r = createMaterialDraft(env, parsed ?? {});
+            if (!r.ok) return send(400, { error: r.error });
+            return send(200, r);
+          } catch (e: any) {
+            return send(400, { error: String(e?.message || e) });
+          }
+        });
+        return;
+      }
+      const r = handleVerifyApi(env, req.method || "GET", u);
+      send(r.status, r.body);
+      return;
     } else {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
@@ -535,7 +572,7 @@ function serve(env: Env, args: any): Promise<number> {
     out(ctx, `usage: ygl-trees webui serve [--port N] [--host H]`);
     out(ctx, paint(C.dim, `  --port N    listen port (default 8642; 0 = pick a free one)`, ctx.color));
     out(ctx, paint(C.dim, `  --host H    bind address (default 127.0.0.1; 0.0.0.0 opens to LAN)`, ctx.color));
-    out(ctx, paint(C.dim, `  endpoints:  / React client · /api/data · /api/events SSE · /api/node /api/artifact /api/task`, ctx.color));
+    out(ctx, paint(C.dim, `  endpoints:  / React client · /api/data · /api/events SSE · /api/node /api/artifact /api/task · /api/verify/*`, ctx.color));
     return Promise.resolve(0);
   }
   // 0.88 单3 (user ruling): React is the only front end — no embedded-HTML

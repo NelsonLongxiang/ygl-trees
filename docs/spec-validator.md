@@ -273,12 +273,18 @@ overall = FAIL  if 任一 role=assert 的 verdict=FAIL
 **服务端端点**（webui.ts，R16 选择门 + P1-1 归属校验同规）：
 
 ```
-GET  /api/verify/specs            # 规范清单（状态 draft/prepared/runnable/done）
-POST /api/verify/spec             # 材料保存（draft）
-POST /api/verify/prepare          # 构造+自审（服务端调判定网关，同 claim evaluate 通道）
-POST /api/verify/run              # 跑验证（同步跑小型规范；长跑先返回 run-id + SSE 进度——事件桥已就位）
-GET  /api/verify/report/<runId>   # 报告载荷
+GET  /api/verify/specs            # 规范清单（version/units/构造 verdict/run 聚合）           ✅ 0.100.0
+GET  /api/verify/spec?id=<spec>   # 构造追溯载荷（spec + prepare + trace，只读）                ✅ 0.100.0
+GET  /api/verify/reports          # 报告清单（四态统计/模式/归档数）                            ✅ 0.100.0
+GET  /api/verify/report?run=<id>  # 报告详情（报告原文 + 归档侧车；不重算不改写）               ✅ 0.100.0
+GET  /api/verify/materials        # 材料清单（投影）                                            ✅ 0.100.0
+GET  /api/verify/material?id=<m>  # 材料正文（构造追溯左列的事实源）                            ✅ 0.100.0
+POST /api/verify/material         # 材料草稿（{title,text}；附件显式 400 指向 CLI）              ✅ 0.100.0
+POST /api/verify/prepare          # 构造+自审（需服务端判定网关；构造面仍在 CLI）               ⬜ 待网关接入
+POST /api/verify/run              # 跑验证（长跑走 SSE 进度）                                  ⬜ 待网关接入
 ```
+
+**0.100.0 实现口径**：三视图全部读文件工件（`$YGL_HOME/verify/*`），不碰工作区库；唯一写入面是材料草稿，且**附件上传显式拒收**（400 → 指向 `verify submit --attach`）——静默丢弃会让「提交成功」掩盖材料缺失。`prepare`/`run` 端点仍欠：它们的构造面需要判定网关（agent 侧），在网关接入前保持 CLI 注入式接口，不在 WebUI 假装能跑。
 
 SSE 实时进度走既有 ctx.on("ygl") 公共通道（verify.report / verify.progress 事件），无新通道。前端组件复用 antd 表单/表格/标签生态（Pipeline.tsx 同款模式：类型化载荷 + 渲染验证测试 + token 纪律）。
 

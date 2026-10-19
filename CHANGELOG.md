@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.100.0
+
+**升级注意**：无契约变更（`contract_version 1.1` / `corpus_version 1.1` 不变，语料 digest 不动）。新增 WebUI 服务面端点与三视图，CLI 命令面零破坏。
+
+- **WebUI 验证器三视图（M13-2 第一批）**：`apps/web/src/Verify.tsx` + 服务端 `packages/ops/tools/src/verify-web.ts`（挂 `/api/verify/*`）。
+  - **材料提交**：标题 + 一段话（模糊输入是常态）。附件上传尚未接（multipart 排第二批）——WebUI 对 `attachments` 字段**显式 400** 并指向 `verify submit --attach`，不静默丢弃（静默丢弃会让「提交成功」掩盖材料缺失，而材料缺失正是 NEEDS-MATERIAL 的根因）。
+  - **构造追溯**（只读审计面）：规范清单 → 材料原文 + 构造结论（verdict/轮次/被拒）+ 「判据 ↔ 检查器」表（类型/比较模式/判据原文/锚点）。**没有 ✓/✗ 按钮**——判定链上没有人工确认。
+  - **报告看板**：运行记录按 `finished` 倒序；详情把 FAIL/NEEDS-MATERIAL 例外项**置顶为处置清单**（severity + 行数），四态统计退居摘要；附引擎模式/签名身份/快照 sha/归档数。
+  - 服务面实现 7 个只读端点 + 1 个写入端点（材料草稿，同正文幂等）；`prepare`/`run` 端点仍欠——构造面需要判定网关，接入前 HTTP 层不假装能跑。
+- **r17 复核 P3 四项（302cb119）**：①`archive --with binary` 的内容身份分支补 CLI 用例（同 key 另一封包替换工作区副本 → `refusing to archive`）；②`prepare.spec` 增 `corpus_version === CORPUS_VERSION` 回归断言（此前硬编码 "1.0" 的缺陷无守卫）；③`docs/verify-signing.md` §2 补 unsigned legacy 语义——**完整性可验、身份未证**，且剥掉签名字段会改变 `binary_sha256`（降级不保留身份），发布物应要求 signed 登记；④§5/§6 措辞订正——`archive verify` 做的是**哈希链与签名登记项一致性**，它没有密钥表输入、不重验签名，真伪性走 `verify signature`。
+- 测试：unit **410**（+12：verify-web ×8 / Verify 渲染 ×3 / archive 身份 ×1）/ Rust 31 / demo 128 / contract 100 / readme 54。
+
 ## 0.99.1
 
 **升级注意**：无契约变化（`contract_version 1.1`、`corpus_version 1.1` 不变）。本版是 0.99.0 签名批的收尾补丁：修一处版本透传缺陷，补首签实证与运维文档两条口径澄清。
