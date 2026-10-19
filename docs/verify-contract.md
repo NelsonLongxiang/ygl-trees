@@ -83,9 +83,14 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
   }}
 ```
 
-- 条件 op 闭集：`= != > >= < <= in between is null is not null`；`in` 传非空数组，`between` 传两元素数组。
+- 条件 op 闭集：`= != > >= < <= in between is null is not null`；`in` 传非空数组，`between` 传两元素数组且**闭区间**（含两端）。
+- **元素同型**（r8 F3）：`in` / `between` 的元素必须全为数字或全为字符串——混合类型在 PG 直接报错、在 SQLite 按类型序比较，结论不可移植；`is null` / `is not null` 带 `value` 是构造错误（不得静默忽略）。
 - 组节点 `and|or|not` 可嵌套；`not` 内部按 AND 连接后整体取反。
-- `agg` 支持 `count|sum|min|max`（count 可省略 col）；别名进报告，便于审计。
+- `agg` 支持 `count|sum|min|max`（count 可省略 col）；别名进报告，便于审计，且**别名必须唯一**（自动名 `count_all` 也在唯一性检查内）。
+- **纯聚合形态**（r8 F1）：`agg` 非空时 `select` 必须为空数组——列与聚合混排需要 GROUP BY，而 AST 里没有 GROUP BY，渲染出的 `SELECT batch, SUM(x)` 在 PG 非法。纯聚合适用于总额对账：两侧都用 `agg:sum` 的 sql-pair 谓词侧比较总额。
+- **sql-pair 的谓词侧**（r8 F1）：`{ "predicate": {...} }` 是最新形态，值列 = 该谓词唯一的 agg 列，key 缺省为常量 `"total"`；两侧都用谓词即"总额对总额"。谓词侧必须恰好一列 agg、且查询只产出一行。
+- **count / exists 也接受谓词形态**（r8 F2）：`{"type":"count","predicate":{...},"op":"==","value":N}` 由引擎渲染 `SELECT count(*)`；`{"type":"exists","predicate":{...},"expect":true}` 渲染 `SELECT 1 ... WHERE`。手写 SQL 形态仍是评审例外，不属于机械生成面。
+- **时间字面量规范化**（r8 F4/F5）：带偏移的 ISO 时间（`+08:00` / `+0800` / `Z`）在渲染时统一折成 UTC `Z`——SQLite 里日期是字符串，`BETWEEN '+08:00'` 是字典序比较，与时间序不等价；折成 Z 后同一 spec 在任何机器上给同一结论，Rust 侧同口径。无时区的时间字面量仍拒绝（W1b）。
 - 标识符守门：列名/表名只允许裸标识符（可 `表.列`），表达式与子查询一律构造期拒绝；字符串值按 `''` 转义。
 - **找违规型（`fail_when:"rows>0"`）必须给 where**，否则整表非空就能冒充"扫过本批"。
 - 渲染结果 `rendered.find_sql` / `rendered.scope_sql` 写进报告 evidence，与 witness 对账。

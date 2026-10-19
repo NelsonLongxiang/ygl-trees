@@ -1,0 +1,39 @@
+{
+  "contract_version": "0.4",
+  "spec_id": "spec__name__",
+  "spec_version": 1,
+  "verifier": { "engine_version": "0.1.0", "corpus_version": "1" },
+  "as_of": { "kind": "snapshot", "value": "2026-10-19T00:00:00.000Z" },
+  "attachments": [],
+  "sealed": { "review": false },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "账单总额等于申报总额",
+      "severity": "S1",
+      "source_clause": "本期账单合计应等于申报合计",
+      "expected_from": { "quote": "账单合计＝申报合计", "locator": "bills!B7" },
+      "checker": {
+        "type": "sql-pair",
+        "left": {
+          "predicate": {
+            "from": "bills",
+            "select": [],
+            "agg": [{ "fn": "sum", "col": "amount_cents", "as": "total" }],
+            "where": { "op": "and", "conditions": [{ "col": "batch", "op": "=", "value": "2026-07" }] }
+          }
+        },
+        "right": {
+          "predicate": {
+            "from": "declared",
+            "select": [],
+            "agg": [{ "fn": "sum", "col": "amount_cents", "as": "total" }],
+            "where": { "op": "and", "conditions": [{ "col": "batch", "op": "=", "value": "2026-07" }] }
+          }
+        },
+        "compare": { "mode": "exact", "currency": "CNY", "scale": 2 }
+      }
+    }
+  ]
+}

@@ -73,14 +73,15 @@ describe("谓词 AST 渲染（同源生成）", () => {
     expect(r.findSql).toBe("SELECT id FROM bills WHERE (batch IN ('2026-06', '2026-07') OR NOT (status = 'void'))");
   });
 
-  it("agg 渲染成别名列；count(*) 允许省略列", () => {
+  it("agg 只允许纯聚合形态（r8 F1：混排会渲染出 PG 非法 SQL）；count(*) 允许省略列", () => {
     const r = renderPredicate({
       from: "bills",
-      select: ["batch"],
+      select: [],
       agg: [{ fn: "sum", col: "amount_cents", as: "total" }, { fn: "count" }],
       where: { op: "and", conditions: [{ col: "batch", op: "=", value: "2026-07" }] },
     });
-    expect(r.findSql).toBe("SELECT batch, SUM(amount_cents) AS total, COUNT(*) AS count_all FROM bills WHERE (batch = '2026-07')");
+    expect(r.findSql).toBe("SELECT SUM(amount_cents) AS total, COUNT(*) AS count_all FROM bills WHERE (batch = '2026-07')");
+    expect(() => renderPredicate({ from: "bills", select: ["batch"], agg: [{ fn: "count" }] })).toThrow(/mixes select columns with agg/);
   });
 
   it("标识符守门：拒绝表达式、子查询与注入串", () => {

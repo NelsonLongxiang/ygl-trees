@@ -70,7 +70,11 @@ export interface PredicateAgg {
 export interface Predicate {
   /** 表/视图名（裸标识符） */
   from: string;
-  /** 取数列（裸标识符）；缺省 select * 会拒绝（审计看不出取了什么） */
+  /**
+   * 取数列（裸标识符）。审计看不出「取了什么」的 `select *` 一律拒绝；
+   * 纯聚合查询（agg 非空）时 select 必须为空数组——列与聚合混排需要 GROUP BY，
+   * 而 GROUP BY 不在 AST 里，渲染出的 `SELECT batch, SUM(x)` 在 PG 直接报错（r8 F1）。
+   */
   select: string[];
   /** 聚合列（可选）；给出时按 as 或 agg 名产出单列 */
   agg?: PredicateAgg[];
@@ -110,7 +114,12 @@ export type SqlChecker = RawSqlChecker | PredicateChecker;
 
 export type PairSide =
   | { from: string; key: string; value: string }
-  | { table: string; key: string; value: string };
+  | { table: string; key: string; value: string }
+  /**
+   * 机械形态（r8 F1）：谓词侧自己产出一行——`{predicate, key?}`。
+   * 值列 = predicate.agg 的唯一一列；key 缺省为常量 "total"（总额对总额）。
+   */
+  | { predicate: Predicate; key?: string };
 
 export interface SqlPairChecker {
   type: "sql-pair";
@@ -133,21 +142,33 @@ export type CountChecker =
     }
   | {
       /**
+       * 计数型：谓词形态（r8 F2）——`SELECT count(*)` 由引擎从同一谓词渲染，
+       * 与 find/scope 共享同一 where；不允许再手写 sql。
+       */
+      type: "count";
+      predicate: Predicate;
+      from?: never;
+      sql?: never;
+      op: ">=" | "<=" | "==" | "!=" | ">" | "<";
+      value: number;
+    }
+  | {
+      /**
        * 计数型：业务数据源单语句计数（必须返回单行单列）。
        * scanned = 源表行数；matched = 计数。
        */
       type: "count";
       from?: never;
       sql: string;
+      predicate?: never;
       op: ">=" | "<=" | "==" | "!=" | ">" | "<";
       value: number;
     };
 
-export interface ExistsChecker {
-  type: "exists";
-  sql: string;
-  expect: boolean;
-}
+export type ExistsChecker =
+  | { type: "exists"; sql: string; predicate?: never; expect: boolean }
+  /** 谓词形态（r8 F2）：`SELECT 1 ... WHERE` 由引擎从同一谓词渲染 */
+  | { type: "exists"; predicate: Predicate; sql?: never; expect: boolean };
 
 export interface FileChecker {
   type: "file";

@@ -1,0 +1,7 @@
+{
+  "checker": "sql-pair",
+  "domain": "freight-audit",
+  "tags": ["fail", "agg", "total-reconciliation"],
+  "expects": "FAIL：两侧总额聚合（SUM）不相等，证明 agg 值真的参与比较（r8 F1）",
+  "matrix": "agg"
+}

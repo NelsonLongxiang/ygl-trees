@@ -45,5 +45,5 @@ console.log(report.overall, report.summary);        // 判定在报告里，不�
 
 ## 状态
 
-M13-1 骨架：契约 v0.4、引擎 + SQLite runner + 语料骨架（30 例：七型 8 + 红队 10 + compare 矩阵 12）、19 测试全绿。
+M13-1 骨架：契约 v0.4、引擎 + SQLite runner + prepare 流水线（P0–P5）+ 语料 33 例（七型 8 + 红队 10 + compare 矩阵 12 + 聚合对账 1 + 其它边界），64 测试全绿。
 未做：prepare/自审链、命令面（CLI）、封包器（M13-1b）、Rust 二进制。

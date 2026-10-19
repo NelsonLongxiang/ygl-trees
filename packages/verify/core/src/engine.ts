@@ -228,13 +228,28 @@ async function runFactChecker(
 
     case "sql-pair": {
       const readSide = (side: typeof c.left): Row[] => {
+        if ("predicate" in side && side.predicate) {
+          const aggs = side.predicate.agg ?? [];
+          if (aggs.length !== 1) {
+            throw new Error("sql-pair predicate side needs exactly one agg column (that column is the compared value)");
+          }
+          renderPredicate(side.predicate); // 先跑一次校验（agg/别名/where 规则）
+          const alias = aggAliasOf(side.predicate);
+          const { findSql } = renderPredicate(side.predicate);
+          const rows = runner.query(findSql);
+          if (rows.length !== 1) {
+            throw new Error(`sql-pair predicate side must yield exactly one row (aggregate), got ${rows.length}`);
+          }
+          return [{ key: side.key ?? "total", value: rows[0][alias] }];
+        }
         if ("from" in side) {
           const ref = refId(side.from);
           const rows = outputs.get(ref);
           if (!rows) throw new Error(`pipeline reference ${side.from} is not available (topological order violated)`);
           return rows;
         }
-        return runner.query(`SELECT ${side.key}, ${side.value} FROM ${side.table}`);
+        const tbl = (side as { table: string; key: string; value: string });
+        return runner.query(`SELECT ${tbl.key}, ${tbl.value} FROM ${tbl.table}`);
       };
       const compareSpec: CompareSpec = c.compare;
       const specErrs = validateCompareSpec(compareSpec);
@@ -247,10 +262,18 @@ async function runFactChecker(
       } catch (e) {
         return { verdict: "ERROR", evidence: { reason: (e as Error).message } };
       }
-      const lk = (c.left as { key: string }).key;
-      const lv = (c.left as { value: string }).value;
-      const rk = (c.right as { key: string }).key;
-      const rv = (c.right as { value: string }).value;
+      const sideKey = (sd: typeof c.left): string => {
+        if ("predicate" in sd && sd.predicate) return sd.key ?? "total";
+        return (sd as { key: string }).key;
+      };
+      const sideVal = (sd: typeof c.left): string => {
+        if ("predicate" in sd && sd.predicate) return "value";
+        return (sd as { value: string }).value;
+      };
+      const lk = sideKey(c.left);
+      const lv = sideVal(c.left);
+      const rk = sideKey(c.right);
+      const rv = sideVal(c.right);
       const card = compareSpec.cardinality ?? "1:1";
       const agg = compareSpec.agg;
       const group = (rows: Row[], key: string, value: string) => {
@@ -267,6 +290,7 @@ async function runFactChecker(
         const tableSides: string[] = [];
         for (const side of [c.left, c.right]) {
           if ("table" in side) tableSides.push(side.table);
+          else if ("predicate" in side && side.predicate) tableSides.push(side.predicate.from);
         }
         return tableSides.map((t) => {
           try {
@@ -335,8 +359,9 @@ async function runFactChecker(
       return { verdict: "PASS", witness: w, evidence: { compared } };
     }
     case "count": {
-      if (c.from !== undefined && c.sql !== undefined) {
-        return { verdict: "ERROR", evidence: { reason: "count checker declares both from and sql (must be exactly one)" } };
+      const countForms = ["from", "sql", "predicate"].filter((k) => (c as Record<string, unknown>)[k] !== undefined);
+      if (countForms.length !== 1) {
+        return { verdict: "ERROR", evidence: { reason: `count checker declares ${countForms.join("+") || "nothing"} — exactly one of from/sql/predicate is required` } };
       }
       let n: number;
       let scanned: number;
@@ -349,6 +374,13 @@ async function runFactChecker(
         }
         n = upstream.length;
         scanned = upstream.length;
+      } else if ("predicate" in c && c.predicate) {
+        const { from, whereSql } = renderScan(c.predicate);
+        const rows = runner.query(`SELECT count(*) AS n FROM ${from}${whereSql}`);
+        n = rows.length > 0 ? Number(Object.values(rows[0])[0]) : 0;
+        const scope = rowsScannedFromSql(runner, `SELECT count(*) AS n FROM ${from}${whereSql}`);
+        scanned = scope.scanned;
+        sources = scope.sources;
       } else if (c.sql !== undefined) {
         const rows = runner.query(c.sql);
         if (rows.length > 1 || (rows.length === 1 && Object.keys(rows[0]).length !== 1)) {
@@ -367,9 +399,16 @@ async function runFactChecker(
       return { verdict: pass ? "PASS" : "FAIL", witness: witness(scanned, n, sources, fingerprint), evidence: { count: n, op: c.op, expected: c.value } };
     }
     case "exists": {
-      const rows = runner.query(c.sql);
+      let sql: string;
+      if ("predicate" in c && c.predicate) {
+        const { from, whereSql } = renderScan(c.predicate);
+        sql = `SELECT 1 FROM ${from}${whereSql}`;
+      } else {
+        sql = c.sql;
+      }
+      const rows = runner.query(sql);
       const present = rows.length > 0;
-      const { scanned, sources } = rowsScannedFromSql(runner, c.sql);
+      const { scanned, sources } = rowsScannedFromSql(runner, sql);
       return { verdict: present === c.expect ? "PASS" : "FAIL", witness: witness(scanned, rows.length, sources, fingerprint), evidence: { present, expect: c.expect } };
     }
     case "file": {
@@ -565,13 +604,36 @@ function ident(name: string, what: string): string {
   return parts.join(".");
 }
 
+/** 带时区的 ISO 8601（r8 F4：PG 常见输出含 +08 / +0800 形态） */
+const ISO_OFFSET = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2}|[+-]\d{2})$/;
+
+/**
+ * 时间字面量规范化（r8 F5）：带偏移的时间统一折成 UTC Z。
+ * 原因：SQLite 里日期是字符串，`BETWEEN '2026-07-01T00:00:00+08:00' AND ...` 是字典序比较，
+ * 与真实时间序不等价；折成 Z 后同一 spec 在任何机器上给出同一结论（Rust 侧同口径）。
+ */
+function normalizeIsoLiteral(v: string): string {
+  if (!ISO_OFFSET.test(v)) return v;
+  const ms = Date.parse(v.replace(" ", "T"));
+  if (!Number.isFinite(ms)) throw new Error(`predicate literal ${JSON.stringify(v)} looks like an ISO datetime but cannot be parsed`);
+  return new Date(ms).toISOString();
+}
+
 /** 字面量渲染：数字走白名单字符串，字符串按 '' 转义（永不拼接外部 SQL 片段） */
 function literal(v: string | number): string {
   if (typeof v === "number") {
     if (!Number.isFinite(v)) throw new Error(`predicate literal is not a finite number: ${v}`);
     return String(v);
   }
-  return `'${v.replace(/'/g, "''")}'`;
+  const norm = normalizeIsoLiteral(v);
+  return `'${norm.replace(/'/g, "''")}'`;
+}
+
+/** in/between 的元素必须同型（r8 F3：混合 number/string 在 PG 报错、SQLite 按类型序比较） */
+function assertSameScalarType(values: unknown[], col: string): void {
+  const kinds = new Set(values.map((v) => (typeof v === "number" ? "number" : typeof v === "string" ? "string" : "other")));
+  if (kinds.has("other")) throw new Error(`predicate where ${col} list contains a non-scalar value`);
+  if (kinds.size > 1) throw new Error(`predicate where ${col} list mixes numbers and strings — declare one type (r8 F3)`);
 }
 
 function renderCondition(w: PredicateCondition): string {
@@ -579,17 +641,22 @@ function renderCondition(w: PredicateCondition): string {
   switch (w.op) {
     case "is null":
     case "is not null":
+      // r8 F3：is null 带 value 是构造错误，不能静默忽略（会让人以为在比较值）
+      if (w.value !== undefined) throw new Error(`predicate where ${col} ${w.op} must not carry a value`);
       return `${col} ${w.op.toUpperCase()}`;
     case "in": {
       if (!Array.isArray(w.value) || w.value.length === 0) {
         throw new Error(`predicate where ${col} in (...) needs a non-empty array value`);
       }
+      assertSameScalarType(w.value, col);
       return `${col} IN (${w.value.map((v) => literal(v)).join(", ")})`;
     }
     case "between": {
       if (!Array.isArray(w.value) || w.value.length !== 2) {
         throw new Error(`predicate where ${col} between needs a two-element array value`);
       }
+      assertSameScalarType(w.value, col);
+      // 闭区间（含两端），写进契约；端点为 null 由 assertSameScalarType 拒绝
       return `${col} BETWEEN ${literal(w.value[0])} AND ${literal(w.value[1])}`;
     }
     default: {
@@ -627,26 +694,62 @@ export interface RenderedPredicate {
  * 从同一谓词 AST 渲染两段查询（裁定「同源生成」，r5 S2）：
  * find 与 scope **共享同一 where 子句字符串**，物理上不可能伪造扫描面。
  */
-export function renderPredicate(pred: Predicate): RenderedPredicate {
+/** 谓词渲染的公共部分：from 与 where（find/scope/count/exists 共用，保证同源） */
+export function renderScan(pred: Predicate): { from: string; whereSql: string } {
   const from = ident(pred.from, "from");
-  if (!Array.isArray(pred.select) || pred.select.length === 0) {
-    throw new Error("predicate.select must list at least one column (audit needs to know what was read)");
+  return { from, whereSql: renderWhere(pred.where) };
+}
+
+/** 聚合列的渲染 + 规则校验（r8 F1）：别名唯一、count 之外必须给列、select 不得与 agg 混排 */
+function renderAggs(pred: Predicate): string[] {
+  const aggs = pred.agg ?? [];
+  if (aggs.length === 0) return [];
+  if (pred.select.length > 0) {
+    throw new Error("predicate mixes select columns with agg without GROUP BY (renders invalid SQL on PG) — use agg-only");
   }
-  const plain = pred.select.map((c) => ident(c, "select column"));
-  const aggs = (pred.agg ?? []).map((a) => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const a of aggs) {
     const col = a.col ? ident(a.col, "agg column") : "*";
     if (col === "*" && a.fn !== "count") throw new Error(`predicate agg ${a.fn} needs a column (only count allows *)`);
     const alias = ident(a.as ?? `${a.fn}_${a.col ?? "all"}`, "agg alias");
-    return `${a.fn.toUpperCase()}(${col}) AS ${alias}`;
-  });
+    if (seen.has(alias)) throw new Error(`predicate agg alias ${JSON.stringify(alias)} is duplicated — aliases must be unique`);
+    seen.add(alias);
+    out.push(`${a.fn.toUpperCase()}(${col}) AS ${alias}`);
+  }
+  return out;
+}
+
+export interface RenderedPredicate {
+  findSql: string;
+  scopeSql: string;
+}
+
+/**
+ * 从同一谓词 AST 渲染两段查询（裁定「同源生成」，r5 S2）：
+ * find 与 scope **共享同一 where 子句字符串**，物理上不可能伪造扫描面。
+ * 纯聚合形态（agg 非空、select 为空）产出 `SELECT SUM(x) AS sum_x ...`，报告可比对聚合值（r8 F1）。
+ */
+export function renderPredicate(pred: Predicate): RenderedPredicate {
+  const { from, whereSql } = renderScan(pred);
+  const aggs = renderAggs(pred);
+  const plain = pred.select.map((c) => ident(c, "select column"));
   const cols = [...plain, ...aggs];
-  if (cols.length === 0) throw new Error("predicate.select must list at least one column");
+  if (cols.length === 0) {
+    throw new Error("predicate.select must list at least one column (or use agg for an aggregate query)");
+  }
   const select = cols.join(", ");
-  const whereSql = renderWhere(pred.where);
   return {
     findSql: `SELECT ${select} FROM ${from}${whereSql}`,
     scopeSql: `SELECT count(*) AS n FROM ${from}${whereSql}`,
   };
+}
+
+/** 谓词形态的聚合别名（sql-pair 谓词侧 / count 谓词形态用） */
+export function aggAliasOf(pred: Predicate, index = 0): string {
+  const a = (pred.agg ?? [])[index];
+  if (!a) throw new Error("predicate has no agg column at index " + index);
+  return a.as ?? `${a.fn}_${a.col ?? "all"}`;
 }
 
 export function refsOf(c: Checker): string[] {
