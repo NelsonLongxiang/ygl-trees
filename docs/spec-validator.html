@@ -241,7 +241,7 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
     <div class="stage">
       <div class="who">agent · 驱动</div>
       <div class="what">确定性检查</div>
-      <div class="how">六型检查器拓扑执行；模型调用全部前压，run 阶段零模型。</div>
+      <div class="how">八型检查器拓扑执行；fact 层零模型，review 层的 agent 只对照冻结 rubric 读冻结提交物。</div>
     </div>
     <div class="stage">
       <div class="who">交付</div>
@@ -252,8 +252,17 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
 
   <div class="callout">
     <div class="t">核心立场：判定零概率</div>
-    <p>模型只出现在预处理（人话 → 判据结构化）与采证编排。verdict ∈ {PASS, FAIL, NEEDS-HUMAN, ERROR}，语义判不了的判据在预处理阶段就标 <code>human</code>——<strong>不让模型给概率冒充结论</strong>。</p>
+    <p>模型只出现在预处理（人话 → 判据结构化）与 review 层审阅。verdict ∈ {PASS, FAIL, NEEDS-HUMAN, ERROR}，语义判不了的判据在预处理阶段就标 <code>agent</code>（有 rubric 可依）或 <code>human</code>——<strong>不让模型给概率冒充结论</strong>。</p>
   </div>
+
+  <h3><span class="n">1.1a</span>提交物即验证器</h3>
+  <p>业务专家的输入分两类：<strong>基准材料</strong>（标尺——什么算对的证据）与<strong>提交物</strong>（靶子——业务方交上来的东西）。两者都可以是图片、PDF、表格、压缩包。</p>
+  <div class="grid c3">
+    <div class="card"><h4><span class="icon">▤</span>可判定</h4><p>任何提交物都能被某类验证器判真/假：文件在不在、清单齐不齐、内容合不合裁——输出统一是布尔。</p></div>
+    <div class="card"><h4><span class="icon">◈</span>agent 是常态验证者</h4><p>业务交付物（报告/报表/方案/压缩包）大多没有 SQL 面，靠对照冻结 rubric 读一遍判布尔——agent 型的原生场景。</p></div>
+    <div class="card"><h4><span class="icon">⊤</span>布尔是唯一契约</h4><p>不管来源是 SQL、文件清单还是 agent 审阅，对上层输出同一个布尔 + 证据；来源只影响「真」的承诺强度。</p></div>
+  </div>
+  <p class="dim">压缩包按<strong>文件级</strong>验：存在性、类型、大小、解包清单、命名规范、校验和（<code>file</code> 型，纯确定性）。</p>
 
   <h3><span class="n">1.2</span>VU = 纯函数，规范 = 管线</h3>
   <p>每条验证单元（VU）是一个纯函数，输入 → <code>{ verdict, evidence, outputs }</code>。输出带类型，可被下游引用——<strong>一个验证器的结果是另一个验证器的输入</strong>。</p>
@@ -271,13 +280,15 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   <div class="grid c2">
     <div>
       <table>
-        <tr><th>检查器类型</th><th>判定来源</th></tr>
-        <tr><td><code>sql</code></td><td>违规行数（SELECT 前缀门 + 分号拒绝）</td></tr>
-        <tr><td><code>sql-pair</code></td><td>两表按键值比对，容差 ±ε</td></tr>
-        <tr><td><code>count</code></td><td>计数阈值（telemetry 同语法）</td></tr>
-        <tr><td><code>exists</code></td><td>存在性</td></tr>
-        <tr><td><code>command</code></td><td>退出码 / stdout 字面匹配</td></tr>
-        <tr><td><code>human</code></td><td>人（<strong>不做假确定性</strong>）</td></tr>
+        <tr><th>检查器类型</th><th>来源层</th><th>判定依据</th></tr>
+        <tr><td><code>sql</code></td><td>fact</td><td>违规行数（SELECT 前缀门 + 分号拒绝）</td></tr>
+        <tr><td><code>sql-pair</code></td><td>fact</td><td>两表按键值比对，容差 ±ε</td></tr>
+        <tr><td><code>count</code></td><td>fact</td><td>计数阈值（telemetry 同语法）</td></tr>
+        <tr><td><code>exists</code></td><td>fact</td><td>存在性</td></tr>
+        <tr><td><code>file</code></td><td>fact</td><td>文件级：清单/命名/数量/校验和</td></tr>
+        <tr><td><code>command</code></td><td>fact</td><td>退出码 / stdout 字面匹配</td></tr>
+        <tr><td><code>agent</code></td><td>review</td><td>按冻结 rubric 审阅 → 布尔 + 逐项引文，<strong>可复核不冒充事实</strong></td></tr>
+        <tr><td><code>human</code></td><td>human</td><td>人（<strong>不做假确定性</strong>）</td></tr>
       </table>
     </div>
     <div>
@@ -293,7 +304,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
       </table>
     </div>
   </div>
-  <p class="dim">闭集纪律：新增检查器类型 = 破坏性变更（走 schema 版本）。六型 × 七域之外的判据，预处理一律标 <code>human</code>，不会静默漏判。</p>
+  <p class="dim">闭集纪律：新增检查器类型 = 破坏性变更（走 schema 版本）。八型 × 七域之外的判据，预处理一律标 <code>human</code>，不会静默漏判。<strong>三层真承诺</strong>：fact 层逐字重放；review 层标注来源+给复核通道；human 层只呈现待裁项。</p>
 
   <h3><span class="n">1.4</span>语言放置：判定核心是数据，不是代码</h3>
   <table>
@@ -362,7 +373,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   <table>
     <tr><th>组件</th><th>落点</th><th>要点</th></tr>
     <tr><td>命令族</td><td><span class="mono">packages/ops/tools/src/verify-cmds.ts</span></td><td>submit / prepare / confirm / run / report / list</td></tr>
-    <tr><td>检查器引擎</td><td><span class="mono">packages/research/pipeline/src/verify-*.ts</span></td><td>六型执行 + 管线拓扑 + 级联语义</td></tr>
+    <tr><td>检查器引擎</td><td><span class="mono">packages/research/pipeline/src/verify-*.ts</span></td><td>八型执行 + 管线拓扑 + 级联语义</td></tr>
     <tr><td>spec 存储</td><td>artifacts（kind=verify-spec / verify-report）</td><td>零新表起步；查询面成型再升 v13</td></tr>
     <tr><td>报告渲染</td><td><span class="mono">packages/ops/tools/src/webui.ts</span> + <span class="mono">apps/web/src/Verify*.tsx</span></td><td>R16 选择门 + 归属校验同规</td></tr>
     <tr><td>提取适配器</td><td><span class="mono">scripts/verify-extract/*.py</span></td><td>子进程 JSON 契约；黄金样本测试</td></tr>
@@ -540,7 +551,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   <div class="sec-head"><span class="sec-num">04</span><h2>路线</h2></div>
   <table>
     <tr><th>批次</th><th>内容</th><th>验收</th><th>版本</th></tr>
-    <tr><td><strong>M13-1</strong></td><td>CLI 后端：submit / prepare / confirm / run / report / list；六型检查器；管线拓扑；版本化；SQLite + PG</td><td>全门禁绿（unit + contract + demo）；.157 运费对账端到端跑通</td><td>0.96.0</td></tr>
+    <tr><td><strong>M13-1</strong></td><td>CLI 后端：submit / prepare / confirm / run / report / list；八型检查器；管线拓扑；版本化；SQLite + PG</td><td>全门禁绿（unit + contract + demo）；.157 运费对账端到端跑通</td><td>0.96.0</td></tr>
     <tr><td><strong>M13-2</strong></td><td>WebUI 三视图（材料提交 / VU 确认 / 报告看板）+ Python 提取适配器（真实样本）</td><td>浏览器端到端可用；黄金样本测试</td><td>0.97.0</td></tr>
     <tr><td>M13-3</td><td>毕业通道（验证 → patrol）；报告导出（PDF/HTML）</td><td>毕业产物可追溯；导出可用于对质</td><td>0.98+</td></tr>
     <tr><td>触发式</td><td>Rust 确定性内核（判据：规模或外发需求坐实）</td><td>同一 JSON 契约下与 Node 实现字节级同结果</td><td>—</td></tr>
