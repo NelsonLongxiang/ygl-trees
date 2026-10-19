@@ -270,21 +270,24 @@ overall = FAIL  if 任一 role=assert 的 verdict=FAIL
 2. **构造追溯视图**（审计面，非门槛）：只读展示 prepare 产物——左列判据原文 + **材料出处**（期望值锚点：报价基准.xlsx·Sheet1·R5C3；图片值标注提取区域），右列翻译出的 checker（类型+表+列+容差+期望值来源），附自审三问的逐条结论（忠实/可判/非空转）与构造修订历史。**这里没有 ✓/✗ 按钮**——它是事后复核入口，不是放行闸门。
 3. **报告看板**（结果交付面，m11428+m11429 修正）：**处置清单优先**（FAIL 例外项=工作清单置顶，四态统计退居摘要行）——每项可展开证据明细（判据原文/基准出处/违规行/两侧数值/管线 trace）；NEEDS-MATERIAL 一键转「补充材料」task；版本对比视图（同规范两次 run=数据漂移轴；两版规范同数据=判据修订影响轴）。
 
-**服务端端点**（webui.ts，R16 选择门 + P1-1 归属校验同规）：
+**服务端端点**（`packages/ops/tools/src/verify-web.ts`）。**归属口径（0.101.0 订正）**：验证器工件是 **$YGL_HOME 级**，与 R16 项目选择正交——不套项目选择门，也不按项目过滤；这道门属于业务数据（research/claim/kb），不属于「规范↔运行」的工件面。唯一的访问控制是 id 白名单 + 解析后包含性断言（防路径穿越），越界一律 404（不区分「不存在」与「越界」，避免探测）。
 
 ```
 GET  /api/verify/specs            # 规范清单（version/units/构造 verdict/run 聚合）           ✅ 0.100.0
 GET  /api/verify/spec?id=<spec>   # 构造追溯载荷（spec + prepare + trace，只读）                ✅ 0.100.0
 GET  /api/verify/reports          # 报告清单（四态统计/模式/归档数）                            ✅ 0.100.0
 GET  /api/verify/report?run=<id>  # 报告详情（报告原文 + 归档侧车；不重算不改写）               ✅ 0.100.0
+GET  /api/verify/reports?spec=<id> # 报告清单按规范过滤                                       ✅ 0.101.0
+GET  /api/verify/archives         # 归档清单（侧车展开：archive_id/filename/zip_sha256/with）    ✅ 0.101.0
 GET  /api/verify/materials        # 材料清单（投影）                                            ✅ 0.100.0
 GET  /api/verify/material?id=<m>  # 材料正文（构造追溯左列的事实源）                            ✅ 0.100.0
-POST /api/verify/material         # 材料草稿（{title,text}；附件显式 400 指向 CLI）              ✅ 0.100.0
+PUT  /api/verify/blob?name=&mime= # 附件原始字节入内容寻址仓（服务端算 sha256；幂等去重）       ✅ 0.101.0
+POST /api/verify/material         # 材料草稿（{title,text,attachments:[{sha256,name}]}）         ✅ 0.101.0
 POST /api/verify/prepare          # 构造+自审（需服务端判定网关；构造面仍在 CLI）               ⬜ 待网关接入
 POST /api/verify/run              # 跑验证（长跑走 SSE 进度）                                  ⬜ 待网关接入
 ```
 
-**0.100.0 实现口径**：三视图全部读文件工件（`$YGL_HOME/verify/*`），不碰工作区库；唯一写入面是材料草稿，且**附件上传显式拒收**（400 → 指向 `verify submit --attach`）——静默丢弃会让「提交成功」掩盖材料缺失。`prepare`/`run` 端点仍欠：它们的构造面需要判定网关（agent 侧），在网关接入前保持 CLI 注入式接口，不在 WebUI 假装能跑。
+**实现口径（0.100.0 → 0.101.0）**：三视图全部读文件工件（`$YGL_HOME/verify/*`），不碰工作区库。附件有两步：先 `PUT /api/verify/blob` 把**原始字节**入仓（服务端按字节算 sha256、全局去重、`blobs/<sha 前 2 位>/<sha>`，超 64 MiB 回 413 JSON，`.incoming/*.part` 启动时与上传前按 mtime 清理 6 小时以上孤儿），再 `POST /api/verify/material` 只带 `{sha256,name}` 引用——**客户端永远不报哈希、不传路径**，引用未入仓的 blob 直接 400。写端点要求 `application/json`（否则 415）；上传门是端点本身：serve 绑非回环地址时默认关（403），`YGL_VERIFY_ALLOW_UPLOAD=1` 显式开、`=0` 强制关。`prepare`/`run` 端点仍欠：它们的判定需要网关凭证，且 runner 只能由 serve 进程在启动时注入（请求体**永不携带** argv/allowlist/凭证），在网关接入前保持 CLI 注入式接口，不在 WebUI 假装能跑。
 
 SSE 实时进度走既有 ctx.on("ygl") 公共通道（verify.report / verify.progress 事件），无新通道。前端组件复用 antd 表单/表格/标签生态（Pipeline.tsx 同款模式：类型化载荷 + 渲染验证测试 + token 纪律）。
 

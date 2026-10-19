@@ -7,6 +7,8 @@
  *
  * @module @ygl/ops-tools/webui
  */
+import { join } from "node:path";
+
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
 import { resolveDistRoot } from "../../../web/app/src/index";
@@ -18,7 +20,8 @@ import { openStatic as openWebApp } from "../../../web/app/src";
 import { resolveProject, resolveTree, projectSample } from "../../../core/database/src/selection";
 // 0.91a (direct-55b4ca85): static import — same ESM-silent-death family fix
 import { onEvent } from "../../../core/text/src/eventbus";
-import { createMaterialDraft, handleVerifyApi, VERIFY_BODY_LIMIT } from "./verify-web";
+import { BLOB_LIMIT, createMaterialDraft, handleVerifyApi, openBlobUpload, uploadAllowed, VERIFY_BODY_LIMIT } from "./verify-web";
+import { pruneIncoming } from "./blob-store";
 
 interface DashboardData {
   brief: any;
@@ -275,7 +278,12 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
  *  / and /index.html → live HTML; /api/data → dashboard JSON;
  *  /api/events → SSE stream (server-side change detection, pushes fresh
  *  payloads so clients never poll); /api/node?tree=<name>&key=<key> → node detail. */
-export function createDashboardServer(env: Env) {
+export function createDashboardServer(env: Env, opts: { allowUpload?: boolean } = {}) {
+  // 默认关闭：只有 serve 在回环地址上显式打开（或 YGL_VERIFY_ALLOW_UPLOAD=1）。
+  // 嵌入方不传旗标时不该默默获得写盘能力。
+  const allowUpload = opts.allowUpload === true;
+  // 启动时清掉上次异常退出留下的上传半截文件（fdc757f6 骑士②）。
+  try { pruneIncoming(join(env.home, "verify")); } catch { /* 没有 verify 目录就是没上传过 */ }
   const http = require("node:http");
   // 0.88 单3 (user ruling): React client (apps/web/dist) is the ONLY front
   // end. Dist missing → non-API routes answer an honest 503 with the build
@@ -512,23 +520,69 @@ export function createDashboardServer(env: Env) {
         res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
         res.end(JSON.stringify(body));
       };
+      // 附件字节上传：内容寻址仓的唯一 HTTP 入口。原始字节 PUT（不解析 multipart），
+      // 边收边哈希落 .incoming/*.part，超限立刻断连——半截文件永远不会变成"完整附件"。
+      if (url === "/api/verify/blob" && (req.method || "").toUpperCase() === "PUT") {
+        if (!allowUpload) {
+          return send(403, {
+            error: "blob upload is disabled: serve bound a non-loopback address; set YGL_VERIFY_ALLOW_UPLOAD=1 to enable",
+          });
+        }
+        const name = u.searchParams.get("name") || "attachment";
+        const mimeHint = u.searchParams.get("mime") || undefined;
+        const sink = openBlobUpload(env);
+        let done = false;
+        req.on("data", (c: any) => {
+          if (done) return;
+          if (!sink.write(Buffer.isBuffer(c) ? c : Buffer.from(c))) {
+            // 超限：立刻回 413 JSON 并丢弃后续字节。先 destroy 会让客户端只看到断连，
+            // 与契约「失败也机器可读」相抵（r18 P3）。
+            done = true;
+            sink.abort();
+            send(413, { error: `blob too large: exceeds ${BLOB_LIMIT} bytes` });
+            try { req.resume(); } catch { /* */ }
+          }
+        });
+        req.on("end", () => {
+          if (done) return;
+          done = true;
+          if (sink.overflowed()) {
+            sink.abort();
+            return send(413, { error: `blob too large: exceeds ${BLOB_LIMIT} bytes` });
+          }
+          try {
+            const ref = sink.finish(name, mimeHint);
+            return send(200, ref);
+          } catch (e: any) {
+            sink.abort();
+            return send(400, { error: String(e?.message || e) });
+          }
+        });
+        req.on("error", () => {
+          if (done) return;
+          done = true;
+          sink.abort();
+        });
+        return;
+      }
       if (url === "/api/verify/material" && req.method === "POST") {
+        // r18 P3：写端点要求 JSON（表单/跨站 simple request 直接挡在解析之前）。
+        const ct = String(req.headers["content-type"] || "").toLowerCase();
+        if (!ct.includes("application/json")) {
+          return send(415, { error: "content-type must be application/json" });
+        }
         let body = "";
         let overflow = false;
         req.on("data", (c: any) => {
+          if (overflow) return; // 丢弃后续字节但把连接读完——直接 destroy 会让客户端看到断连而不是 JSON 错误
           body += c;
-          if (body.length > VERIFY_BODY_LIMIT) { overflow = true; try { req.destroy(); } catch { /* */ } }
+          if (body.length > VERIFY_BODY_LIMIT) { overflow = true; body = ""; }
         });
         req.on("end", () => {
           try {
-            if (overflow) return send(400, { error: "request body too large" });
+            if (overflow) return send(413, { error: `request body too large (limit ${VERIFY_BODY_LIMIT} bytes)` });
             const parsed = JSON.parse(body || "{}");
-            // 附件上传尚未实现：显式拒收，而不是静默丢弃（静默丢弃会伪装成"材料齐全"）。
-            if (parsed && parsed.attachments !== undefined) {
-              return send(400, {
-                error: "attachments are not accepted by the WebUI yet — use CLI: ygl-trees verify submit --attach <file>",
-              });
-            }
+            // attachments 现在是合法的 sha256 引用列表；引用不存在的 blob 由草稿层拒收。
             const r = createMaterialDraft(env, parsed ?? {});
             if (!r.ok) return send(400, { error: r.error });
             return send(200, r);
@@ -592,15 +646,16 @@ function serve(env: Env, args: any): Promise<number> {
       resolve(2);
       return;
     }
-    const server = createDashboardServer(env);
+    // ④ cold-user report: hardcoded 127.0.0.1 blocks LAN/WSL access.
+    // Default stays 127.0.0.1 (safe); --host 0.0.0.0 opens to the network.
+    const host = String(args.flags.host || "127.0.0.1");
+    // 附件上传面随绑定地址收放：非回环地址默认关闭（写端点 + 任意字节 = 磁盘填充面）。
+    const server = createDashboardServer(env, { allowUpload: uploadAllowed(host) });
     const onErr = (e: any) => {
       bad(ctx, `webui serve: ${e?.message || e}`);
       resolve(1);
     };
     server.once("error", onErr);
-    // ④ cold-user report: hardcoded 127.0.0.1 blocks LAN/WSL access.
-    // Default stays 127.0.0.1 (safe); --host 0.0.0.0 opens to the network.
-    const host = String(args.flags.host || "127.0.0.1");
     server.listen(port, host, () => {
       server.removeListener("error", onErr);
       const addr = server.address();

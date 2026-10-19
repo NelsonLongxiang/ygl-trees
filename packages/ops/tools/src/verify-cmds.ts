@@ -26,6 +26,7 @@ import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
+import { BLOB_LIMIT, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
@@ -54,7 +55,7 @@ interface MaterialRecord {
   created: string;
   text_sha256: string;
   text_path: string;
-  files: Array<{ path: string; sha256: string; mime: string; size: number; stored: string }>;
+  files: Array<{ path: string; sha256: string; mime: string; size: number; stored: string; blob?: boolean }>;
 }
 
 function readJson<T>(path: string): T {
@@ -314,11 +315,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           bad(ctx, `attachment not found: ${a}`);
           return 1;
         }
-        const buf = readFileSync(a);
-        const sha = sha256(buf);
-        const stored = `${short(sha)}-${basename(a)}`;
-        writeFileSync(join(dir, "files", stored), buf);
-        files.push({ path: basename(a), sha256: sha, mime: mimeOf(a), size: buf.length, stored });
+        let ref;
+        try {
+          // 唯一写入面：CLI 与 HTTP 上传都走 blob-store（同哈希、同容量策略、同去重）。
+          ref = putBlobFromFile(p.root, a);
+        } catch (e: any) {
+          bad(ctx, `cannot store attachment ${a}: ${e?.message || e}`);
+          return 1;
+        }
+        files.push({
+          path: basename(a),
+          sha256: ref.sha256,
+          mime: ref.mime,
+          size: ref.size,
+          stored: `${short(ref.sha256)}-${basename(a)}`,
+          blob: true,
+        });
       }
       const record: MaterialRecord = {
         material_id: materialId,

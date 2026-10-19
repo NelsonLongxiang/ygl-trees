@@ -2,17 +2,17 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-19T21:08:47.239Z",
+  "measured_at": "2026-10-19T21:39:41.562Z",
   "metrics": {
     "bundle_bytes": {
-      "value": 585539,
+      "value": 598082,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-19T21:08:44.846Z"
+      "measured_at": "2026-10-19T21:39:39.168Z"
     },
     "web_dist_bytes": {
-      "value": 1321288,
+      "value": 1369836,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-19T21:08:44.848Z"
+      "measured_at": "2026-10-19T21:39:39.170Z"
     },
     "cold_start_ms": {
       "value": 455,

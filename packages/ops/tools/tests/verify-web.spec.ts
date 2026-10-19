@@ -86,7 +86,7 @@ beforeAll(async () => {
     archives: [{ archive_id: "arc_1", filename: "a.yglverify.zip" }],
   });
 
-  server = createDashboardServer({ ctx: { json: true, color: false, quiet: true }, db, store, home } as any);
+  server = createDashboardServer({ ctx: { json: true, color: false, quiet: true }, db, store, home } as any, { allowUpload: true });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   const addr: any = server.address();
   base = `http://127.0.0.1:${addr.port}`;
@@ -175,7 +175,7 @@ describe("verify 服务面：HTTP 契约", () => {
     expect(unknown.status).toBe(404);
   });
 
-  it("POST /api/verify/material 收草稿；attachments 显式拒收（不静默丢弃）", async () => {
+  it("POST /api/verify/material 收草稿；attachments 只收 sha256 引用（引用不存在的 blob 拒绝）", async () => {
     const ok = await fetch(`${base}/api/verify/material`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -185,13 +185,14 @@ describe("verify 服务面：HTTP 契约", () => {
     const j = (await ok.json()) as any;
     expect(j.material_id).toMatch(/^mat_[0-9a-f]{12}$/);
 
-    const att = await fetch(`${base}/api/verify/material`, {
+    // 客户端报哈希不算数：引用必须先在仓里存在
+    const unknownRef = await fetch(`${base}/api/verify/material`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "带附件", text: "附件还没实现。", attachments: ["bills.xlsx"] }),
+      body: JSON.stringify({ title: "带附件", text: "引用一个不存在的 blob。", attachments: [{ sha256: "a".repeat(64), name: "bills.xlsx" }] }),
     });
-    expect(att.status).toBe(400);
-    expect(((await att.json()) as any).error).toContain("verify submit --attach");
+    expect(unknownRef.status).toBe(400);
+    expect(((await unknownRef.json()) as any).error).toContain("blob not found");
 
     const empty = await fetch(`${base}/api/verify/material`, {
       method: "POST",
@@ -199,5 +200,99 @@ describe("verify 服务面：HTTP 契约", () => {
       body: JSON.stringify({ title: "空", text: "" }),
     });
     expect(empty.status).toBe(400);
+  });
+
+  it("写端点要求 JSON content-type（415），超限回 413 JSON 而不是断连", async () => {
+    const wrong = await fetch(`${base}/api/verify/material`, {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify({ title: "x", text: "y" }),
+    });
+    expect(wrong.status).toBe(415);
+
+    const huge = "x".repeat(70 * 1024);
+    const over = await fetch(`${base}/api/verify/material`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "big", text: huge }),
+    });
+    expect(over.status).toBe(413);
+    expect(((await over.json()) as any).error).toContain("too large");
+  });
+
+  it("附件上传：PUT 原始字节入仓，重复上传幂等（同 sha256）", async () => {
+    const payload = Buffer.from(["账单,金额", "A,100", ""].join(String.fromCharCode(10)));
+    const up = await fetch(`${base}/api/verify/blob?name=bills.csv`, {
+      method: "PUT",
+      headers: { "content-type": "text/csv" },
+      body: payload,
+    });
+    expect(up.status).toBe(200);
+    const ref = (await up.json()) as any;
+    expect(ref.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(ref.size).toBe(payload.length);
+    expect(ref.mime).toBe("text/csv");
+
+    const again = await fetch(`${base}/api/verify/blob?name=copy.csv`, { method: "PUT", body: payload });
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as any).sha256).toBe(ref.sha256);
+
+    // 引用入仓后的 blob 收材料
+    const mat = await fetch(`${base}/api/verify/material`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "带附件", text: "附件已入仓。", attachments: [{ sha256: ref.sha256, name: "bills.csv" }] }),
+    });
+    expect(mat.status).toBe(200);
+    const body = (await mat.json()) as any;
+    expect(body.files).toHaveLength(1);
+    expect(body.files[0].sha256).toBe(ref.sha256);
+  });
+
+  it("归档清单端点存在，报告可按 spec 过滤", async () => {
+    const arch = await fetch(`${base}/api/verify/archives`);
+    expect(arch.status).toBe(200);
+    expect(Array.isArray(await arch.json())).toBe(true);
+
+    const all = (await (await fetch(`${base}/api/verify/reports`)).json()) as any[];
+    const filtered = (await (await fetch(`${base}/api/verify/reports?spec=${encodeURIComponent(all[0].spec_id)}`)).json()) as any[];
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(filtered.every((r) => r.spec_id === all[0].spec_id)).toBe(true);
+  });
+
+  it("detail 端点挡路径穿越：../../、编码 %2e%2e 一律 404（r18 P1）", async () => {
+    // 在 verify 根外放一份可辨识文件：修好之前 `?run=../../leak` 会读到它
+    fs.writeFileSync(path.join(home, "leak.json"), JSON.stringify({ leaked: true }), "utf8");
+    const probes = [
+      `${base}/api/verify/report?run=${encodeURIComponent("../../leak")}`,
+      `${base}/api/verify/spec?id=${encodeURIComponent("../../evil")}`,
+      `${base}/api/verify/material?id=${encodeURIComponent("../../evil2")}`,
+      `${base}/api/verify/report?run=%2e%2e%2f%2e%2e%2fleak`,
+      `${base}/api/verify/spec?id=..%2F..%2Fevil`,
+    ];
+    for (const p of probes) {
+      const r = await fetch(p);
+      expect(r.status).toBe(404);
+      expect(JSON.stringify(await r.json())).not.toContain("leaked");
+    }
+  });
+
+  it("非回环绑定时上传端点关闭（403），读端点照常", async () => {
+    const gated = createDashboardServer({ home, store } as any, { allowUpload: false });
+    const port = await new Promise<number>((resolve) => {
+      gated.listen(0, "127.0.0.1", () => {
+        const addr = gated.address();
+        resolve(typeof addr === "object" && addr ? addr.port : 0);
+      });
+    });
+    try {
+      const up = await fetch(`http://127.0.0.1:${port}/api/verify/blob?name=x.bin`, { method: "PUT", body: Buffer.from("x") });
+      expect(up.status).toBe(403);
+      expect(((await up.json()) as any).error).toContain("YGL_VERIFY_ALLOW_UPLOAD=1");
+      const read = await fetch(`http://127.0.0.1:${port}/api/verify/specs`);
+      expect(read.status).toBe(200);
+    } finally {
+      await new Promise<void>((resolve) => gated.close(() => resolve()));
+    }
   });
 });

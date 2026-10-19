@@ -1,22 +1,23 @@
 /** 验证器三视图（M13-2）：材料提交 / 构造追溯（只读审计）/ 报告看板。
  *
  * 设计口径（docs/spec-validator.md §9）：
- * - 材料提交是唯一的人工入口：标题 + 一段话。附件走 CLI `verify submit --attach`
- *   （WebUI 的 multipart 通道排在第二批），这里明说而不是假装支持。
+ * - 材料提交是唯一的人工入口：标题 + 一段话 + 附件。附件先以原始字节 PUT 到
+ *   `api/verify/blob`（服务端算 sha256、全局去重），提交时只带 sha256 引用——
+ *   客户端永远不报哈希，也不传路径。
  * - 构造追溯是**只读审计面**：没有 ✓/✗ 按钮，判定链上没有人工确认。
  * - 报告看板把 FAIL / NEEDS-MATERIAL 的例外项置顶——它们是工作清单，不是统计数字。
  */
 import { useEffect, useState } from "react";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, List, message, Space, Table, Tabs, Tag, Typography,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, List, message, Space, Table, Tabs, Tag, Typography, Upload,
 } from "antd";
 
 import type {
-  VerifyReportDetail, VerifyReportRow, VerifySpecDetail, VerifySpecRow,
+  VerifyAttachmentRef, VerifyReportDetail, VerifyReportRow, VerifySpecDetail, VerifySpecRow,
 } from "./api";
 import {
   fetchVerifyMaterial, fetchVerifyReport, fetchVerifyReports, fetchVerifySpec, fetchVerifySpecs,
-  submitVerifyMaterial,
+  submitVerifyMaterial, uploadVerifyBlob,
 } from "./api";
 import { C } from "./tokens";
 
@@ -36,12 +37,14 @@ function VerdictTag({ verdict }: { verdict: string }) {
 function MaterialForm() {
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState<{ material_id: string; text_sha256: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [refs, setRefs] = useState<VerifyAttachmentRef[]>([]);
+  const [saved, setSaved] = useState<{ material_id: string; text_sha256: string; files?: Array<{ path: string; sha256: string; size: number }> } | null>(null);
 
   const submit = async (v: { title: string; text: string }) => {
     setBusy(true);
     try {
-      const r = await submitVerifyMaterial(v);
+      const r = await submitVerifyMaterial({ ...v, attachments: refs });
       setSaved(r);
       message.success(`草稿已保存：${r.material_id}`);
     } catch (e: any) {
@@ -64,18 +67,55 @@ function MaterialForm() {
       >
         <Input.TextArea rows={8} placeholder="例：本期账单覆盖 7 月 1 日至 7 月 31 日，共 3 单，合计 4,412.50 元；报价基准见财务 6 月 30 日邮件。" />
       </Form.Item>
-      <Form.Item>
-        <Space>
-          <Button type="primary" htmlType="submit" loading={busy}>提交材料</Button>
-          <Text type="secondary">附件（xlsx/png/pdf/zip）暂走 CLI：ygl-trees verify submit --attach &lt;file&gt;</Text>
+      <Form.Item label="附件" extra="xlsx / png / pdf / zip 等原始文件；服务端按内容算 sha256 并全局去重，同一份文件重复上传不占第二份磁盘。">
+        <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          <Upload
+            multiple
+            showUploadList
+            disabled={uploading}
+            customRequest={async ({ file, onSuccess, onError }) => {
+              const f = file as File;
+              setUploading(true);
+              try {
+                const ref = await uploadVerifyBlob(f);
+                setRefs((prev) => [...prev, { sha256: ref.sha256, name: f.name, mime: ref.mime }]);
+                onSuccess?.(ref as any);
+                message.success(`${f.name} 已入仓 ${ref.sha256.slice(0, 12)}… (${ref.size} B)`);
+              } catch (e: any) {
+                message.error(String(e?.message || e));
+                onError?.(e);
+              } finally {
+                setUploading(false);
+              }
+            }}
+          >
+            <Button loading={uploading}>选择文件并上传</Button>
+          </Upload>
+          {refs.length > 0 && (
+            <Space direction="vertical" size={0}>
+              {refs.map((r) => (
+                <Text key={r.sha256} type="secondary">
+                  · {r.name} — <Text code>{r.sha256.slice(0, 12)}…</Text>
+                </Text>
+              ))}
+            </Space>
+          )}
         </Space>
+      </Form.Item>
+      <Form.Item>
+        <Button type="primary" htmlType="submit" loading={busy}>提交材料</Button>
       </Form.Item>
       {saved && (
         <Alert
           type="success"
           showIcon
           message={`material_id = ${saved.material_id}`}
-          description={<Text code>text_sha256 = {saved.text_sha256}</Text>}
+          description={
+            <Space direction="vertical" size={0}>
+              <Text code>text_sha256 = {saved.text_sha256}</Text>
+              <Text type="secondary">附件 {saved.files?.length ?? 0} 个（已入内容寻址仓）</Text>
+            </Space>
+          }
         />
       )}
     </Form>
@@ -87,9 +127,12 @@ function TraceView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<VerifySpecDetail | null>(null);
   const [materialText, setMaterialText] = useState<string>("");
+  const [loadErr, setLoadErr] = useState<string>("");
 
   useEffect(() => {
-    fetchVerifySpecs().then(setSpecs).catch(() => setSpecs([]));
+    fetchVerifySpecs()
+      .then((rows) => { setSpecs(rows); setLoadErr(""); })
+      .catch((e) => { setSpecs([]); setLoadErr(String(e?.message || e)); });
   }, []);
 
   useEffect(() => {
@@ -132,7 +175,9 @@ function TraceView() {
   return (
     <Space align="start" size={16} style={{ width: "100%", alignItems: "flex-start" }}>
       <Card size="small" title="规范" style={{ width: 280, flex: "0 0 280px" }}>
-        {specs.length === 0 ? (
+        {loadErr ? (
+          <Alert type="error" showIcon message="规范清单加载失败" description={<Text code>{loadErr}</Text>} />
+        ) : specs.length === 0 ? (
           <Empty description="还没有规范" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <List
@@ -206,9 +251,12 @@ function ReportBoard() {
   const [rows, setRows] = useState<VerifyReportRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<VerifyReportDetail | null>(null);
+  const [loadErr, setLoadErr] = useState<string>("");
 
   useEffect(() => {
-    fetchVerifyReports().then(setRows).catch(() => setRows([]));
+    fetchVerifyReports()
+      .then((r) => { setRows(r); setLoadErr(""); })
+      .catch((e) => { setRows([]); setLoadErr(String(e?.message || e)); });
   }, []);
 
   useEffect(() => {
@@ -222,7 +270,9 @@ function ReportBoard() {
   return (
     <Space direction="vertical" size={12} style={{ width: "100%" }}>
       <Card size="small" title="运行记录">
-        {rows.length === 0 ? (
+        {loadErr ? (
+          <Alert type="error" showIcon message="运行记录加载失败" description={<Text code>{loadErr}</Text>} />
+        ) : rows.length === 0 ? (
           <Empty description="还没有运行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <List

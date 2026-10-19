@@ -238,7 +238,49 @@ export async function fetchVerifyReport(run: string): Promise<VerifyReportDetail
   return r.json();
 }
 
-export async function submitVerifyMaterial(input: { title: string; text: string }): Promise<{ material_id: string; text_sha256: string }> {
+export interface VerifyBlobRef {
+  sha256: string;
+  size: number;
+  mime: string;
+}
+
+/** 附件字节上传：原始字节 PUT 到内容寻址仓（服务端算 sha256，客户端不报哈希）。 */
+export async function uploadVerifyBlob(file: File): Promise<VerifyBlobRef> {
+  const q = new URLSearchParams({ name: file.name });
+  if (file.type) q.set("mime", file.type);
+  const r = await fetch(`api/verify/blob?${q.toString()}`, { method: "PUT", body: file });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(String((body as any)?.error || `api/verify/blob ${r.status}`));
+  return body as VerifyBlobRef;
+}
+
+export interface VerifyArchiveRow {
+  run_id: string;
+  archive_id: string;
+  filename: string;
+  archive_sha256: string;
+  zip_sha256: string;
+  created: string;
+  with: string[];
+}
+
+export async function fetchVerifyArchives(): Promise<VerifyArchiveRow[]> {
+  const r = await fetch("api/verify/archives");
+  if (!r.ok) throw new Error(`api/verify/archives ${r.status}`);
+  return r.json();
+}
+
+export interface VerifyAttachmentRef {
+  sha256: string;
+  name: string;
+  mime?: string;
+}
+
+export async function submitVerifyMaterial(input: {
+  title: string;
+  text: string;
+  attachments?: VerifyAttachmentRef[];
+}): Promise<{ material_id: string; text_sha256: string; files?: Array<{ path: string; sha256: string; size: number }> }> {
   const r = await fetch("api/verify/material", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -246,5 +288,5 @@ export async function submitVerifyMaterial(input: { title: string; text: string 
   });
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(String((body as any)?.error || `api/verify/material ${r.status}`));
-  return body as { material_id: string; text_sha256: string };
+  return body as { material_id: string; text_sha256: string; files?: Array<{ path: string; sha256: string; size: number }> };
 }

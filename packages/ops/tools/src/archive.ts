@@ -8,6 +8,7 @@
  * - 确定性：store-only zip + 固定 mtime + 路径排序 → `zip_sha256` 跨平台可复算。
  */
 import { createHash } from "node:crypto";
+import { readBlob } from "./blob-store";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { canonicalStringify } from "../../../verify/core/src/canonical";
@@ -197,12 +198,28 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
     const matDir = join(root, "materials", materialId);
     const recPath = join(matDir, "material.json");
     if (!existsSync(recPath)) throw new Error(`materials not found for ${materialId}`);
-    const rec = readJsonFile<{ text_path?: string; files?: Array<{ path: string; stored: string }> }>(recPath);
+    const rec = readJsonFile<{
+      text_path?: string;
+      files?: Array<{ path: string; stored: string; sha256?: string; blob?: boolean }>;
+    }>(recPath);
     push(`materials/${materialId}/${safeNameSegment(rec.text_path || "material.txt")}`, readFileSync(join(matDir, rec.text_path || "material.txt")), "material");
     for (const f of rec.files ?? []) {
-      const src = join(matDir, "files", f.stored);
-      if (!existsSync(src)) throw new Error(`attachment missing on disk: ${materialId}/files/${f.stored}`);
-      push(`materials/${materialId}/files/${safeNameSegment(f.stored)}`, readFileSync(src), "attachment", f.path);
+      // 附件字节的唯一真相：`blob: true` 的条目在内容寻址仓（CLI `--attach` 与
+      // HTTP 上传共用同一写入函数）；旧工作区没有该标记，仍按 material 本地副本读。
+      let bytes: Buffer;
+      if (f.blob) {
+        if (!f.sha256) throw new Error(`attachment entry has blob flag but no sha256: ${f.path}`);
+        try {
+          bytes = readBlob(root, f.sha256);
+        } catch {
+          throw new Error(`attachment blob missing: ${f.sha256} (${f.path}) — the blob store was pruned or moved`);
+        }
+      } else {
+        const src = join(matDir, "files", f.stored);
+        if (!existsSync(src)) throw new Error(`attachment missing on disk: ${materialId}/files/${f.stored}`);
+        bytes = readFileSync(src);
+      }
+      push(`materials/${materialId}/files/${safeNameSegment(f.stored)}`, bytes, "attachment", f.path);
     }
   }
 

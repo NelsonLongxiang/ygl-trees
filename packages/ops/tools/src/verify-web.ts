@@ -2,8 +2,9 @@
  *
  * 裁定（docs/spec-validator.md §8 / §9）：
  * - 构造追溯视图是**只读审计面**，没有 ✓/✗ 按钮——这里不提供 confirm/approve；
- * - 材料提交是唯一的人工入口：标题 + 一段话（附件上传走 CLI `verify submit --attach`，
- *   multipart 解析排在 M13-2 第二批，本文件不假装支持）；
+ * - 材料提交是唯一的人工入口：标题 + 一段话 + 附件引用（附件字节先经
+ *   `PUT /api/verify/blob` 落到内容寻址仓，本文件只收 sha256 引用——服务端不再
+ *   解析 multipart，浏览器一个 `fetch(..., {body: file})` 即可，字节保真且天然去重）；
  * - 报告与规范都是文件工件，读盘即可，不碰工作区数据库，因此这里没有任何写入风险面
  *   以外的副作用。
  *
@@ -14,7 +15,9 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
+
+import { BLOB_LIMIT, blobPath, createBlobSink, hasBlob, mimeFor, pruneIncoming } from "./blob-store";
 
 import type { Env } from "../../../core/database/src/types";
 
@@ -38,6 +41,24 @@ export function verifyPaths(env: Env): VerifyPaths {
     reports: join(root, "reports"),
     archives: join(root, "archives"),
   };
+}
+
+
+/** 工件 id 的字符集（material/spec/run 全是自己生成的 ASCII 短名）。 */
+const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * 把 id 拼到工件根下，同时挡住路径穿越（r18 P1：`?run=../../leak` 曾读到
+ * verify 根外的文件）。两道门：id 白名单 + resolve 后的包含性断言——只做前者
+ * 会漏掉平台差异（盘符、UNC、`..%2f` 解码后形态），只做后者又太晚。
+ */
+function safeJoin(root: string, id: string, suffix = ""): string | null {
+  if (!ID_RE.test(id)) return null;
+  if (suffix && !/^\.[A-Za-z0-9]{1,8}$/.test(suffix)) return null;
+  const base = resolve(root);
+  const full = resolve(base, id + suffix);
+  if (full !== base && !full.startsWith(base + sep)) return null;
+  return full;
 }
 
 function readJson<T>(path: string): T | null {
@@ -103,7 +124,8 @@ export function listSpecs(env: Env): SpecRow[] {
 /** 构造追溯视图的载荷：规范 + prepare 产物 + trace（全部只读）。 */
 export function specDetail(env: Env, specId: string): { spec: unknown; prepare: unknown; trace: unknown } | null {
   const p = verifyPaths(env);
-  const dir = join(p.specs, specId);
+  const dir = safeJoin(p.specs, specId);
+  if (!dir) return null;
   const spec = readJson<any>(join(dir, "spec.json"));
   if (!spec) return null;
   return {
@@ -128,7 +150,7 @@ export interface ReportRow {
 }
 
 /** 报告清单（看板摘要行）。归档数量从 archives 侧车读，不猜。 */
-export function listReports(env: Env): ReportRow[] {
+export function listReports(env: Env, specId?: string): ReportRow[] {
   const p = verifyPaths(env);
   if (!existsSync(p.reports)) return [];
   return readdirSync(p.reports)
@@ -156,15 +178,54 @@ export function listReports(env: Env): ReportRow[] {
         archived: Array.isArray(side?.archives) ? side.archives.length : 0,
       } satisfies ReportRow;
     })
+    .filter((r) => (specId ? r.spec_id === specId : true))
     .sort((a, b) => String(b.finished).localeCompare(String(a.finished)));
+}
+
+/** 归档清单（跨 run 展开，按创建时刻倒序）——报告看板的「归档」列的事实源。 */
+export interface ArchiveRow {
+  run_id: string;
+  archive_id: string;
+  filename: string;
+  archive_sha256: string;
+  zip_sha256: string;
+  created: string;
+  with: string[];
+}
+
+export function listArchives(env: Env): ArchiveRow[] {
+  const p = verifyPaths(env);
+  if (!existsSync(p.archives)) return [];
+  const rows: ArchiveRow[] = [];
+  for (const f of readdirSync(p.archives)) {
+    if (!f.endsWith(".json")) continue;
+    const runId = f.slice(0, -5);
+    if (!ID_RE.test(runId)) continue;
+    const side = readJson<any>(join(p.archives, f));
+    for (const a of Array.isArray(side?.archives) ? side.archives : []) {
+      rows.push({
+        run_id: runId,
+        archive_id: String(a?.archive_id ?? ""),
+        filename: String(a?.filename ?? ""),
+        archive_sha256: String(a?.archive_sha256 ?? ""),
+        zip_sha256: String(a?.zip_sha256 ?? ""),
+        created: String(a?.created ?? ""),
+        with: Array.isArray(a?.with) ? a.with.map(String) : [],
+      });
+    }
+  }
+  return rows.sort((a, b) => b.created.localeCompare(a.created));
 }
 
 /** 报告看板详情：报告原文 + 归档侧车（不重算、不改写——报告不可变）。 */
 export function reportDetail(env: Env, runId: string): { report: unknown; archives: unknown[] } | null {
   const p = verifyPaths(env);
-  const report = readJson<any>(join(p.reports, `${runId}.json`));
+  const at = safeJoin(p.reports, runId, ".json");
+  if (!at) return null;
+  const report = readJson<any>(at);
   if (!report) return null;
-  const side = readJson<any>(join(p.archives, `${runId}.json`));
+  const sidePath = safeJoin(p.archives, runId, ".json");
+  const side = sidePath ? readJson<any>(sidePath) : null;
   return { report, archives: Array.isArray(side?.archives) ? side.archives : [] };
 }
 
@@ -198,7 +259,8 @@ export function listMaterials(env: Env): MaterialRow[] {
 /** 材料正文（专家提交的「一段话」原文——构造追溯视图左列的事实源）。 */
 export function getMaterial(env: Env, materialId: string): { record: unknown; text: string } | null {
   const p = verifyPaths(env);
-  const dir = join(p.materials, materialId);
+  const dir = safeJoin(p.materials, materialId);
+  if (!dir) return null;
   const record = readJson<any>(join(dir, "material.json"));
   if (!record) return null;
   let text = "";
@@ -210,26 +272,76 @@ export function getMaterial(env: Env, materialId: string): { record: unknown; te
   return { record, text };
 }
 
+function safeBaseName(name: string): string {
+  const base = basename(String(name || "")).replace(/[\u0000-\u001f]/g, "").trim();
+  if (!base || base === "." || base === "..") return "attachment";
+  return base.slice(0, 120);
+}
+
+export interface MaterialFileRow {
+  path: string;
+  sha256: string;
+  mime: string;
+  size: number;
+  stored: string;
+  blob: true;
+}
+
 /** 材料草稿写入（三视图里唯一的人工写入面）。
  *
- * 附件上传还没接（multipart 排在第二批）：这里明确拒收 `attachments` 字段，而不是
- * 静默丢弃——静默丢弃会让「提交成功」的假象掩盖材料缺失，而材料缺失是 prepare 的
- * NEEDS-MATERIAL 根因（验证器最怕的不是拒绝，是假装有材料）。
+ * 附件以 sha256 引用提交：字节早已由 `PUT /api/verify/blob` 落到内容寻址仓。
+ * 引用不存在的 blob 一律拒绝（不静默丢弃，也不凭名字猜内容）——材料缺失是
+ * prepare 的 NEEDS-MATERIAL 根因，验证器最怕的不是拒绝，是假装有材料。
  */
 export function createMaterialDraft(
   env: Env,
-  input: { title?: unknown; text?: unknown; created?: string }
-): { ok: true; material_id: string; text_sha256: string } | { ok: false; error: string } {
+  input: { title?: unknown; text?: unknown; attachments?: unknown; created?: string }
+):
+  | { ok: true; material_id: string; text_sha256: string; files: MaterialFileRow[] }
+  | { ok: false; error: string } {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const text = typeof input.text === "string" ? input.text : "";
   if (!text.trim()) return { ok: false, error: "material text is empty — a material must say something in words" };
+  const p = verifyPaths(env);
+
+  let refs: MaterialFileRow[] = [];
+  if (input.attachments !== undefined) {
+    if (!Array.isArray(input.attachments)) return { ok: false, error: "attachments must be an array of {sha256,name}" };
+    for (const raw of input.attachments) {
+      const sha = typeof (raw as any)?.sha256 === "string" ? String((raw as any).sha256) : "";
+      const name = typeof (raw as any)?.name === "string" ? String((raw as any).name) : "";
+      if (!/^[0-9a-f]{64}$/.test(sha)) return { ok: false, error: `attachment sha256 must be 64 lowercase hex chars: ${sha || "(missing)"}` };
+      if (!hasBlob(p.root, sha)) return { ok: false, error: `attachment blob not found: ${sha} — upload it to PUT /api/verify/blob first` };
+      let size = 0;
+      try { size = statSync(blobPath(p.root, sha)).size; } catch { size = 0; }
+      // mime 由服务端按扩展名定：客户端声明只作记录（见 blob-store clientMimeOf），
+      // 不参与任何判定，也不写进规范。
+      refs.push({
+        path: safeBaseName(name || sha),
+        sha256: sha,
+        mime: mimeFor(name || sha),
+        size,
+        stored: `${sha.slice(0, 12)}-${safeBaseName(name || sha)}`,
+        blob: true,
+      });
+    }
+  }
+
   const digest = sha256(text);
   const materialId = `mat_${digest.slice(0, 12)}`;
-  const p = verifyPaths(env);
   const dir = join(p.materials, materialId);
   if (existsSync(dir)) {
     // 幂等：同正文草稿重提交返回同一个 id（与 CLI `verify submit` 同口径）。
-    return { ok: true, material_id: materialId, text_sha256: digest };
+    const existing = readJson<any>(join(dir, "material.json"));
+    const known = (Array.isArray(existing?.files) ? existing.files : []).map((f: any) => ({
+      path: String(f.path ?? ""),
+      sha256: String(f.sha256 ?? ""),
+      mime: String(f.mime ?? ""),
+      size: Number(f.size ?? 0),
+      stored: String(f.stored ?? ""),
+      blob: true as const,
+    }));
+    return { ok: true, material_id: materialId, text_sha256: digest, files: known };
   }
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "material.txt"), text, "utf8");
@@ -241,8 +353,10 @@ export function createMaterialDraft(
         title: title || `draft ${materialId}`,
         created: input.created ?? new Date().toISOString(),
         text_sha256: digest,
-        text_path: join(dir, "material.txt"),
-        files: [],
+        // 相对路径：与 CLI 的 material.json 同口径（早先这里写绝对路径，
+        // 归档时 join(matDir, 绝对路径) 在 Windows 上会拼出无效路径）。
+        text_path: "material.txt",
+        files: refs,
         source: "webui-draft",
       },
       null,
@@ -250,8 +364,25 @@ export function createMaterialDraft(
     ),
     "utf8"
   );
-  return { ok: true, material_id: materialId, text_sha256: digest };
+  return { ok: true, material_id: materialId, text_sha256: digest, files: refs };
 }
+
+/** 上传接口的开关：绑非回环地址时必须显式开启（写端点 + 任意字节 = 磁盘填充面）。 */
+export function uploadAllowed(host: string): boolean {
+  if (process.env.YGL_VERIFY_ALLOW_UPLOAD === "1") return true;
+  if (process.env.YGL_VERIFY_ALLOW_UPLOAD === "0") return false;
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/** `PUT /api/verify/blob?name=<filename>` 的流式收字节入口（webui 负责连接生命周期）。 */
+export function openBlobUpload(env: Env) {
+  const p = verifyPaths(env);
+  mkdirSync(join(p.root, "blobs"), { recursive: true });
+  pruneIncoming(p.root);
+  return createBlobSink(p.root);
+}
+
+export { BLOB_LIMIT };
 
 export interface VerifyApiResult {
   status: number;
@@ -281,7 +412,13 @@ export function handleVerifyApi(env: Env, method: string, url: URL): VerifyApiRe
   }
   if (path === "/api/verify/reports") {
     if (method !== "GET") return deny("GET only");
-    return ok(listReports(env));
+    const spec = q.get("spec") || "";
+    if (spec && !ID_RE.test(spec)) return miss(`spec not found: ${spec}`);
+    return ok(listReports(env, spec || undefined));
+  }
+  if (path === "/api/verify/archives") {
+    if (method !== "GET") return deny("GET only");
+    return ok(listArchives(env));
   }
   if (path === "/api/verify/report") {
     if (method !== "GET") return deny("GET only");

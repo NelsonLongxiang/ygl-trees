@@ -18,11 +18,12 @@ describe("verify 三视图（M13-2）", () => {
     expect(html).toContain("报告看板");
   });
 
-  it("材料提交：标题 + 一段话 + 附件走 CLI 的诚实说明", () => {
+  it("材料提交：标题 + 一段话 + 附件先入内容寻址仓（提交只带 sha256 引用）", () => {
     expect(html).toContain("标题");
     expect(html).toContain("一段话");
-    // 附件还没接 WebUI：必须明说，不能让「提交成功」掩盖材料缺失
-    expect(html).toContain("verify submit --attach");
+    // 附件走原始字节 PUT：客户端不报哈希、不传路径，服务端算 sha256 并去重
+    expect(html).toContain("选择文件并上传");
+    expect(html).toContain("全局去重");
     expect(html).toContain("结构化是 agent 构造的产物");
   });
 

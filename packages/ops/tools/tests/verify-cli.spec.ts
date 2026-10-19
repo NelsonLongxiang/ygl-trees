@@ -451,6 +451,51 @@ describe.skipIf(!hasBundle)("verify 封包链（register → import → archive 
     expect(r.out).toContain("refusing to archive");
   });
 
+  it("blob 后端的附件随归档入包，归档可重算全链（M13-2 第二批）", () => {
+    expect(run(["db", "init"]).rc).toBe(0);
+    const matText = join(home, "mat-blob.txt");
+    writeFileSync(matText, ["每期运费账单须附原始 CSV。", ""].join(String.fromCharCode(10)), "utf8");
+    const csv = join(home, "bill-2026-07.csv");
+    const csvBytes = Buffer.from(["账单号,金额", "INV-1,1290.40", ""].join(String.fromCharCode(10)));
+    writeFileSync(csv, csvBytes);
+
+    const submitted = run(["verify", "submit", "--title", "blob 附件", "--text", matText, "--attach", csv, "--json"]);
+    expect(submitted.rc).toBe(0);
+    const mat = JSON.parse(submitted.out) as { material_id: string; files: Array<{ sha256: string; blob?: boolean; size: number }> };
+    expect(mat.files).toHaveLength(1);
+    expect(mat.files[0].blob).toBe(true);
+    const sha = mat.files[0].sha256;
+    expect(sha).toMatch(/^[0-9a-f]{64}$/);
+    // 内容寻址：仓里只有一份，文件名不再参与定位
+    expect(existsSync(join(home, "verify", "blobs", sha.slice(0, 2), sha))).toBe(true);
+
+    // 语料 spec 改成本地 id 与 blob 附件，再跑一次（默认归档 = materials）
+    const caseDir = join(REPO, "packages", "verify", "core", "corpus", "cases", "sql-find-violation");
+    const spec = JSON.parse(readFileSync(join(caseDir, "spec.json"), "utf8")) as any;
+    spec.spec_id = "spec_blobarch";
+    spec.attachments = [{ path: "bill-2026-07.csv", sha256: sha, role: "baseline", mime: "text/csv", size: csvBytes.length }];
+    const specDir = join(home, "verify", "specs", spec.spec_id);
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(join(specDir, "spec.json"), JSON.stringify(spec, null, 2), "utf8");
+    writeFileSync(join(specDir, "prepare.json"), JSON.stringify({ material_id: mat.material_id, materials_sha256: "" }, null, 2), "utf8");
+
+    const dbFile = join(home, "blobarch.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec(readFileSync(join(caseDir, "db.sql"), "utf8"));
+    db.close();
+    const ran = run(["verify", "run", spec.spec_id, "--db", dbFile, "--json"]);
+    expect(ran.rc).toBe(0);
+    const report = JSON.parse(ran.out) as { archive?: { path: string } };
+    expect(report.archive?.path).toBeTruthy();
+
+    const verified = run(["verify", "archive", "verify", report.archive!.path, "--json"]);
+    expect(verified.rc).toBe(0);
+    const ok = JSON.parse(verified.out) as { ok: boolean; items: number };
+    expect(ok.ok).toBe(true);
+    // 材料正文 + 附件字节 + 报告 + 规范都在包里
+    expect(ok.items).toBeGreaterThanOrEqual(5);
+  });
+
   it("密钥表自检：key_id 必须是 sha256(public_key)（r16 P2②）", () => {
     const sealed = join(home, "sealed-for-keys");
     writeFileSync(sealed, sealedBytes("spec_keys", 1));

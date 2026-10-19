@@ -258,6 +258,8 @@ verify list --unarchived                                            # 跑过但�
 
 > 命令名唯一：`verify report import`（fdc757f6 ②，与设计文档 §8.5.1 同步；曾写作 `import-report`）。
 
+**提交附件（0.101.0）**：`submit --attach <file>` 与 WebUI 上传共用同一写入函数——附件字节进**内容寻址仓** `$YGL_HOME/verify/blobs/<sha 前 2 位>/<sha256>`，`materials/<id>/material.json` 的 `files[]` 记 `{path,sha256,mime,size,stored,blob:true}`；归档时按 sha 取字节，不再依赖材料目录里的副本。去重免费：同一份文件重复提交只占一份磁盘。
+
 **rc 契约**：`0`=跑完出报告（含 FAIL/NM/ERROR 结论）、`1`=运行错误、`2`=用法错误。判定在报告不在退出码。
 
 **`--db` 语义（r15 P1-1）**：在 `verify` 组里 `--db <file>` 一律指**业务库快照**（run/prepare 的取数对象），工作区库固定是 `$YGL_HOME/ygl-trees.db`——verify 命令不会打开业务库做 ygl schema 迁移，也不写它；`run` 先复制快照再读，`data_source.sha256` 记的是**原始字节**。这是「证据可复核」的前提：任何会改写源库的路径都不该出现在验证链上。
@@ -265,6 +267,24 @@ verify list --unarchived                                            # 跑过但�
 **`--no-archive`**：`run` 默认归档（契约 §7），`--no-archive` 跳过；归档失败不改写报告、但 rc=1（过程错误）。
 
 **未知旗标**：verify 组每个动作有旗标白名单，未知旗标一律 rc=2 并点名（`unknown flag for verify run: --attachment`）——构造期静默比报错危险。
+
+## 4.7 服务面（M13-2，0.100.0 → 0.101.0）
+
+浏览器侧只读 + 材料草稿 + 附件上传，全部走 `$YGL_HOME/verify/*` 文件工件，不碰工作区库：
+
+```
+GET  /api/verify/specs | spec?id= | reports[?spec=] | report?run= | archives | materials | material?id=
+PUT  /api/verify/blob?name=&mime=     # 原始字节入内容寻址仓（服务端算 sha256）
+POST /api/verify/material             # {title,text,attachments:[{sha256,name}]}
+```
+
+- **id 一律白名单 `^[A-Za-z0-9_-]{1,128}$` + 解析后包含性断言**；越界与不存在都回 404（不区分，避免探测）。r18 P1 曾实测 `?run=../../leak` 读到 verify 根外文件。
+- **归属口径**：验证器工件是 home 级，与 R16 项目选择正交——不套选择门、不按项目过滤。
+- **附件两步**：先 PUT 字节入仓，再提交 sha256 引用；客户端不报哈希、不传路径。引用未入仓 blob → 400；单文件上限 64 MiB（按服务端实收字节计数，不信 `Content-Length`）；超限 413 JSON。
+- **写端点头**：`POST /api/verify/material` 要求 `application/json`（否则 415）。
+- **上传门**：serve 绑非回环地址时默认关（403），`YGL_VERIFY_ALLOW_UPLOAD=1` 开、`=0` 强制关；门的是端点本身，不是只藏 UI 按钮。
+- **孤儿清理**：`blobs/.incoming/*.part` 在服务启动与每次上传前按 mtime 清 6 小时以上残留（断连/超限留下的半截文件）。
+- `prepare` / `run` **没有 HTTP 端点**：判定需要网关凭证，runner 只能由 serve 进程启动时注入，请求体永不携带 argv/allowlist/凭证。
 
 **注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。
 
@@ -412,6 +432,8 @@ store-only zip（不压缩）、条目按路径字节序、mtime 固定 `1980-01
 `archive` 成功 rc=0；run 时归档失败不改写报告但 rc=1（`--json` 带 `archive_error`）；`--no-archive` 仅跳过归档。
 默认落点 `$YGL_HOME/verify/archives/<filename>`（`--out` 覆盖）——归档不写调用者 cwd，仓库不会被 `*.yglverify.zip` 污染。
 `verify list --unarchived` 列出「有报告无侧车」的 run——不阻塞 run，但交付判据可要求为空。
+**附件字节来源（0.101.0）**：`--with materials` 的附件从内容寻址仓按 `files[].sha256` 读取（`blob:true` 条目）；缺 blob 时抛 `attachment blob missing: <sha> (<path>) — the blob store was pruned or moved`，不产半包。旧工作区（`blob` 未标记）仍读 `materials/<id>/files/<stored>`。
+
 **跨实现快照（r14 R1）**：`archive --with snapshot` 默认只认工作区里 retained 的快照（`$YGL_HOME/verify/snapshots/<sha>.sqlite`，sha 从报告 `data_source.sha256` 派生，统一 `sha256:<hex>` 形态）。Rust 直跑的报告没有 retained 快照，此时用 `--snapshot <db>` 显式交同一份字节：归档前按报告 sha 校验，不符 `--snapshot … does not match report.data_source.sha256 (report <a>, file <b>)` 直接拒，不产半包。
 
 ### 7.6 `verify self-check`（递归验证单入口）
