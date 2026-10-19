@@ -224,9 +224,9 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
 <!-- ============ 1. ARCHITECTURE ============ -->
 <section id="arch"><div class="wrap">
   <div class="sec-head"><span class="sec-num">01</span><h2>架构设计</h2></div>
-  <p class="sec-desc">三段流：人提交模糊材料 → agent 预处理成机器判据 → 确定性检查器跑出可重放的结论。结构化是预处理的输出，不是专家的输入义务。</p>
+  <p class="sec-desc">三段流：人提交模糊材料 → agent 构造并自审判据 → 验证器跑出可重放的布尔结论。<strong>没有专家逐项确认</strong>——验证器输出 true 即判通过。结构化是 agent 构造的输出，不是专家的输入义务。</p>
 
-  <h3><span class="n">1.1</span>三段流</h3>
+  <h3><span class="n">1.1</span>三段流（零人工确认）</h3>
   <div class="flow">
     <div class="stage">
       <div class="who">人 · 业务专家</div>
@@ -234,25 +234,25 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
       <div class="how">标题 + 一段话 + 附件（xlsx / png / pdf）。零 SQL、零代码、零字段义务。</div>
     </div>
     <div class="stage">
-      <div class="who">agent · 预处理</div>
-      <div class="what">提取 → 翻译</div>
-      <div class="how">读附件提值（带出处锚点）；一段话翻译成候选验证单元；专家逐项确认。</div>
+      <div class="who">agent · 构造</div>
+      <div class="what">提取 → 翻译 → 自审</div>
+      <div class="how">读附件提值（带出处锚点）；一段话翻译成验证单元；独立上下文自审三问（忠实/可判/非空转）。</div>
     </div>
     <div class="stage">
       <div class="who">agent · 驱动</div>
       <div class="what">确定性检查</div>
-      <div class="how">八型检查器拓扑执行；fact 层零模型，review 层的 agent 只对照冻结 rubric 读冻结提交物。</div>
+      <div class="how">七型检查器拓扑执行；fact 层零模型，review 层的 agent 只对照冻结 rubric 读冻结提交物。</div>
     </div>
     <div class="stage">
       <div class="who">交付</div>
       <div class="what">真 + 产物</div>
-      <div class="how">结论可重放 + 证据包 + 可重跑的规范资产 + 人工项 task。</div>
+      <div class="how">结论可重放 + 证据包 + 可重跑的规范资产 + 补充材料 task。</div>
     </div>
   </div>
 
   <div class="callout">
     <div class="t">核心立场：判定零概率</div>
-    <p>模型只出现在预处理（人话 → 判据结构化）与 review 层审阅。verdict ∈ {PASS, FAIL, NEEDS-HUMAN, ERROR}，语义判不了的判据在预处理阶段就标 <code>agent</code>（有 rubric 可依）或 <code>human</code>——<strong>不让模型给概率冒充结论</strong>。</p>
+    <p>模型只出现在构造（人话 → 判据结构化）与 review 层审阅。verdict ∈ {PASS, FAIL, NEEDS-MATERIAL, ERROR}——<strong>验证器输出 true 才判通过</strong>；判不了就标 NEEDS-MATERIAL（不算通过），不让模型给概率冒充结论。正确性靠可审计构造 + 独立自审 + 抗弛守卫，不靠人签字。</p>
   </div>
 
   <h3><span class="n">1.1a</span>提交物即验证器</h3>
@@ -288,7 +288,6 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
         <tr><td><code>file</code></td><td>fact</td><td>文件级：清单/命名/数量/校验和</td></tr>
         <tr><td><code>command</code></td><td>fact</td><td>退出码 / stdout 字面匹配</td></tr>
         <tr><td><code>agent</code></td><td>review</td><td>按冻结 rubric 审阅 → 布尔 + 逐项引文，<strong>可复核不冒充事实</strong></td></tr>
-        <tr><td><code>human</code></td><td>human</td><td>人（<strong>不做假确定性</strong>）</td></tr>
       </table>
     </div>
     <div>
@@ -304,7 +303,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
       </table>
     </div>
   </div>
-  <p class="dim">闭集纪律：新增检查器类型 = 破坏性变更（走 schema 版本）。八型 × 七域之外的判据，预处理一律标 <code>human</code>，不会静默漏判。<strong>三层真承诺</strong>：fact 层逐字重放；review 层标注来源+给复核通道；human 层只呈现待裁项。</p>
+  <p class="dim">闭集纪律：新增检查器类型 = 破坏性变更（走 schema 版本）。七型 × 七域之外的判据一律标 <code>NEEDS-MATERIAL</code>（点名缺什么材料），不会静默漏判也不会静默通过。<strong>两层真承诺</strong>：fact 层逐字重放；review 层标注来源+给事后复核通道。</p>
 
   <h3><span class="n">1.4</span>语言放置：判定核心是数据，不是代码</h3>
   <table>
@@ -324,23 +323,22 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   </table>
 
   <h3><span class="n">1.5</span>前后端契约</h3>
-  <p>业务专家的主界面是浏览器。React 客户端（现有 <code>webui serve</code> 承载）三个视图，六个端点：</p>
+  <p>业务专家的主界面是浏览器。React 客户端（现有 <code>webui serve</code> 承载）三个视图，五个端点（<strong>无确认端点</strong>）：</p>
   <div class="grid c3">
-    <div class="card"><h4><span class="icon">✎</span>材料提交</h4><p>标题 + 一段话 + 附件拖拽。附件即注册为可追溯 source。草稿自动保存。</p></div>
-    <div class="card"><h4><span class="icon">⇄</span>VU 确认</h4><p>左列判据原文 + 材料出处；右列翻译出的检查器。逐项 ✓ / ✗。</p></div>
+    <div class="card"><h4><span class="icon">✎</span>材料提交</h4><p>标题 + 一段话 + 附件拖拽。附件即注册为可追溯 source。提交即触发构造+自审。</p></div>
+    <div class="card"><h4><span class="icon">⇄</span>构造追溯</h4><p><strong>只读审计面</strong>：左列判据原文 + 材料出处；右列构造出的检查器 + 自审三问结论。没有 ✓/✗ 按钮。</p></div>
     <div class="card"><h4><span class="icon">▤</span>报告看板</h4><p><strong>处置清单优先</strong>：FAIL 例外项置顶；证据可展开；版本对比双轴。</p></div>
   </div>
   <pre><span class="k">GET</span>  /api/verify/specs          <span class="c"># 规范清单（draft / prepared / runnable / done）</span>
 <span class="k">POST</span> /api/verify/spec           <span class="c"># 材料保存</span>
-<span class="k">POST</span> /api/verify/prepare        <span class="c"># 提取 + 翻译（服务端调判定网关，同 claim evaluate 通道）</span>
-<span class="k">POST</span> /api/verify/confirm        <span class="c"># 逐项确认 / 驳回</span>
+<span class="k">POST</span> /api/verify/prepare        <span class="c"># 提取 + 翻译 + 自审（判定网关，同 claim evaluate 通道）</span>
 <span class="k">POST</span> /api/verify/run            <span class="c"># 跑验证（长跑返回 run-id + SSE 进度）</span>
 <span class="k">GET</span>  /api/verify/report/&lt;runId&gt; <span class="c"># 报告载荷</span></pre>
 
   <h3><span class="n">1.6</span>版本管理：重放可追溯</h3>
   <table>
     <tr><th>对象</th><th>版本语义</th><th>机制</th></tr>
-    <tr><td><strong>spec 规范</strong></td><td>每次 confirm 自增（v1 → v2 …），旧版只读保留</td><td>artifacts.version 自增</td></tr>
+    <tr><td><strong>spec 规范</strong></td><td>每次 prepare 自审通过即自增（v1 → v2 …），旧版只读保留</td><td>artifacts.version 自增</td></tr>
     <tr><td><strong>run 报告</strong></td><td>钉住 spec 版本 + 附件 source 快照——重放 = 同版本 + 同输入</td><td>报告头记 <code>{spec_id, spec_version, sources[], db 快照}</code></td></tr>
     <tr><td><strong>附件基准</strong></td><td>不可变 source：换版 = 新行，<strong>旧报告锚点永不断链</strong></td><td>source append-only</td></tr>
     <tr><td><strong>毕业产物</strong></td><td>记录出身 <code>{spec_id, version}</code></td><td>graduation 引用</td></tr>
@@ -354,7 +352,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
 
   <div class="callout good">
     <div class="t">交付契约：真 + 产物</div>
-    <p><strong>真</strong> = 只有可证伪、可复验的结论才交付：PASS/FAIL 是事实陈述（带证据 + 同版本同输入重放逐字段一致）；NEEDS-HUMAN / ERROR 是<strong>诚实的非真态</strong>，绝不冒充真假。</p>
+    <p><strong>真</strong> = 只有可证伪、可复验的结论才交付：PASS/FAIL 带证据 + 同版本同输入重放逐字段一致（fact 层）；NEEDS-MATERIAL / ERROR 是<strong>诚实的非真态</strong>，绝不冒充真假、不算通过。</p>
     <p><strong>产物</strong> = 专家拿走四件：处置清单报告（FAIL 置顶）+ 证据包（锚点全链）+ 规范资产（可重跑 / 可毕业 / 可挂树）+ 人工项 task（零未处置）。</p>
   </div>
 
@@ -365,15 +363,15 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     <tr><td>3</td><td><strong>契约先行</strong></td><td>spec / VU / 报告三 JSON schema 是唯一接口真相；任何语言实现同一契约即可互换</td></tr>
     <tr><td>4</td><td><strong>进程边界</strong></td><td>语言间只经子进程 + JSON，禁跨语言 FFI 纠缠；每个组件可独立测试、独立发布</td></tr>
     <tr><td>5</td><td><strong>门禁随语言</strong></td><td>Node = vitest + contract:audit；Python = pytest + ruff（提取黄金样本）；Rust = cargo test + clippy</td></tr>
-    <tr><td>6</td><td><strong>提取值带锚点</strong></td><td>每个从材料提取的值都有出处（文件 · 页/sheet/行/区域），确认视图可见</td></tr>
+    <tr><td>6</td><td><strong>提取值带锚点</strong></td><td>每个从材料提取的值都有出处（文件 · 页/sheet/行/区域），构造追溯视图可见</td></tr>
     <tr><td>7</td><td><strong>模型只在前置</strong></td><td>所有模型调用在 prepare 一次性完成并冻结进 VU；run 阶段零模型调用</td></tr>
   </table>
 
   <h3><span class="n">2.1</span>代码落点</h3>
   <table>
     <tr><th>组件</th><th>落点</th><th>要点</th></tr>
-    <tr><td>命令族</td><td><span class="mono">packages/ops/tools/src/verify-cmds.ts</span></td><td>submit / prepare / confirm / run / report / list</td></tr>
-    <tr><td>检查器引擎</td><td><span class="mono">packages/research/pipeline/src/verify-*.ts</span></td><td>八型执行 + 管线拓扑 + 级联语义</td></tr>
+    <tr><td>命令族</td><td><span class="mono">packages/ops/tools/src/verify-cmds.ts</span></td><td>submit / prepare / run / report / trace / list</td></tr>
+    <tr><td>检查器引擎</td><td><span class="mono">packages/research/pipeline/src/verify-*.ts</span></td><td>七型执行 + 管线拓扑 + 级联语义</td></tr>
     <tr><td>spec 存储</td><td>artifacts（kind=verify-spec / verify-report）</td><td>零新表起步；查询面成型再升 v13</td></tr>
     <tr><td>报告渲染</td><td><span class="mono">packages/ops/tools/src/webui.ts</span> + <span class="mono">apps/web/src/Verify*.tsx</span></td><td>R16 选择门 + 归属校验同规</td></tr>
     <tr><td>提取适配器</td><td><span class="mono">scripts/verify-extract/*.py</span></td><td>子进程 JSON 契约；黄金样本测试</td></tr>
@@ -383,7 +381,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   <div class="grid c3">
     <div class="card"><h4><span class="icon">1</span>单元</h4><p>检查器逐型、管线拓扑/环检测、版本解析、级联语义。纯函数，无 DB。</p></div>
     <div class="card"><h4><span class="icon">2</span>契约</h4><p>spec/VU/报告三 schema 的 round-trip；JSON 纯度；rc 契约（0/1/2 分类）。</p></div>
-    <div class="card"><h4><span class="icon">3</span>Demo</h4><p>端到端：真实附件 → prepare → confirm → run → 报告断言。每条新能力至少一条 demo 断言。</p></div>
+    <div class="card"><h4><span class="icon">3</span>Demo</h4><p>端到端：真实附件 → prepare（含自审）→ run → 报告断言。每条新能力至少一条 demo 断言。</p></div>
   </div>
 
   <h3><span class="n">2.3</span>风险与默认裁定</h3>
@@ -393,7 +391,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     <tr><td>B</td><td>真实附件样本</td><td>用户取 1-2 个真实业务件；无样本则首版只做表格解析</td></tr>
     <tr><td>C</td><td>批次节奏</td><td>M13-1 后端 → 0.96.0；M13-2 前端 → 0.97.0</td></tr>
     <tr><td>D</td><td>spec 粒度</td><td>1 spec = 1 业务问题域（含 N 条 VU）</td></tr>
-    <tr><td>E</td><td>FAIL 自动开 task</td><td>否（报告呈现，人决定）；NEEDS-HUMAN 自动开</td></tr>
+    <tr><td>E</td><td>FAIL 自动开 task</td><td>否（报告呈现，人决定）；NEEDS-MATERIAL 自动开</td></tr>
     <tr><td>F</td><td>报告导出</td><td>后置（PDF / HTML 进 0.98 候选）</td></tr>
     <tr><td>G</td><td>毕业阈值</td><td>3 轮同结果 + 跨度 ≥ 1 月；首版只留接口</td></tr>
   </table>
@@ -425,11 +423,11 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
     </div>
   </div>
 
-  <h3><span class="n">3.2</span>预处理产物（VU 确认视图）</h3>
-  <p class="dim">左列：判据原文 + 期望值出处锚点。右列：候选检查器。专家逐项 ✓ / ✗。</p>
+  <h3><span class="n">3.2</span>构造产物（构造追溯视图 · 只读）</h3>
+  <p class="dim">左列：判据原文 + 期望值出处锚点。右列：构造出的检查器 + 自审三问结论。<strong>没有 ✓/✗ 按钮</strong>——专家只提交材料，判定由验证器输出。</p>
 
   <div class="vu">
-    <div class="vu-head"><span class="id">V1</span><span class="title">发票金额与订单应付一致</span><span class="badge b-pass" style="cursor:default">✓ 已确认</span></div>
+    <div class="vu-head"><span class="id">V1</span><span class="title">发票金额与订单应付一致</span><span class="badge b-pass" style="cursor:default">自审通过 · 忠实/可判/非空转</span></div>
     <div class="vu-body">
       <div class="vu-col"><div class="h">判据原文 · 材料出处</div>
         <p>「每张运费发票金额要跟订单应付对得上」</p>
@@ -442,7 +440,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   </div>
 
   <div class="vu">
-    <div class="vu-head"><span class="id">V2</span><span class="title">超期未对账暴露</span><span class="badge b-pass" style="cursor:default">✓ 已确认</span></div>
+    <div class="vu-head"><span class="id">V2</span><span class="title">超期未对账暴露</span><span class="badge b-pass" style="cursor:default">自审通过 · 忠实/可判/非空转</span></div>
     <div class="vu-body">
       <div class="vu-col"><div class="h">判据原文 · 值来源</div>
         <p>「超过一周没对账的单子要暴露出来」</p>
@@ -454,7 +452,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   </div>
 
   <div class="vu">
-    <div class="vu-head"><span class="id">V3</span><span class="title">异常判定汇总</span><span class="badge b-pass" style="cursor:default">✓ 已确认</span></div>
+    <div class="vu-head"><span class="id">V3</span><span class="title">异常判定汇总</span><span class="badge b-pass" style="cursor:default">自审通过 · 忠实/可判/非空转</span></div>
     <div class="vu-body">
       <div class="vu-col"><div class="h">判据原文 · 管线引用</div>
         <p>「上面两类问题都要判 FAIL」</p>
@@ -465,14 +463,14 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   </div>
 
   <div class="vu">
-    <div class="vu-head"><span class="id">V4</span><span class="title">计价基准提取 · 重量单价</span><span class="badge b-hum" style="cursor:default">⧗ 待确认</span></div>
+    <div class="vu-head"><span class="id">V4</span><span class="title">计价基准提取 · 重量单价</span><span class="badge b-hum" style="cursor:default">自审修订 1 轮 · 现通过</span></div>
     <div class="vu-body">
       <div class="vu-col"><div class="h">判据原文 · 材料出处</div>
         <p>「每公斤 2.35 元」（来自报价基准）</p>
         <p class="anchor-line">↳ 视觉提取：账单截图-1.png · 表格区域 R3·C5 → 2.35</p></div>
       <div class="vu-col"><div class="h">翻译出的检查器</div>
         <p><code>sql</code> · freight_invoices.rate_per_kg vs <strong>2.35</strong>（提取冻结值）</p>
-        <p class="anchor-line" style="color:var(--warning)">专家需确认：截图值 = 报价基准值</p></div>
+        <p class="anchor-line" style="color:var(--warning)">自审修订：首轮判「期望值锚点与提交物同源」→ 改锚到报价基准.xlsx·Sheet1·R5C3</p></div>
     </div>
   </div>
 
@@ -485,7 +483,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
         <div class="stat tot"><div class="v">7</div><div class="l">验证项</div></div>
         <div class="stat pass"><div class="v">3</div><div class="l">PASS</div></div>
         <div class="stat fail"><div class="v">3</div><div class="l">FAIL · 处置清单</div></div>
-        <div class="stat hum"><div class="v">1</div><div class="l">NEEDS-HUMAN</div></div>
+        <div class="stat hum"><div class="v">1</div><div class="l">NEEDS-MATERIAL</div></div>
       </div>
       <p class="dim" style="font-size:13px;margin:6px 0 14px">spec v2 · run 72a4 · 2026-10-19 22:41 · 数据快照 db:ygl@2026-10-19T22:40 · 可重放 ✓</p>
 
@@ -522,7 +520,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
       </div>
 
       <div class="report-item hum">
-        <div class="top"><span class="badge b-hum">NEEDS-HUMAN</span><span class="name">V7 · 合同条款适用性（语义判据）</span><span class="num" style="color:var(--warning)">已转 task #41</span></div>
+        <div class="top"><span class="badge b-hum">NEEDS-MATERIAL</span><span class="name">V7 · 合同条款适用性（材料未给适用条款页）</span><span class="num" style="color:var(--warning)">已转 task #41（补充材料）</span></div>
         <div class="evidence"><p style="font-size:13px">「合同条款是否覆盖本次运费调整」——机器判不了，已自动开 task 交给业务专家裁决。</p></div>
       </div>
 
@@ -540,7 +538,7 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
 
   <h3><span class="n">3.4</span>处置闭环</h3>
   <div class="grid c3">
-    <div class="card"><h4><span class="icon">→</span>发现</h4><p>FAIL 3 项 → 处置清单置顶；NEEDS-HUMAN 1 项 → 自动 task。</p></div>
+    <div class="card"><h4><span class="icon">→</span>发现</h4><p>FAIL 3 项 → 处置清单置顶；NEEDS-MATERIAL 1 项 → 自动开「补充材料」task。</p></div>
     <div class="card"><h4><span class="icon">⚒</span>处置</h4><p>业务方修数据（供应商发票更正 / 超期单完成对账）。</p></div>
     <div class="card"><h4><span class="icon">↻</span>复核</h4><p>同 spec 重跑 → run 版本对比（数据漂移轴）；绿了即闭环。稳定 3 轮 → 毕业成 patrol 每日巡检。</p></div>
   </div>
@@ -551,8 +549,8 @@ V3 (count)    : <span class="b">$V2.violations</span> == 0        → verdict FA
   <div class="sec-head"><span class="sec-num">04</span><h2>路线</h2></div>
   <table>
     <tr><th>批次</th><th>内容</th><th>验收</th><th>版本</th></tr>
-    <tr><td><strong>M13-1</strong></td><td>CLI 后端：submit / prepare / confirm / run / report / list；八型检查器；管线拓扑；版本化；SQLite + PG</td><td>全门禁绿（unit + contract + demo）；.157 运费对账端到端跑通</td><td>0.96.0</td></tr>
-    <tr><td><strong>M13-2</strong></td><td>WebUI 三视图（材料提交 / VU 确认 / 报告看板）+ Python 提取适配器（真实样本）</td><td>浏览器端到端可用；黄金样本测试</td><td>0.97.0</td></tr>
+    <tr><td><strong>M13-1</strong></td><td>CLI 后端：submit / prepare / run / report / trace / list；七型检查器；管线拓扑；版本化；SQLite + PG</td><td>全门禁绿（unit + contract + demo）；.157 运费对账端到端跑通</td><td>0.96.0</td></tr>
+    <tr><td><strong>M13-2</strong></td><td>WebUI 三视图（材料提交 / 构造追溯 / 报告看板）+ Python 提取适配器（真实样本）</td><td>浏览器端到端可用；黄金样本测试</td><td>0.97.0</td></tr>
     <tr><td>M13-3</td><td>毕业通道（验证 → patrol）；报告导出（PDF/HTML）</td><td>毕业产物可追溯；导出可用于对质</td><td>0.98+</td></tr>
     <tr><td>触发式</td><td>Rust 确定性内核（判据：规模或外发需求坐实）</td><td>同一 JSON 契约下与 Node 实现字节级同结果</td><td>—</td></tr>
   </table>
