@@ -436,6 +436,32 @@ export class TreeStore {
 
     // conditions: required gates block, optional ones only modify cost
     const conds = this.db.all("SELECT * FROM node_conditions WHERE node_id=?", [n.id]);
+    // 0.93 T1 (direct-e487e737 lineage, .157 ops-handbook): op=telemetry reads
+    // the workspace event ledger instead of the caller's state bag. We resolve
+    // counts HERE (evalCond stays pure) and inject them as telemetry:* keys.
+    const telConds = conds.filter((c: Row) => String(c.op) === "telemetry");
+    if (telConds.length) {
+      state = { ...state };
+      for (const c of telConds) {
+        const m = /^([A-Za-z0-9_.\/-]+)(?::(\d+)([dhs]))?/.exec(String(c.value).trim());
+        if (!m) continue;
+        let sql = "SELECT count(*) AS n FROM events WHERE kind=?";
+        const params: any[] = [m[1]];
+        if (m[2]) {
+          // window suffix (e.g. cmd.run:14d) — cmd.run timestamps have been
+          // ISO/UTC since 0.12-era writes went through nowIso(); old local
+          // space-format rows sort before any ISO cutoff and are excluded,
+          // which is correct for post-migration telemetry.
+          const unitMs = m[3] === "d" ? 86400_000 : m[3] === "h" ? 3600_000 : 1000;
+          sql += " AND ts >= ?";
+          params.push(new Date(Date.now() - Number(m[2]) * unitMs).toISOString());
+        }
+        try {
+          const row = this.db.get(sql, params) as any;
+          state[`telemetry:${m[1]}${m[2] ? ":" + m[2] + m[3] : ""}`] = row?.n ?? 0;
+        } catch { /* events table unreadable → condition fails closed below */ }
+      }
+    }
     for (const c of conds) {
       const pass = evalCond(c, state);
       // eval-family values may carry a question envelope — display the
@@ -830,6 +856,27 @@ export class TreeStore {
 
 /** Evaluate a condition against a runtime state bag. */
 function evalCond(c: Row, state: Record<string, any>): boolean {
+  // 0.93 T1: telemetry conds compare a ledger count injected by canUnlock()
+  // (telemetry:<kind>[:<window>] keys) — they never read the state bag's
+  // raw key, so this check runs BEFORE the `raw === undefined` bail-out.
+  // Fails closed on malformed value or missing count — a gate that cannot
+  // read its metric must not unlock.
+  if (String(c.op) === "telemetry") {
+    const m = /^([A-Za-z0-9_.\/-]+)(?::(\d+)([dhs]))?(>=|<=|==|!=|>|<)\s*(-?\d+)$/.exec(String(c.value).trim());
+    if (!m) return false;
+    const count = state[`telemetry:${m[1]}${m[2] ? ":" + m[2] + m[3] : ""}`];
+    if (typeof count !== "number") return false;
+    const target = Number(m[5]);
+    switch (m[4]) {
+      case ">=": return count >= target;
+      case "<=": return count <= target;
+      case "==": return count === target;
+      case "!=": return count !== target;
+      case ">": return count > target;
+      case "<": return count < target;
+    }
+    return false;
+  }
   const raw = state[c.expr] ?? state[c.name];
   if (raw === undefined) return false;
   const op = c.op || ">=";

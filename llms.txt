@@ -1,4 +1,4 @@
-# ygl-trees v0.92.0 — AI Agent Research Workbench
+# ygl-trees v0.93.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -185,6 +185,15 @@ Batch scheduling
 ```bash
 job add <title> -- "<cmd>" [--every <min>]                   # create scheduled job
 job tick                                                     # run due jobs (drive with cron)
+```
+
+### patrol
+
+Boundary patrol (0.93)
+
+```bash
+patrol add <name> --sql "SELECT …" [--severity S1|S2|S3]     # register assertion (violating rows)
+patrol run / list / findings                                 # evaluate + disposition queue
 ```
 
 ### project

@@ -23,7 +23,7 @@ export const MIRROR_TABLES = [
   "meta", "config", "skills", "skill_refs", "projects", "queries", "sources", "query_sources", "evidence",
   "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
   "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
-  "relations", "jobs", "runs", "events", "schema_migrations",
+  "relations", "jobs", "runs", "events", "schema_migrations", "patrol_checks", "patrol_findings",
 ];
 
 /** Base tables whose FTS ngram we recompute — input functions MUST mirror
@@ -283,6 +283,16 @@ CREATE TABLE events (
 CREATE TABLE schema_migrations (   -- v10/PG-A③: applied-schema ledger, both backends
   backend text NOT NULL, version integer NOT NULL, applied_at text NOT NULL,
   note text NOT NULL DEFAULT '', PRIMARY KEY (backend, version));
+CREATE TABLE patrol_checks (       -- v12/0.93-T2: boundary assertions
+  id text PRIMARY KEY, name text NOT NULL, description text NOT NULL DEFAULT '',
+  sql text NOT NULL, severity text NOT NULL DEFAULT 'S2',
+  enabled integer NOT NULL DEFAULT 1, created text NOT NULL, updated text NOT NULL, UNIQUE(name));
+CREATE TABLE patrol_findings (     -- v12/0.93-T2: disposition queue
+  id text PRIMARY KEY,
+  check_id text NOT NULL REFERENCES patrol_checks(id) ON DELETE CASCADE,
+  row_key text NOT NULL, detail text NOT NULL DEFAULT '', severity text NOT NULL DEFAULT 'S2',
+  status text NOT NULL DEFAULT 'open', first_seen text NOT NULL, last_seen text NOT NULL,
+  resolved text, note text NOT NULL DEFAULT '', UNIQUE(check_id, row_key));
 `;
 
 const MIGRATE_INDEXES = `
@@ -292,6 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_proj   ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts        ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_jobs_enabled     ON jobs(enabled);
+CREATE INDEX IF NOT EXISTS idx_patrol_status    ON patrol_findings(status);
 CREATE INDEX IF NOT EXISTS idx_nodes_tree       ON nodes(tree_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_tier       ON nodes(tree_id, tier);
 CREATE INDEX IF NOT EXISTS idx_edge_child       ON node_edges(child_id);

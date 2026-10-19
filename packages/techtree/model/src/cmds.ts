@@ -467,12 +467,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         );
       }
       if (!cKey) {
-        bad(ctx, "usage: node cond [add|rm] <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
+        bad(ctx, "usage: node cond [add|rm] <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op telemetry --value 'cmd.run>=100'|'cmd.run:14d>=100'] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
         return 2;
       }
       const k = cKey;
       if (rejectBare(ctx, args.flags, ["name", "value", "op", "effect", "weight", "options", "answer", "levels", "min-score"])) return 2;
-      if (validateEnum(ctx, args.flags, "op", [">=", "==", "<=", "!=", "has", "eval", "eval-choice", "eval-score"])) return 2;
+      if (validateEnum(ctx, args.flags, "op", [">=", "==", "<=", "!=", "has", "telemetry", "eval", "eval-choice", "eval-score"])) return 2;
       if (validateEnum(ctx, args.flags, "effect", ["gate", "cost_mul"])) return 2;
       const name = flagStr("name");
       // 0.89.1: `node cond <key> --op eval --value q` without --name used to

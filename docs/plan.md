@@ -297,6 +297,18 @@
 - **约束**：0.91 全批禁止重放/清洗/回填 events 表（首份校准曲线数据源完整性）；分支 `0.91a-event-family`（worktree D:\workspace\ygl-trees-091a）冻结窗口外开发，**合并/发布压到 10-19 15:00 基线快照之后**（监督席结算 14:00×5 支 + 校准曲线 14:30 + predict list 快照 15:00）。
 - 测试：packages/research/pipeline/tests/emit-postcommit.spec.ts ×4（回滚零泄漏 / research 路径 ESM 可见+字段形状 / techtree 路径同 / 重复写不发（dup 早退语义冻结））。
 
+### M11 — 业务接线批（0.93，2026-10-19 立项 m10310；.157 ops-handbook + ygl-overlap 12 断言背书）
+
+**产品论纲（kb 58faf8b271）**：三树主（业务科技树 / 仓库研究树 / 人类能力树）×一协议（研究→预测→测试→验证→校准元循环）。ygl 不造执行能力——.157 专家团已有执行文明；ygl 是其认知台账，产品机会=三根接线。
+
+- **T1 遥测门（0.93.0 已落，cfb8407）**：`cond op=telemetry`，value 语法 `kind[:窗口 d| h| s]（>=|<=|==|!=|>|<）数量`；canUnlock 注入 `telemetry:<kind>[:<win>]` 计数袋（events 表 count）；求值失闭。教训：evalCond 分支必须放 `raw===undefined` 守卫**之前**（首版 unreachable 被 live 探针揭穿）。
+- **T3 cmd.run 会话归因（0.93.0 已落）**：bin.ts 两处发射点 actor=`YGL_SESSION||DSH_SESSION_ID||"cli"` + payload.session；采纳遥测命令级→会话级（.157 手册盲区 #1 同款解药）。
+- **T2 patrol 命令族（0.93.0 已落，schema v12）**：patrol_checks/patrol_findings；SQL 门（SELECT 前缀+分号拒绝+4000 上限）；三态生命周期（仍在违反→last_seen bump / 消失+open|ack→auto-fixed / resolved 后复发→reopen）；doctor patrol_queue（S1 open=fail）；契约 §9。零未处置铁律产品化。
+- **T4 SOP 绑定 rel（设计裁定 2026-10-19，冻结窗侦察）**：`rels.ts` 的 rel 值本就自由串（默认 related）——`--rel executes` 今日可用；sources 表无 kind 列，**不加 schema**（v12 刚落，单字段消费者未成型）：约定 `source add --tags sop`（tags 可检索）+ `rel add node:<tree>/<key> source:<id> --rel executes` 构成 SOP 织物条目；skills/README 记入词汇表。若 T5 毕业通道需要结构化 kind 再开 v13（真实消费者驱动）。
+- **T5 毕业通道接缝（设计，待实施）**：ygl claim（supported+证据齐）→（.157 intention_parser）→本体→sop-renderer→Odoo 上岗。ygl 侧交付面=协议文档+produce 侧 artifact kind=sop 落账（artifacts.kind 已自由）+ rel executes 织物；跨系统执行归 .157（replace-esm 抵制裁定保持：互补不替代）。
+- **T6 skills 两件（0.93 剩余）**：repo-research 标准形（主推②：给开源项目建研究树——mp-skills 深读是首例，GLOSSARY/two-loads/tracer-bullet 票制可迁移）；ops-patterns（.157 ops-handbook 三机制提炼：采纳监测/预测回测/SOP 边界巡检→patrol/遥测门/结算日历映射）。human-capability 推 0.94（human-agent-eng 探针两周观察期后提炼）。
+- **T7 scenarios.md 重构（0.93 剩余）**：「三树主×一协议」骨架重排六场景，每场景挂对应树主与协议环节。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

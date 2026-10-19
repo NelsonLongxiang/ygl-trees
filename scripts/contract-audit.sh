@@ -244,6 +244,24 @@ case "$CLJ" in *'"channel": "review-rounds"'*|*'"channel": null'*) pass "claim l
 $Y db sql "DELETE FROM projects WHERE name='audit-t2'" >/dev/null 2>&1
 $Y db sql "DELETE FROM claims WHERE id='$PC90'" >/dev/null 2>&1
 
+# ── contract 9: patrol 命令族（0.93-T2）——SQL 门 rc=2 / 生命周期 JSON 纯净 ──
+echo "── contract 9: patrol 边界断言（SQL 门 + JSON）"
+json_err "patrol non-SELECT gate" 2 -- $Y patrol add evil --sql "DELETE FROM artifacts"
+json_err "patrol semicolon gate"  2 -- $Y patrol add evil2 --sql "SELECT 1; DROP TABLE events"
+PATJ=$($Y patrol add pc-audit --sql "SELECT id FROM projects WHERE status='zombie'" --severity S1 --json 2>/dev/null); PATC=$?
+if [ "$PATC" = "0" ] && printf '%s' "$PATJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.exit(j.name==='pc-audit'?0:1)})"; then
+  pass "patrol add json 单对象"
+else
+  fail "patrol add json" "$PATJ"
+fi
+PATR=$($Y patrol run --json 2>/dev/null); PATRC=$?
+if [ "$PATRC" = "0" ] && printf '%s' "$PATR" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.exit(typeof j.open_total==='number'?0:1)})"; then
+  pass "patrol run json open_total"
+else
+  fail "patrol run json" "$PATR"
+fi
+$Y patrol rm pc-audit >/dev/null 2>&1 || true
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

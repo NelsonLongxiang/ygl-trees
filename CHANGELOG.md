@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.93.0（2026-10-19）业务接线批（.157 ops-handbook 借鉴 + 0.93 立项 m10310）
+
+- **遥测门（T1，cond op=telemetry）**：节点条件可绑定事件遥测——`node cond add <key> --name <n> --op telemetry --value "kb.add:7d>=3"`（kind[:窗口] 比较符 数量）；canUnlock 注入 `telemetry:<kind>[:<win>]` 计数袋（窗口 d/h/s 换算，events 表计数）；求值失闭（count 非 number 或语法不匹配→false）。业务语义：「这条 SOP 本周被知识沉淀 ≥3 次」成为可机判的解锁条件。
+- **cmd.run 会话归因（T3）**：bin.ts 两处发射点加 actor 列——`YGL_SESSION || DSH_SESSION_ID || "cli"` + payload.session（cli 时不填保历史形状）；采纳遥测从命令级升会话级（.157 ops-handbook 盲区 #1 的解药，两侧共同缺陷）。
+- **patrol 命令族（T2，schema v12）**：边界断言 + 处置队列产品化（.157「零未处置铁律」）——`patrol add <name> --sql "SELECT …" --severity S1|S2|S3`（SELECT 门 + 分号拒绝 + 单语句；违规行=finding）；`patrol run`（fresh/reopened/auto-fixed 三态；消失的违规自动转 fixed，resolved 后复发转 open 重开）；`patrol findings --status open|ack|fixed|fp` 处置队列；`patrol ack|fp|fix <id>` 人工处置；doctor 新检查 patrol_queue（open S1=fail / S2-S3=warn / all clear=pass）。新表 patrol_checks/patrol_findings（UNIQUE(check_id,row_key) 幂等去重）+ PG MIGRATE_DDL 同步 + db export 收录。
+- 测试：telemetry-cond.spec ×4 + patrol.spec ×5（SQL 门/生命周期含 doctor fail→ack→auto-fixed/**复发重开+ack 存活**（预审 direct-6ca52c84 P1）/JSON 纯净/幂等）+ 契约 §9 ×4；unit 254 / demo 125 / contract 100；ops/tools 补 @ygl/research-pipeline 依赖声明（预审 P2）。
+
 ## 0.92.0（2026-10-19）管线视图 React 重建 + 视觉 token 单源化（canvas 工单 direct-0f20e882 单A/单B）
 
 - **管线视图 React 重建（单A，webui-design.md §3 接替 0.88 退役的 HTML 实现）**：apps/web/src/Pipeline.tsx——按状态四列水流（已证实/有争议/未验证/已反驳），claim 卡 3px 状态色左沿 + 支持/反驳计数 + 证据折叠列表（stance 着色 + 引文摘录 + locator）；渲染验证 ×6（renderToStaticMarkup 方案，零新依赖——不引 jsdom/testing-library）；R19 同口径双重不渲染（服务端未授权不填 claims/claim_evidence/evidence 三键 + App 挂载门）；api.ts DashboardData 补三键类型化（含 sources，禁 as any）。

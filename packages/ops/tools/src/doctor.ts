@@ -74,6 +74,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
   }
 
+  // ── 2c. Patrol queue (v12, 0.93-T2) — the zero-undispositioned iron rule
+  // surfaced as workspace health: S1 open findings fail, S2/S3 open warn.
+  {
+    const hasPatrol = db.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='patrol_findings'");
+    if (hasPatrol) {
+      const openS1 = db.get("SELECT count(*) n FROM patrol_findings WHERE status IN ('open','ack') AND severity='S1'")?.n ?? 0;
+      const openRest = db.get("SELECT count(*) n FROM patrol_findings WHERE status IN ('open','ack') AND severity!='S1'")?.n ?? 0;
+      const checkCount = db.get("SELECT count(*) n FROM patrol_checks WHERE enabled=1")?.n ?? 0;
+      if (openS1 > 0) {
+        checks.push({ name: "patrol_queue", status: "fail", detail: `${openS1} open S1 finding(s) — run 'ygl-trees patrol findings --status open' and disposition (ack|fp|fix)` });
+      } else if (openRest > 0) {
+        checks.push({ name: "patrol_queue", status: "warn", detail: `${openRest} open finding(s) across ${checkCount} check(s) — patrol findings` });
+      } else {
+        checks.push({ name: "patrol_queue", status: "pass", detail: checkCount ? `all clear across ${checkCount} check(s)` : "no patrol checks registered" });
+      }
+    }
+  }
+
   // ── 3. FTS sync (spot check: sources vs sources_fts) ──
   const srcCount = db.get("SELECT COUNT(*) c FROM sources")?.c ?? 0;
   const srcFtsCount = db.get("SELECT COUNT(*) c FROM sources_fts")?.c ?? 0;

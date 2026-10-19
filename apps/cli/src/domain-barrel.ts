@@ -9,6 +9,7 @@
 import * as dbCmds from "../../../packages/ops/tools/src/db-cmds";
 import * as configCmds from "../../../packages/ops/tools/src/config-cmds";
 import * as jobCmds from "../../../packages/ops/tools/src/job-cmds";
+import * as patrolCmds from "../../../packages/ops/tools/src/patrol-cmds";
 import * as agentCmds from "../../../packages/ops/tools/src/agent-cmds";
 import * as researchCmds from "../../../packages/research/pipeline/src/cmds";
 import * as projectCmds from "../../../packages/research/produce/src/project-cmds";
@@ -25,6 +26,7 @@ export const DOMAIN_MODULES: Record<string, { run: (env: any, action: string, re
   db: dbCmds,
   config: configCmds,
   job: jobCmds,
+  patrol: patrolCmds,
   agent: agentCmds,
   research: researchCmds,
   project: projectCmds,

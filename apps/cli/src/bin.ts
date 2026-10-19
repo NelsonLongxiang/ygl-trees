@@ -152,6 +152,7 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   promote <noteId> [--name]  turn a note into a reusable skill
 
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
+${paint(C.bold, "patrol", color)}       boundary assertions + disposition queue (S1|S2|S3)
   add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]
   list | run <id> | tick | enable <id> | disable <id> | logs
 
@@ -512,10 +513,15 @@ export async function main(argv: string[]): Promise<number> {
       const rc = await pluginCmd.run(env, action || "", args._.slice(2), args);
       const code = typeof rc === "number" ? rc : 0;
       try {
+        // 0.93 T3: cmd.run attribution — bare shells keep the historical
+        // "cli" actor; session-tagged invocations (YGL_SESSION/DSH_SESSION_ID)
+        // carry their seat identity so adoption telemetry can tell seats apart
+        // (.157 ops-handbook blind spot #1, mirrored on our side).
+        const actor = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli";
         db.run(
           "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
-          [`${process.env.YGL_RUN_ID}`, new Date().toISOString(), "cli", "cmd.run", group, String(action || ""),
-           JSON.stringify({ run: process.env.YGL_RUN_ID, group, action: action || "", rc: code, duration_ms: Date.now() - t0, plugin: true }),
+          [`${process.env.YGL_RUN_ID}`, new Date().toISOString(), actor, "cmd.run", group, String(action || ""),
+           JSON.stringify({ run: process.env.YGL_RUN_ID, group, action: action || "", rc: code, duration_ms: Date.now() - t0, plugin: true, session: actor === "cli" ? undefined : actor }),
            code === 0 ? "info" : code === 2 ? "warn" : "error"]
         );
       } catch { /* telemetry best-effort */ }
@@ -524,7 +530,7 @@ export async function main(argv: string[]): Promise<number> {
     const mod = DOMAIN_MODULES[group];
     if (!mod) {
       // Help guidance: suggest closest match for unknown commands
-      const known = ["agent","research","produce","kb","skill","tree","node","task","rel","plugin","webui","db","doctor","config","job","project","mcp","llms","version","help"];
+      const known = ["agent","research","produce","kb","skill","tree","node","task","rel","plugin","webui","db","doctor","config","job","patrol","project","mcp","llms","version","help"];
       const aliases: Record<string, string> = {
         database: "db", data: "db", sqlite: "db",
         knowledge: "kb", notes: "kb", notebook: "kb",
@@ -579,16 +585,18 @@ export async function main(argv: string[]): Promise<number> {
     const code = typeof rc === "number" ? rc : 0;
     // R10.3: cmd.run ledger row — rc-mapped severity (0→info, 2→warn, else→error)
     try {
+      // 0.93 T3: session attribution (see the plugin-branch twin above)
+      const actor = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli";
       db.run(
         "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
         [
           `${process.env.YGL_RUN_ID}`,
           new Date().toISOString(),
-          "cli",
+          actor,
           "cmd.run",
           group,
           String(action || ""),
-          JSON.stringify({ run: process.env.YGL_RUN_ID, group, action: action || "", rc: code, duration_ms: Date.now() - t0 }),
+          JSON.stringify({ run: process.env.YGL_RUN_ID, group, action: action || "", rc: code, duration_ms: Date.now() - t0, session: actor === "cli" ? undefined : actor }),
           code === 0 ? "info" : code === 2 ? "warn" : "error",
         ]
       );
@@ -740,6 +748,10 @@ export function generateLlmsManifest(): string {
     ["job", "Batch scheduling", [
       ["job add <title> -- \"<cmd>\" [--every <min>]", "create scheduled job"],
       ["job tick", "run due jobs (drive with cron)"],
+    ]],
+    ["patrol", "Boundary patrol (0.93)", [
+      ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],
+      ["patrol run / list / findings", "evaluate + disposition queue"],
     ]],
     ["project", "Project management", [
       ["project new <name> -q \"<question>\"", "create + select (session-scoped)"],

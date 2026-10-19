@@ -628,3 +628,133 @@ export async function projectCreate(ds: DataSource, name: string, question = "")
     return rows[0];
   });
 }
+
+// ================================================================ patrol (v12, 0.93-T2)
+
+/** Register a boundary assertion. `sql` must be a SELECT that returns
+ *  VIOLATING rows (empty = pass) — the command layer enforces the shape,
+ *  this layer trusts it (writes.ts is the write surface, not validation). */
+export async function patrolAdd(
+  ds: DataSource,
+  o: { name: string; sql: string; severity?: string; description?: string }
+): Promise<WriteResult> {
+  return runTx(ds, async (mgr) => {
+    const ex = (await mgr.query(`SELECT * FROM patrol_checks WHERE name=?`, [o.name])) as any[];
+    if (ex.length) return { row: ex[0], dup: true };
+    const id = shortId(["patrol", o.name], 10);
+    const now = nowIso();
+    const sev = o.severity || "S2";
+    await mgr.query(
+      `INSERT INTO patrol_checks(id,name,description,sql,severity,enabled,created,updated)
+       VALUES(?,?,?,?,?,1,?,?)`,
+      [id, o.name, o.description || "", o.sql, sev, now, now]
+    );
+    await logEvent(mgr, "patrol.add", "patrol", id, `${o.name} [${sev}]`);
+    return {
+      row: { id, name: o.name, description: o.description || "", sql: o.sql, severity: sev, enabled: 1, created: now, updated: now },
+      dup: false,
+    };
+  });
+}
+
+/** Remove a check (CASCADE clears its findings). */
+export async function patrolRm(ds: DataSource, nameOrId: string): Promise<{ name: string; findings: number }> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM patrol_checks WHERE id=? OR name=?`, [nameOrId, nameOrId])) as any[];
+    if (!rows.length) throw new Error(`patrol check not found: ${nameOrId}`);
+    const c = rows[0];
+    const n = (await mgr.query(`SELECT count(*) AS n FROM patrol_findings WHERE check_id=?`, [c.id])) as any[];
+    await mgr.query(`DELETE FROM patrol_findings WHERE check_id=?`, [c.id]);
+    await mgr.query(`DELETE FROM patrol_checks WHERE id=?`, [c.id]);
+    await logEvent(mgr, "patrol.rm", "patrol", c.id, c.name);
+    return { name: c.name, findings: Number(n?.[0]?.n ?? 0) };
+  });
+}
+
+/** Upsert one patrol run's findings (called per check by the command layer
+ *  with the violating rows it just read). Semantics:
+ *    still-violating  → last_seen bump; reopen (status open, resolved=NULL,
+ *                       first_seen reset) when it had regressed to a
+ *                       resolved state — a returning violation is NEW work.
+ *    gone + open|ack  → auto-`fixed` (the assertion passes now; the queue
+ *                       must not carry stale rows) — resolved=now.
+ *    gone + fixed|fp  → untouched (terminal dispositions).
+ *  Returns per-check counters for the receipt. */
+export async function patrolRecord(
+  ds: DataSource,
+  checkId: string,
+  severity: string,
+  violating: Array<Record<string, any>>
+): Promise<{ violations: number; fresh: number; reopened: number; auto_fixed: number }> {
+  const now = nowIso();
+  return runTx(ds, async (mgr) => {
+    const prior = (await mgr.query(`SELECT * FROM patrol_findings WHERE check_id=?`, [checkId])) as any[];
+    const byKey = new Map(prior.map((f: any) => [String(f.row_key), f]));
+    const seen = new Set<string>();
+    let fresh = 0, reopened = 0;
+    for (const row of violating.slice(0, 500)) {
+      const rowKey = String(row[Object.keys(row)[0]] ?? "");
+      if (!rowKey || seen.has(rowKey)) continue;
+      seen.add(rowKey);
+      const detail = JSON.stringify(row).slice(0, 2000);
+      const ex = byKey.get(rowKey);
+      if (!ex) {
+        const id = shortId(["pf", checkId, rowKey], 10);
+        await mgr.query(
+          `INSERT INTO patrol_findings(id,check_id,row_key,detail,severity,status,first_seen,last_seen,resolved,note)
+           VALUES(?,?,?,?,?,'open',?,?,NULL,'')`,
+          [id, checkId, rowKey, detail, severity, now, now]
+        );
+        fresh++;
+      } else {
+        // Recurrence rule (0.93 P1, direct-6ca52c84): a finding that was
+        // resolved (fixed|fp) and violates again REOPENS — status back to
+        // open, first_seen reset, resolved cleared. Anything else (open, ack)
+        // keeps its lane: ack means "seen, being worked" and survives reruns
+        // while the violation persists.
+        const wasResolved = ex.status === "fixed" || ex.status === "fp";
+        await mgr.query(
+          `UPDATE patrol_findings SET last_seen=?, detail=?,
+           status=CASE WHEN ? THEN 'open' ELSE status END,
+           first_seen=CASE WHEN ? THEN ? ELSE first_seen END,
+           resolved=CASE WHEN ? THEN NULL ELSE resolved END
+           WHERE id=?`,
+          [now, detail, wasResolved ? 1 : 0, wasResolved ? 1 : 0, now, wasResolved ? 1 : 0, ex.id]
+        );
+        if (wasResolved) reopened++;
+      }
+    }
+    let autoFixed = 0;
+    for (const f of prior) {
+      if (seen.has(String(f.row_key))) continue;
+      if (f.status === "open" || f.status === "ack") {
+        await mgr.query(`UPDATE patrol_findings SET status='fixed', resolved=? WHERE id=?`, [now, f.id]);
+        autoFixed++;
+      }
+    }
+    await logEvent(mgr, "patrol.run", "patrol", checkId, `violations=${violating.length} fresh=${fresh} reopened=${reopened} auto_fixed=${autoFixed}`);
+    return { violations: seen.size, fresh, reopened, auto_fixed: autoFixed };
+  });
+}
+
+/** Human disposition: ack (seen, being worked) | fp (false positive — the
+ *  .157 allowlist lane) | fix (manual close without waiting for a rerun). */
+export async function patrolDisposition(
+  ds: DataSource,
+  findingId: string,
+  status: "ack" | "fp" | "fix",
+  note: string
+): Promise<Record<string, any>> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM patrol_findings WHERE id=?`, [findingId])) as any[];
+    if (!rows.length) throw new Error(`patrol finding not found: ${findingId}`);
+    const f = rows[0];
+    const now = nowIso();
+    await mgr.query(
+      `UPDATE patrol_findings SET status=?, note=?, resolved=CASE WHEN ?='ack' THEN NULL ELSE ? END WHERE id=?`,
+      [status === "fix" ? "fixed" : status, note || f.note, status, now, findingId]
+    );
+    await logEvent(mgr, "patrol.disposition", "patrol", f.check_id, `${findingId} → ${status}${note ? ` · ${note}` : ""}`);
+    return { ...f, status: status === "fix" ? "fixed" : status, note: note || f.note };
+  });
+}

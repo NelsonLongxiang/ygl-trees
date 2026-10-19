@@ -36,4 +36,67 @@ export class Event {
   seq?: number | null;
 }
 
-export const CORE_ENTITIES = [Event];
+/** v12 (0.93-T2): boundary assertion — a SELECT that returns violating rows. */
+@Entity({ name: "patrol_checks" })
+export class PatrolCheck {
+  @PrimaryColumn({ name: "id", type: "text" })
+  id!: string;
+
+  @Column({ name: "name", type: "text" })
+  name!: string;
+
+  @Column({ name: "description", type: "text", default: "" })
+  description!: string;
+
+  @Column({ name: "sql", type: "text" })
+  sql!: string;
+
+  /** S1 critical | S2 warning | S3 info (.157 ops-handbook vocabulary) */
+  @Column({ name: "severity", type: "text", default: "S2" })
+  severity!: string;
+
+  @Column({ name: "enabled", type: "integer", default: 1 })
+  enabled!: number;
+
+  @Column({ name: "created", type: "text" })
+  created!: string;
+
+  @Column({ name: "updated", type: "text" })
+  updated!: string;
+}
+
+/** v12 (0.93-T2): disposition queue — open | ack | fixed | fp. */
+@Entity({ name: "patrol_findings" })
+export class PatrolFinding {
+  @PrimaryColumn({ name: "id", type: "text" })
+  id!: string;
+
+  @Column({ name: "check_id", type: "text" })
+  checkId!: string;
+
+  @Column({ name: "row_key", type: "text" })
+  rowKey!: string;
+
+  @Column({ name: "detail", type: "text", default: "" })
+  detail!: string;
+
+  @Column({ name: "severity", type: "text", default: "S2" })
+  severity!: string;
+
+  @Column({ name: "status", type: "text", default: "open" })
+  status!: string;
+
+  @Column({ name: "first_seen", type: "text" })
+  firstSeen!: string;
+
+  @Column({ name: "last_seen", type: "text" })
+  lastSeen!: string;
+
+  @Column({ name: "resolved", type: "text", nullable: true })
+  resolved?: string | null;
+
+  @Column({ name: "note", type: "text", default: "" })
+  note!: string;
+}
+
+export const CORE_ENTITIES = [Event, PatrolCheck, PatrolFinding];

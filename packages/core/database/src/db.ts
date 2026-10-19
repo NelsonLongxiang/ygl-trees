@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /** Shared ORM-opened signal: orm.ts flips this when a DataSource settles.
  * plugin.ts stop() reads it WITHOUT importing orm (which pulls typeorm) so
@@ -358,6 +358,38 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   PRIMARY KEY (backend, version)
 );
 
+-- ---------------------------------------------------------------- patrol (v12, 0.93-T2)
+-- Declarative boundary assertions + disposition queue (.157 ops-handbook
+-- sop-patrol-daily productized). A check is a SELECT that returns VIOLATING
+-- rows (empty = pass); patrol run upserts findings. The iron rule this
+-- table family enforces: no finding stays undispositioned forever.
+CREATE TABLE IF NOT EXISTS patrol_checks (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  sql         TEXT NOT NULL,              -- SELECT-only (enforced at add time + read connection)
+  severity    TEXT NOT NULL DEFAULT 'S2', -- S1 critical | S2 warning | S3 info (.157 vocabulary)
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created     TEXT NOT NULL,
+  updated     TEXT NOT NULL,
+  UNIQUE(name)
+);
+CREATE TABLE IF NOT EXISTS patrol_findings (
+  id         TEXT PRIMARY KEY,
+  check_id   TEXT NOT NULL REFERENCES patrol_checks(id) ON DELETE CASCADE,
+  row_key    TEXT NOT NULL,               -- stable key of the violating row (first result column)
+  detail     TEXT NOT NULL DEFAULT '',    -- JSON snapshot of the row (truncated)
+  severity   TEXT NOT NULL DEFAULT 'S2',
+  status     TEXT NOT NULL DEFAULT 'open',-- open | ack | fixed | fp
+  first_seen TEXT NOT NULL,
+  last_seen  TEXT NOT NULL,
+  resolved   TEXT,                        -- set when leaving open/ack
+  note       TEXT NOT NULL DEFAULT '',
+  UNIQUE(check_id, row_key)
+);
+CREATE INDEX IF NOT EXISTS idx_patrol_findings_status ON patrol_findings(status);
+
+
 CREATE INDEX IF NOT EXISTS idx_sources_project  ON sources(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id);
 CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
@@ -574,13 +606,14 @@ export class DB {
       if ((v > 0 && v < 9) || (v === 0 && tablesPreExist)) this.upgrade8to9();
       if ((v > 0 && v < 10) || (v === 0 && tablesPreExist)) this.upgrade9to10();
       if ((v > 0 && v < 11) || (v === 0 && tablesPreExist)) this.upgrade10to11();
+      if ((v > 0 && v < 12) || (v === 0 && tablesPreExist)) this.upgrade11to12();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
       // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
       // applied version; replay-safe)
       this.db.run(
         `INSERT OR IGNORE INTO schema_migrations(backend,version,applied_at,note) VALUES('sqlite',?,?,?)`,
-        [SCHEMA_VERSION, nowIso(), 'v11: claims.channel (prediction ledger channel — direct-ce9eaf7a) · v10: events.seq + schema_migrations ledger']
+        [SCHEMA_VERSION, nowIso(), 'v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
       );
     }
   }
@@ -599,6 +632,13 @@ export class DB {
   private upgrade10to11(): void {
     const has = this.get("SELECT 1 FROM pragma_table_info('claims') WHERE name='channel'");
     if (!has) this.db.exec(`ALTER TABLE claims ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
+  }
+
+  /** v11 -> v12 (0.93-T2): patrol family — pure additive CREATE TABLE IF NOT
+   *  EXISTS (both tables live in SCHEMA_SQL), so the upgrade is a no-op guard
+   *  kept for ledger symmetry with the other steps. */
+  private upgrade11to12(): void {
+    /* SCHEMA_SQL exec below creates patrol_checks/patrol_findings */
   }
 
   /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine
