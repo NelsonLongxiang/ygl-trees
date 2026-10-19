@@ -199,7 +199,7 @@ verify list                        # 规范清单与状态
 
 | 层 | 语言 | 为什么是它 | 工程形态 |
 |---|---|---|---|
-| **产品壳**：CLI/存储/版本/WebUI/API/事件 | **Node**（ygl-trees 主体） | Cordis 运行时、artifacts/source 数据模型、R16 门禁、React 前端全在此；SQL 型检查器在本层执行（纯数据驱动，无语言问题） | npm 包（现有 bundle） |
+| **产品壳**：CLI/存储/版本/WebUI/API/事件 | **Node，TypeScript 优先**（m11452；ygl-trees 主体本就 TS strict） | Cordis 运行时、artifacts/source 数据模型、R16 门禁、React 前端全在此；SQL 型检查器在本层执行（纯数据驱动，无语言问题） | npm 包（现有 bundle） |
 | **提取层**：xlsx/PDF 解析、OCR、视觉前处理 | **Python** | 文档解析/数据科学生态最强（pandas/pdfplumber/openpyxl）；**.157 的运费审计工具链就是 Python（audit_freight_bill.py 一脉）——血统直接复用** | 独立脚本/子进程，JSON stdin/stdout 契约；`verify prepare` 经 command 型边界调用 |
 | **确定性内核**（可选，后置）：独立可分发校验器、百万行比对、二进制级重放保证 | **Rust** | 单静态二进制零运行时漂移（给无 Node/Python 环境的第三方跑同一验证）；性能；供应链可信 | cargo 产物，同一 JSON 契约进出；**首版不做**——需求坐实（毕业规模/外发场景）再引入 |
 
