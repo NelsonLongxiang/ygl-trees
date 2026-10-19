@@ -1,0 +1,10 @@
+{
+  "checker": "count",
+  "domain": "freight-audit",
+  "tags": [
+    "pass",
+    "count",
+    "single-row-single-col"
+  ],
+  "expects": "PASS：10 月批次发票数 >= 3"
+}

@@ -90,10 +90,11 @@
     "type": "sql-pair",
     "left":  {"table": "freight_invoices", "key": "order_id", "value": "amount"},
     "right": {"table": "purchase_orders",  "key": "id",       "value": "payable_amount"},
-    "tolerance": 0.01
+    "compare": { "mode": "tolerance_abs", "value": 0.01, "currency": "CNY", "scale": 2, "cardinality": "1:1" }
   },
   "expected_from": {
-    "kind": "runtime-query",
+    "quote": "每张运费发票金额与对应订单应付金额一致（来自提交材料+报价基准.xlsx）",
+    "locator": "定价框架.md:41",
     "note": "两侧均为运行时查询"
   }
 }

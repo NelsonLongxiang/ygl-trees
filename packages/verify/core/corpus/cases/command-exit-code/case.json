@@ -1,0 +1,10 @@
+{
+  "checker": "command",
+  "domain": "tooling",
+  "tags": [
+    "pass",
+    "command",
+    "allowlist"
+  ],
+  "expects": "PASS：node --version 退出码 0"
+}

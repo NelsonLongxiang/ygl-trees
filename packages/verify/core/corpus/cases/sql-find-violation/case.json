@@ -1,0 +1,11 @@
+{
+  "checker": "sql",
+  "domain": "freight-audit",
+  "tags": [
+    "fail",
+    "scope",
+    "batch-scoped"
+  ],
+  "expects": "FAIL：2026-10 批次 1 张发票金额不符；scope_sql 限定批次",
+  "note": "错批次 INV-4 不得计入——证明 scope_sql 生效"
+}

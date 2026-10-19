@@ -1,0 +1,10 @@
+{
+  "checker": "agent",
+  "domain": "governance",
+  "tags": [
+    "error",
+    "sealed",
+    "review-layer"
+  ],
+  "expects": "ERROR：封包且未开 --with-review 时 agent 型不可用"
+}

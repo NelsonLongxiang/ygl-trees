@@ -1,0 +1,9 @@
+{
+  "checker": "sql",
+  "domain": "freight-audit",
+  "tags": [
+    "missing",
+    "fail_when rows==0"
+  ],
+  "expects": "FAIL：A-1005 有订单无运费发票"
+}

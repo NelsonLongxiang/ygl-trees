@@ -1,0 +1,35 @@
+{
+  "contract_version": "0.4",
+  "spec_id": "spec__name__",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "每张订单必须有运费发票",
+      "severity": "S1",
+      "source_clause": "每张采购订单都须有对应的运费账单",
+      "expected_from": {
+        "quote": "每张采购订单都须有对应的运费账单",
+        "locator": "首战B计划.md:90"
+      },
+      "checker": {
+        "type": "sql",
+        "sql": "select p.order_id from purchase_order p left join freight_invoice f on f.order_id=p.order_id where p.batch='2026-10' and f.order_id is null",
+        "fail_when": "rows>0"
+      }
+    }
+  ]
+}

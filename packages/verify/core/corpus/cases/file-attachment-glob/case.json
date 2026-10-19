@@ -1,0 +1,10 @@
+{
+  "checker": "file",
+  "domain": "freight-audit",
+  "tags": [
+    "pass",
+    "glob",
+    "root-and-nested"
+  ],
+  "expects": "PASS：attachments 下根目录与子目录共 2 个 pdf，min 2"
+}

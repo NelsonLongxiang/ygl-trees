@@ -104,16 +104,30 @@ async function runFactChecker(
       const failWhen = c.fail_when ?? "rows>0";
       // 构造守卫（r3 意见 2）：找违规型必须能证明扫的是本批范围——
       // 要么给 scope_sql，要么 sql 自带 WHERE（否则「整表非空」冒充「扫过本批」）。
-      if (failWhen === "rows>0" && !c.scope_sql && !/\bwhere\b/i.test(c.sql)) {
+      const sqlNoComments = c.sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+      if (failWhen === "rows>0" && !c.scope_sql && !/\bwhere\b/i.test(sqlNoComments)) {
         return { verdict: "ERROR", evidence: { reason: "find-violation sql has no WHERE and no scope_sql — cannot prove the scan covers the intended batch (vacuous-pass risk)" } };
       }
       const rows = runner.query(c.sql);
       let scanned: number;
       let sources: Array<{ table: string; rows: number }>;
       if (c.scope_sql) {
+        // N1：scope_sql 必须是「单行单列整数」的扫描面行数；多行/多列/非整数一律 ERROR
+        // （否则 Number('INV-1') = NaN 会以 NaN witness 参与判定，JSON 序列化后变 null）。
         try {
           const scopeRows = runner.query(c.scope_sql);
-          scanned = scopeRows.length > 0 ? Number(Object.values(scopeRows[0])[0]) : 0;
+          if (scopeRows.length !== 1) {
+            return { verdict: "ERROR", evidence: { reason: `scope_sql must return exactly one row (got ${scopeRows.length}); return a single count(*)` } };
+          }
+          const cols = Object.values(scopeRows[0]);
+          if (cols.length !== 1) {
+            return { verdict: "ERROR", evidence: { reason: `scope_sql must return exactly one column (got ${cols.length})` } };
+          }
+          const n = Number(cols[0]);
+          if (!Number.isInteger(n) || n < 0) {
+            return { verdict: "ERROR", evidence: { reason: `scope_sql must return a non-negative integer row count (got ${JSON.stringify(cols[0])})` } };
+          }
+          scanned = n;
         } catch (e) {
           return { verdict: "ERROR", evidence: { reason: `scope_sql failed: ${(e as Error).message}` } };
         }
@@ -345,14 +359,18 @@ function walk(dir: string): string[] {
 }
 
 function globToRegExp(glob: string): RegExp {
-  const escaped = glob
+  // N7：尾 `a/**` 也匹配（此前只处理了 `**/` 前缀形态）
+  const trailingAny = glob.endsWith("/**");
+  const base = trailingAny ? glob.slice(0, -3) : glob;
+  let body = base
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*\//g, "\u0000") // `**/` 可匹配零层目录（r3 意见 d）
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
     .split("\u0000")
     .join("(?:.*/)?");
-  return new RegExp(`^${escaped}$`);
+  if (trailingAny) body += "(?:/.*)?";
+  return new RegExp(`^${body}$`);
 }
 
 /** 从 VU 的 checker JSON 中提取 $Vx 引用（管线依赖）。 */
@@ -434,8 +452,15 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   if ("cycle" in orderResult) {
     throw new Error(`pipeline cycle detected among: ${orderResult.cycle.join(", ")}`);
   }
+  // N2：sql 文本不支持占位展开（$vu: 只允许出现在 count.from / sql-pair 的侧引用）
+  for (const vu of spec.vu) {
+    const c = vu.checker as { sql?: string; scope_sql?: string };
+    if (/\$/.test(`${c.sql ?? ""} ${c.scope_sql ?? ""}`)) {
+      throw new Error(`${vu.id}: "$" in sql text is not supported — pipeline refs belong to count.from / sql-pair sides (no placeholder expansion)`);
+    }
+  }
   // R13：as_of 必须锚定——时间函数在构造期拒绝（NOW()/CURRENT_TIMESTAMP 无法重放）
-  const timeFn = /(now\s*\(|current_timestamp|current_date|current_time)/i;
+  const timeFn = /\b(now\s*\(|current_timestamp|current_date|current_time)\b/i;
   for (const vu of spec.vu) {
     const c = vu.checker as { sql?: string; scope_sql?: string };
     const text = `${c.sql ?? ""} ${c.scope_sql ?? ""}`;

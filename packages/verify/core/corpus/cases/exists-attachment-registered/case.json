@@ -1,0 +1,9 @@
+{
+  "checker": "exists",
+  "domain": "freight-audit",
+  "tags": [
+    "pass",
+    "exists"
+  ],
+  "expects": "PASS：INV-1 存在于台账"
+}

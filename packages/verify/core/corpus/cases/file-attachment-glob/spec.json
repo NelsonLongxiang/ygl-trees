@@ -1,0 +1,44 @@
+{
+  "contract_version": "0.4",
+  "spec_id": "spec__name__",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [
+    {
+      "path": "invoice-2026-10.pdf",
+      "sha256": "sha256:seed"
+    },
+    {
+      "path": "po/po-2026-10.pdf",
+      "sha256": "sha256:seed2"
+    }
+  ],
+  "sealed": {
+    "review": false
+  },
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "title": "账单原件齐备",
+      "severity": "S1",
+      "source_clause": "每期运费账单须附原始 PDF",
+      "expected_from": {
+        "quote": "每期运费账单须附原始 PDF",
+        "locator": "ops-handbook-v1.md:31"
+      },
+      "checker": {
+        "type": "file",
+        "glob": "**/*.pdf",
+        "min": 2
+      }
+    }
+  ]
+}

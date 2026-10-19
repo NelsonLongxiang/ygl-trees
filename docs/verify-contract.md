@@ -50,6 +50,7 @@
 - `severity` ∈ `S1|S2|S3`：构造阶段按判据语气赋值（必须/不得→S1，应→S2，建议→S3），自审只可上调；**不改变 overall 数学**，只影响呈现顺序与处置优先级（**NEEDS-MATERIAL 自动开 task**；首版 FAIL 只进报告例外清单、不自动开——与 md 决策表 E 一致，R9）。
 - **checker 形状互斥**：`checker` 是**标签联合**——`type` 决定其余键。`sql-pair` 的每一侧是 **`from`（rowset 引用）或 `table`（基表）二选一，不得并存**（fdc757f6 ①）；`from` 在位时 `key`/`value` 指 rowset 列名，`table` 无意义。
 - **count 形状闭合**（评审 R2）：`count` 的集合来源 **`from`（上游 `$Vx` 行集）或 `sql`（业务数据源单语句）二选一，不得并存、不得缺失**；`from` 在位时 `scanned = 上游行数`、`matched = 计数`；`sql` 在位时 `scanned = 源表行数`。占位绑定语法：`from` 写 `"$vu:V1"`（行集）或 `"$vu:V1.rows"`（同义），引擎按 `$vu:` 命名空间解析；`sql` 文本内不支持占位展开。
+- **`scope_sql`**（评审 r3 追补，已反灌契约）：`sql` 型找违规时用于证明「扫的是本批范围」的旁路查询——必须返回**单行单列非负整数**（通常是 `select count(*) …`），引擎取其值作为 `rows_scanned`；多行/多列/非整数 → **ERROR**（N1）。无 `scope_sql` 时回退源表行数，且要求 `sql` 自带 WHERE。
 - **CompareSpec**（评审 B5 + R7 单一形状）`compare`：`mode ∈ exact|tolerance_abs|tolerance_rel|window|subset|superset|range|regex`；`currency`+`scale` 必填则按最小单位整数比较（禁浮点直比）；`cardinality ∈ 1:1|1:N|N:1`（默认 1:1，重复键→ERROR 点名；`1:N` 须带 `agg`）；`null ∈ error|equal|ignore`（默认 error）。
   - **ε 规则**：`exact` **不带 ε**（带 `value` 即构造错误）；`tolerance_abs`/`tolerance_rel`/`window` 的 ε **必须 0 < ε**（ε=0 就是 exact，混用即空转）；`range` 用 `value`=下界、`value_max`=上界。
   - **unit 只属 window**，取值 `d|h|s`；其余模式带 `unit` 即构造错误。

@@ -5,7 +5,7 @@
  * 只认这里的形状。checker 是标签联合：`type` 决定其余键（评审 fdc757f6 ①）。
  */
 
-export const CONTRACT_VERSION = "1.0";
+export const CONTRACT_VERSION = "0.4"; // 未冻结：冻结时随语料收敛一次 pin 到 1.0
 
 export type Verdict = "PASS" | "FAIL" | "NEEDS-MATERIAL" | "ERROR";
 export type VuRole = "assert" | "source";
