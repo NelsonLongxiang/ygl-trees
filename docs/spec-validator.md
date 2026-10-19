@@ -88,7 +88,28 @@ meta:
 - 报告形态：artifact（kind=verify-report）+ `verify.report` 事件 + 控制台汇总（N 项：x PASS / y FAIL / z NEEDS-HUMAN / w ERROR）。
 - NEEDS-HUMAN 项 → 自动落 task（复用 artifacts kind=task 状态机，零新表）。
 
-## 7. 命令族（命名避开 produce spec 的「spec 工件」重名）
+## 7. 前端支持（WebUI，用户裁定 m11362）
+
+业务专家的主界面就是浏览器，不是 CLI。React 客户端（apps/web，现有 webui serve 承载）新增三个视图：
+
+1. **表单编辑器**（专家填写面）：结构化表单——每项验证：标题/判据人话/容差/严重度/数据描述；字段化输入直接产出结构化数据（**绕过 Markdown 解析歧义**——表单是主入口，Markdown 模板保留给 CLI/power 用户）。草稿自动保存（artifact kind=verify-spec, status=draft）。
+2. **VU 确认视图**（人保真面）：prepare 产物左右对照——左列判据原文（source_clause），右列翻译出的 checker（类型+表+列+容差），逐项 ✓ 确认 / ✗ 驳回（带理由，驳回项回到待翻译池）。专家确认后 spec 进 runnable 态。
+3. **报告看板**（结果交付面）：四态分组板（PASS/FAIL/NEEDS-HUMAN/ERROR 色分——复用 DESIGN.md token 家族：success/danger/warning/secondary），每项可展开证据明细（违规行数、样例行、两侧数值）；NEEDS-HUMAN 一键转 task；历史 run 对比（同规范两轮 diff——回归可视化）。
+
+**服务端端点**（webui.ts，R16 选择门 + P1-1 归属校验同规）：
+
+```
+GET  /api/verify/specs            # 规范清单（状态 draft/prepared/runnable/done）
+POST /api/verify/spec             # 表单保存（draft/publish）
+POST /api/verify/prepare          # 触发预处理（服务端调判定网关做翻译辅助，同 claim evaluate 通道）
+POST /api/verify/confirm          # 逐项确认/驳回
+POST /api/verify/run              # 跑验证（同步跑小型规范；长跑先返回 run-id + SSE 进度——事件桥已就位）
+GET  /api/verify/report/<runId>   # 报告载荷
+```
+
+SSE 实时进度走既有 ctx.on("ygl") 公共通道（verify.report / verify.progress 事件），无新通道。前端组件复用 antd 表单/表格/标签生态（Pipeline.tsx 同款模式：类型化载荷 + 渲染验证测试 + token 纪律）。
+
+## 8. 命令族（CLI 面，与 WebUI 同一后端）
 
 ```
 verify form                        # 输出空白表单模板
@@ -101,16 +122,17 @@ verify list                        # 规范清单与状态
 
 数据面：ygl 工作区 db（默认）+ 任意 SQLite 文件路径 + PG URL（**复用 0.89 的 getPgOrm 方言地基**——.157 的 Odoo/PG 直连即在此）。
 
-## 8. 与树/毕业协议的接缝（复用而非新建）
+## 9. 与树/毕业协议的接缝（复用而非新建）
 
 - 验证规范可挂树节点：`rel add node:<tree>/<key> artifact:<spec-id> --rel decided-by`（规范=节点的验收判据）。
 - 报告挂节点：`--rel evidenced-by`（验证结果=节点证据）。
 - **毕业通道**（未来，先记设计）：一条验证规范稳定通过 N 轮 → `verify graduate <id>` 生成 patrol 检查（一次性验证 → 持续监控），走 graduation-protocol 的 executes 织物。
 
-## 9. 待裁定点（实现前需拍板）
+## 10. 待裁定点（实现前需拍板）
 
-1. **表单载体**：Markdown 模板（人友好，prepare 严格化）vs YAML schema（机器严格，人难写）——推荐 Markdown。
+1. **表单载体**（m11362 前端裁定后收窄）：**WebUI 结构化表单为主入口**（直接产出结构化数据，零解析歧义）+ Markdown 模板保留给 CLI/power 用户——推荐此双轨。
 2. **命令名**：`verify`（推荐，避开 produce spec 重名）vs `checklist` vs 顶层 `spec`。
 3. **第一版检查器范围**：sql / sql-pair / count / exists / command / human 全上，还是先 sql + sql-pair + human 三件最小闭环？——推荐全上（sql/count 引擎已在 patrol/telemetry 现成，边际成本低）。
 4. **VU 存储**：新表 verify_specs/verify_units（schema v13）vs 复用 artifacts（kind=verify-spec，VU 存 meta JSON）——推荐 artifacts 起步（九触点成本减半），查询面成型再升表。
 5. **多数据源连接**：第一版是否带 PG（.157 直连）——推荐带（地基已在），但连接串安全（不入库，运行时传入）。
+6. **前端批序**（m11362 新增）：CLI 后端先行（M13-1 命令族+检查器+报告，可独立验收）→ WebUI 三视图（M13-2 表单编辑器/VU 确认/报告看板）——推荐此序（前端依赖后端契约稳定，避免双头改）；若要并行则 WebUI 先做表单编辑器（依赖最少）。

@@ -316,7 +316,7 @@
 
 ### M13 — spec-validator 验证规范驱动器（2026-10-19 立项 m11350，设计阶段）
 
-**用户目标（verbatim m11350）**：「构建一套预处理的规范驱动spec 的验证器，供人工业务专家填写的，由agent 进行驱动验证，最终交付确定性的结果工具」。设计全文 docs/spec-validator.md。核心立场：agent 出现在预处理（人话→判据结构化）与采证编排，**判定零概率**（verdict ∈ PASS/FAIL/NEEDS-HUMAN/ERROR，全带证据，重放一致）。血统：.157 ops-handbook 四问判据+S1/S2/S3+零未处置（实战祖先）；patrol/telemetry 引擎复用；毕业通道反向接缝（verify→patrol graduate）。待裁定五点：表单载体/命令名（verify vs spec 重名）/检查器首版范围/VU 存储（artifacts 起步 vs v13 新表）/PG 直连时机。
+**用户目标（verbatim m11350）**：「构建一套预处理的规范驱动spec 的验证器，供人工业务专家填写的，由agent 进行驱动验证，最终交付确定性的结果工具」；**m11362 补充裁定：需要前端支持**（业务专家主界面=浏览器）。设计全文 docs/spec-validator.md（§7 前端层：表单编辑器/VU 确认视图/报告看板三视图 + /api/verify/* 六端点 + SSE 进度走既有 ygl 通道）。核心立场：agent 出现在预处理（人话→判据结构化）与采证编排，**判定零概率**（verdict ∈ PASS/FAIL/NEEDS-HUMAN/ERROR，全带证据，重放一致）。血统：.157 ops-handbook 四问判据+S1/S2/S3+零未处置（实战祖先）；patrol/telemetry 引擎复用；毕业通道反向接缝（verify→patrol graduate）。待裁定六点（表单载体已因前端裁定收窄为 WebUI 主+Markdown 辅双轨）：命令名（verify vs spec 重名）/检查器首版范围/VU 存储（artifacts 起步 vs v13 新表）/PG 直连时机/前后端批序（推荐后端先行）。
 
 ## 明确推迟（不进本计划）
 
