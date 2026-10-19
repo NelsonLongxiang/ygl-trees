@@ -1,0 +1,12 @@
+{
+  "name": "@ygl/verify-core",
+  "version": "0.1.0",
+  "description": "Spec-driven deterministic verifier core: contract, seven checkers, pipeline, report folding (M13)",
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  }
+}

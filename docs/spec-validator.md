@@ -52,7 +52,7 @@
   账单包.zip     （文件级：解包清单要与发票号清单一致）
 ```
 
-附件注册为 source（file://），可追溯、可重放。专家零 SQL、零代码、零字段义务——写不清楚的部分交给 agent 构造，构造不了的不会静默通过（fail-closed，见 §4.3）。
+附件入 content-addressed blob（新表 `attachments`：sha256/size/mime，评审 R3），可追溯、可重放。专家零 SQL、零代码、零字段义务——写不清楚的部分交给 agent 构造，构造不了的不会静默通过（fail-closed，见 §4.3）。
 
 ## 3.5 提交物即验证器（m11490 核心洞察）
 
@@ -151,7 +151,7 @@
 | role | 语义 | verdict | 计入总判定？ |
 |---|---|---|---|
 | **`assert`**（断言，默认） | 检查器违规行 = 业务不合规 → FAIL | PASS / FAIL / NEEDS-MATERIAL / ERROR | **是** |
-| **`source`**（数据源/投影） | 只负责把数据取出来给下游用（`$Vx.out`），自身不判定 | **恒 PASS-by-construction**（取数失败才是 ERROR） | **否** |
+| **`source`**（数据源/投影） | 只负责把数据取出来给下游用（`$Vx.out`），自身不判定 | **不参与折叠**（PASS-by-construction；取数失败=ERROR 级联） | **否** |
 
 - **总判定 = 所有 `assert` 节点独立合取**：任一 `assert` FAIL → 总 FAIL；`source` 节点不参与总判定，只作为数据管线的一环在 trace 里呈现。
 - **逐条计数不折叠**：V1 FAIL、V2 消费 `$V1.rows` 后 PASS 时，报告分别记两条（V1 FAIL / V2 PASS），summary 的 `fail` 计数以 assert 节点为准——不允许「下游过了就当上游没问题」。
@@ -176,7 +176,7 @@ V3 (count)    : 「$V2.violations == 0」   → 0 行=PASS；>0 → FAIL 并带�
 - **引用语法**：`$Vx.<output>` 出现在下游 checker 的参数位（sql 的 WHERE IN、sql-pair 的一侧、count 的集合源）。
 - **执行序 = 拓扑序**：复用科技树引擎的 DAG 语义（拓扑排序 + 环检测）——规范内引用成环在 prepare 阶段拒绝（同 `node validate`）。
 - **级联语义**：上游 FAIL → 其 outputs 仍然产生（FAIL 的行集正是下游要消费的证据）；上游 ERROR（表不存在/连接断）→ 下游标 ERROR（原因=上游不可用），不装死也不中断独立分支。
-- **verdict 传播（评审 C1 补）**：`source` 节点恒 PASS（取数失败=ERROR）；下游 `assert` 的判定**独立成立**，不因上游 FAIL 而自动 FAIL（上游行集正是它的输入）；总判定只做 `assert` ∧，`source` 与 trace 不进 summary 分母。
+- **verdict 传播（评审 C1 补 + R5 表述修正）**：`source` 节点**不参与折叠**（PASS-by-construction，仅记录 trace；取数失败=ERROR 级联，下游引用了它才暴露）；下游 `assert` 的判定**独立成立**，不因上游 FAIL 而自动 FAIL（上游行集正是它的输入）；总判定只做 `assert` ∧，`source` 与 trace 不进 summary 分母。
 - **确定性保持**：组合是纯数据流——同输入同输出同判定；报告=管线执行 trace（每级展示收到什么、产出什么、判了什么）。
 - **与科技树同构**：spec 内 VU 图是 mini-DAG，树引擎的闭包/拓扑/环检测直接复用；跨 spec 组合（一个 spec 的报告作为另一个 spec 的输入）未来走 artifact 引用，首版不做。
 
@@ -250,8 +250,8 @@ overall = FAIL  if 任一 role=assert 的 verdict=FAIL
 | 对象 | 版本语义 | 机制 |
 |---|---|---|
 | **spec（规范）** | 每次 prepare 自审通过即产生新版本（v1→v2…）；修订=重新 prepare（自审失败项回炉） | artifacts.version 自增；旧版本只读保留 |
-| **run（报告）** | 钉住 spec 版本 + 附件 source id 快照 | 报告头记 {spec_id, spec_version, sources[], db 快照标识}——重放=同版本+同输入 |
-| **附件（基准文件）** | 不可变 source：报价基准换版=新 source 行，**旧报告的锚点永不断链** | source 本就 append-only（file:// + 哈希 id） |
+| **run（报告）** | 钉住 spec 版本 + 附件 sha256 快照 | 报告头记 {spec_id, spec_version, attachment_sha256[], db 快照标识}——重放=同版本+同输入 |
+| **附件（基准文件）** | 不可变 blob：报价基准换版=新 `attachments` 行，**旧报告的锚点永不断链** | content-addressed（sha256 去重、append-only） |
 | **毕业（patrol）** | 毕业产物记 spec 版本来源 | graduation 引用 {spec_id, version} |
 
 对比视图的版本对：同数据两版规范（判据修订影响面）/ 同规范两次 run（数据漂移）——报告看板的 diff 就是这两个轴。
@@ -260,7 +260,7 @@ overall = FAIL  if 任一 role=assert 的 verdict=FAIL
 
 业务专家的主界面就是浏览器，不是 CLI。React 客户端（apps/web，现有 webui serve 承载）新增三个视图：
 
-1. **材料提交视图**（专家填写面，m11390 修正）：**标题 + 一段话 + 附件上传**（图片/表格/PDF/压缩包拖拽区）——不是结构化字段表单；结构化是 agent 构造的产物，不是专家的输入义务。附件上传即注册 source（file://，归属当前项目）。草稿自动保存（artifact kind=verify-spec, status=draft）。提交即触发 prepare（含自审），无需二次确认。
+1. **材料提交视图**（专家填写面，m11390 修正）：**标题 + 一段话 + 附件上传**（图片/表格/PDF/压缩包拖拽区）——不是结构化字段表单；结构化是 agent 构造的产物，不是专家的输入义务。附件上传即入 content-addressed blob（归属当前项目，sha256 去重）。草稿自动保存（artifact kind=verify-spec, status=draft）。提交即触发 prepare（含自审），无需二次确认。
 2. **构造追溯视图**（审计面，非门槛）：只读展示 prepare 产物——左列判据原文 + **材料出处**（期望值锚点：报价基准.xlsx·Sheet1·R5C3；图片值标注提取区域），右列翻译出的 checker（类型+表+列+容差+期望值来源），附自审三问的逐条结论（忠实/可判/非空转）与构造修订历史。**这里没有 ✓/✗ 按钮**——它是事后复核入口，不是放行闸门。
 3. **报告看板**（结果交付面，m11428+m11429 修正）：**处置清单优先**（FAIL 例外项=工作清单置顶，四态统计退居摘要行）——每项可展开证据明细（判据原文/基准出处/违规行/两侧数值/管线 trace）；NEEDS-MATERIAL 一键转「补充材料」task；版本对比视图（同规范两次 run=数据漂移轴；两版规范同数据=判据修订影响轴）。
 
@@ -279,7 +279,7 @@ SSE 实时进度走既有 ctx.on("ygl") 公共通道（verify.report / verify.pr
 ## 8. 命令族（CLI 面，与 WebUI 同一后端）
 
 ```
-verify submit                      # 材料提交（标题+一段话+附件登记为 source）
+verify submit                      # 材料提交（标题+一段话+附件入 blob）
 verify prepare <spec-id>           # 提取+翻译+自审 → 可执行 VU 集（无人确认环节）
 verify run <spec-id> [--db <path|url>]   # 跑全部检查器 → 报告
 verify report <run-id>             # 复核历史报告

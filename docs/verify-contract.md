@@ -49,9 +49,11 @@
 - `role`：`assert` 参与总判定；`source` 恒 PASS-by-construction、不进 summary 分母，且必须被至少一个下游 `$Vx.out` 引用（否则空转，构造拒绝）。
 - `severity` ∈ `S1|S2|S3`：构造阶段按判据语气赋值（必须/不得→S1，应→S2，建议→S3），自审只可上调；**不改变 overall 数学**，只影响呈现顺序与处置优先级（S1 FAIL/NM 自动开 task）。
 - **checker 形状互斥**：`checker` 是**标签联合**——`type` 决定其余键。`sql-pair` 的每一侧是 **`from`（rowset 引用）或 `table`（基表）二选一，不得并存**（fdc757f6 ①）；`from` 在位时 `key`/`value` 指 rowset 列名，`table` 无意义。
+- **count 形状闭合**（评审 R2）：`count` 的集合来源 **`from`（上游 `$Vx` 行集）或 `sql`（业务数据源单语句）二选一，不得并存、不得缺失**；`from` 在位时 `scanned = 上游行数`、`matched = 计数`；`sql` 在位时 `scanned = 源表行数`。占位绑定语法：`from` 直接写 `"$V1"` 或 `"$V1.rows"`，引擎按 `$<vu-id>` 前缀解析。
 - **CompareSpec**（评审 B5）`compare`：`mode ∈ exact|tolerance_abs|tolerance_rel|window|subset|superset|range|regex`；`currency`+`scale` 必填则按最小单位整数比较（禁浮点直比）；`cardinality ∈ 1:1|1:N|N:1`（默认 1:1，重复键→ERROR 点名；`1:N` 须带 `agg`）；`null ∈ error|equal|ignore`（默认 error）。
 - `expected_from`：值三源之一——`material-extract`（带 `anchor` + **`quote` 原文复读**，锚点可机械核对）、`explicit`（专家显式给出）、`runtime-query`（运行时查询）；prepare 时冻结。
 - **附件两阶段**（评审 B4）：`baseline` 在 submit 冻结（值进 spec）；`submission` 的字节在 run 时校验 `sha256`（同路径换内容=新附件行）；附件走 content-addressed blob（sha256/size/mime），不参与 FTS。
+- **附件落点裁定**（评审 R3，冻结前置）：**新表 `attachments`**（走九触点：SCHEMA_SQL/实体/迁移/写服务/读服务/导出/清理/测试/文档），**不在 `sources` 增列**——`sources` 只按 `sha1(text)` 存 UTF-8 正文且 `url_hash` 重复早返回（`writes.ts:139,152`），没有二进制按字节入库的路径；把附件塞进 source 会让「同一路径换内容」静默复用旧行。spec 的 `attachments[].sha256` 即 `attachments.content_sha256` 的外部锚。
 - `as_of`（评审 C2）：所有时间窗口与 `now()` 必须锚定——`kind: snapshot`（SQLite 用文件哈希，PG 用只读事务快照 id）。
 - `sealed.review`：封包是否允许 review 层（默认 false；`--with-review` 置 true）。
 
@@ -89,7 +91,23 @@
 **铁律**
 
 - `overall`（评审 B1）：`FAIL if 任一 assert=FAIL`；否则 `NEEDS-MATERIAL if 任一 assert=NEEDS-MATERIAL`；否则 `ERROR if 任一 assert=ERROR`；否则 `PASS`。**优先级 FAIL > NEEDS-MATERIAL > ERROR > PASS**；`summary` 以 assert 为分母，source 单列 trace。
-- `witness`（评审 B2）：每个 fact checker 必须输出；`rows_scanned=0` → 该 VU 判 **NEEDS-MATERIAL**；期望非空而 `rows_matched=0` 同判；`schema_fingerprint` 与 prepare 冻结值不一致 → **ERROR**。
+- `witness`（评审 B2 + R1/R4）：**fact 型（sql/sql-pair/count/exists/file）必填**——类型层面 `VuResultFact.witness: ScopeWitness` 非可选；`agent`/`command` 型可选。逐型口径见 **§2.1**（不同型的「空范围」「零匹配」结论不同，禁止一刀切）。`schema_fingerprint` 与 prepare 冻结值不一致 → **ERROR**。
+
+### 2.1 witness 语义表（评审 R1）
+
+> 「零扫描 ⇒ NEEDS-MATERIAL」只对**找违规**语义成立。逐型定义如下；G2 语料按本表写 `expected-report.json`。
+
+| checker | `rows_scanned` 口径 | `rows_matched` 口径 | 空范围（scanned=0） | 零匹配（matched=0） | 依据字段 |
+|---|---|---|---|---|---|
+| `sql`（fail_when=rows>0，找违规） | 源表行数合计 | 违规行数 | **NEEDS-MATERIAL** | **PASS**（无违规） | `fail_when` |
+| `sql`（fail_when=rows==0，找缺失） | 源表行数合计 | 命中行数 | **NEEDS-MATERIAL** | **FAIL**（应存在） | `fail_when` |
+| `sql-pair` | 两侧键并集数 | 实际比较过的键数 | **NEEDS-MATERIAL**（无可比键） | PASS（全部一致）；违规计入 matched 的差集 | `compare`/`cardinality` |
+| `count`（from/sql） | 上游行数或源表行数 | 计数结果 | **NEEDS-MATERIAL** | 由 `op`+`value` 判定（0 本身是合法计数） | `op`/`value` |
+| `exists`（expect=true，找存在） | 源表行数 | 命中行数（0/1+） | **NEEDS-MATERIAL** | **FAIL** | `expect` |
+| `exists`（expect=false，找不存在） | 源表行数 | 命中行数 | **NEEDS-MATERIAL** | **PASS** | `expect` |
+| `file` | 提交物文件总数 | glob 命中的文件数 | **NEEDS-MATERIAL**（目录为空） | `min`/`require` 缺省时 **PASS**；`min>0`/`require` 命中缺失 → **FAIL** | `min`/`max`/`require` |
+| `command` | —（无统一面） | — | 仅以 `expect_exit`/`stdout_matches` 判 | 同左 | `expect_exit` |
+| `agent` | —（review 层） | — | 缺凭证/无 review runner → **ERROR** | 由 rubric 判 | `rubric`/`pass_if` |
 - 证据行 **canonical 排序**（主键升序、NULL 置末）——否则「逐字重放」不成立。
 - `payload_sha256`：整份报告除该字段外的规范化哈希（import 前可校验文件未被手改，评审 B3）。
 - 报告**不可变**：重跑生成新 `run_id`。
@@ -144,5 +162,6 @@ build_sha256 = H(engine || spec)          # 不含 footer 自身（含自身即�
 
 ## 6. 状态
 
+- v0.3：评审 302cb119 R1/R2/R3/R4 契约面落文（witness 语义表 / count from-sql 互斥 / attachments 新表裁定 / VuResult witness 类型强制）。
 - v0.2：已并入 fdc757f6 D0 快检三条（sql-pair 互斥 / 命令名统一 / 七型形状齐为冻结前置）与 302cb119 B1/B2/B3/B5 契约面（overall+severity / witness / footer+登记 / CompareSpec+as_of）。**未冻结**。
 - 冻结动作：上述冻结条件三条满足后，`contract_version` 钉 `1.0` + CHANGELOG 记录 + 双评审收尾回执。
