@@ -30,6 +30,7 @@ tags: ygl-trees,methodology,relations,fabric
 | `decided-by` | 节点由某个决策（claim/design）裁定 | node → claim / design artifact |
 | `tracked-by` | 节点的进展由任务跟踪 | node → task artifact |
 | `derived-from` | 节点从某知识/报告衍生 | node → kb / report artifact |
+| `executes` | 节点的能力由该 SOP 承接执行（毕业协议） | node → source(tags=sop) |
 | `related` | 兜底弱关联（能起更specific的rel就别用） | 任意 |
 
 ## 3. 引用语法与验证
