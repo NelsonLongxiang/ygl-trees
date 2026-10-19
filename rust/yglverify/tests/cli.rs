@@ -111,3 +111,83 @@ fn self_check_validates_embedded_vectors() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("canonical-vectors: ok (12)"), "{stdout}");
 }
+
+fn sealed_binary(dir: &Path, case: &str) -> PathBuf {
+    let out = dir.join("concrete");
+    let spec = cases_dir().join(case).join("spec.json");
+    let status = Command::new(bin())
+        .args(["seal", "--spec", spec.to_str().unwrap(), "--out", out.to_str().unwrap()])
+        .status()
+        .expect("spawn seal");
+    assert!(status.success(), "seal failed");
+    out
+}
+
+#[test]
+fn sealed_binary_embeds_spec_and_reports_identity() {
+    let dir = temp_dir("sealed");
+    let db = dir.join("case.sqlite");
+    seed_db("sql-find-violation", &db);
+    let sealed = sealed_binary(&dir, "sql-find-violation");
+
+    // 无 --spec：读内嵌规范，报告记 sealed 与 binary_sha256
+    let output = Command::new(&sealed)
+        .args([
+            "run",
+            "--db",
+            db.to_str().unwrap(),
+            "--json",
+            "--run-id",
+            "run_sealed",
+            "--now",
+            "2026-10-19T00:00:00.000Z",
+        ])
+        .output()
+        .expect("spawn sealed");
+    assert_eq!(output.status.code(), Some(0));
+    let report: Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("json");
+    assert_eq!(report["overall"], "FAIL");
+    assert_eq!(report["verifier"]["mode"], "sealed");
+    let identity = report["verifier"]["binary_sha256"].as_str().expect("binary_sha256");
+    assert!(identity.starts_with("sha256:"), "{identity}");
+
+    // 封包拒绝 --spec：改规范必须重打二进制
+    let spec = cases_dir().join("sql-find-violation").join("spec.json");
+    let refused = Command::new(&sealed)
+        .args(["run", "--spec", spec.to_str().unwrap(), "--db", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(refused.status.code(), Some(2));
+
+    // 篡改内嵌规范 → 运行期 rc=1 且点名 spec_sha256
+    let mut bytes = fs::read(&sealed).expect("read sealed");
+    let idx = bytes.len() / 2;
+    bytes[idx] ^= 0xff;
+    let tampered = dir.join("tampered");
+    fs::write(&tampered, &bytes).expect("write tampered");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tampered, fs::Permissions::from_mode(0o755));
+    }
+    let bad = Command::new(&tampered)
+        .args(["run", "--db", db.to_str().unwrap()])
+        .output()
+        .expect("spawn tampered");
+    assert_eq!(bad.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(stderr.contains("spec_sha256") || stderr.contains("build_sha256"), "{stderr}");
+}
+
+#[test]
+fn sealing_a_sealed_binary_is_refused() {
+    let dir = temp_dir("reseal");
+    let sealed = sealed_binary(&dir, "sql-find-violation");
+    let spec = cases_dir().join("sql-find-violation").join("spec.json");
+    let out = dir.join("again");
+    let output = Command::new(&sealed)
+        .args(["seal", "--spec", spec.to_str().unwrap(), "--out", out.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(2));
+}

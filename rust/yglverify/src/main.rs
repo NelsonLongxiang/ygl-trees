@@ -9,6 +9,7 @@
 //!                 [--now <rfc3339>] [--mode open|sealed]
 //!   yglverify --version
 //!   yglverify canonical-check
+//!   yglverify seal --spec <spec.json> --out <file>   # 产出封包二进制（内嵌 spec）
 //!   yglverify self-check [--corpus <dir>]
 
 use std::fs;
@@ -21,6 +22,7 @@ use serde_json::Value;
 use yglverify::canonical;
 use yglverify::contract::parse_spec;
 use yglverify::engine::{run_verify, VerifyOptions};
+use yglverify::sealed::{open_sealed, read_sealed_file, seal_bytes, sha256_hex};
 use yglverify::sqlite::SqliteRunner;
 
 const USAGE: &str = "\
@@ -33,7 +35,7 @@ usage:
   yglverify --version";
 
 struct RunArgs {
-    spec: String,
+    spec: Option<String>,
     db: String,
     json: bool,
     out: Option<String>,
@@ -87,7 +89,7 @@ fn parse_run_args(args: &[String]) -> Result<RunArgs, ExitCode> {
         }
         i += 1;
     }
-    let spec = spec.ok_or_else(|| usage_error("run requires --spec <file|->"))?;
+
     let db = db.ok_or_else(|| usage_error("run requires --db <snapshot.sqlite>"))?;
     if mode != "open" && mode != "sealed" {
         return Err(usage_error("--mode must be open|sealed"));
@@ -111,13 +113,41 @@ fn cmd_run(args: &[String]) -> ExitCode {
         Ok(p) => p,
         Err(code) => return code,
     };
+    // 封包形态：spec 内嵌，拒绝 --spec（规范改了就该换二进制，而不是换参数）
+    let self_path = std::env::current_exe().unwrap_or_else(|_| Path::new("yglverify").to_path_buf());
+    let sealed = match read_sealed_file(&self_path) {
+        Ok(s) => s,
+        Err(e) => return runtime_error(e),
+    };
+    let sealed_bytes = if sealed.is_some() {
+        match fs::read(&self_path) {
+            Ok(b) => Some(b),
+            Err(e) => return runtime_error(format!("cannot read own binary: {e}")),
+        }
+    } else {
+        None
+    };
+    let (spec_text, mode, binary_sha) = match (&sealed, parsed.spec.as_deref()) {
+        (Some((footer, spec)), None) => {
+            let sha = sealed_bytes
+                .as_ref()
+                .map(|b| format!("sha256:{}", sha256_hex(b)))
+                .unwrap_or_default();
+            let _ = footer;
+            (spec.clone(), "sealed".to_string(), Some(sha))
+        }
+        (Some(_), Some(_)) => {
+            return usage_error("sealed binary does not accept --spec — the spec is embedded; rebuild the binary to change it")
+        }
+        (None, Some(path)) => match read_spec(path) {
+            Ok(s) => (s, parsed.mode.clone(), None),
+            Err(code) => return code,
+        },
+        (None, None) => return usage_error("run requires --spec <file|-> (or run a sealed binary)"),
+    };
     if !Path::new(&parsed.db).exists() {
         return runtime_error(format!("snapshot not found: {}", parsed.db));
     }
-    let spec_text = match read_spec(&parsed.spec) {
-        Ok(s) => s,
-        Err(code) => return code,
-    };
     let spec = match parse_spec(&spec_text) {
         Ok(s) => s,
         Err(e) => return runtime_error(e),
@@ -133,6 +163,8 @@ fn cmd_run(args: &[String]) -> ExitCode {
         now_iso: parsed.now.clone(),
         run_id: parsed.run_id.clone(),
         engine_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        mode: Some(mode.clone()),
+        binary_sha256: binary_sha.clone(),
     };
     let report = match run_verify(&spec, &opts) {
         Ok(r) => r,
@@ -142,12 +174,6 @@ fn cmd_run(args: &[String]) -> ExitCode {
         Ok(v) => v,
         Err(e) => return runtime_error(format!("cannot serialize report: {e}")),
     };
-    // sealed 形态：报告自带 mode 与实际产物一致（open 时不出现 binary_sha256）
-    if let Some(obj) = value.as_object_mut() {
-        if let Some(verifier) = obj.get_mut("verifier").and_then(|v| v.as_object_mut()) {
-            verifier.insert("mode".into(), Value::String(parsed.mode.clone()));
-        }
-    }
     let text = match serde_json::to_string_pretty(&value) {
         Ok(t) => t,
         Err(e) => return runtime_error(format!("cannot render report: {e}")),
@@ -169,6 +195,78 @@ fn cmd_run(args: &[String]) -> ExitCode {
             println!("report:  {out}");
         }
     }
+    ExitCode::SUCCESS
+}
+
+fn cmd_seal(args: &[String]) -> ExitCode {
+    let mut spec_path: Option<String> = None;
+    let mut out: Option<String> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--spec" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => spec_path = Some(v.clone()),
+                    None => return usage_error("--spec requires a file"),
+                }
+            }
+            "--out" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => out = Some(v.clone()),
+                    None => return usage_error("--out requires a path"),
+                }
+            }
+            other => return usage_error(&format!("unknown flag: {other}")),
+        }
+        i += 1;
+    }
+    let spec_path = match spec_path {
+        Some(p) => p,
+        None => return usage_error("seal requires --spec <spec.json>"),
+    };
+    let out = match out {
+        Some(p) => p,
+        None => return usage_error("seal requires --out <file>"),
+    };
+    let spec_text = match fs::read_to_string(&spec_path) {
+        Ok(t) => t,
+        Err(e) => return runtime_error(format!("cannot read spec {spec_path}: {e}")),
+    };
+    let spec = match parse_spec(&spec_text) {
+        Ok(s) => s,
+        Err(e) => return runtime_error(e),
+    };
+    let self_path = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => return runtime_error(format!("cannot locate own binary: {e}")),
+    };
+    let engine = match fs::read(&self_path) {
+        Ok(b) => b,
+        Err(e) => return runtime_error(format!("cannot read own binary: {e}")),
+    };
+    // 不允许二次封包（footer 里再塞 footer 会破坏 build_sha256 的语义）
+    if open_sealed(&engine).is_ok() {
+        return usage_error("this binary is already sealed — seal the open build instead");
+    }
+    let sealed = match seal_bytes(&engine, &spec_text, env!("CARGO_PKG_VERSION"), &spec.verifier.corpus_version) {
+        Ok(b) => b,
+        Err(e) => return runtime_error(e),
+    };
+    if let Err(e) = fs::write(&out, &sealed) {
+        return runtime_error(format!("cannot write {out}: {e}"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&out, fs::Permissions::from_mode(0o755));
+    }
+    let footer = match open_sealed(&sealed) {
+        Ok((f, _, _)) => f,
+        Err(e) => return runtime_error(e),
+    };
+    println!("sealed {} (spec {} v{}, build {})", out, spec.spec_id, spec.spec_version, footer.build_sha256);
     ExitCode::SUCCESS
 }
 
@@ -214,6 +312,21 @@ fn cmd_self_check(args: &[String]) -> ExitCode {
         checked += 1;
     }
     println!("canonical-vectors: ok ({checked})");
+    if let Ok(exe) = std::env::current_exe() {
+        match read_sealed_file(&exe) {
+            Ok(Some((footer, spec_text))) => match parse_spec(&spec_text) {
+                Ok(spec) => {
+                    println!(
+                        "sealed-spec: ok ({} v{}, build {}, corpus {})",
+                        spec.spec_id, spec.spec_version, footer.build_sha256, footer.corpus_version
+                    );
+                }
+                Err(e) => return runtime_error(format!("embedded spec does not parse: {e}")),
+            },
+            Ok(None) => println!("sealed-spec: skip (open build)"),
+            Err(e) => return runtime_error(e),
+        }
+    }
     if let Some(dir) = &corpus {
         let manifest = Path::new(dir).join("manifest.json");
         match fs::read_to_string(&manifest) {
@@ -242,6 +355,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("run") => cmd_run(&args[1..]),
+        Some("seal") => cmd_seal(&args[1..]),
         Some("self-check") => cmd_self_check(&args[1..]),
         Some("canonical-check") => cmd_self_check(&[]),
         Some("-h") | Some("--help") => {

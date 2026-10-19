@@ -27,6 +27,10 @@ pub struct VerifyOptions<'a> {
     /// 语料/测试可钉 run_id，保证报告字节可复现。
     pub run_id: Option<String>,
     pub engine_version: Option<String>,
+    /// "open"（spec 由调用方给）或 "sealed"（spec 内嵌在二进制里）
+    pub mode: Option<String>,
+    /// 封包二进制的 sha256（报告身份锚；open 模式为 None）
+    pub binary_sha256: Option<String>,
 }
 
 fn get(row: &Row, key: &str) -> Value {
@@ -932,8 +936,8 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         started: started.clone(),
         finished: started,
         verifier: ReportVerifier {
-            mode: "open".into(),
-            binary_sha256: None,
+            mode: opts.mode.clone().unwrap_or_else(|| "open".into()),
+            binary_sha256: opts.binary_sha256.clone(),
             engine_version: opts.engine_version.clone().unwrap_or_else(|| "0.1.0".into()),
             spec_version: spec.spec_version,
             corpus_version: spec.verifier.corpus_version.clone(),

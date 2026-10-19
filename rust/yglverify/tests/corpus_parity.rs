@@ -44,6 +44,8 @@ fn run_case(dir: &Path) -> Result<Value, String> {
         now_iso: Some("2026-10-19T00:00:00.000Z".to_string()),
         run_id: Some(format!("run_{}", dir.file_name().unwrap().to_string_lossy())),
         engine_version: Some("0.1.0".to_string()),
+        mode: Some("open".to_string()),
+        binary_sha256: None,
     };
     let report = run_verify(&spec, &opts);
     let _ = fs::remove_file(&db_path);

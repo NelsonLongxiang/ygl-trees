@@ -269,8 +269,23 @@ build_sha256 = H(engine || spec)          # 不含 footer 自身（含自身即�
 - `verify report import` 校验：binary_sha256 命中登记 ∧ spec_version 匹配 ∧ payload_sha256 一致；任一不符 → 拒绝并点名。
 - 自检：`self-check` 重算三段并比对；`--expect <sha256>` 提供带外比对通道；可选 ed25519 签名（公钥带外分发）。
 
+**1.0 实现形态（Rust `yglverify`，2026-10-20）**——上面是语义布局，实际字节是：
+
+```
+[engine 字节][spec json][footer json][footer_len: u32 LE]
+footer = { magic:"YGLVF1", spec_offset, spec_length, spec_sha256,
+           build_sha256, engine_version, corpus_version }
+```
+
+- `seal --spec <spec.json> --out <file>` 产出封包：拷贝当前开放的二进制 + 内嵌 spec + footer；**已封包的二进制拒绝二次 seal（rc=2）**。
+- `run` 解析顺序：先看自身是否封包 → 封包且给了 `--spec` 一律 **rc=2**（改规范必须重打二进制）；封包且没给 `--spec` 用内嵌规范，报告 `verifier.mode="sealed"`、`verifier.binary_sha256 = "sha256:" + H(整个封包文件)`；开放构建仍可 `--spec`（`mode="open"`、无 `binary_sha256`）。
+- 篡改检测 fail-closed：spec 字节与 `spec_sha256` 不符、或 `engine||spec` 与 `build_sha256` 不符 → **rc=1 点名**；尾部结构是封包但校验不过时**不得**当开放构建继续跑（`looks_sealed` 判别）。
+- `self-check` 在封包构建上多打一行 `sealed-spec: ok (<spec_id> v<n>, build <build_sha256>, corpus <version>)`；开放构建打 `sealed-spec: skip (open build)`。
+- 签名（ed25519）与带外登记仍未实现，属 M13-1b 收尾项。
+
 ## 6. 状态
 
+- **v1.2（2026-10-20）**：Rust `yglverify` 补封包形态（§5 实现形态：`seal` / 内嵌 spec / 拒绝 `--spec` / 双哈希篡改检测 / `self-check` 的 `sealed-spec` 行）；`contract_version` 仍 1.0（交付形态，不是 spec/report 形状变更）。
 - **v1.1（2026-10-20）**：新增 §7 归档包（命名语法 / 包内目录 / 确定性 zip / 校验链 / 侧车登记），`verify run` 默认归档；`contract_version` 仍 1.0（归档是命令面能力，不是 spec/report 形状变更）。
 - **v1.0（冻结，2026-10-19）**：v0.5 之后并入 r10 评审 F1–F6（prepare sql 分支 `$vu:` 收窄、window 的 `±hh` 偏移归一、M13-1 拒 agent 型 + `sealed.review=false`、as_of 必由调用方给、canonical 拒非纯对象、数字口径改 ES 形态并写明三条相对 RFC 8785 的有意偏离）；引擎入口加契约版本守卫（1.0 引擎只跑 1.0 spec）；报告增 `spec_id` / `data_source` 两个可选自描述字段。**冻结**：`contract_version = "1.0"`、`corpus_version = "1.0"`；此后形状变更走 1.0→1.1 升版，不得静默改 1.0 内文。
 - v0.5：r9 评审 E1–E5 落文与修复（sql-pair 谓词侧键名/同族守卫、空批聚合对 NEEDS-MATERIAL、sql/count/exists 禁 agg、±hh 偏移归一、prepare P2 白名单与 schema 全量校验、`$vu:` 收窄、附件 sha256 进 spec、P3/P4 配置错误归 `error`）+ JCS canonical 落地实现与跨实现向量 + §1.6 prepare 五阶段规则表。
