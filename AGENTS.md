@@ -48,7 +48,9 @@ pnpm bench                # 性能基准（先 build；结果落 tmp/bench-resul
 pnpm pack:check           # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm readme:verify        # 文档真值门禁：README 命令示例逐条跑并断言退出码
 pnpm ratchet              # 度量棘轮：bundle/前端体积/冷启动只降不升（基线 ratchet-baseline.json）
-pnpm contract:audit       # 契约体检（96 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道（31 读+7 错误）
+pnpm test:rust            # M13-1b 二进制 parity：cargo test（33 例冻结语料 + canonical 向量 + CLI 契约）
+pnpm verify:run           # 验证器组合入口：submit → prepare → run（rc 只表达过程，判定在报告）
+pnpm contract:audit       # 契约体检（100 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道（31 读+7 错误）
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
