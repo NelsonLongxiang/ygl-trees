@@ -369,6 +369,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         title: clip(r.title, 50),
         rel: r.relevance,
         conf: r.confidence,
+        tags: r.tags || "",
         score: typeof r.score === "number" ? r.score.toFixed(2) : "-",
       }));
       table(ctx, rows, ["id", "title", "rel", "conf", "score"], ["id", "title", "rel", "conf", "score"]);
