@@ -101,11 +101,30 @@ async function runFactChecker(
 
   switch (c.type) {
     case "sql": {
+      const failWhen = c.fail_when ?? "rows>0";
+      // 构造守卫（r3 意见 2）：找违规型必须能证明扫的是本批范围——
+      // 要么给 scope_sql，要么 sql 自带 WHERE（否则「整表非空」冒充「扫过本批」）。
+      if (failWhen === "rows>0" && !c.scope_sql && !/\bwhere\b/i.test(c.sql)) {
+        return { verdict: "ERROR", evidence: { reason: "find-violation sql has no WHERE and no scope_sql — cannot prove the scan covers the intended batch (vacuous-pass risk)" } };
+      }
       const rows = runner.query(c.sql);
-      const { scanned, sources } = rowsScannedFromSql(runner, c.sql);
+      let scanned: number;
+      let sources: Array<{ table: string; rows: number }>;
+      if (c.scope_sql) {
+        try {
+          const scopeRows = runner.query(c.scope_sql);
+          scanned = scopeRows.length > 0 ? Number(Object.values(scopeRows[0])[0]) : 0;
+        } catch (e) {
+          return { verdict: "ERROR", evidence: { reason: `scope_sql failed: ${(e as Error).message}` } };
+        }
+        sources = rowsScannedFromSql(runner, c.sql).sources;
+      } else {
+        const scope = rowsScannedFromSql(runner, c.sql);
+        scanned = scope.scanned;
+        sources = scope.sources;
+      }
       const w = witness(scanned, rows.length, sources, fingerprint);
       if (scanned === 0) return { verdict: "NEEDS-MATERIAL", witness: w, evidence: { reason: "zero rows scanned — wrong table or empty data" } };
-      const failWhen = c.fail_when ?? "rows>0";
       const violations = failWhen === "rows>0" ? rows.length : rows.length === 0 ? 1 : 0;
       const sorted = canonicalRows(rows, Object.keys(rows[0] ?? {}).slice(0, 1));
       if (violations > 0) {
@@ -116,7 +135,7 @@ async function runFactChecker(
     case "sql-pair": {
       const readSide = (side: typeof c.left): Row[] => {
         if ("from" in side) {
-          const ref = side.from.replace(/^\$/, "");
+          const ref = refId(side.from);
           const rows = outputs.get(ref);
           if (!rows) throw new Error(`pipeline reference ${side.from} is not available (topological order violated)`);
           return rows;
@@ -195,10 +214,22 @@ async function runFactChecker(
           violations.push({ key: k, left: l, right: r, diff: Number.isFinite(ln) && Number.isFinite(rn) ? Number((ln - rn).toFixed(6)) : "mismatch" });
         }
       }
-      const w = witness(keys.length, compared, [], fingerprint);
+      const tableSides: string[] = [];
+      for (const side of [c.left, c.right]) {
+        if ("table" in side) tableSides.push(side.table);
+      }
+      const sources = tableSides.map((t) => {
+        try {
+          return { table: t, rows: runner.tableRows(t) };
+        } catch {
+          return { table: t, rows: -1 };
+        }
+      });
+      // matched = 违规对数（与契约示例 rows_matched=3 对齐，r3 意见 1）
+      const w = witness(keys.length, violations.length, sources, fingerprint);
       if (keys.length === 0) return { verdict: "NEEDS-MATERIAL", witness: w, evidence: { reason: "no keys to compare — empty source" } };
       if (violations.length > 0) {
-        return { verdict: "FAIL", witness: w, evidence: { violations: violations.length, rows: violations.slice(0, 5) } };
+        return { verdict: "FAIL", witness: w, evidence: { violations: violations.length, compared, rows: violations.slice(0, 5) } };
       }
       return { verdict: "PASS", witness: w, evidence: { compared } };
     }
@@ -210,7 +241,7 @@ async function runFactChecker(
       let scanned: number;
       let sources: Array<{ table: string; rows: number }> = [];
       if (c.from !== undefined) {
-        const ref = c.from.replace(/^\$/, "");
+        const ref = refId(c.from);
         const upstream = outputs.get(ref);
         if (!upstream) {
           return { verdict: "ERROR", evidence: { reason: `count from ${c.from} is not available (topological order violated)` } };
@@ -219,6 +250,9 @@ async function runFactChecker(
         scanned = upstream.length;
       } else if (c.sql !== undefined) {
         const rows = runner.query(c.sql);
+        if (rows.length > 1 || (rows.length === 1 && Object.keys(rows[0]).length !== 1)) {
+          return { verdict: "ERROR", evidence: { reason: "count.sql must return exactly one row and one column" } };
+        }
         n = rows.length > 0 ? Number(Object.values(rows[0])[0]) : 0;
         const scope = rowsScannedFromSql(runner, c.sql);
         scanned = scope.scanned;
@@ -313,11 +347,11 @@ function walk(dir: string): string[] {
 function globToRegExp(glob: string): RegExp {
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*/g, "\u0000")
+    .replace(/\*\*\//g, "\u0000") // `**/` 可匹配零层目录（r3 意见 d）
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
     .split("\u0000")
-    .join(".*");
+    .join("(?:.*/)?");
   return new RegExp(`^${escaped}$`);
 }
 
@@ -326,8 +360,8 @@ export function refsOf(c: Checker): string[] {
   const refs = new Set<string>();
   const visit = (v: unknown) => {
     if (typeof v === "string") {
-      // 管线引用两种形态：`$Vx.field`（模板占位）与 `$Vx`（from 整值引用，R2）
-      const re = /\$([A-Za-z0-9_-]+)/g;
+      // 命名空间 `$vu:V1`（r3 意见 b）：避免把 PG 占位符 $1/$$、金额 $50 误认成管线引用。
+      const re = /\$vu:([A-Za-z0-9_-]+)/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(v))) refs.add(m[1]);
     } else if (Array.isArray(v)) {
@@ -388,7 +422,7 @@ export function foldOverall(results: VuResult[]): { overall: Verdict; reason: st
     const ids = asserts.filter((r) => r.verdict === "ERROR").map((r) => r.id);
     return { overall: "ERROR", reason: `${ids.join(", ")} errored` };
   }
-  if (asserts.length === 0) return { overall: "PASS", reason: "no assert units (source-only spec)" };
+  if (asserts.length === 0) return { overall: "NEEDS-MATERIAL", reason: "no assert units — spec asserts nothing" };
   return { overall: "PASS", reason: `all ${asserts.length} assert units passed` };
 }
 
@@ -400,21 +434,35 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   if ("cycle" in orderResult) {
     throw new Error(`pipeline cycle detected among: ${orderResult.cycle.join(", ")}`);
   }
+  // R13：as_of 必须锚定——时间函数在构造期拒绝（NOW()/CURRENT_TIMESTAMP 无法重放）
+  const timeFn = /(now\s*\(|current_timestamp|current_date|current_time)/i;
+  for (const vu of spec.vu) {
+    const c = vu.checker as { sql?: string; scope_sql?: string };
+    const text = `${c.sql ?? ""} ${c.scope_sql ?? ""}`;
+    if (timeFn.test(text)) {
+      throw new Error(`${vu.id}: non-deterministic time function in sql — freeze the timestamp via as_of/parameters (R13)`);
+    }
+  }
+  if (!spec.vu.some((v) => v.role === "assert")) {
+    throw new Error("spec has no assert units — a spec that asserts nothing must not report PASS");
+  }
   const outputs = new Map<string, Row[]>();
   const results: VuResult[] = [];
   for (const vu of orderResult.order) {
     if (vu.role === "source") {
-      const rows = vu.checker.type === "sql" || vu.checker.type === "sql-pair" ? executeSourceRows(vu, opts, runnerOf(opts)) : [];
-      outputs.set(vu.id, rows);
+      const fetched = executeSourceRows(vu, opts, runnerOf(opts));
+      outputs.set(vu.id, fetched.rows);
       results.push({
         id: vu.id,
         role: "source",
-        verdict: "PASS",
+        verdict: fetched.error ? "ERROR" : "PASS",
         severity: vu.severity,
         source_clause: vu.source_clause,
         checker_type: vu.checker.type,
-        trace: "PASS-by-construction (source; not folded — downstream failure surfaces as ERROR)",
-        evidence: { rows: rows.length },
+        trace: fetched.error
+          ? "source fetch failed — downstream references turn ERROR (not folded into overall)"
+          : "PASS-by-construction (source; not folded — downstream failure surfaces as ERROR)",
+        evidence: fetched.error ? { rows: 0, error: fetched.error } : { rows: fetched.rows.length },
       });
       continue;
     }
@@ -429,6 +477,18 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
     }
     const evidence = { ...(outcome.evidence ?? {}) };
     let verdict = outcome.verdict;
+    // 级联（评审 a）：引用了取数失败的 source -> 下游一律 ERROR，不允许把"没数据"当成 PASS/FAIL 证据
+    const brokenRef = refsOf(vu.checker).filter((ref) => results.some((r) => r.id === ref && r.verdict === "ERROR"));
+    if (brokenRef.length) {
+      verdict = "ERROR";
+      evidence.reason = `upstream source failed: ${brokenRef.join(", ")}`;
+    }
+    // schema 漂移（评审 c）：prepare 冻结的指纹与本次运行不一致 -> ERROR
+    if (spec.schema_fingerprint && fingerprintOf(opts.runner) !== spec.schema_fingerprint) {
+      verdict = "ERROR";
+      evidence.schema_drift = { frozen: spec.schema_fingerprint, current: fingerprintOf(opts.runner) };
+      evidence.reason = "schema_drift: fingerprint differs from the one frozen at prepare";
+    }
     // 装配期守卫：PASS 必须带 witness 且非零扫描（防空洞通过）
     if (verdict === "PASS" && outcome.witness && outcome.witness.rows_scanned === 0 && vu.checker.type !== "command" && vu.checker.type !== "agent") {
       verdict = "NEEDS-MATERIAL";
@@ -477,6 +537,14 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   const exceptions = results
     .filter((r) => r.role === "assert" && (r.verdict === "FAIL" || r.verdict === "NEEDS-MATERIAL"))
     .map((r) => ({ vu: r.id, severity: r.severity as Severity, row_count: Number((r.evidence as { violations?: number; rows_total?: number } | undefined)?.violations ?? 0) }));
+  if (spec.schema_fingerprint) {
+    for (const r of results) {
+      if (r.witness && r.witness.schema_fingerprint !== spec.schema_fingerprint) {
+        (r as { verdict: string }).verdict = "ERROR";
+        r.evidence = { ...(r.evidence ?? {}), schema_drift: true, expected_schema: spec.schema_fingerprint, seen: r.witness.schema_fingerprint };
+      }
+    }
+  }
   const report: VerifyReport = {
     contract_version: spec.contract_version,
     run_id: runId,
@@ -502,6 +570,13 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   return report;
 }
 
+/** `$vu:V1` / `$vu:V1.rows` → `V1`（r3 命名空间解析）。 */
+function refId(ref: string): string {
+  const m = ref.match(/^\$vu:([A-Za-z0-9_-]+)/);
+  if (!m) throw new Error(`invalid pipeline reference "${ref}" — expected $vu:<vu-id>[.<field>]`);
+  return m[1];
+}
+
 function fingerprintOf(runner: QueryRunner): string {
   try {
     return runner.schemaFingerprint();
@@ -522,15 +597,15 @@ function safeQuery(runner: QueryRunner, sql: string): Row[] {
   }
 }
 
-function executeSourceRows(vu: VerifyUnit, opts: VerifyOptions, runner: QueryRunner): Row[] {
+function executeSourceRows(vu: VerifyUnit, opts: VerifyOptions, runner: QueryRunner): { rows: Row[]; error?: string } {
   if (vu.checker.type === "sql") {
     try {
-      return runner.query(vu.checker.sql);
-    } catch {
-      return [];
+      return { rows: runner.query(vu.checker.sql) };
+    } catch (e) {
+      return { rows: [], error: (e as Error).message };
     }
   }
-  return [];
+  return { rows: [], error: `source role requires a sql checker (got ${vu.checker.type})` };
 }
 
 /** 报告载荷哈希（评审 B3）：除 payload_sha256 自身外的规范化哈希。 */

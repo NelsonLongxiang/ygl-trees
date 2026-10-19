@@ -94,8 +94,8 @@ export function compareValues(left: unknown, right: unknown, spec: CompareSpec):
     case "tolerance_abs":
     case "window": {
       if (spec.mode === "window" && !spec.unit) return { error: 'window mode requires "unit" (d|h|s)' };
-      if (typeof spec.value !== "number" || !Number.isFinite(spec.value) || spec.value < 0) {
-        return { error: `invalid tolerance value: ${String(spec.value)}` };
+      if (typeof spec.value !== "number" || !Number.isFinite(spec.value) || !(spec.value > 0)) {
+        return { error: `invalid tolerance value: ${String(spec.value)} (must be > 0; ε=0 is exact)` };
       }
       if (currency !== undefined && scale !== undefined) {
         const l = toMinorUnits(left, scale);
@@ -158,10 +158,15 @@ export function validateCompareSpec(spec: CompareSpec): string[] {
   if (!known.has(spec.mode)) errs.push(`unknown compare mode: ${spec.mode}`);
   if ((spec.currency === undefined) !== (spec.scale === undefined)) errs.push("currency and scale must be provided together");
   if (spec.scale !== undefined && (!Number.isInteger(spec.scale) || spec.scale < 0 || spec.scale > 6)) errs.push("scale must be an integer 0..6");
-  if ((spec.mode === "tolerance_abs" || spec.mode === "tolerance_rel" || spec.mode === "window") && typeof spec.value !== "number") {
-    errs.push(`${spec.mode} requires numeric value`);
-  }
+  // R7：单一形状——exact 无 ε；tolerance/window 的 ε 必须 0<ε（ε=0 是 exact，别混）；
+  // unit 只属 window，取值 d|h|s。
+  const tol = spec.mode === "tolerance_abs" || spec.mode === "tolerance_rel" || spec.mode === "window";
+  if (spec.mode === "exact" && spec.value !== undefined) errs.push("exact takes no tolerance value (use tolerance_abs for ε)");
+  if (tol && typeof spec.value !== "number") errs.push(`${spec.mode} requires numeric value (ε)`);
+  if (tol && typeof spec.value === "number" && !(spec.value > 0)) errs.push(`${spec.mode} requires ε > 0 (ε=0 is exact)`);
   if (spec.mode === "window" && !spec.unit) errs.push("window requires unit (d|h|s)");
+  if (spec.unit !== undefined && spec.mode !== "window") errs.push("unit only applies to window mode");
+  if (spec.unit !== undefined && !["d", "h", "s"].includes(String(spec.unit))) errs.push("unit must be d|h|s");
   if (spec.mode === "range" && (typeof spec.value !== "number" || typeof spec.value_max !== "number")) errs.push("range requires value and value_max");
   if (spec.cardinality === "1:N" && !spec.agg) errs.push('cardinality "1:N" requires agg (sum|max|min)');
   return errs;

@@ -34,6 +34,11 @@ export interface CompareSpec {
 export interface SqlChecker {
   type: "sql";
   sql: string;
+  /**
+   * 扫描面查询（r3 意见 2）：找违规型必须能证明「扫的是本批范围」而不是整表非空。
+   * 给出时 scanned = 本查询行数；未给出时回退源表行数，且构造守卫要求 sql 自带 WHERE。
+   */
+  scope_sql?: string;
   /** 期望行数语义：none（只看违规行）/ nonempty（必须至少一行） */
   expect?: "none" | "nonempty";
   /** 违规判定：rows>0 即 FAIL（默认），或 rows==0 即 FAIL */
@@ -51,19 +56,29 @@ export interface SqlPairChecker {
   compare: CompareSpec;
 }
 
-export interface CountChecker {
-  /**
-   * 计数型（评审 B5 + R2 形状闭合）：阈值比较。
-   * 集合来源二选一（不得并存）：
-   * - from：上游行集引用（"$Vx"，scanned = 上游行数，matched = 该行数）；
-   * - sql：业务数据源单语句（scanned = 源表行数，matched = 计数结果）。
-   */
-  type: "count";
-  from?: string;
-  sql?: string;
-  op: ">=" | "<=" | "==" | "!=" | ">" | "<";
-  value: number;
-}
+export type CountChecker =
+  | {
+      /**
+       * 计数型（评审 B5 + R2 形状 + r3 判别联合）：上游行集计数。
+       * scanned = 上游行数；matched = 计数。
+       */
+      type: "count";
+      from: string;
+      sql?: never;
+      op: ">=" | "<=" | "==" | "!=" | ">" | "<";
+      value: number;
+    }
+  | {
+      /**
+       * 计数型：业务数据源单语句计数（必须返回单行单列）。
+       * scanned = 源表行数；matched = 计数。
+       */
+      type: "count";
+      from?: never;
+      sql: string;
+      op: ">=" | "<=" | "==" | "!=" | ">" | "<";
+      value: number;
+    };
 
 export interface ExistsChecker {
   type: "exists";
@@ -156,6 +171,8 @@ export interface VerifySpec {
   as_of: AsOfRef;
   vu: VerifyUnit[];
   attachments: AttachmentRef[];
+  /** prepare 冻结的 schema 指纹；run 时与 witness 比对，不一致 → ERROR（评审 c） */
+  schema_fingerprint?: string;
   sealed: { review: boolean };
 }
 

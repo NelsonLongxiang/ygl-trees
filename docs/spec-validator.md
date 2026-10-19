@@ -119,8 +119,8 @@
    - **无条件拒绝**：sql 型无 WHERE 或只在视图上聚合 → 拒绝；
    - **覆盖率检查**：每条 source_clause 至少映射一个 VU，或显式声明该判据不可机器判定（进 NEEDS-MATERIAL 并说明缺什么材料）——判据不许静默消失；
    - **fail-closed**：材料不足以锚定任何检查 → NEEDS-MATERIAL，绝不落 PASS。
-   - **per-type 最小强度（评审 C3-ii）**：`sql-pair` 的 tolerance 必须落在合法数值域（ε≤0 或未设上界=空转，拒绝）；`count` 的判据不得恒真（`>= 0` 之类拒绝）；`file` 的 glob 不得匹配任意名（`*`/`**` 裸用拒绝）；`agent` 的 rubric 必须含**可证伪检查点**（全称肯定句如「格式规范」=空转，须写「字段 X 缺失即 FAIL」这类可失败项）；`sql` 无 WHERE/仅视图聚合拒绝（已有）。
-   - **typed tolerance（§4.1 补全）**：容差三单位——`abs`（绝对数值）、`percent`（百分比）、`day`（时间窗口，如「7 天内」→ `{kind:"day", value:7}`）；单位与比较域必须匹配（数值域塞 day 拒绝）。
+   - **per-type 最小强度（评审 C3-ii）**：`sql-pair` 的 tolerance 必须落在合法数值域（**`exact` 不带 ε**；`tolerance_abs|tolerance_rel|window` 的 **ε 必须 >0**（ε=0 即 exact，混用=空转，拒绝）；`range` 必须给上下界）；`count` 的判据不得恒真（`>= 0` 之类拒绝）；`file` 的 glob 不得匹配任意名（`*`/`**` 裸用拒绝）；`agent` 的 rubric 必须含**可证伪检查点**（全称肯定句如「格式规范」=空转，须写「字段 X 缺失即 FAIL」这类可失败项）；`sql` 无 WHERE/仅视图聚合拒绝（已有）。
+   - **typed tolerance（§4.1 补全）**：容差形状统一（R7）——`tolerance_abs`（绝对数值 ε）、`tolerance_rel`（相对比例 ε）、`window`（时间窗口 ε + `unit:"d"|"h"|"s"`，如「7 天内」→ `{"mode":"window","value":7,"unit":"d"}`）；`unit` **只属 window**，数值域带 unit 即拒绝。
 
 自审与修订过程全部写进 spec 的 meta（谁在第几轮改了什么），报告可追溯。
 
@@ -133,7 +133,7 @@
 | `count` | 计数窗口（telemetry 同语法 `kind[:win] op N`） | **fact** | 逐字重放 |
 | `exists` | 记录/证据存在性 | **fact** | 逐字重放 |
 | `file` | **文件级检查（m11490）**：存在性/类型/大小/zip 清单/命名规范/校验和 | **fact** | 逐字重放 |
-| `command` | CLI 命令 rc=0 / stdout 匹配 | **fact** | 逐字重放 |
+| `command` | CLI 命令 rc=0 / stdout 匹配 | **执行事实**（不进 fact 折叠；witness 可选） | 逐字重放（stdout 摘要） |
 | `agent` | **提交物审阅（m11490）**：按冻结 rubric 读提交物 → 布尔 + 逐项引文 | **review** | 可复核（rubric+引文），不承诺逐字 |
 
 **两层「真」的承诺**（§6 展开）：
@@ -151,7 +151,7 @@
 | role | 语义 | verdict | 计入总判定？ |
 |---|---|---|---|
 | **`assert`**（断言，默认） | 检查器违规行 = 业务不合规 → FAIL | PASS / FAIL / NEEDS-MATERIAL / ERROR | **是** |
-| **`source`**（数据源/投影） | 只负责把数据取出来给下游用（`$Vx.out`），自身不判定 | **不参与折叠**（PASS-by-construction；取数失败=ERROR 级联） | **否** |
+| **`source`**（数据源/投影） | 只负责把数据取出来给下游用（`$vu:<id>.out`），自身不判定 | **不参与折叠**（PASS-by-construction；取数失败=ERROR 级联） | **否** |
 
 - **总判定 = 所有 `assert` 节点独立合取**：任一 `assert` FAIL → 总 FAIL；`source` 节点不参与总判定，只作为数据管线的一环在 trace 里呈现。
 - **逐条计数不折叠**：V1 FAIL、V2 消费 `$V1.rows` 后 PASS 时，报告分别记两条（V1 FAIL / V2 PASS），summary 的 `fail` 计数以 assert 节点为准——不允许「下游过了就当上游没问题」。
@@ -166,14 +166,14 @@
 **每个 VU 是一个纯函数**：输入 → {verdict, evidence, **outputs**}。输出带类型（七域 + rowset 行集型），可被下游 VU 引用——一个验证器的结果是另一个验证器的输入：
 
 ```
-VU := (环境查询值, 附件提取值, 上游输出 $Vx.out) → { verdict, evidence, outputs: {name: type} }
+VU := (环境查询值, 附件提取值, 上游输出 `$vu:<id>.out`) → { verdict, evidence, outputs: {name: type} }
 
 V1 (sql)      : 「拉超期未对账账单」      → outputs: {rows: rowset}
 V2 (sql-pair) : 「$V1.rows 逐行 vs 报价基准」 → inputs: $V1.rows → outputs: {violations: rowset}
 V3 (count)    : 「$V2.violations == 0」   → 0 行=PASS；>0 → FAIL 并带样例行
 ```
 
-- **引用语法**：`$Vx.<output>` 出现在下游 checker 的参数位（sql 的 WHERE IN、sql-pair 的一侧、count 的集合源）。
+- **引用语法**（302cb119 r3 收窄）：唯一命名空间 **`$vu:<id>`**，仅支持两处消费位——**`count.from`**（上游行集）与 **`sql-pair` 某一侧的 `from`**；`sql` 的 `WHERE IN` 占位展开**首版不支持**（SQL 文本里出现 `$` 一律按非法字符拒绝）。
 - **执行序 = 拓扑序**：复用科技树引擎的 DAG 语义（拓扑排序 + 环检测）——规范内引用成环在 prepare 阶段拒绝（同 `node validate`）。
 - **级联语义**：上游 FAIL → 其 outputs 仍然产生（FAIL 的行集正是下游要消费的证据）；上游 ERROR（表不存在/连接断）→ 下游标 ERROR（原因=上游不可用），不装死也不中断独立分支。
 - **verdict 传播（评审 C1 补 + R5 表述修正）**：`source` 节点**不参与折叠**（PASS-by-construction，仅记录 trace；取数失败=ERROR 级联，下游引用了它才暴露）；下游 `assert` 的判定**独立成立**，不因上游 FAIL 而自动 FAIL（上游行集正是它的输入）；总判定只做 `assert` ∧，`source` 与 trace 不进 summary 分母。
@@ -193,15 +193,18 @@ overall = FAIL  if 任一 role=assert 的 verdict=FAIL
 
 优先级 **FAIL > NEEDS-MATERIAL > ERROR > PASS**——「业务不对」压过「没判成」压过「环境故障」。`source` 节点不参与（§5.1）。混合态必须在报告首屏可见（例：2 FAIL + 1 NEEDS-MATERIAL → overall=FAIL，但 NEEDS-MATERIAL 条目单独列出、附补材料清单）。
 
-**severity 权属**：S1/S2/S3 在构造阶段按判据语气赋值（材料/规范中「必须/不得」→ S1，「应」→ S2，「建议」→ S3），自审只允许上调不允许下调；severity **不改变 overall 数学**，只决定报告呈现顺序、处置队列优先级与是否自动开 task（S1 FAIL/NM 自动开）。
+**severity 权属**：S1/S2/S3 在构造阶段按判据语气赋值（材料/规范中「必须/不得」→ S1，「应」→ S2，「建议」→ S3），自审只允许上调不允许下调；severity **不改变 overall 数学**，只决定报告呈现顺序、处置队列优先级与是否自动开 task（**NEEDS-MATERIAL 自动开**；首版 FAIL 只进例外清单不自动开——与 §12 决策表 E 一致，R9 统一）。
 
 ## 5.3 比较契约 CompareSpec（评审 B5——数值/单位/基数/NULL）
 
 所有比较器只认一个 `CompareSpec`，字段闭集：
 
 ```json
-{ "mode": "abs|rel|window|exact|subset|superset|range|regex",
-  "value": 0.01, "unit": "day", "currency": "CNY", "scale": 2,
+{ "mode": "exact|tolerance_abs|tolerance_rel|window|subset|superset|range|regex",
+  "value": 0.01,  // exact 不带；tolerance_* 必 >0；range 为下界
+  "value_max": 10, // 仅 range
+  "unit": "d",     // 仅 window（d|h|s）
+  "currency": "CNY", "scale": 2,
   "cardinality": "1:1|1:N|N:1", "null": "error|equal|ignore" }
 ```
 
@@ -221,7 +224,7 @@ overall = FAIL  if 任一 role=assert 的 verdict=FAIL
 ```
 
 - `rows_scanned = 0` → **NEEDS-MATERIAL**（表空/选错表/谓词全 NULL 都不许落 PASS）；
-- 期望非空但 `rows_matched = 0` → NEEDS-MATERIAL（要么数据缺，要么查询写错）；
+- 零匹配结论**按型而定**（不再一刀切 NM；逐型见 `docs/verify-contract.md` §2.1 表：找违规 matched=0 → **PASS**；找缺失 matched=0 → **FAIL**；`file` 缺省 PASS、`min`/`require` 缺失 → FAIL；`count` 见下条）；
 - prepare 冻结 schema fingerprint（表/列/类型），run 不一致 → **ERROR**（schema 漂移=环境不满足契约）；
 - 证据行 canonical 排序（主键升序，NULL 置末）——否则「逐字重放」不成立。
 
@@ -312,6 +315,8 @@ verify list                        # 规范清单与状态
 
 **运行契约（agent/CI 友好）**：`verify run --json` 输出单对象 `{run_id, spec_version, summary:{pass,fail,needs_material,error}, report_path}`。**退出码只表达过程**：`rc=0`=验证已执行出报告（无论 PASS/FAIL——FAIL 是有效结论，不是程序错误）；`rc=1`=运行错误；`rc=2`=用法错误。判定在报告里，不在退出码里——agent 驱动时不会把「有问题的业务」误判成「工具坏了」。
 
+**时间确定性（R13）**：`as_of` 必须锚定到冻结值；SQL 中出现 `NOW()/CURRENT_TIMESTAMP/CURRENT_DATE` 一律**构造期拒绝**（无法重放），时间参数以字面量绑定。
+
 **运行环境**：任何装了 ygl-trees 的机器 + 规范声明的数据源可达（SQLite 文件路径 / PG URL / workspace 内附件 source）。连接串运行时传入、不入库。
 
 ### 8.5.1 交付形态：封包二进制（m11659 + m11703 用户裁定）
@@ -360,7 +365,7 @@ verify list                        # 规范清单与状态
 5. **多数据源连接**：第一版是否带 PG（.157 直连）——推荐带（地基已在），但连接串安全（不入库，运行时传入）。
 6. **前端批序**（m11362 新增）：CLI 后端先行（M13-1 命令族+检查器+报告，可独立验收）→ WebUI 三视图（M13-2 材料提交/构造追溯/报告看板）——推荐此序（前端依赖后端契约稳定）；若要并行则 WebUI 先做材料提交视图（依赖最少）。
 7. **附件提取通道**（m11390 新增）：xlsx/csv 表格解析（纯库，如 xlsx 包）；PDF 文本抽取（pdf-parse 类）；图片值提取走**视觉模型**（Vercel AI Gateway 同通道，prepare 一次性）——推荐第一版表格+图片先上、PDF 视样本再定；提取值全部带出处锚点。
-8. **管线组合深度**（m11413 新增）：VU 间 `$Vx.out` 引用 + 拓扑执行 + 环检测拒绝 + 级联语义——推荐首版就上（DAG 引擎复用科技树现成件，边际成本≈引用解析器）；跨 spec 组合推后。
+8. **管线组合深度**（m11413 新增）：VU 间 `$vu:<id>.out` 引用 + 拓扑执行 + 环检测拒绝 + 级联语义——推荐首版就上（DAG 引擎复用科技树现成件，边际成本≈引用解析器）；跨 spec 组合推后。
 9. **agent 型审阅契约**（m11490 新增）：rubric 在 prepare 自审阶段冻结（逐项检查点清单）+ 提交物快照冻结；run 时模型只按冻结 rubric 对照冻结提交物输出布尔+逐项引文；报告标注 review 层并给事后复核通道——推荐此形态（把模型调用关进冻结输入的笼子里）。
 10. **自审实施形态**（m11558 新增）：独立上下文复核 agent——同进程二次调用（带干净 messages）vs 子进程/spawn 独立会话；推荐**同进程独立上下文**（成本低、可观测），自审 prompt 只含「材料 + VU 清单 + 三问」，不含构造理由与修订历史（避免自我确认偏误）。
 

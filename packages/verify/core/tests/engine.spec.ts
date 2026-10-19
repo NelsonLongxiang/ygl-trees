@@ -38,7 +38,7 @@ function spec(vu: VerifyUnit[]): VerifySpec {
     spec_id: "spec_test",
     spec_version: 1,
     verifier: { engine_version: "0.1.0", corpus_version: "1.0" },
-    as_of: { frozen_at: "2026-10-19T00:00:00Z" },
+    as_of: { kind: "snapshot", value: "2026-10-19T00:00:00.000Z" },
     attachments: [],
     sealed: { review: false },
     vu,
@@ -48,7 +48,7 @@ function spec(vu: VerifyUnit[]): VerifySpec {
 describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
   it("空表上的 sql 断言绝不落 PASS，降级 NEEDS-MATERIAL 并带 witness", async () => {
     const report = await runVerify(
-      spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from freight_bill", fail_when: "rows>0" } })]),
+      spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from freight_bill where batch='2026-10'", fail_when: "rows>0" } })]),
       { runner: fakeRunner({ freight_bill: [] }) },
     );
     expect(report.overall).toBe("NEEDS-MATERIAL");
@@ -65,7 +65,7 @@ describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
       schemaFingerprint: () => "sha256:fake",
     };
     const report = await runVerify(
-      spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from freight_bill", fail_when: "rows>0" } })]),
+      spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from freight_bill where batch='2026-10'", fail_when: "rows>0" } })]),
       { runner },
     );
     expect(report.overall).toBe("PASS");
@@ -83,8 +83,8 @@ describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
   });
 
   it("管线环检测直接报错（不静默跳过）", () => {
-    const a = unit({ id: "A", checker: { type: "sql", sql: "select * from t from $B" } });
-    const b = unit({ id: "B", checker: { type: "sql", sql: "select * from t from $A" } });
+    const a = unit({ id: "A", checker: { type: "sql", sql: "select * from t from $vu:B" } });
+    const b = unit({ id: "B", checker: { type: "sql", sql: "select * from t from $vu:A" } });
     const r = topoOrder([a, b]);
     expect("cycle" in r).toBe(true);
   });
@@ -93,7 +93,7 @@ describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
     const report = await runVerify(
       spec([
         unit({ id: "SRC", role: "source", checker: { type: "sql", sql: "select * from bills" } }),
-        unit({ id: "C1", checker: { type: "count", from: "$SRC", op: ">=", value: 1 } }),
+        unit({ id: "C1", checker: { type: "count", from: "$vu:SRC", op: ">=", value: 1 } }),
       ]),
       { runner: fakeRunner({ bills: [{ id: 1 }, { id: 2 }] }) },
     );
@@ -110,7 +110,7 @@ describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
           id: "P1",
           checker: {
             type: "sql-pair",
-            left: { from: "$SRC", key: "id", value: "amount" } as never,
+            left: { from: "$vu:SRC", key: "id", value: "amount" } as never,
             right: { table: "bill", key: "id", value: "amount" } as never,
             compare: { mode: "exact", currency: "CNY", scale: 2 },
           },
@@ -122,5 +122,61 @@ describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
     const p1 = report.vu.find((r) => r.id === "P1")!;
     expect(p1.verdict).toBe("ERROR");
     expect(String(p1.evidence?.reason)).toContain("duplicate key");
+  });
+});
+
+describe("engine: 评审 a–f 实现缺口守卫", () => {
+  it("a) source 取数失败不吞：source=ERROR 且下游级联 ERROR", async () => {
+    const runner: QueryRunner = {
+      query(sql: string) {
+        if (/from\s+bad_src/i.test(sql)) throw new Error("no such table: bad_src");
+        return [{ v: 1 }];
+      },
+      tableRows() { return 1; },
+      schemaFingerprint() { return "sha256:fake"; },
+    };
+    const report = await runVerify(
+      spec([
+        unit({ id: "S1", role: "source", outputs: ["rows"], checker: { type: "sql", sql: "select * from bad_src" } }),
+        unit({ id: "V1", checker: { type: "count", from: "$vu:S1", op: ">=", value: 1 } }),
+      ]),
+      { runner },
+    );
+    expect(report.vu.find((v) => v.id === "S1")?.verdict).toBe("ERROR");
+    expect(report.vu.find((v) => v.id === "V1")?.verdict).toBe("ERROR");
+  });
+
+  it("e) 没有 assert 的规范在构造期拒绝（不允许空规范判 PASS）", async () => {
+    await expect(
+      runVerify(spec([unit({ id: "S1", role: "source", checker: { type: "sql", sql: "select * from t where x=1" } })]), {
+        runner: fakeRunner({ t: [{ x: 1 }] }),
+      }),
+    ).rejects.toThrow(/no assert/i);
+  });
+
+  it("c) schema 指纹漂移 → ERROR 并记 schema_drift", async () => {
+    const s = spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from t where x=1", fail_when: "rows>0" } })]);
+    s.schema_fingerprint = "sha256:frozen_before_prepare";
+    const report = await runVerify(s, { runner: fakeRunner({ t: [{ x: 1 }] }) });
+    const r = report.vu[0];
+    expect(r.verdict).toBe("ERROR");
+    expect(JSON.stringify(r.evidence ?? {})).toContain("schema_drift");
+  });
+
+  it("② sql 找违规缺 WHERE 且无 scope_sql → ERROR（构造守卫）", async () => {
+    const report = await runVerify(
+      spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from t", fail_when: "rows>0" } })]),
+      { runner: fakeRunner({ t: [{ x: 1 }] }) },
+    );
+    expect(report.vu[0].verdict).toBe("ERROR");
+  });
+
+  it("R13 sql 出现 now()/current_timestamp → 构造期拒绝", async () => {
+    await expect(
+      runVerify(
+        spec([unit({ id: "V1", checker: { type: "sql", sql: "select * from t where created < current_timestamp", fail_when: "rows>0" } })]),
+        { runner: fakeRunner({ t: [] }) },
+      ),
+    ).rejects.toThrow(/time function|as_of/i);
   });
 });
