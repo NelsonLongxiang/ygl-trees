@@ -94,6 +94,24 @@
 
 **闭集纪律**：新增 type = 破坏性变更（走 schema 版本）。判定输出永远不含概率；语义判不了的判据（如「文案语气合规」）在 prepare 阶段就该被建议为 `human`。
 
+## 5.5 管线组合（函数语义，m11413 裁定）
+
+**每个 VU 是一个纯函数**：输入 → {verdict, evidence, **outputs**}。输出带类型（七域 + rowset 行集型），可被下游 VU 引用——一个验证器的结果是另一个验证器的输入：
+
+```
+VU := (环境查询值, 附件提取值, 上游输出 $Vx.out) → { verdict, evidence, outputs: {name: type} }
+
+V1 (sql)      : 「拉超期未对账账单」      → outputs: {rows: rowset}
+V2 (sql-pair) : 「$V1.rows 逐行 vs 报价基准」 → inputs: $V1.rows → outputs: {violations: rowset}
+V3 (count)    : 「$V2.violations == 0」   → verdict FAIL 带样例行
+```
+
+- **引用语法**：`$Vx.<output>` 出现在下游 checker 的参数位（sql 的 WHERE IN、sql-pair 的一侧、count 的集合源）。
+- **执行序 = 拓扑序**：复用科技树引擎的 DAG 语义（拓扑排序 + 环检测）——规范内引用成环在 prepare 阶段拒绝（同 `node validate`）。
+- **级联语义**：上游 FAIL → 其 outputs 仍然产生（FAIL 的行集正是下游要消费的证据）；上游 ERROR（表不存在/连接断）→ 下游标 ERROR（原因=上游不可用），不装死也不中断独立分支。
+- **确定性保持**：组合是纯数据流——同输入同输出同判定；报告=管线执行 trace（每级展示收到什么、产出什么、判了什么）。
+- **与科技树同构**：spec 内 VU 图是 mini-DAG，树引擎的闭包/拓扑/环检测直接复用；跨 spec 组合（一个 spec 的报告作为另一个 spec 的输入）未来走 artifact 引用，首版不做。
+
 ## 6. 结果契约（确定性核心）
 
 - 每项 verdict ∈ {PASS, FAIL, NEEDS-HUMAN, ERROR}：
@@ -153,3 +171,4 @@ verify list                        # 规范清单与状态
 5. **多数据源连接**：第一版是否带 PG（.157 直连）——推荐带（地基已在），但连接串安全（不入库，运行时传入）。
 6. **前端批序**（m11362 新增）：CLI 后端先行（M13-1 命令族+检查器+报告，可独立验收）→ WebUI 三视图（M13-2 材料提交/VU 确认/报告看板）——推荐此序（前端依赖后端契约稳定，避免双头改）；若要并行则 WebUI 先做材料提交视图（依赖最少）。
 7. **附件提取通道**（m11390 新增）：xlsx/csv 表格解析（纯库，如 xlsx 包）；PDF 文本抽取（pdf-parse 类）；图片值提取走**视觉模型**（Vercel AI Gateway 同通道，prepare 一次性）——推荐第一版表格+图片先上、PDF 视样本再定；提取值全部带出处锚点。
+8. **管线组合深度**（m11413 新增）：VU 间 `$Vx.out` 引用 + 拓扑执行 + 环检测拒绝 + 级联语义——推荐首版就上（DAG 引擎复用科技树现成件，边际成本≈引用解析器）；跨 spec 组合推后。
