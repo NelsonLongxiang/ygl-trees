@@ -1,0 +1,132 @@
+{
+  "candidates": [
+    {
+      "source_clause": "I1 域间直连只允许白名单内的历史债务：allowed=0 的 cross_domain_imports 行必须为 0。",
+      "anchor": {
+        "quote": "I1 域间直连只允许白名单内的历史债务：allowed=0 的 cross_domain_imports 行必须为 0。",
+        "locator": "material.md#I1"
+      },
+      "title": "跨域直连不超出冻结白名单",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "cross_domain_imports",
+          "select": [],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "allowed",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "op": "==",
+        "value": 0
+      }
+    },
+    {
+      "source_clause": "I2 事件面不得萎缩：event_sites 的调用点总数不得少于 20（ctx.on / ctx.emit / onEvent / onEventKind / emitEvent）。",
+      "anchor": {
+        "quote": "I2 事件面不得萎缩：event_sites 的调用点总数不得少于 20（ctx.on / ctx.emit / onEvent / onEventKind / emitEvent）。",
+        "locator": "material.md#I2"
+      },
+      "title": "事件面不萎缩（floor）",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "event_sites",
+          "select": []
+        },
+        "op": ">=",
+        "value": 20
+      }
+    },
+    {
+      "source_clause": "I3 0.86 已删除的服务不得复活：service_defs 中 class 为 TechTreeService 或 WebAppService 的行必须为 0。",
+      "anchor": {
+        "quote": "I3 0.86 已删除的服务不得复活：service_defs 中 class 为 TechTreeService 或 WebAppService 的行必须为 0。",
+        "locator": "material.md#I3"
+      },
+      "title": "已删除服务不复活",
+      "severity": "S1",
+      "checker": {
+        "type": "exists",
+        "predicate": {
+          "from": "service_defs",
+          "select": [],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "class",
+                "op": "in",
+                "value": [
+                  "TechTreeService",
+                  "WebAppService"
+                ]
+              }
+            ]
+          }
+        },
+        "expect": false
+      }
+    },
+    {
+      "source_clause": "I4 每个 Cordis 服务必须在同一文件声明 ctx 合并：has_declare_module=0 或 ctx_key 为 NULL 的行必须为 0。",
+      "anchor": {
+        "quote": "I4 每个 Cordis 服务必须在同一文件声明 ctx 合并：has_declare_module=0 或 ctx_key 为 NULL 的行必须为 0。",
+        "locator": "material.md#I4"
+      },
+      "title": "服务必须声明 ctx 合并",
+      "severity": "S2",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "service_defs",
+          "select": [
+            "file",
+            "class"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "has_declare_module",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "ctx_key",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "I5 事件表裸写只允许既有存量：bare_event_inserts 的写入点数不得超过 13（冻结基线，收敛另行排期）。",
+      "anchor": {
+        "quote": "I5 事件表裸写只允许既有存量：bare_event_inserts 的写入点数不得超过 13（冻结基线，收敛另行排期）。",
+        "locator": "material.md#I5"
+      },
+      "title": "事件表裸写不新增（ceiling）",
+      "severity": "S3",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "bare_event_inserts",
+          "select": []
+        },
+        "op": "<=",
+        "value": 13
+      }
+    }
+  ]
+}

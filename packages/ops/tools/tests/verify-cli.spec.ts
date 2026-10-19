@@ -76,6 +76,39 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(obj.problems.join(" ")).toMatch(/payload_sha256/);
   });
 
+  it("archive 未知 run → rc=1 且点名（不产半包）", () => {
+    const r = run(["verify", "archive", "run_deadbeef00000000", "--json"]);
+    expect(r.rc).toBe(1);
+    expect((JSON.parse(r.out) as { error: string }).error).toMatch(/run not found/);
+  });
+
+  it("archive verify 缺文件 → rc=1 且 problems 点名（机器可读）", () => {
+    const r = run(["verify", "archive", "verify", join(home, "nope.zip"), "--json"]);
+    expect(r.rc).toBe(1);
+    const obj = JSON.parse(r.out) as { ok: boolean; problems?: string[]; error?: string };
+    expect(obj.ok).toBe(false);
+    expect((obj.problems ?? [obj.error ?? ""]).join(" ")).toMatch(/not found|ENOENT|no such file|cannot read/i);
+  });
+
+  it("archive verify 不是 zip → rc=1 且 problems 点名（判定不在 rc 里装）", () => {
+    const fake = join(home, "fake.yglverify.zip");
+    writeFileSync(fake, "not a zip at all", "utf8");
+    const r = run(["verify", "archive", "verify", fake, "--json"]);
+    expect(r.rc).toBe(1);
+    const obj = JSON.parse(r.out) as { ok: boolean; problems: string[] };
+    expect(obj.ok).toBe(false);
+    expect(obj.problems.length).toBeGreaterThan(0);
+  });
+
+  it("self-check --no-cases → rc=0（环境/语料摘要/形状全绿，语料实跑显式 skip）", () => {
+    const corpus = join(REPO, "packages", "verify", "core", "corpus");
+    const r = run(["verify", "self-check", "--corpus", corpus, "--no-cases", "--json"]);
+    expect(r.rc).toBe(0);
+    const obj = JSON.parse(r.out) as { ok: boolean; items: Array<{ id: string; status: string }> };
+    expect(obj.ok).toBe(true);
+    expect(obj.items.find((i) => i.id === "corpus-cases")?.status).toBe("skip");
+  }, 60_000);
+
   it("未知子命令 → rc=2（verify 组同其他组口径）", () => {
     const r = run(["verify", "frobnicate", "--json"]);
     expect(r.rc).toBe(2);

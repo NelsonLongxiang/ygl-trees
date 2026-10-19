@@ -12,7 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
 import type { Env } from "../../../core/database/src/types";
@@ -21,7 +21,10 @@ import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../.
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { prepareSpec } from "../../../verify/core/src/prepare";
+import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
+import type { ArchiveWith } from "./archive";
+import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 
 const KINDS = ["materials", "specs", "reports", "registrations"] as const;
 
@@ -162,6 +165,43 @@ function findMaterial(env: Env, id: string): MaterialRecord {
   return readJson<MaterialRecord>(file);
 }
 
+/** 找语料目录：显式 flag > YGL_VERIFY_CORPUS > 从 cwd 向上找 packages/verify/core/corpus。 */
+function resolveCorpus(explicit?: string): string | undefined {
+  if (explicit) return existsSync(explicit) ? explicit : undefined;
+  const envDir = process.env.YGL_VERIFY_CORPUS;
+  if (envDir && existsSync(envDir)) return envDir;
+  let dir = process.cwd();
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, "packages", "verify", "core", "corpus");
+    if (existsSync(join(candidate, "manifest.json"))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+async function selfCheckCase(env: Env, root: string, args: any): Promise<number> {
+  const { ctx } = env;
+  const res = await selfCheck({
+    corpusDir: resolveCorpus(args.flags.corpus ? String(args.flags.corpus) : undefined),
+    archivesDir: join(root, "archives"),
+    archiveVerifier: (zip: string) => verifyArchiveBytes(readFileSync(zip)),
+    runCases: args.flags.cases !== false && args.flags["no-cases"] !== true,
+    caseLimit: args.flags.limit ? Number(args.flags.limit) : undefined,
+  });
+  if (ctx.json) {
+    console.log(JSON.stringify(res, null, 2));
+    return res.ok ? 0 : 1;
+  }
+  for (const item of res.items) {
+    const mark = item.status === "ok" ? paint(C.green, "✓", ctx.color) : item.status === "skip" ? paint(C.dim, "–", ctx.color) : paint(C.red, "✗", ctx.color);
+    out(ctx, `  ${mark} ${item.id.padEnd(18)} ${item.detail}`);
+  }
+  out(ctx, res.ok ? paint(C.green, "  self-check: ok", ctx.color) : paint(C.red, "  self-check: FAILED", ctx.color));
+  return res.ok ? 0 : 1;
+}
+
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx } = env;
   const p = paths(env);
@@ -264,6 +304,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         materialIndex,
         schemaProbe,
         specId: `spec_${short(sha256(materialId))}`,
+        title: args.flags.title ? String(args.flags.title) : undefined,
+        domain: args.flags.domain ? String(args.flags.domain) : undefined,
         specVersion: args.flags["spec-version"] ? Number(args.flags["spec-version"]) : prevVersion + 1,
         // as_of 由调用方（= 这里）给：默认冻结时刻；--as-of 可显式钉快照时点
         asOf: { kind: "snapshot", value: String(args.flags["as-of"] || new Date().toISOString()) },
@@ -328,6 +370,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `cannot snapshot --db: ${e?.message || e}`);
         return 1;
       }
+      try {
+        retainSnapshot(p.root, snap);
+      } catch {
+        // 快照留存失败不阻塞判定；只有 `--with snapshot` 归档会要求它
+      }
       const runner = new SqliteRunner(snap.path);
       return runVerify(spec, { runner, submissionDir: submission, mode: "open" })
         .then((report): number => {
@@ -335,8 +382,26 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           withSource.payload_sha256 = payloadHash(withSource);
           const file = join(p.reports, `${report.run_id}.json`);
           writeJson(file, withSource);
+          let archived: { path: string; filename: string; archive_id: string; archive_sha256: string; zip_sha256: string } | undefined;
+          let archiveError = "";
+          if (args.flags["no-archive"] !== true) {
+            try {
+              archived = archiveRun(p.root, report.run_id, { id: String(report.spec_id), version: report.verifier.spec_version }, args.flags);
+            } catch (e: any) {
+              archiveError = e?.message || String(e);
+            }
+          }
           if (ctx.json) {
-            console.log(JSON.stringify({ run_id: report.run_id, spec_id: report.spec_id, spec_version: report.verifier.spec_version, overall: report.overall, summary: report.summary, report_path: file }));
+            console.log(JSON.stringify({
+              run_id: report.run_id,
+              spec_id: report.spec_id,
+              spec_version: report.verifier.spec_version,
+              overall: report.overall,
+              summary: report.summary,
+              report_path: file,
+              archive: archived ?? null,
+              archive_error: archiveError || undefined,
+            }));
           } else {
             out(ctx, `  ${report.overall === "PASS" ? paint(C.green, "PASS", ctx.color) : report.overall === "FAIL" ? paint(C.red, "FAIL", ctx.color) : paint(C.yellow, report.overall, ctx.color)}  ${report.run_id}`);
             out(ctx, `  pass ${report.summary.pass} · fail ${report.summary.fail} · needs-material ${report.summary.needs_material} · error ${report.summary.error}`);
@@ -346,8 +411,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               out(ctx, `    ${mark} ${v.id} ${v.verdict}${titles.get(v.id) ? `  ${titles.get(v.id)}` : ""}${"witness" in v && v.witness ? `  (scanned ${v.witness.rows_scanned} / matched ${v.witness.rows_matched})` : ""}`);
             }
             out(ctx, paint(C.dim, `  report: ${file}`, ctx.color));
+            if (archived) out(ctx, paint(C.dim, `  archive: ${archived.path}  (${archived.archive_id})`, ctx.color));
+            else if (archiveError) out(ctx, paint(C.red, `  ✗ archive failed: ${archiveError}`, ctx.color));
+            else out(ctx, paint(C.dim, "  archive: skipped (--no-archive)", ctx.color));
           }
-          return 0; // rc 只表达过程：FAIL 是有效结论
+          return archiveError ? 1 : 0; // rc 只表达过程：FAIL 是有效结论；归档失败是过程错误
         })
         .catch((e: any): number => {
           bad(ctx, `run failed: ${e?.message || e}`);
@@ -356,6 +424,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     case "list": {
+      if (args.flags.unarchived === true) {
+        const runs = unarchivedRuns(p.root);
+        if (ctx.json) {
+          console.log(JSON.stringify(runs, null, 2));
+          return 0;
+        }
+        if (!runs.length) {
+          out(ctx, paint(C.dim, "  every run is archived", ctx.color));
+          return 0;
+        }
+        table(ctx, runs, ["run_id", "spec_id", "overall", "created"], []);
+        return 0;
+      }
       const dirs = existsSync(p.specs) ? readdirSync(p.specs) : [];
       const rows = dirs
         .filter((d) => existsSync(join(p.specs, d, "spec.json")))
@@ -454,6 +535,84 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
 
+    case "self-check": {
+      return selfCheckCase(env, p.root, args);
+    }
+
+    case "archive": {
+      const target = rest[0];
+      if (!target) {
+        bad(ctx, "usage: verify archive <run-id|spec-id> [--with materials|snapshot|binary|all] [--out <file>] | verify archive verify <file>");
+        return 2;
+      }
+      if (target === "verify") {
+        const file = rest[1];
+        if (!file) {
+          bad(ctx, "usage: verify archive verify <file.yglverify.zip>");
+          return 2;
+        }
+        const res = verifyArchiveFile(file);
+        if (ctx.json) {
+          console.log(JSON.stringify({ ok: res.ok, archive_id: res.manifest?.archive_id ?? null, archive_sha256: res.manifest?.archive_sha256 ?? null, items: res.manifest?.items.length ?? 0, problems: res.problems, warnings: res.warnings }));
+        } else if (res.ok) {
+          out(ctx, `  ✓ archive verified: ${res.manifest?.archive_id}  (${res.manifest?.items.length} item(s), contract ${res.manifest?.contract_version})`);
+        } else {
+          for (const pr of res.problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
+        }
+        for (const w of res.warnings) out(ctx, paint(C.yellow, `  ! ${w}`, ctx.color));
+        return res.ok ? 0 : 1;
+      }
+      let runId = target;
+      if (target.startsWith("spec_")) {
+        const reports = existsSync(p.reports)
+          ? readdirSync(p.reports)
+              .filter((f) => f.endsWith(".json"))
+              .map((f) => readJson<VerifyReport>(join(p.reports, f)))
+              .filter((r) => r.spec_id === target)
+              .sort((a, b) => String(a.finished).localeCompare(String(b.finished)))
+          : [];
+        const last = reports.pop();
+        if (!last) {
+          bad(ctx, `no runs for spec ${target} — run it first`);
+          return 1;
+        }
+        runId = String(last.run_id);
+      }
+      const reportFile = join(p.reports, `${runId}.json`);
+      if (!existsSync(reportFile)) {
+        bad(ctx, `run not found: ${runId}`);
+        return 1;
+      }
+      const report = readJson<VerifyReport>(reportFile);
+      try {
+        const built = buildArchive({
+          verifyRoot: p.root,
+          runId,
+          with: archiveWithOf(args.flags.with),
+          out: args.flags.out ? String(args.flags.out) : undefined,
+        });
+        appendRegistry(p.root, runId, { id: String(report.spec_id), version: report.verifier.spec_version }, {
+          archive_id: built.manifest.archive_id,
+          archive_sha256: built.manifest.archive_sha256,
+          zip_sha256: built.zip_sha256,
+          filename: built.filename,
+          path: built.path,
+          created: built.manifest.created,
+          with: built.manifest.with,
+        });
+        if (ctx.json) {
+          console.log(JSON.stringify({ run_id: runId, path: built.path, filename: built.filename, archive_id: built.manifest.archive_id, archive_sha256: built.manifest.archive_sha256, zip_sha256: built.zip_sha256, with: built.manifest.with, items: built.manifest.items.length }));
+        } else {
+          out(ctx, `  ✓ archived ${runId} → ${built.path}`);
+          out(ctx, paint(C.dim, `    ${built.manifest.archive_id}  ${built.manifest.items.length} item(s)  with=${built.manifest.with.join(",")}`, ctx.color));
+        }
+        return 0;
+      } catch (e: any) {
+        bad(ctx, `archive failed: ${e?.message || e}`);
+        return 1;
+      }
+    }
+
     case "trace": {
       const specId = rest[0];
       if (!specId) {
@@ -500,10 +659,49 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `unknown verify action: ${action}`);
         return 2;
       }
-      out(ctx, "usage: verify submit|prepare|run|list|report|report import|trace|export");
+      out(ctx, "usage: verify submit|prepare|run|list|report|report import|trace|export|archive|archive verify|self-check");
       return 0;
     }
   }
+}
+
+function archiveWithOf(raw: unknown): ArchiveWith[] {
+  if (raw === undefined || raw === null || raw === true) return ["materials"];
+  const parts = String(raw)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const out: ArchiveWith[] = [];
+  for (const part of parts) {
+    if (part === "all") {
+      out.push(...ARCHIVE_WITH);
+      continue;
+    }
+    if (!ARCHIVE_WITH.includes(part as ArchiveWith)) throw new Error(`unknown --with kind: ${part} (allowed: ${ARCHIVE_WITH.join("|")}|all)`);
+    out.push(part as ArchiveWith);
+  }
+  return out.length ? out : ["materials"];
+}
+
+/** 默认归档；`--no-archive` 关闭。归档失败不回滚报告，只把 rc 置 1（过程错误）。 */
+function archiveRun(
+  root: string,
+  reportRunId: string,
+  spec: { id: string; version: number },
+  flags: Record<string, unknown>,
+): { path: string; filename: string; archive_id: string; archive_sha256: string; zip_sha256: string } {
+  const withKinds = archiveWithOf(flags.with);
+  const built = buildArchive({ verifyRoot: root, runId: reportRunId, with: withKinds, out: flags.out ? String(flags.out) : undefined });
+  appendRegistry(root, reportRunId, spec, {
+    archive_id: built.manifest.archive_id,
+    archive_sha256: built.manifest.archive_sha256,
+    zip_sha256: built.zip_sha256,
+    filename: built.filename,
+    path: built.path,
+    created: built.manifest.created,
+    with: built.manifest.with,
+  });
+  return { path: built.path, filename: built.filename, archive_id: built.manifest.archive_id, archive_sha256: built.manifest.archive_sha256, zip_sha256: built.zip_sha256 };
 }
 
 function mimeOf(path: string): string {

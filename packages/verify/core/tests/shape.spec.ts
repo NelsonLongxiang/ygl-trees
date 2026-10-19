@@ -31,6 +31,9 @@ function shapeOf(value: unknown, prefix = "", out: string[] = []): string[] {
     if (arr.length) shapeOf(arr[0], `${prefix}[]`, out);
   } else if (t === "object") {
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      // 值为 undefined 的键在 JSON 里本就不存在（序列化时省略），不记为形状——否则
+      // 快照会声明一个实际不可见字段（如 open 模式下的 verifier.binary_sha256）。
+      if ((value as Record<string, unknown>)[key] === undefined) continue;
       shapeOf((value as Record<string, unknown>)[key], prefix ? `${prefix}.${key}` : key, out);
     }
   }

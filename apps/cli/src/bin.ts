@@ -762,6 +762,9 @@ export function generateLlmsManifest(): string {
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
       ["verify list / report <run-id> / trace <spec-id> / export <spec-id>", "catalog, reports, construction trace, .yglverify.json"],
       ["verify report import <report.json>", "import a sealed-run report (payload/binary/spec_version checks)"],
+      ["verify archive <run-id|spec-id> / archive verify <file>", "archive bundle (report+spec+materials) / recompute the full hash chain"],
+      ["verify list --unarchived", "runs that exist but were never archived"],
+      ["verify self-check", "recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [
       ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.97.0（2026-10-20）归档包 + 递归自校验：产物可带走、校验器可被校验
+
+- **归档是默认动作（`verify archive`，契约 §7）**：`verify run` 结束即归档，`--no-archive` 才关。文件名有语法（`yglverify-<domain>-<slug>-v<n>-<utc>-r<run8>.yglverify.zip`，domain/slug 都可退化），包内目录唯一（`manifest/report/spec/prepare?/trace?/materials/<id>/files/<sha12>-<name>`，深度 ≤4、全 ASCII 化、原名进 `items[].original_name`）。**报告不可变**：归档身份写侧车 `$YGL_HOME/verify/archives/<run_id>.json`，不改 `report.json`（否则 payload_sha256 自毁）。
+- **确定性 zip（`zip-store.ts`）**：store-only、条目按路径字节序、mtime 固定 1980-01-01、外部属性 0644、无目录条目/extra/comment —— 同输入同字节，`zip_sha256` 跨平台可复算；`archive_sha256 = sha256(canonical(manifest 去掉自身两个字段))`，`archive_id = arc_<前12>`。附独立 zip reader（零依赖，CRC 不符即拒）。
+- **`verify archive verify <file>` 重算全链**：路径规范 → 每条 item sha256/size → `archive_sha256` 重算 → 未声明条目点名 → `report.payload_sha256` 重算 → summary/overall **按 VU 结果重算**比对 → contract/corpus/spec_version/run_id 一致 → `materials_sha256` 与 spec 一致。任一环失败 rc=1 点名文件；**判定结论不在归档校验里表达**。
+- **`verify self-check`（递归验证单入口，契约 §7.6）**：environment → canonical 向量 → 语料冻结摘要 → 形状快照 → 语料实跑（33 例含红队）→ 归档重算，六项逐条报 ok/fail/skip。**SKIP 不等于 OK**：发布产物不含 `corpus/`，缺语料时显式 skip 并提示 `--corpus` / `YGL_VERIFY_CORPUS`，绝不静默显示通过。`--no-cases` 关实跑、`--limit N` 只跑前 N 例。
+- **语料运行器随包发布**：实现从 `corpus/run.ts` 移到 `src/corpus-runner.ts`（`corpus/run.ts` 保留为 re-export + 默认参数适配），`verify self-check` 才能用发布产物跑语料；惰性 `node:sqlite` 绑定保持不变（未触达 verify 的命令仍零 stderr）。
+- **形状快照口径修正**：值为 `undefined` 的键不再进形状（它本就在 JSON 里不存在，如 open 模式的 `verifier.binary_sha256`），快照重铸；`self-check` 的 shapes 项校验每行 `path:type` 形态。
+- **真实试炼场：Cordis 应用评审自动化（`scripts/cordis-scan.mjs` + `scripts/cordis-drift.mjs`）**：m00310 的一次性 Cordis 评审固化成 verify spec（五条不变量：跨域直连白名单外为 0 / 事件面 ≥20 / 0.86 删除的服务不复活 / 服务必须声明 ctx 合并 / 事件表裸写 ≤13），每轮 = 一次 verify run。采集器把 `packages/**`、`apps/**` 扫成只读 sqlite 快照（四表 + `meta.source_digest`），`--root` 可指向任意树用于验收注入。实测：HEAD `overall PASS` 5/5；把 src 拷到临时树并注入一条 `knowledge/skills → techtree/model` 跨域 import → 同一冻结 spec `overall FAIL`，只有 V1 失败，witness `rows_scanned=151 / rows_matched=1`、`evidence{count:1,op:"==",expected:0}`；`archive verify` ok、`report import` imported。方法论与纪律见 `scripts/verify/cordis-drift/README.md`。
+- **修 `ratchet --write` 空转（真实缺陷）**：回归分支 `continue` 早退导致认账值从未写进基线——文档承诺的「显式 `--write` 重设基线」实际无效。改为作者席 `--write` 时 adopt 新值并记 `accepted`（rc=0），否则仍 rc=1。本版因此把 bundle 基线从 507800 重设为 552030（verify 命令面 + 归档 + 自校验的真实增量）。
+- 测试：unit 370 / demo 128 / contract 100 / readme 53。新增 `archive.spec.ts` ×13（命名/路径/确定性 zip/篡改/缺件/侧车）、`selfcheck.spec.ts` ×6（全绿/改语料/改向量/无语料 skip/归档注入/摘要同算法）、`verify-cli.spec.ts` +4（archive 未知 run、缺文件、非 zip、self-check）。
+
 ## 0.96.0（2026-10-20）M13-1 spec validator：verify 命令面 + 契约/语料钉 1.0 + 度量棘轮
 
 - **verify 命令面（M13-1 落地，主推④ 的机器判定入口）**：`submit`（冻结材料：正文 + 附件 sha256/size/mime）→ `prepare`（候选 → P0–P5 流水线：逐字锚点 → 机械形态校验 → 盲审三问 → 红队 → 冻版）→ `run`（**只碰 sqlite 快照副本**，报告记 `data_source{kind,sha256,source,captured_at}`）→ `list`/`report`/`trace`/`export`/`report import`（校验 payload_sha256 + 构建登记 + 三版本一致）。rc 只表达过程：发现 FAIL 的报告仍 rc=0，判定看 `overall`；`prepare` 只有 `ready` 才 rc=0。

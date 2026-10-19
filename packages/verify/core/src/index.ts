@@ -10,3 +10,5 @@ export * from "./compare";
 export * from "./engine";
 export * from "./sqlite-runner";
 export * from "./prepare";
+export * from "./selfcheck";
+export * from "./corpus-runner";

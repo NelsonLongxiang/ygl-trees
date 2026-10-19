@@ -85,8 +85,14 @@ for (const m of METRICS) {
   }
 
   if (value > base + tolerance) {
-    failed = true;
-    report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "regressed" });
+    if (write) {
+      // 作者席显式认账：adopt 新值并重设基线（能力新增导致的体积/时延增长走这条）
+      metrics[m.key] = { ...metrics[m.key], value, tolerance_rel: m.toleranceRel, measured_at: new Date().toISOString() };
+      report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "accepted" });
+    } else {
+      failed = true;
+      report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "regressed" });
+    }
     continue;
   }
 
@@ -116,8 +122,8 @@ if (asJson) {
   console.log(JSON.stringify({ ok: !failed, baseline: BASELINE, report }, null, 2));
 } else {
   for (const r of report) {
-    const mark = r.status === "regressed" ? "✗" : r.status === "held" ? "·" : "✓";
-    const delta = r.base === null ? "seed" : r.status === "tightened" ? `${r.base} → ${r.value}` : r.status === "regressed" ? `${r.base} → ${r.value} (tolerance +${r.tolerance})` : String(r.value);
+    const mark = r.status === "regressed" ? "✗" : r.status === "held" ? "·" : r.status === "accepted" ? "!" : "✓";
+    const delta = r.base === null ? "seed" : r.status === "tightened" ? `${r.base} → ${r.value}` : r.status === "regressed" ? `${r.base} → ${r.value} (tolerance +${r.tolerance})` : r.status === "accepted" ? `${r.base} → ${r.value} (accepted)` : String(r.value);
     console.log(`  ${mark} ${r.label.padEnd(44)} ${delta}  [${r.status}]`);
   }
   console.log(failed ? "\nratchet: 指标回归 —— 优化，或显式 --write 认账重设基线" : "\nratchet: 全部指标未退化");

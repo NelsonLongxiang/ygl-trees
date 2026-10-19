@@ -1,4 +1,4 @@
-# ygl-trees v0.96.0 — AI Agent Research Workbench
+# ygl-trees v0.97.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -197,6 +197,9 @@ verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> # extrac
 verify run <spec-id> --db <snapshot.sqlite>                  # run checkers on a snapshot copy → report (rc=0 even on FAIL)
 verify list / report <run-id> / trace <spec-id> / export <spec-id> # catalog, reports, construction trace, .yglverify.json
 verify report import <report.json>                           # import a sealed-run report (payload/binary/spec_version checks)
+verify archive <run-id|spec-id> / archive verify <file>      # archive bundle (report+spec+materials) / recompute the full hash chain
+verify list --unarchived                                     # runs that exist but were never archived
+verify self-check                                            # recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives
 ```
 
 ### patrol

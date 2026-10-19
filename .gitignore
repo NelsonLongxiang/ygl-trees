@@ -5,3 +5,6 @@ tmp/
 .agents/
 *.tsbuildinfo
 vendor/cordis/bin.js
+
+# verify 归档包（默认落 $YGL_HOME/verify/archives/，防手滑留在仓库根）
+*.yglverify.zip

@@ -18,7 +18,6 @@ summary.fail:number
 summary.needs_material:number
 summary.pass:number
 verifier:object
-verifier.binary_sha256:undefined
 verifier.corpus_version:string
 verifier.engine_version:string
 verifier.mode:string
