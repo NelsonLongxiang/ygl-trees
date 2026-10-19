@@ -1,0 +1,33 @@
+{
+  "contract_version": "0.4",
+  "spec_id": "spec_red_scope_mismatch",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "units": [],
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "severity": "S1",
+      "title": "批次与查询各查各的表",
+      "source_clause": "本批次 2026-07 每张发票都有明细",
+      "checker": {
+        "type": "sql",
+        "sql": "select l.id from invoice_lines l where l.id = 'L-404'",
+        "scope_sql": "select count(*) from invoices where billing_month = '2026-07'",
+        "expect": "no rows"
+      }
+    }
+  ]
+}

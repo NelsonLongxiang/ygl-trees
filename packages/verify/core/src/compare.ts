@@ -12,6 +12,17 @@ import type { CompareSpec } from "./contract";
 export type CompareOutcome = { equal: boolean } | { error: string };
 
 /** 货币化：四舍五入到最小单位整数（分）。非数/NaN → null（由调用方判错）。 */
+/** window 型：把 ISO 字符串或 Date 归一成 epoch ms（数字不当日期，避免把金额误判为时间）。 */
+function toEpochMs(v: unknown): number | null {
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.getTime() : null;
+  if (typeof v === "string") {
+    const ms = Date.parse(v);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
+
+/** 货币化：四舍五入到最小单位整数（分）。非数/NaN → null（由调用方判错）。 */
 export function toMinorUnits(v: unknown, scale: number): number | null {
   if (typeof v === "number") {
     if (!Number.isFinite(v)) return null;
@@ -91,9 +102,22 @@ export function compareValues(left: unknown, right: unknown, spec: CompareSpec):
       if (ls !== null && rs !== null) return { equal: ls === rs };
       return { equal: left === right };
     }
-    case "tolerance_abs":
     case "window": {
-      if (spec.mode === "window" && !spec.unit) return { error: 'window mode requires "unit" (d|h|s)' };
+      if (!spec.unit || !["d", "h", "s"].includes(String(spec.unit))) {
+        return { error: 'window mode requires "unit" (d|h|s)' };
+      }
+      if (typeof spec.value !== "number" || !Number.isFinite(spec.value) || !(spec.value > 0)) {
+        return { error: `invalid window width: ${String(spec.value)} (must be > 0)` };
+      }
+      const unitMs = { d: 86_400_000, h: 3_600_000, s: 1_000 }[String(spec.unit) as "d" | "h" | "s"];
+      const lm = toEpochMs(left);
+      const rm = toEpochMs(right);
+      if (lm === null || rm === null) {
+        return { error: `window mode requires date values (got ${String(left)} vs ${String(right)})` };
+      }
+      return { equal: Math.abs(lm - rm) <= spec.value * unitMs };
+    }
+    case "tolerance_abs": {
       if (typeof spec.value !== "number" || !Number.isFinite(spec.value) || !(spec.value > 0)) {
         return { error: `invalid tolerance value: ${String(spec.value)} (must be > 0; ε=0 is exact)` };
       }
@@ -110,8 +134,8 @@ export function compareValues(left: unknown, right: unknown, spec: CompareSpec):
       return { equal: Math.abs(l - r) <= spec.value };
     }
     case "tolerance_rel": {
-      if (typeof spec.value !== "number" || !Number.isFinite(spec.value) || spec.value < 0) {
-        return { error: `invalid relative tolerance: ${String(spec.value)}` };
+      if (typeof spec.value !== "number" || !Number.isFinite(spec.value) || !(spec.value > 0)) {
+        return { error: `invalid relative tolerance: ${String(spec.value)} (must be > 0; ε=0 is exact)` };
       }
       const l = asNumber(left);
       const r = asNumber(right);

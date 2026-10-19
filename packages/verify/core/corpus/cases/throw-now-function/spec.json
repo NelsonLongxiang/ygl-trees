@@ -1,0 +1,32 @@
+{
+  "contract_version": "0.4",
+  "spec_id": "spec_throw_now_function",
+  "spec_version": 1,
+  "verifier": {
+    "engine_version": "0.1.0",
+    "corpus_version": "1"
+  },
+  "as_of": {
+    "kind": "snapshot",
+    "value": "2026-10-19T00:00:00.000Z"
+  },
+  "attachments": [],
+  "sealed": {
+    "review": false
+  },
+  "units": [],
+  "vu": [
+    {
+      "id": "V1",
+      "role": "assert",
+      "severity": "S1",
+      "title": "now() 不可重放",
+      "source_clause": "created_at 必须落在锚定时刻之前",
+      "checker": {
+        "type": "sql",
+        "sql": "select id from invoices where created_at = now()",
+        "expect": "no rows"
+      }
+    }
+  ]
+}

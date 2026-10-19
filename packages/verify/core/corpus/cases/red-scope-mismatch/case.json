@@ -1,0 +1,4 @@
+{
+  "cases": 1,
+  "expect_throw": "not the one being checked"
+}

@@ -66,6 +66,11 @@ function rowsScannedFromSql(runner: QueryRunner, sql: string): { scanned: number
 }
 
 /** 粗提取 SQL 源表（FROM/JOIN）——witness 用；解析失败不阻断执行。 */
+/** 剥掉 SQL 注释——守卫要判断"代码里到底有没有"，不能把注释里的字样当真。 */
+function stripSqlComments(sql: string): string {
+  return sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+}
+
 export function extractTables(sql: string): string[] {
   const out = new Set<string>();
   const re = /\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)/gi;
@@ -104,7 +109,7 @@ async function runFactChecker(
       const failWhen = c.fail_when ?? "rows>0";
       // 构造守卫（r3 意见 2）：找违规型必须能证明扫的是本批范围——
       // 要么给 scope_sql，要么 sql 自带 WHERE（否则「整表非空」冒充「扫过本批」）。
-      const sqlNoComments = c.sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+      const sqlNoComments = stripSqlComments(c.sql);
       if (failWhen === "rows>0" && !c.scope_sql && !/\bwhere\b/i.test(sqlNoComments)) {
         return { verdict: "ERROR", evidence: { reason: "find-violation sql has no WHERE and no scope_sql — cannot prove the scan covers the intended batch (vacuous-pass risk)" } };
       }
@@ -460,12 +465,32 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
     throw new Error(`pipeline cycle detected among: ${orderResult.cycle.join(", ")}`);
   }
   // R13：as_of 必须锚定——时间函数在构造期拒绝（NOW()/CURRENT_TIMESTAMP 无法重放）
-  const timeFn = /\b(now\s*\(|current_timestamp|current_date|current_time)\b/i;
+  // 形态：now( / now () / CURRENT_TIMESTAMP（关键字可无括号）/ CURRENT_DATE / CURRENT_TIME；
+  // 词边界两侧都排掉标识符（current_timestamp_utc 不算），注释先剥（注释里的 now 不误伤）。
+  const timeFn = /(^|[^A-Za-z0-9_])(now\s*\(|(current_timestamp|current_date|current_time)(?![A-Za-z0-9_]))/i;
   for (const vu of spec.vu) {
-    const c = vu.checker as { sql?: string; scope_sql?: string };
-    const text = `${c.sql ?? ""} ${c.scope_sql ?? ""}`;
+    const c = vu.checker as { sql?: string; scope_sql?: string; as_of?: unknown };
+    const text = stripSqlComments(`${c.sql ?? ""} ${c.scope_sql ?? ""}`);
     if (timeFn.test(text)) {
       throw new Error(`${vu.id}: non-deterministic time function in sql — freeze the timestamp via as_of/parameters (R13)`);
+    }
+    // as_of 必须可锚定：只声明 as_of 却没有任何 scope 过滤 = 无法证明"取的是那一刻的数据"
+    if (vu.expected_from && typeof vu.expected_from === "object" && "as_of" in vu.expected_from) {
+      const scoped = Boolean(c.scope_sql) || /\bas\s+of\b/i.test(text);
+      if (!scoped) {
+        throw new Error(`${vu.id}: expected_from.as_of requires scope_sql (or an explicit AS OF clause) — as_of alone is not replayable (N6)`);
+      }
+    }
+  }
+  // S2：scope_sql 与 sql 必须落在同一批表上——否则"批次过滤"和"违规查询"各查各的表，能冒充同批
+  for (const vu of spec.vu) {
+    const c = vu.checker as { sql?: string; scope_sql?: string };
+    if (!c.sql || !c.scope_sql) continue;
+    const sqlTables = extractTables(c.sql);
+    const scopeTables = extractTables(c.scope_sql);
+    const disjoint = sqlTables.length > 0 && scopeTables.length > 0 && scopeTables.every((t) => !sqlTables.includes(t));
+    if (disjoint) {
+      throw new Error(`${vu.id}: scope_sql reads ${scopeTables.join(", ")} while sql reads ${sqlTables.join(", ")} — no shared table means the "batch" is not the one being checked (S2)`);
     }
   }
   if (!spec.vu.some((v) => v.role === "assert")) {
