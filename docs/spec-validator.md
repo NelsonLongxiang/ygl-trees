@@ -232,7 +232,7 @@ verify list                        # 规范清单与状态
 | **运行时** | ygl-trees 的 `verify` 命令组（发布产物 bundle 内）；同一引擎执行所有规范 | 所有场景 | ygl-trees 版本号 |
 | **服务面** | `webui serve` 的 `/api/verify/*` + 三视图 | 业务专家的浏览器 | 同运行时 |
 | **agent 面** | CLI `--json` / MCP 工具：submit/prepare/run/report 结构化调用 | 驱动验证的 agent | 同运行时 |
-| **独立分发**（后置） | `verify export --bundle` → 自包含目录（spec + 最小引擎 + 数据源配置）；再往后 Rust 静态二进制 | 无 ygl 环境的第三方 | 二进制与 spec 双钉 |
+| **独立分发** | `verify export --bundle` → 自包含目录（spec + 附件 + 数据源声明）；**二进制 CLI 见下节（m11659 升为交付形态）** | 无 ygl 环境的第三方 | 二进制与 spec 双钉 |
 
 **为什么是数据+运行时，不是逐规范生成程序**：
 
@@ -244,6 +244,25 @@ verify list                        # 规范清单与状态
 **运行契约（agent/CI 友好）**：`verify run --json` 输出单对象 `{run_id, spec_version, summary:{pass,fail,needs_material,error}, report_path}`。**退出码只表达过程**：`rc=0`=验证已执行出报告（无论 PASS/FAIL——FAIL 是有效结论，不是程序错误）；`rc=1`=运行错误；`rc=2`=用法错误。判定在报告里，不在退出码里——agent 驱动时不会把「有问题的业务」误判成「工具坏了」。
 
 **运行环境**：任何装了 ygl-trees 的机器 + 规范声明的数据源可达（SQLite 文件路径 / PG URL / workspace 内附件 source）。连接串运行时传入、不入库。
+
+### 8.5.1 交付形态：二进制 CLI（m11659 用户裁定）
+
+> 用户原话（m11659）：「交付的程序 为二进制 cli」。
+
+**交付物 = 单一静态二进制 `yglverify`**（Rust，musl 静态链接，零运行时依赖），面向「没有 ygl-trees 环境」的业务方/第三方——拿到二进制 + 一份 spec 就能在自己的数据上重放验证。
+
+- **职责边界**：二进制只做**执行面**（spec JSON 进 → 报告 JSON 出）；**构造面**留在 TS——材料提交、prepare（提取/翻译/自审）、WebUI、workspace 集成、报告入库。二进制不知道 agent 的存在，也不调用任何构造模型。
+- **契约先行 + 黄金语料门禁**：TS 实现是参考实现；Rust 二进制必须通过同一 corpus（spec + fixture 库 + 期望报告，逐字一致除时间戳）才算合格——**二进制不被信任，直到语料全绿**。任何一侧行为变更都必须先改 corpus。
+- **二进制命令面**：
+  ```
+  yglverify run --spec <spec.json> [--db <sqlite-path> | --pg <url>] [--out report.json] [--json]
+  yglverify self-check          # 版本、语料完整性、数据源连通性
+  yglverify --version           # engine_version（Cargo 版本）
+  ```
+- **交付包形态**：`yglverify`（单文件）+ `spec.json` + `attachments/`（可选；manifest 带相对路径 + sha256）+ 报告输出目录；`yglverify export --bundle` 打成 tar.gz 供分发。
+- **版本钉法**：报告头记录 `engine_version`（二进制版）+ `spec_version` + `corpus_version`；spec 内声明 `runtime_min`，低于即**拒绝执行**（ERROR，不是 FAIL——是环境不满足契约，不是业务有问题）。
+- **安全边界不变**：`command` 是唯一可执行面（显式白名单，默认关闭）；`sql` 只读前缀门；`attachments` 只读（不写回、不执行）。二进制不需要网络（agent 型检查器除外，且该型在离线模式下直接 NEEDS-MATERIAL）。
+- **与 workspace 的接缝**：构造面 `verify export` 产出 spec；二进制跑完的报告由 `verify report import <report.json>` 回收入库（记录 run_id/engine_version/spec_version，报告不可变）。
 
 ## 9. 与树/毕业协议的接缝（复用而非新建）
 
@@ -272,7 +291,7 @@ verify list                        # 规范清单与状态
 |---|---|---|---|
 | **产品壳**：CLI/存储/版本/WebUI/API/事件 | **Node，TypeScript 优先**（m11452；ygl-trees 主体本就 TS strict） | Cordis 运行时、artifacts/source 数据模型、R16 门禁、React 前端全在此；SQL 型检查器在本层执行（纯数据驱动，无语言问题） | npm 包（现有 bundle） |
 | **提取层**：xlsx/PDF 解析、OCR、视觉前处理 | **Python** | 文档解析/数据科学生态最强（pandas/pdfplumber/openpyxl）；**.157 的运费审计工具链就是 Python（audit_freight_bill.py 一脉）——血统直接复用** | 独立脚本/子进程，JSON stdin/stdout 契约；`verify prepare` 经 command 型边界调用 |
-| **确定性内核**（可选，后置）：独立可分发校验器、百万行比对、二进制级重放保证 | **Rust** | 单静态二进制零运行时漂移（给无 Node/Python 环境的第三方跑同一验证）；性能；供应链可信 | cargo 产物，同一 JSON 契约进出；**首版不做**——需求坐实（毕业规模/外发场景）再引入 |
+| **确定性内核 / 交付形态**：单静态二进制校验器 | **Rust**（m11659 升为交付形态，不再「后置」） | 单静态二进制零运行时漂移——交付对象是无 Node/Python 环境的业务方；性能；供应链可信 | cargo 产物，同一 JSON 契约进出；**M13-1b 交付**，与 TS 参考实现同吃一份黄金语料 |
 
 **跨语言工程规范**（不管几种语言都守）：
 
@@ -282,7 +301,7 @@ verify list                        # 规范清单与状态
 4. **发布单元分离**：npm（壳）/脚本随包或独立仓（提取）/二进制 artifact（内核）——互不绑架升级节奏。
 5. **语言准入判据**：新语言进入（含 Go 等）必须声明组件归属 + 契约遵守 + 门禁接入，无例外。
 
-9. **M13 语言切分**（m11443 新增）：推荐 **M13-1 全 Node**（壳+SQL 检查器+管线执行）；提取层 Python 适配器随 M13-1 的 prepare 接口预留（command 边界），真实附件样本到位后 M13-2 前接入；Rust 内核**不排期**（判据触发：毕业规模跑不动/外发分发需求坐实）。
+9. **M13 语言切分**（m11443 新增、m11659 重排）：**M13-1 全 Node**（构造面：submit/prepare/自审/export/运行时刻引擎/黄金语料 corpus）；**M13-1b Rust 二进制**（同一契约的执行面，语料双实现门禁，交付 `yglverify`）；提取层 Python 适配器随 M13-1 的 prepare 接口预留（command 边界），真实附件样本到位后接入；WebUI 三视图随 M13-2。
 
 ## 12. 实现前仍需拍板的运营性选择（m11466 整理）
 
@@ -290,10 +309,11 @@ verify list                        # 规范清单与状态
 |---|---|---|---|
 | A | **首发验收靶子**：第一个真实跑通的验证规范选哪条？ | **.157 运费对账**（Odoo PG 数据现成 + Python 审计链血统 + bill-audit 树已挂真凭据） | 决定 M13-1 的验收用例与 demo 断言 |
 | B | **真实附件样本**：提取层黄金样本从哪来？ | 用户从 .157 取 1-2 个真实业务件（报价单 xlsx + 账单截图 png） | 决定 Python 提取适配器接入时点；无样本则 M13-1 只做表格解析、图片提取留 M13-2 |
-| C | **批次节奏** | M13-1（后端）→ 0.96.0；M13-2（前端三视图）→ 0.97.0 分两版 | 后端可先给 .157 用起来；合并一版会拖慢验证 |
+| C | **批次节奏** | M13-1（TS 构造面 + 黄金语料）→ 0.96.0；**M13-1b（Rust 二进制 `yglverify`，与语料双实现门禁）→ 0.97.0**；M13-2（前端三视图）→ 0.98.0 | 后端可先给 .157 用起来；二进制独立版本可单独发布给第三方 |
 | D | spec 粒度 | 1 spec = 1 业务问题域（如「运费对账」含 N 条 VU），非 1 条判据 | 影响 prepare 交互粒度 |
 | E | FAIL 是否自动开 task | 首版只在报告呈现（例外清单），不自动开（避免噪音）；NEEDS-MATERIAL 自动开（已定） | 影响 task 表噪音 |
 | F | 报告导出 | 首版 WebUI 看板 + CLI 文本；PDF/HTML 导出后置 | 业务专家对质/汇报场景 |
 | G | 毕业阈值（patrol 化） | 同结果稳定 3 轮 + 跨度 ≥1 个月；首版不实现，只留接口 | 不阻塞首版 |
+| H | 二进制命名与交付包（m11659 新增） | `yglverify` + 目录包（spec.json + attachments/ + 报告）；`export --bundle` 出 tar.gz | 决定分发包形态与 CI 产物 |
 
-其余九条（命令名/七检查器/artifacts 存储/PG/管线组合/语言切分/自审形态）均为推荐默认，风险低可逆，开工即按推荐执行。
+其余九条（命令名/七检查器/artifacts 存储/PG/管线组合/自审形态）均为推荐默认，风险低可逆，开工即按推荐执行；语言切分已由 m11659 钉为「TS 构造面 + Rust 二进制执行面」。
