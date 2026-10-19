@@ -314,6 +314,10 @@
 - **0.94.0 锁家族终章（1e66b90/42b9c52）**：open 阶段 `.ygllock` 活持有者有界等待（`YGL_LOCK_RETRY_MS` 默认 8000ms；0=旧行为）——busy_timeout 只护句柄建立后，0.83/0.85/0.90.1 反复现身的家族连根；holderAlive 判活（kill0/EPERM=活，ESRCH/自身=死）；锁重试 spec ×4（opt-in 教训：spec 直构必须传 {lock:true}）。预审 direct-e164d3dc 通过；两条 µs 级理论窗（TOCTOU/waitForLockDir）按评审裁定**不开事项**（advisory 层预存+句柄层兜底+单用户成本收益）。产品论纲落盘（scenarios.md 一协议×三树主×六场景 + graduation-protocol.md + skills×2）。
 - **0.95.0 毕业三件套 demo + tags 读面（6ce4da2）**：demo §9g ×3（supported 断言→source --tags sop→rel executes）——0.94 P3 承诺兑现；顺带修真缺口：source list/search 投影漏 tags（毕业协议消费方式「按 tags=sop 拉源」CLI 读面不可能）——cmds.ts list 投影+reads.ts sourceList+sourceSearch 三处；tags 本就落库进 FTS。踩坑：source add 是纯旗标命令（位置 URL→rc=2）；tags 存逗号串非数组。
 
+### M13 — spec-validator 验证规范驱动器（2026-10-19 立项 m11350，设计阶段）
+
+**用户目标（verbatim m11350）**：「构建一套预处理的规范驱动spec 的验证器，供人工业务专家填写的，由agent 进行驱动验证，最终交付确定性的结果工具」。设计全文 docs/spec-validator.md。核心立场：agent 出现在预处理（人话→判据结构化）与采证编排，**判定零概率**（verdict ∈ PASS/FAIL/NEEDS-HUMAN/ERROR，全带证据，重放一致）。血统：.157 ops-handbook 四问判据+S1/S2/S3+零未处置（实战祖先）；patrol/telemetry 引擎复用；毕业通道反向接缝（verify→patrol graduate）。待裁定五点：表单载体/命令名（verify vs spec 重名）/检查器首版范围/VU 存储（artifacts 起步 vs v13 新表）/PG 直连时机。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）
