@@ -132,12 +132,13 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
 
 ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec → report
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
-  prepare <material-id>                extract → blind self-review → freeze spec (rc=0 only when ready)
+  prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
   register <sealed-binary>            register a sealed build (footer chain → registrations/ + binaries/)
   list | report <run-id> | trace <spec-id> | export <spec-id>
   report import <report.json>          import a sealed-run report (payload/binary/version checks)
-  archive <run-id|spec-id> | archive verify <file>   take-away archive (default after run) / re-verify chain
+  archive <run-id|spec-id> [--snapshot <db>]         take-away archive; --snapshot feeds cross-impl runs
+  archive verify <file>                              re-verify an archive's full hash chain
   self-check [--corpus <dir>] [--no-cases]           recursive gate: vectors → digest → shapes → cases → archives
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
@@ -390,7 +391,10 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   const home = str(args, "home", HOME);
-  const file = str(args, "db", "") || dbPath(home);
+  // verify 组（r15 P1-1）：`--db` 是业务库快照，不是工作区库——把它当工作区库会让
+  // `verify run/prepare` 就地给业务库跑 ygl schema 迁移（实测灌入 57 张表、user_version 0→12），
+  // 而且 data_source.sha256 取改写后的字节，证据与报告当场对不上。
+  const file = group === "verify" ? dbPath(home) : str(args, "db", "") || dbPath(home);
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
   const needInit = !(group === "db" && action === "init") && group !== "plugin";

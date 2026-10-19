@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.98.0（2026-10-20）构造面无损试跑 + file 排除集 + r14 三项收口
+
+- **`verify prepare --draft`**：跑完 P0–P5 只给结论，**不写** `spec.json`/`prepare.json`/`trace.json`、不消耗 `spec_version`。构造面调参不再污染版本号（此前每次试跑都推进 spec 版本，回滚只能删目录）。
+- **file 检查的 `ignore` 排除集**（TS + Rust 对称）：被排除文件不进扫描面（`witness` 与 `evidence.ignored` 只算可见文件），`require`/`sha256` 仍按字面路径校验；全部被排除 → NEEDS-MATERIAL 而不是 PASS；P2 拒绝绝对路径、`..` 段与通吃 glob。契约 §1.7。
+- **r14 R1（归档链）**：`data_source.sha256` 统一 `sha256:<hex>`（TS 曾写裸 hex、Rust 写前缀 → 跨实现 `archive --with snapshot` 必失败）；archive/retain 归一化剥前缀。新增 `archive --snapshot <db>`：Rust 直跑等没有 retained 快照的报告，显式交同一份字节，入包前按报告 sha 校验，不符即点名拒绝。
+- **r14 R2（门禁可信度）**：parity 门断言 `rustPayload === rustCore`，并补 `data_source` 形态断言（此前该字段被剥除，正好是盲区）；`YGL_REQUIRE_RUST=1` 时缺 release 产物直接红，不再静默 skip。
+- **r14 R3（封包判别）**：`looks_sealed` 改结构性候选——magic 字节坏、footer JSON 语法坏也算「封包被改」，一律 rc=1；不再降级成开放模式（rc=2）。
+- **verify 组未知旗标 rc=2**：每个动作有旗标白名单，`--attachment` 这类误拼不再被静默吞掉（曾导致 `files: []` 却 rc=0）。
+- **`--db` 语义纠正（r15 P1-1，重要）**：`verify <cmd> --db <file>` 的 `--db` 是**业务库快照**，verify 组不再把它当工作区库打开——此前 `verify run/prepare --db <业务库>` 会就地跑 ygl schema 迁移（实测给业务库灌入 57 张表、`user_version` 0→12），且 `data_source.sha256` 取的是改写之后的字节，证据与报告当场对不上。工作区库固定为 `$YGL_HOME/ygl-trees.db`；回归断言「verify 后业务库 sha 不变、表集不变」。
+- 文档：契约新增 §1.7（ignore）、§1.8（CLI 文件形态：candidates/reviews/db 示例 + `--draft` + 未知旗标纪律），§7.5 补 `--snapshot`；`docs/spec-validator.md` §5 澄清「执行面闭集 ≠ 构造面发射集」（prepare 只发 sql/sql-pair/count/exists 四型）。
+- 测试：unit **386**（+4：file-ignore ×3、verify-cli 未知旗标 ×1、archive 跨实现快照 ×1；r15 回归 +4：业务库不被迁移、`--no-archive`、`--draft` 不落盘）、Rust **28**（+1 封包损坏判别）、demo 128、contract 100。
+
 ## 0.97.2（2026-10-20）同字节重发（npm 版本元数据传播延迟消歧）
 
 **内容与 0.97.1 完全一致，仅版本号不同。** 0.97.1 发布后 npmjs 的版本元数据约 16 分钟后才可解析

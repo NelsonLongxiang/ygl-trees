@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -124,6 +124,77 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     const obj = JSON.parse(r.out) as { ok: boolean; items: Array<{ id: string; status: string }> };
     expect(obj.ok).toBe(true);
     expect(obj.items.find((i) => i.id === "corpus-cases")?.status).toBe("skip");
+  }, 60_000);
+
+  it("--db 是业务库快照，不是工作区库（r15 P1-1：不得就地迁移业务库）", () => {
+    const biz = join(home, "biz.sqlite");
+    const db = new DatabaseSync(biz);
+    db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY, amount INTEGER)");
+    db.exec("INSERT INTO orders VALUES ('o1', 100)");
+    db.close();
+    const before = createHash("sha256").update(require("node:fs").readFileSync(biz)).digest("hex");
+    const r = run(["verify", "list", "--db", biz, "--json"]);
+    expect(r.rc).toBe(0);
+    const after = createHash("sha256").update(require("node:fs").readFileSync(biz)).digest("hex");
+    expect(after).toBe(before);
+    const check = new DatabaseSync(biz, { readOnly: true });
+    const tables = (check.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as Array<{ name: string }>).map((t) => t.name);
+    check.close();
+    expect(tables).toEqual(["orders"]);
+  });
+
+  it("run --no-archive → rc=0 且不产归档（旗标在 ACTION_FLAGS 里）", () => {
+    const caseDir = join(REPO, "packages", "verify", "core", "corpus", "cases", "sql-find-violation");
+    const spec = JSON.parse(readFileSync(join(caseDir, "spec.json"), "utf8")) as { spec_id: string };
+    const specDir = join(home, "verify", "specs", spec.spec_id);
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(join(specDir, "spec.json"), readFileSync(join(caseDir, "spec.json")));
+    const dbFile = join(home, "case.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec(readFileSync(join(caseDir, "db.sql"), "utf8"));
+    db.close();
+    const r = run(["verify", "run", spec.spec_id, "--db", dbFile, "--no-archive", "--json"]);
+    expect(r.rc).toBe(0);
+    const obj = JSON.parse(r.out) as { overall: string; archive: unknown };
+    expect(obj.overall).toBe("FAIL");
+    expect(obj.archive).toBeNull();
+    const archives = join(home, "verify", "archives");
+    expect(existsSync(archives) ? readdirSync(archives).length : 0).toBe(0);
+  });
+
+  it("prepare --draft 干跑：不写 spec/prepare/trace、不消耗 spec_version（r15 小项）", () => {
+    const text = join(home, "draft-material.txt");
+    writeFileSync(text, "账单金额不得为负。\n", "utf8");
+    const sub = run(["verify", "submit", "--title", "d", "--text", text, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = (JSON.parse(sub.out) as { material_id: string }).material_id;
+    const dbFile = join(home, "draft.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec("CREATE TABLE bills (id TEXT PRIMARY KEY, amount_cents INTEGER)");
+    db.exec("INSERT INTO bills VALUES ('b1', -5)");
+    db.close();
+    const clause = "账单金额不得为负。";
+    const anchor = { quote: clause, locator: "material.txt#L1" };
+    const candidates = join(home, "cand.json");
+    writeFileSync(candidates, JSON.stringify({ candidates: [{
+      source_clause: clause,
+      anchor,
+      checker: { type: "sql", fail_when: "rows>0", predicate: { from: "bills", select: ["id"], where: { op: "and", conditions: [{ col: "amount_cents", op: "<", value: 0 }] } } },
+    }] }), "utf8");
+    const reviews = join(home, "rev.json");
+    writeFileSync(reviews, JSON.stringify({ reviews: [[
+      { vu_id: "V1", question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+      { vu_id: "V1", question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+      { vu_id: "V1", question: "not-vacuous", verdict: "ok", reason: "空表会被判 NM", anchor },
+    ]] }), "utf8");
+    const specsBefore = existsSync(join(home, "verify", "specs")) ? readdirSync(join(home, "verify", "specs")).length : 0;
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--draft", "--json"]);
+    // ready 与否都可能（红队/自审），关键是 rc 与「什么都没写」
+    expect([0, 1]).toContain(r.rc);
+    const obj = JSON.parse(r.out) as { draft: boolean };
+    expect(obj.draft).toBe(true);
+    const specs = join(home, "verify", "specs");
+    expect(existsSync(specs) ? readdirSync(specs).length : 0).toBe(specsBefore);
   }, 60_000);
 
   it("未知子命令 → rc=2（verify 组同其他组口径）", () => {

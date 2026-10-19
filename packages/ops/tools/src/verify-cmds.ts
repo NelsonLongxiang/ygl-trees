@@ -208,8 +208,8 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft"],
-  run: ["db", "submission", "now", "run-id", "attachments", "command-allow", "mode"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version"],
+  run: ["db", "submission", "no-archive"],
   list: ["unarchived"],
   report: ["out"],
   trace: [],

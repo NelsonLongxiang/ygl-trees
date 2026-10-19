@@ -260,6 +260,12 @@ verify list --unarchived                                            # 跑过但�
 
 **rc 契约**：`0`=跑完出报告（含 FAIL/NM/ERROR 结论）、`1`=运行错误、`2`=用法错误。判定在报告不在退出码。
 
+**`--db` 语义（r15 P1-1）**：在 `verify` 组里 `--db <file>` 一律指**业务库快照**（run/prepare 的取数对象），工作区库固定是 `$YGL_HOME/ygl-trees.db`——verify 命令不会打开业务库做 ygl schema 迁移，也不写它；`run` 先复制快照再读，`data_source.sha256` 记的是**原始字节**。这是「证据可复核」的前提：任何会改写源库的路径都不该出现在验证链上。
+
+**`--no-archive`**：`run` 默认归档（契约 §7），`--no-archive` 跳过；归档失败不改写报告、但 rc=1（过程错误）。
+
+**未知旗标**：verify 组每个动作有旗标白名单，未知旗标一律 rc=2 并点名（`unknown flag for verify run: --attachment`）——构造期静默比报错危险。
+
 **注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。
 
 
