@@ -10,6 +10,7 @@ import {
   NodeIndexOutlined,
 } from "@ant-design/icons";
 import { subscribeDashboard, type DashboardData } from "./api";
+import { C, themeTokens, statColors } from "./tokens";
 
 // Lazy-load below-the-fold components — reduces initial bundle by ~40%
 const TreeFlow = lazy(() => import("./TreeFlow"));
@@ -19,21 +20,14 @@ const KnowledgeGraph = lazy(() => import("./KnowledgeGraph"));
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 
-/** DESIGN.md token mapping → antd ConfigProvider */
+/** DESIGN.md token mapping → antd ConfigProvider (values live in tokens.ts) */
 function AppTheme({ children }: { children: React.ReactNode }) {
   return (
     <ConfigProvider
       locale={zhCN}
       theme={{
         algorithm: antdTheme.darkAlgorithm,
-        token: {
-          colorPrimary: "#7c9885",       // --color-primary (sage green)
-          colorSuccess: "#6a994e",       // --color-success
-          colorWarning: "#daa520",       // --color-warning
-          colorInfo: "#5b8db8",          // --color-accent
-          borderRadius: 8,              // --radius-md
-          fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
-        },
+        token: themeTokens,
       }}
     >
       {children}
@@ -51,15 +45,7 @@ const statIcons: Record<string, React.ReactNode> = {
   nodes: <PartitionOutlined />,
 };
 
-const statColors: Record<string, string> = {
-  skills: "#7c9885",
-  kb_notes: "#8b7355",
-  sources: "#5b8db8",
-  evidence: "#daa520",
-  claims: "#6a994e",
-  trees: "#9b7cb8",
-  nodes: "#b87c7c",
-};
+// DESIGN.md tokens only — see tokens.ts statColors docblock.
 
 export default function App() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -73,7 +59,7 @@ export default function App() {
     <AppTheme>
       <Layout style={{ minHeight: "100vh" }}>
         <Header style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 24px" }}>
-          <Text style={{ fontSize: 20, color: "#e8e4dc" }}>🐵 ygl-trees</Text>
+          <Text style={{ fontSize: 20, color: C.text }}>🐵 ygl-trees</Text>
           <Text type="secondary" style={{ fontSize: 14 }}>
             AI Agent 研究工作台
           </Text>
@@ -161,7 +147,7 @@ export default function App() {
                       title="已证实断言"
                       value={data.brief.project.verified_claims}
                       suffix={`/ ${data.brief.project.claims}`}
-                      valueStyle={{ color: "#6a994e" }}
+                      valueStyle={{ color: C.success }}
                     />
                   </Space>
                 </Card>

@@ -5,6 +5,7 @@ import {
   Handle, Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { C } from "./tokens";
 
 interface GraphData {
   nodes: Array<{ id: string; label: string; type: string; color: string }>;
@@ -20,7 +21,7 @@ function EntityNode({ data }: NodeProps) {
   const d = data as any;
   return (
     <div style={{
-      background: d.color || "#7c9885",
+      background: d.color || C.secondary,
       color: "#fff",
       padding: "6px 12px",
       borderRadius: 8,
@@ -67,11 +68,14 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
       };
     });
 
+    // 0.92 单B: DESIGN.md tokens only (import from ./tokens) — semantic family:
+    // decided-by=success (adjudication), evidenced-by=warning, tracked-by=
+    // tertiary, related/unknown=secondary.
     const edgeColors: Record<string, string> = {
-      "decided-by": "#6a994e",
-      "evidenced-by": "#daa520",
-      "tracked-by": "#5b8db8",
-      related: "#888",
+      "decided-by": C.success,
+      "evidenced-by": C.warning,
+      "tracked-by": C.tertiary,
+      related: C.secondary,
     };
 
     const es: Edge[] = graph.edges.map((e) => ({
@@ -80,8 +84,8 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
       target: e.target,
       label: e.label,
       animated: e.label === "decided-by",
-      style: { stroke: edgeColors[e.label] || "#888", strokeWidth: 1.5 },
-      labelStyle: { fontSize: 9, fill: "#aaa" },
+      style: { stroke: edgeColors[e.label] || C.secondary, strokeWidth: 1.5 },
+      labelStyle: { fontSize: 9, fill: C.secondary },
     }));
 
     return { nodes: ns, edges: es };
@@ -100,10 +104,10 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#1a1a2e" gap={20} />
+        <Background color={C["border-dim"]} gap={20} />
         <Controls />
         <MiniMap
-          nodeColor={(n) => (n.data as any)?.color || "#7c9885"}
+          nodeColor={(n) => (n.data as any)?.color || C.secondary}
           style={{ background: "#111" }}
         />
       </ReactFlow>

@@ -207,9 +207,14 @@ return { id: r.id, title: r.title, status: meta.status || "todo" };
   if (projAuthorized) {
     try {
       const rels = db.all("SELECT src_type, src_id, dst_type, dst_id, rel FROM relations ORDER BY rowid DESC LIMIT 200") as any[];
+      // 0.92 单B: DESIGN.md palette only (see apps/web/src/tokens.ts) — type →
+      // semantic token: node=primary (structure), claim=success (adjudication),
+      // evidence/source=warning (evidence family), artifact/task=tertiary
+      // (executable work), kb/skill=secondary (knowledge metadata).
       const colors: Record<string, string> = {
-        node: "#7c9885", claim: "#6a994e", kb: "#8b7355",
-        evidence: "#daa520", artifact: "#5b8db8", skill: "#9b7cb8",
+        node: "#58a6ff", claim: "#3fb950", kb: "#8b949e",
+        evidence: "#d29922", artifact: "#79c0ff", skill: "#8b949e",
+        task: "#79c0ff", source: "#d29922",
       };
       for (const r of rels) {
         if (!kgInProject(r.src_type, r.src_id) || !kgInProject(r.dst_type, r.dst_id)) continue;
@@ -225,7 +230,7 @@ return { id: r.id, title: r.title, status: meta.status || "todo" };
             else if (type === "evidence") { const e = db.get("SELECT substr(quote,1,40) AS q FROM evidence WHERE id=?", [id]) as any; if (e) label = e.q; }
             else if (type === "artifact") { const a = db.get("SELECT title FROM artifacts WHERE id=?", [id]) as any; if (a) label = a.title; }
           } catch { /* best-effort */ }
-          kgMap.set(key, { id: key, label, type, color: colors[type] || "#999" });
+          kgMap.set(key, { id: key, label, type, color: colors[type] || "#8b949e" });
         }
         kgEdges.push({ source: `${r.src_type}:${r.src_id}`, target: `${r.dst_type}:${r.dst_id}`, label: r.rel });
       }
