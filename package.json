@@ -74,21 +74,5 @@
   "packageManager": "pnpm@9.15.9",
   "optionalDependencies": {
     "pg": "^8.13.0"
-  },
-  "vitest": {
-    "include": [
-      "packages/*/*/tests/**/*.test.ts",
-      "apps/*/tests/**/*.test.ts"
-    ],
-    "exclude": [
-      "node_modules",
-      "dist",
-      "tmp"
-    ],
-    "env": {
-      "YGL_TEST": "1"
-    },
-    "hookTimeout": 30000,
-    "testTimeout": 20000
   }
 }
