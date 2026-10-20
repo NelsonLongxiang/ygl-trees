@@ -1,7 +1,7 @@
 ---
 name: ygl-trees-verify
 description: >-
-  ygl-trees spec-validator 验证器（M13，0.96→0.101）：把「业务规范」变成可执行、可复核、零人工确认的验证器——
+  ygl-trees spec-validator 验证器（M13，0.96→0.102）：把「业务规范」变成可执行、可复核、零人工确认的验证器——
   业务方交一段话+附件（submit 冻结材料）→ agent 构造判据（prepare P0–P5：提取/盲审/红队/守卫，出 spec）
   → 引擎在数据库快照副本上跑七型检查器（sql/sql-pair/count/exists/file/command/agent）出报告（run）
   → 归档成可带走的确定性 zip（archive，默认必做）+ 封包签名（ed25519，认表不认报文）+ 递归自校验（self-check）。
