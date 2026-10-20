@@ -235,6 +235,12 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.108.3 记录（GitHub issue #10/#11，2026-10-21）**：P3 收口。
+- **#10 `pack-repro` pnpm 定位**：候选扩为「npm_execpath(仅 pnpm.cjs) → node-relative ×2 → `%APPDATA%/npm`、`/opt/homebrew/lib`、`/usr/local/lib` → PATH 各目录的 `node_modules/pnpm/bin/pnpm.cjs`」；仍然只跑 JS 入口（不 spawn `.cmd`），保持 Windows 无 shell 引号面。Homebrew 全局布局与 PATH sibling 都在候选内。
+- **#11 文档名实**：`node_states`→`node_state`；毕业记录字段清单去掉 `materials_sha256`（spec 字段，记录里没有），改为 `spec_id/spec_version/run_ids/thresholds/history/span_days/data_source/created`。
+- `.gitignore` 增 `{}` 根目录杂文件。
+- 测试 unit 不变 **576**。
+
 **0.108.2 记录（GitHub issue #8/#9，2026-10-21）**：外部报告 + 验证席数据级复现。
 - **#8 `nodeMove` 假幂等**：重试分支补血统校验——`events` 中该节点的 `node.move`/`node.move.noop` 必须同时匹配 `from`/`to` 才算重试；否则 rc=1「no recorded move from tree 'x'」并指路 `node rm`。红测试先写（`node-move.spec` 幻影重试 vs 真重试对拉）。
 - **#9① `--db` 空白**：flag `.trim()` 后空串 == 未传；`db_override:null`、`job_target.origin:"report"`（此前 blank 被记 override 但实际跑报告来源）。`verify-cli.spec` 回归。
@@ -313,10 +319,10 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 
 **0.105.0 记录（批九增补单 + r28 收口）**：验证席批九增补（task direct-1d11bff7，用户误挂 4 条证据只能用 `db sql` 裸删）与 302cb119 r28（P3 `$` 展开、Q2 `job_target`）合并本版；无契约形状变更。
 - **claim unlink / evidence rm（P2-1）**：`packages/research/pipeline/src/writes.ts` 新增 `claimUnlink()`（点名三类 not-found、删链接、`recomputeClaimStatus()`、`claim.unlink` 事件）与 `evidenceRemove()`（有链接时拒绝并列出 claim 与解绑命令；`--force` 逐条解绑 + 重算 + 删行 + `evidence.rm` 事件含 `(cascaded: N link(s))`）。`recomputeClaimStatus()` 对 `[预测·` 前缀断言**保持原状态并回 `recalculated:false`**——预测状态由 `claim resolve` 仲裁，证据增删不改变裁决；这是「证据是材料，仲裁是动作」的直接后果。不做成 `source rm` 那种只删不级联的形式：证据的链接面比来源大，静默丢链接会让断言状态说谎。
-- **node move（P2-2）**：`packages/techtree/model/src/writes.ts` `nodeMove()` + `cmds.ts:1130` case：整节点跨树迁移，先拒绝「本树内还有边」（先改边，不替用户猜哪些边该跟走）与「目标树已有同名 key」，成功后迁 `node_states` 行、双树 `markDirty`、落 `node.move` 事件（`from_tree/to_tree/state_rows`）。树内改 parent 不塞进本命令（语义是 unlink+link 的组合）。
+- **node move（P2-2）**：`packages/techtree/model/src/writes.ts` `nodeMove()` + `cmds.ts:1130` case：整节点跨树迁移，先拒绝「本树内还有边」（先改边，不替用户猜哪些边该跟走）与「目标树已有同名 key」，成功后迁 `node_state` 行、双树 `markDirty`、落 `node.move` 事件（`from_tree/to_tree/state_rows`）。树内改 parent 不塞进本命令（语义是 unlink+link 的组合）。
 - **可发现性（P2-3）**：顶层 help 与 llms 补 `node rm <key>`（处理器早已存在，缺行等于没有），并写「删除连带边/条件/状态」；`docs/scenarios.md` 与 techtree 技能补并行会话纪律（各自 `use` 或全程 `-t/--project`，session selection 已存在，不新增机制）。
 - **r28 P3 `$` 进 denylist**：POSIX sh 双引号内仍展开 `$VAR` → `--db /data/${HOME}/x.sqlite` 被判 usable 后跑成另一个库；`SHELL_METACHARS` 加 `$`。`{` `}` 在双引号内是字面量，**不拒**——0.104.0 文档误写、源码本没拒，本版订正文档并加测试（`/data/{a}/x.sqlite` usable）。
-- **r28 Q2 `job_target`**：`graduate.ts` 新增 `attachJobTarget()`，`--schedule` 成功后写入 `job_target {db, origin, usable, job_id, every_minutes, updated_at}`；**只更新这一个字段**，`run_ids/thresholds/created/data_source/materials_sha256` 逐字节不变（`duplicate` 路径同样只动它；不带 `--schedule` 的重复毕业保留旧值）。理由：冻结记录的审计事实不能随排期漂移，但「最后排期意图」需要可审计（`job.retarget` 事件 + `updated_at`）；该字段不进 identity/重复判定/资格/patrol，旧记录缺失容忍。
+- **r28 Q2 `job_target`**：`graduate.ts` 新增 `attachJobTarget()`，`--schedule` 成功后写入 `job_target {db, origin, usable, job_id, every_minutes, updated_at}`；**只更新这一个字段**，`spec_id/spec_version/run_ids/thresholds/history/span_days/data_source/created` 逐字节不变（毕业记录里没有 `materials_sha256` 字段——它是 spec 字段）（`duplicate` 路径同样只动它；不带 `--schedule` 的重复毕业保留旧值）。理由：冻结记录的审计事实不能随排期漂移，但「最后排期意图」需要可审计（`job.retarget` 事件 + `updated_at`）；该字段不进 identity/重复判定/资格/patrol，旧记录缺失容忍。
 - **可复现打包**：新增 `scripts/pack-repro.mjs` + `pnpm pack:repro`（清单取 `npm pack --dry-run --json`；条目排序、mtime=0、uid/gid=0、uname/gname 空、mode 0644、ustar 无 pax、gzip level 9 无文件名/时间戳；Node 实现不经 shell）。实测连打两次同 sha256（1,344,800 B / 162 条目，具体值见 handoff——tarball 含本文件，把自身指纹写进来会自指），且条目清单与 `npm pack` 逐项一致（`pack:check` 5b 断言）。`pack:check` 仍负责「能装能跑」，两者分工写进 `docs/release.md`。
 - **contract-audit 并发口径更正（回应发版席）**：`scripts/contract-audit.sh:19-20` 本就是 `mktemp` + `export YGL_HOME="$WS"` + `trap rm`，从不写共享工作区；发版席观察到的 99/100 归「重负载并行 flake」家族（同轮 `webui.test.ts` P1-1 ECONNRESET 同源），修法是门禁串行化而非快照模式——把审计改成快照副本修的是不存在的缺陷，故不改代码，只在本记录留证。
 - 测试 unit **522**（76 文件，+25，其中 `graduate.spec` 18→22：`job_target` 两条 + 空心记录守卫 + `{}` 路径放行）。

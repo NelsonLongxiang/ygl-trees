@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.108.3
+
+**GitHub issue #10 / #11**（P3，工具链韧性 + 文档名实）。无契约形状变更，无运行时行为变更。
+
+- **#10 `pack-repro` 找不到 pnpm（Homebrew/全局安装）**：`scripts/pack-repro.mjs` 原先只猜两个
+  node-relative 路径；`/opt/homebrew`、npm 全局（`%APPDATA%\npm`、`/usr/local/lib`）与各 PATH 项的
+  `node_modules/pnpm/bin/pnpm.cjs` 全部落空 → `cannot locate pnpm` rc=1。现按已知全局布局 + PATH 项探测；
+  仍然**用本进程 node 跑 pnpm 的 JS 入口**（不 spawn `.cmd` shim，避免 Windows shell 引号面）。
+  错误信息列出候选数与安装建议。
+- **#11 文档名实不符（doc-only）**：`docs/plan.md` 的 `node_states` → 真表名 `node_state`；
+  `docs/plan.md` / `docs/spec-validator.md` 把 `materials_sha256` 列为「毕业记录逐字节不变字段」——
+  毕业记录（`GraduationRecord`）没有该字段（它是 spec 字段），改为真实字段清单
+  `spec_id/spec_version/run_ids/thresholds/history/span_days/data_source/created` 并注明归属。
+- `.gitignore` 增 `{}`（仓库根偶发空文件名，测试脚本副作用）。
+
+测试：unit **576**（不变：本版无行为变更；`pack-repro` 的探测用两次同哈希手工验证）。
+
 ## 0.108.2
 
 **GitHub issue #8 / #9 的 P2 三处**（外部报告，验证席数据级复现）。无契约形状变更。

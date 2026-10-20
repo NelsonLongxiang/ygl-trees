@@ -104,11 +104,25 @@ const pnpmCandidates = [
   /(^|[/\\])pnpm\.cjs$/i.test(process.env.npm_execpath ?? "") ? process.env.npm_execpath : "",
   join(dirname(process.execPath), "node_modules", "pnpm", "bin", "pnpm.cjs"),
   join(dirname(process.execPath), "..", "lib", "node_modules", "pnpm", "bin", "pnpm.cjs"),
+  // GitHub #10: standalone / Homebrew / npm-global installs are not reachable
+  // through the two node-relative guesses above. Probe the known global layouts
+  // and each PATH entry's sibling node_modules (the Windows npm shim lives next
+  // to its package). Never spawn the .cmd shim: on Windows that needs a shell
+  // and re-introduces quoting.
+  ...(process.env.APPDATA ? [join(process.env.APPDATA, "npm", "node_modules", "pnpm", "bin", "pnpm.cjs")] : []),
+  "/opt/homebrew/lib/node_modules/pnpm/bin/pnpm.cjs",
+  "/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs",
+  ...(process.env.PATH ?? "")
+    .split(process.platform === "win32" ? ";" : ":")
+    .filter(Boolean)
+    .map((d) => join(d, "node_modules", "pnpm", "bin", "pnpm.cjs")),
 ].filter(Boolean);
 const pnpmCli = pnpmCandidates.find((p) => existsSync(p));
 if (!pnpmCli) {
   throw new Error(
-    "cannot locate pnpm: pack:repro must run pnpm's packer so workspace: deps are resolved before the bytes are sealed",
+    "cannot locate pnpm: pack:repro must run pnpm's packer so workspace: deps are resolved before the bytes are sealed. " +
+      `Tried: ${pnpmCandidates.slice(0, 6).join(", ")} … (${pnpmCandidates.length} candidates) and PATH/node_modules. ` +
+      "Install pnpm (npm i -g pnpm / Homebrew / corepack enable) and retry.",
   );
 }
 
