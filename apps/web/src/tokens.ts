@@ -28,6 +28,11 @@ export const DARK = {
   warning: "#d29922", // contested / pending-adjacent emphasis
   "on-entity": "#0d1117", // labels on knowledge-graph entity fills
   "on-primary": "#0d1117", // text on solid buttons (antd Button primaryColor / solidTextColor / dangerColor): ink — white was 3.3:1 on the rendered #4e90dc
+  // chart series (overview activity timeline): same hues stepped into the dark chart band; other = de-emphasis gray
+  "chart-research": "#b68104",
+  "chart-tree": "#4b92ce",
+  "chart-eval": "#28a73e",
+  "chart-other": "#6e7681",
 } as const;
 
 // DESIGN.md colors-light.* — same keys, same roles
@@ -47,6 +52,10 @@ export const LIGHT = {
   warning: "#8a5c00",
   "on-entity": "#ffffff",
   "on-primary": "#ffffff",
+  "chart-research": "#8a5c00",
+  "chart-tree": "#0550ae",
+  "chart-eval": "#1a7f37",
+  "chart-other": "#7d8590",
 } as const;
 
 export type ColorKey = keyof typeof DARK;
