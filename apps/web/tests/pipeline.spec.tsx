@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import Pipeline, { pipelineRows, type PipelineClaim, type PipelineLink, type PipelineEvidence } from "../src/Pipeline";
+import Pipeline, {
+  pipelineRows, overallStance, readView, writeView, VIEW_KEY, type PipelineClaim, type PipelineLink, type PipelineEvidence,
+} from "../src/Pipeline";
 
 /**
  * 0.92 单A 渲染验证（direct-0f20e882 队列工单验收①）：管线视图按状态分组
@@ -117,5 +119,45 @@ describe("研究管线 antd 重建：表格 + 筛选（用户裁定：不引 pro
     expect(html).toContain("看板");
     expect(html).toContain("表格");
     expect(html).toContain('aria-label="筛选断言"');
+  });
+});
+
+describe("评审 0e0fcfa：看法持久化 / 筛选收窄看板 / 徽章整体立场 / 键盘可展开", () => {
+  it("readView / writeView 走可注入的存储；坏值与抛错的存储都回 null、不抛", () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => { mem.set(k, v); } };
+    expect(readView(store)).toBeNull();
+    writeView("table", store);
+    expect(mem.get(VIEW_KEY)).toBe("table");
+    expect(readView(store)).toBe("table");
+    mem.set(VIEW_KEY, "weird");
+    expect(readView(store)).toBeNull();
+    const throwing = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+    expect(readView(throwing)).toBeNull();
+    expect(() => writeView("board", throwing)).not.toThrow();
+  });
+
+  it("筛选词只留下命中的断言（看板），并显示 n / N 计数", () => {
+    const html = renderToStaticMarkup(
+      createElement(Pipeline, { claims, claimEvidence: links, evidence, defaultView: "board", defaultNeedle: "校准曲线" })
+    );
+    expect(html).toContain("断言二");
+    expect(html).not.toContain("断言一");
+    expect(html).toContain("1 / 5 条断言");
+  });
+
+  it("证据徽章按整体立场取色（支持 + 反驳并存 = warning），是可聚焦的 button，立场标签用 ToneTag", () => {
+    const mixed: PipelineLink[] = [
+      { claim_id: "c1", evidence_id: "e1", stance: "supports" },
+      { claim_id: "c1", evidence_id: "e3", stance: "refutes" },
+    ];
+    const html = renderToStaticMarkup(
+      createElement(Pipeline, { claims: claims.slice(0, 1), claimEvidence: mixed, evidence, defaultView: "board" })
+    );
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"/);
+    expect(html).toContain('title="支持与反驳并存"');
+    expect(html).toContain("color:var(--color-warning);border-color:var(--color-warning)");
+    expect(overallStance(pipelineRows(claims, links, evidence).find((r) => r.id === "c3")!.items).color).toBe("var(--color-danger)");
+    expect(overallStance(pipelineRows(claims, links, evidence).find((r) => r.id === "c1")!.items).color).toBe("var(--color-success)");
   });
 });

@@ -63,22 +63,25 @@ const stanceMeta: Record<string, { color: string; label: string }> = {
 };
 const stanceOf = (s: string) => stanceMeta[s] ?? stanceMeta.related;
 
-const VIEW_KEY = "ygl-pipeline-view";
-const readView = (): PipelineView | null => {
+export const VIEW_KEY = "ygl-pipeline-view";
+type ViewStore = Pick<Storage, "getItem" | "setItem">;
+const viewStore = (): ViewStore | null => (typeof window === "undefined" ? null : window.localStorage);
+/** The remembered view; null when nothing valid is stored or storage throws. */
+export function readView(s: ViewStore | null = viewStore()): PipelineView | null {
   try {
-    const v = typeof window === "undefined" ? null : window.localStorage.getItem(VIEW_KEY);
+    const v = s?.getItem(VIEW_KEY);
     return v === "board" || v === "table" ? v : null;
   } catch {
     return null;
   }
-};
-const writeView = (v: PipelineView) => {
+}
+export function writeView(v: PipelineView, s: ViewStore | null = viewStore()): void {
   try {
-    window.localStorage.setItem(VIEW_KEY, v);
+    s?.setItem(VIEW_KEY, v);
   } catch {
     /* per-viewer convenience only */
   }
-};
+}
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…" : s;
@@ -87,41 +90,48 @@ function clip(s: string, n: number): string {
 const bucketOf = (status: string): Status =>
   (STATUS_ORDER as readonly string[]).includes(status) ? (status as Status) : "unverified";
 
-/** Claims joined to their evidence, filtered by a needle over claim text and quotes. */
-export function pipelineRows(
-  claims: PipelineClaim[],
-  claimEvidence: PipelineLink[],
-  evidence: PipelineEvidence[],
-  needle = ""
-): Row[] {
+/** Claims joined to their evidence — one pass over the links, computed once per payload (not per keystroke). */
+export function joinRows(claims: PipelineClaim[], claimEvidence: PipelineLink[], evidence: PipelineEvidence[]): Row[] {
   const evById = new Map(evidence.map((e) => [e.id, e]));
-  const q = needle.trim().toLowerCase();
-  return claims
-    .map((c) => ({
-      ...c,
-      bucket: bucketOf(c.status),
-      items: claimEvidence
-        .filter((l) => l.claim_id === c.id)
-        .map((l) => ({ l, ev: evById.get(l.evidence_id) }))
-        .filter((x): x is Linked => !!x.ev),
-    }))
-    .filter((r) => !q || r.text.toLowerCase().includes(q) || r.items.some((x) => x.ev.quote.toLowerCase().includes(q)));
+  const byClaim = new Map<string, Linked[]>();
+  for (const l of claimEvidence) {
+    const ev = evById.get(l.evidence_id);
+    if (!ev) continue;
+    const list = byClaim.get(l.claim_id);
+    if (list) list.push({ l, ev });
+    else byClaim.set(l.claim_id, [{ l, ev }]);
+  }
+  return claims.map((c) => ({ ...c, bucket: bucketOf(c.status), items: byClaim.get(c.id) ?? [] }));
 }
+
+/** The needle over claim text and evidence quotes — the per-keystroke part. */
+export function filterRows(rows: Row[], needle = ""): Row[] {
+  const q = needle.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((r) => r.text.toLowerCase().includes(q) || r.items.some((x) => x.ev.quote.toLowerCase().includes(q)));
+}
+
+export const pipelineRows = (claims: PipelineClaim[], claimEvidence: PipelineLink[], evidence: PipelineEvidence[], needle = ""): Row[] =>
+  filterRows(joinRows(claims, claimEvidence, evidence), needle);
 
 export default function Pipeline({
   claims,
   claimEvidence,
   evidence,
   defaultView,
+  defaultNeedle = "",
 }: {
   claims: PipelineClaim[];
   claimEvidence: PipelineLink[];
   evidence: PipelineEvidence[];
   defaultView?: PipelineView;
+  /** test seam — the filter box's initial text */
+  defaultNeedle?: string;
 }) {
   const [view, setView] = useState<PipelineView>(() => defaultView ?? readView() ?? "board");
-  const [needle, setNeedle] = useState("");
-  const rows = useMemo(() => pipelineRows(claims, claimEvidence, evidence, needle), [claims, claimEvidence, evidence, needle]);
+  const [needle, setNeedle] = useState(defaultNeedle);
+  const joined = useMemo(() => joinRows(claims, claimEvidence, evidence), [claims, claimEvidence, evidence]);
+  const rows = useMemo(() => filterRows(joined, needle), [joined, needle]);
 
   if (!claims.length) return <Empty description="暂无断言" />;
 
@@ -200,19 +210,32 @@ function Board({ rows }: { rows: Row[] }) {
   );
 }
 
+/** The badge wears the claim's overall stance: supports and refutes together read as contested, never the first link's colour alone. */
+export function overallStance(items: Linked[]): { color: string; label: string } {
+  const has = (s: string) => items.some((x) => x.l.stance === s);
+  if (has("supports") && has("refutes")) return { color: C.warning, label: "支持与反驳并存" };
+  if (has("supports")) return stanceMeta.supports;
+  if (has("refutes")) return stanceMeta.refutes;
+  return stanceMeta.related;
+}
+
 /** 证据链接折叠列表——点击展开（webui-design.md §3：点击展开证据链接列表）。 */
 function EvidenceLinks({ items }: { items: Linked[] }) {
   const [open, setOpen] = useState(false);
-  const sm = stanceOf(items[0]?.l.stance);
+  const tone = overallStance(items);
   return (
     <>
-      <Tag
-        color={undefined}
-        style={{ color: sm.color, borderColor: sm.color, cursor: "pointer" }}
+      {/* a real button: Enter / Space toggle, focus ring, aria-expanded (a span with onClick had none of these) */}
+      <Button
+        size="small"
+        aria-expanded={open}
+        autoInsertSpace={false}
+        title={tone.label}
         onClick={() => setOpen((v) => !v)}
+        style={{ color: tone.color, borderColor: tone.color, background: "transparent", fontSize: 12, height: 22, padding: "0 7px" }}
       >
         证据 ×{items.length} {open ? "▲" : "▼"}
-      </Tag>
+      </Button>
       {open && (
         <Collapse
           ghost
@@ -222,9 +245,7 @@ function EvidenceLinks({ items }: { items: Linked[] }) {
             key: String(i),
             label: (
               <span>
-                <Tag style={{ color: stanceOf(l.stance).color, borderColor: stanceOf(l.stance).color }}>
-                  {stanceOf(l.stance).label}
-                </Tag>
+                <ToneTag color={stanceOf(l.stance).color}>{stanceOf(l.stance).label}</ToneTag>
                 <Text type="secondary" style={{ fontSize: 12 }}>{ev.locator || ev.source_id}</Text>
               </span>
             ),
