@@ -160,3 +160,27 @@ describe("R16.5 tree-side", () => {
     expect(JSON.parse(r.stdout).selection_source).toBe("session");
   });
 });
+describe("GitHub #7 会话链继承（worker sessions）", () => {
+  it("子会话继承父会话的项目选择；自己的选择优先", () => {
+    sql("DELETE FROM meta WHERE key LIKE 'current_project@%' OR key='current_project'");
+    expect(run(["project", "use", "alpha"]).rc).toBe(0);
+    const inherited = run(["project", "show", "--json"], { YGL_SESSION: "spec-r16/job-42" });
+    expect(inherited.rc).toBe(0);
+    const j = JSON.parse(inherited.stdout);
+    expect(j.project.name).toBe("alpha");
+    expect(j.selection_source).toBe("session");
+    expect(run(["project", "use", "beta"], { YGL_SESSION: "spec-r16/job-42" }).rc).toBe(0);
+    const own = JSON.parse(run(["project", "show", "--json"], { YGL_SESSION: "spec-r16/job-42" }).stdout);
+    expect(own.project.name).toBe("beta");
+  });
+
+  it("树选择走同一条会话链", () => {
+    sql("DELETE FROM meta WHERE key LIKE 'current_tree@%' OR key='current_tree'");
+    expect(run(["tree", "new", "t-chain"]).rc).toBe(0);
+    expect(run(["tree", "use", "t-chain"]).rc).toBe(0);
+    const r = run(["tree", "show", "--json"], { YGL_SESSION: "spec-r16/job-42" });
+    expect(r.rc).toBe(0);
+    expect(JSON.parse(r.stdout).selection_source).toBe("session");
+    expect(r.stdout).toMatch(/t-chain/);
+  });
+});

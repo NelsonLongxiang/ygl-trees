@@ -304,6 +304,16 @@ export async function main(argv: string[]): Promise<number> {
     process.env.YGL_SERVE = "1";
   }
 
+  // GitHub issue #6 ②: `job tick` / `job run` are long-lived executors — they
+  // execSync each due job (up to 600s) while holding the process-level write
+  // lock, which queued every other CLI invocation (including reads) behind
+  // them. Same reasoning as `webui serve`: boot lock-free; the fs `tick.lock`
+  // keeps two ticks from running concurrently, and SQLite WAL serializes the
+  // runner's own writes. Child job commands already boot with YGL_SERVE=1.
+  if (group === "job" && (action === "tick" || action === "run")) {
+    process.env.YGL_SERVE = "1";
+  }
+
   // P4 fix: --version prints the actual version number (cold-user report);
   // the parser eats --version as a flag, so check flags not positional args.
   if (args.flags.version === true || group === "version") {

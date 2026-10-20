@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.108.1
+
+**GitHub issue #6 的 P2×2**（外部报告，验证席源码级坐实）。无契约形状变更。
+
+- **stuck-run reaper 恢复生效（#6 ①）**：`jobReapStuck` 的 cutoff 用「空格分隔的本地时间」，而
+  `runs.started` 自 0.87.1 起由 `nowIso()` 写成 UTC ISO-8601（`T…Z`）——同日字符串比较
+  (`' ' 0x20 < 'T' 0x54`) 恒假、跨日再叠加时区偏移，README「30 分钟收割」从 0.87.1 起静默失效。
+  修法：cutoff 改 `toISOString()`，与 `started` 同源同格式；**不比较格式化时间**是根因教训。
+  回归：同日/跨日/新鲜三例在 `job-reap.spec.ts`。
+- **job worker 会话链继承（#7，P1，0.106.0 回归）**：`workerSessionId` 让 job 子进程以
+  `<parent>/<job-id>` 作为 `YGL_SESSION`，但选择解析只读**精确**会话键 → 多项目工作区里裸命令 job
+  全部 "ambiguous project"。修法：`resolveProjectRaw` / `resolveTreeRaw` 的会话层沿会话链向上回退
+  （精确键 → 父 → 祖父 …，`/` 分隔段），子树自己设过的键优先。`selection.spec` 增项目/树两例。
+- **`job tick` / `job run` 不再长持写锁（#6 ②）**：两者 `execSync` 每个到期作业（最长 600s）期间
+  独占进程级写锁，其他 CLI（含读命令）排队至分钟级。修法：与 `webui serve` 同推理——boot 时
+  `YGL_SERVE=1` 旁路进程锁；互斥仍由 fs `tick.lock`（tick 之间）+ SQLite WAL（写串行）保证；
+  子作业本就以 `YGL_SERVE=1` 启动。回归：慢作业运行期间 `db stats` 仍即时返回
+  （`job-tick-lock.spec.ts`）。
+
+测试：unit **541 → 547**（`job-reap.spec` +3、`job-tick-lock.spec` +1、`selection.spec` +2）；其余门禁同 0.108.0。
+
 ## 0.108.0
 
 **语料冻结锚点强化（blob 双检）**。无契约/语料语义变更：`contract_version` / `corpus_version` 仍 1.2，

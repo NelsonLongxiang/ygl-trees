@@ -235,6 +235,12 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.108.1 记录（GitHub issue #6 的 P2×2，2026-10-21）**：外部报告 + 验证席源码坐实。
+- **① stuck-run reaper 时间格式**：`reads.ts jobReapStuck` 的 cutoff 是空格分隔本地时间，`runs.started` 是 `nowIso()`（UTC ISO-8601）——同日比较恒假、跨日叠加时区偏移，0.87.1 后静默失效。修法 cutoff 改 `toISOString()`；测试三例（同日 40min / 跨日 / 新鲜 1min）。教训：**任何「格式化时间字符串比较」都是回归温床，必须同源同时钟**。
+- **② job tick/run 长持锁**：`execute()` 的 execSync（≤600s/作业）发生在进程级写锁内，其他 CLI 排队。修法 `bin.ts` 对 `job tick|run` 设 `YGL_SERVE=1`（同 `webui serve` 推理）：boot 无锁，互斥靠 fs `tick.lock` + SQLite WAL；回归测试在慢作业运行中跑 `db stats`，断言 <5s 返回。
+- **#7 job worker 丢项目选择（P1，0.106.0 回归）**：`workerSessionId` 给子会话加 `<parent>/<job>` 段，但选择解析只读精确键 → 多项目工作区裸命令 job 全灭。修法 `sessionChain()`：项目/树选择沿会话链精确→祖先回退，子树自设优先；`selection.spec` +2。
+- 测试 unit 541→**547**（job-reap +3、job-tick-lock +1、selection +2）。
+
 **0.108.0 记录（语料冻结锚点强化，2026-10-21）**：fdc757f6 0.103 裁定的「blob 双检 + 属性保护」落地，无契约/语料语义变更。
 - **身份锚**：`freeze.mjs` 改 `git hash-object -w --path=<repo 相对>`（按 `.gitattributes` 过滤）→ `git cat-file blob` → sha256；同一提交在任意 `core.autocrlf` 下同清单，未提交的新文件也可算（先写对象）。安装态无 git 时回退磁盘哈希（发布产物只读 manifest，不冻结）。
 - **运行时锚**：`corpus-freeze.spec` 新增「盘上字节 sha256 == manifest 哈希」断言；属性/配置回归写 CRLF 时两道哈希分叉，本地门禁即红（0.103 的失败形态从 CI 提前到本地）。

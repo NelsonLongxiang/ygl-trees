@@ -373,9 +373,13 @@ export class Store {
 
   /** Runs left dangling by a killed process: close them out and report. */
   jobReapStuck(maxAgeMinutes = 30): number {
-    const cutoff = new Date(Date.now() - maxAgeMinutes * 60_000);
-    const p = (n: number) => String(n).padStart(2, "0");
-    const cut = `${cutoff.getFullYear()}-${p(cutoff.getMonth() + 1)}-${p(cutoff.getDate())} ${p(cutoff.getHours())}:${p(cutoff.getMinutes())}:${p(cutoff.getSeconds())}`;
+    // GitHub issue #6 ①: `started` is written by jobStart() as nowIso() — UTC
+    // ISO-8601 with 'T' and 'Z'. The old cutoff was a space-separated LOCAL
+    // timestamp, so the string compare `started < cut` was always false on the
+    // same day (' ' 0x20 < 'T' 0x54) and off by the tz offset across days: the
+    // reaper silently stopped reaping anything after the 0.87.1 timestamp
+    // format change. Same clock, same format — never compare formatted times.
+    const cut = new Date(Date.now() - maxAgeMinutes * 60_000).toISOString();
     const r = this.db.run(
       `UPDATE runs SET finished=?, rc=126, output=COALESCE(NULLIF(output,''),'') || '(reaped: process was killed mid-run)'
         WHERE finished='' AND started < ?`,

@@ -3,7 +3,8 @@
  *
  * Resolution priority (project and tree alike):
  *   explicit flag > env (YGL_PROJECT / YGL_TREE) > session key
- *   (`current_project@<sid>` / `current_tree@<sid>`) > global key.
+ *   (`current_project@<sid>` / `current_tree@<sid>`, walking the session chain
+ *   `<sid>` → ancestors for worker sessions) > global key.
  *
  * The global key is display/migration fallback ONLY: it never authorizes
  * project-scoped commands when the workspace has more than one project
@@ -87,11 +88,32 @@ export function resolveProject(db: DB, explicit?: string): Selection {
   return recordSelectionVia(resolveProjectRaw(db, explicit));
 }
 
+/** Session keys to try, exact first then ancestors. YGL_SESSION may be a
+ *  chain: the job runner writes `<parent>/<job-id>` and nested workers append
+ *  further segments (see workerSessionId). A child that never selected a
+ *  project must inherit the nearest ancestor's — otherwise every bare-command
+ *  job in a multi-project workspace died "ambiguous project" (GitHub #7). */
+function sessionChain(prefix: "current_project" | "current_tree"): string[] {
+  const parts = sessionId().split("/").filter(Boolean);
+  const keys: string[] = [];
+  for (let i = parts.length; i > 0; i--) keys.push(`${prefix}@${parts.slice(0, i).join("/")}`);
+  if (!keys.length) keys.push(`${prefix}@default`);
+  return keys;
+}
+
+function sessionSelection(db: DB, prefix: "current_project" | "current_tree"): string {
+  for (const key of sessionChain(prefix)) {
+    const name = db.metaGet(key);
+    if (name) return name;
+  }
+  return "";
+}
+
 function resolveProjectRaw(db: DB, explicit?: string): Selection {
   if (explicit) return { name: explicit, id: byName(db, explicit), source: "flag" };
   const envName = process.env.YGL_PROJECT;
   if (envName) return { name: envName, id: byName(db, envName), source: "env" };
-  const sessionName = db.metaGet(projectSessionKey());
+  const sessionName = sessionSelection(db, "current_project");
   if (sessionName) return { name: sessionName, id: byName(db, sessionName), source: "session" };
   const globalName = db.metaGet("current_project");
   if (globalName) return { name: globalName, id: byName(db, globalName), source: "global" };
@@ -111,7 +133,7 @@ function resolveTreeRaw(db: DB, explicit?: string): Selection {
   if (explicit) return { name: explicit, id: "", source: "flag" };
   const envName = process.env.YGL_TREE;
   if (envName) return { name: envName, id: "", source: "env" };
-  const sessionName = db.metaGet(treeSessionKey());
+  const sessionName = sessionSelection(db, "current_tree");
   if (sessionName) return { name: sessionName, id: "", source: "session" };
   const globalName = db.metaGet("current_tree");
   if (globalName) return { name: globalName, id: "", source: "global" };
