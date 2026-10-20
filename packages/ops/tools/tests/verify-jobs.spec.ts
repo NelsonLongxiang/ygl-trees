@@ -28,6 +28,7 @@ let lockedBase = "";
 let snapshotSha = "";
 let materialId = "";
 let specId = "";
+let testEnv: any;
 
 function listen(s: ReturnType<typeof createDashboardServer>): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -69,6 +70,7 @@ beforeAll(async () => {
   const db = new DB(path.join(dir, "unit.db"));
   const store = new Store(db);
   const env = { home, db, store } as any;
+  testEnv = env;
 
   const draft = createMaterialDraft(env, { title: "作业面材料", text: "账单金额不得为负。\n" });
   expect(draft.ok).toBe(true);
@@ -262,5 +264,31 @@ describe("verify jobs — run", () => {
     const report = JSON.parse(fs.readFileSync(r.json.report_path, "utf8"));
     expect(report.vu[0].verdict).toBe("ERROR");
     expect(String(report.vu[0].evidence.reason)).toContain("allowlist");
+  }, 60_000);
+
+  it("YGL_VERIFY_ALLOW_CMD 空串 = 显式空表（全禁 command，fail-closed），不静默回落 node", async () => {
+    const caseDir = path.join(REPO, "packages", "verify", "core", "corpus", "cases", "command-exit-code");
+    const raw = JSON.parse(fs.readFileSync(path.join(caseDir, "spec.json"), "utf8"));
+    const emptyId = "spec_empty_allowlist";
+    raw.spec_id = emptyId;
+    const specDir = path.join(home, "verify", "specs", emptyId);
+    fs.mkdirSync(specDir, { recursive: true });
+    fs.writeFileSync(path.join(specDir, "spec.json"), JSON.stringify(raw, null, 2));
+    const previous = process.env.YGL_VERIFY_ALLOW_CMD;
+    process.env.YGL_VERIFY_ALLOW_CMD = "";
+    const stricter = createDashboardServer(testEnv, { allowUpload: false, enableVerifyJobs: true });
+    const stricterBase = await listen(stricter);
+    try {
+      const r = await post(`${stricterBase}/api/verify/run`, { spec_id: emptyId, snapshot_sha256: snapshotSha, no_archive: true });
+      expect(r.status).toBe(200);
+      expect(r.json.summary.error).toBe(1);
+      const report = JSON.parse(fs.readFileSync(r.json.report_path, "utf8"));
+      expect(report.vu[0].verdict).toBe("ERROR");
+      expect(String(report.vu[0].evidence.reason)).toContain("allowlist");
+    } finally {
+      await new Promise<void>((resolve) => stricter.close(() => resolve()));
+      if (previous === undefined) delete process.env.YGL_VERIFY_ALLOW_CMD;
+      else process.env.YGL_VERIFY_ALLOW_CMD = previous;
+    }
   }, 60_000);
 });

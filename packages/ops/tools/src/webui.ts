@@ -286,8 +286,10 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
   const enableVerifyJobs = opts.enableVerifyJobs === true;
   // command 型检查器的白名单在 serve 启动时定下（请求体永不携带 argv）：默认只放 node，
   // 需要更多就跑 `YGL_VERIFY_ALLOW_CMD="node,python" webui serve --enable-verify-jobs`。
+  // 空串是**显式空表**（全禁 command，fail-closed），只有未设置才回落 node —— 用 ?? 不是 ||，
+  // 否则操作员写 YGL_VERIFY_ALLOW_CMD= 想全禁，却静默拿到 node（fail-open）。
   const jobDeps = {
-    commandAllowlist: String(process.env.YGL_VERIFY_ALLOW_CMD || "node")
+    commandAllowlist: String(process.env.YGL_VERIFY_ALLOW_CMD ?? "node")
       .split(",")
       .map((v) => v.trim())
       .filter(Boolean),

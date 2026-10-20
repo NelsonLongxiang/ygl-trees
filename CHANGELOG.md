@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.102.1
+
+**热修（发布后 P2）**：`YGL_VERIFY_ALLOW_CMD` 的空串语义是 **fail-open** 的——`String(process.env.YGL_VERIFY_ALLOW_CMD || "node")` 让「设空串 = 全禁 command」的操作员意图静默变成「放行 node」。改为 `??`：未设置才回落 `node`，空串是**显式空表**（所有 `argv[0]` 判 VU `ERROR`，fail-closed）。补回归一例（空串下跑 `command` 型 VU → `ERROR` 且 reason 含 `allowlist`）。
+
+- 记 backlog（评审观察，非本批新增）：`specDir` 按 `spec_id` 不按版本分目录（`verify-cmds.ts`），CLI 与 HTTP 同语义都收强制 `spec_version`——同 id 低版本号会覆写 `spec.json`，`run` 永远读最新写入。两面同源、在"操作员可信"模型下可接受，将来可考虑版本冲突拒绝或分版本目录。
+- 无契约变更；`contract_version` / `corpus_version` 仍 1.1。测试 unit **442**（+1）/ Rust 31 / demo 128 / contract 100 / readme 54。
+
 ## 0.102.0
 
 **升级注意**：无契约变更——`contract_version 1.1` / `corpus_version 1.1` 不变，已发规范、封包与归档包继续可验。新增的是**默认关闭**的 HTTP 执行面，CLI 命令面零破坏。
