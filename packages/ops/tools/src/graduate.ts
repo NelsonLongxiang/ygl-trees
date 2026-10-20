@@ -212,24 +212,49 @@ export interface JobCommand {
   usable: boolean;
   /** candidate 命中 shell 白名单失败 —— CLI 必须拒绝 --schedule，且不要回显原串。 */
   unsafe: boolean;
-  /** 消毒后的摘要（控制字符替换、截断 40 字符）；没有不安全来源时为 null。 */
+  /** 消毒后的形状摘要（长度 + 首个越界字符的类别与位置）；没有不安全来源时为 null。 */
   rejected: string | null;
 }
 
-/** 路径白名单：字母数字、点、下划线、斜杠、反斜杠、冒号、连字符、空格、波浪号。
- *  波浪号是 Windows 8.3 短路径（`C:\Users\ADMINI~1\...`）的合法字符，且命令串
- *  始终双引号包裹——`~` 在双引号内不展开，放进命令串不构成注入面。 */
-const SHELL_PATH_SAFE = /^[A-Za-z0-9._/\\:\- ~]+$/;
+/** 命令解释器元字符 + 控制字符（denylist）：`cmd.exe` 下 `& | < > ^ % ! ( ) " \`` 会被
+ *  解释器吃掉，路径里出现任何一个都不当路径用。反过来说，**允许 Unicode**——中文、
+ *  `#`、`+`、`'` 在 Windows 路径里完全合法，白名单式放行会误伤真实目录（r27 P2-3）。 */
+const SHELL_METACHARS = /[&|<>^%!"`()\u0000-\u001f\u007f]/;
 /** spec_id 同为命令串的一部分，用与 HTTP 层一致的 id 白名单。 */
 const SPEC_ID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 
+/**
+ * 尾随分隔符/空白单独判死：命令串把 `--db` 值双引号包裹，`"C:\Temp\"` 里的反斜杠
+ * 会转义闭合引号，整串变成 `node: bad option`（r27 P2-2 实测）。尾随空格同理会被
+ * 解释器裁剪，与用户看到的路径不一致。
+ */
+function trailingProblem(raw: string): string | null {
+  if (/[\\/]$/.test(raw)) return "paths ending with a separator cannot be quoted safely";
+  if (/\s$/.test(raw)) return "paths ending with whitespace get trimmed by the shell";
+  return null;
+}
+
 export function shellSafePath(raw: string): boolean {
-  return raw.length > 0 && raw.length <= 4096 && SHELL_PATH_SAFE.test(raw);
+  return raw.length > 0 && raw.length <= 4096 && !SHELL_METACHARS.test(raw) && !trailingProblem(raw);
+}
+
+/**
+ * 不安全来源的可读摘要：**只说形状，不回显内容**（r27 P3-1 订正）。
+ *
+ * 旧版保留 40 个可打印字符，等于把注入样本原样写进毕业记录与错误文案——「不回显」
+ * 的承诺成了假的，测试还断言 `rejected` 含 `PWNED`，把泄漏固化成契约。现在只给长度、
+ * 首个越界字符的类别与位置：知道怎么修，拿不到原串。
+ */
+export function unsafeSummary(raw: string): string {
+  const m = SHELL_METACHARS.exec(raw);
+  if (m) return `${raw.length} chars; shell metacharacter at offset ${m.index}`;
+  const tail = trailingProblem(raw);
+  if (tail) return `${raw.length} chars; ${tail}`;
+  return `${raw.length} chars; shape rejected`;
 }
 
 function printable(raw: string): string {
-  const clean = raw.replace(/[^\x20-\x7e]/g, "?");
-  return clean.length > 40 ? `${clean.slice(0, 40)}…` : clean;
+  return unsafeSummary(raw);
 }
 
 export function jobCommand(specId: string, source: string | null, override?: string | null): JobCommand {

@@ -725,10 +725,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         db_override: dbOverride ?? null,
         patrol: patrol ? "eligible" : "not-requested",
       };
-      const emit = (jobRow?: { id?: string; every?: number }): number => {
+      const emit = (jobRow?: { id?: string; every?: number; retargeted?: boolean }): number => {
         if (jobRow) {
           payload.job_id = jobRow.id;
           payload.job_every_minutes = jobRow.every ?? every;
+          if (jobRow.retargeted) payload.job_retargeted = true;
         }
         if (ctx.json) {
           console.log(JSON.stringify(payload, null, 2));
@@ -737,7 +738,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, `  ✓ ${written.duplicate ? "already graduated" : "graduated"}: ${el.spec_id} v${el.spec_version}  (${record.run_ids.length} run(s), span ${record.span_days}d)`);
         out(ctx, `  history: ${record.history.reports_same_version} report(s) at this version, ${record.history.non_pass} non-PASS${record.history.last_non_pass ? ` (last: ${record.history.last_non_pass.run_id}=${record.history.last_non_pass.overall})` : ""}`);
         out(ctx, paint(C.dim, `  record: ${written.path}`, ctx.color));
-        if (jobRow) out(ctx, paint(C.dim, `  scheduled: job ${jobRow.id} every ${payload.job_every_minutes} min`, ctx.color));
+        if (jobRow) out(ctx, paint(C.dim, `  scheduled: job ${jobRow.id} every ${payload.job_every_minutes} min${jobRow.retargeted ? " (existing job updated in place)" : ""}`, ctx.color));
         else if (cmd.unsafe) out(ctx, paint(C.yellow, `  note: the verified source contains shell-unsafe characters — not echoed; job_command is a placeholder and --schedule is refused. Pass --db <file> to pick the recurring database`, ctx.color));
         else if (!cmd.usable) out(ctx, paint(C.yellow, `  note: source ${el.data_source?.source ?? "none"} is not an executable --db; pass --db <file> to register a job`, ctx.color));
         else out(ctx, paint(C.dim, `  next: job add "verify ${specId}" --every ${every || "<min>"} -- ${cmd.command}`, ctx.color));
@@ -749,10 +750,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (!wantSchedule) return emit();
       const title = `verify ${specId}`;
       return getOrm(env.db.path)
-        .then((ds) => writes.jobAdd(ds, { title, command: cmd.command, every, at: "", force: false }))
-        .then((job: any): number => {
-          const row = job?.row ?? job;
-          return emit({ id: row?.id, every: row?.every_minutes ?? row?.every });
+        .then((ds) =>
+          // 已存在同名作业 → 就地改写命令（--db 重定向必须真的生效，r27 P2-1）；
+          // 不存在 → 新建。jobAdd 自己按 title 幂等，这里不再叠一层 force。
+          writes.jobRetarget(ds, { title, command: cmd.command, every }).then((retargeted: any) =>
+            retargeted
+              ? retargeted
+              : writes.jobAdd(ds, { title, command: cmd.command, every, at: "", force: false }).then((job: any) => ({ row: job?.row ?? job, changed: false })),
+          ),
+        )
+        .then((outcome: any): number => {
+          const row = outcome?.row ?? outcome;
+          return emit({ id: row?.id, every: row?.every_minutes ?? row?.every, retargeted: !!outcome?.changed });
         })
         .catch((e: any): number => {
           bad(ctx, `cannot schedule: ${e?.message || e}`);

@@ -237,16 +237,27 @@ describe("jobCommand / patrolEligibility", () => {
     expect(cmd.command).toContain('--db "<snapshot.sqlite>"');
     expect(cmd.command).not.toContain("PWNED");
     expect(cmd.command).not.toContain("&");
-    expect(cmd.rejected).toContain("PWNED");
+    // r27 P3-1: the summary must describe the shape, never echo the sample back —
+    // the old assertion (`toContain("PWNED")`) cemented the leak into the contract.
+    expect(cmd.rejected).not.toContain("PWNED");
+    expect(cmd.rejected).toMatch(/shell metacharacter at offset \d+/);
     // Same rule for an operator override: the job executes it just the same.
     const viaOverride = jobCommand("spec_x", "/data/ok.sqlite", 'x" & whoami & "');
     expect(viaOverride.usable).toBe(false);
     expect(viaOverride.unsafe).toBe(true);
     expect(viaOverride.command).not.toContain("whoami");
+    expect(viaOverride.rejected).not.toContain("whoami");
   });
 
-  it("keeps ordinary paths (spaces, colons, both separators) executable", () => {
-    for (const p of ["/data/billing.sqlite", "C:\\Users\\me\\My Snapshots\\snap.sqlite", "./tmp/snap.sqlite"]) {
+  it("keeps ordinary paths (spaces, colons, both separators, unicode) executable", () => {
+    for (const p of [
+      "/data/billing.sqlite",
+      "C:\\Users\\me\\My Snapshots\\snap.sqlite",
+      "./tmp/snap.sqlite",
+      // r27 P2-3: Chinese / '#' / '+' are legal Windows path characters; a narrow
+      // ascii whitelist used to reject real user directories and block scheduling.
+      "C:\\数据\\账单调账 2026#1+final.sqlite",
+    ]) {
       const cmd = jobCommand("spec_x", p);
       expect(cmd.usable).toBe(true);
       expect(cmd.unsafe).toBe(false);
@@ -256,6 +267,17 @@ describe("jobCommand / patrolEligibility", () => {
     const badId = jobCommand("spec x; rm -rf /", "/data/ok.sqlite");
     expect(badId.usable).toBe(false);
     expect(badId.command).not.toContain("rm -rf");
+  });
+
+  // r27 P2-2: `--db "C:\...\Temp\"` escapes the closing quote and becomes
+  // `node: bad option` — a path that cannot be quoted safely must not be scheduled.
+  it("rejects paths that cannot survive double quoting", () => {
+    for (const p of ["C:\\Users\\me\\Temp\\", "/data/snaps/", "C:\\data\\snap.sqlite "]) {
+      const cmd = jobCommand("spec_x", p);
+      expect(cmd.usable).toBe(false);
+      expect(cmd.unsafe).toBe(true);
+      expect(cmd.rejected).toMatch(/paths ending with (a separator|whitespace)/);
+    }
   });
 
   it("only allows patrol graduation when the verified db IS the workspace db", () => {

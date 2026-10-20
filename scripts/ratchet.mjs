@@ -40,11 +40,6 @@ function dirBytes(dir) {
   return total;
 }
 
-function median(values) {
-  const s = [...values].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
-
 function coldStartMs() {
   // 预热两次不计入：干净检出（新 worktree / 新机器）首次触碰 bundle 与 node_modules
   // 会被杀毒扫描与磁盘冷缓存放大成一次性成本，那不是产品变慢。否则同一 commit
@@ -70,9 +65,16 @@ function coldStartMs() {
 }
 
 const METRICS = [
-  { key: "bundle_bytes", label: "bundle (dist/bundle/bin.cjs)", measure: () => statSync(BIN).size, toleranceRel: 0.02 },
-  { key: "web_dist_bytes", label: "web dist (dist/apps/web/dist)", measure: () => dirBytes(WEB), toleranceRel: 0.02 },
-  { key: "cold_start_ms", label: "cold start (--version, min of 7)", measure: coldStartMs, toleranceRel: 0.3, retryOnRegression: true },
+  { key: "bundle_bytes", label: "bundle (dist/bundle/bin.cjs)", measure: () => statSync(BIN).size, toleranceRel: 0.02, method: "stat-size-of-dist-bundle" },
+  { key: "web_dist_bytes", label: "web dist (dist/apps/web/dist)", measure: () => dirBytes(WEB), toleranceRel: 0.02, method: "sum-file-sizes-recursive" },
+  {
+    key: "cold_start_ms",
+    label: "cold start (--version, min of 7)",
+    measure: coldStartMs,
+    toleranceRel: 0.3,
+    retryOnRegression: true,
+    method: "warm2-min7-retry-once",
+  },
 ];
 
 if (!existsSync(BIN)) {
@@ -100,25 +102,29 @@ for (const m of METRICS) {
   }
 
   if (base === undefined) {
-    metrics[m.key] = { value, tolerance_rel: m.toleranceRel, measured_at: new Date().toISOString() };
+    metrics[m.key] = { value, tolerance_rel: m.toleranceRel, measured_at: new Date().toISOString(), method: m.method };
     report.push({ metric: m.key, label: m.label, value, base: null, status: "seeded" });
     continue;
   }
 
+  if (write) {
+    // 作者席显式认账 / 度量方法变更后的重烘：adopt 本次测量值并盖上 method 戳。
+    // 重烘必须连 held 项一起写——否则同一份基线里新旧尺子的读数混住（r27 P3④：
+    // 旧冷启动基线烘于 median-of-5，改成 min-of-7 后余量只剩十几毫秒）。
+    const status = value > base + tolerance ? "accepted" : value < base ? "tightened" : "rebaked";
+    metrics[m.key] = { ...metrics[m.key], value, tolerance_rel: m.toleranceRel, measured_at: new Date().toISOString(), method: m.method };
+    report.push({ metric: m.key, label: m.label, value, base, tolerance, status });
+    continue;
+  }
+
   if (value > base + tolerance) {
-    if (write) {
-      // 作者席显式认账：adopt 新值并重设基线（能力新增导致的体积/时延增长走这条）
-      metrics[m.key] = { ...metrics[m.key], value, tolerance_rel: m.toleranceRel, measured_at: new Date().toISOString() };
-      report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "accepted" });
-    } else {
-      failed = true;
-      report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "regressed", retried });
-    }
+    failed = true;
+    report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "regressed", retried });
     continue;
   }
 
   if (value < base) {
-    metrics[m.key] = { ...metrics[m.key], value, measured_at: new Date().toISOString() };
+    metrics[m.key] = { ...metrics[m.key], value, measured_at: new Date().toISOString(), method: m.method };
     report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "tightened", retried });
     continue;
   }
@@ -143,7 +149,7 @@ if (asJson) {
   console.log(JSON.stringify({ ok: !failed, baseline: BASELINE, report }, null, 2));
 } else {
   for (const r of report) {
-    const mark = r.status === "regressed" ? "✗" : r.status === "held" ? "·" : r.status === "accepted" ? "!" : "✓";
+    const mark = r.status === "regressed" ? "✗" : r.status === "held" ? "·" : r.status === "accepted" ? "!" : r.status === "rebaked" ? "~" : "✓";
     const delta = r.base === null ? "seed" : r.status === "tightened" ? `${r.base} → ${r.value}` : r.status === "regressed" ? `${r.base} → ${r.value} (tolerance +${r.tolerance})` : r.status === "accepted" ? `${r.base} → ${r.value} (accepted)` : String(r.value);
     console.log(`  ${mark} ${r.label.padEnd(44)} ${delta}  [${r.status}]`);
   }

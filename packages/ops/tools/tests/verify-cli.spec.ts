@@ -169,6 +169,60 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     }
   });
 
+  it("graduate --schedule 重排就地 retarget 既有作业（--db 不再静默 no-op，r27 P2①）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad3-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_ret");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_ret", spec_version: 1 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const sourceA = join(ghome, "billing-a.sqlite");
+      const sourceB = join(ghome, "billing-b.sqlite");
+      const put = (id: string, finished: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({
+            run_id: id,
+            spec_id: "spec_ret",
+            finished,
+            overall: "PASS",
+            verifier: { spec_version: 1 },
+            data_source: { kind: "sqlite-snapshot", source: sourceA },
+          }),
+          "utf8",
+        );
+      put("run_a", "2026-09-01T00:00:00.000Z");
+      put("run_b", "2026-09-20T00:00:00.000Z");
+      put("run_c", "2026-10-11T00:00:00.000Z");
+
+      const first = run(["verify", "graduate", "spec_ret", "--schedule", "--every", "60", "--json"], env);
+      expect(first.rc).toBe(0);
+      const firstBody = JSON.parse(first.out) as { job_id: string; job_command: string; job_retargeted?: boolean };
+      expect(firstBody.job_command).toContain(sourceA);
+      expect(firstBody.job_retargeted).toBeUndefined();
+
+      const moved = run(["verify", "graduate", "spec_ret", "--schedule", "--every", "60", "--db", sourceB, "--json"], env);
+      expect(moved.rc).toBe(0);
+      const body = JSON.parse(moved.out) as { job_id: string; job_command: string; job_retargeted?: boolean; db_override: string };
+      expect(body.job_retargeted).toBe(true);
+      expect(body.job_id).toBe(firstBody.job_id);
+      expect(body.job_command).toContain(sourceB);
+      expect(body.db_override).toBe(sourceB);
+
+      const rowsRun = run(["db", "sql", "select id, command from jobs", "--json"], env);
+      expect(rowsRun.rc).toBe(0);
+      const rows = JSON.parse(rowsRun.out) as Array<{ id: string; command: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].command).toContain(sourceB);
+      expect(rows[0].command).not.toContain(sourceA);
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
   it("graduate --schedule 缺 --every 是用法错误，且不冻结记录（r25 P3①）", () => {
     const ghome = mkdtempSync(join(tmpdir(), "ygl-grad2-"));
     const env = { YGL_HOME: ghome };

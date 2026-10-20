@@ -471,6 +471,31 @@ export async function jobAdd(
   });
 }
 
+/**
+ * 按 title 就地改写作业命令/周期（`verify graduate --schedule --db …` 的重定向用）。
+ *
+ * `jobAdd` 按 title 幂等，命中时原样返回旧行——若命令变了却静默 no-op，输出会展示新
+ * 命令而 `jobs` 表仍是旧路径（r27 P2-1 实测：`--db` 重定向后作业每分钟照旧跑旧库）。
+ * 这里把「存在则改、不存在返回 null」独立出来，由调用方决定新建与否。
+ */
+export async function jobRetarget(
+  ds: DataSource,
+  o: { title: string; command: string; every?: number }
+): Promise<{ row: Record<string, any>; changed: boolean } | null> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM jobs WHERE title=?`, [o.title])) as any[];
+    const ex = rows[0];
+    if (!ex) return null;
+    const every = Number(o.every ?? ex.every_minutes ?? 0);
+    if (ex.command === o.command && Number(ex.every_minutes ?? 0) === every) {
+      return { row: ex, changed: false };
+    }
+    await mgr.query(`UPDATE jobs SET command=?, every_minutes=? WHERE id=?`, [o.command, every, ex.id]);
+    await logEvent(mgr, "job.retarget", "job", ex.id, o.title);
+    return { row: { ...ex, command: o.command, every_minutes: every }, changed: true };
+  });
+}
+
 // ================================================================ artifacts (versioned appends, batch 2)
 
 export async function artifactAdd(

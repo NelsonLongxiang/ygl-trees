@@ -32,7 +32,7 @@
     "demo": "bash examples/demo.sh",
     "test": "pnpm build && pnpm test:unit && bash examples/demo.sh && bash scripts/contract-audit.sh && pnpm ratchet",
     "prepublishOnly": "pnpm test && pnpm pack:check",
-    "test:unit": "vitest run --hook-timeout=60000 --test-timeout=20000 --maxWorkers=2",
+    "test:unit": "vitest run --maxWorkers=2",
     "smoke:bun": "bash scripts/bun-smoke.sh",
     "bench": "pnpm build && node benchmarks/bench.js",
     "pack:check": "bash scripts/pack-check.sh",

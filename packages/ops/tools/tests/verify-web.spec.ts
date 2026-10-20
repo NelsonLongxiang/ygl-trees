@@ -143,7 +143,39 @@ describe("verify 服务面：读投影", () => {
     const d = reportDetail({ home } as any, "run_a");
     expect((d?.report as any).overall).toBe("PASS");
     expect(d?.archives).toHaveLength(1);
+    expect(d?.source_warning).toBeNull();
     expect(reportDetail({ home } as any, "run_missing")).toBeNull();
+  });
+
+  // r27 Q1: the warning that graduation may refuse a shell-hostile source must be
+  // visible on the read face, not only when `graduate --schedule` fails.
+  it("报告详情把不可排期的 data_source 投影成 source_warning（只出声不改报告）", () => {
+    const injected = {
+      run_id: "run_w",
+      spec_id: "spec_111111111111",
+      spec_version: 3,
+      overall: "PASS",
+      reason: "all 2 assert units passed",
+      summary: { pass: 2, fail: 0, needs_material: 0, error: 0 },
+      started: "2026-10-20T01:00:00.000Z",
+      finished: "2026-10-20T01:00:00.000Z",
+      verifier: { mode: "open", spec_version: 3 },
+      data_source: {
+        kind: "sqlite-snapshot",
+        sha256: "a".repeat(64),
+        source: 'C:\\x.sqlite" & whoami',
+        captured_at: "2026-10-20T01:00:00.000Z",
+      },
+    };
+    const at = path.join(verifyPaths({ home } as any).reports, "run_w.json");
+    writeJson(at, injected);
+    try {
+      const d = reportDetail({ home } as any, "run_w");
+      expect(d?.source_warning).toMatch(/not a plain filesystem path/);
+      expect((d?.report as any).data_source.source).toBe(injected.data_source.source);
+    } finally {
+      fs.rmSync(at, { force: true });
+    }
   });
 
   it("材料清单只回投影、正文单独取（构造追溯左列的事实源）", () => {

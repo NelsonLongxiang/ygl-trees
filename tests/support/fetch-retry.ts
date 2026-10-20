@@ -15,7 +15,9 @@ import { Buffer } from "node:buffer";
 
 const REAL_FETCH = globalThis.fetch;
 const MAX_ATTEMPTS = 3;
-const CONNECTION_LEVEL = /fetch failed|ECONNRESET|ECONNREFUSED|EPIPE|socket hang up/i;
+/** 只认「连接没建起来/被对端复位」这一类码。裸 `fetch failed` 太宽：DNS/TLS 失败也
+ *  会被重试，白白多等 900ms 才报（K3 评审席反馈）——那些不是抖动，重试无意义。 */
+const RETRYABLE_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "ECONNABORTED", "UND_ERR_SOCKET"]);
 
 type Replayable = string | Buffer | Uint8Array | URLSearchParams | Blob | ArrayBuffer | null;
 
@@ -43,8 +45,8 @@ async function retryingFetch(input: RequestInfo | URL, init?: RequestInit): Prom
       return await REAL_FETCH(input, init);
     } catch (err) {
       lastErr = err;
-      const msg = `${String((err as Error)?.message ?? err)} ${String((err as any)?.cause?.code ?? (err as any)?.code ?? "")}`;
-      if (!CONNECTION_LEVEL.test(msg) || !safeBody) throw err;
+      const code = String((err as any)?.cause?.code ?? (err as any)?.code ?? "");
+      if (!RETRYABLE_CODES.has(code) || !safeBody) throw err;
       await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
     }
   }

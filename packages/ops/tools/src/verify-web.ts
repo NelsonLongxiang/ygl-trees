@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { basename, join, resolve, sep } from "node:path";
 
 import { BLOB_LIMIT, blobPath, createBlobSink, hasBlob, mimeFor, pruneIncoming } from "./blob-store";
+import { shellSafePath } from "./graduate";
 
 import type { Env } from "../../../core/database/src/types";
 
@@ -232,8 +233,14 @@ export function listArchives(env: Env): ArchiveRow[] {
   return rows.sort((a, b) => b.created.localeCompare(a.created));
 }
 
-/** 报告看板详情：报告原文 + 归档侧车（不重算、不改写——报告不可变）。 */
-export function reportDetail(env: Env, runId: string): { report: unknown; archives: unknown[] } | null {
+/**
+ * 报告看板详情：报告原文 + 归档侧车（不重算、不改写——报告不可变）。
+ *
+ * `source_warning` 是把 `report import` 的那句提醒**投影到读面**（r27 Q1）：跨机绝对
+ * 路径合法，但 shell 装不下的来源（含元字符、尾随分隔符）在 graduate --schedule 时
+ * 必被拒，看板要能提前看见，而不是等执行才踩。只出声、不改变报告内容。
+ */
+export function reportDetail(env: Env, runId: string): { report: unknown; archives: unknown[]; source_warning: string | null } | null {
   const p = verifyPaths(env);
   const at = safeJoin(p.reports, runId, ".json");
   if (!at) return null;
@@ -241,7 +248,9 @@ export function reportDetail(env: Env, runId: string): { report: unknown; archiv
   if (!report) return null;
   const sidePath = safeJoin(p.archives, runId, ".json");
   const side = sidePath ? readJson<any>(sidePath) : null;
-  return { report, archives: Array.isArray(side?.archives) ? side.archives : [] };
+  const source = typeof report?.data_source?.source === "string" ? report.data_source.source : "";
+  const sourceWarning = source && !source.startsWith("blob:") && !shellSafePath(source) ? "data_source.source is not a plain filesystem path — graduation will refuse to schedule it" : null;
+  return { report, archives: Array.isArray(side?.archives) ? side.archives : [], source_warning: sourceWarning };
 }
 
 export interface MaterialRow {

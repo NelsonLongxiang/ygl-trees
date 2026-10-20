@@ -137,7 +137,7 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
   prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
-  graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule]
+  graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]
                                       freeze eligibility, then make the check recurring (--db retargets the job only)
   register <sealed-binary>            register a sealed build (footer chain → registrations/ + binaries/)
   signature <sealed-binary> [--expect-key <hex|file>]  verify a seal's ed25519 signature (key table, not self-signed)
