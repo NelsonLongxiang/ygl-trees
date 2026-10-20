@@ -24,7 +24,11 @@ export interface Selection {
   source: SelectionSource;
 }
 
-/** sid — the session identity keys are namespaced under (R16.1). */
+/** sid — the session identity keys are namespaced under (R16.1).
+ *  The no-session fallback is `"default"` here, while `eventActor()` falls back
+ *  to `"cli"`: same concept, two names for historical reasons (selection keys
+ *  predate the events actor). Keep them distinct — `"default"` means "shared
+ *  bucket, no isolation", `"cli"` means "a human/agent shell did this". */
 export function sessionId(): string {
   return process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "default";
 }
@@ -51,7 +55,13 @@ function byName(db: DB, name: string): string {
  *  which layer authorized a write, so a later reader can tell a bare command
  *  riding a session key from one riding the global migration pointer. Written
  *  by resolveProject/resolveTree; absent when a write ran without any selection
- *  resolution (library callers, tests). */
+ *  resolution (library callers, tests).
+ *
+ *  Boundary (K3 review): this is PROCESS-global, which is exact for the CLI
+ *  (one command per process) but would mislabel concurrent requests if a
+ *  long-lived host (webui serve / verify HTTP) ever performs selection-bearing
+ *  writes from interleaved requests. Tree writes are CLI-only today; if the
+ *  HTTP face ever grows them, `via` must move into request scope. */
 export function recordSelectionVia(sel: Selection): Selection {
   process.env.YGL_SELECTION_VIA = sel.source;
   return sel;

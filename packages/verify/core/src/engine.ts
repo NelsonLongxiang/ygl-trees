@@ -390,47 +390,98 @@ async function runFactChecker(
       return { verdict: "PASS", witness: w, evidence: { compared } };
     }
     case "count": {
-      const countForms = ["from", "sql", "predicate"].filter((k) => (c as Record<string, unknown>)[k] !== undefined);
+      const cc = c as Record<string, any>;
+      const hasAgainst = cc.against !== undefined;
+      const countForms = ["from", "sql", "predicate"].filter((k) => cc[k] !== undefined);
       if (countForms.length !== 1) {
         return { verdict: "ERROR", evidence: { reason: `count checker declares ${countForms.join("+") || "nothing"} — exactly one of from/sql/predicate is required` } };
       }
       let n: number;
       let scanned: number;
       let sources: Array<{ table: string; rows: number }> = [];
-      if (c.from !== undefined) {
-        const ref = refId(c.from);
+      // 1.2: the right-hand side may be a scalar from another table instead of
+      // a literal. `agg` is mandatory (no default): a default would silently
+      // pick max() when a policy table unexpectedly has several rows, and the
+      // "reject only when multi-row" alternative is data-dependent — a spec's
+      // validity must be decidable from the schema alone.
+      let target: number;
+      let compared: { left: number; right: number | null } | undefined;
+      if (hasAgainst) {
+        const a = cc.against as { from?: string; col?: string; agg?: string };
+        if (!a || typeof a.from !== "string" || typeof a.col !== "string") {
+          return { verdict: "ERROR", evidence: { reason: "count.against needs {from, col, agg}", spec_error: "missing_column" } };
+        }
+        if (!a.agg) {
+          return { verdict: "ERROR", evidence: { reason: "count.against requires agg (max|min|sum|count) — no default is applied", spec_error: "missing_agg" } };
+        }
+        if (!cc.predicate) {
+          return { verdict: "ERROR", evidence: { reason: "count.against requires the predicate form (count is the left side)" } };
+        }
+        const { from, whereSql } = renderScan(cc.predicate);
+        const rhsSql = `${a.agg.toUpperCase()}(${ident(a.col, "against column")})`;
+        const rows = runner.query(
+          `SELECT (SELECT count(*) FROM ${from}${whereSql}) AS left_count, (SELECT ${rhsSql} FROM ${ident(a.from, "against table")}) AS right_value`
+        );
+        const leftN = Number(rows[0]?.left_count ?? 0);
+        const rawRight = rows[0]?.right_value;
+        const scope = rowsScannedFromSql(runner, `SELECT count(*) AS n FROM ${from}${whereSql}`);
+        scanned = scope.scanned;
+        sources = scope.sources;
+        n = leftN;
+        if (rawRight === null || rawRight === undefined) {
+          return {
+            verdict: "ERROR",
+            witness: witness(scanned, n, sources, fingerprint),
+            evidence: {
+              reason: `count.against right side is NULL (${a.agg}(${a.from}.${a.col}) over an empty/all-NULL table) — a NULL cannot satisfy '${cc.op}'`,
+              compared: { left: leftN, right: null },
+            },
+          };
+        }
+        const rightN = Number(rawRight);
+        if (!Number.isFinite(rightN)) return { verdict: "ERROR", evidence: { reason: "count.against right side is not a number" } };
+        compared = { left: leftN, right: rightN };
+        target = rightN;
+      } else if (cc.from !== undefined) {
+        const ref = refId(cc.from);
         const upstream = outputs.get(ref);
         if (!upstream) {
-          return { verdict: "ERROR", evidence: { reason: `count from ${c.from} is not available (topological order violated)` } };
+          return { verdict: "ERROR", evidence: { reason: `count from ${cc.from} is not available (topological order violated)` } };
         }
         n = upstream.length;
         scanned = upstream.length;
-      } else if ("predicate" in c && c.predicate) {
-        if ((c.predicate.agg ?? []).length > 0) {
+        target = Number(cc.value);
+      } else if (cc.predicate) {
+        if ((cc.predicate.agg ?? []).length > 0) {
           return { verdict: "ERROR", evidence: { reason: "count predicate must not carry agg — the count itself is the aggregate (r9 E2)" } };
         }
-        const { from, whereSql } = renderScan(c.predicate);
+        const { from, whereSql } = renderScan(cc.predicate);
         const rows = runner.query(`SELECT count(*) AS n FROM ${from}${whereSql}`);
         n = rows.length > 0 ? Number(Object.values(rows[0])[0]) : 0;
         const scope = rowsScannedFromSql(runner, `SELECT count(*) AS n FROM ${from}${whereSql}`);
         scanned = scope.scanned;
         sources = scope.sources;
-      } else if (c.sql !== undefined) {
-        const rows = runner.query(c.sql);
+        target = Number(cc.value);
+      } else if (cc.sql !== undefined) {
+        const rows = runner.query(cc.sql);
         if (rows.length > 1 || (rows.length === 1 && Object.keys(rows[0]).length !== 1)) {
           return { verdict: "ERROR", evidence: { reason: "count.sql must return exactly one row and one column" } };
         }
         n = rows.length > 0 ? Number(Object.values(rows[0])[0]) : 0;
-        const scope = rowsScannedFromSql(runner, c.sql);
+        const scope = rowsScannedFromSql(runner, cc.sql);
         scanned = scope.scanned;
         sources = scope.sources;
+        target = Number(cc.value);
       } else {
         return { verdict: "ERROR", evidence: { reason: "count checker requires from ($Vx) or sql" } };
       }
       if (!Number.isFinite(n)) return { verdict: "ERROR", evidence: { reason: "count query did not return a number" } };
+      if (!Number.isFinite(target)) return { verdict: "ERROR", evidence: { reason: "count target is not a number" } };
       const pass =
-        c.op === ">=" ? n >= c.value : c.op === "<=" ? n <= c.value : c.op === "==" ? n === c.value : c.op === "!=" ? n !== c.value : c.op === ">" ? n > c.value : n < c.value;
-      return { verdict: pass ? "PASS" : "FAIL", witness: witness(scanned, n, sources, fingerprint), evidence: { count: n, op: c.op, expected: c.value } };
+        cc.op === ">=" ? n >= target : cc.op === "<=" ? n <= target : cc.op === "==" ? n === target : cc.op === "!=" ? n !== target : cc.op === ">" ? n > target : n < target;
+      const evidence: Record<string, unknown> = { count: n, op: cc.op, expected: target };
+      if (compared) evidence.compared = compared;
+      return { verdict: pass ? "PASS" : "FAIL", witness: witness(scanned, n, sources, fingerprint), evidence };
     }
     case "exists": {
       let sql: string;
@@ -678,12 +729,24 @@ function assertSameScalarType(values: unknown[], col: string): void {
   if (kinds.size > 1) throw new Error(`predicate where ${col} list mixes numbers and strings — declare one type (r8 F3)`);
 }
 
-function renderCondition(w: PredicateCondition): string {
+/** 1.2：右值是否是列引用（`{col}`），以及它的表限定是否合法（只许同表）。 */
+function columnRefOf(v: unknown): string | null {
+  if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as { col?: unknown }).col === "string") {
+    return (v as { col: string }).col;
+  }
+  return null;
+}
+
+function renderCondition(w: PredicateCondition, fromTable = ""): string {
   const col = ident(w.col, "where column");
+  const rhsCol = columnRefOf(w.value);
   switch (w.op) {
     case "is null":
     case "is not null":
       // r8 F3：is null 带 value 是构造错误，不能静默忽略（会让人以为在比较值）
+      if (rhsCol !== null) {
+        throw new Error(`null_rhs_for_null_op: predicate where ${col} ${w.op} must not carry a {col} value`);
+      }
       if (w.value !== undefined) throw new Error(`predicate where ${col} ${w.op} must not carry a value`);
       return `${col} ${w.op.toUpperCase()}`;
     case "in": {
@@ -702,29 +765,42 @@ function renderCondition(w: PredicateCondition): string {
       return `${col} BETWEEN ${literal(w.value[0])} AND ${literal(w.value[1])}`;
     }
     default: {
+      if (rhsCol !== null) {
+        // 1.2 column-to-column: same table only (a cross-table compare needs an
+        // explicit join key, which belongs to sql-pair).
+        const parts = rhsCol.split(".");
+        const qualifier = parts.length > 1 ? parts[0] : "";
+        const name = parts.length > 1 ? parts[1] : parts[0];
+        if (qualifier && fromTable && qualifier !== fromTable) {
+          throw new Error(
+            `cross_table_col: predicate where ${col} ${w.op} ${rhsCol} — column-to-column comparison is same-table only; a cross-table compare needs sql-pair (join key)`
+          );
+        }
+        return `${col} ${w.op} ${ident(name, "where column ref")}`;
+      }
       if (w.value === undefined || Array.isArray(w.value)) {
         throw new Error(`predicate where ${col} ${w.op} needs a scalar value`);
       }
-      return `${col} ${w.op} ${literal(w.value)}`;
+      return `${col} ${w.op} ${literal(w.value as string | number)}`;
     }
   }
 }
 
 /** 递归渲染谓词树：条件叶 / AND-OR 组 / NOT 组（NOT 内部按 AND 连接后整体取反） */
-function renderNode(n: PredicateNode): string {
+function renderNode(n: PredicateNode, fromTable = ""): string {
   if ("op" in n && (n.op === "and" || n.op === "or" || n.op === "not")) {
     const group = n as PredicateGroup;
     if (group.conditions.length === 0) throw new Error("predicate group has no conditions");
-    const parts = group.conditions.map((c) => renderNode(c));
+    const parts = group.conditions.map((c) => renderNode(c, fromTable));
     if (group.op === "not") return `NOT (${parts.join(" AND ")})`;
     return `(${parts.join(` ${group.op.toUpperCase()} `)})`;
   }
-  return renderCondition(n as PredicateCondition);
+  return renderCondition(n as PredicateCondition, fromTable);
 }
 
-function renderWhere(where?: PredicateGroup): string {
+function renderWhere(where?: PredicateGroup, fromTable = ""): string {
   if (!where) return "";
-  return ` WHERE ${renderNode(where)}`;
+  return ` WHERE ${renderNode(where, fromTable)}`;
 }
 
 export interface RenderedPredicate {
@@ -739,8 +815,8 @@ export interface RenderedPredicate {
 /** 谓词渲染的公共部分：from 与 where（find/scope/count/exists 共用，保证同源） */
 export function renderScan(pred: Predicate): { from: string; whereSql: string; scanSql: string } {
   const from = ident(pred.from, "from");
-  const scanSql = renderWhere(pred.scan);
-  const whereSql = renderWhere(andGroups(pred.scan, pred.where));
+  const scanSql = renderWhere(pred.scan, pred.from);
+  const whereSql = renderWhere(andGroups(pred.scan, pred.where), pred.from);
   return { from, whereSql, scanSql };
 }
 
@@ -875,9 +951,36 @@ export function foldOverall(results: VuResult[]): { overall: Verdict; reason: st
   return { overall: "PASS", reason: `all ${asserts.length} assert units passed` };
 }
 
+/** 1.2 shapes must not sneak into a spec that declares 1.1: new capabilities
+ *  are only admissible under the version that froze them (`version_shape`). */
+function uses12Shapes(spec: VerifySpec): boolean {
+  const hasColRef = (node: unknown): boolean => {
+    if (!node || typeof node !== "object") return false;
+    const n = node as { value?: unknown; conditions?: unknown[]; where?: unknown; scan?: unknown; predicate?: unknown };
+    if (n.value && typeof n.value === "object" && !Array.isArray(n.value)) {
+      if (typeof (n.value as { col?: unknown }).col === "string") return true;
+    }
+    if ((n.conditions ?? []).some(hasColRef)) return true;
+    return hasColRef(n.where) || hasColRef(n.scan) || hasColRef(n.predicate);
+  };
+  const hasAgainst = (node: unknown): boolean =>
+    !!node && typeof node === "object" && (node as { against?: unknown }).against !== undefined;
+  return (spec.vu ?? []).some((vu) => {
+    const c = vu.checker as { predicate?: unknown; against?: unknown };
+    return hasAgainst(c) || hasColRef(c.predicate);
+  });
+}
+
 export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<VerifyReport> {
-  // 契约钉版：1.0 引擎只跑 1.0 spec。旧 spec 不会"大概能跑"——形状变了必须升版重出。
-  if (spec.contract_version !== CONTRACT_VERSION) {
+  // 契约钉版：旧 spec 不会"大概能跑"——形状变了必须升版重出。1.2 起，
+  // 1.1 的 spec 仍可跑（向后兼容），但不得携带 1.2 才冻结的形态。
+  if (spec.contract_version === "1.1") {
+    if (uses12Shapes(spec)) {
+      throw new Error(
+        "version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2"
+      );
+    }
+  } else if (spec.contract_version !== CONTRACT_VERSION) {
     throw new Error(`unsupported contract_version ${String(spec.contract_version)} — this engine implements ${CONTRACT_VERSION}`);
   }
   const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };

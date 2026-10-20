@@ -46,12 +46,18 @@ export type PredicateOp =
   | "is null"
   | "is not null";
 
+/** 1.2：右值引用同一谓词表的一列（列对列比较；只允许同表——跨表要 join key，属 sql-pair）。 */
+export interface ColumnRef {
+  col: string;
+}
+
 export interface PredicateCondition {
   /** 列名；可带表限定（bills.amount），但必须是裸标识符组合，不得是表达式 */
   col: string;
   op: PredicateOp;
-  /** `in` 传数组、`between` 传两元素数组；`is null`/`is not null` 不需要值 */
-  value?: string | number | number[] | string[];
+  /** `in` 传数组、`between` 传两元素数组；`is null`/`is not null` 不需要值。
+   *  1.2 起还接受 `{col}`：只引用 `predicate.from` 同表的列，按 SQL 比较语义（不做隐式 cast）。 */
+  value?: string | number | number[] | string[] | ColumnRef;
 }
 
 /** 谓词节点：叶子是条件，组节点做 AND/OR/NOT 嵌套（NOT 也是一组，内部按 AND 连接后整体取反） */
@@ -137,6 +143,22 @@ export interface SqlPairChecker {
   compare: CompareSpec;
 }
 
+/** 1.2：count 的右值取自另一张表的单值标量（`agg` 必填；空表/全 NULL → NULL，按 compare.null）。 */
+export interface AgainstSpec {
+  from: string;
+  col: string;
+  agg: "max" | "min" | "sum" | "count";
+}
+
+/** 1.2 构造期错误的封闭码表（`evidence.spec_error`）：可枚举、可跨实现逐项比对。
+ *  四值 verdict 骨架不变——新增第五值会破坏报告消费者与 Rust parity。 */
+export type SpecErrorCode =
+  | "cross_table_col"
+  | "missing_column"
+  | "missing_agg"
+  | "null_rhs_for_null_op"
+  | "version_shape";
+
 export type CountChecker =
   | {
       /**
@@ -172,6 +194,20 @@ export type CountChecker =
       predicate?: never;
       op: ">=" | "<=" | "==" | "!=" | ">" | "<";
       value: number;
+    }
+  | {
+      /**
+       * 1.2 计数型：左=谓词计数，右=另一张表的单值标量（`agg` 必填）。
+       * 渲染：`(SELECT count(*) FROM <predicate.from> WHERE …) <op> (SELECT <agg>(<col>) FROM <against.from>)`。
+       * `against.from` 为空/全 NULL → 右值 NULL，按 `compare.null` 既有约定走。
+       */
+      type: "count";
+      predicate: Predicate;
+      against: AgainstSpec;
+      from?: never;
+      sql?: never;
+      op: ">=" | "<=" | "==" | "!=" | ">" | "<";
+      value?: never;
     };
 
 export type ExistsChecker =

@@ -164,9 +164,18 @@ function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "pre
   const wanted = [...pred.select];
   const collect = (n: unknown): string[] => {
     if (!n || typeof n !== "object") return [];
-    const node = n as { col?: string; conditions?: unknown[] };
-    if (typeof node.col === "string") return [node.col];
-    return (node.conditions ?? []).flatMap(collect);
+    const node = n as { col?: string; conditions?: unknown[]; value?: unknown };
+    const out: string[] = [];
+    if (typeof node.col === "string") out.push(node.col);
+    // 1.2: `value:{col}` is a column reference too — the rhs must exist in the
+    // same probed table (a missing rhs column would otherwise surface as a
+    // runtime "no such column" instead of a construction rejection).
+    const v = node.value;
+    if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as { col?: unknown }).col === "string") {
+      out.push((v as { col: string }).col);
+    }
+    for (const c of node.conditions ?? []) out.push(...collect(c));
+    return out;
   };
   wanted.push(...collect(pred.where as unknown));
   wanted.push(...collect(pred.scan as unknown));
@@ -234,6 +243,20 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
   if (checker.type === "count" || checker.type === "exists") {
     if ((checker as { sql?: string }).sql) {
       return `${checker.type} sql form is not allowed in prepared specs — use the predicate form (mechanical generation only)`;
+    }
+    // 1.2: count.against must name an existing table/column and carry agg.
+    const against = (checker as { against?: { from?: string; col?: string; agg?: string } }).against;
+    if (against) {
+      if (!against.agg) {
+        return "count.against requires agg (max|min|sum|count) — missing_agg (no default is applied, so spec validity never depends on data)";
+      }
+      if (!against.from || !against.col) return "count.against needs {from, col, agg}";
+      if (!["max", "min", "sum", "count"].includes(against.agg)) return `count.against agg ${JSON.stringify(against.agg)} is not one of max|min|sum|count`;
+      if (schema) {
+        const cols = schema.tables[against.from];
+        if (!cols) return `count.against.from ${JSON.stringify(against.from)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
+        if (!cols.includes(against.col)) return `count.against column ${JSON.stringify(against.col)} is not in ${against.from} (columns: ${cols.slice(0, 10).join(", ")})`;
+      }
     }
     const pred = (checker as { predicate?: Predicate }).predicate;
     if (pred) {
