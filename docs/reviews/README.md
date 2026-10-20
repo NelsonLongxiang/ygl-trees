@@ -11,6 +11,8 @@
 - 报告**原文不改写**（含评审席的措辞与当时的误判）；修复结论写进 `docs/plan.md` 与 CHANGELOG，
   勘误也记在 plan 里，避免"改报告让它看起来对"。
 - 新增评审报告直接放本目录并在此登记；不另建目录、不放进 `docs/` 根（根目录只留稳定文档）。
+- 跨席共识的方案稿（非逐轮评审）也放本目录，文件名用描述性命名并在索引注明「方案」，例如
+  `harness2-dual-validation-plan.md`。
 
 ## 索引
 
@@ -26,6 +28,8 @@
 | `REVIEW-spec-validator-m13-r18.md` | 0.100.0 复核 | **CHANGES**：P1 路径穿越 + P2 端点缺失 + P3 三项 |
 | `REVIEW-spec-validator-m13-r19.md` | 0.101.0 复核 | PASS；N1–N5 非阻塞项（计数订正、坏报告 WONTFIX、tgz ignore、评审入库、413 用例） |
 | `REVIEW-spec-validator-m13-r20.md` | 0.101.1 复核 | PASS：N1–N5 落点属实 + blob 并发热修实证；D1/D2 文档返工、D3 并发 flake 样本 |
+| `REVIEW-spec-validator-m13-r21.md` | 0.102.0/0.102.1 复核 | **PASS**：HTTP 作业面三条不变量 + ready 路径与 CLI 逐字段一致；P2-1（allowlist 空串）已修、P2-2（非 ready 构造审计落盘）待定 + P3×7 → **0.102.2 已收口**（attempts 追加、as_of 入口、门形态） |
+| `harness2-dual-validation-plan.md`（方案） | harness2 双线验证（两席共识） | 需求侧不可或缺；外强于内；P1a 方差探针 + evaluator 协议先行；红线=单一裁判权 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |
 
