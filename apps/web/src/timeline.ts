@@ -1,7 +1,8 @@
 /**
  * Activity timeline data helpers (pure; the chart in ActivityTimeline.tsx
  * only draws). The server (ops/tools webui.ts R11.2) sends one row per UTC day
- * that had events in the last 30 days — days without events are absent, so
+ * that had events in its window (today and the 30 days before it) — days
+ * without events are absent, so
  * the strip fills the gaps itself; stacking order is chosen for colour
  * adjacency (blue parts amber from green; the neutral "其他" rides on top).
  */

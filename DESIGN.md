@@ -20,7 +20,7 @@ colors:
   danger: "#f85149"         # refuted / fail / excludes edges
   warning: "#d29922"        # contested / pending-adjacent emphasis
   on-entity: "#0d1117"      # labels on knowledge-graph entity fills (≥6.2:1 on every fill)
-  on-primary: "#0d1117"     # text on solid primary / danger fills (antd colorTextLightSolid): ink in dark — white was 3.3:1 on the rendered #4e90dc
+  on-primary: "#0d1117"     # text on solid primary / danger buttons (antd Button primaryColor / solidTextColor / dangerColor; the global colorTextLightSolid stays white): ink in dark — white was 3.3:1 on the rendered #4e90dc
   chart-research: "#b68104" # chart series · research events — warning hue stepped into the dark chart band (OKLCH L 0.64)
   chart-tree: "#4b92ce"     # chart series · tree events — tertiary hue, stepped
   chart-eval: "#28a73e"     # chart series · eval events — success hue, stepped
