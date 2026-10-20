@@ -7,7 +7,7 @@
  *
  *   bundle_bytes    发布产物 dist/bundle/bin.cjs 的字节数（确定值，容差 2%）
  *   web_dist_bytes  dist/apps/web/dist 的字节数合计（确定值，容差 2%）
- *   cold_start_ms   `--version` 冷启动中位数（预热 1 次不计 + 5 次取中位；容差 30%，只看大滑坡）
+ *   cold_start_ms   `--version` 冷启动最小值（预热 2 次不计 + 7 次取最小；超容差延迟复测一次；容差 30%，只看大滑坡）
  *
  * 变好：自动收紧基线（棘轮齿），并在输出里写明旧值 → 新值。
  * 变坏：超容差即失败（rc=1），要么优化，要么显式 `--write` 认账重设基线。
@@ -46,26 +46,33 @@ function median(values) {
 }
 
 function coldStartMs() {
-  // 预热一次不计入：干净检出（新 worktree / 新机器）首次触碰 bundle 与 node_modules
+  // 预热两次不计入：干净检出（新 worktree / 新机器）首次触碰 bundle 与 node_modules
   // 会被杀毒扫描与磁盘冷缓存放大成一次性成本，那不是产品变慢。否则同一 commit
   // 在主树 held、在干净检出 regressed，闸门测的是「路径新不新」而不是「启动快不快」。
-  const warm = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" });
-  if (warm.status !== 0) throw new Error(`cold start warmup failed: ${warm.stderr || warm.status}`);
+  //
+  // 取最小值而非中位数：启动耗时存在可达下界，负载尖峰只会抬高个别样本（实测同一
+  // commit 在 464–634ms 间摆动，中位数会被三五个尖峰顶穿 30% 容差）。真正的产品
+  // 回归会把最小值一起抬上去——最小值是「最理想条件下仍然要花多久」，噪声方向是
+  // 单侧的，所以这里用它。预热两次是为了让 JIT 与页缓存之外的首次系统调用也落位。
+  for (let i = 0; i < 2; i++) {
+    const warm = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" });
+    if (warm.status !== 0) throw new Error(`cold start warmup failed: ${warm.stderr || warm.status}`);
+  }
   const samples = [];
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const t0 = process.hrtime.bigint();
     const r = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" });
     const dt = Number(process.hrtime.bigint() - t0) / 1e6;
     if (r.status !== 0) throw new Error(`cold start probe failed: ${r.stderr || r.status}`);
     samples.push(dt);
   }
-  return Math.round(median(samples));
+  return Math.round(Math.min(...samples));
 }
 
 const METRICS = [
   { key: "bundle_bytes", label: "bundle (dist/bundle/bin.cjs)", measure: () => statSync(BIN).size, toleranceRel: 0.02 },
   { key: "web_dist_bytes", label: "web dist (dist/apps/web/dist)", measure: () => dirBytes(WEB), toleranceRel: 0.02 },
-  { key: "cold_start_ms", label: "cold start (--version, median of 5)", measure: coldStartMs, toleranceRel: 0.3 },
+  { key: "cold_start_ms", label: "cold start (--version, min of 7)", measure: coldStartMs, toleranceRel: 0.3, retryOnRegression: true },
 ];
 
 if (!existsSync(BIN)) {
@@ -79,9 +86,18 @@ const report = [];
 let failed = false;
 
 for (const m of METRICS) {
-  const value = m.measure();
   const base = metrics[m.key]?.value;
   const tolerance = base === undefined ? 0 : Math.max(0, Math.round(base * m.toleranceRel));
+  let value = m.measure();
+  let retried = false;
+
+  // 时间型指标允许一次复测：在测完 494 例单测、demo、契约审计之后，机器可能还处在
+  // 回收负载里，7 个连续样本一起被拖慢。真实回归两次都慢，噪声只会命中一次。
+  if (!write && base !== undefined && value > base + tolerance && m.retryOnRegression) {
+    retried = true;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+    value = Math.min(value, m.measure());
+  }
 
   if (base === undefined) {
     metrics[m.key] = { value, tolerance_rel: m.toleranceRel, measured_at: new Date().toISOString() };
@@ -96,18 +112,18 @@ for (const m of METRICS) {
       report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "accepted" });
     } else {
       failed = true;
-      report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "regressed" });
+      report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "regressed", retried });
     }
     continue;
   }
 
   if (value < base) {
     metrics[m.key] = { ...metrics[m.key], value, measured_at: new Date().toISOString() };
-    report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "tightened" });
+    report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "tightened", retried });
     continue;
   }
 
-  report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "held" });
+  report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "held", retried });
 }
 
 const next = {

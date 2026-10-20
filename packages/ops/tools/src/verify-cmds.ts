@@ -486,7 +486,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         text,
         files: material.files.map((f) => ({ path: f.path, sha256: f.sha256, mime: f.mime, size: f.size })),
       };
-      const schemaProbe = probeOf(schema.ddl);
+      // 0.104.0：列探针问快照库要真实 schema（PRAGMA），DDL 文本漏 ALTER TABLE 加的列
+      const schemaProbe = probeOfDb(dbPath);
       const prevVersion = latestVersionOf(env, materialId);
       // ③ --draft：干跑——跑完整 P0–P5，但不落盘（不写 spec/prepare/trace，不消耗 spec_version）
       const draft = args.flags.draft === true;
@@ -1265,6 +1266,29 @@ export function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
     tables[m[1]] = cols;
   }
   return { tables };
+}
+
+/**
+ * 快照库真实列 → prepare 的 schema 探针（PRAGMA table_info，0.104.0）。
+ *
+ * `probeOf(ddl)` 解析的是 `sqlite_master.sql` 里的 CREATE 语句，`ALTER TABLE … ADD COLUMN`
+ * 加的列不在那条原始 DDL 文本里——结构上正确、数据里存在的列会被 P2 误判「列不在 schema」。
+ * 探针必须问数据库要真实 schema（PRAGMA 认全部列与类型），DDL 文本只留给红队建空库。
+ */
+export function probeOfDb(dbPath: string): { tables: Record<string, string[]> } {
+  const db = openDatabaseSync(dbPath, { readOnly: true });
+  try {
+    const tables: Record<string, string[]> = {};
+    const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
+    for (const { name } of names) {
+      const quoted = `"${name.replace(/"/g, '""')}"`;
+      const cols = db.prepare(`PRAGMA table_info(${quoted})`).all() as Array<{ name: string }>;
+      tables[name] = cols.map((c) => c.name);
+    }
+    return { tables };
+  } finally {
+    db.close();
+  }
 }
 
 export function latestVersionOf(env: Env, materialId: string): number {

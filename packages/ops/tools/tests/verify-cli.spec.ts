@@ -523,6 +523,44 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect((JSON.parse(bad.out) as { verdict: string }).verdict).not.toBe("ready");
   }, 60_000);
 
+  it("列探针取快照真实 schema：ALTER TABLE 加的列不被结构性打回（0.104.0，发版席上报）", () => {
+    const text = join(home, "alter-material.txt");
+    writeFileSync(text, "每条笔记都必须有标签。" + String.fromCharCode(10), "utf8");
+    const sub = run(["verify", "submit", "--title", "alter", "--text", text, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = (JSON.parse(sub.out) as { material_id: string }).material_id;
+    const dbFile = join(home, "alter.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec("CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT)");
+    // 关键：tags 由 ALTER TABLE 加，sqlite_master.sql 仍是两列版本
+    db.exec("ALTER TABLE notes ADD COLUMN tags TEXT");
+    db.exec("INSERT INTO notes (id, body, tags) VALUES ('n1', 'hello', 'x')");
+    db.close();
+    const clause = "每条笔记都必须有标签。";
+    const anchor = { quote: clause, locator: "material.txt#L1" };
+    const candidates = join(home, "cand-alter.json");
+    writeFileSync(candidates, JSON.stringify({ candidates: [{
+      source_clause: clause,
+      anchor,
+      checker: { type: "sql", fail_when: "rows==0", predicate: { from: "notes", select: ["id", "tags"], where: { op: "and", conditions: [{ col: "tags", op: "==", value: "" }] } } },
+    }] }), "utf8");
+    const reviews = join(home, "rev-alter.json");
+    writeFileSync(reviews, JSON.stringify({ reviews: [{
+      source_clause: clause,
+      findings: [
+        { question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+        { question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+        { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
+      ],
+    }] }), "utf8");
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--json"]);
+    const obj = JSON.parse(r.out) as { verdict: string; diagnostics?: unknown };
+    // 修复前：P2 报 'column "tags" is not in notes' 永不 ready
+    expect(JSON.stringify(obj)).not.toMatch(/is not in notes/);
+    expect(obj.verdict).toBe("ready");
+    expect(r.rc).toBe(0);
+  }, 60_000);
+
   it("未知子命令 → rc=2（verify 组同其他组口径）", () => {
     const r = run(["verify", "frobnicate", "--json"]);
     expect(r.rc).toBe(2);

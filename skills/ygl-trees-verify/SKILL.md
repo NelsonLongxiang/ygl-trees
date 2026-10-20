@@ -163,6 +163,7 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 
 - `verify graduate` 报 `not eligible ...` → 不是 bug：资格不够（缺报告/N 份里有 FAIL/跨度不足），按它点名的条件补跑几次真实 `verify run`，别去改报告文件。
 - `--schedule` 报「needs --every」→ 调度必须给分钟数；不给 `--schedule` 时只打印命令串，不登记作业。
+- prepare 报 `column "x" is not in <table>` 但对得上表结构 → 0.104.0 起列探针走快照库 `PRAGMA table_info`（含 `ALTER TABLE` 加的列）；仍报错说明列真不存在，别去改 DDL 文本。
 - `--patrol` 报「needs the verified database to be the workspace database」→ 被验的是快照文件、工作区库是另一份；毕业成 job 即可，patrol 化留给定库同源的场景。
 
 ## 9. 契约速查
