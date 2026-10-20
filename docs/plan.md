@@ -235,6 +235,15 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.108.0 记录（语料冻结锚点强化，2026-10-21）**：fdc757f6 0.103 裁定的「blob 双检 + 属性保护」落地，无契约/语料语义变更。
+- **身份锚**：`freeze.mjs` 改 `git hash-object -w --path=<repo 相对>`（按 `.gitattributes` 过滤）→ `git cat-file blob` → sha256；同一提交在任意 `core.autocrlf` 下同清单，未提交的新文件也可算（先写对象）。安装态无 git 时回退磁盘哈希（发布产物只读 manifest，不冻结）。
+- **运行时锚**：`corpus-freeze.spec` 新增「盘上字节 sha256 == manifest 哈希」断言；属性/配置回归写 CRLF 时两道哈希分叉，本地门禁即红（0.103 的失败形态从 CI 提前到本地）。
+- **属性保护**：manifest 增 `attributes_sha256`，`.gitattributes` 改动可见；同时把仓库级属性改为 `* text=auto eol=lf`
+  （原 `text=auto` 在 Windows `core.eol=native` 下检出 CRLF，前端 PR 的 `tokens.spec` 在 fresh clone 上必红——
+  0.103 同类问题的最后一个仓库级入口）。
+- 等价性：两种锚法 digest 同为 `683766f1…`（173 文件），`corpus_version` 不升——纯观测锚强化。
+- 测试：unit 539→**541**（corpus-freeze +2）。
+
 **0.107.0 记录（契约 1.2 落地，2026-10-21）**：`contract_version` / `corpus_version` 1.1 → 1.2，Rust 同版。
 - **形态一（同表列对列）**：`contract.ts` 的 `PredicateCondition.value` 收 `ColumnRef`；`engine.ts` 渲染为裸标识符，
   `columnRefOf`/`firstColRefPair` 把首个 `{col}` 叶投影进 findSql（`… AS __cmp_left, __cmp_right` + `ORDER BY rowid`），

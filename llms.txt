@@ -1,4 +1,4 @@
-# ygl-trees v0.107.0 — AI Agent Research Workbench
+# ygl-trees v0.108.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).

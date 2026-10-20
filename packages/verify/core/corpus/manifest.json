@@ -1,6 +1,7 @@
 {
   "corpus_version": "1.2",
   "digest": "683766f1077bb2c0fef662f485959bcb14df2ad6100867248faef70ce3902d43",
+  "attributes_sha256": "cf737a163075b95d8f54fc26523f72f4c69960d91e84c74af61c7c9a3c3ee6bb",
   "entries": [
     {
       "path": "canonical/vectors.json",

@@ -2,6 +2,8 @@
 # freeze.mjs 按磁盘字节算 sha256，而 Windows autocrlf=true 的检出会把 text 文件写成 CRLF，
 # 导致「在哪台机器打包」决定 tarball 里 manifest 是否自洽（CI/Linux 检出必红）。
 # 因此语料与矢量表强制 LF，二进制附件显式 -text（否则会被当文本改写）。
-* text=auto
+# 全仓文本统一 LF：`text=auto` 在 Windows 上按 core.eol=native 检出成 CRLF，
+# 会让「按行解析源文件/文档」的测试与语料锚点在 fresh clone 上表现不同（0.108.0）。
+* text=auto eol=lf
 packages/verify/core/corpus/** text eol=lf
 *.pdf -text

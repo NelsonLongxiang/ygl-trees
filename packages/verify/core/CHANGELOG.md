@@ -27,6 +27,10 @@
   `against-null`、`type-mixed`、`agg-variants`、`count-against-missing-agg`；+3 构造拒绝例：
   `red-cross-table-col`、`red-null-rhs-for-null-op`、`red-version-shape`）。digest
   `ee1a0a1d6dddcfcd…`（129 文件）→ `683766f1077bb2c0…`（173 文件）。
+- **冻结锚点（0.108.0 补，1.2 同一语料版本内表示层变更）**：manifest 的 `entries` 改记 **git blob 内容哈希**
+  （`git hash-object -w --path` 过滤 + `git cat-file blob`，免疫 `core.autocrlf` 配置），运行时锚由
+  `corpus-freeze.spec` 断言「盘上字节 == manifest」；新增 `attributes_sha256` 把 `.gitattributes` 纳入保护集。
+  两种锚法得到同一 digest `683766f1…`，故 `corpus_version` 不升（案例语义与字节均未变，纯观测锚强化）。
 - **gate 内生效的形状校验**：`selfcheck` 的契约/语料版本期望同步 1.2；`corpus-freeze` 断言新 manifest。
 
 ## contract_version 1.1 + corpus_version 1.1（2026-10-20，封包签名）

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.108.0
+
+**语料冻结锚点强化（blob 双检）**。无契约/语料语义变更：`contract_version` / `corpus_version` 仍 1.2，
+digest 仍 `683766f1…`（两种锚法等价，见 `packages/verify/core/CHANGELOG.md`）。
+
+- **身份锚（blob 内容哈希）**：`corpus/freeze.mjs` 不再按磁盘字节冻结，而是
+  `git hash-object -w --path=<repo 相对>`（让 git 按 `.gitattributes` 过滤）→ `git cat-file blob`
+  → sha256。同一提交在任何 `core.autocrlf` 配置下都得到同一清单；未提交的新语料文件同样可算
+  （先写对象再取内容）。这是 0.103 事故复盘裁定里「manifest 记 blob 内容哈希」那一半。
+- **运行时锚**：`corpus-freeze.spec` 新增断言「工作树字节 sha256 == manifest 哈希」——属性/配置回归把语料
+  写成 CRLF 时，两道哈希分叉并大声失败（0.103 事故的失败形态从「CI 才红」提前到本地门禁）。
+- **属性文件进保护集**：manifest 新增 `attributes_sha256`，`.gitattributes` 被改动立刻可见。
+- **全仓文本统一 LF**：`.gitattributes` 从 `* text=auto` 改为 `* text=auto eol=lf`。`text=auto` 在
+  `core.eol=native`（Windows 默认）下检出为 CRLF——前端 PR 的 `tokens.spec` 按行解析 `DESIGN.md`
+  时在 fresh clone 上必红（本机主树恰好是 LF 历史检出，掩盖了它）。这是 0.103「在哪台机器检出决定
+  测试结果」同类问题的最后一个仓库级入口；语料与 `*.pdf -text` 规则保留。
+- 兼容：安装态没有 git，`freeze.mjs` 回退磁盘哈希（仅开发/CI 侧冻结；发布产物只读 manifest）。
+
+测试：unit **541**（corpus-freeze +2：盘上字节审计、属性文件保护）；其余门禁同 0.107.0。
+
 ## 0.107.0
 
 **契约 1.2：右值可引用列**（`contract_version` / `corpus_version` 1.1 → 1.2）。1.1 spec 行为不变，

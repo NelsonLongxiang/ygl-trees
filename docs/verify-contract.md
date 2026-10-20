@@ -352,6 +352,12 @@ review（agent 型）与 fact 型同样有可验收形状，不是"再问一次�
 - `contract_version` 钉 `1.0` 时同时钉 `corpus_version`；此后二者各自独立自增，报告里两个版本号都记。
   （2026-10-20 起二者均为 `1.1`：contract 1.1 是封包签名身份字段，corpus 1.1 是 33 份 spec 随契约升版重铸。
   2026-10-21 起二者均为 `1.2`：contract 1.2 是「右值可引用列」两形态；corpus 1.2 是 44 例，既有 33 例逐字节不变，digest `683766f1…`（173 文件，取代 1.1 的 `ee1a0a1d…`）。）
+- **blob 双检（0.108.0，fdc757f6 0.103 裁定剩下的两件）**：`freeze.mjs` 不再按「这台机器磁盘上的字节」冻结，
+  而是 `git hash-object -w --path=<repo 相对>` 让 git 按 `.gitattributes` 过滤出 blob、再 `git cat-file blob`
+  取回内容算 sha256——**身份锚**，同一提交在任何 `core.autocrlf` 配置下同哈希（未提交的新文件也可算）。
+  运行时锚留在门禁：`corpus-freeze.spec` 断言「工作树字节 sha256 == manifest 哈希」，配置回归导致 CRLF
+  重写时两道哈希分叉、测试大声失败。`.gitattributes` 自身进保护集（manifest `attributes_sha256`），
+  属性回归不再静默。当前 digest `683766f1…` 在两种锚法下一致，证明语料已是纯 LF 基。
 - **EOL 纪律（0.104.0，发版席 BLOCK 修复）**：语料是**字节级**冻结产物（`freeze.mjs` 按磁盘字节算 sha256），而 Git 的 `core.autocrlf` 会让同一提交在不同检出行尾不同——曾出现「manifest 按 CRLF 冻结、canonical 按 LF 冻结」的混合清单，导致 CI/Linux/LF 检出上 `self-check` 与语料快照必红、tarball 内容随打包机漂移。修法：仓库根 `.gitattributes` 固定 `packages/verify/core/corpus/** text eol=lf`、`*.pdf -text`（二进制附件不得被当文本改写），并在统一 LF 基上重冻 manifest。**案例如今在任何检出上都逐字节一致**；`corpus_version` 仍为 `1.1`（案例语义零变化——仓库存储的 blob 本来就是 LF，变的是工作树行尾），`1.1` 的 digest 以 LF 基为准：`ee1a0a1d6dddcfcd…`（129 文件）。旧记录里的 `4cac21b4…` 是 CRLF 工作树误冻的产物，已被取代。
 - 时间字面量纪律（W1b）：`window` 只接受「纯日期」或「带时区的 datetime」；`'2026-07-01 10:00:00'` 这类无时区时间戳构造期 ERROR（否则 Date.parse 按本机时区解释，换台机器窗口就漂）。
 - 真实网关凭证在 M13-1b（封包 fact-only 闭环）之前**不接**：review/prepare 层的模型调用一律走注入接口，测试用假 runner。
