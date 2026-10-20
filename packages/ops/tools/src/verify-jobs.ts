@@ -35,7 +35,7 @@ import {
   latestVersionOf,
   minimalRedTeam,
   normalizeAsOf,
-  prepareRecordPath,
+  writePrepareRecord,
   probeOf,
   readJson,
   schemaOf,
@@ -90,6 +90,14 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   const body = (input ?? {}) as Record<string, unknown>;
   const materialId = String(body.material_id ?? "");
   if (!ID_RE.test(materialId)) return fail(400, "material_id must match ^[A-Za-z0-9_-]{1,128}$");
+  // as_of 双侧同校验（r22 ②，顺序 0.102.4）：**先于任何 I/O** —— 缺材料 + 非法 as_of 必须报 400
+  // as_of 而不是 404 material（CLI 侧同理，旗标错误不该先读盘再报成运行错误）。
+  let asOf: string;
+  try {
+    asOf = normalizeAsOf(body.as_of, new Date().toISOString());
+  } catch (e: any) {
+    return fail(400, String(e?.message || e));
+  }
   const candidates = listOf(body.candidates, "candidates") as PrepareCandidate[] | null;
   const reviews = listOf(body.reviews, "reviews") as Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }> | null;
   if (!candidates || !reviews) {
@@ -113,13 +121,6 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   }
   const draft = body.draft === true;
   const requested = Number(body.spec_version);
-  // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → 400（不落盘、不消耗版本）
-  let asOf: string;
-  try {
-    asOf = normalizeAsOf(body.as_of, new Date().toISOString());
-  } catch (e: any) {
-    return fail(400, String(e?.message || e));
-  }
   const res = await prepareSpec(text, {
     runner: fileRunner(candidates),
     reviewer: fileReviewer(reviews),
@@ -141,10 +142,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   let record: string | null = null;
   if (!draft) {
     const dir = specDir(env, `spec_${short(sha256(materialId))}`);
-    mkdirSync(dir, { recursive: true });
     const created = new Date().toISOString();
-    const recordPath = prepareRecordPath(dir, ready, created);
-    writeJson(recordPath, {
+    const recordPath = writePrepareRecord(dir, ready, {
       material_id: materialId,
       created,
       verdict: res.verdict,
@@ -152,7 +151,7 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
       rejected: res.rejected,
       diagnostics: res.diagnostics,
       materials_sha256: res.materials_sha256,
-    });
+    }, created);
     record = relative(dir, recordPath).split(sep).join("/");
     if (ready && res.spec) {
       writeJson(join(dir, "spec.json"), res.spec);

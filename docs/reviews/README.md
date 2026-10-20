@@ -30,6 +30,7 @@
 | `REVIEW-spec-validator-m13-r20.md` | 0.101.1 复核 | PASS：N1–N5 落点属实 + blob 并发热修实证；D1/D2 文档返工、D3 并发 flake 样本 |
 | `REVIEW-spec-validator-m13-r21.md` | 0.102.0/0.102.1 复核 | **PASS**：HTTP 作业面三条不变量 + ready 路径与 CLI 逐字段一致；P2-1（allowlist 空串）已修、P2-2（非 ready 构造审计落盘）待定 + P3×7 → **0.102.2 已收口**（attempts 追加、as_of 入口、门形态） |
 | `REVIEW-spec-validator-m13-r22.md` | 0.102.2 三问收口复核 | **PASS**：attempts 只追加/ready 记录逐字节不变、as_of 入口、门形态实证通过（unit 445/445、contract 100、demo/readme rc=0）；P3×4（as_of 双侧校验、specDetail 暴露 attempts、命名碰撞、CLI JSON record） |
+| `REVIEW-spec-validator-m13-r23.md` | 0.102.3 复核 | **PASS**：r22 四条（as_of 双侧校验、attempts 投影、命名续号、CLI record）实测通过（unit 454/454、contract 100、demo/readme rc=0）；**P2-1**：`verify-contract.md` §4.7 的 `--reviews` 示例仍是旧嵌套形状（照文档永远拿不到 ready，实测复现）+ P3×5（as_of 无时区/非法日历静默归一、HTTP 校验次序、prepare.json 不可变措辞、record 路径前缀、wx 原子占位）→ **0.102.4 已收口** |
 | `harness2-dual-validation-plan.md`（方案） | harness2 双线验证（两席共识） | 需求侧不可或缺；外强于内；P1a 方差探针 + evaluator 协议先行；红线=单一裁判权 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |

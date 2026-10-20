@@ -165,37 +165,95 @@ export function specDir(env: Env, specId: string): string {
 }
 
 /**
- * 构造记录落盘路径（0.102.2）：**ready 才写不可变的 `prepare.json`**；未 ready 的尝试写
- * `attempts/<ts>.json`，只追加、不覆盖。CLI 与 HTTP 共用这一个口径——此前 CLI 无论
- * ready 与否都覆盖 `prepare.json`（一次失败的补跑会冲掉上一轮已冻结的成功记录），
- * HTTP 面则什么都不写（失败尝试无痕）；两个面各错一半，现在统一为「成功记录不改、
+ * 构造记录落盘（0.102.2，原子占位 0.102.4）：**ready 才写 `prepare.json`**（以最后一次成功为准——
+ * 同 spec 再准备成功会覆盖，这不是"不可变"，只是"失败的补跑不许冲掉成功记录"）；未 ready 的
+ * 尝试写 `attempts/<ts>.json`，只追加、不覆盖。CLI 与 HTTP 共用这一个口径——此前 CLI 无论
+ * ready 与否都覆盖 `prepare.json`（一次失败的补跑会冲掉上一轮已冻结的成功记录），HTTP 面则
+ * 什么都不写（失败尝试无痕）；两个面各错一半，现在统一为「成功记录以最后一次成功为准、
  * 失败尝试留档」。
+ *
+ * 并发安全（r23 P3③）：attempts 用 `flag: "wx"` 原子占位。先 `existsSync` 再写的续号方案有
+ * TOCTOU 窗口（8 路并发没撞是毫秒错开的运气），`wx` 下同毫秒的第二个写者直接拿 EEXIST，
+ * 续号重试即可——路径选择与创建是同一次系统调用，不存在"选中后被抢"。
  */
-export function prepareRecordPath(dir: string, ready: boolean, now = new Date().toISOString()): string {
-  if (ready) return join(dir, "prepare.json");
+export function writePrepareRecord(dir: string, ready: boolean, payload: unknown, now = new Date().toISOString()): string {
+  mkdirSync(dir, { recursive: true });
+  if (ready) {
+    const file = join(dir, "prepare.json");
+    writeJson(file, payload);
+    return file;
+  }
   const attempts = join(dir, "attempts");
   mkdirSync(attempts, { recursive: true });
   const base = now.replace(/[:.]/g, "-");
-  // 毫秒级同刻两次尝试（并发/重放）会撞名：加短序号而不是覆盖（r22 P3①）
-  let candidate = join(attempts, `${base}.json`);
-  for (let n = 2; existsSync(candidate); n++) candidate = join(attempts, `${base}-${n}.json`);
-  return candidate;
+  const data = `${JSON.stringify(payload, null, 2)}
+`;
+  for (let n = 1; n < 1000; n++) {
+    const file = join(attempts, n === 1 ? `${base}.json` : `${base}-${n}.json`);
+    try {
+      writeFileSync(file, data, { encoding: "utf8", flag: "wx" });
+      return file;
+    } catch (e: any) {
+      if (e?.code !== "EEXIST") throw e;
+    }
+  }
+  throw new Error("cannot allocate an attempts record: 1000 same-millisecond collisions");
 }
 
 /** as_of 校验失败（r22 ②）。CLI 映射 rc=2，HTTP 映射 400——两侧共用同一个校验。 */
 export class AsOfError extends Error {}
 
+/** 严格 ISO：纯日期（按 UTC 00:00）或"带显式时区"的 datetime；其余一律拒（r23 P3①）。 */
+const AS_OF_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const AS_OF_DATETIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}(?::?\d{2})?)$/;
+
+/** 日历合法性按 UTC 逐字段回读——`2026-02-30` 会被 Date 静默滚成 03-02，不能信任 Date.parse。 */
+function calendarOk(y: number, mo: number, d: number): boolean {
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
 /**
- * as_of 归一（r22 ②）：R13 要求锚定冻结值，不可解析的时间锚会把报告变成不可对质。
- * 可解析 → `toISOString()`（+08 偏移原样入、UTC 归一存）；不可解析/非字符串 → 抛 AsOfError。
+ * as_of 归一（r22 ②，0.102.4 收紧为严格 ISO）。R13 要求锚定冻结值：不可解析的时间锚会把
+ * 报告变成不可对质，而"能解析但按本机时区解释"的锚在 CI(UTC) 与本机(+08) 会得到两个时刻。
+ *
+ * 接受：`2026-10-24`（纯日期，按 UTC 00:00）、`2026-10-24T10:00:00Z`、
+ * `2026-10-24T10:00:00.123+08:00`、`+0800`（与引擎 `ISO_DATETIME_TZ` 的 `±hh` 口径一致）。
+ * 拒绝：无时区 datetime、空格分隔、非 ISO（`Jan 1 2026`）、非法日历（`2026-02-30`）。
  * 未给（undefined/null/空串）才回落 `fallback`（调用方的本次时刻）。
  */
 export function normalizeAsOf(raw: unknown, fallback: string): string {
   if (raw === undefined || raw === null || raw === "") return fallback;
   if (typeof raw !== "string") throw new AsOfError(`as_of must be an ISO-8601 string, got ${typeof raw}`);
-  const d = new Date(raw.trim());
-  if (Number.isNaN(d.getTime())) throw new AsOfError(`as_of is not a parseable ISO-8601 timestamp: ${raw}`);
-  return d.toISOString();
+  const t = raw.trim();
+  let m = AS_OF_DATE.exec(t);
+  if (m) {
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (!calendarOk(y, mo, d)) throw new AsOfError(`as_of is not a valid calendar date: ${raw}`);
+    return new Date(Date.UTC(y, mo - 1, d)).toISOString();
+  }
+  m = AS_OF_DATETIME.exec(t);
+  if (!m) {
+    throw new AsOfError(
+      `as_of is not an ISO-8601 timestamp with an explicit zone (use 2026-10-24T00:00:00Z, 2026-10-24T08:00:00+08:00, +0800, or a bare date 2026-10-24) — got: ${raw}`
+    );
+  }
+  const [, ys, mos, ds, hs, mis, ss, frac, zone] = m;
+  const [y, mo, d] = [Number(ys), Number(mos), Number(ds)];
+  if (!calendarOk(y, mo, d)) throw new AsOfError(`as_of is not a valid calendar date: ${raw}`);
+  const [h, mi, sec] = [Number(hs), Number(mis), Number(ss ?? "0")];
+  if (h > 23 || mi > 59 || sec > 59) throw new AsOfError(`as_of has an out-of-range time: ${raw}`);
+  let offsetMin = 0;
+  if (zone !== "Z") {
+    const sign = zone.startsWith("-") ? -1 : 1;
+    const digits = zone.slice(1).replace(":", "");
+    const zh = Number(digits.slice(0, 2));
+    const zm = digits.length > 2 ? Number(digits.slice(2, 4)) : 0;
+    if (zh > 23 || zm > 59) throw new AsOfError(`as_of has an out-of-range zone offset: ${raw}`);
+    offsetMin = sign * (zh * 60 + zm);
+  }
+  const ms = frac ? Number(`${frac}000`.slice(0, 3)) : 0;
+  return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMin * 60000).toISOString();
 }
 
 export function findMaterial(env: Env, id: string): MaterialRecord {
@@ -467,11 +525,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return res.verdict === "ready" ? 0 : 1;
         }
         const dir = specDir(env, `spec_${short(sha256(materialId))}`);
-        mkdirSync(dir, { recursive: true });
         const created = new Date().toISOString();
         const ready = res.verdict === "ready" && !!res.spec;
-        const recordPath = prepareRecordPath(dir, ready, created);
-        writeJson(recordPath, {
+        const recordPath = writePrepareRecord(dir, ready, {
           material_id: materialId,
           created,
           verdict: res.verdict,
@@ -479,7 +535,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           rejected: res.rejected,
           diagnostics: res.diagnostics,
           materials_sha256: res.materials_sha256,
-        });
+        }, created);
         if (ready && res.spec) {
           writeJson(join(dir, "spec.json"), res.spec);
           writeJson(join(dir, "trace.json"), {

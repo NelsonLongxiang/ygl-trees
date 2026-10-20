@@ -250,6 +250,56 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(existsSync(join(specDir, "spec.json"))).toBe(false);
   }, 60_000);
 
+  it("照文档的对象形状 --reviews → ready，三文件落盘（r23 P2 正向回归）", () => {
+    const text = join(home, "ready-material.txt");
+    writeFileSync(text, "账单金额不得为负。" + String.fromCharCode(10), "utf8");
+    const sub = run(["verify", "submit", "--title", "ready", "--text", text, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = (JSON.parse(sub.out) as { material_id: string }).material_id;
+    const dbFile = join(home, "ready.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec("CREATE TABLE bills (id TEXT PRIMARY KEY, amount_cents INTEGER)");
+    db.exec("INSERT INTO bills VALUES ('b1', -5)");
+    db.close();
+    const clause = "账单金额不得为负。";
+    const anchor = { quote: clause, locator: "material.txt#L1" };
+    // 文档给的形状：候选裸对象数组 + 盲审按 source_clause 对齐（vu_id 由 prepare 生成）
+    const candidates = join(home, "cand-ready.json");
+    writeFileSync(candidates, JSON.stringify({ candidates: [{
+      source_clause: clause,
+      anchor,
+      // 空快照判 FAIL 才过 P4 红队（rows==0 是违规），非空洞 PASS
+      checker: { type: "sql", fail_when: "rows==0", predicate: { from: "bills", select: ["id"], where: { op: "and", conditions: [{ col: "amount_cents", op: "<", value: 0 }] } } },
+    }] }), "utf8");
+    const reviews = join(home, "rev-ready.json");
+    writeFileSync(reviews, JSON.stringify({ reviews: [{
+      source_clause: clause,
+      findings: [
+        { question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+        { question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+        { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
+      ],
+    }] }), "utf8");
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--json"]);
+    expect(r.rc).toBe(0);
+    const obj = JSON.parse(r.out) as { verdict: string; record: string; spec_id: string };
+    expect(obj.verdict).toBe("ready");
+    // record 相对 verify 根（脚本可直接拼绝对路径）
+    expect(obj.record).toBe(["specs", obj.spec_id, "prepare.json"].join("/"));
+    const dir = join(home, "verify", "specs", obj.spec_id);
+    for (const f of ["prepare.json", "spec.json", "trace.json"]) expect(existsSync(join(dir, f))).toBe(true);
+    // 反向：旧版嵌套形状（r23 P2 的错例）永不 ready
+    const nested = join(home, "rev-nested.json");
+    writeFileSync(nested, JSON.stringify({ reviews: [[
+      { vu_id: "V1", question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+      { vu_id: "V1", question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+      { vu_id: "V1", question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
+    ]] }), "utf8");
+    const bad = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", nested, "--db", dbFile, "--json"]);
+    expect(bad.rc).toBe(1);
+    expect((JSON.parse(bad.out) as { verdict: string }).verdict).not.toBe("ready");
+  }, 60_000);
+
   it("未知子命令 → rc=2（verify 组同其他组口径）", () => {
     const r = run(["verify", "frobnicate", "--json"]);
     expect(r.rc).toBe(2);

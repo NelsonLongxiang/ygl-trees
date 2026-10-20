@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.102.4
+
+**r23 收口**（评审 302cb119：0.102.3 PASS，留 1 P2 + P3×5）——无契约形状变更，全部是把「口径」收紧到可对质。
+
+- **as_of 严格 ISO（P3⑤ / 三问①）**：`normalizeAsOf` 从「Date 能解析就收」改为显式语法校验——**接受**纯日期（UTC 00:00）与带显式时区的 datetime（`Z`/`+08:00`/`+0800`，±hh 与引擎 `ISO_DATETIME_TZ` 同口径）、1–9 位小数秒；**拒绝**无时区 datetime（同一串在本机 +08 与 CI UTC 会落成两个锚点）、空格分隔、非 ISO、非法日历（`2026-02-30` 曾被 Date 静默滚成 03-02 并以错误锚冻结——现在直接拒）。这是 0.102.3「可解析即归一」的漏洞：评审实测 CLI 曾以错误锚覆盖上一份 ready 记录。
+- **as_of 校验提前（P3①）**：HTTP `prepare` 的 as_of 校验移到 `findMaterial`/`snapshotPath`/`schemaOf` 之前——「缺材料 + 非法 as_of」现在报 400（旗标错误）而非 404（资源错误），与 CLI 的「先校验后 I/O」同纪律。
+- **attempts 原子占位（三问③）**：`prepareRecordPath` 的 `existsSync` 续号换成 `writeFileSync(..., {flag:"wx"})` + EEXIST 续号——原方案有 TOCTOU 窗口（评审：8 路并发没撞是毫秒错开的运气）。
+- **P2：文档 reviews 示例形状**：`docs/verify-contract.md` 的 `--reviews` 示例原写旧嵌套 `[[{vu_id…}]]`，而 `fileReviewer` 按 `source_clause` 匹配对象数组——照文档抄永远 `needs-material`。示例改为 `[{source_clause, findings}]`（并注明 vu_id 由 prepare 生成），补 CLI 正向回归：文档形状 → ready rc=0 且三文件落盘；旧嵌套形状 → 非 ready（P2 的反例）。
+- **措辞订正（P3②③）**：撤掉「`prepare.json` 不可变」的说法——真实口径是「成功以最后一次成功为准，失败的补跑不得冲掉上一轮成功记录」；文档写明 attempts 投影的 `file` 是 attempts 目录内 basename，而 CLI `record` 是相对 verify 根的 `specs/<id>/…`，两者基准不同。另注明 as_of 比引擎 `ISO_DATETIME_TZ` 更严（拒空格分隔）是有意的：数据值宽容，入参严格。
+- 测试 unit **463**（+9：as-of 严格用例 6、CLI ready 形状正向 1、HTTP 严格 as_of 2（含「校验先于 I/O」））/ Rust 31 / demo 128 / contract 100 / readme 54。`contract_version` / `corpus_version` 仍 1.1。
+- 附：r23 评审报告入库 `docs/reviews/REVIEW-spec-validator-m13-r23.md`（索引登记）。
+
 ## 0.102.3
 
 **r22 P3 收口**（评审 302cb119：0.102.2 PASS，留 as_of 校验 / attempts 可审计 / 命名碰撞 / CLI record 四条）——无契约形状变更。

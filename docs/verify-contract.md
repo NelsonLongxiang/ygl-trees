@@ -144,8 +144,16 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
     "compare": { "mode": "exact", "currency": "CNY", "scale": 2 } },
   "expected_from": { "kind": "material-extract", "source_id": "materials", "quote": "…", "anchor": "material.md#I1" }
 }]}
-// --reviews：盲审结论（每候选三条 findings；缺一条就判"自审不完整"）
-{ "reviews": [[{ "vu_id": "V1", "question": "faithful", "verdict": "ok", "reason": "…", "anchor": { "quote": "…", "locator": "material.md#I1" }, "checkpoint": "anchor-verbatim" }]] }
+// --reviews：盲审结论。**按 source_clause 对齐**（vu_id 由 prepare 生成，不要自己写；写成
+// 旧版嵌套 `[[{vu_id…}]]` 会一条都匹配不上 → 判"自审不完整"）。每候选三条 findings，缺一条即不完整。
+{ "reviews": [{
+  "source_clause": "账单总额须等于申报总额。",     // 必须与 --candidates 里该候选逐字相同
+  "findings": [
+    { "question": "faithful",    "verdict": "ok", "reason": "…", "anchor": { "quote": "账单总额须等于申报总额。", "locator": "material.md#I1" }, "checkpoint": "anchor-verbatim" },
+    { "question": "decidable",   "verdict": "ok", "reason": "…", "anchor": { "quote": "…", "locator": "material.md#I1" } },
+    { "question": "not-vacuous", "verdict": "ok", "reason": "…", "anchor": { "quote": "…", "locator": "material.md#I1" } }
+  ]
+}] }
 // --db：schema 探针用的库（只读打开；也可用 --attachments 目录 + 空库）
 ```
 
@@ -268,7 +276,7 @@ verify list --unarchived                                            # 跑过但�
 
 **未知旗标**：verify 组每个动作有旗标白名单，未知旗标一律 rc=2 并点名（`unknown flag for verify run: --attachment`）——构造期静默比报错危险。
 
-## 4.7 服务面（M13-2，0.100.0 → 0.102.3）
+## 4.7 服务面（M13-2，0.100.0 → 0.102.4）
 
 浏览器侧只读 + 材料草稿 + 附件上传 + 作业式 prepare/run，全部走 `$YGL_HOME/verify/*` 文件工件，不碰工作区库：
 
@@ -290,8 +298,9 @@ POST /api/verify/run                  # {spec_id,snapshot_sha256,no_archive?}   
 - **请求体永不携带可执行面**：没有 argv/allowlist/路径；夹带 `submission_dir` 直接 400（目录树没有安全的 HTTP 来源，file 型检查器仍走 CLI/封包）。command 型白名单由 serve 启动时注入（`YGL_VERIFY_ALLOW_CMD`，未设置才默认 `node`；空串 = 显式空表，全禁，fail-closed）；不在白名单的 argv[0] 判 VU `ERROR`，而不是执行。
 - **快照按内容寻址**：先 `PUT /api/verify/blob?name=snapshot.sqlite`，再传 `snapshot_sha256`（64 位小写 hex）；缺 blob 404，非法 sha 400。run 先把 blob 字节复制成临时快照再跑（裁定 A：只碰副本），报告 `data_source.source` 记 `blob:<sha12>`。
 - **HTTP 状态只表达过程**：400 用法/422 快照不可读或引擎硬拒/404 找不到/415/413；判定结论在 body——prepare 的 `verdict`（`ready`/`needs-material`/`error`）、run 的 `overall`（PASS/FAIL 都 200）。归档默认做，失败记 `archive_error`（报告照落）。
-- **构造记录（0.102.2）**：只有 ready 才写不可变的 `spec.json`/`prepare.json`/`trace.json`；未 ready 的尝试落同目录 `attempts/<ts>.json`（只追加，绝不覆盖已冻结记录；同一毫秒的第二次尝试加短序号 `-2`/`-3`，不覆盖）。构造追溯载荷（`GET /api/verify/spec`）带 `attempts: [{file, created, verdict}]` 投影，正文仍只在盘上。CLI `verify prepare --json` 回 `record`（相对 verify 根的 `specs/<id>/prepare.json` 或 `attempts/<ts>.json`），脚本不用自己拼时间戳。
-- **as_of 双侧同校验（0.102.3）**：HTTP `as_of` 与 CLI `--as-of` 走同一个归一函数——可解析 → `toISOString()`（`+08:00` 偏移归一为 UTC 存盘，同一个瞬间只有一种存盘形态）；不可解析/非字符串 → HTTP 400、CLI rc=2，且**不落盘、不消耗 spec_version**。语义依据：R13 要求 as_of 锚定冻结值，不可解析的时间锚会让报告变成不可对质。缺省（未给）才回落到调用方（请求/命令）时刻。
+- **构造记录（0.102.2 / 原子占位 0.102.4）**：ready 才写 `spec.json`/`prepare.json`/`trace.json`；未 ready 的尝试落同目录 `attempts/<ts>.json`。口径是「**成功记录以最后一次成功为准、失败尝试留档**」——`prepare.json` 不是不可变（同 spec 再准备成功会覆盖它，这正确），不可变的是「失败的补跑不许冲掉上一轮成功记录」这一条。`attempts` 用 `flag:"wx"` 原子占位，同毫秒第二个写者拿 EEXIST 续号 `-2`/`-3`（先 `existsSync` 再写的方案有 TOCTOU 窗口，已弃）。
+  构造追溯载荷（`GET /api/verify/spec`）带 `attempts: [{file, created, verdict}]` 投影，正文仍只在盘上；这里的 `file` 是 `attempts/` 目录内的 basename（`attempts/x.json`），CLI `verify prepare --json` 的 `record` 则是**相对 verify 根**的路径（`specs/<id>/prepare.json` 或 `specs/<id>/attempts/x.json`）——两者都能直接拼成绝对路径，只是基准不同，脚本别混用。
+- **as_of 双侧同校验，严格 ISO（0.102.3；0.102.4 收紧）**：HTTP `as_of` 与 CLI `--as-of` 走同一个归一函数。**接受**：纯日期 `2026-10-24`（按 UTC 00:00）、带显式时区的 datetime（`…Z`、`+08:00`、`+0800`——`±hh` 与引擎 `ISO_DATETIME_TZ` 同口径）、1–9 位小数秒。**拒绝**：无时区 datetime（`2026-10-24T10:00:00` 在本机 +08 与 CI UTC 会得到两个锚点）、空格分隔、非 ISO（`Jan 1 2026`）、非法日历（`2026-02-30` 被 Date 静默滚成 03-02 并以错误锚冻结——必须拒）。归一结果一律 `toISOString()`（偏移转为 UTC 存盘，同一个瞬间只有一种存盘形态）；不可解析/非字符串 → HTTP 400、CLI rc=2，且**不落盘、不消耗 spec_version**，HTTP 侧的校验在 material/blob/schema 任何 I/O 之前（缺材料 + 非法 as_of 报 400 而非 404）。语义依据：R13 要求 as_of 锚定冻结值，不可解析的时间锚会让报告变成不可对质。缺省（未给）才回落到调用方（请求/命令）时刻。注意 as_of 比引擎的 `ISO_DATETIME_TZ` **更严**：引擎比对数据值时容忍空格分隔（数据里常见），as_of 是入参/旗标，空格形态有歧义，故拒——两边不一致是有意的，不是漂移。
 - **构造面仍在 agent**：`candidates`/`reviews` 由 agent 提交，服务端只做 P0–P5 机械判定与冻版，绝不发明候选（缺数组 400）。
 
 **注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。

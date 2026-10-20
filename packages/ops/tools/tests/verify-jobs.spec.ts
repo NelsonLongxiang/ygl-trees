@@ -226,6 +226,21 @@ describe("verify jobs — prepare", () => {
     expect(spec.as_of.value).toBe("2026-10-20T01:00:00.000Z");
   }, 60_000);
 
+  it("as_of 严格 ISO：无时区 / 空格 / 非法日历 → 400（r23 P3⑤：不猜服务端时区，也不让 02-30 静默滚成 03-02）", async () => {
+    for (const bad of ["2026-10-20T10:00:00", "2026-10-20 10:00:00Z", "Jan 1 2026", "2026-02-30"]) {
+      const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: bad });
+      expect(r.status).toBe(400);
+      expect(String(r.json.error)).toContain("as_of");
+      expect(String(r.json.error)).toMatch(/explicit zone|valid calendar date/);
+    }
+  }, 60_000);
+
+  it("as_of 校验先于 material/blob 读取（缺材料 + 非法 as_of → 400 而非 404，r23 P3①）", async () => {
+    const r = await post(`${base}/api/verify/prepare`, { material_id: "mat_missing0000", candidates, reviews, snapshot_sha256: snapshotSha, as_of: "not-a-time" });
+    expect(r.status).toBe(400);
+    expect(String(r.json.error)).toContain("as_of");
+  }, 60_000);
+
   it("快照只能按内容寻址：不存在的 sha → 404 且错误里点名上传入口", async () => {
     const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: "a".repeat(64) });
     expect(r.status).toBe(404);
