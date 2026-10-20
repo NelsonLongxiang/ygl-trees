@@ -694,7 +694,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         }
       }
-      const dbOverride = args.flags.db ? String(args.flags.db) : null;
+      // GitHub #9: a blank --db ("  ") was truthy, so it was recorded as
+      // origin:"override" while the command itself fell back to the report's
+      // source — the freeze record disagreed with what ran. A flag made only of
+      // whitespace is the same as absent.
+      const dbOverrideRaw = args.flags.db ? String(args.flags.db).trim() : "";
+      const dbOverride = dbOverrideRaw || null;
       const cmd = jobCommand(specId, el.data_source?.source ?? null, dbOverride);
       // 来源不可直接执行时不能登记作业——否则作业每分钟 ENOENT 失败（blob 引用），
       // 或者更糟：报告数据经 shell 执行（r26 P1 注入面）。两种都拒绝，且不回显原串。

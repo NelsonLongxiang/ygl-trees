@@ -251,6 +251,48 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     }
   });
 
+  // GitHub #9: "   " was truthy, so the freeze record said origin:"override"
+  // while the command ran the report's source. Whitespace is not a path.
+  it("--db 全空白 == 未传：db_override null、job_target origin=report（GitHub #9）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad-blank-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_blank");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_blank", spec_version: 1 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const source = join(ghome, "live.sqlite");
+      const put = (id: string, finished: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({
+            run_id: id,
+            spec_id: "spec_blank",
+            finished,
+            overall: "PASS",
+            verifier: { spec_version: 1 },
+            data_source: { kind: "sqlite-snapshot", source },
+          }),
+          "utf8",
+        );
+      put("run_a", "2026-09-01T00:00:00.000Z");
+      put("run_b", "2026-09-20T00:00:00.000Z");
+      put("run_c", "2026-10-11T00:00:00.000Z");
+
+      const r = run(["verify", "graduate", "spec_blank", "--every", "60", "--schedule", "--db", "   ", "--json"], env);
+      expect(r.rc).toBe(0);
+      const body = JSON.parse(r.out) as { db_override: string | null; job_command: string };
+      expect(body.db_override).toBeNull();
+      expect(body.job_command).toContain(source);
+      const rec = JSON.parse(readFileSync(join(ghome, "verify", "graduations", "spec_blank.json"), "utf8"));
+      expect(rec.job_target).toMatchObject({ db: source, origin: "report" });
+    } finally {
+      rmSync(ghome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
   // Issue #3 (external report): the issue-#9 `job_target_error` line was
   // inserted between `if (jobRow)` and its `else if` chain, which detached the
   // chain: a SUCCESSFUL --schedule printed both "scheduled: job …" and

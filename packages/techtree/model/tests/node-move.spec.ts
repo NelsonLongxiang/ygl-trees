@@ -140,4 +140,21 @@ describe("nodeMove", () => {
     await expect(treeWrites.nodeMove(ds, left, "parent", "no-such-tree")).rejects.toThrow(/tree not found: no-such-tree/);
     await closeOrm();
   });
+  // GitHub #8 (P2): the target-tree fallback used to accept ANY same-key node in
+  // the target tree as an "already applied" retry. It must only accept a node
+  // this command actually moved — otherwise a typo'd source tree reports a move
+  // that never happened (rc=0, duplicate:true, phantom noop event).
+  it("refuses a phantom retry when the target node was never moved from the source", async () => {
+    const ds = await getOrm(db.path!);
+    await treeWrites.nodeAdd(ds, right, { key: "target-only" });
+    const takenId = (db.get("SELECT id FROM nodes WHERE key='target-only' AND tree_id=?", right) as any).id;
+    const before = (db.get("SELECT COUNT(*) c FROM events WHERE entity_id=? AND kind='node.move.noop'", takenId) as any).c;
+    await expect(treeWrites.nodeMove(ds, left, "target-only", "right")).rejects.toThrow(
+      /no recorded move from tree 'left'/
+    );
+    const after = (db.get("SELECT COUNT(*) c FROM events WHERE entity_id=? AND kind='node.move.noop'", takenId) as any).c;
+    expect(after).toBe(before); // no phantom noop event
+    expect((db.get("SELECT tree_id FROM nodes WHERE id=?", takenId) as any).tree_id).toBe(right);
+    await closeOrm();
+  });
 });

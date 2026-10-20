@@ -164,6 +164,8 @@ describe("sourceRemove (issue #7)", () => {
     expect(r.forced).toBe(true);
     expect(r.evidence_removed).toBe(1);
     expect(r.claims_recomputed).toBe(1);
+    // GitHub #9: one JSON field, one type — cascaded is a count on both faces.
+    expect(r.cascaded).toBe(1);
     expect(db.get("SELECT COUNT(*) AS c FROM evidence WHERE source_id=?", [sid])).toEqual({ c: 0 });
     expect(db.get("SELECT COUNT(*) AS c FROM evidence_fts WHERE id=?", [evidence])).toEqual({ c: 0 });
     expect(db.get("SELECT COUNT(*) AS c FROM sources_fts WHERE id=?", [sid])).toEqual({ c: 0 });

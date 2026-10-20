@@ -235,6 +235,12 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.108.2 记录（GitHub issue #8/#9，2026-10-21）**：外部报告 + 验证席数据级复现。
+- **#8 `nodeMove` 假幂等**：重试分支补血统校验——`events` 中该节点的 `node.move`/`node.move.noop` 必须同时匹配 `from`/`to` 才算重试；否则 rc=1「no recorded move from tree 'x'」并指路 `node rm`。红测试先写（`node-move.spec` 幻影重试 vs 真重试对拉）。
+- **#9① `--db` 空白**：flag `.trim()` 后空串 == 未传；`db_override:null`、`job_target.origin:"report"`（此前 blank 被记 override 但实际跑报告来源）。`verify-cli.spec` 回归。
+- **#9② `cascaded` 类型统一**：`evidenceRemove` number / `sourceRemove` boolean → 一律 number（级联删除量）；`unlink.spec` 断言冻结。
+- 测试 unit 549→**576**（含 PR#4 合并带入 27 例前端测试；本版 +2：node-move 幻影重试、verify-cli 空白 --db）。
+
 **0.108.1 记录（GitHub issue #6 的 P2×2，2026-10-21）**：外部报告 + 验证席源码坐实。
 - **① stuck-run reaper 时间格式**：`reads.ts jobReapStuck` 的 cutoff 是空格分隔本地时间，`runs.started` 是 `nowIso()`（UTC ISO-8601）——同日比较恒假、跨日叠加时区偏移，0.87.1 后静默失效。修法 cutoff 改 `toISOString()`；测试三例（同日 40min / 跨日 / 新鲜 1min）。教训：**任何「格式化时间字符串比较」都是回归温床，必须同源同时钟**。
 - **② job tick/run 长持锁**：`execute()` 的 execSync（≤600s/作业）发生在进程级写锁内，其他 CLI 排队。修法 `bin.ts` 对 `job tick|run` 设 `YGL_SERVE=1`（同 `webui serve` 推理）：boot 无锁，互斥靠 fs `tick.lock` + SQLite WAL；回归测试在慢作业运行中跑 `db stats`，断言 <5s 返回。

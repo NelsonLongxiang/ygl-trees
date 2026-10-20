@@ -428,7 +428,7 @@ export async function sourceRemove(
   ds: DataSource,
   sourceId: string,
   force = false
-): Promise<{ id: string; evidence_removed: number; claims_recomputed: number; forced: boolean; cascaded: boolean }> {
+): Promise<{ id: string; evidence_removed: number; claims_recomputed: number; forced: boolean; cascaded: number }> {
   return runTx(ds, async (mgr) => {
     const s = (await mgr.query(`SELECT id, title FROM sources WHERE id=?`, [sourceId])) as any[];
     if (!s.length) throw new Error(`source not found: ${sourceId}`);
@@ -468,7 +468,10 @@ export async function sourceRemove(
       evidence_removed: evIds.length,
       claims_recomputed: claims.size,
       forced: force,
-      cascaded: evIds.length > 0,
+      // GitHub #9: `cascaded` is a COUNT on both removal faces
+      // (evidence rm: links dropped; source rm: evidence rows dropped) — one
+      // JSON field, one type. It used to be a boolean here and a number there.
+      cascaded: evIds.length,
     };
   });
 }

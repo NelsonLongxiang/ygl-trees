@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.108.2
+
+**GitHub issue #8 / #9 的 P2 三处**（外部报告，验证席数据级复现）。无契约形状变更。
+
+- **#8 `node move` 假幂等**：源树查行落空后的重试分支只判断「目标树有同名 key」，没有来源证明——
+  `node move y7 --to b -t a`（y7 本就生在 b）会 rc=0 报 `duplicate:true` + 谎报 `from_tree` +
+  落一条幻影 `node.move.noop`。修法：重试分支查 `events` 里该节点的 `node.move`/`node.move.noop`
+  血统（`from`/`to` 同时匹配）才认重试；无血统 → rc=1 点名两棵树并指路 `node rm`。
+  真重试仍幂等（`node-move.spec` 两条用例对拉）。
+- **#9① `--db` 全空白**：`String("   ")` 为真 → 冻结记录写 `origin:"override"`，而实际命令回落到报告来源——
+  记录与执行不一致。修法：flag trim 后空串视为未传（`db_override:null`、`origin:"report"`）。
+  回归测试在 `verify-cli.spec`。
+- **#9② `cascaded` 两形**：`evidence rm` 返回 number（丢掉的链接数），`source rm` 返回 boolean——
+  同一 JSON 字段两种类型。统一为 **number**（两面的「级联删掉多少」），`source rm` 值 = 证据行数；
+  `unlink.spec` 断言类型冻结。
+
+测试：unit **549 → 576**（含 PR#4 合并带入的前端测试；本版 +2：`node-move.spec` 幻影重试、`verify-cli.spec` 空白 --db）；其余门禁同 0.108.1。
+
 ## 0.108.1
 
 **GitHub issue #6 的 P2×2**（外部报告，验证席源码级坐实）。无契约形状变更。

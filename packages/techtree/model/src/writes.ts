@@ -300,6 +300,28 @@ export async function nodeMove(
         const there = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [retryTree[0].id, keyOrId, keyOrId])) as any[];
         if (there.length) {
           const fromName = ((await mgr.query(`SELECT name FROM trees WHERE id=?`, [fromTreeId])) as any[])[0]?.name ?? fromTreeId;
+          // GitHub #8: a same-key node in the target tree is only a retry when
+          // THIS command moved it there. Without that provenance the fallback
+          // reported `duplicate:true` for a move that never happened (typo'd
+          // source tree) — a fake no-op plus a phantom event. A real move logs
+          // node.move{from,to}; a prior retry logs node.move.noop{from,to}.
+          const evs = (await mgr.query(
+            `SELECT payload FROM events WHERE entity_id=? AND kind IN ('node.move','node.move.noop') ORDER BY rowid DESC LIMIT 20`,
+            [there[0].id]
+          )) as any[];
+          const proven = evs.some((e) => {
+            try {
+              const p = JSON.parse(e.payload || "{}");
+              return p?.from === fromName && p?.to === retryTree[0].name;
+            } catch {
+              return false;
+            }
+          });
+          if (!proven) {
+            throw new Error(
+              `node '${there[0].key}' exists in tree '${retryTree[0].name}' but there is no recorded move from tree '${fromName}' — refusing to report a move that never happened (check the source tree, or remove the target row with: node rm ${there[0].key} -t ${retryTree[0].name})`
+            );
+          }
           await logEvent(mgr, "node.move.noop", there[0].id, {
             from: fromName,
             to: retryTree[0].name,
