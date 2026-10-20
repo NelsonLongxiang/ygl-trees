@@ -50,5 +50,5 @@ react-pdf（+88%，且用户裁定不做导出）· remix（framework 模式需 
 
 ### 可选工具（需另行安装，不在门禁内）
 
-- `npx -y @ant-design/cli lint ./src`：antd 弃用 / 可访问性 / 用法检查，交付时要求 0 项。
-- `npx -y -p @google/design.md designmd lint DESIGN.md`：DESIGN.md 格式与对比度检查，要求 0 error。
+- `npx -y @ant-design/cli lint ./src`：antd 弃用 / 可访问性 / 用法检查，建议保持 0 项（本轮交付为 0）。
+- `npx -y -p @google/design.md designmd lint DESIGN.md`：DESIGN.md 格式与对比度检查，建议保持 0 error（本轮交付为 0，仅余 orphaned-tokens 一类警告）。
