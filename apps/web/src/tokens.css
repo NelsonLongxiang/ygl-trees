@@ -17,7 +17,7 @@
   --color-success: #3fb950;
   --color-danger: #f85149;
   --color-warning: #d29922;
-  --color-on-entity: var(--color-neutral);
+  --color-on-entity: #0d1117;
   --entity-stroke: rgba(255, 255, 255, 0.3);
   --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-entity: 0 2px 6px rgba(0, 0, 0, 0.3);

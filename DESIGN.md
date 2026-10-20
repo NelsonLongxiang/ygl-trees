@@ -19,6 +19,7 @@ colors:
   success: "#3fb950"        # supported / pass / unlockable
   danger: "#f85149"         # refuted / fail / excludes edges
   warning: "#d29922"        # contested / pending-adjacent emphasis
+  on-entity: "#0d1117"      # labels on knowledge-graph entity fills (≥6.2:1 on every fill)
 # Light theme — same keys, same roles; every text pair AA (see ## Themes).
 colors-light:
   primary: "#0969da"
@@ -34,6 +35,7 @@ colors-light:
   success: "#1a7f37"
   danger: "#d1242f"
   warning: "#8a5c00"
+  on-entity: "#ffffff"
 typography:
   h1:
     fontFamily: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
@@ -102,6 +104,10 @@ components:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.secondary}"
     rounded: "{rounded.sm}"
+  entity-node:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-entity}"
+    rounded: "{rounded.lg}"
 ---
 
 ## Overview
@@ -167,6 +173,18 @@ minimum. The panel survives live-data refreshes — selection state is sacred.
 Border-first: cards and chips separate by 1px `border`, not shadow. The one
 exception is the fixed node panel (`0 8px 24px rgba(0,0,0,.45)`), which must
 read as floating above the page.
+
+Per theme (tokens.css; the drift guard checks these literals appear here):
+
+| token | dark | light |
+|---|---|---|
+| `--shadow-panel` | `0 8px 24px rgba(0, 0, 0, 0.45)` | `0 8px 24px rgba(140, 149, 159, 0.2)` |
+| `--shadow-entity` (graph entities) | `0 2px 6px rgba(0, 0, 0, 0.3)` | `0 1px 3px rgba(31, 35, 40, 0.12)` |
+| `--entity-stroke` (2px entity ring) | `rgba(255, 255, 255, 0.3)` | `rgba(31, 35, 40, 0.15)` |
+
+Entity fills are the status/role colors by type (node=primary, claim=success,
+evidence/source=warning, artifact/task=tertiary, kb/skill=secondary); labels on
+them use `on-entity`.
 
 ## Shapes
 

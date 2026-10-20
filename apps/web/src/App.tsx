@@ -81,11 +81,22 @@ function Shell() {
       </Header>
 
       <Content style={{ padding: 24, maxWidth: 1360, margin: "0 auto", width: "100%" }}>
+        {/* Never hide an error behind loaded data: before the first payload it is
+            "unreachable"; after it, the live channel broke and the view is stale. */}
         {error && !data && (
           <Alert
             type="error"
             title="API 不可达"
             description={<Text code>ygl-trees webui serve --port 8642</Text>}
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
+        {error && data && (
+          <Alert
+            type="warning"
+            title="实时更新中断——当前为最近一次数据"
+            description={<Text type="secondary">{error}</Text>}
             showIcon
             style={{ marginBottom: 16 }}
           />
@@ -97,22 +108,29 @@ function Shell() {
   );
 }
 
+/** Route table — exported so tests can mount it under a MemoryRouter. */
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Shell />}>
+        <Route index element={<OverviewPage />} />
+        <Route path="pipeline" element={<PipelinePage />} />
+        <Route path="tree" element={<TreePage />} />
+        <Route path="graph" element={<GraphPage />} />
+        <Route path="verify" element={<VerifyPage />} />
+        <Route path="artifacts" element={<ArtifactsPage />} />
+        <Route path="*" element={<OverviewPage />} />
+      </Route>
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <DashboardProvider>
         <HashRouter>
-          <Routes>
-            <Route path="/" element={<Shell />}>
-              <Route index element={<OverviewPage />} />
-              <Route path="pipeline" element={<PipelinePage />} />
-              <Route path="tree" element={<TreePage />} />
-              <Route path="graph" element={<GraphPage />} />
-              <Route path="verify" element={<VerifyPage />} />
-              <Route path="artifacts" element={<ArtifactsPage />} />
-              <Route path="*" element={<OverviewPage />} />
-            </Route>
-          </Routes>
+          <AppRoutes />
         </HashRouter>
       </DashboardProvider>
     </ThemeProvider>

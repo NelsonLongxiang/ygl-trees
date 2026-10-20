@@ -71,6 +71,7 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     "success",
     "danger",
     "warning",
+    "on-entity",
   ];
 
   it("DESIGN.md defines every color in both themes", () => {
@@ -80,14 +81,29 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     }
   });
 
-  it("tokens.css stays in sync with DESIGN.md (all 13 colors × dark/light)", () => {
+  it("tokens.css declares no --color-* outside DESIGN.md (both theme blocks)", () => {
+    for (const blk of [cssDark, cssLight]) {
+      const names = [...blk.matchAll(/--color-([a-z-]+):/g)].map((m) => m[1]);
+      for (const n of names) expect(colorKeys, `--color-${n} not in DESIGN.md`).toContain(n);
+    }
+  });
+
+  it("non-color theme values in tokens.css are written down in DESIGN.md", () => {
+    for (const blk of [cssDark, cssLight]) {
+      for (const m of blk.matchAll(/--((?:shadow|entity)-[a-z-]+):\s*([^;]+);/g)) {
+        expect(design, `--${m[1]}: ${m[2]} missing from DESIGN.md`).toContain(m[2].trim());
+      }
+    }
+  });
+
+  it("tokens.css stays in sync with DESIGN.md (all colors × dark/light)", () => {
     for (const k of colorKeys) {
       expect(cssVar(k), `dark --color-${k}`).toBe(designColor(k));
       expect(cssVarIn(cssLight, k), `light --color-${k}`).toBe(designLight(k));
     }
   });
 
-  it("tokens.ts DARK/LIGHT palettes mirror DESIGN.md (all 13 colors × dark/light)", () => {
+  it("tokens.ts DARK/LIGHT palettes mirror DESIGN.md (all colors × dark/light)", () => {
     const dark = tsMap("DARK"), light = tsMap("LIGHT");
     for (const k of colorKeys) {
       expect(tsHex(dark, k), `DARK.${k}`).toBe(designColor(k));
@@ -140,6 +156,22 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     const hexes = src.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
     for (const h of hexes) {
       expect(tokenSet.has(h.toLowerCase()), `non-token hex ${h} in webui.ts`).toBe(true);
+    }
+  });
+
+  it("KnowledgeGraph type fills match the server's dark colour map type for type", () => {
+    // webui.ts still ships a dark hex per entity (snapshot.json contract); the
+    // client themes by type instead — the two maps must name the same token.
+    const server = readFileSync(resolve(REPO, "packages/ops/tools/src/webui.ts"), "utf8");
+    const sMap = /const colors: Record<string, string> = \{([\s\S]*?)\};/.exec(server)?.[1] ?? "";
+    const serverHex = Object.fromEntries([...sMap.matchAll(/(\w+):\s*"(#[0-9a-f]{6})"/g)].map((m) => [m[1], m[2]]));
+    const kg = readFileSync(resolve(REPO, "apps/web/src/KnowledgeGraph.tsx"), "utf8");
+    const cMap = /const typeFill: Record<string, string> = \{([\s\S]*?)\};/.exec(kg)?.[1] ?? "";
+    const clientKey = Object.fromEntries([...cMap.matchAll(/(\w+):\s*C\.(\w+)/g)].map((m) => [m[1], m[2]]));
+    expect(Object.keys(clientKey).sort()).toEqual(Object.keys(serverHex).sort());
+    expect(Object.keys(serverHex).length).toBeGreaterThan(0);
+    for (const [type, key] of Object.entries(clientKey)) {
+      expect(designColor(key), `${type}: client ${key} vs server ${serverHex[type]}`).toBe(serverHex[type]);
     }
   });
 

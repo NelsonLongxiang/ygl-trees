@@ -31,7 +31,7 @@ function EntityNode({ data }: NodeProps) {
   return (
     <div style={{
       background: fillOf(d.type),
-      color: "var(--color-on-entity)", // dark: neutral ink (≥6.2:1), light: white (≥4.9:1)
+      color: C["on-entity"], // dark: neutral ink (≥6.2:1), light: white (≥4.9:1)
       padding: "6px 12px",
       borderRadius: "var(--radius-lg)",
       fontSize: 11,

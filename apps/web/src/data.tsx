@@ -12,7 +12,7 @@ interface DashboardState {
   error: string | null;
 }
 
-const DashboardContext = createContext<DashboardState>({ data: null, error: null });
+export const DashboardContext = createContext<DashboardState>({ data: null, error: null });
 
 export function useDashboard(): DashboardState {
   return useContext(DashboardContext);

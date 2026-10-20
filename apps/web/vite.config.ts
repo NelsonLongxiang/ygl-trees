@@ -12,7 +12,6 @@ export default defineConfig({
           xyflow: ["@xyflow/react"],
           markdown: ["react-markdown"],
           router: ["react-router"],
-          ahooks: ["ahooks"],
         },
       },
     },

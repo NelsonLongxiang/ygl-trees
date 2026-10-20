@@ -26,6 +26,7 @@ export const DARK = {
   success: "#3fb950", // supported / pass / unlockable
   danger: "#f85149", // refuted / fail / excludes edges
   warning: "#d29922", // contested / pending-adjacent emphasis
+  "on-entity": "#0d1117", // labels on knowledge-graph entity fills
 } as const;
 
 // DESIGN.md colors-light.* — same keys, same roles
@@ -43,6 +44,7 @@ export const LIGHT = {
   success: "#1a7f37",
   danger: "#d1242f",
   warning: "#8a5c00",
+  "on-entity": "#ffffff",
 } as const;
 
 export type ColorKey = keyof typeof DARK;

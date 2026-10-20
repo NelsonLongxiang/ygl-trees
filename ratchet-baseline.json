@@ -11,9 +11,9 @@
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {
-      "value": 1419984,
+      "value": 1419591,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-20T14:42:37.000Z",
+      "measured_at": "2026-10-20T15:35:34.508Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
