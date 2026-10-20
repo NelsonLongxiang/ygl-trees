@@ -24,6 +24,14 @@ export const SERIES_LABEL: Record<SeriesKey, string> = {
   other: "其他",
 };
 
+/** What each bucket counts — the server buckets by event-kind prefix (ops/tools webui.ts); claim.eval is a claim event, so it is 研究. */
+export const SERIES_NOTE: Record<SeriesKey, string> = {
+  research: "研究 = source / evidence / claim / query / kb / artifact 事件（含断言评估 claim.eval）",
+  tree: "科技树 = node / tree 事件",
+  eval: "判定 = eval.* 事件（节点条件判定）；断言评估计入研究",
+  other: "其他 = 其余事件（task、project、config 等）",
+};
+
 export interface Segment {
   key: SeriesKey;
   value: number;

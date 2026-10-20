@@ -3,7 +3,7 @@
  * build still serves from any sub-path). Each page is one view of the old
  * single scroll column; heavy views stay lazy-loaded.
  */
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Alert, Button, Card, Empty, Space, Statistic, Table, Tag, Typography } from "antd";
 import {
@@ -14,6 +14,7 @@ import { useDashboard } from "./data";
 import { C, statColors } from "./tokens";
 import { ToneTag } from "./ToneTag";
 import ActivityTimeline from "./ActivityTimeline";
+import { copyText } from "./clipboard";
 
 const TreeFlow = lazy(() => import("./TreeFlow"));
 const Artifacts = lazy(() => import("./Artifacts"));
@@ -93,36 +94,38 @@ const TASK_STATUS: Record<string, { color: string; label: string }> = {
 
 /**
  * One agent-proposed command: shown in the executable voice (mono tertiary) and
- * copyable with one click. The page never runs it — writes stay in the CLI.
+ * copyable with one click. The page never runs it — writes stay in the CLI. The
+ * label only says 已复制 when the clipboard really took it; on failure the
+ * command text is selected so a manual Ctrl/Cmd+C still works.
  */
 function ActionRow({ cmd }: { cmd: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const codeRef = useRef<HTMLElement>(null);
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(cmd);
-    } catch {
-      // insecure context / older browser: select-and-copy fallback
-      const ta = document.createElement("textarea");
-      ta.value = cmd;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } finally {
-        ta.remove();
-      }
+    const ok = await copyText(cmd);
+    setState(ok ? "copied" : "failed");
+    if (!ok && codeRef.current) {
+      const range = document.createRange();
+      range.selectNodeContents(codeRef.current);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    window.setTimeout(() => setState("idle"), ok ? 1500 : 4000);
   };
   return (
     <div className="yt-action-row">
-      <Text code>→ {cmd}</Text>
-      <Button size="small" type="text" icon={<CopyOutlined />} autoInsertSpace={false} aria-label={`复制命令：${cmd}`} onClick={copy}>
-        {copied ? "已复制" : "复制"}
+      <Text code ref={codeRef}>→ {cmd}</Text>
+      <Button
+        size="small"
+        type="text"
+        icon={<CopyOutlined />}
+        autoInsertSpace={false}
+        aria-label={`复制命令：${cmd}`}
+        danger={state === "failed"}
+        onClick={copy}
+      >
+        {state === "copied" ? "已复制" : state === "failed" ? "复制失败，请手动复制" : "复制"}
       </Button>
     </div>
   );
@@ -177,14 +180,18 @@ export function OverviewPage() {
         </Card>
       )}
 
-      <Card
-        className="yt-ov-timeline"
-        size="small"
-        title={<><LineChartOutlined /> 最近 30 天活动</>}
-        extra={<Text type="secondary">每天事件数</Text>}
-      >
-        <ActivityTimeline timeline={data.timeline ?? []} />
-      </Card>
+      {/* events carry no project: the strip is workspace-wide, so it is labelled so and,
+          like every other pane (R16.4 / R19), stays hidden until a project is selected */}
+      {!data.unselected && (
+        <Card
+          className="yt-ov-timeline"
+          size="small"
+          title={<><LineChartOutlined /> 最近 30 天活动</>}
+          extra={<Text type="secondary">每天事件数 · 全工作区 · UTC 日</Text>}
+        >
+          <ActivityTimeline timeline={data.timeline ?? []} />
+        </Card>
+      )}
 
       {data.brief.next_actions?.length > 0 && (
         <Card

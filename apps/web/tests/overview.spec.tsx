@@ -7,6 +7,8 @@ import { OverviewPage } from "../src/pages";
 import { DashboardContext } from "../src/data";
 import { ThemeProvider } from "../src/theme";
 import type { DashboardData } from "../src/api";
+import { copyText } from "../src/clipboard";
+import { SERIES_NOTE } from "../src/timeline";
 
 /**
  * Overview = the expert ↔ agent cockpit (user direction 2026-10-20: UI
@@ -44,6 +46,17 @@ describe("ActivityTimeline", () => {
     expect(t).toContain("合计");
     expect(t).toContain("2026-10-18");
     expect(t).not.toContain('class="yt-tl"');
+  });
+
+  it("defaults to 31 UTC days (today + the server's 30 days back) and names each bucket's scope", () => {
+    const d = renderToStaticMarkup(h(ActivityTimeline, { timeline, today }));
+    expect((d.match(/<title[ >]/g) ?? []).length).toBe(32); // chart title + 31 day columns
+    expect(d).toContain("最近 30 天（含今天）活动，按 UTC 日");
+    expect(d).toContain(`title="${SERIES_NOTE.eval}"`); // legend item
+    expect(SERIES_NOTE.eval).toContain("eval.*");
+    expect(SERIES_NOTE.research).toContain("claim.eval");
+    const t = renderToStaticMarkup(h(ActivityTimeline, { timeline, today, defaultView: "table" }));
+    expect(t).toContain(`title="${SERIES_NOTE.research}"`); // column header
   });
 
   it("an empty strip explains what fills it", () => {
@@ -90,9 +103,40 @@ describe("OverviewPage", () => {
     expect(buttons.filter((t) => t.includes("复制")).length).toBe(2);
   });
 
-  it("shows the activity timeline and the task list", () => {
+  it("shows the activity timeline (labelled workspace-wide, UTC days) and the task list", () => {
     expect(html).toContain("最近 30 天活动");
+    expect(html).toContain("全工作区 · UTC 日");
     expect(html).toContain("整理证据");
     expect(html).toContain("已证实断言");
+  });
+
+  it("hides the workspace-wide timeline while no project is selected (R16.4 / R19)", () => {
+    const unselected = { ...data, brief: { ...data.brief, project: undefined }, unselected: { reason: "no project selected", projects: [{ name: "a" }] } } as unknown as DashboardData;
+    const u = renderToStaticMarkup(
+      h(ThemeProvider, null,
+        h(DashboardContext.Provider, { value: { data: unselected, error: null } },
+          h(MemoryRouter, null, h(OverviewPage))))
+    );
+    expect(u).toContain("未选择项目");
+    expect(u).not.toContain("最近 30 天活动");
+  });
+});
+
+describe("copyText (review of 314e64b): 已复制 only when the clipboard really took it", () => {
+  it("async clipboard success → true", async () => {
+    expect(await copyText("x", { clipboard: { writeText: async () => {} } })).toBe(true);
+  });
+  it("no clipboard (insecure context) → the legacy result decides", async () => {
+    expect(await copyText("x", { clipboard: null, exec: () => false })).toBe(false);
+    expect(await copyText("x", { clipboard: null, exec: () => true })).toBe(true);
+  });
+  it("a throwing legacy path is a failure, not an unhandled rejection", async () => {
+    await expect(copyText("x", { clipboard: null, exec: () => { throw new Error("denied"); } })).resolves.toBe(false);
+  });
+  it("a rejected clipboard falls back to the legacy path", async () => {
+    expect(await copyText("x", { clipboard: { writeText: async () => { throw new Error("NotAllowedError"); } }, exec: () => true })).toBe(true);
+  });
+  it("nothing available → false", async () => {
+    expect(await copyText("x", { clipboard: null })).toBe(false);
   });
 });
