@@ -10,6 +10,8 @@ import {
   Handle, Position,
 } from "@xyflow/react";
 import { fetchNode, type NodeDetail, type TreeData } from "./api";
+import { useLayoutNodes } from "./flow";
+import { useThemeName } from "./theme";
 
 type TreeNodeData = {
   label: string;
@@ -26,7 +28,8 @@ function TreeNode({ data }: NodeProps<Node<TreeNodeData>>) {
         borderRadius: "var(--radius-md)",
         background: "var(--color-surface)",
         border: `1.5px solid ${d.selected ? "var(--color-primary)" : "var(--color-border)"}`,
-        color: d.unlocked ? "var(--color-text)" : "var(--color-text-dim)",
+        // locked = secondary, not text-dim: text-dim is 2.3:1 in dark (DESIGN.md: decorative only)
+        color: d.unlocked ? "var(--color-text)" : "var(--color-secondary)",
         fontSize: 11,
         cursor: "pointer",
         minWidth: 90,
@@ -43,11 +46,14 @@ function TreeNode({ data }: NodeProps<Node<TreeNodeData>>) {
 const nodeTypes = { treeNode: TreeNode };
 
 export default function TreeFlow({ tree }: { tree: TreeData | null }) {
+  const colorMode = useThemeName();
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<NodeDetail | null>(null);
 
-  const { nodes, edges } = useMemo(() => {
-    if (!tree) return { nodes: [] as Node[], edges: [] as Edge[] };
+  // layout from the payload only; selection is applied on top so a click never
+  // rebuilds (and never resets) the canvas
+  const { layout, edges } = useMemo(() => {
+    if (!tree) return { layout: [] as Node<TreeNodeData>[], edges: [] as Edge[] };
     const tiers = new Map<number, typeof tree.nodes>();
     for (const n of tree.nodes) {
       const t = n.tier || 0;
@@ -56,7 +62,7 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
     }
     const tierKeys = [...tiers.keys()].sort((a, b) => a - b);
     const ROW = 110, COL = 180;
-    const nodes: Node[] = tree.nodes.map((n) => {
+    const layout: Node<TreeNodeData>[] = tree.nodes.map((n) => {
       const t = n.tier || 0;
       const row = tierKeys.indexOf(t);
       const siblings = tiers.get(t)!;
@@ -66,7 +72,11 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
         id: n.key,
         type: "treeNode",
         position: { x: row * COL, y: (col - (siblings.length - 1) / 2) * ROW },
-        data: { label: n.key.slice(0, 16), unlocked: !!n.unlocked_at, selected: selected === n.key } as TreeNodeData,
+        // first-fit estimate only: fitView runs before xyflow has measured the
+        // nodes; the measured size (kept by useLayoutNodes) replaces it
+        initialWidth: 90,
+        initialHeight: 32,
+        data: { label: n.key.slice(0, 16), unlocked: !!n.unlocked_at },
       };
     });
     const edges: Edge[] = tree.edges.map((e, i) => ({
@@ -80,8 +90,14 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
         strokeDasharray: e.required ? undefined : "5 4",
       },
     }));
-    return { nodes, edges };
-  }, [tree, selected]);
+    return { layout, edges };
+  }, [tree]);
+
+  const [liveNodes, onNodesChange] = useLayoutNodes(layout, `tree:${tree?.name ?? ""}`);
+  const nodes = useMemo(
+    () => liveNodes.map((n) => (!!n.data.selected === (n.id === selected) ? n : { ...n, data: { ...n.data, selected: n.id === selected } })),
+    [liveNodes, selected]
+  );
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_e, node) => {
@@ -103,7 +119,9 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
     <div style={{ display: "flex", gap: "var(--spacing-md)" }}>
       <div style={{ flex: 1, height: 460, border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", background: "var(--color-neutral)" }}>
         <ReactFlow
+          colorMode={colorMode}
           nodes={nodes}
+          onNodesChange={onNodesChange}
           edges={edges}
           nodeTypes={nodeTypes}
           onNodeClick={onNodeClick}
@@ -117,7 +135,7 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
           <MiniMap
             pannable
             style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)" }}
-            nodeColor={() => "#30363d"}
+            nodeColor="var(--color-text-dim)"
           />
         </ReactFlow>
       </div>

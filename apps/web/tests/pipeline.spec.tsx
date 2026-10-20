@@ -53,11 +53,12 @@ describe("0.92 单A 管线视图渲染验证", () => {
 
   it("carries status-color left borders from DESIGN.md tokens", () => {
     const html = render();
-    // React/antd serialize inline colors as rgb() or hex depending on the
-    // merge path — assert the token VALUE either way (word+color pairing is
-    // the contract; the serialization form is not).
-    expect(html).toMatch(/border-left:3px solid (rgb\(63, ?185, ?80\)|#3fb950)/); // success
-    expect(html).toMatch(/border-left:3px solid (rgb\(248, ?81, ?73\)|#f85149)/); // danger
+    // Two themes (DESIGN.md ## Themes): inline colors are the token's CSS var,
+    // so the edge follows the theme switch — assert the token NAME, never a
+    // literal hex that would pin one theme.
+    expect(html).toMatch(/border-left:3px solid var\(--color-success\)/);
+    expect(html).toMatch(/border-left:3px solid var\(--color-danger\)/);
+    expect(html).not.toMatch(/border-left:3px solid #/);
   });
 
   it("shows the evidence link affordance with per-claim counts", () => {

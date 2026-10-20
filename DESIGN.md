@@ -1,8 +1,8 @@
 ---
 name: ygl-trees Workbench
 description: >-
-  Developer-console identity for an AI-agent research workbench — GitHub-dark
-  surfaces, one blue interaction driver, semantic status colors, monospace for
+  Developer-console identity for an AI-agent research workbench — GitHub
+  dark + light themes (switchable), one blue interaction driver, semantic status colors, monospace for
   anything executable. Zero-dependency rendering (inline CSS in a single HTML
   file) — tokens stay small and flat by design.
 colors:
@@ -15,10 +15,29 @@ colors:
   border: "#30363d"         # hairlines, chips, node strokes
   border-dim: "#21262d"     # table rules, dividers
   text: "#c9d1d9"           # primary text on surface
-  text-dim: "#484f58"       # de-emphasized footer text
+  text-dim: "#6e7681"       # non-text only (minimap node blocks, decorative fills) — never text; ≥3:1 non-text floor
   success: "#3fb950"        # supported / pass / unlockable
   danger: "#f85149"         # refuted / fail / excludes edges
   warning: "#d29922"        # contested / pending-adjacent emphasis
+  on-entity: "#0d1117"      # labels on knowledge-graph entity fills (≥6.2:1 on every fill)
+  on-primary: "#0d1117"     # text on solid primary / danger fills (antd colorTextLightSolid): ink in dark — white was 3.3:1 on the rendered #4e90dc
+# Light theme — same keys, same roles; every text pair AA (see ## Themes).
+colors-light:
+  primary: "#0969da"
+  secondary: "#59636e"
+  tertiary: "#0550ae"
+  neutral: "#f6f8fa"
+  surface: "#ffffff"
+  surface-hover: "#eff2f5"
+  border: "#d0d7de"
+  border-dim: "#d8dee4"
+  text: "#1f2328"
+  text-dim: "#636c76"
+  success: "#1a7f37"
+  danger: "#d1242f"
+  warning: "#8a5c00"
+  on-entity: "#ffffff"
+  on-primary: "#ffffff"
 typography:
   h1:
     fontFamily: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
@@ -87,18 +106,49 @@ components:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.secondary}"
     rounded: "{rounded.sm}"
+  entity-node:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-entity}"
+    rounded: "{rounded.lg}"
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.sm}"
 ---
 
 ## Overview
 
-A developer console, not a marketing page. The identity is GitHub-dark by
-lineage: near-black canvas, one tier of surface cards, and **exactly one
+A developer console, not a marketing page. The identity is GitHub by
+lineage, in two switchable themes (dark is the original, light its twin):
+a two-depth canvas, one tier of surface cards, and **exactly one
 interaction color** (primary blue). Everything an agent can execute — next
 actions, commands — renders in monospace tertiary blue so "runnable" is a
 typographic property, not a button. Status is always word + color, never
 color alone.
 
+## Themes
+
+Two themes, `dark` and `light`, selected by `data-theme` on `<html>`. Every
+color key exists in both maps (`colors` = dark, `colors-light` = light) with
+the same role, so components read CSS variables and never branch on theme.
+
+- **Default** follows `prefers-color-scheme`; the user's pick persists in
+  `localStorage["ygl-theme"]` (`system` / `light` / `dark`) and is applied by an
+  inline script before first paint (no flash).
+- **Switch**: one icon button at the header's right end (切换主题), cycling
+  跟随系统 → 浅色 → 深色; the tooltip names the current mode. Switching never
+  resets selection, scroll or open panels.
+- **antd** follows the switch (`darkAlgorithm` / `defaultAlgorithm`, token map
+  applied in both); **xyflow** gets `colorMode`.
+- Light keeps the depth model: `neutral` (pale page) under `surface` (white
+  cards). Every text pair meets AA in both themes (≥4.5:1 on neutral/surface/
+  surface-hover). `text-dim` carries no text — it is a non-text token (minimap
+  node blocks, decorative fills) held to the WCAG 1.4.11 non-text floor, ≥3:1 on
+  every ground in both themes (dark `#6e7681`: 4.1:1 / 3.8:1 / 3.5:1).
+
 ## Colors
+
+Hex values below are the dark theme; `colors-light` holds the light twin.
 
 - **Primary (#58a6ff):** the only interaction driver — links, focus rings,
   selected tree nodes, hovered chips. Never used for body text.
@@ -111,6 +161,15 @@ color alone.
 - **Success / Danger / Warning:** claim statuses and eval outcomes; each is
   paired with a word (`supported`, `fail`, `pending`) — color is reinforcement,
   never the sole signal.
+- **Text on solid fills (`on-primary`):** antd renders a solid primary button from
+  `primary` as a derived shade (`#4e90dc` in dark), where white text reads 3.3:1.
+  Dark therefore sets the Button's solid text (`primaryColor` / `solidTextColor` /
+  `dangerColor`) to ink (`on-primary` = `neutral`: 5.7:1 normal, 8.3:1 hover, 4.6:1
+  pressed); light keeps white (5.2:1 / 4.5:1 / 7.7:1). Danger fills follow the same rule. The derived state shades that fall short are slid
+  toward the nearest passing step of the same hue in `tokens.ts` (BUTTON_STATES);
+  every state in both themes is checked against antd's real derivation by a test.
+  The global `colorTextLightSolid` stays white: tooltips and badges share it, and
+  their grounds are dark in both themes.
 
 ## Typography
 
@@ -130,6 +189,18 @@ minimum. The panel survives live-data refreshes — selection state is sacred.
 Border-first: cards and chips separate by 1px `border`, not shadow. The one
 exception is the fixed node panel (`0 8px 24px rgba(0,0,0,.45)`), which must
 read as floating above the page.
+
+Per theme (tokens.css; the drift guard checks these literals appear here):
+
+| token | dark | light |
+|---|---|---|
+| `--shadow-panel` | `0 8px 24px rgba(0, 0, 0, 0.45)` | `0 8px 24px rgba(140, 149, 159, 0.2)` |
+| `--shadow-entity` (graph entities) | `0 2px 6px rgba(0, 0, 0, 0.3)` | `0 1px 3px rgba(31, 35, 40, 0.12)` |
+| `--entity-stroke` (2px entity ring) | `rgba(255, 255, 255, 0.3)` | `rgba(31, 35, 40, 0.15)` |
+
+Entity fills are the status/role colors by type (node=primary, claim=success,
+evidence/source=warning, artifact/task=tertiary, kb/skill=secondary); labels on
+them use `on-entity`.
 
 ## Shapes
 

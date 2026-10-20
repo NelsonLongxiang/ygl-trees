@@ -1,0 +1,11 @@
+/* Shell chrome — token vars only (tokens.css). */
+.yt-nav { display: flex; align-items: stretch; align-self: stretch; gap: var(--spacing-xs); flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.yt-nav a {
+  display: flex; align-items: center; padding: 0 var(--spacing-md);
+  color: var(--color-secondary); white-space: nowrap; text-decoration: none;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+.yt-nav a:hover { color: var(--color-text); }
+.yt-nav a.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.yt-nav a:focus-visible { outline-offset: -2px; }

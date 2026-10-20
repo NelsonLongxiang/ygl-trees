@@ -99,7 +99,7 @@ export default function Pipeline({
               const links = claimEvidence.filter((l) => l.claim_id === c.id);
               const items = links
                 .map((l) => ({ l, ev: evById.get(l.evidence_id) }))
-                .filter((x) => x.ev);
+                .filter((x): x is { l: PipelineLink; ev: PipelineEvidence } => !!x.ev);
               return (
                 <Card
                   key={c.id}

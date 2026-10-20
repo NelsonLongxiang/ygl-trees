@@ -141,3 +141,66 @@ describe("subscribeDashboard（SSE 实时 + 轮询降级）", () => {
     await expect(fetchDashboard()).rejects.toThrow(/api\/data 500/);
   });
 });
+
+describe("subscribeDashboard 断线上报（66d10ab 复评：断线不得静默）", () => {
+  const down = () => fetchStub.mockImplementation(async () => {
+    throw new TypeError("Failed to fetch");
+  });
+  // mockClear (file-level beforeEach) keeps a swapped implementation — put the healthy server back
+  afterEach(() => {
+    fetchStub.mockImplementation(async () => {
+      fetched.push("poll");
+      return { ok: true, status: 200, json: async () => PAYLOAD("fetch") } as any;
+    });
+  });
+
+  it("已有数据后服务被杀：SSE onerror 立即探测，失败即 onError（不等 10s 轮询）", async () => {
+    const got: DashboardData[] = [];
+    const errors: string[] = [];
+    const dispose = subscribeDashboard((d) => got.push(d), (e) => errors.push(e));
+    await vi.waitFor(() => expect(got.length).toBe(1));
+    FakeEventSource.instances[0].emit("data", { data: JSON.stringify(PAYLOAD("sse")) });
+    down();
+    FakeEventSource.instances[0].onerror?.({});
+    await vi.waitFor(() => expect(errors).toEqual(["Failed to fetch"]));
+    expect(got.length).toBe(2); // stale data stays; the error rides on top of it
+    dispose();
+  });
+
+  it("SSE 不可用但服务在（老服务端 / 剥离代理）：探测成功只投递数据，不误报", async () => {
+    const got: DashboardData[] = [];
+    const errors: string[] = [];
+    const dispose = subscribeDashboard((d) => got.push(d), (e) => errors.push(e));
+    await vi.waitFor(() => expect(got.length).toBe(1));
+    FakeEventSource.instances[0].onerror?.({});
+    await vi.waitFor(() => expect(got.length).toBe(2));
+    expect(errors).toEqual([]);
+    dispose();
+  });
+
+  it("重连风暴只并发一个探测（onerror 连发不叠请求）", async () => {
+    const dispose = subscribeDashboard(() => {}, () => {});
+    await vi.waitFor(() => expect(fetchStub).toHaveBeenCalledTimes(1));
+    let release!: () => void;
+    fetchStub.mockImplementation(() => new Promise((r) => {
+      release = () => r({ ok: true, status: 200, json: async () => PAYLOAD("late") } as any);
+    }));
+    const es = FakeEventSource.instances[0];
+    es.onerror?.({});
+    es.onerror?.({});
+    es.onerror?.({});
+    expect(fetchStub).toHaveBeenCalledTimes(2);
+    release();
+    dispose();
+  });
+
+  it("降级轮询失败也上报（原 .catch(() => {}) 吞错）", async () => {
+    const errors: string[] = [];
+    const dispose = subscribeDashboard(() => {}, (e) => errors.push(e));
+    await vi.waitFor(() => expect(fetchStub).toHaveBeenCalledTimes(1));
+    down();
+    await vi.advanceTimersByTimeAsync(10000);
+    await vi.waitFor(() => expect(errors).toEqual(["Failed to fetch"]));
+    dispose();
+  });
+});

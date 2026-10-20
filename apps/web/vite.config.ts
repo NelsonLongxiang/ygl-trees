@@ -11,6 +11,7 @@ export default defineConfig({
           antd: ["antd", "@ant-design/icons"],
           xyflow: ["@xyflow/react"],
           markdown: ["react-markdown"],
+          router: ["react-router"],
         },
       },
     },
