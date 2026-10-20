@@ -96,6 +96,21 @@ executions 的行数 > policy.max_executions
 `manifest.json` 按 LF 重冻（0.103 事故后的铁律：`.gitattributes` + 盘上字节 == manifest 哈希
 双检，见 fdc757f6 的裁定），digest 在 CHANGELOG 记录旧→新与「纯新增例」理由。
 
+## 5b. 实现期冻结（fdc757f6 批准，含条件）
+
+**形态一（col-col）的逐行两侧值**：不进 `ScopeWitness`（那是扫描域证明），用
+`evidence.compared_rows`（采样，≤5 行 `{left,right}`）+ `evidence.compared_total`。
+两个硬条件：
+1. `compared_total` **无条件出现**（即使全部行都在采样内）——消费者要能区分「恰好 3 行」与
+   「3/N 采样」；条件性出现会让形状守卫出现两套。
+2. 采样确定性：渲染 SQL 带显式 `ORDER BY rowid`（TS/Rust 自然序理论上有漂移空间）；
+   并且语料必须有一例 `compared_total > compared_rows.length`，让采样路径在字节级被 parity 冻结。
+
+**`agg:"count"` 语义**：`count(col)`（跳过 NULL），与 max/min/sum 家族一致；`count(*)` 会让
+`col` 失义。附带不对称（写进契约文档）：**count 是家族里唯一不会产生 NULL 右值的 agg**——
+空表/全 NULL 时 `count` → 0，而 `max/min/sum` → NULL。`against-null` 语料把这对对比
+（count-over-empty=0 vs max-over-empty→NULL）冻在同一例里。
+
 ## 6. 明确不在 1.2 范围（评审已裁定：拆 1.3）
 
 - **`group_by` / `having`**：**拆 1.3**（fdc757f6 裁定）。1.3 锚点先记下，防止将来与 1.2 自相矛盾：
