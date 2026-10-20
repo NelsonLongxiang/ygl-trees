@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import Pipeline, { type PipelineClaim, type PipelineLink, type PipelineEvidence } from "../src/Pipeline";
+import Pipeline, { pipelineRows, type PipelineClaim, type PipelineLink, type PipelineEvidence } from "../src/Pipeline";
 
 /**
  * 0.92 单A 渲染验证（direct-0f20e882 队列工单验收①）：管线视图按状态分组
@@ -85,5 +85,37 @@ describe("0.92 单A 管线视图渲染验证", () => {
     );
     expect(html).toContain("未验证");
     expect(html).toContain("神秘状态断言");
+  });
+});
+
+describe("研究管线 antd 重建：表格 + 筛选（用户裁定：不引 pro-components）", () => {
+  it("筛选同时匹配断言文本与证据原文", () => {
+    expect(pipelineRows(claims, links, evidence, "校准曲线").map((r) => r.id)).toEqual(["c2"]);
+    expect(pipelineRows(claims, links, evidence, "相反证据").map((r) => r.id)).toEqual(["c3"]); // only in a quote
+    expect(pipelineRows(claims, links, evidence, "  ").length).toBe(claims.length);
+  });
+
+  it("行带上已解析的证据，未知状态归入未验证", () => {
+    const rows = pipelineRows([...claims, { id: "c9", text: "x", status: "weird" }], links, evidence);
+    expect(rows.find((r) => r.id === "c1")!.items.map((x) => x.ev.id)).toEqual(["e1", "e2"]);
+    expect(rows.find((r) => r.id === "c9")!.bucket).toBe("unverified");
+  });
+
+  it("表格看法：列头、状态词、默认按状态再按支持数排序", () => {
+    const html = renderToStaticMarkup(
+      createElement(Pipeline, { claims, claimEvidence: links, evidence, defaultView: "table" })
+    );
+    for (const h of ["状态", "断言", "支持", "反驳", "证据"]) expect(html).toContain(`>${h}<`);
+    for (const w of ["已证实", "有争议", "未验证", "已反驳"]) expect(html).toContain(w);
+    const order = ["断言一", "断言二", "断言三", "断言四", "断言五"].map((t) => html.indexOf(t));
+    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true);
+    expect(html).not.toMatch(/border-left:3px solid/); // the scan edge is the board's, not the table's
+  });
+
+  it("看板 / 表格切换与筛选框都在", () => {
+    const html = render();
+    expect(html).toContain("看板");
+    expect(html).toContain("表格");
+    expect(html).toContain('aria-label="筛选断言"');
   });
 });
