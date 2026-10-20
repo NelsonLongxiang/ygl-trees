@@ -96,8 +96,8 @@ export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 
 
 ```
 docs/spec.md           需求规格 R1-R14 + 验收标准
-docs/plan.md           现行里程碑（M11+）+ 执行记录；M1–M10 历史 → docs/plan-archive.md
-docs/CHANGELOG-archive.md  CHANGELOG 0.94− 历史归档（2026-10-20 账本治理拆分）
+docs/plan.md           现行里程碑（M11+）+ 执行记录；M1–M10 历史 → docs/plan-archive-2026-10-20.md
+docs/CHANGELOG-archive-2026-10-20.md  CHANGELOG 0.94− 历史归档（归档按拆分日期命名）
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
 docs/layout.md         目录层级规划

@@ -198,4 +198,4 @@ staged-publish 冲突（`Cannot publish over previously staged version`）。为
 
 ---
 
-更早版本（0.1.0 – 0.94.0）的变更记录见 [docs/CHANGELOG-archive.md](docs/CHANGELOG-archive.md)。
+更早版本（0.1.0 – 0.94.0）的变更记录见 [docs/CHANGELOG-archive-2026-10-20.md](docs/CHANGELOG-archive-2026-10-20.md)（归档按拆分日期命名，指针只指向最新归档）。
