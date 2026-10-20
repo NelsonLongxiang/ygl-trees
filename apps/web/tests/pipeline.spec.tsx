@@ -137,6 +137,22 @@ describe("评审 0e0fcfa：看法持久化 / 筛选收窄看板 / 徽章整体�
     expect(() => writeView("board", throwing)).not.toThrow();
   });
 
+  it("存储一访问就抛（localStorage getter 抛 SecurityError）：readView / writeView 不抛，管线照常渲染（780f894 回归）", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { get localStorage() { throw new Error("SecurityError: The operation is insecure."); } },
+    });
+    try {
+      expect(readView()).toBeNull();
+      expect(() => writeView("table")).not.toThrow();
+      const html = renderToStaticMarkup(createElement(Pipeline, { claims, claimEvidence: links, evidence }));
+      expect(html).toContain("已证实");
+      expect(html).toContain("断言一");
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
   it("筛选词只留下命中的断言（看板），并显示 n / N 计数", () => {
     const html = renderToStaticMarkup(
       createElement(Pipeline, { claims, claimEvidence: links, evidence, defaultView: "board", defaultNeedle: "校准曲线" })

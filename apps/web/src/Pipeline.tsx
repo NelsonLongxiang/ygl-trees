@@ -66,18 +66,24 @@ const stanceOf = (s: string) => stanceMeta[s] ?? stanceMeta.related;
 export const VIEW_KEY = "ygl-pipeline-view";
 type ViewStore = Pick<Storage, "getItem" | "setItem">;
 const viewStore = (): ViewStore | null => (typeof window === "undefined" ? null : window.localStorage);
-/** The remembered view; null when nothing valid is stored or storage throws. */
-export function readView(s: ViewStore | null = viewStore()): PipelineView | null {
+/**
+ * The remembered view; null when nothing valid is stored or storage throws. The
+ * storage getter itself throws when storage is blocked, so it is read inside the
+ * try — never as a default parameter (review of 780f894).
+ */
+export function readView(s?: ViewStore | null): PipelineView | null {
   try {
-    const v = s?.getItem(VIEW_KEY);
+    const store = s === undefined ? viewStore() : s;
+    const v = store?.getItem(VIEW_KEY);
     return v === "board" || v === "table" ? v : null;
   } catch {
     return null;
   }
 }
-export function writeView(v: PipelineView, s: ViewStore | null = viewStore()): void {
+export function writeView(v: PipelineView, s?: ViewStore | null): void {
   try {
-    s?.setItem(VIEW_KEY, v);
+    const store = s === undefined ? viewStore() : s;
+    store?.setItem(VIEW_KEY, v);
   } catch {
     /* per-viewer convenience only */
   }
