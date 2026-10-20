@@ -9,3 +9,36 @@
 .yt-nav a:hover { color: var(--color-text); }
 .yt-nav a.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
 .yt-nav a:focus-visible { outline-offset: -2px; }
+
+/* Overview — fixed CSS grid (user ruling: no drag-reorder library). 12 columns ≥992px, one below. */
+.yt-overview { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--spacing-md); align-items: start; }
+.yt-overview > * { grid-column: 1 / -1; min-width: 0; }
+.yt-ov-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--spacing-md); }
+.yt-ov-stats a { display: block; color: inherit; border-radius: var(--radius-md); }
+.yt-ov-stats a:focus-visible { outline-offset: 2px; }
+@media (min-width: 992px) {
+  .yt-ov-progress { grid-column: span 4; }
+  .yt-ov-progress + .yt-ov-timeline { grid-column: span 8; }
+}
+.yt-action-row { display: flex; align-items: center; gap: var(--spacing-sm); min-width: 0; }
+.yt-action-row > code, .yt-action-row > .ant-typography { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Activity timeline — token colours only; text in text tokens, never the series colour. */
+.yt-tl-wrap { display: grid; gap: var(--spacing-sm); }
+.yt-tl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); flex-wrap: wrap; }
+.yt-tl-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--spacing-md); color: var(--color-secondary); font-size: 12px; }
+.yt-tl-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.yt-tl-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.yt-tl-readout { min-height: 22px; font-size: 12px; color: var(--color-text); }
+.yt-tl-values { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
+.yt-tl-value { display: inline-flex; align-items: center; gap: 4px; }
+.yt-tl-key { width: 10px; height: 2px; display: inline-block; }
+.yt-tl { display: block; width: 100%; height: auto; font-family: var(--font-sans); }
+.yt-tl-grid { stroke: var(--color-border-dim); stroke-width: 1; }
+.yt-tl-axis { fill: var(--color-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.yt-tl-label { fill: var(--color-text); font-size: 11px; font-weight: 600; }
+.yt-tl-hit { fill: transparent; outline: none; }
+.yt-tl-hit:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -1px; }
+/* the hovered / focused column lifts at once — DESIGN.md allows transitions on background/color only */
+.yt-tl-col.is-active path, .yt-tl-col.is-active rect:not(.yt-tl-hit) { filter: brightness(1.15); }
+.yt-tl-table td { font-variant-numeric: tabular-nums; }

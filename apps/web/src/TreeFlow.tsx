@@ -28,7 +28,7 @@ function TreeNode({ data }: NodeProps<Node<TreeNodeData>>) {
         borderRadius: "var(--radius-md)",
         background: "var(--color-surface)",
         border: `1.5px solid ${d.selected ? "var(--color-primary)" : "var(--color-border)"}`,
-        // locked = secondary, not text-dim: text-dim is 2.3:1 in dark (DESIGN.md: decorative only)
+        // locked = secondary, not text-dim: text-dim is a non-text token (DESIGN.md: minimap blocks, never text)
         color: d.unlocked ? "var(--color-text)" : "var(--color-secondary)",
         fontSize: 11,
         cursor: "pointer",

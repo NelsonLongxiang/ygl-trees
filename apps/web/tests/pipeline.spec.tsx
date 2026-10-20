@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import Pipeline, { type PipelineClaim, type PipelineLink, type PipelineEvidence } from "../src/Pipeline";
+import Pipeline, {
+  pipelineRows, overallStance, readView, writeView, VIEW_KEY, type PipelineClaim, type PipelineLink, type PipelineEvidence,
+} from "../src/Pipeline";
 
 /**
  * 0.92 单A 渲染验证（direct-0f20e882 队列工单验收①）：管线视图按状态分组
@@ -85,5 +87,93 @@ describe("0.92 单A 管线视图渲染验证", () => {
     );
     expect(html).toContain("未验证");
     expect(html).toContain("神秘状态断言");
+  });
+});
+
+describe("研究管线 antd 重建：表格 + 筛选（用户裁定：不引 pro-components）", () => {
+  it("筛选同时匹配断言文本与证据原文", () => {
+    expect(pipelineRows(claims, links, evidence, "校准曲线").map((r) => r.id)).toEqual(["c2"]);
+    expect(pipelineRows(claims, links, evidence, "相反证据").map((r) => r.id)).toEqual(["c3"]); // only in a quote
+    expect(pipelineRows(claims, links, evidence, "  ").length).toBe(claims.length);
+  });
+
+  it("行带上已解析的证据，未知状态归入未验证", () => {
+    const rows = pipelineRows([...claims, { id: "c9", text: "x", status: "weird" }], links, evidence);
+    expect(rows.find((r) => r.id === "c1")!.items.map((x) => x.ev.id)).toEqual(["e1", "e2"]);
+    expect(rows.find((r) => r.id === "c9")!.bucket).toBe("unverified");
+  });
+
+  it("表格看法：列头、状态词、默认按状态再按支持数排序", () => {
+    const html = renderToStaticMarkup(
+      createElement(Pipeline, { claims, claimEvidence: links, evidence, defaultView: "table" })
+    );
+    for (const h of ["状态", "断言", "支持", "反驳", "证据"]) expect(html).toContain(`>${h}<`);
+    for (const w of ["已证实", "有争议", "未验证", "已反驳"]) expect(html).toContain(w);
+    const order = ["断言一", "断言二", "断言三", "断言四", "断言五"].map((t) => html.indexOf(t));
+    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true);
+    expect(html).not.toMatch(/border-left:3px solid/); // the scan edge is the board's, not the table's
+  });
+
+  it("看板 / 表格切换与筛选框都在", () => {
+    const html = render();
+    expect(html).toContain("看板");
+    expect(html).toContain("表格");
+    expect(html).toContain('aria-label="筛选断言"');
+  });
+});
+
+describe("评审 0e0fcfa：看法持久化 / 筛选收窄看板 / 徽章整体立场 / 键盘可展开", () => {
+  it("readView / writeView 走可注入的存储；坏值与抛错的存储都回 null、不抛", () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => { mem.set(k, v); } };
+    expect(readView(store)).toBeNull();
+    writeView("table", store);
+    expect(mem.get(VIEW_KEY)).toBe("table");
+    expect(readView(store)).toBe("table");
+    mem.set(VIEW_KEY, "weird");
+    expect(readView(store)).toBeNull();
+    const throwing = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+    expect(readView(throwing)).toBeNull();
+    expect(() => writeView("board", throwing)).not.toThrow();
+  });
+
+  it("存储一访问就抛（localStorage getter 抛 SecurityError）：readView / writeView 不抛，管线照常渲染（780f894 回归）", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { get localStorage() { throw new Error("SecurityError: The operation is insecure."); } },
+    });
+    try {
+      expect(readView()).toBeNull();
+      expect(() => writeView("table")).not.toThrow();
+      const html = renderToStaticMarkup(createElement(Pipeline, { claims, claimEvidence: links, evidence }));
+      expect(html).toContain("已证实");
+      expect(html).toContain("断言一");
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
+  it("筛选词只留下命中的断言（看板），并显示 n / N 计数", () => {
+    const html = renderToStaticMarkup(
+      createElement(Pipeline, { claims, claimEvidence: links, evidence, defaultView: "board", defaultNeedle: "校准曲线" })
+    );
+    expect(html).toContain("断言二");
+    expect(html).not.toContain("断言一");
+    expect(html).toContain("1 / 5 条断言");
+  });
+
+  it("证据徽章按整体立场取色（支持 + 反驳并存 = warning），是可聚焦的 button，立场标签用 ToneTag", () => {
+    const mixed: PipelineLink[] = [
+      { claim_id: "c1", evidence_id: "e1", stance: "supports" },
+      { claim_id: "c1", evidence_id: "e3", stance: "refutes" },
+    ];
+    const html = renderToStaticMarkup(
+      createElement(Pipeline, { claims: claims.slice(0, 1), claimEvidence: mixed, evidence, defaultView: "board" })
+    );
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"/);
+    expect(html).toContain('title="支持与反驳并存"');
+    expect(html).toContain("color:var(--color-warning);border-color:var(--color-warning)");
+    expect(overallStance(pipelineRows(claims, links, evidence).find((r) => r.id === "c3")!.items).color).toBe("var(--color-danger)");
+    expect(overallStance(pipelineRows(claims, links, evidence).find((r) => r.id === "c1")!.items).color).toBe("var(--color-success)");
   });
 });
