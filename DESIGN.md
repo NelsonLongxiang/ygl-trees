@@ -20,6 +20,7 @@ colors:
   danger: "#f85149"         # refuted / fail / excludes edges
   warning: "#d29922"        # contested / pending-adjacent emphasis
   on-entity: "#0d1117"      # labels on knowledge-graph entity fills (≥6.2:1 on every fill)
+  on-primary: "#0d1117"     # text on solid primary / danger fills (antd colorTextLightSolid): ink in dark — white was 3.3:1 on the rendered #4e90dc
 # Light theme — same keys, same roles; every text pair AA (see ## Themes).
 colors-light:
   primary: "#0969da"
@@ -36,6 +37,7 @@ colors-light:
   danger: "#d1242f"
   warning: "#8a5c00"
   on-entity: "#ffffff"
+  on-primary: "#ffffff"
 typography:
   h1:
     fontFamily: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
@@ -108,6 +110,10 @@ components:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.on-entity}"
     rounded: "{rounded.lg}"
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.sm}"
 ---
 
 ## Overview
@@ -155,6 +161,15 @@ Hex values below are the dark theme; `colors-light` holds the light twin.
 - **Success / Danger / Warning:** claim statuses and eval outcomes; each is
   paired with a word (`supported`, `fail`, `pending`) — color is reinforcement,
   never the sole signal.
+- **Text on solid fills (`on-primary`):** antd renders a solid primary button from
+  `primary` as a derived shade (`#4e90dc` in dark), where white text reads 3.3:1.
+  Dark therefore sets the Button's solid text (`primaryColor` / `solidTextColor` /
+  `dangerColor`) to ink (`on-primary` = `neutral`: 5.7:1 normal, 8.3:1 hover, 4.6:1
+  pressed); light keeps white (5.2:1 / 4.5:1 / 7.7:1). Danger fills follow the same rule. The derived state shades that fall short are slid
+  toward the nearest passing step of the same hue in `tokens.ts` (BUTTON_STATES);
+  every state in both themes is checked against antd's real derivation by a test.
+  The global `colorTextLightSolid` stays white: tooltips and badges share it, and
+  their grounds are dark in both themes.
 
 ## Typography
 

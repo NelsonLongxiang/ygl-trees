@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { theme as antdTheme } from "antd";
+import { PALETTES, themeConfig } from "../src/tokens";
 
 /**
  * 单B (direct-0f20e882, 0.92): visual token single-sourcing.
@@ -72,6 +74,7 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     "danger",
     "warning",
     "on-entity",
+    "on-primary",
   ];
 
   it("DESIGN.md defines every color in both themes", () => {
@@ -182,4 +185,38 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
       expect(colorKeys.includes(v), `statColor ${v} not a DESIGN.md color`).toBe(true);
     }
   });
+});
+
+/**
+ * S1 (verifier, b735565 → 3f83e69): a solid primary button in dark rendered
+ * white on antd's derived #4e90dc at 3.31:1. Check the RENDERED fills — what
+ * antd derives from our seeds, plus the Button overrides — never the seed hex.
+ */
+describe("solid control text: on-primary ≥ 4.5:1 on every primary / danger button state, both themes", () => {
+  const norm = (h: string) => (h.length === 4 ? "#" + [...h.slice(1)].map((c) => c + c).join("") : h).toLowerCase();
+  const lin = (c: number) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const lum = (h: string) => { const n = norm(h).slice(1); const [r, g, b] = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16)); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); };
+  const ratio = (a: string, b: string) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const STATES = ["colorPrimary", "colorPrimaryHover", "colorPrimaryActive", "colorError", "colorErrorHover", "colorErrorActive"] as const;
+
+  for (const name of ["dark", "light"] as const) {
+    it(`${name}: text on solid fills and the tooltip`, () => {
+      const cfg = themeConfig(name);
+      const t = antdTheme.getDesignToken(cfg) as unknown as Record<string, string>;
+      const button = (cfg.components?.Button ?? {}) as Record<string, string>;
+      const ink = PALETTES[name]["on-primary"];
+      for (const k of ["primaryColor", "dangerColor", "solidTextColor"]) expect(norm(button[k]), `${name} Button.${k}`).toBe(ink);
+      expect(norm(t.colorTextLightSolid)).toBe("#ffffff"); // the global stays white: tooltips and badges share it
+      for (const k of STATES) {
+        const fill = button[k] ?? t[k];
+        expect(ratio(ink, fill), `${name} ${k} ${fill} vs ${ink}`).toBeGreaterThanOrEqual(4.5);
+      }
+      // the tooltip's text on its spotlight ground (light: rgba(0,0,0,.85) over white ≈ #262626)
+      const tip = ((cfg.components?.Tooltip ?? {}) as Record<string, string>).colorTextLightSolid ?? t.colorTextLightSolid;
+      const spot = t.colorBgSpotlight.startsWith("#") ? t.colorBgSpotlight : "#262626";
+      expect(ratio(tip, spot), `${name} tooltip ${tip} on ${spot}`).toBeGreaterThanOrEqual(4.5);
+      // checked boxes stay non-text 3:1: antd's white check on the derived primary
+      expect(ratio("#ffffff", t.colorPrimary)).toBeGreaterThanOrEqual(3);
+    });
+  }
 });

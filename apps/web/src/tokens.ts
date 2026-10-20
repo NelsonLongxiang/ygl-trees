@@ -27,6 +27,7 @@ export const DARK = {
   danger: "#f85149", // refuted / fail / excludes edges
   warning: "#d29922", // contested / pending-adjacent emphasis
   "on-entity": "#0d1117", // labels on knowledge-graph entity fills
+  "on-primary": "#0d1117", // text on solid buttons (antd Button primaryColor / solidTextColor / dangerColor): ink — white was 3.3:1 on the rendered #4e90dc
 } as const;
 
 // DESIGN.md colors-light.* — same keys, same roles
@@ -45,6 +46,7 @@ export const LIGHT = {
   danger: "#d1242f",
   warning: "#8a5c00",
   "on-entity": "#ffffff",
+  "on-primary": "#ffffff",
 } as const;
 
 export type ColorKey = keyof typeof DARK;
@@ -60,6 +62,18 @@ export const C = Object.fromEntries(
 ) as Record<ColorKey, string>;
 
 const FONT_SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+/**
+ * Solid-button state fills where antd's derived step leaves on-primary under
+ * 4.5:1 (dark: the pressed steps are too dark for ink, the error step is the
+ * seed; light: the hover steps are too light for white — GitHub-light buttons
+ * darken on hover). Same hue, slid to the nearest passing shade; every state in
+ * both themes is checked against antd's real derivation in tokens.spec.
+ */
+const BUTTON_STATES: Record<ThemeName, Record<string, string>> = {
+  dark: { colorPrimaryActive: "#467fc0", colorError: "#f85149", colorErrorActive: "#da4942" },
+  light: { colorPrimaryHover: "#1f76d6", colorErrorHover: "#d54047" },
+};
 
 // antd theme token mapping (DESIGN.md → ConfigProvider), both themes
 export function themeConfig(name: ThemeName): ThemeConfig {
@@ -87,6 +101,9 @@ export function themeConfig(name: ThemeName): ThemeConfig {
     components: {
       Layout: { headerBg: p.surface, bodyBg: p.neutral, headerPadding: "0 24px" },
       Card: { borderRadiusLG: 6 }, // DESIGN.md rounded.md — cards
+      // text on solid buttons (type primary / danger): ink in dark, white in light — set on the Button, not on the
+      // global colorTextLightSolid that tooltips and badges share (their grounds are dark in both themes)
+      Button: { primaryColor: p["on-primary"], dangerColor: p["on-primary"], solidTextColor: p["on-primary"], ...BUTTON_STATES[name] },
     },
   };
 }
