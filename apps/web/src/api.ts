@@ -64,13 +64,17 @@ export function subscribeDashboard(
   onError?: (e: string) => void
 ): () => void {
   let live = false;
+  let probing = false;
+  // Every fetch failure is reported, never swallowed: with data already on screen
+  // the shell shows it as "实时更新中断" over the stale view (review of 66d10ab).
+  const refresh = () => fetchDashboard().then(onData).catch((e) => onError?.(String(e?.message || e)));
   // degraded path: poll only until (and unless) SSE takes over
   const poll = window.setInterval(() => {
     if (live) return;
-    fetchDashboard().then(onData).catch(() => {});
+    refresh();
   }, 10000);
   // immediate first paint regardless of transport
-  fetchDashboard().then(onData).catch((e) => onError?.(String(e?.message || e)));
+  refresh();
 
   let es: EventSource | null = null;
   try {
@@ -84,8 +88,15 @@ export function subscribeDashboard(
       }
     });
     es.onerror = () => {
-      // browser auto-reconnects; fall back to polling until it does
+      // browser auto-reconnects; fall back to polling until it does. Probe once
+      // now rather than at the next 10s tick: server gone → onError at once;
+      // server up without SSE (older server, stripping proxy) → data, no alarm.
       live = false;
+      if (probing) return;
+      probing = true;
+      refresh().finally(() => {
+        probing = false;
+      });
     };
   } catch (e: any) {
     onError?.(`eventsource unavailable: ${String(e?.message || e)}`);
