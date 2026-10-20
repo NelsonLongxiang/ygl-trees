@@ -45,14 +45,18 @@ executions 的行数 > policy.max_executions
 {
   "predicate": { "from": "executions", "select": [], "where": { … } },
   "op": ">",
-  "against": { "from": "policy", "col": "max_executions" }   // 新增：右值取标量
+  "against": { "from": "policy", "col": "max_executions", "agg": "max" }   // 新增：右值取标量
 }
 ```
 
 **语义**：`SELECT (SELECT count(*) FROM <from> WHERE <where>) <op> (SELECT <agg>(<col>) FROM <against.from>)`。
-- `agg` 可选：`max`（默认，适合「阈值配置」）、`min`、`sum`、`count`。
-- 两侧都必须是**单值**：`against.from` 聚合后天然单行；`max()`/`min()` 对多行也单值；
-  但若 `against` 省略 `agg` 且表有多行 → 构造期拒绝（「scalar right side is not a claim you can make — give agg」）。
+- `agg` **必填**（`max|min|sum|count`）：缺省 → P2 构造期拒绝（`missing_agg`）。不设默认——
+  默认 `max` 在「配置表意外多行」时静默取最大，是典型的 helpful magic；且「多行才拒绝」是
+  **数据依赖**的判据（行数是快照数据而非 schema），会让 spec 有效性随数据漂移。显式 `agg`
+  同时让「阈值取 max」成为 spec JSON 里可审计的声明。
+- `against.from` 为空表时，聚合结果为 NULL：按 `compare.null` 既有约定处理（默认 `error`），
+  语料用一例冻结该行为。
+- 其余单值性：`against.from` 聚合后天然单行，无需运行期再检查。
 - `count.predicate` 的现有禁令保留（不得带 `agg`，count 自身是聚合）。
 - 与形态一不叠加：`against` 与 `value` 互斥（P2 拒绝同时出现）。
 - `against.from` 支持 `$vu:` 引用吗？**不支持**——上游 VU 的输出是行集，不是标量；
@@ -65,9 +69,13 @@ executions 的行数 > policy.max_executions
 ## 4. 兼容与版本
 
 - `CONTRACT_VERSION` 1.1 → **1.2**；`CORPUS_VERSION` 同步 1.2（语料重冻，见 §5）。
-- **1.1 的 spec 在 1.2 引擎下行为不变**：新形态是可选键，旧 spec 不出现即走旧路径；
-  `prepare` 校验以 spec 声明的 `contract_version` 为准——declared 1.1 却用 1.2 形态 → 拒绝，
-  不允许「用新语法混过旧版本」。
+- **1.1 的 spec 在 1.2 引擎下行为不变**：新形态是可选键，旧 spec 不出现即走旧路径。
+- **版本不匹配仍是「引擎拒跑」而非 verdict**（保留现行为）：declared 1.1 的 spec 带 1.2 形态
+  → `runVerify` 入口硬抛（rc 非 0），不产出 PASS/FAIL/NEEDS-MATERIAL/ERROR 报告。
+- **构造期错误**用 `evidence.spec_error`（**新设**，1.1 无此字段）细分，值域为封闭码表，随
+  1.2 键控进形状守卫：`cross_table_col` / `missing_column` / `missing_agg` /
+  `null_rhs_for_null_op` / `version_shape`。四值 verdict 骨架不变——新增第五值会破坏报告消费者、
+  WebUI、Rust parity 与 evaluator 协议；封闭码表才是可枚举比对面的稳定契约，`reason` 只给人读。
 - 报告 `contract_version` 取引擎版本（与现行为一致），`spec.contract_version` 单独保留。
 - Rust 实现（M13-1b 封包）必须同版：`contract.rs` 加两处形状、`engine.rs` 加两条渲染与构造期校验、
   `tests/parity.rs` 语料逐例整份报告 parity 保持全绿。
@@ -80,23 +88,29 @@ executions 的行数 > policy.max_executions
 | `col-ref-fail` | 同上但 A<B | FAIL（evidence 点名两侧值） |
 | `count-against-pass` | `count` vs `against.max` 成立 | PASS + `compared:{left,right}` |
 | `count-against-fail` | 计数 == 阈值（`>` 不成立） | FAIL + `compared` |
-| `construct-rejects`（3 个负例共用一例目录） | 跨表 `{col}`、`against` 多行且无 `agg`、缺列 | 全部构造期 ERROR，不进 SQL |
+| `agg-variants` | 同一数据上 `max`/`min`/`sum`/`count` 四断言 | 四组独立 witness，可 parametrize 成一例多断言 |
+| `construct-rejects`（5 个负例共用一例目录） | 跨表 `{col}`、缺 `agg`、缺列、`is null` 配 `{col}`、declared 1.1 却用 1.2 形态 | 全部构造期 ERROR（`spec_error` 封闭码）/版本闸拒跑，不进 SQL |
+| `against-null` | `against.from` 空表 + `agg` → 右值 NULL | 按 `compare.null` 约定冻结（默认 error） |
+| `type-mixed` | 文本列 vs 数字列比较 | 按 SQL storage class 语义冻结（better-sqlite3 与 rusqlite 的 parity 高价值区） |
 
 `manifest.json` 按 LF 重冻（0.103 事故后的铁律：`.gitattributes` + 盘上字节 == manifest 哈希
 双检，见 fdc757f6 的裁定），digest 在 CHANGELOG 记录旧→新与「纯新增例」理由。
 
-## 6. 明确不在 1.2 范围（请评审确认）
+## 6. 明确不在 1.2 范围（评审已裁定：拆 1.3）
 
-- **`group_by` / `having`**：需要定义「分组后的 PASS/FAIL 归属」（部分组失败怎么判？witness
-  是逐组还是汇总？）与报告形状扩展，比「右值可引用列」大一档。**建议 1.3 单独立项**，
-  1.2 只解决用户当前表达不了的那条不变量。若评审认为必须同批，请给出 PASS/FAIL 的分组语义裁定。
+- **`group_by` / `having`**：**拆 1.3**（fdc757f6 裁定）。1.3 锚点先记下，防止将来与 1.2 自相矛盾：
+  逐组判 PASS/FAIL；`violations[]` 带组键（对齐 find-violation 形状）；`overall` = 任一组 FAIL 即 FAIL；
+  `rows_scanned` = 跨组总行数；witness 记违规组（有界：前 N 组 + 总数）。1.3 落地时 1.2 的
+  「`{col}` 只许同表」规则原样适用。
 - 任意子查询 / 表达式右值：不做——那会把「判据」变成 SQL，破坏「AST 是机械生成唯一形态」。
 - 隐式类型转换、NULL 特殊语义：不做，按 SQL 语义；NULL 比较的结果由 `compare.null` 既有约定管。
 
-## 7. 待评审问题（请逐条回答）
+## 7. 已裁定（fdc757f6，2026-10-20）
 
-1. `against` 默认 `agg` 取 `max` 是否合理？还是必须显式给 `agg`（更啰嗦但更不容易猜错）？
-2. 形态一是否允许 `value:{col}` 出现在 `predicate.agg` 的 `having` 场景（如果 1.3 才做 having，
-   1.2 里就自然没有）？
-3. 构造期错误码沿用 `ERROR` + `spec_error` 细分，还是新增 `CONTRACT_VERSION_MISMATCH` 类？
-4. 语料 +5 例是否足够覆盖「跨表列引用」与「多行标量」两类负例？
+1. **`agg` 必填，无默认**；缺省 → P2 `missing_agg`（永远是 schema 可判，不依赖数据行数）。
+2. `value:{col}` 的 having 场景 1.2 自然不存在（having 归 1.3）。
+3. **不新增 verdict**：四值骨架冻结；构造期细分走新设 `evidence.spec_error` 封闭码表；
+   版本不匹配保持「引擎入口拒跑」。
+4. 语料 **+8 例**（原 5 + `against-null`、`type-mixed`、版本闸负例；「多行无 agg」改写为「缺 agg」；
+   `agg` 变体可 parametrize）。
+- 附带语义：`agg` 作用在空 `against.from` → 右值 NULL，按 `compare.null` 约定并冻结语料。
