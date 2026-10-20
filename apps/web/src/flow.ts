@@ -1,57 +1,81 @@
 /**
  * Controlled xyflow nodes for the tree and graph canvases. The layout is
- * recomputed on every live payload, but the canvas owns what the user did:
- * a node they dragged keeps its position, and every node keeps the size
- * xyflow measured (the MiniMap skips nodes without one). Without
- * onNodesChange neither ever reached the node list — drags snapped back and
- * the MiniMap drew nothing.
+ * recomputed on every live payload and nodes follow it — except the ones the
+ * user moved: a finished drag (or keyboard move) pins that node where it was
+ * dropped. Every node keeps the size xyflow measured (the MiniMap skips nodes
+ * without one). Without onNodesChange neither ever reached the node list —
+ * drags snapped back and the MiniMap drew nothing.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { applyNodeChanges, type Node, type OnNodesChange } from "@xyflow/react";
+import { useCallback, useState } from "react";
+import { applyNodeChanges, type Node, type NodeChange, type OnNodesChange, type XYPosition } from "@xyflow/react";
 
-/** Fresh layout in, live state kept: same id → previous position + measured size. */
-export function mergeLayout<N extends Node>(prev: N[], next: N[]): N[] {
+export type Pins = Map<string, XYPosition>;
+
+/**
+ * Fresh layout in: pinned ids take their pinned position, every other node
+ * takes the layout's (so a tier that grows re-spreads), and any node already on
+ * the canvas keeps its measured size.
+ */
+export function mergeLayout<N extends Node>(prev: N[], next: N[], pins: ReadonlyMap<string, XYPosition>): N[] {
   const live = new Map(prev.map((n) => [n.id, n]));
   return next.map((n) => {
-    const p = live.get(n.id);
-    return p ? { ...n, position: p.position, measured: p.measured } : n;
+    const pin = pins.get(n.id);
+    const measured = live.get(n.id)?.measured;
+    if (!pin && !measured) return n;
+    return { ...n, ...(pin && { position: pin }), ...(measured && { measured }) };
   });
 }
 
-// Canvas state outlives the component: switching views unmounts the canvas,
-// and coming back must not undo the user's drags. Page-session only.
-const remembered = new Map<string, Node[]>();
+/** A finished move (drag end, or a keyboard step) pins the node; in-flight drag frames don't. */
+export function recordMoves<N extends Node>(changes: NodeChange<N>[], pins: Pins): void {
+  for (const c of changes) {
+    if (c.type === "position" && c.dragging === false && c.position) pins.set(c.id, c.position);
+  }
+}
+
+// Pins outlive the component: switching views unmounts the canvas, and coming
+// back must not undo the user's moves. Only moved nodes are remembered (not
+// whole node lists), for this page session.
+const pinsByCanvas = new Map<string, Pins>();
+const pinsOf = (key: string): Pins => {
+  let pins = pinsByCanvas.get(key);
+  if (!pins) pinsByCanvas.set(key, (pins = new Map()));
+  return pins;
+};
+
+interface CanvasState<N extends Node> {
+  key: string;
+  layout: N[];
+  nodes: N[];
+}
 
 /**
- * Nodes for <ReactFlow nodes onNodesChange>. `canvasKey` names the canvas
- * (e.g. "tree:<name>"): another key starts from that canvas's own state — or
- * the bare layout — instead of merging into the previous canvas. The memory is
- * written where the nodes are, so a key never stores another canvas's nodes.
+ * Nodes for <ReactFlow nodes onNodesChange>. `canvasKey` names the canvas (e.g.
+ * "tree:<name>"). A new key or a new layout is folded in during render, not in
+ * an effect, so the first frame of another tree is that tree — never a flash of
+ * the previous canvas.
  */
 export function useLayoutNodes<N extends Node>(layout: N[], canvasKey: string): [N[], OnNodesChange<N>] {
-  const recall = (key: string) => (remembered.get(key) ?? []) as N[];
-  const [nodes, setNodes] = useState<N[]>(() => mergeLayout(recall(canvasKey), layout));
-  const lastKey = useRef(canvasKey);
+  const [state, setState] = useState<CanvasState<N>>(() => ({
+    key: canvasKey,
+    layout,
+    nodes: mergeLayout([], layout, pinsOf(canvasKey)),
+  }));
 
-  useEffect(() => {
-    const from = lastKey.current === canvasKey ? null : recall(canvasKey);
-    lastKey.current = canvasKey;
-    setNodes((prev) => {
-      const next = mergeLayout(from ?? prev, layout);
-      remembered.set(canvasKey, next);
-      return next;
-    });
-  }, [layout, canvasKey]);
+  let current = state;
+  if (state.key !== canvasKey || state.layout !== layout) {
+    const prev = state.key === canvasKey ? state.nodes : [];
+    current = { key: canvasKey, layout, nodes: mergeLayout(prev, layout, pinsOf(canvasKey)) };
+    setState(current); // render-phase update: React re-renders before committing
+  }
 
   const onNodesChange: OnNodesChange<N> = useCallback(
-    (changes) =>
-      setNodes((prev) => {
-        const next = applyNodeChanges(changes, prev);
-        remembered.set(canvasKey, next);
-        return next;
-      }),
+    (changes) => {
+      recordMoves(changes, pinsOf(canvasKey));
+      setState((s) => (s.key === canvasKey ? { ...s, nodes: applyNodeChanges(changes, s.nodes) } : s));
+    },
     [canvasKey]
   );
 
-  return [nodes, onNodesChange];
+  return [current.nodes, onNodesChange];
 }
