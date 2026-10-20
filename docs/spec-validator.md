@@ -369,7 +369,7 @@ verify list                        # 规范清单与状态
 
 - 验证规范可挂树节点：`rel add node:<tree>/<key> artifact:<spec-id> --rel decided-by`（规范=节点的验收判据）。
 - 报告挂节点：`--rel evidenced-by`（验证结果=节点证据）。
-- **毕业通道**（未来，先记设计）：一条验证规范稳定通过 N 轮 → `verify graduate <id>` 生成 patrol 检查（一次性验证 → 持续监控），走 graduation-protocol 的 executes 织物。
+- **毕业通道**（M13-3，设计裁定 2026-10-20）：目标是把「一次性验证」变成「常驻检查」。关键事实（代码侦察）：`patrol run` 把 check 的 SQL 直接跑在**工作区自己的库**上（`patrol-cmds.ts:117` `store.db.all(c.sql)`），而验证规范的 VU 判的是**被验快照**里的表——两张库不同源，把 VU 的 `findSql` 抄成 patrol check 只对「被验对象就是本工作区库」的规范成立。第一版按三段拆：①**资格**：同一 `spec_version`、连续 `--min-runs`（默认 3）份报告 `overall=PASS`、跨度 ≥ `--min-span-days`（默认 30 天），任一不满足则点名拒绝（rc=1，不落盘）；②**毕业记录**：`$YGL_HOME/verify/graduations/<spec_id>.json` 冻结（spec_version、run_id 清单、阈值、created），幂等重跑返回 `duplicate:true`；③**常驻执行**：生成 `job add --every <min> -- ygl-trees verify run <spec_id> --db <source> --no-archive`（`<source>` 取毕业报告的 `data_source.source`，作业运行史落 runs 表、报告继续进 `reports/` 形成趋势）。patrol 化（S1/S2/S3 处置队列）只对被验库 == 工作区库的规范开放（`--patrol` 分支把渲染后的 `findSql` 交 `patrol add`，因为「空结果=通过」正好等价于 `fail_when="rows>0"`）；库不对源时明确拒绝并点名 type。CI 集成后置（M13-4），先把「毕业 = 冻结资格 + 绑定调度」做实。
 
 ## 10. 待裁定点（实现前需拍板）
 
