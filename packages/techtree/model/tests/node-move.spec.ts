@@ -105,6 +105,25 @@ describe("nodeMove", () => {
     await closeOrm();
   });
 
+  // External review #1 (issue #2): the first call moved the node, so a retry
+  // looks up an empty source tree. It must stay idempotent (rc=0, moved:false,
+  // duplicate:true) instead of surfacing as `node not found`.
+  it("is idempotent when the same move is retried after success", async () => {
+    const ds = await getOrm(db.path!);
+    await treeWrites.nodeAdd(ds, left, { key: "retried" });
+    const first = await treeWrites.nodeMove(ds, left, "retried", "right");
+    expect(first.moved).toBe(true);
+    const again = await treeWrites.nodeMove(ds, left, "retried", "right");
+    expect(again.moved).toBe(false);
+    expect(again.duplicate).toBe(true);
+    expect(again.row.tree_id).toBe(right);
+    expect(db.get("SELECT COUNT(*) c FROM nodes WHERE key='retried'").c).toBe(1);
+    // One `node.move` + one `node.move.noop`, never a second move claim.
+    expect(db.get("SELECT COUNT(*) c FROM events WHERE kind='node.move' AND entity_id=?", first.row.id).c).toBe(1);
+    expect(db.get("SELECT payload FROM events WHERE kind='node.move.noop' AND entity_id=? ORDER BY rowid DESC LIMIT 1", first.row.id).payload).toContain('"retried"');
+    await closeOrm();
+  });
+
   it("names unknown nodes and unknown trees", async () => {
     const ds = await getOrm(db.path!);
     await expect(treeWrites.nodeMove(ds, left, "ghost", "right")).rejects.toThrow(/node not found: ghost/);

@@ -124,6 +124,10 @@ describe("evidenceRemove", () => {
     expect(r.forced).toBe(false);
     expect(r.unlinked).toEqual([]);
     expect(db.get("SELECT COUNT(*) AS c FROM evidence WHERE id=?", [evidence])).toEqual({ c: 0 });
+    // External review #6: the FTS shadow must die with the base row, in the
+    // same transaction (write-path rule 1). A leftover shadow is searchable
+    // evidence whose base row no longer exists.
+    expect(db.get("SELECT COUNT(*) AS c FROM evidence_fts WHERE id=?", [evidence])).toEqual({ c: 0 });
     await closeOrm();
   });
 });

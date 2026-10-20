@@ -235,6 +235,12 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.105.2 记录（issue #2 的 P1 修复批）**：外部复核 GitHub issue #2（zhujun200409-cloud）对本仓 14396eb 提 9+ 条；本版修三条 P1（验证席代码级坐实 #1/#6，另 #2 为测试缺陷）。#4/#5 已并入 0.105.1 的 pack:repro 重写，#3/#7/#8/#9 排 0.106.0。
+- **#1 `node move` 重试不幂等**：`nodeMove()` 的源树查行按 `fromTreeId` 作用域，首移成功后同一命令重试必然空集 → `node not found` rc=1（契约违约：幂等操作报错）。修法：查行落空时再查目标树，若同名节点已在那里 → `{moved:false, duplicate:true}` rc=0 + `node.move.noop` 事件（payload 带 from/to/key）。**不合并语义**：`moved:false` 仍是「本来就在」，`duplicate:true` 是「这次是重试」，两者都 rc=0。
+- **#6 `evidence rm` 留下 `evidence_fts` 孤儿**：删基表与 `claim_evidence` 时漏删 FTS 影子行，破坏写路径铁律 1（幂等/基表/FTS/events 同事务）——被删证据仍可被全文检索命中，指向不存在的基表行。修法：同事务 `DELETE FROM evidence_fts WHERE id=?`；`unlink.spec` 加影子行断言。
+- **#2 同义反复断言**：`verify-cli.spec.ts` 的 r28 Q2 `created` 不变量比较写成 `afterMove.created === afterMove.created`（两分支相同，永远绿）。修法：在 `--db` 重排前读冻结记录做 before-image，再断言 `created`/`data_source`/`run_ids` 与重排后逐字节相等——测试现在能真的抓到「重排改写了审计事实」。
+- 测试：node-move 6→7（重试幂等）、unlink 7（+FTS 影子）；verify-cli 32 例复绿。
+
 **0.105.1 记录（打包修复 P0，无源码改动）**：0.105.0 的发布 tarball 由 `pack:repro` 手工组装，直接读仓库原始 `package.json`，绕过 pnpm 的 `workspace:` 重写 → 四个 `@deepseek-ai/*` 依赖以 `workspace:~` 进入 npm 清单，全新 `npm install ygl-trees@0.105.0` 必 `EUNSUPPORTEDPROTOCOL`；`pack:check` 5b 只比哈希与条目清单（字节稳定性），没验可安装性，故未拦住。修复：`pack:repro` 改为**以 `pnpm pack` 产物为内容源**再确定性重打包（条目排序/mtime 0/uid-gid 0/0644/ustar/gzip 9），重打包前硬闸拒绝任何 `workspace:` 残留；gzip 头 OS 字节固定 `0xFF`（修外部复核 #5 的跨主机哈希不一致）；`pack:check` 5b 新增空目录 `npm i <repro tarball>` + 跑装出来的 `bin --version`（外部复核 #4；只比哈希不比可安装性正是本次漏网原因）。事后处置：Gitea 0.105.0 unpublish、npmjs dist-tag `latest` 回拨 0.104.0（granular token 不能物理删 0.105.0，已隔离危害）。
 
 **0.105.0 记录（批九增补单 + r28 收口）**：验证席批九增补（task direct-1d11bff7，用户误挂 4 条证据只能用 `db sql` 裸删）与 302cb119 r28（P3 `$` 展开、Q2 `job_target`）合并本版；无契约形状变更。

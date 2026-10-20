@@ -254,6 +254,8 @@ export async function nodeDel(ds: DataSource, treeId: string, keyOrId: string): 
 export interface NodeMoveResult {
   row: Record<string, any>;
   moved: boolean;
+  /** true when this call was a retry of an already-applied move (issue #1). */
+  duplicate?: boolean;
   from_tree: string;
   to_tree: string;
   state_rows: number;
@@ -282,7 +284,34 @@ export async function nodeMove(
 ): Promise<NodeMoveResult> {
   return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [fromTreeId, keyOrId, keyOrId])) as any[];
-    if (!rows.length) throw new Error(`node not found: ${keyOrId}`);
+    if (!rows.length) {
+      // Retry of an already-applied move (external review #1): the first call
+      // put the node in the target tree, so the source lookup is empty. A
+      // retried command must stay idempotent (rc=0, no second event that
+      // claims a move), not surface as `node not found`.
+      const retryTree = (await mgr.query(`SELECT id,name FROM trees WHERE name=? OR id=?`, [toTree, toTree])) as any[];
+      if (retryTree.length) {
+        const there = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [retryTree[0].id, keyOrId, keyOrId])) as any[];
+        if (there.length) {
+          const fromName = ((await mgr.query(`SELECT name FROM trees WHERE id=?`, [fromTreeId])) as any[])[0]?.name ?? fromTreeId;
+          await logEvent(mgr, "node.move.noop", there[0].id, {
+            from: fromName,
+            to: retryTree[0].name,
+            key: there[0].key,
+          });
+          return {
+            row: there[0],
+            moved: false,
+            duplicate: true,
+            from_tree: fromName,
+            to_tree: retryTree[0].name,
+            state_rows: 0,
+            closure_rows: 0,
+          };
+        }
+      }
+      throw new Error(`node not found: ${keyOrId}`);
+    }
     const node = rows[0];
     const fromRows = (await mgr.query(`SELECT id,name FROM trees WHERE id=?`, [fromTreeId])) as any[];
     const fromName = fromRows[0]?.name ?? fromTreeId;

@@ -203,6 +203,9 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
       const firstBody = JSON.parse(first.out) as { job_id: string; job_command: string; job_retargeted?: boolean };
       expect(firstBody.job_command).toContain(sourceA);
       expect(firstBody.job_retargeted).toBeUndefined();
+      // Before-image for the r28 Q2 invariant: read the frozen record now,
+      // while it still carries the FIRST scheduling intent.
+      const beforeMove = JSON.parse(readFileSync(join(ghome, "verify", "graduations", "spec_ret.json"), "utf8"));
 
       const moved = run(["verify", "graduate", "spec_ret", "--schedule", "--every", "60", "--db", sourceB, "--json"], env);
       expect(moved.rc).toBe(0);
@@ -219,11 +222,16 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
       const firstTarget = (firstBody as any).job_target;
       expect(firstTarget).toMatchObject({ db: sourceA, origin: "report", usable: true, every_minutes: 60 });
       expect(firstTarget.job_id).toBe(firstBody.job_id);
+      // The freeze invariant: only job_target may move; created/data_source/
+      // run_ids need a real before-image (issue #2: the old assertion
+      // compared a value with itself in both branches — it could never fail).
       const afterMove = JSON.parse(readFileSync(gradPath, "utf8"));
       expect(afterMove.job_target).toMatchObject({ db: sourceB, origin: "override", every_minutes: 60 });
       expect(JSON.stringify(afterMove.run_ids)).toBe(JSON.stringify(["run_c", "run_b", "run_a"]));
       expect(afterMove.thresholds).toMatchObject({ min_runs: 3, min_span_days: 30 });
-      expect(afterMove.created).toBe((firstBody as any).record === undefined ? afterMove.created : afterMove.created);
+      expect(afterMove.created).toBe(beforeMove.created);
+      expect(JSON.stringify(afterMove.data_source)).toBe(JSON.stringify(beforeMove.data_source));
+      expect(JSON.stringify(afterMove.run_ids)).toBe(JSON.stringify(beforeMove.run_ids));
 
       // Re-graduating without --schedule must not erase the last scheduling intent.
       const plain = run(["verify", "graduate", "spec_ret", "--json"], env);

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.105.2
+
+**外部复核 issue #2 的 P1 修复批**（GitHub `NelsonLongxiang/ygl-trees#2`）。无契约形状变更。
+
+- **`node move` 重试幂等（#1，契约违约）**：首移成功后节点已在目标树，同一命令重试时源树查行必然为空
+  → 旧实现抛 `node not found` rc=1。现在查行落空时若目标树已有同名节点，返回
+  `{moved:false, duplicate:true}`（rc=0）并落 `node.move.noop` 事件——重试不产生第二个「已移动」声明，
+  也不把幂等操作报成错误。新增 `writes.ts` 的 `duplicate` 字段与 CLI 既有 `moved:false` 分支对接。
+- **`evidence rm` 的 FTS 影子同事务删除（#6，写路径铁律 1 违约）**：旧实现删 `claim_evidence` 与
+  `evidence` 基表，却没删 `evidence_fts` 影子行——删除后仍可被全文检索命中，且搜索结果是「没有基表行的
+  证据」。现在同一事务内 `DELETE FROM evidence_fts WHERE id=?`。
+- **补强测试（#2）**：`verify-cli.spec.ts` 里 r28 Q2 的 `created` 不变量断言写成同义反复
+  （两个分支都是 `afterMove.created`，永远为真）；改为在 `--db` 重排**之前**读取冻结记录做
+  before-image，逐项断言 `created` / `data_source` / `run_ids` 与重排后逐字节一致。
+- 回归：`node-move.spec` 7 例（+1 重试幂等）、`unlink.spec` 7 例（+FTS 影子断言）。
+
 ## 0.105.1
 
 **打包修复（P0）：`pack:repro` 产物不再携带 `workspace:` 残留**。源码零改动，仅发布链路修复。

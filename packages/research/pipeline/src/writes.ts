@@ -389,6 +389,10 @@ export async function evidenceRemove(
       statuses[cid] = r.status;
     }
     await mgr.query(`DELETE FROM evidence WHERE id=?`, [evidenceId]);
+    // Write-path rule 1: FTS shadow writes live in the same transaction as the
+    // base row. A delete that skips the shadow leaves a searchable orphan whose
+    // base row is gone (external review #6).
+    await ftsShadow(mgr, `DELETE FROM evidence_fts WHERE id=?`, [evidenceId]);
     await logEvent(
       mgr,
       "evidence.rm",
