@@ -251,6 +251,44 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     }
   });
 
+  // Issue #3 (external report): the issue-#9 `job_target_error` line was
+  // inserted between `if (jobRow)` and its `else if` chain, which detached the
+  // chain: a SUCCESSFUL --schedule printed both "scheduled: job …" and
+  // "next: job add …", inviting the operator to register a duplicate job.
+  it("graduate --schedule 成功的人类输出不再诱导重复注册（issue #3）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad-human-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_human");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_human", spec_version: 1 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const source = join(ghome, "human.sqlite");
+      const put = (id: string, finished: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({ run_id: id, spec_id: "spec_human", finished, overall: "PASS", verifier: { spec_version: 1 }, data_source: { kind: "sqlite-snapshot", source } }),
+          "utf8",
+        );
+      put("run_a", "2026-09-01T00:00:00.000Z");
+      put("run_b", "2026-09-20T00:00:00.000Z");
+      put("run_c", "2026-10-11T00:00:00.000Z");
+
+      const r = run(["verify", "graduate", "spec_human", "--schedule", "--every", "60"], env);
+      expect(r.rc).toBe(0);
+      expect(r.out).toMatch(/scheduled: job/);
+      expect(r.out).not.toMatch(/next: job add/);
+      // exactly one job row: the schedule path registers it, the human output
+      // must not suggest a second registration
+      const jobs = run(["db", "sql", "select id from jobs", "--json"], env);
+      expect((JSON.parse(jobs.out) as unknown[]).length).toBe(1);
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
   it("graduate --schedule 缺 --every 是用法错误，且不冻结记录（r25 P3①）", () => {
     const ghome = mkdtempSync(join(tmpdir(), "ygl-grad2-"));
     const env = { YGL_HOME: ghome };

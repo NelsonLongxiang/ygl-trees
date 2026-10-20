@@ -764,12 +764,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         // issue #9: a failed job_target write used to be JSON-only — the human
         // path said "scheduled" and nothing else, so an operator reading the
         // terminal could not tell the frozen record no longer matches the job.
+        // Issue #3: this line is independent of the next-action chain below —
+        // hanging the chain off this `if` made a successful --schedule also
+        // print "next: job add …", inviting a duplicate recursive job.
         if (payload.job_target_error) {
           out(ctx, paint(C.yellow, `  ! job_target not written: ${String(payload.job_target_error)}  (the record still holds the previous scheduling intent; the job itself was registered)`, ctx.color));
         }
-        else if (cmd.unsafe) out(ctx, paint(C.yellow, `  note: the verified source contains shell-unsafe characters — not echoed; job_command is a placeholder and --schedule is refused. Pass --db <file> to pick the recurring database`, ctx.color));
-        else if (!cmd.usable) out(ctx, paint(C.yellow, `  note: source ${el.data_source?.source ?? "none"} is not an executable --db; pass --db <file> to register a job`, ctx.color));
-        else out(ctx, paint(C.dim, `  next: job add "verify ${specId}" --every ${every || "<min>"} -- ${cmd.command}`, ctx.color));
+        if (!jobRow) {
+          if (cmd.unsafe) out(ctx, paint(C.yellow, `  note: the verified source contains shell-unsafe characters — not echoed; job_command is a placeholder and --schedule is refused. Pass --db <file> to pick the recurring database`, ctx.color));
+          else if (!cmd.usable) out(ctx, paint(C.yellow, `  note: source ${el.data_source?.source ?? "none"} is not an executable --db; pass --db <file> to register a job`, ctx.color));
+          else out(ctx, paint(C.dim, `  next: job add "verify ${specId}" --every ${every || "<min>"} -- ${cmd.command}`, ctx.color));
+        }
         if (dbOverride && cmd.usable) {
           out(ctx, paint(C.yellow, `  note: --db only retargets the recurring job; the frozen record still names the verified source (${el.data_source?.source ?? "none"})`, ctx.color));
         }
