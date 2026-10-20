@@ -7,7 +7,7 @@
  *
  *   bundle_bytes    发布产物 dist/bundle/bin.cjs 的字节数（确定值，容差 2%）
  *   web_dist_bytes  dist/apps/web/dist 的字节数合计（确定值，容差 2%）
- *   cold_start_ms   `--version` 冷启动中位数（5 次；容差 30%，只看大滑坡）
+ *   cold_start_ms   `--version` 冷启动中位数（预热 1 次不计 + 5 次取中位；容差 30%，只看大滑坡）
  *
  * 变好：自动收紧基线（棘轮齿），并在输出里写明旧值 → 新值。
  * 变坏：超容差即失败（rc=1），要么优化，要么显式 `--write` 认账重设基线。
@@ -46,6 +46,11 @@ function median(values) {
 }
 
 function coldStartMs() {
+  // 预热一次不计入：干净检出（新 worktree / 新机器）首次触碰 bundle 与 node_modules
+  // 会被杀毒扫描与磁盘冷缓存放大成一次性成本，那不是产品变慢。否则同一 commit
+  // 在主树 held、在干净检出 regressed，闸门测的是「路径新不新」而不是「启动快不快」。
+  const warm = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" });
+  if (warm.status !== 0) throw new Error(`cold start warmup failed: ${warm.stderr || warm.status}`);
   const samples = [];
   for (let i = 0; i < 5; i++) {
     const t0 = process.hrtime.bigint();

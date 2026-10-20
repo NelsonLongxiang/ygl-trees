@@ -22,7 +22,7 @@
 |---|---|---|---|
 | `bundle_bytes` | `dist/bundle/bin.cjs` 字节数 | 2% | 发布产物的确定性度量；膨胀会直接变成启动与安装成本 |
 | `web_dist_bytes` | `dist/apps/web/dist` 合计 | 2% | 前端资源只增不减是默认命运，必须显式认账 |
-| `cold_start_ms` | `--version` 冷启动中位数（5 次） | 30% | 只抓大滑坡；单次墙钟噪声大，宽容差 + 中位数 |
+| `cold_start_ms` | `--version` 冷启动中位数（预热 1 次不计 + 5 次取中位） | 30% | 只抓大滑坡；单次墙钟噪声大，宽容差 + 中位数。预热样本是必须的：干净检出首次触碰 bundle 被杀毒与磁盘冷缓存放大，否则同一 commit 在主树 held、在新 worktree regressed，闸门测的是路径新不新而非启动快不快 |
 
 行为：
 

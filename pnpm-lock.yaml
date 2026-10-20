@@ -217,6 +217,8 @@ importers:
         specifier: workspace:~
         version: link:../../core/text
 
+  packages/verify/core: {}
+
   packages/web/app:
     dependencies:
       '@deepseek-ai/cordis':

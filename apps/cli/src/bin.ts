@@ -188,6 +188,7 @@ ${paint(C.bold, "tree / node", color)}   tech-tree node model
                                       [--op eval --value "<布尔问题>"]
                                       [--op eval-choice --value "<问题>" --options "k=desc,..." --answer k]
                                       [--op eval-score --value "<问题>" --levels "级0,..." --min-score n]
+                                      [--force rewrite an existing condition in place]
                                       [--effect gate|cost_mul] [--weight n]
   node index                         rebuild closure + topo order
   node can <key> [--state k=v]       evaluate required vs optional gates
