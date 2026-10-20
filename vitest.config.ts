@@ -19,6 +19,9 @@ export default defineConfig({
     env: {
       YGL_TEST: "1",
     },
+    // 测试侧只重试「一个字节都没收到」的连接级失败（见 tests/support/fetch-retry.ts）：
+    // 干净检出上满负载跑 72 文件会偶发 ECONNRESET，那是传输抖动而非判据失败。
+    setupFiles: ["tests/support/fetch-retry.ts"],
     hookTimeout: 30000,
     testTimeout: 20000,
   },
