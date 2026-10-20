@@ -10,7 +10,7 @@
 import { useId, useMemo, useState } from "react";
 import { Button, Empty, Space, Table, Typography } from "antd";
 import {
-  SERIES, SERIES_LABEL, dayTickIndexes, fillDays, fmtDay, labelledColumns, niceTicks, stackColumns,
+  SERIES, SERIES_LABEL, SERIES_NOTE, dayTickIndexes, fillDays, fmtDay, labelledColumns, niceTicks, stackColumns,
   type Column, type SeriesKey, type TimelineRow,
 } from "./timeline";
 
@@ -41,7 +41,7 @@ type View = "chart" | "table";
 
 export default function ActivityTimeline({
   timeline,
-  days = 30,
+  days = 31, // today + the server's 30 days back (ts >= date('now','-30 days')), UTC days
   today,
   defaultView = "chart",
 }: {
@@ -61,7 +61,7 @@ export default function ActivityTimeline({
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={`最近 ${days} 天没有记录到活动：用 research / node / eval 等命令工作后，这里会按天显示事件数。`}
+        description={`最近 ${days - 1} 天（含今天）没有记录到活动：用 research / node / eval 等命令工作后，这里会按 UTC 日显示事件数。`}
       />
     );
   }
@@ -71,7 +71,7 @@ export default function ActivityTimeline({
       <div className="yt-tl-head">
         <ul className="yt-tl-legend" aria-label="图例">
           {SERIES.map((k) => (
-            <li key={k}>
+            <li key={k} title={SERIES_NOTE[k]}>
               <i className="yt-tl-swatch" style={{ background: SERIES_FILL[k] }} aria-hidden="true" />
               {SERIES_LABEL[k]}
             </li>
@@ -94,7 +94,7 @@ export default function ActivityTimeline({
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
           columns={[
             { title: "日期", dataIndex: "day", width: 120 },
-            ...SERIES.map((k) => ({ title: SERIES_LABEL[k], dataIndex: k, align: "right" as const, width: 88 })),
+            ...SERIES.map((k) => ({ title: <span title={SERIES_NOTE[k]}>{SERIES_LABEL[k]}</span>, dataIndex: k, align: "right" as const, width: 88 })),
             { title: "合计", key: "total", align: "right" as const, render: (_: unknown, r) => r.research + r.eval + r.tree + r.other },
           ]}
         />
@@ -130,7 +130,7 @@ function Chart({
         )}
       </div>
       <svg className="yt-tl" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby={titleId}>
-        <title id={titleId}>最近 {days} 天活动：按天堆叠的研究、判定、科技树、其他事件数</title>
+        <title id={titleId}>最近 {days - 1} 天（含今天）活动，按 UTC 日堆叠的研究、科技树、判定、其他事件数</title>
         {ticks.map((t) => (
           <g key={t}>
             <line className="yt-tl-grid" x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} />
