@@ -22,7 +22,7 @@ export const DARK = {
   border: "#30363d", // hairlines, chips, node strokes
   "border-dim": "#21262d", // table rules, dividers, canvas dots
   text: "#c9d1d9", // primary text on surface
-  "text-dim": "#484f58", // de-emphasized footer text
+  "text-dim": "#6e7681", // non-text only: minimap node blocks (≥3:1 non-text floor), never text
   success: "#3fb950", // supported / pass / unlockable
   danger: "#f85149", // refuted / fail / excludes edges
   warning: "#d29922", // contested / pending-adjacent emphasis

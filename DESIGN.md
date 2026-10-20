@@ -15,7 +15,7 @@ colors:
   border: "#30363d"         # hairlines, chips, node strokes
   border-dim: "#21262d"     # table rules, dividers
   text: "#c9d1d9"           # primary text on surface
-  text-dim: "#484f58"       # de-emphasized footer text
+  text-dim: "#6e7681"       # non-text only (minimap node blocks, decorative fills) — never text; ≥3:1 non-text floor
   success: "#3fb950"        # supported / pass / unlockable
   danger: "#f85149"         # refuted / fail / excludes edges
   warning: "#d29922"        # contested / pending-adjacent emphasis
@@ -135,9 +135,10 @@ the same role, so components read CSS variables and never branch on theme.
 - **antd** follows the switch (`darkAlgorithm` / `defaultAlgorithm`, token map
   applied in both); **xyflow** gets `colorMode`.
 - Light keeps the depth model: `neutral` (pale page) under `surface` (white
-  cards). Every light text pair meets AA (≥4.5:1 on neutral/surface/
-  surface-hover). Dark keeps the source's one failing pair, `text-dim` (2.3:1),
-  for decorative text only.
+  cards). Every text pair meets AA in both themes (≥4.5:1 on neutral/surface/
+  surface-hover). `text-dim` carries no text — it is a non-text token (minimap
+  node blocks, decorative fills) held to the WCAG 1.4.11 non-text floor, ≥3:1 on
+  every ground in both themes (dark `#6e7681`: 4.1:1 / 3.8:1 / 3.5:1).
 
 ## Colors
 
