@@ -75,6 +75,10 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     "warning",
     "on-entity",
     "on-primary",
+    "chart-research",
+    "chart-tree",
+    "chart-eval",
+    "chart-other",
   ];
 
   it("DESIGN.md defines every color in both themes", () => {

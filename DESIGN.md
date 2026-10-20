@@ -21,6 +21,10 @@ colors:
   warning: "#d29922"        # contested / pending-adjacent emphasis
   on-entity: "#0d1117"      # labels on knowledge-graph entity fills (≥6.2:1 on every fill)
   on-primary: "#0d1117"     # text on solid primary / danger fills (antd colorTextLightSolid): ink in dark — white was 3.3:1 on the rendered #4e90dc
+  chart-research: "#b68104" # chart series · research events — warning hue stepped into the dark chart band (OKLCH L 0.64)
+  chart-tree: "#4b92ce"     # chart series · tree events — tertiary hue, stepped
+  chart-eval: "#28a73e"     # chart series · eval events — success hue, stepped
+  chart-other: "#6e7681"    # chart series · other events — the de-emphasis gray, never a categorical hue
 # Light theme — same keys, same roles; every text pair AA (see ## Themes).
 colors-light:
   primary: "#0969da"
@@ -38,6 +42,10 @@ colors-light:
   warning: "#8a5c00"
   on-entity: "#ffffff"
   on-primary: "#ffffff"
+  chart-research: "#8a5c00"
+  chart-tree: "#0550ae"
+  chart-eval: "#1a7f37"
+  chart-other: "#7d8590"
 typography:
   h1:
     fontFamily: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
@@ -170,6 +178,16 @@ Hex values below are the dark theme; `colors-light` holds the light twin.
   every state in both themes is checked against antd's real derivation by a test.
   The global `colorTextLightSolid` stays white: tooltips and badges share it, and
   their grounds are dark in both themes.
+- **Chart series (`chart-research` / `chart-tree` / `chart-eval` / `chart-other`):**
+  the only colors that paint data marks (the overview activity timeline). Fixed
+  stack order research → tree → eval → other: blue sits between amber and green so
+  deutan readers can part them (adjacent-pair CVD ΔE ≥ 8 and normal-vision ≥ 15 in
+  both themes, checked with a palette validator); `chart-other` is the folded
+  tail, a de-emphasis gray (`#7d8590` light / `#6e7681` dark), never a categorical hue.
+  In light the three hues are the semantic tokens themselves; in dark they are the
+  same hues stepped down into the chart band (OKLCH L 0.64, ≥ 5:1 on `surface`).
+  A legend is always shown, text never wears a series color (labels, axes and
+  legends use `text` / `secondary`), and every number is also in a table view.
 
 ## Typography
 
