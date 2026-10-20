@@ -1,6 +1,7 @@
 /**
- * Activity timeline (overview): one stacked column per UTC day for the last 30
- * days — research / eval / tree / other event counts from /api/data `timeline`.
+ * Activity timeline (overview): one stacked column per UTC day for today and the
+ * 30 days before it (31 columns — the server's window) — research / eval / tree /
+ * other event counts from /api/data `timeline`.
  * Pure SVG in token colours (--color-chart-*; "其他" is the de-emphasis gray),
  * text only ever in text tokens (dataviz: text never wears the series colour).
  * A legend is always shown (4 series); direct labels only on the peak day and
@@ -61,7 +62,7 @@ export default function ActivityTimeline({
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={`最近 ${days - 1} 天（含今天）没有记录到活动：用 research / node / eval 等命令工作后，这里会按 UTC 日显示事件数。`}
+        description={`今天 + 前 ${days - 1} 天没有记录到活动：用 research / node / eval 等命令工作后，这里会按 UTC 日显示事件数。`}
       />
     );
   }
@@ -130,7 +131,7 @@ function Chart({
         )}
       </div>
       <svg className="yt-tl" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby={titleId}>
-        <title id={titleId}>最近 {days - 1} 天（含今天）活动，按 UTC 日堆叠的研究、科技树、判定、其他事件数</title>
+        <title id={titleId}>今天 + 前 {days - 1} 天的活动，按 UTC 日堆叠的研究、科技树、判定、其他事件数</title>
         {ticks.map((t) => (
           <g key={t}>
             <line className="yt-tl-grid" x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} />

@@ -186,8 +186,8 @@ export function OverviewPage() {
         <Card
           className="yt-ov-timeline"
           size="small"
-          title={<><LineChartOutlined /> 最近 30 天活动</>}
-          extra={<Text type="secondary">每天事件数 · 全工作区 · UTC 日</Text>}
+          title={<><LineChartOutlined /> 活动时间线</>}
+          extra={<Text type="secondary">今天 + 前 30 天 · 每天事件数 · 全工作区 · UTC 日</Text>}
         >
           <ActivityTimeline timeline={data.timeline ?? []} />
         </Card>

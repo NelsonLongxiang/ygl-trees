@@ -51,7 +51,7 @@ describe("ActivityTimeline", () => {
   it("defaults to 31 UTC days (today + the server's 30 days back) and names each bucket's scope", () => {
     const d = renderToStaticMarkup(h(ActivityTimeline, { timeline, today }));
     expect((d.match(/<title[ >]/g) ?? []).length).toBe(32); // chart title + 31 day columns
-    expect(d).toContain("最近 30 天（含今天）活动，按 UTC 日");
+    expect(d).toContain("今天 + 前 30 天的活动，按 UTC 日");
     expect(d).toContain(`title="${SERIES_NOTE.eval}"`); // legend item
     expect(SERIES_NOTE.eval).toContain("eval.*");
     expect(SERIES_NOTE.research).toContain("claim.eval");
@@ -104,8 +104,8 @@ describe("OverviewPage", () => {
   });
 
   it("shows the activity timeline (labelled workspace-wide, UTC days) and the task list", () => {
-    expect(html).toContain("最近 30 天活动");
-    expect(html).toContain("全工作区 · UTC 日");
+    expect(html).toContain("活动时间线");
+    expect(html).toContain("今天 + 前 30 天 · 每天事件数 · 全工作区 · UTC 日");
     expect(html).toContain("整理证据");
     expect(html).toContain("已证实断言");
   });
@@ -118,7 +118,7 @@ describe("OverviewPage", () => {
           h(MemoryRouter, null, h(OverviewPage))))
     );
     expect(u).toContain("未选择项目");
-    expect(u).not.toContain("最近 30 天活动");
+    expect(u).not.toContain("活动时间线");
   });
 });
 
