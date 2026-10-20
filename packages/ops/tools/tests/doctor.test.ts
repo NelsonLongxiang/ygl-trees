@@ -124,3 +124,37 @@ describe("doctor relation_orphans 检查（K3 0.106.0）", () => {
     expect(check().status).toBe("pass");
   });
 });
+
+describe("doctor session_identity 检查（K3 0.106.0）", () => {
+  it("无 session 身份 + 多项目 → warn；设置 YGL_SESSION 后消失", async () => {
+    const mod = await import("../src/doctor");
+    const capture = () => {
+      const lines: string[] = [];
+      const origLog = console.log;
+      console.log = (s: string) => lines.push(String(s));
+      try {
+        mod.run({ ctx: { json: true, color: false, quiet: false }, db, store: null } as any, "", [], {});
+        return JSON.parse(lines.join("")) as any[];
+      } finally {
+        console.log = origLog;
+      }
+    };
+    db.run("INSERT INTO projects(id,name,question,status,created,updated) VALUES(?,?,?,?,?,?)", ["p_sid1", "sid-one", "", "active", now, now]);
+    db.run("INSERT INTO projects(id,name,question,status,created,updated) VALUES(?,?,?,?,?,?)", ["p_sid2", "sid-two", "", "active", now, now]);
+    const prevSid = process.env.YGL_SESSION;
+    const prevDsh = process.env.DSH_SESSION_ID;
+    delete process.env.YGL_SESSION;
+    delete process.env.DSH_SESSION_ID;
+    try {
+      const warned = capture().find((c) => c.name === "session_identity");
+      expect(warned?.status).toBe("warn");
+      expect(warned?.detail).toContain("default");
+      process.env.YGL_SESSION = "spec-doctor";
+      expect(capture().find((c) => c.name === "session_identity")).toBeUndefined();
+    } finally {
+      if (prevSid === undefined) delete process.env.YGL_SESSION; else process.env.YGL_SESSION = prevSid;
+      if (prevDsh === undefined) delete process.env.DSH_SESSION_ID; else process.env.DSH_SESSION_ID = prevDsh;
+      db.run("DELETE FROM projects WHERE id IN ('p_sid1','p_sid2')");
+    }
+  });
+});

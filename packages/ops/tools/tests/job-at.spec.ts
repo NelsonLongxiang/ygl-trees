@@ -58,3 +58,19 @@ describe("job add --at", () => {
     expect(r.stdout).toContain("command:  echo hi");
   });
 });
+
+describe("workerSessionId (K3 0.106.0)", () => {
+  it("scopes a job run under its parent session and chains nested workers", async () => {
+    const { workerSessionId } = await import("../src/job-cmds");
+    expect(workerSessionId("job_1", "sess")).toBe("sess/job_1");
+    // a worker that itself ticks another job keeps the whole chain traceable
+    expect(workerSessionId("job_2", "sess/job_1")).toBe("sess/job_1/job_2");
+    const prev = process.env.YGL_SESSION;
+    process.env.YGL_SESSION = "env-sid";
+    try {
+      expect(workerSessionId("job_3")).toBe("env-sid/job_3");
+    } finally {
+      if (prev === undefined) delete process.env.YGL_SESSION; else process.env.YGL_SESSION = prev;
+    }
+  });
+});

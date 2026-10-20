@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.106.0
+
+**选择归属与 worker 隔离**（K3 情报：8 个 verifier 节点落错树的两个残余洞）。无契约形状变更。
+
+- **worker 级 session 身份**：`job tick` 派生作业时注入 `YGL_SESSION=<parent-sid>/<job-id>`
+  （嵌套 worker 续 `/<run-id>`）与 `YGL_JOB_ID`。此前同一 DSH 会话派 N 个并行 worker 共享一个
+  session id，session 级选择（`current_project@<sid>`）互相覆盖；裸 cron/脚本进程则全落在
+  `"default"` 桶。现在每次作业运行都有自己的选择命名空间，父链仍可回溯。
+- **写事件选择归因**：`resolveProject`/`resolveTree` 把解析来源（`flag|env|session|global|only|none`）
+  记入进程上下文；事务写路径的 `events.actor` 改为真实 session id（无则 `cli`），树域对象 payload
+  额外带 `via`——审计上第一次能回答「这次写是显式 `-t`、环境变量、会话选择还是全局遗留指针授权的」。
+  研究域 payload 保持冻结的字符串形态不改（只归因 actor），避免已有审计消费者与测试断言的形状漂移。
+- **`doctor` 两条新警告（warn，不 fail）**：`session_identity`——未设 `YGL_SESSION`/
+  `DSH_SESSION_ID` 且工作区有多个项目时，点名所有进程共享 `"default"` 选择桶的风险；
+  `tree_selection_hygiene`——多树工作区只设置了全局 `current_tree` 指针时，提示并行会话会互相
+  改写的实际路径（`tree use` 或 `-t/--tree` 钉住）。
+- 测试：unit **528 → 531**（`job-at.spec` +1 `workerSessionId` 链、`unlink.spec` +1 归因
+  〔actor=session + 树域 payload `via`〕、`doctor.test` +1 `session_identity`）。
+
 ## 0.105.3
 
 **issue #2 剩余项 + K3 评审五条 NIT**（GitHub `NelsonLongxiang/ygl-trees#2`）。无契约形状变更。

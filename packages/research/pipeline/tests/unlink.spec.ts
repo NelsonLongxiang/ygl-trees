@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { getOrm, closeOrm } from "../../../core/database/src/orm";
 import * as writes from "../src/writes";
+import { resolveProject } from "../../../core/database/src/selection";
 
 let db: DB;
 let dir: string;
@@ -170,5 +171,40 @@ describe("sourceRemove (issue #7)", () => {
     const ev = db.get("SELECT payload FROM events WHERE kind='source.rm' ORDER BY rowid DESC LIMIT 1") as any;
     expect(String(ev.payload)).toContain("cascaded: 1 evidence");
     await closeOrm();
+  });
+});
+
+describe("selection attribution (K3 0.106.0)", () => {
+  it("records actor = session id on writes; tree events also carry the resolved selection layer", async () => {
+    const prevSid = process.env.YGL_SESSION;
+    const prevVia = process.env.YGL_SELECTION_VIA;
+    process.env.YGL_SESSION = "spec-via";
+    db.metaSet("current_project@spec-via", "unlink");
+    let ds: any = null;
+    try {
+      const sel = resolveProject(db);
+      expect(sel.source).toBe("session");
+      expect(process.env.YGL_SELECTION_VIA).toBe("session");
+
+      // research writes log string payloads (frozen shape): only the actor is
+      // attributed there; the tree domain logs object payloads, so `via` rides
+      // along without changing the payload type of existing events.
+      ds = await getOrm(db.path!);
+      const c = await writes.claimAdd(ds, pid, "selection attribution claim");
+      const claimEv = db.get("SELECT actor FROM events WHERE kind='claim.add' AND entity_id=?", [c.row.id]) as any;
+      expect(claimEv.actor).toBe("spec-via");
+
+      const treeWrites = await import("../../../techtree/model/src/writes");
+      const t = await treeWrites.treeCreate(ds, "attr-tree", pid, "");
+      const n = await treeWrites.nodeAdd(ds, t.id, { key: "attr-node" });
+      const nodeEv = db.get("SELECT actor, payload FROM events WHERE kind='node.add' AND entity_id=?", [n.row.id]) as any;
+      expect(nodeEv.actor).toBe("spec-via");
+      expect(String(nodeEv.payload)).toContain('"via":"session"');
+    } finally {
+      if (ds) await closeOrm();
+      if (prevSid === undefined) delete process.env.YGL_SESSION; else process.env.YGL_SESSION = prevSid;
+      if (prevVia === undefined) delete process.env.YGL_SELECTION_VIA; else process.env.YGL_SELECTION_VIA = prevVia;
+      db.run("DELETE FROM meta WHERE key=?", ["current_project@spec-via"]);
+    }
   });
 });

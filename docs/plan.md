@@ -235,6 +235,13 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.106.0 记录（选择归属与 worker 隔离）**：K3 情报把「8 verifier 节点落错树」拆成两个残余洞——`"default"` 桶（无 `YGL_SESSION` 的裸进程共享一个选择命名空间）与 sid 粒度不到 worker（同一 DSH 会话派 N 个 worker 共享 `DSH_SESSION_ID`）。本版各补一半，另加审计归因。
+- **worker 级 sid**：`job-cmds.ts` 的 `execute()` 给子进程注入 `YGL_SESSION=<parent>/<job-id>` 与 `YGL_JOB_ID`；`workerSessionId()` 导出并单测（`sess/job_1`、`sess/job_1/job_2`、`env-sid/job_3`）。作业之间、同作业并发运行之间不再共享 session 选择；父链仍可回指。
+- **选择归因**：`selection.ts` 增 `recordSelectionVia()`/`currentSelectionVia()`/`eventActor()`；`resolveProject`/`resolveTree` 解析后把 source 记入 `YGL_SELECTION_VIA`。事务写路径（research/pipeline 与 techtree/model 的 `logEvent`）`actor` 改 `eventActor()`；树域对象 payload 合并 `via`。**研究域 payload 不改字符串形态**——emit-postcommit 等既有断言把 payload 当冻结文本，形状漂移会破坏审计消费者；因此研究域只归因 actor，树域（payload 本就是对象）才带 via。测试固定这条边界。
+- **doctor 警告**：`session_identity`（sid=default 且多项目）与 `tree_selection_hygiene`（仅全局 `current_tree` 且多树）；均 warn 不 fail——并行共享是合法用法，doctor 只负责让风险可见。
+- **契约 1.2 拆到 0.107.0**：1.2 要动 contract types / prepare / engine / Rust mirror / 语料重冻 / corpus_version，跨实现且需设计评审先行；先出 `docs/verify-contract-v1.2.md` 草案给 K3 与 fdc757f6 过目再实现，不塞进本补丁版。
+- 测试 unit 528→**531**（job-at +1、unlink 归因 +1、doctor +1）；README 计数同步 522→531（此前两版漏更新，非门禁项）。
+
 **0.105.3 记录（issue #2 剩余项 + K3 五条 NIT）**：0.105.2 发布后清尾，无契约形状变更。
 - **#3 原子写**：`verify-cmds.ts writeJson()` 改临时文件 + `renameSync`（同目录），冻结记录要么旧要么新，不存在截断；`graduate --schedule` 的就地重写走这条。测试：graduate 22 例复绿 + 0.105.2 的 verify-cli before-image 断言。
 - **#7 `source rm` 级联**：新增 `writes.sourceRemove(ds, id, force)`——有证据时拒绝并列证据 id；`--force` 事务内逐条解链→重算 claim→删 `evidence_fts`→删证据→删来源→删 `sources_fts`，事件 `source.rm` 带 `cascaded: N evidence, M claim(s)`；CLI 补 project_id 前置校验（旧实现只按 id 查，跨项目可删）。

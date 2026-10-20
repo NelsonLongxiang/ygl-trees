@@ -294,7 +294,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) console.log(JSON.stringify({ pruned: 0, dry_run: true, rows: dangling }, null, 2));
         else {
           head(ctx, `Would prune ${dangling.length} orphan relation(s)`);
-          table(ctx, dangling, ["src", "rel", "dst"], ["src_type", "rel", "dst_type"]);
+          table(
+            ctx,
+            dangling.map((r: any) => ({ src: `${r.src_type}:${r.src_id}`, rel: r.rel, dst: `${r.dst_type}:${r.dst_id}` })),
+            ["src", "rel", "dst"],
+            ["src", "rel", "dst"]
+          );
         }
         return 0;
       }
@@ -309,7 +314,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (ctx.json) console.log(JSON.stringify({ pruned: dangling.length, dry_run: false, rows: dangling }, null, 2));
       else {
         ok(ctx, `pruned ${dangling.length} orphan relation(s)`);
-        table(ctx, dangling, ["src", "rel", "dst"], ["src_type", "rel", "dst_type"]);
+        table(
+          ctx,
+          dangling.map((r: any) => ({ src: `${r.src_type}:${r.src_id}`, rel: r.rel, dst: `${r.dst_type}:${r.dst_id}` })),
+          ["src", "rel", "dst"],
+          ["src", "rel", "dst"]
+        );
       }
       return 0;
     })();

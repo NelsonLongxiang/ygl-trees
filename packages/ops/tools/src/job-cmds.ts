@@ -126,6 +126,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 }
 
+/** Worker-level session id for a job run (K3 0.106.0). The job runner is a
+ *  process boundary: two concurrent runs of one job (or two jobs under one DSH
+ *  session) must not share the parent's session-scoped selection, or their
+ *  writes land wherever the operator last pointed the parent. Nested workers
+ *  keep appending (`<parent>/<job>/<run>`), so the chain stays traceable. */
+export function workerSessionId(jobId: string, parent = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli"): string {
+  return `${parent}/${jobId}`;
+}
+
 function execute(env: Env, job: any): void {
   const { ctx, store } = env;
   const runId = store.jobStart(job.id);
@@ -142,7 +151,7 @@ function execute(env: Env, job: any): void {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 600_000,
-      env: { ...process.env, YGL_SERVE: "1" },
+      env: { ...process.env, YGL_SERVE: "1", YGL_SESSION: workerSessionId(job.id), YGL_JOB_ID: job.id },
     });
     rc = 0;
   } catch (e: any) {

@@ -47,11 +47,37 @@ function byName(db: DB, name: string): string {
   return r?.id ?? "";
 }
 
+/** Last resolution outcome in this process (K3 0.106.0): audit rows record
+ *  which layer authorized a write, so a later reader can tell a bare command
+ *  riding a session key from one riding the global migration pointer. Written
+ *  by resolveProject/resolveTree; absent when a write ran without any selection
+ *  resolution (library callers, tests). */
+export function recordSelectionVia(sel: Selection): Selection {
+  process.env.YGL_SELECTION_VIA = sel.source;
+  return sel;
+}
+
+/** The layer the current process resolved through, if any. */
+export function currentSelectionVia(): SelectionSource | "" {
+  const v = process.env.YGL_SELECTION_VIA;
+  return (v as SelectionSource) || "";
+}
+
+/** Actor identity for audit rows: the session id when the caller has one, so
+ *  two concurrent sessions are distinguishable in `events` (K3 0.106.0). */
+export function eventActor(): string {
+  return process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli";
+}
+
 /**
  * Resolve the effective project for this invocation.
  * `explicit` is the --project/-p flag value when present (source "flag").
  */
 export function resolveProject(db: DB, explicit?: string): Selection {
+  return recordSelectionVia(resolveProjectRaw(db, explicit));
+}
+
+function resolveProjectRaw(db: DB, explicit?: string): Selection {
   if (explicit) return { name: explicit, id: byName(db, explicit), source: "flag" };
   const envName = process.env.YGL_PROJECT;
   if (envName) return { name: envName, id: byName(db, envName), source: "env" };
@@ -68,6 +94,10 @@ export function resolveProject(db: DB, explicit?: string): Selection {
 
 /** Resolve the effective tree. Tree-scoped commands stay lenient (R16.4). */
 export function resolveTree(db: DB, explicit?: string): Selection {
+  return recordSelectionVia(resolveTreeRaw(db, explicit));
+}
+
+function resolveTreeRaw(db: DB, explicit?: string): Selection {
   if (explicit) return { name: explicit, id: "", source: "flag" };
   const envName = process.env.YGL_TREE;
   if (envName) return { name: envName, id: "", source: "env" };

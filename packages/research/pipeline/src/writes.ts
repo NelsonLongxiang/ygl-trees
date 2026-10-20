@@ -19,6 +19,7 @@ import { Claim, Evidence, Query, QuerySource, Source } from "./entities";
 import { Event } from "../../../core/database/src/entities";
 import { contentHash, ngram, nowIso, sha1, shortId } from "../../../core/text/src/text";
 import { ormDialect } from "../../../core/database/src/orm";
+import { currentSelectionVia, eventActor } from "../../../core/database/src/selection";
 // 0.91a (Cordis review direct-032bf3b4): static import — the old
 // `require()`-in-try/catch form silently dies under ESM hosts (vitest),
 // the exact disease M7-3 fixed in database/plugin.ts. The bus is core→core
@@ -69,11 +70,16 @@ async function logEvent(mgr: EntityManager, kind: string, entity: string, entity
   let obj = typeof payload === "string" ? payload : payload ?? "";
   const run = process.env.YGL_RUN_ID || "";
   if (run && typeof obj === "object") obj = { ...obj, run };
+  // K3 0.106.0: which selection layer authorized this write — audit rows should
+  // answer "why this project", not just "what changed". Only recorded when the
+  // command actually resolved a selection (library callers see no field).
+  const via = currentSelectionVia();
+  if (via && typeof obj === "object") obj = { ...(obj as Record<string, unknown>), via };
   const p = typeof obj === "string" ? obj : JSON.stringify(obj);
   await mgr.insert(Event, {
     id: shortId([kind, entity], 12),
     ts: nowIso(),
-    actor: "cli",
+    actor: eventActor(),
     kind,
     entity,
     entityId,

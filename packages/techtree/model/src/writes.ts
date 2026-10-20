@@ -16,6 +16,7 @@ import { ngram, nowIso, shortId } from "../../../core/text/src/text";
 // 0.91a (Cordis review direct-032bf3b4): static import — same ESM-silent-death
 // fix as M7-3 (database/plugin.ts). See research/pipeline/src/writes.ts.
 import { emitEvent, YglEvent } from "../../../core/text/src/eventbus";
+import { currentSelectionVia, eventActor } from "../../../core/database/src/selection";
 
 /** 0.91a: transaction wrapper with post-commit bus flush — the audit-row
  * INSERT stays transactional, the bus emission happens only after commit;
@@ -51,10 +52,13 @@ async function logEvent(
   level: "info" | "warn" | "error" = "info"
 ): Promise<void> {
   const run = process.env.YGL_RUN_ID || "";
-  const body = run ? JSON.stringify({ ...payload, run }) : JSON.stringify(payload ?? {});
+  // K3 0.106.0: record which selection layer authorized the tree write.
+  const via = currentSelectionVia();
+  const enriched = via ? { ...payload, via } : payload;
+  const body = run ? JSON.stringify({ ...enriched, run }) : JSON.stringify(enriched ?? {});
   await mgr.query(
     `INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)`,
-    [shortId([kind, entityId], 12), nowIso(), "cli", kind, "node", entityId, body, level]
+    [shortId([kind, entityId], 12), nowIso(), eventActor(), kind, "node", entityId, body, level]
   );
   // 0.91a: snapshot + transaction-scoped pending bag (see runTx above).
   const snap: YglEvent = { kind, entity: "node", entityId, payload: String(body), ts: new Date().toISOString() };

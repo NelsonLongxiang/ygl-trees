@@ -13,7 +13,7 @@ import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
-import { resolveProject, projectSessionKey, projectCount } from "../../../core/database/src/selection";
+import { resolveProject, projectSessionKey, projectCount, sessionId } from "../../../core/database/src/selection";
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
 import { orphanRelations } from "./rels";
@@ -72,6 +72,33 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       });
     } else if (sel.source !== "none") {
       checks.push({ name: "selection_hygiene", status: "pass", detail: `selection resolves via ${sel.source}` });
+    }
+    // K3 0.106.0: the "default" bucket is the isolation hole that let 8 verifier
+    // nodes land in the wrong tree — every bare process shares it. Warn when a
+    // multi-project workspace is running without any session identity.
+    const sid = sessionId();
+    if (sid === "default" && projectCount(db) > 1) {
+      checks.push({
+        name: "session_identity",
+        status: "warn",
+        detail:
+          "YGL_SESSION/DSH_SESSION_ID unset — every process shares the 'default' selection bucket; " +
+          "parallel agents can flip each other's project/tree. Set YGL_SESSION per worker or pin with -p/-t",
+      });
+    }
+    // Tree side: a lone global 'current_tree' pointer in a multi-tree workspace
+    // is the same class of hazard (tree-scoped writes follow it silently).
+    const treeCount = Number(db.get("SELECT COUNT(*) AS n FROM trees")?.n ?? 0);
+    const treeSessionSet = !!db.metaGet(`current_tree@${sid}`);
+    const treeGlobalSet = !!db.metaGet("current_tree");
+    if (treeCount > 1 && treeGlobalSet && !treeSessionSet) {
+      checks.push({
+        name: "tree_selection_hygiene",
+        status: "warn",
+        detail:
+          "only the global 'current_tree' pointer is set — parallel sessions flipping it move your writes; " +
+          "run 'ygl-trees tree use <name>' per session or pass -t/--tree",
+      });
     }
   }
 
