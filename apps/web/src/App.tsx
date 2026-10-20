@@ -4,9 +4,10 @@
  * still works from any sub-path; webui serve needs no route table.
  */
 import { HashRouter, Link, NavLink, Outlet, Route, Routes } from "react-router";
-import { Alert, Card, Layout, Tag, Typography } from "antd";
+import { Alert, Card, Layout, Typography } from "antd";
 import { useDashboard, DashboardProvider } from "./data";
 import { ThemeProvider, ThemeToggle } from "./theme";
+import { ToneTag } from "./ToneTag";
 import { C } from "./tokens";
 import {
   ArtifactsPage, GraphPage, OverviewPage, PipelinePage, TreePage, VerifyPage,
@@ -29,15 +30,15 @@ function ProjectTag() {
   const { data } = useDashboard();
   if (data?.brief?.project) {
     return (
-      <Tag color="success" style={{ marginInlineEnd: 0 }}>
+      <ToneTag color={C.success} style={{ marginInlineEnd: 0 }}>
         {data.brief.project.name}
         {data.brief.selection_source && (
           <span style={{ opacity: 0.65, marginLeft: 6 }}>· {data.brief.selection_source}</span>
         )}
-      </Tag>
+      </ToneTag>
     );
   }
-  if (data?.unselected) return <Tag color="warning" style={{ marginInlineEnd: 0 }}>未选择项目</Tag>;
+  if (data?.unselected) return <ToneTag color={C.warning} style={{ marginInlineEnd: 0 }}>未选择项目</ToneTag>;
   return null;
 }
 

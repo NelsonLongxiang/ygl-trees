@@ -6,6 +6,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { C } from "./tokens";
+import { useLayoutNodes } from "./flow";
 import { useThemeName } from "./theme";
 
 interface GraphData {
@@ -56,8 +57,8 @@ const nodeTypes = { entity: EntityNode };
 
 export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
   const colorMode = useThemeName();
-  const { nodes, edges } = useMemo(() => {
-    if (!graph?.nodes) return { nodes: [] as Node[], edges: [] as Edge[] };
+  const { layout, edges } = useMemo(() => {
+    if (!graph?.nodes) return { layout: [] as Node[], edges: [] as Edge[] };
 
     // Simple layout: circle for entities grouped by type
     const types = [...new Set(graph.nodes.map((n) => n.type))];
@@ -74,7 +75,7 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
         id: n.id,
         type: "entity" as const,
         position: { x: Math.cos(angle) * r, y: Math.sin(angle) * r },
-        initialWidth: 100, // MiniMap needs a size (see TreeFlow)
+        initialWidth: 100, // first-fit estimate (see TreeFlow)
         initialHeight: 40,
         data: { label: n.label, type: n.type },
       };
@@ -95,13 +96,15 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
       source: e.source,
       target: e.target,
       label: e.label,
-      animated: e.label === "decided-by",
+      animated: false, // DESIGN.md: graph edges are never animated
       style: { stroke: edgeColors[e.label] || C.secondary, strokeWidth: 1.5 },
       labelStyle: { fontSize: 9, fill: C.secondary },
     }));
 
-    return { nodes: ns, edges: es };
+    return { layout: ns, edges: es };
   }, [graph]);
+
+  const [nodes, onNodesChange] = useLayoutNodes(layout, "knowledge-graph");
 
   if (!nodes.length) return null;
 
@@ -110,6 +113,7 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
       <ReactFlow
         colorMode={colorMode}
         nodes={nodes}
+        onNodesChange={onNodesChange}
         edges={edges}
         nodeTypes={nodeTypes}
         fitView

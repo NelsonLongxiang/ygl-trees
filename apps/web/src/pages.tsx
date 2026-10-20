@@ -11,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import { useDashboard } from "./data";
 import { C, statColors } from "./tokens";
+import { ToneTag } from "./ToneTag";
 
 const TreeFlow = lazy(() => import("./TreeFlow"));
 const Artifacts = lazy(() => import("./Artifacts"));
@@ -72,9 +73,9 @@ function UnselectedNotice() {
 }
 
 const TASK_STATUS: Record<string, { color: string; label: string }> = {
-  todo: { color: "default", label: "待办" },
-  doing: { color: "processing", label: "进行中" },
-  done: { color: "success", label: "已完成" },
+  todo: { color: C.secondary, label: "待办" },
+  doing: { color: C.primary, label: "进行中" },
+  done: { color: C.success, label: "已完成" },
 };
 
 export function OverviewPage() {
@@ -144,7 +145,7 @@ export function OverviewPage() {
                 onFilter: (value, record) => record.status === value,
                 render: (s: string) => {
                   const c = TASK_STATUS[s] || TASK_STATUS.todo;
-                  return <Tag color={c.color}>{c.label}</Tag>;
+                  return <ToneTag color={c.color}>{c.label}</ToneTag>;
                 },
               },
               {

@@ -7,9 +7,9 @@
  * - 构造追溯是**只读审计面**：没有 ✓/✗ 按钮，判定链上没有人工确认。
  * - 报告看板把 FAIL / NEEDS-MATERIAL 的例外项置顶——它们是工作清单，不是统计数字。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, List, message as antdMessage, Space, Table, Tabs, Tag, Typography, Upload,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, Listy, message as antdMessage, Space, Table, Tabs, Tag, Typography, Upload,
 } from "antd";
 
 import type {
@@ -20,6 +20,7 @@ import {
   submitVerifyMaterial, uploadVerifyBlob,
 } from "./api";
 import { C } from "./tokens";
+import { ToneTag } from "./ToneTag";
 
 const { Text, Paragraph } = Typography;
 
@@ -32,8 +33,36 @@ const verdictColor: Record<string, string> = {
 
 function VerdictTag({ verdict }: { verdict: string }) {
   // outlined word + color (DESIGN.md: color is reinforcement, never a filled chip with white text)
-  const c = verdictColor[verdict] ?? C.secondary;
-  return <Tag style={{ color: c, borderColor: c, background: "transparent" }}>{verdict || "—"}</Tag>;
+  return <ToneTag color={verdictColor[verdict] ?? C.secondary}>{verdict || "—"}</ToneTag>;
+}
+
+/** A selectable row in the verifier's lists: click or Enter/Space picks it, aria-current marks the pick. */
+function SelectRow({ selected, onSelect, children }: { selected: boolean; onSelect: () => void; children: ReactNode }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-current={selected || undefined}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      style={{
+        cursor: "pointer",
+        padding: "8px 12px",
+        borderRadius: "var(--radius-sm)",
+        borderBottom: `1px solid ${C["border-dim"]}`,
+        // DESIGN.md states: selected = primary stroke; hover tint carries the row
+        background: selected ? C["surface-hover"] : undefined,
+        boxShadow: selected ? `inset 0 0 0 1px ${C.primary}` : undefined,
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 function MaterialForm() {
@@ -75,7 +104,7 @@ function MaterialForm() {
           <Input.TextArea rows={8} placeholder="例：本期账单覆盖 7 月 1 日至 7 月 31 日，共 3 单，合计 4,412.50 元；报价基准见财务 6 月 30 日邮件。" />
         </Form.Item>
         <Form.Item label="附件" extra="xlsx / png / pdf / zip 等原始文件；服务端按内容算 sha256 并全局去重，同一份文件重复上传不占第二份磁盘。">
-          <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={6} style={{ width: "100%" }}>
             <Upload
               multiple
               showUploadList
@@ -99,7 +128,7 @@ function MaterialForm() {
               <Button loading={uploading}>选择文件并上传</Button>
             </Upload>
             {refs.length > 0 && (
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 {refs.map((r) => (
                   <Text key={r.sha256} type="secondary">
                     · {r.name} — <Text code>{r.sha256.slice(0, 12)}…</Text>
@@ -116,9 +145,9 @@ function MaterialForm() {
           <Alert
             type="success"
             showIcon
-            message={`material_id = ${saved.material_id}`}
+            title={`material_id = ${saved.material_id}`}
             description={
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <Text code>text_sha256 = {saved.text_sha256}</Text>
                 <Text type="secondary">附件 {saved.files?.length ?? 0} 个（已入内容寻址仓）</Text>
               </Space>
@@ -161,7 +190,7 @@ function TraceView() {
     {
       title: "翻译出的检查器",
       render: (_: unknown, r: VerifySpecDetail["spec"]["vu"][number]) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text code>{r.checker?.type ?? "?"}</Text>
           {r.checker?.mode ? <Text type="secondary">compare: {String(r.checker.mode)}</Text> : null}
         </Space>
@@ -170,7 +199,7 @@ function TraceView() {
     {
       title: "判据原文",
       render: (_: unknown, r: VerifySpecDetail["spec"]["vu"][number]) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Paragraph style={{ margin: 0 }} ellipsis={{ rows: 2, expandable: true, symbol: "展开" }}>
             {r.source_clause ?? ""}
           </Paragraph>
@@ -184,19 +213,16 @@ function TraceView() {
     <Space align="start" size={16} style={{ width: "100%", alignItems: "flex-start" }}>
       <Card size="small" title="规范" style={{ width: 280, flex: "0 0 280px" }}>
         {loadErr ? (
-          <Alert type="error" showIcon message="规范清单加载失败" description={<Text code>{loadErr}</Text>} />
+          <Alert type="error" showIcon title="规范清单加载失败" description={<Text code>{loadErr}</Text>} />
         ) : specs.length === 0 ? (
           <Empty description="还没有规范" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <List
-            size="small"
-            dataSource={specs}
-            renderItem={(s) => (
-              <List.Item
-                style={{ cursor: "pointer", background: s.spec_id === selected ? C["border-dim"] : undefined }}
-                onClick={() => setSelected(s.spec_id)}
-              >
-                <Space direction="vertical" size={0}>
+          <Listy
+            items={specs}
+            rowKey="spec_id"
+            itemRender={(s) => (
+              <SelectRow selected={s.spec_id === selected} onSelect={() => setSelected(s.spec_id)}>
+                <Space orientation="vertical" size={0}>
                   <Text strong>{s.title || s.spec_id}</Text>
                   <Text type="secondary">
                     v{s.spec_version} · {s.units} 判据 · {s.runs} 次运行
@@ -205,7 +231,7 @@ function TraceView() {
                     {s.verdict ? `构造：${s.verdict}` : "构造：—"} {s.last_overall ? `· 最近：${s.last_overall}` : ""}
                   </Text>
                 </Space>
-              </List.Item>
+              </SelectRow>
             )}
           />
         )}
@@ -214,11 +240,11 @@ function TraceView() {
         {!detail ? (
           <Card size="small"><Empty description="选择左侧规范查看构造追溯" image={Empty.PRESENTED_IMAGE_SIMPLE} /></Card>
         ) : (
-          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert
               type="info"
               showIcon
-              message="只读审计面"
+              title="只读审计面"
               description="这里展示 prepare 的产物（判据↔检查器↔自审结论），用于事后复核；判定链上没有人工确认按钮。"
             />
             <Card size="small" title="材料原文（专家提交的一段话）">
@@ -232,7 +258,7 @@ function TraceView() {
                 <Descriptions.Item label="被拒">{detail.prepare?.rejected?.length ?? 0}</Descriptions.Item>
               </Descriptions>
               {(detail.prepare?.rejected?.length ?? 0) > 0 && (
-                <Space direction="vertical" size={4} style={{ marginTop: 8 }}>
+                <Space orientation="vertical" size={4} style={{ marginTop: 8 }}>
                   {detail.prepare!.rejected!.map((r, i) => (
                     <Text key={i} type="secondary">· [{r.stage}] {r.reason}</Text>
                   ))}
@@ -276,39 +302,36 @@ function ReportBoard() {
   const exceptionIds = new Set(exceptions.map((e) => e.vu));
 
   return (
-    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Card size="small" title="运行记录">
         {loadErr ? (
-          <Alert type="error" showIcon message="运行记录加载失败" description={<Text code>{loadErr}</Text>} />
+          <Alert type="error" showIcon title="运行记录加载失败" description={<Text code>{loadErr}</Text>} />
         ) : rows.length === 0 ? (
           <Empty description="还没有运行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <List
-            size="small"
-            dataSource={rows}
-            renderItem={(r) => (
-              <List.Item
-                style={{ cursor: "pointer", background: r.run_id === selected ? C["border-dim"] : undefined }}
-                onClick={() => setSelected(r.run_id)}
-                actions={[
-                  <Text key="s" type="secondary">
+          <Listy
+            items={rows}
+            rowKey="run_id"
+            itemRender={(r) => (
+              <SelectRow selected={r.run_id === selected} onSelect={() => setSelected(r.run_id)}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <Space orientation="vertical" size={0} style={{ flex: 1, minWidth: 0 }}>
+                    <Text strong>{r.run_id}</Text>
+                    <Text type="secondary">{r.spec_id} v{r.spec_version} · {r.mode} · {r.finished}</Text>
+                  </Space>
+                  <Text type="secondary">
                     {r.summary.pass}✓ {r.summary.fail}✗ {r.summary.needs_material}? {r.summary.error}! · 归档 {r.archived}
-                  </Text>,
-                  <VerdictTag key="v" verdict={r.overall} />,
-                ]}
-              >
-                <List.Item.Meta
-                  title={<Text strong>{r.run_id}</Text>}
-                  description={<Text type="secondary">{r.spec_id} v{r.spec_version} · {r.mode} · {r.finished}</Text>}
-                />
-              </List.Item>
+                  </Text>
+                  <VerdictTag verdict={r.overall} />
+                </div>
+              </SelectRow>
             )}
           />
         )}
       </Card>
       {detail && (
         <Card size="small" title="报告">
-          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
             <Space wrap>
               <VerdictTag verdict={detail.report.overall} />
               <Text>{detail.report.reason}</Text>
@@ -333,7 +356,7 @@ function ReportBoard() {
               <Alert
                 type="warning"
                 showIcon
-                message={`处置清单：${exceptions.length} 项`}
+                title={`处置清单：${exceptions.length} 项`}
                 description={exceptions.map((e) => `${e.vu}（${e.severity ?? "?"}，${e.row_count ?? 0} 行）`).join(" · ")}
               />
             )}
@@ -349,7 +372,7 @@ function ReportBoard() {
                 {
                   title: "证据 / trace",
                   render: (_: unknown, r: VerifyReportDetail["report"]["vu"][number]) => (
-                    <Space direction="vertical" size={0}>
+                    <Space orientation="vertical" size={0}>
                       {r.evidence ? (
                         <Text code style={{ fontSize: 12 }}>
                           {JSON.stringify(r.evidence).slice(0, 160)}
