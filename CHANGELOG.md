@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.103.0
+
+**M13-3 毕业通道**：把「一次性验证」升级为「常驻检查」——`verify graduate`（`packages/ops/tools/src/graduate.ts`）。无契约形状变更（`contract_version` / `corpus_version` 仍 1.1）。
+
+- **三段拆**：①**资格**＝同一 `spec_version`、最近 `--min-runs`（默认 3）份报告全部 `overall=PASS`、首末跨度 ≥ `--min-span-days`（默认 30 天）。**跨 spec_version 不算连续**——判据本身变了，"历史最好成绩"不成立。拒绝时逐条点名（缺几条、哪条不是 PASS、跨度差多少天），rc=1 且**不落盘**。
+- **毕业记录冻结**：`$YGL_HOME/verify/graduations/<spec_id>.json` 写 `{spec_id, spec_version, run_ids, thresholds, span_days, data_source, created}`。同核心内容重跑回 `duplicate:true`（保留首次 `created`）；不同形状**拒绝覆盖**并给出 `delete <path> deliberately` 的显式指引——冻结记录不可被重跑改写（与 prepare「成功记录不被失败补跑冲掉」同一纪律）。
+- **常驻执行**：默认只打印命令串（JSON 的 `job_command`），`--schedule --every <min>` 才真的登记作业（`job add`）；命令串固定带 `--no-archive`（趋势看 `reports/`，不看归档数量）。`<source>` 取毕业报告 `data_source.source`。
+- **patrol 化边界**：`--patrol` 只在「被验库 == 工作区库」时放行，否则点名拒绝——`patrol run` 在工作区库上跑 SQL 而 VU 判的是被验快照，生成半对的检查比没有检查更危险。0.103.0 **只做资格闸门**，不自动生成 patrol check。
+- **r25 收口（评审 302cb119，3 个 P2 必修 + P3 记账）**：①跨度闸门不再真空——`--min-span-days > 0` 时必须 ≥2 份报告，`--min-runs 1` + 单份 PASS 不再以 span=0 混过；②报告来源是 `blob:<sha12>`（HTTP 作业面内容寻址）时**不能当 `--db`**——`job_command` 打占位符、`--schedule` 拒绝登记，除非 `--db <file>` 显式覆盖，否则作业每分钟 ENOENT 失败；③文档把「`--patrol` 交 patrol add」订正为「0.103.0 只做资格闸门」。另收：`history` 摘要（同版本总数/非 PASS 数/最近一条非 PASS）、跨度窗口右移写进文档、响应一律回冻结阈值、`--schedule` 的用法校验提前到落盘之前（旧实现 rc=2 却已冻结记录）、被取代与记录错误分开提示。
+- rc 语义与 verify 组一致：0=已毕业/duplicate，1=资格不够或运行错误，2=用法错误（缺 spec-id、`--min-runs` 非正整数、`--schedule` 缺 `--every`）。
+- 测试 unit **483**（+20：`graduate.spec.ts` 10——资格/缺报告/FAIL/跨度/跨版本隔离/缺 spec/冻结幂等/拒绝覆盖/命令串/patrol 边界；CLI 5——缺参数 rc=2、未知 spec rc=1、资格不够→够格→duplicate 全链、`--schedule` 缺 `--every` rc=2 且不冻结、blob 来源拒绝登记而 `--db` 覆盖后放行，各自用独立 `YGL_HOME` 不污染共享夹具）/ Rust 31 / demo 128 / contract 100 / readme 54。
+- 文档：`docs/spec-validator.md` §9 毕业通道补「已实现（0.103.0）」语义；`docs/verify-contract.md` §4.7 收 r24 三条口径——①`attempts[].file`=目录内文件名 / HTTP `record`=spec 目录相对 / CLI `record`=verify 根相对，**三个基准不同**；②小数秒 >3 位静默截断到毫秒；③有意保留的宽容边界（纯日期按 UTC、偏移 ±23:59）与「拒小写 t/z、闰秒、基本格式」显式写明。
+
 ## 0.102.4
 
 **r23 收口**（评审 302cb119：0.102.3 PASS，留 1 P2 + P3×5）——无契约形状变更，全部是把「口径」收紧到可对质。

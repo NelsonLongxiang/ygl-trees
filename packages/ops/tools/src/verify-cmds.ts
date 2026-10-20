@@ -16,6 +16,8 @@ import { basename, dirname, join, relative, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
 import type { Env } from "../../../core/database/src/types";
+import { getOrm } from "../../../core/database/src/orm";
+import * as writes from "../../../research/pipeline/src/writes";
 import { bad, C, out, paint, table } from "../../../core/text/src/fmt";
 import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
@@ -28,6 +30,7 @@ import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
+import { checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 
@@ -306,6 +309,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach"],
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version"],
   run: ["db", "submission", "no-archive"],
+  graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
   trace: [],
@@ -634,6 +638,116 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         })
         .catch((e: any): number => {
           bad(ctx, `run failed: ${e?.message || e}`);
+          return 1;
+        });
+    }
+
+    case "graduate": {
+      const specId = rest[0];
+      if (!specId) {
+        bad(ctx, "usage: verify graduate <spec-id> [--min-runs N] [--min-span-days DAYS] [--every MIN --schedule] [--db <source>] [--patrol]");
+        return 2;
+      }
+      const thresholds = {
+        min_runs: args.flags["min-runs"] ? Number(args.flags["min-runs"]) : 3,
+        min_span_days: args.flags["min-span-days"] ? Number(args.flags["min-span-days"]) : 30,
+      };
+      if (!Number.isInteger(thresholds.min_runs) || thresholds.min_runs < 1) {
+        bad(ctx, "--min-runs must be a positive integer");
+        return 2;
+      }
+      if (!Number.isFinite(thresholds.min_span_days) || thresholds.min_span_days < 0) {
+        bad(ctx, "--min-span-days must be a non-negative number");
+        return 2;
+      }
+      const every = args.flags.every ? Number(args.flags.every) : 0;
+      const wantSchedule = args.flags.schedule === true;
+      // 用法错误必须先于任何落盘（r25 P3①：旧实现先冻结记录再报 --every 缺失，rc=2 却已写盘）。
+      if (wantSchedule && (!Number.isInteger(every) || every < 1)) {
+        bad(ctx, "--schedule needs --every <minutes> (>= 1)");
+        return 2;
+      }
+      let el;
+      try {
+        el = checkEligibility(env, specId, thresholds);
+      } catch (e: any) {
+        bad(ctx, e instanceof GraduationError ? e.message : `graduate failed: ${e?.message || e}`);
+        return 1;
+      }
+      const patrol = args.flags.patrol === true;
+      if (!el.ok) {
+        // 拒绝时点名每一条不满足的条件——毕业不是"再跑一次试试"，是"条件够了才毕业"。
+        bad(ctx, `not eligible for graduation: ${el.reasons.join("; ")}`);
+        return 1;
+      }
+      if (patrol) {
+        const pe = patrolEligibility(env, el.data_source);
+        if (!pe.ok) {
+          bad(ctx, `cannot graduate to patrol: ${pe.reason}`);
+          return 1;
+        }
+      }
+      const dbOverride = args.flags.db ? String(args.flags.db) : null;
+      const cmd = jobCommand(specId, el.data_source?.source ?? null, dbOverride);
+      // 来源不可直接执行（blob:<sha12> 或空）时不能登记作业——否则作业每分钟 ENOENT 失败，
+      // 而毕业记录已经冻在那儿（r25 P2-2）。
+      if (wantSchedule && !cmd.usable) {
+        bad(
+          ctx,
+          `cannot schedule: the verified source is not an executable --db (${el.data_source?.source ?? "none"}); ` +
+            `pass --db <snapshot.sqlite> to choose the recurring database`,
+        );
+        return 1;
+      }
+      let written;
+      try {
+        written = writeGraduation(env, el, thresholds);
+      } catch (e: any) {
+        bad(ctx, e instanceof GraduationError ? e.message : `graduate failed: ${e?.message || e}`);
+        return 1;
+      }
+      const record = written.record; // 响应一律回冻结值，不回请求值（r25 Q2 / P3②）
+      const payload: Record<string, unknown> = {
+        graduated: true,
+        duplicate: written.duplicate,
+        spec_id: el.spec_id,
+        spec_version: el.spec_version,
+        run_ids: record.run_ids,
+        span_days: record.span_days,
+        thresholds: record.thresholds,
+        history: record.history,
+        record: written.path,
+        job_command: cmd.command,
+        job_command_usable: cmd.usable,
+        patrol: patrol ? "eligible" : "not-requested",
+      };
+      const emit = (jobRow?: { id?: string; every?: number }): number => {
+        if (jobRow) {
+          payload.job_id = jobRow.id;
+          payload.job_every_minutes = jobRow.every ?? every;
+        }
+        if (ctx.json) {
+          console.log(JSON.stringify(payload, null, 2));
+          return 0;
+        }
+        out(ctx, `  ✓ ${written.duplicate ? "already graduated" : "graduated"}: ${el.spec_id} v${el.spec_version}  (${record.run_ids.length} run(s), span ${record.span_days}d)`);
+        out(ctx, `  history: ${record.history.reports_same_version} report(s) at this version, ${record.history.non_pass} non-PASS${record.history.last_non_pass ? ` (last: ${record.history.last_non_pass.run_id}=${record.history.last_non_pass.overall})` : ""}`);
+        out(ctx, paint(C.dim, `  record: ${written.path}`, ctx.color));
+        if (jobRow) out(ctx, paint(C.dim, `  scheduled: job ${jobRow.id} every ${payload.job_every_minutes} min`, ctx.color));
+        else if (!cmd.usable) out(ctx, paint(C.yellow, `  note: source ${el.data_source?.source ?? "none"} is not an executable --db; pass --db <file> to register a job`, ctx.color));
+        else out(ctx, paint(C.dim, `  next: job add "verify ${specId}" --every ${every || "<min>"} -- ${cmd.command}`, ctx.color));
+        return 0;
+      };
+      if (!wantSchedule) return emit();
+      const title = `verify ${specId}`;
+      return getOrm(env.db.path)
+        .then((ds) => writes.jobAdd(ds, { title, command: cmd.command, every, at: "", force: false }))
+        .then((job: any): number => {
+          const row = job?.row ?? job;
+          return emit({ id: row?.id, every: row?.every_minutes ?? row?.every });
+        })
+        .catch((e: any): number => {
+          bad(ctx, `cannot schedule: ${e?.message || e}`);
           return 1;
         });
     }
@@ -1056,7 +1170,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `unknown verify action: ${action}`);
         return 2;
       }
-      out(ctx, "usage: verify submit|prepare|run|register|list|report|report import|trace|export|archive|archive verify|self-check");
+      out(ctx, "usage: verify submit|prepare|run|graduate|register|list|report|report import|trace|export|archive|archive verify|self-check");
       return 0;
     }
   }

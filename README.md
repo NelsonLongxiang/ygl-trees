@@ -127,7 +127,7 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 - **Cordis 服务化 + 事件桥真修（0.86）**：evalClaim/assessEvidence/semanticRank 进 `ctx.ops` 服务（域包不再跨包 require 运维实现，eval 网关统一入口）；零消费壳服务（ctx.techtree/ctx.webApp）删除，base bundle 收敛为 database/ops/research/timer；WebUI SSE 改走 Cordis 公共通道 `ctx.on("ygl")`（事件驱动 + 轮询降级）；**事件桥 ESM 静默死亡缺陷根治**——桥原用 require() 包 try/catch，ESM 宿主下 ReferenceError 被静默吞、桥直接死亡，改静态 import 后桥链有了单测防线；kind 专用通道从 11 种硬编码清单改为动态桥接（`ygl:<kind>`），不再静默丢弃清单外事件
 - **研究管线视图 + 视觉 token 单源化（0.92）**：WebUI 管线视图 React 重建（0.88 退役的 HTML 实现正式接替）——断言按状态四列水流（已证实/有争议/未验证/已反驳），claim 卡状态色左沿 + 证据折叠列表（stance 着色 + 引文摘录），渲染验证测试锁面；视觉 identity 单源化——DESIGN.md 为唯一调色板真相源，antd 主题/统计卡/知识图谱（含服务端色板）全走 token，漂移守卫 ×7 解析 DESIGN.md 断言两面一致，改色只能从 DESIGN.md 起改
 
-- **spec-validator 验证器（0.96 → 0.102）**：把「业务规范」变成可执行的验证器——业务专家交一段话+附件，agent 构造判据（`prepare` P0–P5 含盲审与红队），引擎跑七型检查器（sql/sql-pair/count/exists/file/command/agent）出报告，**判定链上没有人工确认**（构造追溯视图只读审计）。契约（`docs/verify-contract.md`）与黄金语料钉 `contract_version 1.1` / `corpus_version 1.1`，TS 引擎与 Rust 单二进制 `yglverify`（`rust/yglverify/`）**整份报告逐字节 parity**（33 例语料机械门）；`--draft` 无损试跑、`file` 检查支持 `ignore` 排除集、归档包（确定性 zip + `archive verify` 全链重算）、`verify self-check`（六环自校验）、封包形态（spec 内嵌 + footer v1 + **ed25519 签名 + 认表不认报文**；发布物应要求 signed 登记）。CLI 命令族：`verify submit/prepare/run/report/trace/archive/register/signature/self-check`；WebUI 三视图（0.100.0 起，0.101.0 接附件上传，0.102.0 起作业式 `prepare`/`run` HTTP 端点由 `webui serve --enable-verify-jobs` 打开、默认 403）：材料提交 / 构造追溯 / 报告看板（`/api/verify/*`）
+- **spec-validator 验证器（0.96 → 0.103）**：把「业务规范」变成可执行的验证器——业务专家交一段话+附件，agent 构造判据（`prepare` P0–P5 含盲审与红队），引擎跑七型检查器（sql/sql-pair/count/exists/file/command/agent）出报告，**判定链上没有人工确认**（构造追溯视图只读审计）。契约（`docs/verify-contract.md`）与黄金语料钉 `contract_version 1.1` / `corpus_version 1.1`，TS 引擎与 Rust 单二进制 `yglverify`（`rust/yglverify/`）**整份报告逐字节 parity**（33 例语料机械门）；`--draft` 无损试跑、`file` 检查支持 `ignore` 排除集、归档包（确定性 zip + `archive verify` 全链重算）、`verify self-check`（六环自校验）、封包形态（spec 内嵌 + footer v1 + **ed25519 签名 + 认表不认报文**；发布物应要求 signed 登记）。CLI 命令族：`verify submit/prepare/run/graduate/report/trace/archive/register/signature/self-check`（`graduate` = 资格冻结 + 常驻检查，0.103.0）；WebUI 三视图（0.100.0 起，0.101.0 接附件上传，0.102.0 起作业式 `prepare`/`run` HTTP 端点由 `webui serve --enable-verify-jobs` 打开、默认 403）：材料提交 / 构造追溯 / 报告看板（`/api/verify/*`）
 **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 
 ---
@@ -308,7 +308,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 463 例) + demo（128 条断言）+ contract:audit（100 项）
+pnpm test          # 四段制回归：build + unit (vitest 483 例) + demo（128 条断言）+ contract:audit（100 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node benchmarks/bench.js --quick   # 缩小规模快速跑

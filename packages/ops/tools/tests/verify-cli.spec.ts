@@ -87,6 +87,176 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect((JSON.parse(r.out) as { error: string }).error).toMatch(/spec not found|not found/i);
   });
 
+  it("graduate 缺 spec-id → rc=2（用法错误，不是「资格不够」）", () => {
+    const r = run(["verify", "graduate", "--json"]);
+    expect(r.rc).toBe(2);
+    expect((JSON.parse(r.out) as { error: string }).error).toMatch(/usage: verify graduate/);
+  });
+
+  it("graduate 未知 spec → rc=1 且点名（不写空记录）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad-"));
+    try {
+      expect(run(["db", "init"], { YGL_HOME: ghome }).rc).toBe(0); // 独立 home 先建库（无库时任何组都 rc=2）
+      const r = run(["verify", "graduate", "spec_nope", "--json"], { YGL_HOME: ghome });
+      expect(r.rc).toBe(1);
+      expect((JSON.parse(r.out) as { error: string }).error).toMatch(/spec not found: spec_nope/);
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
+  it("graduate 资格不够时逐条点名，够格后冻结记录且重跑 duplicate（M13-3）", () => {
+    // 独立 YGL_HOME：这个用例故意只造「够格的最小形状」，不能污染共享 home 的其他读命令断言。
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_grad");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_grad", spec_version: 2 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const put = (id: string, finished: string, overall: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({
+            run_id: id,
+            spec_id: "spec_grad",
+            finished,
+            overall,
+            verifier: { spec_version: 2 },
+            data_source: { kind: "sqlite-snapshot", source: join(ghome, "billing.sqlite") },
+          }),
+          "utf8",
+        );
+      put("run_a", "2026-09-01T00:00:00.000Z", "PASS");
+
+      const short = run(["verify", "graduate", "spec_grad", "--json"], env);
+      expect(short.rc).toBe(1);
+      expect((JSON.parse(short.out) as { error: string }).error).toMatch(/need 3 report\(s\).*found 1/);
+      expect(existsSync(join(ghome, "verify", "graduations", "spec_grad.json"))).toBe(false);
+
+      put("run_b", "2026-09-20T00:00:00.000Z", "PASS");
+      put("run_c", "2026-10-11T00:00:00.000Z", "PASS");
+      const ok = run(["verify", "graduate", "spec_grad", "--json"], env);
+      expect(ok.rc).toBe(0);
+      const body = JSON.parse(ok.out) as {
+        graduated: boolean;
+        duplicate: boolean;
+        run_ids: string[];
+        span_days: number;
+        job_command: string;
+        record: string;
+      };
+      expect(body.graduated).toBe(true);
+      expect(body.duplicate).toBe(false);
+      expect(body.run_ids).toEqual(["run_c", "run_b", "run_a"]);
+      expect(body.span_days).toBe(40);
+      expect(body.job_command).toBe(`ygl-trees verify run spec_grad --db "${join(ghome, "billing.sqlite")}" --no-archive`);
+      expect(existsSync(join(ghome, "verify", "graduations", "spec_grad.json"))).toBe(true);
+
+      const again = run(["verify", "graduate", "spec_grad", "--json"], env);
+      expect(again.rc).toBe(0);
+      expect((JSON.parse(again.out) as { duplicate: boolean }).duplicate).toBe(true);
+
+      const patrol = run(["verify", "graduate", "spec_grad", "--patrol", "--json"], env);
+      expect(patrol.rc).toBe(1);
+      expect((JSON.parse(patrol.out) as { error: string }).error).toMatch(
+        /patrol graduation needs the verified database to be the workspace database/,
+      );
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
+  it("graduate --schedule 缺 --every 是用法错误，且不冻结记录（r25 P3①）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad2-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_sched");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_sched", spec_version: 1 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const put = (id: string, finished: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({
+            run_id: id,
+            spec_id: "spec_sched",
+            finished,
+            overall: "PASS",
+            verifier: { spec_version: 1 },
+            data_source: { kind: "sqlite-snapshot", source: join(ghome, "billing.sqlite") },
+          }),
+          "utf8",
+        );
+      put("rs_a", "2026-09-01T00:00:00.000Z");
+      put("rs_b", "2026-09-20T00:00:00.000Z");
+      put("rs_c", "2026-10-11T00:00:00.000Z");
+
+      const r = run(["verify", "graduate", "spec_sched", "--schedule", "--json"], env);
+      expect(r.rc).toBe(2);
+      expect((JSON.parse(r.out) as { error: string }).error).toMatch(/--schedule needs --every/);
+      expect(existsSync(join(ghome, "verify", "graduations", "spec_sched.json"))).toBe(false);
+
+      const ok = run(["verify", "graduate", "spec_sched", "--every", "120", "--schedule", "--json"], env);
+      expect(ok.rc).toBe(0);
+      const body = JSON.parse(ok.out) as { job_id: string; job_every_minutes: number; thresholds: { min_span_days: number } };
+      expect(typeof body.job_id).toBe("string");
+      expect(body.job_every_minutes).toBe(120);
+      expect(body.thresholds.min_span_days).toBe(30);
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
+  it("graduate --schedule 拒绝内容寻址来源，--db 覆盖后才登记（r25 P2-2）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad3-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_blob");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_blob", spec_version: 1 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const put = (id: string, finished: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({
+            run_id: id,
+            spec_id: "spec_blob",
+            finished,
+            overall: "PASS",
+            verifier: { spec_version: 1 },
+            data_source: { kind: "sqlite-snapshot", sha256: "b".repeat(64), source: "blob:0123456789ab" },
+          }),
+          "utf8",
+        );
+      put("rb_a", "2026-09-01T00:00:00.000Z");
+      put("rb_b", "2026-09-20T00:00:00.000Z");
+      put("rb_c", "2026-10-11T00:00:00.000Z");
+
+      const refused = run(["verify", "graduate", "spec_blob", "--every", "60", "--schedule", "--json"], env);
+      expect(refused.rc).toBe(1);
+      expect((JSON.parse(refused.out) as { error: string }).error).toMatch(/not an executable --db/);
+      expect(existsSync(join(ghome, "verify", "graduations", "spec_blob.json"))).toBe(false);
+
+      const overridden = run(
+        ["verify", "graduate", "spec_blob", "--db", join(ghome, "live.sqlite"), "--every", "60", "--schedule", "--json"],
+        env,
+      );
+      expect(overridden.rc).toBe(0);
+      const body = JSON.parse(overridden.out) as { job_command: string; job_command_usable: boolean };
+      expect(body.job_command_usable).toBe(true);
+      expect(body.job_command).toContain(`--db "${join(ghome, "live.sqlite")}"`);
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
   it("list 空工作区 → rc=0 空数组（读命令的 JSON 纯净）", () => {
     const r = run(["verify", "list", "--json"]);
     expect(r.rc).toBe(0);

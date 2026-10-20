@@ -2,12 +2,12 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-20T01:57:08.929Z",
+  "measured_at": "2026-10-20T03:09:51.042Z",
   "metrics": {
     "bundle_bytes": {
-      "value": 611503,
+      "value": 624179,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-20T01:57:06.209Z"
+      "measured_at": "2026-10-20T03:01:27.136Z"
     },
     "web_dist_bytes": {
       "value": 1369836,
@@ -15,9 +15,9 @@
       "measured_at": "2026-10-19T21:39:39.170Z"
     },
     "cold_start_ms": {
-      "value": 455,
+      "value": 493,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-10-19T20:12:32.398Z"
+      "measured_at": "2026-10-20T03:09:51.041Z"
     }
   }
 }

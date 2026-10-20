@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.102.4
+version: 0.103.0
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
@@ -121,6 +121,24 @@ ygl-trees verify self-check --no-cases       # 只跑前四环（无内核环境
 网关边界如实：jev 只回布尔概率、不产锚点引文，喂不进 `ReviewRunner`——agent 型 VU 在 HTTP 面仍
 ERROR/NEEDS-MATERIAL，要 agent 型就自己实现带引文的 reviewer 走 CLI 注入。
 
+## 7b. 毕业通道（0.103.0）
+
+一次性验证只证明「当时对」，常驻检查才证明「一直对」。`verify graduate` 把资格冻结 + 绑定调度：
+
+```bash
+ygl-trees verify graduate spec_xxx                            # 只看资格（默认 3 份连续 PASS、跨度 ≥30 天）
+ygl-trees verify graduate spec_xxx --min-runs 5 --min-span-days 14
+ygl-trees verify graduate spec_xxx --every 1440 --schedule    # 真的登记作业（每天跑一次）
+ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 == 工作区库
+```
+
+- 资格：同一 `spec_version`、最近 N 份报告全 `overall=PASS`、首末跨度 ≥ M 天。**跨版本不算连续**；拒绝时逐条点名（rc=1，不落盘）。
+- 冻结：`$YGL_HOME/verify/graduations/<spec_id>.json`；同核心重跑 `duplicate:true`（保留首次 `created`），不同形状**拒绝覆盖**（要改必须显式删文件）。
+- 执行：`job_command` 固定 `ygl-trees verify run <spec> --db "<source>" --no-archive`，`<source>` 取毕业报告 `data_source.source`；`--schedule` 才登记，默认只打印。
+- `--patrol` 只在「被验库 == 工作区库」放行——patrol 跑工作区库、VU 判被验快照，库不对源时生成半对的检查更危险。
+- 历史摘要：记录与 JSON 带 `history {reports_same_version, non_pass, last_non_pass}`——资格只看最近 N 份（历史 FAIL 不否决），但审计者能看到它曾失败。
+- 来源可执行性：报告 `data_source.source` 是 `blob:<sha12>` 时**不能当 `--db`**——`--schedule` 会拒绝登记，需要 `--db <file>` 显式指定常驻库。
+
 ## 8. 常见坑
 
 | 现象 | 原因/处理 |
@@ -140,6 +158,10 @@ ERROR/NEEDS-MATERIAL，要 agent 型就自己实现带引文的 reviewer 走 CLI
 | 想知道这次尝试落哪个文件 | CLI `prepare --json` 的 `record`（相对 verify 根）；`GET /api/verify/spec` 载荷带 `attempts:[{file,created,verdict}]` 投影 |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
 | command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |
+
+- `verify graduate` 报 `not eligible ...` → 不是 bug：资格不够（缺报告/N 份里有 FAIL/跨度不足），按它点名的条件补跑几次真实 `verify run`，别去改报告文件。
+- `--schedule` 报「needs --every」→ 调度必须给分钟数；不给 `--schedule` 时只打印命令串，不登记作业。
+- `--patrol` 报「needs the verified database to be the workspace database」→ 被验的是快照文件、工作区库是另一份；毕业成 job 即可，patrol 化留给定库同源的场景。
 
 ## 9. 契约速查
 
