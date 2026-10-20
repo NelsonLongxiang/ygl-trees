@@ -32,11 +32,12 @@ react-pdf（+88%，且用户裁定不做导出）· remix（framework 模式需 
 
 ## 交付验收（验证器口径，2026-10-20 起）
 
-每个视图提交前过本地门禁，提交后由独立验证器（`/Users/jun/workspace/ygl-webui-verifier`，监督席运行）实测；
+每个视图提交前过本地门禁，提交后由外部结果验证器 ygl-webui-verifier 实测（独立仓库，不随上游发布，监督席运行：对指定提交构建、起 `webui serve`，用 Playwright 逐视图逐场景实测并归档结果，文件按 `<sha12>--<run_id>.json` 命名）；下面的口径是给维护者看的契约，不依赖那个仓库也能照着验。
 里程碑节点（ygl-trees 树 `webui` 的 `webui-release`）只在验证器对被验提交 root PASS 后解锁，证据 = run_id + 结果文件路径。
 
-- **本地门禁**：`pnpm test` 全绿（build + 单测 + demo + contract:audit + ratchet：web_dist 容差 2%）；
-  `antd lint ./src` 0 项；`designmd lint DESIGN.md` 0 error；apps/web 测试只用 `react-dom/server` 静态渲染，不引 jsdom。
+- **本地门禁**（仓库内命令）：`pnpm test` 全绿（build + 单测 + demo + contract:audit + ratchet：web_dist
+  容差 2%）；单项可跑 `pnpm test:unit`、`pnpm contract:audit`、`pnpm ratchet`；apps/web 测试只用
+  `react-dom/server` 静态渲染，不引 jsdom。
 - **视图层实测**：6 个视图（概览 / 研究管线 / 科技树 / 知识图谱 / 验证器 / 产出工件）× 3 场景
   （深色 / 浅色 / 存储禁用——`localStorage` 与 `sessionStorage` 一访问即抛 SecurityError）：
   无控制台错误、无错误告警、主区至少 20 个字（空态必须有引导文案）、画布有节点、
@@ -46,3 +47,8 @@ react-pdf（+88%，且用户裁定不做导出）· remix（framework 模式需 
 - **色板**：DESIGN.md 两套色板每一对文字配对 ≥4.5（`text-dim` 为非文字 token，按 3:1）；
   图表系列色 `chart-*` 以色板验证器核：相邻对 CVD ΔE ≥8、普通视觉 ≥15、对底 ≥3:1，两套主题各验一次。
 - **规则**：前端只读；agent 建议的命令可一键复制、页面不执行写操作；导出 / PDF 不在范围（用户裁定 2026-10-20）。
+
+### 可选工具（需另行安装，不在门禁内）
+
+- `npx -y @ant-design/cli lint ./src`：antd 弃用 / 可访问性 / 用法检查，交付时要求 0 项。
+- `npx -y -p @google/design.md designmd lint DESIGN.md`：DESIGN.md 格式与对比度检查，要求 0 error。
