@@ -122,16 +122,28 @@ export function listSpecs(env: Env): SpecRow[] {
 }
 
 /** 构造追溯视图的载荷：规范 + prepare 产物 + trace（全部只读）。 */
-export function specDetail(env: Env, specId: string): { spec: unknown; prepare: unknown; trace: unknown } | null {
+export function specDetail(env: Env, specId: string): { spec: unknown; prepare: unknown; trace: unknown; attempts: Array<{ file: string; created: string | null; verdict: string | null }> } | null {
   const p = verifyPaths(env);
   const dir = safeJoin(p.specs, specId);
   if (!dir) return null;
   const spec = readJson<any>(join(dir, "spec.json"));
   if (!spec) return null;
+  // 失败尝试的审计投影（r22 建议①）：只读文件名/created/verdict，正文仍在 spec 目录的 attempts/ 里。
+  const attemptsDir = join(dir, "attempts");
+  const attempts = existsSync(attemptsDir)
+    ? readdirSync(attemptsDir)
+        .filter((f) => f.endsWith(".json"))
+        .sort()
+        .map((f) => {
+          const rec = readJson<any>(join(attemptsDir, f));
+          return { file: f, created: typeof rec?.created === "string" ? rec.created : null, verdict: typeof rec?.verdict === "string" ? rec.verdict : null };
+        })
+    : [];
   return {
     spec,
     prepare: readJson<any>(join(dir, "prepare.json")),
     trace: readJson<any>(join(dir, "trace.json")),
+    attempts,
   };
 }
 

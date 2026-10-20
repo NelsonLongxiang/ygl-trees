@@ -34,6 +34,7 @@ import {
   knownMaterialHashes,
   latestVersionOf,
   minimalRedTeam,
+  normalizeAsOf,
   prepareRecordPath,
   probeOf,
   readJson,
@@ -112,6 +113,13 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   }
   const draft = body.draft === true;
   const requested = Number(body.spec_version);
+  // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → 400（不落盘、不消耗版本）
+  let asOf: string;
+  try {
+    asOf = normalizeAsOf(body.as_of, new Date().toISOString());
+  } catch (e: any) {
+    return fail(400, String(e?.message || e));
+  }
   const res = await prepareSpec(text, {
     runner: fileRunner(candidates),
     reviewer: fileReviewer(reviews),
@@ -123,8 +131,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
     domain: body.domain ? String(body.domain) : undefined,
     specVersion: Number.isInteger(requested) && requested > 0 ? requested : latestVersionOf(env, materialId) + 1,
     // as_of 是「材料/快照的时点」，由调用方钉（P5 冻版责任在构造方）；HTTP 给可选入口，
-    // 不给就按本次请求时刻——与 CLI --as-of 同语义，不做服务端猜测。
-    asOf: { kind: "snapshot", value: typeof body.as_of === "string" && body.as_of.trim() ? body.as_of.trim() : new Date().toISOString() },
+    // 不给就按本次请求时刻——与 CLI --as-of 同语义，不做服务端猜测；可解析性由 normalizeAsOf 双侧统一。
+    asOf: { kind: "snapshot", value: asOf },
     engineVersion: "0.1.0",
     corpusVersion: CORPUS_VERSION,
     knownMaterialHashes: knownMaterialHashes(env, materialId),

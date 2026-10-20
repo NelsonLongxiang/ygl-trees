@@ -115,11 +115,20 @@ describe("verify 服务面：读投影", () => {
     });
   });
 
-  it("构造追溯载荷 = spec + prepare + trace，未知 id 返回 null", () => {
+  it("构造追溯载荷 = spec + prepare + trace + attempts 投影，未知 id 返回 null", () => {
+    const attemptsDir = path.join(home, "verify", "specs", "spec_111111111111", "attempts");
+    fs.mkdirSync(attemptsDir, { recursive: true });
+    writeJson(path.join(attemptsDir, "2026-10-20T01-00-00-000Z.json"), { created: "2026-10-20T01:00:00.000Z", verdict: "needs-material" });
+    writeJson(path.join(attemptsDir, "2026-10-20T02-00-00-000Z.json"), { created: "2026-10-20T02:00:00.000Z", verdict: "rejected" });
     const d = specDetail({ home } as any, "spec_111111111111");
     expect(d?.spec).toMatchObject({ title: "运费对账" });
     expect(d?.prepare).toMatchObject({ verdict: "ready" });
     expect(d?.trace).toMatchObject({ stages: [{ stage: "P1", ok: true }] });
+    // 失败尝试的审计投影（r22 建议①）：只给文件名/created/verdict，按文件名排序
+    expect(d?.attempts).toEqual([
+      { file: "2026-10-20T01-00-00-000Z.json", created: "2026-10-20T01:00:00.000Z", verdict: "needs-material" },
+      { file: "2026-10-20T02-00-00-000Z.json", created: "2026-10-20T02:00:00.000Z", verdict: "rejected" },
+    ]);
     expect(specDetail({ home } as any, "spec_missing")).toBeNull();
   });
 

@@ -12,7 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
 import type { Env } from "../../../core/database/src/types";
@@ -175,7 +175,27 @@ export function prepareRecordPath(dir: string, ready: boolean, now = new Date().
   if (ready) return join(dir, "prepare.json");
   const attempts = join(dir, "attempts");
   mkdirSync(attempts, { recursive: true });
-  return join(attempts, `${now.replace(/[:.]/g, "-")}.json`);
+  const base = now.replace(/[:.]/g, "-");
+  // 毫秒级同刻两次尝试（并发/重放）会撞名：加短序号而不是覆盖（r22 P3①）
+  let candidate = join(attempts, `${base}.json`);
+  for (let n = 2; existsSync(candidate); n++) candidate = join(attempts, `${base}-${n}.json`);
+  return candidate;
+}
+
+/** as_of 校验失败（r22 ②）。CLI 映射 rc=2，HTTP 映射 400——两侧共用同一个校验。 */
+export class AsOfError extends Error {}
+
+/**
+ * as_of 归一（r22 ②）：R13 要求锚定冻结值，不可解析的时间锚会把报告变成不可对质。
+ * 可解析 → `toISOString()`（+08 偏移原样入、UTC 归一存）；不可解析/非字符串 → 抛 AsOfError。
+ * 未给（undefined/null/空串）才回落 `fallback`（调用方的本次时刻）。
+ */
+export function normalizeAsOf(raw: unknown, fallback: string): string {
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  if (typeof raw !== "string") throw new AsOfError(`as_of must be an ISO-8601 string, got ${typeof raw}`);
+  const d = new Date(raw.trim());
+  if (Number.isNaN(d.getTime())) throw new AsOfError(`as_of is not a parseable ISO-8601 timestamp: ${raw}`);
+  return d.toISOString();
 }
 
 export function findMaterial(env: Env, id: string): MaterialRecord {
@@ -370,7 +390,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const reviewsPath = String(args.flags.reviews || "");
       const dbPath = String(args.flags.db || "");
       if (!materialId || !candidatesPath || !reviewsPath || !dbPath) {
-        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft]");
+        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>]");
+        return 2;
+      }
+      // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
+      // 放在最前面：旗标错误是用法错误，不该先做 material/db 的 I/O 再说。
+      let asOf: string;
+      try {
+        asOf = normalizeAsOf(args.flags["as-of"], new Date().toISOString());
+      } catch (e: any) {
+        bad(ctx, `${e.message} (--as-of expects an ISO-8601 timestamp, e.g. 2026-10-20T09:00:00+08:00)`);
         return 2;
       }
       let material: MaterialRecord;
@@ -410,7 +439,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         domain: args.flags.domain ? String(args.flags.domain) : undefined,
         specVersion: args.flags["spec-version"] ? Number(args.flags["spec-version"]) : prevVersion + 1,
         // as_of 由调用方（= 这里）给：默认冻结时刻；--as-of 可显式钉快照时点
-        asOf: { kind: "snapshot", value: String(args.flags["as-of"] || new Date().toISOString()) },
+        asOf: { kind: "snapshot", value: asOf },
         engineVersion: "0.1.0",
         corpusVersion: CORPUS_VERSION,
         knownMaterialHashes: knownMaterialHashes(env, materialId),
@@ -426,6 +455,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             rejected: res.rejected.length,
             materials_sha256: res.materials_sha256,
             diagnostics: res.diagnostics,
+            record: null,
           };
           if (ctx.json) {
             console.log(JSON.stringify(payload));
@@ -461,7 +491,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           });
         }
         if (ctx.json) {
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, diagnostics: res.diagnostics }));
+          // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
+          const record = relative(paths(env).root, recordPath).split(sep).join("/");
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, diagnostics: res.diagnostics, record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {

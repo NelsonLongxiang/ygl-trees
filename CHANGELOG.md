@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.102.3
+
+**r22 P3 收口**（评审 302cb119：0.102.2 PASS，留 as_of 校验 / attempts 可审计 / 命名碰撞 / CLI record 四条）——无契约形状变更。
+
+- **as_of 双侧同校验（评审要求②）**：新增 `normalizeAsOf`（`verify-cmds.ts`），HTTP `POST /api/verify/prepare` 的 `as_of` 与 CLI `--as-of` 共用——可解析 → `toISOString()`（`+08:00` 偏移归一 UTC，同一个瞬间只有一种存盘形态）；不可解析/非字符串 → HTTP 400、CLI rc=2，且**不落盘、不消耗 spec_version**。理由（R13）：不可解析的时间锚会让报告不可对质。CLI 的校验先于 material/db I/O，旗标错误不会被报成运行错误。
+- **attempts 可审计（评审建议①）**：`GET /api/verify/spec?id=` 的载荷新增 `attempts: [{file, created, verdict}]` 投影（按文件名排序）。构造追溯视图可直接回答「为什么没 ready」，正文仍只在盘上。
+- **命名碰撞（P3①）**：`prepareRecordPath` 同毫秒两次尝试不再撞名——首个 `attempts/<ts>.json`，续列 `-2`/`-3`，只追加不覆盖。
+- **CLI `--json` 的 record（P3②）**：`verify prepare --json` 回 `record`（相对 verify 根的 `specs/<id>/prepare.json` 或 `attempts/<ts>.json`），脚本不必自己拼时间戳；`--draft` 回 `record: null` 保持形状稳定。
+- 文档：`docs/verify-contract.md` §4.7 与 `docs/spec-validator.md` §7 同步（as_of 校验、attempts 投影、record 字段、命名规则）；`skills/ygl-trees-verify` 补 as_of 纪律。
+- 测试 unit **454**（+9：`as-of.spec.ts` 6 例 normalizeAsOf/路径碰撞；HTTP 不可解析 400 且不落盘、`+08` 归一；CLI rc=2；specDetail attempts 投影）/ Rust 31 / demo 128 / contract 100 / readme 54。`contract_version` / `corpus_version` 仍 1.1。
+- 附：r22 评审报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r22.md`（索引已登记）。
+
 ## 0.102.2
 
 **评审 r21 三问收口（P2-2 / P3-2 / as_of 入口）** —— 0.102.0 作业面复核后的下一批口径统一，无契约形状变更。

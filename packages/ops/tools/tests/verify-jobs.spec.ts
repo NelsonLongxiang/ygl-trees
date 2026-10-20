@@ -204,6 +204,28 @@ describe("verify jobs — prepare", () => {
     expect(spec.as_of.value).toBe(asOf);
   }, 60_000);
 
+  it("as_of 不可解析 → 400 且不落盘（r22 ②：CLI rc=2 / HTTP 400 同一校验）", async () => {
+    const specDir = path.join(home, "verify", "specs", specId);
+    const attemptsDir = path.join(specDir, "attempts");
+    const attemptsBefore = fs.existsSync(attemptsDir) ? fs.readdirSync(attemptsDir).length : 0;
+    const before = createHash("sha256").update(fs.readFileSync(path.join(specDir, "spec.json"))).digest("hex");
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: "not-a-time" });
+    expect(r.status).toBe(400);
+    expect(String(r.json.error)).toContain("as_of");
+    // 不落盘：spec.json 不变、attempts 不增
+    const after = createHash("sha256").update(fs.readFileSync(path.join(specDir, "spec.json"))).digest("hex");
+    expect(after).toBe(before);
+    expect(fs.existsSync(attemptsDir) ? fs.readdirSync(attemptsDir).length : 0).toBe(attemptsBefore);
+  }, 60_000);
+
+  it("as_of 带 +08 偏移 → 归一 UTC 存盘（可解析即归一，r22 ②）", async () => {
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: "2026-10-20T09:00:00+08:00" });
+    expect(r.status).toBe(200);
+    expect(r.json.verdict).toBe("ready");
+    const spec = JSON.parse(fs.readFileSync(path.join(home, "verify", "specs", specId, "spec.json"), "utf8"));
+    expect(spec.as_of.value).toBe("2026-10-20T01:00:00.000Z");
+  }, 60_000);
+
   it("快照只能按内容寻址：不存在的 sha → 404 且错误里点名上传入口", async () => {
     const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: "a".repeat(64) });
     expect(r.status).toBe(404);

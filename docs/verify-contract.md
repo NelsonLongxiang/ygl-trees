@@ -268,7 +268,7 @@ verify list --unarchived                                            # 跑过但�
 
 **未知旗标**：verify 组每个动作有旗标白名单，未知旗标一律 rc=2 并点名（`unknown flag for verify run: --attachment`）——构造期静默比报错危险。
 
-## 4.7 服务面（M13-2，0.100.0 → 0.102.0）
+## 4.7 服务面（M13-2，0.100.0 → 0.102.3）
 
 浏览器侧只读 + 材料草稿 + 附件上传 + 作业式 prepare/run，全部走 `$YGL_HOME/verify/*` 文件工件，不碰工作区库：
 
@@ -276,8 +276,8 @@ verify list --unarchived                                            # 跑过但�
 GET  /api/verify/specs | spec?id= | reports[?spec=] | report?run= | archives | materials | material?id=
 PUT  /api/verify/blob?name=&mime=     # 原始字节入内容寻址仓（服务端算 sha256）
 POST /api/verify/material             # {title,text,attachments:[{sha256,name}]}
-POST /api/verify/prepare              # {material_id,candidates,reviews,snapshot_sha256,draft?}   [--enable-verify-jobs]
-POST /api/verify/run                  # {spec_id,snapshot_sha256,no_archive?}                    [--enable-verify-jobs]
+POST /api/verify/prepare              # {material_id,candidates,reviews,snapshot_sha256,draft?,as_of?}   [--enable-verify-jobs]
+POST /api/verify/run                  # {spec_id,snapshot_sha256,no_archive?}                            [--enable-verify-jobs]
 ```
 
 - **id 一律白名单 `^[A-Za-z0-9_-]{1,128}$` + 解析后包含性断言**；越界与不存在都回 404（不区分，避免探测）。r18 P1 曾实测 `?run=../../leak` 读到 verify 根外文件。
@@ -290,7 +290,8 @@ POST /api/verify/run                  # {spec_id,snapshot_sha256,no_archive?}   
 - **请求体永不携带可执行面**：没有 argv/allowlist/路径；夹带 `submission_dir` 直接 400（目录树没有安全的 HTTP 来源，file 型检查器仍走 CLI/封包）。command 型白名单由 serve 启动时注入（`YGL_VERIFY_ALLOW_CMD`，未设置才默认 `node`；空串 = 显式空表，全禁，fail-closed）；不在白名单的 argv[0] 判 VU `ERROR`，而不是执行。
 - **快照按内容寻址**：先 `PUT /api/verify/blob?name=snapshot.sqlite`，再传 `snapshot_sha256`（64 位小写 hex）；缺 blob 404，非法 sha 400。run 先把 blob 字节复制成临时快照再跑（裁定 A：只碰副本），报告 `data_source.source` 记 `blob:<sha12>`。
 - **HTTP 状态只表达过程**：400 用法/422 快照不可读或引擎硬拒/404 找不到/415/413；判定结论在 body——prepare 的 `verdict`（`ready`/`needs-material`/`error`）、run 的 `overall`（PASS/FAIL 都 200）。归档默认做，失败记 `archive_error`（报告照落）。
-- **构造记录（0.102.2）**：只有 ready 才写不可变的 `spec.json`/`prepare.json`/`trace.json`；未 ready 的尝试落同目录 `attempts/<ts>.json`（只追加，绝不覆盖已冻结记录）。HTTP `prepare` 另收可选 `as_of`（ISO 时刻）——P5 时点由构造方钉，服务端不猜，缺省用请求时刻。
+- **构造记录（0.102.2）**：只有 ready 才写不可变的 `spec.json`/`prepare.json`/`trace.json`；未 ready 的尝试落同目录 `attempts/<ts>.json`（只追加，绝不覆盖已冻结记录；同一毫秒的第二次尝试加短序号 `-2`/`-3`，不覆盖）。构造追溯载荷（`GET /api/verify/spec`）带 `attempts: [{file, created, verdict}]` 投影，正文仍只在盘上。CLI `verify prepare --json` 回 `record`（相对 verify 根的 `specs/<id>/prepare.json` 或 `attempts/<ts>.json`），脚本不用自己拼时间戳。
+- **as_of 双侧同校验（0.102.3）**：HTTP `as_of` 与 CLI `--as-of` 走同一个归一函数——可解析 → `toISOString()`（`+08:00` 偏移归一为 UTC 存盘，同一个瞬间只有一种存盘形态）；不可解析/非字符串 → HTTP 400、CLI rc=2，且**不落盘、不消耗 spec_version**。语义依据：R13 要求 as_of 锚定冻结值，不可解析的时间锚会让报告变成不可对质。缺省（未给）才回落到调用方（请求/命令）时刻。
 - **构造面仍在 agent**：`candidates`/`reviews` 由 agent 提交，服务端只做 P0–P5 机械判定与冻版，绝不发明候选（缺数组 400）。
 
 **注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。

@@ -68,6 +68,15 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(obj.error).toMatch(/usage: verify prepare/);
   });
 
+  it("prepare --as-of 不可解析 → rc=2（用法错误，r22 ②）", () => {
+    // 旗标校验先于 I/O：material/db 都不存在也应报用法错误而不是运行错误
+    const r = run(["verify", "prepare", "mat_deadbeef0000", "--candidates", "c.json", "--reviews", "r.json", "--db", "s.sqlite", "--as-of", "not-a-time", "--json"]);
+    expect(r.rc).toBe(2);
+    const obj = JSON.parse(r.out) as { error: string };
+    expect(obj.error).toMatch(/as_of/);
+    expect(obj.error).toMatch(/ISO-8601/);
+  });
+
   it("run 未知 spec → rc=1（运行错误，不是用法错误）", () => {
     const db = join(home, "snap.sqlite");
     const d = new DatabaseSync(db);
