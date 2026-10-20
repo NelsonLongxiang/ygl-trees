@@ -268,14 +268,16 @@ verify list --unarchived                                            # 跑过但�
 
 **未知旗标**：verify 组每个动作有旗标白名单，未知旗标一律 rc=2 并点名（`unknown flag for verify run: --attachment`）——构造期静默比报错危险。
 
-## 4.7 服务面（M13-2，0.100.0 → 0.101.0）
+## 4.7 服务面（M13-2，0.100.0 → 0.102.0）
 
-浏览器侧只读 + 材料草稿 + 附件上传，全部走 `$YGL_HOME/verify/*` 文件工件，不碰工作区库：
+浏览器侧只读 + 材料草稿 + 附件上传 + 作业式 prepare/run，全部走 `$YGL_HOME/verify/*` 文件工件，不碰工作区库：
 
 ```
 GET  /api/verify/specs | spec?id= | reports[?spec=] | report?run= | archives | materials | material?id=
 PUT  /api/verify/blob?name=&mime=     # 原始字节入内容寻址仓（服务端算 sha256）
 POST /api/verify/material             # {title,text,attachments:[{sha256,name}]}
+POST /api/verify/prepare              # {material_id,candidates,reviews,snapshot_sha256,draft?}   [--enable-verify-jobs]
+POST /api/verify/run                  # {spec_id,snapshot_sha256,no_archive?}                    [--enable-verify-jobs]
 ```
 
 - **id 一律白名单 `^[A-Za-z0-9_-]{1,128}$` + 解析后包含性断言**；越界与不存在都回 404（不区分，避免探测）。r18 P1 曾实测 `?run=../../leak` 读到 verify 根外文件。
@@ -284,7 +286,11 @@ POST /api/verify/material             # {title,text,attachments:[{sha256,name}]}
 - **写端点头**：`POST /api/verify/material` 要求 `application/json`（否则 415）。
 - **上传门**：serve 绑非回环地址时默认关（403），`YGL_VERIFY_ALLOW_UPLOAD=1` 开、`=0` 强制关；门的是端点本身，不是只藏 UI 按钮。
 - **孤儿清理**：`blobs/.incoming/*.part` 在服务启动与每次上传前按 mtime 清 6 小时以上残留（断连/超限留下的半截文件）。
-- `prepare` / `run` **没有 HTTP 端点**：判定需要网关凭证，runner 只能由 serve 进程启动时注入，请求体永不携带 argv/allowlist/凭证。
+- **作业式 prepare/run 默认关闭**：`webui serve --enable-verify-jobs` 才开（否则 403）。执行面要求 JSON（415）、方法 POST（405），请求体上限同材料草稿。
+- **请求体永不携带可执行面**：没有 argv/allowlist/路径；夹带 `submission_dir` 直接 400（目录树没有安全的 HTTP 来源，file 型检查器仍走 CLI/封包）。command 型白名单由 serve 启动时注入（`YGL_VERIFY_ALLOW_CMD`，默认 `node`）；不在白名单的 argv[0] 判 VU `ERROR`，而不是执行。
+- **快照按内容寻址**：先 `PUT /api/verify/blob?name=snapshot.sqlite`，再传 `snapshot_sha256`（64 位小写 hex）；缺 blob 404，非法 sha 400。run 先把 blob 字节复制成临时快照再跑（裁定 A：只碰副本），报告 `data_source.source` 记 `blob:<sha12>`。
+- **HTTP 状态只表达过程**：400 用法/422 快照不可读或引擎硬拒/404 找不到/415/413；判定结论在 body——prepare 的 `verdict`（`ready`/`needs-material`/`error`，只有 ready 才落 spec/prepare/trace）、run 的 `overall`（PASS/FAIL 都 200）。归档默认做，失败记 `archive_error`（报告照落）。
+- **构造面仍在 agent**：`candidates`/`reviews` 由 agent 提交，服务端只做 P0–P5 机械判定与冻版，绝不发明候选（缺数组 400）。
 
 **注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。
 

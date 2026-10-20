@@ -39,12 +39,13 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 - 布局：按状态分组的水流式
 - **状态（0.92 单A React 重建完成，direct-0f20e882 队列工单）**：apps/web/src/Pipeline.tsx——按状态四列水流（已证实/有争议/未验证/已反驳），claim 卡 3px 状态色左沿 + 支持/反驳计数 + 证据折叠列表（stance 着色 + 引文摘录）；状态色全部走 DESIGN.md token（tokens.ts，单B 纪律）；渲染验证 apps/web/tests/pipeline.spec.tsx ×6（renderToStaticMarkup，不引 jsdom）；R19 同口径——claims/claim_evidence/evidence 三键由服务端授权域收集，未选择态不填、组件不挂载（双重不渲染）。0.88 退役的 HTML 实现由本组件正式接替。
 
-### 4. 验证器三视图（M13-2，0.100.0 → 附件 0.101.0）
+### 4. 验证器三视图（M13-2，0.100.0 → 附件 0.101.0 → 作业面 0.102.0）
 - 数据源：`/api/verify/*`（读 `$YGL_HOME/verify/*` 文件工件，不碰工作区库）；同源组件 `apps/web/src/Verify.tsx`。
 - 视图一**材料提交**：标题 + 一段话（模糊输入是常态）+ 附件。附件先以原始字节 `PUT /api/verify/blob` 入内容寻址仓（服务端算 sha256、全局去重），提交只带 `{sha256,name}` 引用——客户端不报哈希、不传路径。上传门在端点（非回环绑定默认关，`YGL_VERIFY_ALLOW_UPLOAD=1` 开）。
 - 视图二**构造追溯**（只读审计面）：左侧规范清单 → 右侧材料原文 + 构造结论（verdict/轮次/被拒）+ 「判据 ↔ 检查器」表（类型/比较模式/判据原文/锚点）。**没有 ✓/✗ 按钮**：判定链上没有人工确认，这里是事后复核入口。
 - 视图三**报告看板**：运行记录按 `finished` 倒序；报告详情把 FAIL/NEEDS-MATERIAL 例外项**置顶为处置清单**（带 severity 与行数），四态统计退居摘要；附引擎模式/签名身份/快照 sha/归档数。
-- 渲染验证：`apps/web/tests/verify.spec.tsx` ×3（静态渲染，断言三视图入口、附件入仓形态、无放行类按钮文案）；服务面契约 `packages/ops/tools/tests/verify-web.spec.ts` ×12（投影/幂等/405/404/穿越探针/415/413/上传门/archives/reports?spec）；blob 仓单测 `blob-store.spec.ts` ×7。
+- 作业面（0.102.0，API-only）：`POST /api/verify/prepare|run` 由 `webui serve --enable-verify-jobs` 打开，默认 403。**UI 暂不调**——前端要长任务进度与取消语义（SSE 还没做），先给 agent/脚本用，免得把半成品按钮放出去。
+- 渲染验证：`apps/web/tests/verify.spec.tsx` ×3（静态渲染，断言三视图入口、附件入仓形态、无放行类按钮文案）；服务面契约 `packages/ops/tools/tests/verify-web.spec.ts` ×14（投影/幂等/405/404/穿越探针/415/413/上传门/archives/reports?spec/坏报告跳过）；blob 仓单测 `blob-store.spec.ts` ×8（含并发收尾）；作业面 `verify-jobs.spec.ts` ×16（门/方法/JSON/体上限/prepare 三件套/draft/缺 blob/非法 sha/缺材料/缺 candidates/run+归档/no_archive/archive_error/submission_dir/白名单）。
 
 ## 技术约束
 

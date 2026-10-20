@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.102.0
+
+**升级注意**：无契约变更——`contract_version 1.1` / `corpus_version 1.1` 不变，已发规范、封包与归档包继续可验。新增的是**默认关闭**的 HTTP 执行面，CLI 命令面零破坏。
+
+- **M13-2 第三批：作业式验证面**（`packages/ops/tools/src/verify-jobs.ts`）。`POST /api/verify/prepare` 收 `{material_id, candidates, reviews, snapshot_sha256, draft?}`，跑 P0–P5 冻版（只有 `verdict=ready` 且非 `draft` 才落 `prepare.json`/`spec.json`/`trace.json`，形状与 CLI 完全一致）；`POST /api/verify/run` 收 `{spec_id, snapshot_sha256, no_archive?}`，在快照副本上出报告并默认归档。两者与 CLI 共用 `verify-cmds` 的同一组原语（`schemaOf` / `snapshotCopy` / `specDir` / `findMaterial` / `archiveRun` 等改为导出），不另写第二实现——重复实现才是漂移的源头。
+- **默认关闭（`webui serve --enable-verify-jobs`）**：一个嵌入方不该因为调了 `serve` 就默默获得「能执行任意 spec」的能力；未开时两端点回 403 并点名开关。执行面要求 `application/json`（415）、只收 POST（405）、请求体上限同材料草稿（413）。
+- **三条不变量**：①**请求体永不携带可执行面**——没有 argv/allowlist/路径，夹带 `submission_dir`（或 `submission`）直接 400，因为目录树没有安全的 HTTP 来源，file 型检查器仍走 CLI/封包；command 型白名单由 serve 启动时注入（`YGL_VERIFY_ALLOW_CMD`，默认只放 `node`），不在白名单的 `argv[0]` 判 VU `ERROR` 而不是执行。②**快照只能按内容寻址**——先 `PUT /api/verify/blob?name=snapshot.sqlite` 再传 `snapshot_sha256`（64 位小写 hex，非法 400、缺 blob 404 并点名上传端点），服务端到 blob 仓取字节。③**run 只碰副本**——blob 字节先复制成临时快照再跑（与 CLI 同一条 `snapshotCopy` 路径），报告 `data_source` 记 `{kind:"sqlite-snapshot", source:"blob:<sha12>", sha256, captured_at}` 后重算 `payload_sha256`。
+- **HTTP 状态只表达过程**：400 用法 / 404 找不到 / 415 / 413 / 422（快照不可读或引擎硬拒，文案 `run rejected: …`）；判定结论在 body——prepare 的 `verdict`（`ready` / `needs-material` / `error`）、run 的 `overall`（PASS 与 FAIL 都是 200）。归档失败记 `archive_error`，不把已生成的报告变成 500。
+- **构造面仍在 agent**：`candidates`（提取/翻译产物）与 `reviews`（盲审三问）由 agent 提交，服务端只做 P0–P5 机械判定与冻版，绝不发明候选；缺数组回 400。**gateway 边界如实记录**：`~/.vercel.ai-gateway.env` 的 key 可调 typesafe-ai/jev，但它只回布尔概率、不产出带锚点引文，喂不进 `ReviewRunner`（review 契约要求逐条 `anchor.quote` + `locator`）——所以 HTTP 面在 agent 型 VU 上仍会 NEEDS-MATERIAL/ERROR，这是能力边界而非配置缺失。
+- 测试：unit **441**（+16：`verify-jobs.spec.ts` 覆盖门/方法/JSON/体上限、prepare 落三件套与 `spec_<sha12>` 幂等、`--draft` 不落盘、缺 blob 404、非法 sha 400、缺材料 404、缺 candidates 400、run 出报告+归档、`no_archive`、语料例归档失败记 `archive_error`、`submission_dir` 400、缺 spec 404、command 白名单外判 ERROR）/ Rust 31 / demo 128 / contract 100 / readme 54。
+
 ## 0.101.1
 
 **热修（发布后 P3）**：`createBlobSink().finish()` 的 `renameSync` 缺并发护栏——两个并发 PUT 同内容时，胜者落位后败者在 Windows 上抛 `EEXIST/EPERM` → 500，而语义上应幂等 200。修法与 `putBlob` 同款：`try/catch` → 清临时文件 → `dest` 已存在即返 ref；补「同内容并发收尾」回归（8 例）。

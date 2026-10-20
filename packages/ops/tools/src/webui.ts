@@ -21,6 +21,7 @@ import { resolveProject, resolveTree, projectSample } from "../../../core/databa
 // 0.91a (direct-55b4ca85): static import — same ESM-silent-death family fix
 import { onEvent } from "../../../core/text/src/eventbus";
 import { BLOB_LIMIT, createMaterialDraft, handleVerifyApi, openBlobUpload, uploadAllowed, VERIFY_BODY_LIMIT } from "./verify-web";
+import { prepareViaHttp, runViaHttp } from "./verify-jobs";
 import { pruneIncoming } from "./blob-store";
 
 interface DashboardData {
@@ -278,10 +279,19 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
  *  / and /index.html → live HTML; /api/data → dashboard JSON;
  *  /api/events → SSE stream (server-side change detection, pushes fresh
  *  payloads so clients never poll); /api/node?tree=<name>&key=<key> → node detail. */
-export function createDashboardServer(env: Env, opts: { allowUpload?: boolean } = {}) {
+export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; enableVerifyJobs?: boolean } = {}) {
   // 默认关闭：只有 serve 在回环地址上显式打开（或 YGL_VERIFY_ALLOW_UPLOAD=1）。
   // 嵌入方不传旗标时不该默默获得写盘能力。
   const allowUpload = opts.allowUpload === true;
+  const enableVerifyJobs = opts.enableVerifyJobs === true;
+  // command 型检查器的白名单在 serve 启动时定下（请求体永不携带 argv）：默认只放 node，
+  // 需要更多就跑 `YGL_VERIFY_ALLOW_CMD="node,python" webui serve --enable-verify-jobs`。
+  const jobDeps = {
+    commandAllowlist: String(process.env.YGL_VERIFY_ALLOW_CMD || "node")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean),
+  };
   // 启动时清掉上次异常退出留下的上传半截文件（fdc757f6 骑士②）。
   try { pruneIncoming(join(env.home, "verify")); } catch { /* 没有 verify 目录就是没上传过 */ }
   const http = require("node:http");
@@ -565,6 +575,41 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean } 
         });
         return;
       }
+      // 作业式验证面（0.102.0）：prepare/run。默认关闭——只有显式 --enable-verify-jobs
+      // 才把"能跑 spec"这个能力交给 HTTP；执行面一律要求 JSON 请求体。
+      if (url === "/api/verify/prepare" || url === "/api/verify/run") {
+        if ((req.method || "").toUpperCase() !== "POST") {
+          return send(405, { error: "use POST" });
+        }
+        if (!enableVerifyJobs) {
+          return send(403, { error: "verify jobs are disabled: start serve with --enable-verify-jobs" });
+        }
+        const ct = String(req.headers["content-type"] || "").toLowerCase();
+        if (!ct.includes("application/json")) {
+          return send(415, { error: "content-type must be application/json" });
+        }
+        let body = "";
+        let overflow = false;
+        req.on("data", (c: any) => {
+          if (overflow) return;
+          body += c;
+          if (body.length > VERIFY_BODY_LIMIT) { overflow = true; body = ""; }
+        });
+        req.on("end", () => {
+          void (async () => {
+            if (overflow) return send(413, { error: `request body too large (limit ${VERIFY_BODY_LIMIT} bytes)` });
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(body || "{}");
+            } catch (e: any) {
+              return send(400, { error: `invalid JSON body: ${String(e?.message || e)}` });
+            }
+            const r = url === "/api/verify/prepare" ? await prepareViaHttp(env, parsed) : await runViaHttp(env, parsed, jobDeps);
+            send(r.status, r.body);
+          })().catch((e: any) => send(500, { error: String(e?.message || e) }));
+        });
+        return;
+      }
       if (url === "/api/verify/material" && req.method === "POST") {
         // r18 P3：写端点要求 JSON（表单/跨站 simple request 直接挡在解析之前）。
         const ct = String(req.headers["content-type"] || "").toLowerCase();
@@ -623,9 +668,10 @@ function serve(env: Env, args: any): Promise<number> {
   // 0.79.1 (R297 user report): `webui serve --help` used to fall through and
   // actually start a server — an accidental extra process. Short-circuit.
   if (args.flags.help || args.flags.h) {
-    out(ctx, `usage: ygl-trees webui serve [--port N] [--host H]`);
+    out(ctx, `usage: ygl-trees webui serve [--port N] [--host H] [--enable-verify-jobs]`);
     out(ctx, paint(C.dim, `  --port N    listen port (default 8642; 0 = pick a free one)`, ctx.color));
     out(ctx, paint(C.dim, `  --host H    bind address (default 127.0.0.1; 0.0.0.0 opens to LAN)`, ctx.color));
+    out(ctx, paint(C.dim, `  --enable-verify-jobs  enable POST /api/verify/prepare + /api/verify/run (default off; command allowlist from YGL_VERIFY_ALLOW_CMD, default node)`, ctx.color));
     out(ctx, paint(C.dim, `  endpoints:  / React client · /api/data · /api/events SSE · /api/node /api/artifact /api/task · /api/verify/*`, ctx.color));
     return Promise.resolve(0);
   }
@@ -650,7 +696,7 @@ function serve(env: Env, args: any): Promise<number> {
     // Default stays 127.0.0.1 (safe); --host 0.0.0.0 opens to the network.
     const host = String(args.flags.host || "127.0.0.1");
     // 附件上传面随绑定地址收放：非回环地址默认关闭（写端点 + 任意字节 = 磁盘填充面）。
-    const server = createDashboardServer(env, { allowUpload: uploadAllowed(host) });
+    const server = createDashboardServer(env, { allowUpload: uploadAllowed(host), enableVerifyJobs: args.flags["enable-verify-jobs"] === true });
     const onErr = (e: any) => {
       bad(ctx, `webui serve: ${e?.message || e}`);
       resolve(1);

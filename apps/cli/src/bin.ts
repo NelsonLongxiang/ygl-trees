@@ -746,7 +746,7 @@ export function generateLlmsManifest(): string {
       ["webui export [--out <file>]", "single-file offline dashboard"],
     ]],
     ["db", "Database operations", [
-      ["db init", "create workspace + schema (auto-imports 9 built-in skills)"],
+      ["db init", "create workspace + schema (auto-imports 12 built-in skills)"],
       ["db stats", "row counts per table"],
       ["db export <file>", "full backup"],
       ["db sync pg <url>", "one-way mirror to PostgreSQL"],

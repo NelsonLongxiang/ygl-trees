@@ -46,10 +46,10 @@ function paths(env: Env) {
   };
 }
 
-const sha256 = (buf: Buffer | string): string => createHash("sha256").update(buf).digest("hex");
-const short = (sha: string): string => sha.slice(0, 12);
+export const sha256 = (buf: Buffer | string): string => createHash("sha256").update(buf).digest("hex");
+export const short = (sha: string): string => sha.slice(0, 12);
 
-interface MaterialRecord {
+export interface MaterialRecord {
   material_id: string;
   title: string;
   created: string;
@@ -58,16 +58,16 @@ interface MaterialRecord {
   files: Array<{ path: string; sha256: string; mime: string; size: number; stored: string; blob?: boolean }>;
 }
 
-function readJson<T>(path: string): T {
+export function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
-function writeJson(path: string, value: unknown): void {
+export function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 /** 以文件形态注入 prepare 的候选（agent 的提取/翻译产物）。 */
-function fileRunner(candidates: PrepareCandidate[]): PrepareRunner {
+export function fileRunner(candidates: PrepareCandidate[]): PrepareRunner {
   return {
     async prepare() {
       return candidates;
@@ -76,7 +76,7 @@ function fileRunner(candidates: PrepareCandidate[]): PrepareRunner {
 }
 
 /** 以文件形态注入盲审结论：每候选一组三问，按 source_clause 对齐（不认 VU id —— 那由 prepare 生成）。 */
-function fileReviewer(reviews: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>): ReviewRunner {
+export function fileReviewer(reviews: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>): ReviewRunner {
   return {
     async review(req) {
       const hit = reviews.find((r) => r.source_clause === req.vu.source_clause);
@@ -87,7 +87,7 @@ function fileReviewer(reviews: Array<{ source_clause: string; findings: Array<Om
 }
 
 /** P4 最小红队（fdc757f6 裁定①配套）：空快照上不得 ERROR、不得空洞 PASS。 */
-function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<string[]> {
+export function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<string[]> {
   return async (s: VerifySpec) => {
     const db = openDatabaseSync(":memory:");
     try {
@@ -118,7 +118,7 @@ function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<string[
 }
 
 /** 从快照库取建表 DDL（红队空库用；不复制数据）。 */
-function schemaOf(dbPath: string): { ddl: string[]; fingerprint: string } {
+export function schemaOf(dbPath: string): { ddl: string[]; fingerprint: string } {
   const db = openDatabaseSync(dbPath, { readOnly: true });
   try {
     const rows = db.prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string; sql: string }>;
@@ -149,7 +149,7 @@ function pruneSnapshots(dir: string): number {
   return removed;
 }
 
-function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string } {
+export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string } {
   const stat = statSync(dbPath);
   if (!stat.isFile()) throw new Error(`--db must point to a SQLite file (snapshot copy), not a directory: ${dbPath}`);
   const dir = join(process.env.TEMP || process.env.TMPDIR || ".", "ygl-verify-snapshots");
@@ -160,11 +160,11 @@ function snapshotCopy(dbPath: string): { path: string; sha256: string; source: s
   return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath) };
 }
 
-function specDir(env: Env, specId: string): string {
+export function specDir(env: Env, specId: string): string {
   return join(paths(env).specs, specId);
 }
 
-function findMaterial(env: Env, id: string): MaterialRecord {
+export function findMaterial(env: Env, id: string): MaterialRecord {
   const dir = join(paths(env).materials, id);
   const file = join(dir, "material.json");
   if (!existsSync(file)) throw new Error(`material not found: ${id} (verify submit first)`);
@@ -975,7 +975,7 @@ function archiveWithOf(raw: unknown): ArchiveWith[] {
 }
 
 /** 默认归档；`--no-archive` 关闭。归档失败不回滚报告，只把 rc 置 1（过程错误）。 */
-function archiveRun(
+export function archiveRun(
   root: string,
   reportRunId: string,
   spec: { id: string; version: number },
@@ -1013,7 +1013,7 @@ function mimeOf(path: string): string {
 }
 
 /** 建表 DDL → prepare 的 schema 探针（表 → 列名）。 */
-function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
+export function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
   const tables: Record<string, string[]> = {};
   for (const sql of ddl) {
     const m = sql.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`\[]?([A-Za-z0-9_]+)["'`\]]?\s*\(([\s\S]*)\)/i);
@@ -1030,7 +1030,7 @@ function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
   return { tables };
 }
 
-function latestVersionOf(env: Env, materialId: string): number {
+export function latestVersionOf(env: Env, materialId: string): number {
   const dir = specDir(env, `spec_${short(sha256(materialId))}`);
   const file = join(dir, "spec.json");
   if (!existsSync(file)) return 0;
@@ -1041,7 +1041,7 @@ function latestVersionOf(env: Env, materialId: string): number {
   }
 }
 
-function knownMaterialHashes(env: Env, currentMaterialId: string): string[] {
+export function knownMaterialHashes(env: Env, currentMaterialId: string): string[] {
   const dir = paths(env).materials;
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
