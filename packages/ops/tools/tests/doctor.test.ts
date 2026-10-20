@@ -97,3 +97,30 @@ describe("doctor stale_lock 自检", () => {
     expect(foreign).toBe("warn");
   });
 });
+
+describe("doctor relation_orphans 检查（K3 0.106.0）", () => {
+  it("dangling relation → warn；清理后 → pass", async () => {
+    const mod = await import("../src/doctor");
+    const check = () => {
+      const lines: string[] = [];
+      const ctx: any = { json: true, color: false, quiet: false };
+      const origLog = console.log;
+      console.log = (s: string) => lines.push(String(s));
+      try {
+        mod.run({ ctx, db, store: null } as any, "", [], {});
+        return JSON.parse(lines.join("")).find((c: any) => c.name === "relation_orphans");
+      } finally {
+        console.log = origLog;
+      }
+    };
+    db.run(
+      "INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created) VALUES(?,?,?,?,?,?,?,?)",
+      ["r_dangling", "node", "n_missing", "claim", "c_missing", "related", 1, now]
+    );
+    const warned = check();
+    expect(warned.status).toBe("warn");
+    expect(warned.detail).toContain("rel prune");
+    db.run("DELETE FROM relations WHERE id='r_dangling'");
+    expect(check().status).toBe("pass");
+  });
+});

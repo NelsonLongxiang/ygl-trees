@@ -235,6 +235,15 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.105.3 记录（issue #2 剩余项 + K3 五条 NIT）**：0.105.2 发布后清尾，无契约形状变更。
+- **#3 原子写**：`verify-cmds.ts writeJson()` 改临时文件 + `renameSync`（同目录），冻结记录要么旧要么新，不存在截断；`graduate --schedule` 的就地重写走这条。测试：graduate 22 例复绿 + 0.105.2 的 verify-cli before-image 断言。
+- **#7 `source rm` 级联**：新增 `writes.sourceRemove(ds, id, force)`——有证据时拒绝并列证据 id；`--force` 事务内逐条解链→重算 claim→删 `evidence_fts`→删证据→删来源→删 `sources_fts`，事件 `source.rm` 带 `cascaded: N evidence, M claim(s)`；CLI 补 project_id 前置校验（旧实现只按 id 查，跨项目可删）。
+- **#8 `ratchet` seeded 提示**：基线缺失时打印「N 项无基线，`--write` 建基线」（旧实现测完即丢、静默空转）。
+- **#9 `job_target_error` 人类面**：graduate 人类输出补黄字「记录仍是上次排期意图，作业已登记」。
+- **K3① relations 孤儿**：`rels.ts` 新增 `relationEndExists()`/`orphanRelations()` 与 `rel prune [--dry-run]`（落 `rel.prune` 事件）；`doctor` 增 `relation_orphans` warn；删除路径不静默连坐——检测与治理分离（doctor 计数、prune 显式清）。首版测试：rel prune dry-run 不删、真删后 orphan=0 且事件 pruned:1。
+- **K3②** `evidence not found` 补 `-p` 指引；**K3③** `evidenceRemove` 返回 `forced`（入参）+ `cascaded`（实际链接数），CLI JSON 同步；**K3④** `nodeMove` 只迁 `node_closure` depth=0 自环行、docstring 同步（透传行由 `node index` 重建，测试用真实 shadow 节点造 stale 行验证不随迁）；**K3⑤** `node_edges` 检查补 `tree_id`。
+- 测试 unit 523→**528**（unlink +3、rels +1、doctor +1、node-move 断言增强）。
+
 **0.105.2 记录（issue #2 的 P1 修复批）**：外部复核 GitHub issue #2（zhujun200409-cloud）对本仓 14396eb 提 9+ 条；本版修三条 P1（验证席代码级坐实 #1/#6，另 #2 为测试缺陷）。#4/#5 已并入 0.105.1 的 pack:repro 重写，#3/#7/#8/#9 排 0.106.0。
 - **#1 `node move` 重试不幂等**：`nodeMove()` 的源树查行按 `fromTreeId` 作用域，首移成功后同一命令重试必然空集 → `node not found` rc=1（契约违约：幂等操作报错）。修法：查行落空时再查目标树，若同名节点已在那里 → `{moved:false, duplicate:true}` rc=0 + `node.move.noop` 事件（payload 带 from/to/key）。**不合并语义**：`moved:false` 仍是「本来就在」，`duplicate:true` 是「这次是重试」，两者都 rc=0。
 - **#6 `evidence rm` 留下 `evidence_fts` 孤儿**：删基表与 `claim_evidence` 时漏删 FTS 影子行，破坏写路径铁律 1（幂等/基表/FTS/events 同事务）——被删证据仍可被全文检索命中，指向不存在的基表行。修法：同事务 `DELETE FROM evidence_fts WHERE id=?`；`unlink.spec` 加影子行断言。

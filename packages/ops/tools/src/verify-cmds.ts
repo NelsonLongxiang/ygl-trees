@@ -11,7 +11,7 @@
  * 运行契约：rc 只表达过程——0=跑完出报告（PASS/FAIL 都是有效结论），1=运行错误，2=用法错误。
  */
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
@@ -66,7 +66,13 @@ export function readJson<T>(path: string): T {
 }
 
 export function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  // Atomic write: temp file in the same directory + rename. A killed process
+  // must never leave a half-written frozen record behind — --schedule rewrites
+  // graduations/*.json in place, and a truncated JSON there is unauditable
+  // (issue #3). rename(2) is atomic on the same filesystem on POSIX and Windows.
+  const tmp = `${path}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  renameSync(tmp, path);
 }
 
 /** 以文件形态注入 prepare 的候选（agent 的提取/翻译产物）。 */
@@ -755,6 +761,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, `  history: ${record.history.reports_same_version} report(s) at this version, ${record.history.non_pass} non-PASS${record.history.last_non_pass ? ` (last: ${record.history.last_non_pass.run_id}=${record.history.last_non_pass.overall})` : ""}`);
         out(ctx, paint(C.dim, `  record: ${written.path}`, ctx.color));
         if (jobRow) out(ctx, paint(C.dim, `  scheduled: job ${jobRow.id} every ${payload.job_every_minutes} min${jobRow.retargeted ? " (existing job updated in place)" : ""}`, ctx.color));
+        // issue #9: a failed job_target write used to be JSON-only — the human
+        // path said "scheduled" and nothing else, so an operator reading the
+        // terminal could not tell the frozen record no longer matches the job.
+        if (payload.job_target_error) {
+          out(ctx, paint(C.yellow, `  ! job_target not written: ${String(payload.job_target_error)}  (the record still holds the previous scheduling intent; the job itself was registered)`, ctx.color));
+        }
         else if (cmd.unsafe) out(ctx, paint(C.yellow, `  note: the verified source contains shell-unsafe characters — not echoed; job_command is a placeholder and --schedule is refused. Pass --db <file> to pick the recurring database`, ctx.color));
         else if (!cmd.usable) out(ctx, paint(C.yellow, `  note: source ${el.data_source?.source ?? "none"} is not an executable --db; pass --db <file> to register a job`, ctx.color));
         else out(ctx, paint(C.dim, `  next: job add "verify ${specId}" --every ${every || "<min>"} -- ${cmd.command}`, ctx.color));

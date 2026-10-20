@@ -1,4 +1,4 @@
-# ygl-trees v0.105.2 — AI Agent Research Workbench
+# ygl-trees v0.105.3 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -129,6 +129,7 @@ Relation fabric (cross-entity linking)
 ```bash
 rel add <src> <dst> [--rel t]                                # link two refs: node:key claim:id kb:id artifact:id ...
 rel list [--src r] [--dst r]                                 # browse relations
+rel prune [--dry-run]                                        # delete relations whose endpoint row is gone (doctor flags them)
 ```
 
 ### plugin

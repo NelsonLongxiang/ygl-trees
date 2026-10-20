@@ -753,6 +753,7 @@ export function generateLlmsManifest(): string {
     ["rel", "Relation fabric (cross-entity linking)", [
       ["rel add <src> <dst> [--rel t]", "link two refs: node:key claim:id kb:id artifact:id ..."],
       ["rel list [--src r] [--dst r]", "browse relations"],
+      ["rel prune [--dry-run]", "delete relations whose endpoint row is gone (doctor flags them)"],
     ]],
     ["plugin", "User-level plugin distribution (R14 L3)", [
       ["plugin init", "create $YGL_HOME/plugins profile"],

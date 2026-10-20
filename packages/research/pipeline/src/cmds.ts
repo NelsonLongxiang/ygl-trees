@@ -391,13 +391,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (subAction === "rm") {
-      if (!rest[1] || !store.sourceGet(rest[1])) {
-        bad(ctx, `source not found: ${rest[1]}`);
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research source rm <sourceId> [--force cascade its evidence]");
+        return 2;
+      }
+      // Project scoping matters here: sourceGet(id) alone would let a session
+      // pointed at project A delete project B's source.
+      const s0 = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [id, project.id]);
+      if (!s0) {
+        bad(ctx, `source not found: ${id}  (in project ${project.name}; ids resolve inside one project — pass -p if it lives elsewhere)`);
         return 1;
       }
-      store.sourceDel(rest[1]);
-      ok(ctx, `source removed: ${rest[1]}`);
-      return 0;
+      const force = args.flags.force === true;
+      return getOrm(env.db.path)
+        .then((ds) => writes.sourceRemove(ds, id, force))
+        .then((r: any): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify(r, null, 2));
+          } else {
+            ok(ctx, r.evidence_removed
+              ? `source removed: ${r.id}  (cascade: ${r.evidence_removed} evidence row(s) dropped; ${r.claims_recomputed} claim(s) recomputed)`
+              : `source removed: ${r.id}`);
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
   }
 
@@ -414,7 +436,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const e0 = store.db.get("SELECT id, quote FROM evidence WHERE id=? AND project_id=?", [id, project.id]);
       if (!e0) {
-        bad(ctx, `evidence not found: ${id}  (in project ${project.name})`);
+        bad(ctx, `evidence not found: ${id}  (in project ${project.name}; ids resolve inside one project — pass -p if it lives elsewhere)`);
         return 1;
       }
       const force = args.flags.force === true;
@@ -422,7 +444,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         .then((ds) => writes.evidenceRemove(ds, id, force))
         .then((r): number => {
           if (ctx.json) {
-            console.log(JSON.stringify({ id: r.id, unlinked: r.unlinked, forced: r.forced, statuses: r.statuses }, null, 2));
+            console.log(JSON.stringify({ id: r.id, unlinked: r.unlinked, forced: r.forced, cascaded: r.cascaded, statuses: r.statuses }, null, 2));
           } else {
             ok(ctx, r.unlinked.length
               ? `evidence removed: ${r.id}  (cascade: ${r.unlinked.length} link(s) dropped; claims recomputed: ${r.unlinked.map((c) => `${c}→${r.statuses[c]}`).join(", ")})`

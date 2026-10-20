@@ -40,6 +40,12 @@ afterAll(() => {
 describe("nodeMove", () => {
   it("moves a lone node and marks BOTH trees dirty", async () => {
     const ds = await getOrm(db.path!);
+    const lonelyId = (db.get("SELECT id FROM nodes WHERE key='lonely'") as any).id;
+    // Only the depth-0 self row follows the node (K3 0.106.0); transitive
+    // closure rows are rebuilt by `node index` and must stay where they were.
+    db.run("INSERT INTO node_closure(tree_id,ancestor,descendant,depth) VALUES(?,?,?,0)", [left, lonelyId, lonelyId]);
+    const shadowId = (await treeWrites.nodeAdd(ds, left, { key: "shadow" })).row.id;
+    db.run("INSERT INTO node_closure(tree_id,ancestor,descendant,depth) VALUES(?,?,?,1)", [left, lonelyId, shadowId]);
     const r = await treeWrites.nodeMove(ds, left, "lonely", "right");
     expect(r.moved).toBe(true);
     expect(r.from_tree).toBe("left");
@@ -51,6 +57,10 @@ describe("nodeMove", () => {
     for (const t of [left, right]) {
       expect(db.get("SELECT dirty FROM node_index WHERE tree_id=?", t)?.dirty).toBe(1);
     }
+    const selfRow = db.get("SELECT tree_id FROM node_closure WHERE ancestor=? AND descendant=? AND depth=0", [r.row.id, r.row.id]);
+    expect(selfRow.tree_id).toBe(right);
+    const stale = db.get("SELECT tree_id FROM node_closure WHERE ancestor=? AND descendant=?", [r.row.id, shadowId]);
+    expect(stale.tree_id).toBe(left);
     await closeOrm();
   });
 

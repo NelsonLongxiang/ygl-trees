@@ -16,6 +16,7 @@ import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
 import { resolveProject, projectSessionKey, projectCount } from "../../../core/database/src/selection";
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
+import { orphanRelations } from "./rels";
 
 interface Check {
   name: string;
@@ -154,6 +155,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ? "no orphaned rows"
       : `${orphanEvidence} orphan evidence, ${orphanEdges} orphan edges — run: ygl-trees node validate`,
   });
+
+  // ── 5b. Orphaned relations (K3 0.106.0) ──
+  // `relations` is type-agnostic and has no FK to its endpoints, so deleting a
+  // node/evidence/claim leaves rows that point at nothing. Read paths tolerate
+  // them (raw-id fallback), which is exactly why they must be visible here.
+  {
+    const dangling = orphanRelations(env);
+    checks.push({
+      name: "relation_orphans",
+      status: dangling.length ? "warn" : "pass",
+      detail: dangling.length
+        ? `${dangling.length} relation(s) point at deleted rows — ygl-trees rel prune --dry-run lists them, rel prune removes them`
+        : "every relation endpoint still exists",
+    });
+  }
 
   // ── 6. Config validity ──
   const configRows = db.all("SELECT key, value FROM config");

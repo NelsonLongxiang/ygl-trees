@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
 import { getOrm, closeOrm } from "../../../core/database/src/orm";
-import { resolveRef, relAdd, relRm, REL_TYPES, RelError } from "../src/rels";
+import { resolveRef, relAdd, relRm, REL_TYPES, RelError, orphanRelations } from "../src/rels";
 
 let db: DB;
 let dir: string;
@@ -90,5 +90,31 @@ describe("relAdd / relRm", () => {
   it("rel.add 事件可查（agent log 面可见）", () => {
     const n = db.all("SELECT COUNT(*) AS c FROM events WHERE kind='rel.add'");
     expect(Number(n[0].c)).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("orphan relations (K3 0.106.0)", () => {
+  it("detects a dangling endpoint and prunes it explicitly (dry-run first)", async () => {
+    const treeWrites = await import("../../../techtree/model/src/writes");
+    const rels = await import("../src/rels");
+    const ds = await getOrm(db.path!);
+    const tree = await treeWrites.treeCreate(ds, "rt2", (globalThis as any).__ids.pid as string, "");
+    await treeWrites.nodeAdd(ds, tree.id, { key: "doomed" });
+    db.metaSet("current_tree", "rt2");
+    await relAdd(env, "node:doomed", `claim:${(globalThis as any).__ids.cl as string}`, "related");
+    expect(orphanRelations(env).length).toBe(0);
+
+    // deleting the node through raw SQL is exactly the "no FK cascade" hole
+    db.run("DELETE FROM nodes WHERE key='doomed'");
+    const dangling = orphanRelations(env);
+    expect(dangling.length).toBe(1);
+    expect(dangling[0].src_type).toBe("node");
+
+    await rels.run(env, "prune", [], { flags: { "dry-run": true } });
+    expect(orphanRelations(env).length).toBe(1);
+    await rels.run(env, "prune", [], { flags: {} });
+    expect(orphanRelations(env).length).toBe(0);
+    const ev = db.get("SELECT payload FROM events WHERE kind='rel.prune' ORDER BY rowid DESC LIMIT 1") as any;
+    expect(String(ev.payload)).toContain('"pruned":1');
   });
 });

@@ -272,8 +272,10 @@ export interface NodeMoveResult {
  *   - a key that already exists in the target tree is refused (keys are unique
  *     per tree)
  *   - per-node rows travel with the node: conditions stay attached by node id,
- *     `node_state` rows are re-stamped with the new tree id, and closure depth-0
- *     self rows follow too
+ *     `node_state` rows are re-stamped with the new tree id, and only the
+ *     closure depth-0 self row follows (transitive rows are rebuilt by
+ *     `node index`; a node with real edges is refused above, so no live
+ *     ancestor/descendant rows can belong to it)
  * Both trees are marked dirty so the denormalized index is rebuilt by `node index`.
  */
 export async function nodeMove(
@@ -321,7 +323,7 @@ export async function nodeMove(
     if (toTreeId === fromTreeId) {
       return { row: node, moved: false, from_tree: fromName, to_tree: toRows[0].name, state_rows: 0, closure_rows: 0 };
     }
-    const edgeCount = (await mgr.query(`SELECT COUNT(*) AS n FROM node_edges WHERE parent_id=? OR child_id=?`, [node.id, node.id])) as any[];
+    const edgeCount = (await mgr.query(`SELECT COUNT(*) AS n FROM node_edges WHERE tree_id=? AND (parent_id=? OR child_id=?)`, [fromTreeId, node.id, node.id])) as any[];
     const n = Number(edgeCount[0]?.n ?? 0);
     if (n > 0) {
       throw new Error(
@@ -337,9 +339,9 @@ export async function nodeMove(
       );
     }
     const stateRows = (await mgr.query(`SELECT COUNT(*) AS n FROM node_state WHERE node_id=?`, [node.id])) as any[];
-    const closureRows = (await mgr.query(`SELECT COUNT(*) AS n FROM node_closure WHERE ancestor=? OR descendant=?`, [node.id, node.id])) as any[];
+    const closureRows = (await mgr.query(`SELECT COUNT(*) AS n FROM node_closure WHERE ancestor=? AND descendant=? AND depth=0`, [node.id, node.id])) as any[];
     await mgr.query(`UPDATE node_state SET tree_id=? WHERE node_id=?`, [toTreeId, node.id]);
-    await mgr.query(`UPDATE node_closure SET tree_id=? WHERE ancestor=? OR descendant=?`, [toTreeId, node.id, node.id]);
+    await mgr.query(`UPDATE node_closure SET tree_id=? WHERE ancestor=? AND descendant=? AND depth=0`, [toTreeId, node.id, node.id]);
     await mgr.query(`UPDATE nodes SET tree_id=? WHERE id=?`, [toTreeId, node.id]);
     await markDirty(mgr, fromTreeId);
     await markDirty(mgr, toTreeId);

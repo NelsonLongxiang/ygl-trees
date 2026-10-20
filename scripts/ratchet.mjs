@@ -152,6 +152,13 @@ const tightened = report.filter((r) => r.status === "tightened").length;
 if (tightened > 0 && !write) {
   console.log(`\nratchet: ${tightened} metric(s) measured tighter than the baseline — run \`node scripts/ratchet.mjs --write\` to lock them in (baseline left untouched)`);
 }
+// A missing baseline (fresh checkout, new metric) used to be measured and then
+// silently dropped: nothing failed, nothing was written, and the next run
+// repeated the same no-op. Name the state and the command that fixes it.
+const seeded = report.filter((r) => r.status === "seeded").length;
+if (seeded > 0 && !write) {
+  console.log(`ratchet: ${seeded} metric(s) had no baseline — run \`node scripts/ratchet.mjs --write\` to seed the ratchet`);
+}
 
 if (asJson) {
   console.log(JSON.stringify({ ok: !failed, baseline: BASELINE, report }, null, 2));

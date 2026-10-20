@@ -117,6 +117,16 @@ describe("evidenceRemove", () => {
     await closeOrm();
   });
 
+  it("reports forced as the input flag and cascaded as the link count", async () => {
+    const { evidence } = await fixture("no links here", "unlinked quote");
+    const ds = await getOrm(db.path!);
+    const r = await writes.evidenceRemove(ds, evidence, true); // --force, nothing to cascade
+    expect(r.forced).toBe(true);
+    expect(r.cascaded).toBe(0);
+    expect(r.unlinked).toEqual([]);
+    await closeOrm();
+  });
+
   it("deletes an unlinked evidence without ceremony", async () => {
     const { evidence } = await fixture("orphan claim", "orphan quote");
     const ds = await getOrm(db.path!);
@@ -128,6 +138,37 @@ describe("evidenceRemove", () => {
     // same transaction (write-path rule 1). A leftover shadow is searchable
     // evidence whose base row no longer exists.
     expect(db.get("SELECT COUNT(*) AS c FROM evidence_fts WHERE id=?", [evidence])).toEqual({ c: 0 });
+    await closeOrm();
+  });
+});
+
+describe("sourceRemove (issue #7)", () => {
+  it("refuses while evidence rows exist and names the cascade", async () => {
+    const { evidence } = await fixture("claim for source guard", "guarded source quote");
+    const sid = (db.get("SELECT source_id FROM evidence WHERE id=?", [evidence]) as any).source_id;
+    const ds = await getOrm(db.path!);
+    await expect(writes.sourceRemove(ds, sid)).rejects.toThrow(
+      /still has 1 evidence row\(s\)[\s\S]*pass --force to cascade/
+    );
+    expect(db.get("SELECT COUNT(*) AS c FROM sources WHERE id=?", [sid])).toEqual({ c: 1 });
+    await closeOrm();
+  });
+
+  it("cascades with --force: evidence, links and FTS shadows gone; claims recomputed", async () => {
+    const { claim, evidence } = await fixture("claim to be stranded", "cascade source quote");
+    const sid = (db.get("SELECT source_id FROM evidence WHERE id=?", [evidence]) as any).source_id;
+    const ds = await getOrm(db.path!);
+    await writes.claimLink(ds, claim, evidence, "supports");
+    const r = await writes.sourceRemove(ds, sid, true);
+    expect(r.forced).toBe(true);
+    expect(r.evidence_removed).toBe(1);
+    expect(r.claims_recomputed).toBe(1);
+    expect(db.get("SELECT COUNT(*) AS c FROM evidence WHERE source_id=?", [sid])).toEqual({ c: 0 });
+    expect(db.get("SELECT COUNT(*) AS c FROM evidence_fts WHERE id=?", [evidence])).toEqual({ c: 0 });
+    expect(db.get("SELECT COUNT(*) AS c FROM sources_fts WHERE id=?", [sid])).toEqual({ c: 0 });
+    expect((db.get("SELECT status FROM claims WHERE id=?", [claim]) as any).status).toBe("unverified");
+    const ev = db.get("SELECT payload FROM events WHERE kind='source.rm' ORDER BY rowid DESC LIMIT 1") as any;
+    expect(String(ev.payload)).toContain("cascaded: 1 evidence");
     await closeOrm();
   });
 });

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.105.3
+
+**issue #2 剩余项 + K3 评审五条 NIT**（GitHub `NelsonLongxiang/ygl-trees#2`）。无契约形状变更。
+
+- **冻结记录原子写（#3）**：`writeJson()` 改为同目录临时文件 + `rename`。`--schedule` 会就地重写
+  `graduations/*.json`，旧实现 `writeFileSync` 被 kill 时留下截断 JSON——既是无法审计的记录，也让
+  之后每条命令解析失败。现在要么是旧内容、要么是新内容，不存在半写状态（`rename(2)` 在 POSIX 与
+  Windows 同卷均原子）。
+- **`source rm` 不再静默级联（#7）**：`evidence.source_id` 是 `ON DELETE CASCADE`，旧实现一条
+  `DELETE` 就静默删掉整串证据、丢光 claim 链接、留下过期 status 与两张表的 FTS 影子。现在：
+  有证据时拒绝并列出证据 id（提示 `research evidence rm <id> [--force]` 或 `source rm --force`）；
+  `--force` 在一个事务里逐条解链 → 重算受影响 claim → 删 `evidence_fts` 影子 → 删证据 →
+  删来源 → 删 `sources_fts` 影子，落 `source.rm` 事件（`cascaded: N evidence, M claim(s)`）。
+  同时补上项目域前置检查（此前 `source rm` 只按 id 查，未校验 project_id）。
+- **`ratchet` seeded 状态可见（#8）**：基线缺失（新检出/新指标）时旧实现测完就丢，既不落库也不提示，
+  下一轮重复同样空转；现在打印「N 项无基线，`--write` 建基线」。
+- **`job_target_error` 进人类输出（#9）**：排期字段写失败此前只在 `--json` 里出现，人类路径仍只说
+  scheduled；现在补黄字说明「记录仍是上一次排期意图，作业已登记」。
+- **K3 NIT① relations 孤儿治理**：`relations` 无 FK 级联，删节点/证据/断言会留下指向空行的关系。
+  新增 `orphanRelations()` 与 `rel prune [--dry-run]`（显式清理，落 `rel.prune` 事件），`doctor`
+  增 `relation_orphans` 检查（warn，不 fail）。删除路径**不**顺带清关系——静默连坐会让「这次删除
+  到底删了什么」不可审计。
+- **K3 NIT② `evidence rm` 报错指引**：`evidence not found` 补 `-p` 指引，与 `claim unlink` 对齐。
+- **K3 NIT③ `forced` 语义**：`forced` 改为如实反映入参（是否传 `--force`），新增 `cascaded`
+  报实际级联链接数——旧值靠 `unlinked.length` 推断，契约面不可自证。
+- **K3 NIT④ `nodeMove` 闭包收窄**：只迁 `depth=0` 自环行（透传行由 `node index` 重建），
+  docstring 与 SQL 对齐；**NIT⑤** 边检查补 `tree_id`（把「边不跨树」从隐式不变量变成显式条件）。
+- 测试：unit **523 → 528**（`unlink.spec` +3：forced/cascaded 语义、source rm 拒绝与级联、
+  FTS 影子断言；`rels.test` +1 孤儿关系检测与 prune；`doctor.test` +1 `relation_orphans`；
+  `node-move.spec` 增闭包收窄断言）。
+
 ## 0.105.2
 
 **外部复核 issue #2 的 P1 修复批**（GitHub `NelsonLongxiang/ygl-trees#2`）。无契约形状变更。

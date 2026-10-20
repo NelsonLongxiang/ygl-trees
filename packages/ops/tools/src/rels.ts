@@ -152,6 +152,37 @@ export async function relRm(env: Env, srcRef: string, dstRef: string, rel = "rel
   });
 }
 
+/** Endpoint existence probes for the relation fabric (K3 0.106.0: `relations`
+ *  has no FK cascade, so deleting a node/evidence/claim can leave a relation
+ *  pointing at nothing). Unknown types are treated as alive — a future entity
+ *  type must not be reported dangling just because this table is stale. */
+const EXISTS_SQL: Record<string, string> = {
+  node: "SELECT 1 AS hit FROM nodes WHERE id=?",
+  claim: "SELECT 1 AS hit FROM claims WHERE id=?",
+  evidence: "SELECT 1 AS hit FROM evidence WHERE id=?",
+  source: "SELECT 1 AS hit FROM sources WHERE id=?",
+  query: "SELECT 1 AS hit FROM queries WHERE id=?",
+  kb: "SELECT 1 AS hit FROM kb_notes WHERE id=?",
+  artifact: "SELECT 1 AS hit FROM artifacts WHERE id=?",
+  task: "SELECT 1 AS hit FROM artifacts WHERE kind='task' AND id=?",
+  skill: "SELECT 1 AS hit FROM skills WHERE name=?",
+};
+
+export function relationEndExists(db: any, type: string, id: string): boolean {
+  const sql = EXISTS_SQL[type];
+  if (!sql) return true;
+  return !!db.get(sql, [id]);
+}
+
+/** Relations whose src or dst row no longer exists (detection; `rel prune`
+ *  is the explicit cleanup — deletion paths must not cascade silently). */
+export function orphanRelations(env: Env): any[] {
+  const rows = env.db.all("SELECT id, src_type, src_id, dst_type, dst_id, rel, created FROM relations ORDER BY created") as any[];
+  return rows.filter(
+    (r) => !relationEndExists(env.db, r.src_type, r.src_id) || !relationEndExists(env.db, r.dst_type, r.dst_id)
+  );
+}
+
 // ── CLI ──
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -246,6 +277,44 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return 0;
   }
 
-  bad(ctx, "usage: rel [add|rm|list] ...  (see ygl-trees help)");
+  // K3 0.106.0: explicit cleanup for relations whose endpoints are gone.
+  // Detection lives in doctor (`relation_orphans`); deletion paths deliberately
+  // do not cascade — a node delete must not quietly erase "who was related to
+  // it", or the user cannot tell what their delete actually removed.
+  if (action === "prune") {
+    const dry = !!args.flags["dry-run"] || args.flags.dry === true;
+    return (async () => {
+      const dangling = orphanRelations(env);
+      if (!dangling.length) {
+        if (ctx.json) console.log(JSON.stringify({ pruned: 0, dry_run: dry, rows: [] }, null, 2));
+        else ok(ctx, "no orphan relations");
+        return 0;
+      }
+      if (dry) {
+        if (ctx.json) console.log(JSON.stringify({ pruned: 0, dry_run: true, rows: dangling }, null, 2));
+        else {
+          head(ctx, `Would prune ${dangling.length} orphan relation(s)`);
+          table(ctx, dangling, ["src", "rel", "dst"], ["src_type", "rel", "dst_type"]);
+        }
+        return 0;
+      }
+      const ds = await getOrm(env.db.path);
+      await ds.transaction(async (mgr: any) => {
+        for (const r of dangling) await mgr.query("DELETE FROM relations WHERE id=?", [r.id]);
+        await mgr.query(
+          "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+          [shortId(["rel.prune"], 12), nowIso(), "cli", "rel.prune", "relation", "", JSON.stringify({ pruned: dangling.length }), "info"]
+        );
+      });
+      if (ctx.json) console.log(JSON.stringify({ pruned: dangling.length, dry_run: false, rows: dangling }, null, 2));
+      else {
+        ok(ctx, `pruned ${dangling.length} orphan relation(s)`);
+        table(ctx, dangling, ["src", "rel", "dst"], ["src_type", "rel", "dst_type"]);
+      }
+      return 0;
+    })();
+  }
+
+  bad(ctx, "usage: rel [add|rm|list|prune] ...  (see ygl-trees help)");
   return 2;
 }

@@ -368,7 +368,15 @@ export async function evidenceRemove(
   ds: DataSource,
   evidenceId: string,
   force = false
-): Promise<{ id: string; unlinked: string[]; forced: boolean; statuses: Record<string, string> }> {
+): Promise<{
+  id: string;
+  unlinked: string[];
+  /** true iff the caller passed --force (input fact, not an outcome). */
+  forced: boolean;
+  /** how many links the cascade actually removed (0 with --force + no links). */
+  cascaded: number;
+  statuses: Record<string, string>;
+}> {
   return runTx(ds, async (mgr) => {
     const e = (await mgr.query(`SELECT id, quote FROM evidence WHERE id=?`, [evidenceId])) as any[];
     if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
@@ -400,7 +408,62 @@ export async function evidenceRemove(
       evidenceId,
       `${String(e[0]?.quote ?? "").slice(0, 60)}${claims.length ? ` (cascaded: ${claims.length} link(s))` : ""}`
     );
-    return { id: evidenceId, unlinked: claims, forced: claims.length > 0, statuses };
+    return { id: evidenceId, unlinked: claims, forced: force, cascaded: claims.length, statuses };
+  });
+}
+
+/** Issue #7 (external review): `source rm` used to be a bare DELETE. Because
+ *  `evidence.source_id` is ON DELETE CASCADE, removing a source silently
+ *  deleted its evidence, dropped claim links and left claim statuses stale —
+ *  and the FTS shadows of both tables behind. Now it refuses while evidence
+ *  exists and, with `--force`, removes the whole cone in one transaction:
+ *  links → recomputed claims → evidence shadows → evidence → source → shadow. */
+export async function sourceRemove(
+  ds: DataSource,
+  sourceId: string,
+  force = false
+): Promise<{ id: string; evidence_removed: number; claims_recomputed: number; forced: boolean; cascaded: boolean }> {
+  return runTx(ds, async (mgr) => {
+    const s = (await mgr.query(`SELECT id, title FROM sources WHERE id=?`, [sourceId])) as any[];
+    if (!s.length) throw new Error(`source not found: ${sourceId}`);
+    const evs = (await mgr.query(`SELECT id FROM evidence WHERE source_id=? ORDER BY id`, [sourceId])) as any[];
+    const evIds = evs.map((r: any) => String(r.id));
+    if (evIds.length && !force) {
+      const list = evIds.slice(0, 8).join(" ") + (evIds.length > 8 ? " …" : "");
+      throw new Error(
+        `source ${sourceId} still has ${evIds.length} evidence row(s): ${list} — ` +
+          `removing it would silently delete them and strand their claim links ` +
+          `(evidence.source_id cascades); remove them first (research evidence rm <id> [--force]) ` +
+          `or pass --force to cascade`
+      );
+    }
+    const claims = new Set<string>();
+    for (const eid of evIds) {
+      const links = (await mgr.query(`SELECT claim_id FROM claim_evidence WHERE evidence_id=?`, [eid])) as any[];
+      for (const l of links) claims.add(String(l.claim_id));
+      await mgr.query(`DELETE FROM claim_evidence WHERE evidence_id=?`, [eid]);
+      await mgr.query(`DELETE FROM evidence WHERE id=?`, [eid]);
+      await ftsShadow(mgr, `DELETE FROM evidence_fts WHERE id=?`, [eid]);
+    }
+    for (const cid of claims) await recomputeClaimStatus(mgr, cid);
+    await mgr.query(`DELETE FROM sources WHERE id=?`, [sourceId]);
+    await ftsShadow(mgr, `DELETE FROM sources_fts WHERE id=?`, [sourceId]);
+    await logEvent(
+      mgr,
+      "source.rm",
+      "source",
+      sourceId,
+      `${String(s[0]?.title ?? "").slice(0, 60)}${
+        evIds.length ? ` (cascaded: ${evIds.length} evidence, ${claims.size} claim(s) recomputed)` : ""
+      }`
+    );
+    return {
+      id: sourceId,
+      evidence_removed: evIds.length,
+      claims_recomputed: claims.size,
+      forced: force,
+      cascaded: evIds.length > 0,
+    };
   });
 }
 
