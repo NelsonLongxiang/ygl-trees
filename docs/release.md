@@ -68,24 +68,31 @@ pnpm contract:audit # 写路径契约体检：幂等 / duplicate 回执 / 坏引
 **实测记录（0.38.0）**：tarball 52 包闭包，`@deepseek-ai/cordis@~4.0.5-alpha.2` 等 fork 版本
 在 npm 上均有源（DSH 自己发布）——`workspace:~` 重写后可解；9 条命令面 + doctor 全通过。
 
-### 可复现打包（0.105.0）
+### 可复现打包（0.105.0，0.105.1 修正）
 
 `pnpm pack` 打出的 tarball 带打包机的 mtime、属主与 gzip 头，**同一 commit 每次打指纹都变**，
-只能记账不能当篡改校验。`pnpm pack:repro` 用它自己的实现产出确定性 tarball：
+只能记账不能当篡改校验。`pnpm pack:repro` 产出确定性 tarball：
 
 ```bash
 pnpm pack:repro                    # -> ygl-trees-<version>.tgz，打印 bytes 与 sha256
 node scripts/pack-repro.mjs --json # 机器可读：{path, bytes, sha256, files}
 ```
 
-固定项：文件清单取 `npm pack --dry-run --json`（沿用 npm 的 `files`/`.npmignore`/`publishConfig`
-选择规则，不重写第二套）、条目按路径字节序、`mtime=0`、`uid/gid=0`、`uname/gname` 空、
-`mode=0644`、ustar 格式（无 pax 扩展）、gzip level 9 且不带文件名与时间戳。全程 Node 实现，
-不经过 shell `tar`/`gzip`，Windows 与 Linux 产出同字节。
+**内容源必须是 pnpm 的产物**（0.105.1 修正）：`pnpm pack` 负责 `workspace:` 依赖重写与
+`files`/`.npmignore`/`publishConfig` 的文件选择，脚本只把它的条目重写成确定性字节——
+条目按路径字节序、`mtime=0`、`uid/gid=0`、`uname/gname` 空、`mode=0644`、ustar 格式
+（无 pax 扩展）、gzip level 9 且不带文件名与时间戳、gzip 头 OS 字节固定 `0xFF`。
+全程 Node 实现，不经过 shell `tar`/`gzip`，Windows 与 Linux 产出同字节。
 
-分工：`pack:check` 继续回答「这个包能不能装、能不能跑」；`pack:repro` 只回答「同一个包每次
-字节是否相同」。发布交接时给两个指纹并说明差异来源——**repro sha256 作篡改校验**，npm 官方
-tarball 的 sha256 只是记账（`npm publish` 仍走 npm 自己的 pack 路径）。
+> 0.105.0 的事故：脚本当时直接读仓库原始 `package.json` 手工组装 tar，绕过了 pnpm 的
+> 依赖重写——四个 `workspace:~` 包原样进了 npm，全新 `npm install` 必失败。所以现在
+> 重打包前有一道硬闸：清单里仍有 `workspace:` 就直接拒绝封包。
+
+分工：`pack:check` 回答「这个包能不能装、能不能跑」——5b 段除了两次哈希相同与条目清单
+一致，还会在空目录用 **npm 真装一次**并跑装出来的 `bin --version`（只比哈希不比可安装性，
+正是 0.105.0 漏过门禁的原因）；`pack:repro` 只回答「同一个包每次字节是否相同」。发布交接
+时给两个指纹并说明差异来源——**repro sha256 作篡改校验**，npm 官方 tarball 的 sha256 只是
+记账（`npm publish` 仍走 npm 自己的 pack 路径）。
 
 ## 二、发布命令
 

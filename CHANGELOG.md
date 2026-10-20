@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.105.1
+
+**打包修复（P0）：`pack:repro` 产物不再携带 `workspace:` 残留**。源码零改动，仅发布链路修复。
+
+- **事故**：0.105.0 的发布 tarball 由 `scripts/pack-repro.mjs` 手工组装，而该脚本直接读取仓库原始
+  `package.json` 并打包——`workspace:~` 依赖没有被解析成真实版本，`@deepseek-ai/cordis` /
+  `cosmokit` / `schemastery` / `cordis-plugin-timer` 四个包以 `workspace:~` 原样进入 npm 清单，
+  任何全新 `npm install ygl-trees@0.105.0` 都以 `EUNSUPPORTEDPROTOCOL` 失败。`pnpm pack` /
+  `pnpm publish` 会自动重写这类依赖，手写组装器则不会——发布字节必须是被解析过的字节。
+- **修法**：脚本改为**以 pnpm 的产物为内容源**，再确定性重打包（这正是外部复核建议的方案 b）：
+  `pnpm pack` 负责依赖重写与 `files`/`.npmignore` 选择，脚本只把它的条目按路径排序、
+  `mtime=0`/`uid=gid=0`/`uname=gname` 空/`mode=0644`/ustar/gzip level 9 重写成可复现字节。
+  重打包前有一道硬闸：`package.json` 里仍有 `workspace:` → 直接抛错拒绝封包。
+- **跨主机字节一致（外部复核 #5）**：gzip 头的 OS 字节（offset 9）由宿主 zlib 的 `OS_CODE` 决定，
+  同一内容在 Windows/Linux 上会产出不同 sha256；现在固定写 `0xFF`（unknown），
+  `docs/release.md` 的「跨主机同字节」声明才成立。
+- **装得上才算发布（外部复核 #4）**：`pack:check` 5b 段新增真·npm 隔离安装探针——
+  在空目录 `npm i <pack:repro tarball>`，断言退出码 0 且装出来的 `bin` 能跑 `--version`。
+  此前 5b 只验「两次哈希相同 + 条目清单一致」，验的是字节稳定性，不是可安装性；
+  这正是 0.105.0 事故漏过门禁的原因。
+- **发布纪律（发版席 SOP 已补）**：发布前解包 tarball，确认 `dependencies` 无 `workspace:` 残留、
+  `bin` 路径正确；不再以「tarball sha1 双端一致」替代内容级检查。
+
 ## 0.105.0
 
 **批九增补单 + r28 收口**：无契约形状变更（`contract_version` / `corpus_version` 仍 1.1）。

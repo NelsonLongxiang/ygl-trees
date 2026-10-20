@@ -80,6 +80,24 @@ if [ -f "$WORK/repro1.tgz" ] && [ -f "$WORK/repro2.tgz" ]; then
   NPM_LIST=$(tar -tzf "$TGZ" | sort)
   REPRO_LIST=$(tar -tzf "$WORK/repro1.tgz" | sort)
   [ "$NPM_LIST" = "$REPRO_LIST" ] && pass "repro tarball ships the same entries as npm pack" || fail "repro tarball entry list differs from npm pack"
+  # End-to-end publishability: the sealed bytes must install from an EMPTY
+  # directory through npm itself. 0.105.0 shipped `workspace:` deps to npm and
+  # no gate noticed — this section compared hashes and entry lists only, i.e.
+  # byte stability, not installability.
+  PROBE="$WORK/probe-consumer"
+  mkdir -p "$PROBE"
+  printf '{"name":"repro-probe","version":"1.0.0","private":true}' > "$PROBE/package.json"
+  # Same env hygiene as the section-3 install: pnpm injects its allow-scripts
+  # whitelist into the child env and npm >=10 then rejects the install with
+  # EALLOWSCRIPTS; pin the public registry so a mirror hijack cannot masquerade
+  # as a packaging bug.
+  if ( cd "$PROBE" && unset npm_config_allow_scripts && npm i "$WORK/repro1.tgz" --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ >"$REPO/tmp/npm-repro-install.log" 2>&1 ); then
+    PV=$(node "$PROBE/node_modules/ygl-trees/dist/bundle/bin.cjs" --version 2>/dev/null | tail -1)
+    EXPECT=$(node -e "const f=require('fs');console.log(JSON.parse(f.readFileSync(process.argv[1],'utf8')).version)" "$REPO/package.json")
+    [ "$PV" = "$EXPECT" ] && pass "npm installs the sealed tarball; shipped bin reports $PV" || fail "installed bin reported '$PV', expected '$EXPECT'"
+  else
+    fail "npm install of the pack:repro tarball failed (see tmp/npm-repro-install.log)"
+  fi
 fi
 
 echo "── 6. cleanup"
