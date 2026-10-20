@@ -88,6 +88,7 @@ ygl-trees node link mining smelting                 # 必检 AND
 ygl-trees node link bronze steel --optional         # 可选，不阻塞
 ygl-trees node link bronze iron --mode OR           # 任一即可
 ygl-trees node link a b --rel excludes              # 互斥分支
+ygl-trees node move stray --to demo              # 跨树搬节点（树内还有边则拒绝，先 unlink）
 ygl-trees node can steel --state "research_lab_level=3,has_engineer=1"
 ygl-trees node can a b c --state-file probe.json   # 批量判定：一进程测 N 节点（探针冷启动 1s×N → 1s）
 ygl-trees node ready                                # 当前可解锁集合
@@ -144,6 +145,7 @@ source add      收来源，按 (project, url_hash) 去重；--query 顺带关�
                 --adjudication "<裁决摘要>"：会话内裁决原生载体（url 自动 session://adjudication/<时刻>，摘要兼作标题）；--url 收任意 <scheme>://（https/file/session/a2a/… 跨 Agent 引用免落盘）
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
+evidence rm     删除证据：仍被任一断言链接时默认拒绝（点名先 claim unlink）；--force 级联删链并重算状态
 claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）
                 --channel <台账通道>（0.90）：预测注册时登记结算数据通道（github-issues|review-rounds|npm-registry|manual…），结算防通道错配
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
@@ -151,6 +153,7 @@ claim link      断言 ↔ 证据，自动算 supported / refuted / contested
                 [预测·…] 断言不自动晋升（0.82.1）：挂证据≠仲裁，状态保持 unverified 直到显式 resolve / 到期回测
 claim resolve   人工仲裁出口：--as supported|refuted|contested，事件留痕；后续新证据链接会重新推导
 claim unresolve 复位通道：把断言重置回 unverified（撤销链接副作用 / 抢跑仲裁），幂等 duplicate:true
+claim unlink    解除单条 断言↔证据 链接：重算状态（[预测·] 断言保持原状态，避免把预测降级）、事件留痕 claim.unlink
 predict list    结算投影（0.90）：全部 [预测·] 断言一表出 outcome（未结算/1/0/ND）+ channel + 期限；
                 结算三段式 note（evidence --note 尾部 `outcome=1|0, brier=…, settler=…`）解析出 brier/settler——校准曲线 SQL 直出
 predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据自动测（树/kb 计数、npm 版本数），判 hit/miss/pending/manual——只报告不仲裁，给出待 resolve 建议
@@ -308,11 +311,12 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 497 例) + demo（128 条断言）+ contract:audit（100 项）
+pnpm test          # 四段制回归：build + unit (vitest 522 例) + demo（128 条断言）+ contract:audit（100 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
+pnpm pack:repro    # 可复现打包：mtime/owner/顺序/gzip 全固定，同一 commit 任意机器 sha256 相同
 ygl-trees --version    # 打印版本号
 ygl-trees llms          # 结构化能力清单（LLM 参考一次性获取全部命令面）
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2

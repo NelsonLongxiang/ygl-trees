@@ -247,6 +247,92 @@ export async function nodeDel(ds: DataSource, treeId: string, keyOrId: string): 
   });
 }
 
+// ================================================================ move
+
+/** Result of a cross-tree move. `moved:false` means the node was already in
+ * the target tree (idempotent, rc=0) — never an error. */
+export interface NodeMoveResult {
+  row: Record<string, any>;
+  moved: boolean;
+  from_tree: string;
+  to_tree: string;
+  state_rows: number;
+  closure_rows: number;
+}
+
+/**
+ * Move one node between trees (batch-nine supplement P2-2: nodes were landing
+ * in the wrong tree and there was no command to repair it).
+ *
+ * Scope is deliberately narrow — THIS IS NOT A SUBTREE MIGRATION:
+ *   - a node that still has edges inside its tree is refused (moving it would
+ *     split the graph; move the connected nodes together, or `node unlink` first)
+ *   - a key that already exists in the target tree is refused (keys are unique
+ *     per tree)
+ *   - per-node rows travel with the node: conditions stay attached by node id,
+ *     `node_state` rows are re-stamped with the new tree id, and closure depth-0
+ *     self rows follow too
+ * Both trees are marked dirty so the denormalized index is rebuilt by `node index`.
+ */
+export async function nodeMove(
+  ds: DataSource,
+  fromTreeId: string,
+  keyOrId: string,
+  toTree: string
+): Promise<NodeMoveResult> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [fromTreeId, keyOrId, keyOrId])) as any[];
+    if (!rows.length) throw new Error(`node not found: ${keyOrId}`);
+    const node = rows[0];
+    const fromRows = (await mgr.query(`SELECT id,name FROM trees WHERE id=?`, [fromTreeId])) as any[];
+    const fromName = fromRows[0]?.name ?? fromTreeId;
+    const toRows = (await mgr.query(`SELECT id,name FROM trees WHERE name=? OR id=?`, [toTree, toTree])) as any[];
+    if (!toRows.length) throw new Error(`tree not found: ${toTree}`);
+    const toTreeId = toRows[0].id;
+    if (toTreeId === fromTreeId) {
+      return { row: node, moved: false, from_tree: fromName, to_tree: toRows[0].name, state_rows: 0, closure_rows: 0 };
+    }
+    const edgeCount = (await mgr.query(`SELECT COUNT(*) AS n FROM node_edges WHERE parent_id=? OR child_id=?`, [node.id, node.id])) as any[];
+    const n = Number(edgeCount[0]?.n ?? 0);
+    if (n > 0) {
+      throw new Error(
+        `node '${node.key}' has ${n} edge(s) inside tree '${fromName}' -- moving it would split the graph; ` +
+          `move the connected nodes together, or cut it loose first (node unlink <parent> ${node.key})`
+      );
+    }
+    const clash = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND key=?`, [toTreeId, node.key])) as any[];
+    if (clash.length) {
+      throw new Error(
+        `node '${node.key}' already exists in tree '${toRows[0].name}' -- keys are unique per tree; ` +
+          `remove the other node first (node rm ${node.key} -t ${toRows[0].name}) or keep this one where it is`
+      );
+    }
+    const stateRows = (await mgr.query(`SELECT COUNT(*) AS n FROM node_state WHERE node_id=?`, [node.id])) as any[];
+    const closureRows = (await mgr.query(`SELECT COUNT(*) AS n FROM node_closure WHERE ancestor=? OR descendant=?`, [node.id, node.id])) as any[];
+    await mgr.query(`UPDATE node_state SET tree_id=? WHERE node_id=?`, [toTreeId, node.id]);
+    await mgr.query(`UPDATE node_closure SET tree_id=? WHERE ancestor=? OR descendant=?`, [toTreeId, node.id, node.id]);
+    await mgr.query(`UPDATE nodes SET tree_id=? WHERE id=?`, [toTreeId, node.id]);
+    await markDirty(mgr, fromTreeId);
+    await markDirty(mgr, toTreeId);
+    await logEvent(mgr, "node.move", node.id, {
+      from: fromName,
+      to: toRows[0].name,
+      key: node.key,
+      state_rows: Number(stateRows[0]?.n ?? 0),
+      closure_rows: Number(closureRows[0]?.n ?? 0),
+    });
+    const after = (await mgr.query(`SELECT * FROM nodes WHERE id=?`, [node.id])) as any[];
+    return {
+      row: after[0],
+      moved: true,
+      from_tree: fromName,
+      to_tree: toRows[0].name,
+      state_rows: Number(stateRows[0]?.n ?? 0),
+      closure_rows: Number(closureRows[0]?.n ?? 0),
+    };
+  });
+}
+
 // ================================================================ edges
 
 export async function link(

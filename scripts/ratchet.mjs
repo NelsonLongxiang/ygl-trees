@@ -140,9 +140,17 @@ const next = {
   metrics,
 };
 
-if (write || report.some((r) => r.status === "tightened" || r.status === "seeded")) {
-  // 收紧与建基线都落盘；回归不自动改写（要人显式 --write 认账）
-  if (write || !failed) writeFileSync(BASELINE, JSON.stringify(next, null, 2) + "\n", "utf8");
+// Persist the baseline only when asked. Tightening used to be written back
+// implicitly, which made a *measurement* mutate a tracked file: `pnpm test`
+// (and any publish hook that runs it) left the tree dirty mid-release, and
+// `pnpm publish` then refused with ERR_PNPM_GIT_UNCLEAN. A gate that changes
+// what it measures is not a gate — `--write` is the operator's signature.
+if (write) {
+  writeFileSync(BASELINE, JSON.stringify(next, null, 2) + "\n", "utf8");
+}
+const tightened = report.filter((r) => r.status === "tightened").length;
+if (tightened > 0 && !write) {
+  console.log(`\nratchet: ${tightened} metric(s) measured tighter than the baseline — run \`node scripts/ratchet.mjs --write\` to lock them in (baseline left untouched)`);
 }
 
 if (asJson) {

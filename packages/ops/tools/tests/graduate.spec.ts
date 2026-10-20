@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import { verifyPaths } from "../src/verify-web";
 import {
+  attachJobTarget,
   checkEligibility,
   GraduationError,
   graduationPath,
@@ -257,6 +258,8 @@ describe("jobCommand / patrolEligibility", () => {
       // r27 P2-3: Chinese / '#' / '+' are legal Windows path characters; a narrow
       // ascii whitelist used to reject real user directories and block scheduling.
       "C:\\数据\\账单调账 2026#1+final.sqlite",
+      // r28 P4: braces are literal inside double quotes — we deny `$`, not `{}`.
+      "/data/{a}/x.sqlite",
     ]) {
       const cmd = jobCommand("spec_x", p);
       expect(cmd.usable).toBe(true);
@@ -280,6 +283,17 @@ describe("jobCommand / patrolEligibility", () => {
     }
   });
 
+  // r28 P3: POSIX sh expands $VAR inside double quotes — `/data/${HOME}/x.sqlite`
+  // would silently point the recurring job at a different file.
+  it("rejects $ expansion inside double quotes", () => {
+    for (const p of ["/data/${HOME}/x.sqlite", "/data/$SNAP/x.sqlite"]) {
+      const cmd = jobCommand("spec_x", p);
+      expect(cmd.usable).toBe(false);
+      expect(cmd.unsafe).toBe(true);
+      expect(cmd.rejected).toMatch(/shell metacharacter at offset/);
+    }
+  });
+
   it("only allows patrol graduation when the verified db IS the workspace db", () => {
     expect(patrolEligibility(env(), null).ok).toBe(false);
     expect(patrolEligibility(env(), null).reason).toContain("no data_source");
@@ -287,5 +301,65 @@ describe("jobCommand / patrolEligibility", () => {
     expect(
       patrolEligibility(env(), { kind: "sqlite-snapshot", source: path.join(dir, "workspace.db") }).ok,
     ).toBe(true);
+  });
+});
+
+describe("attachJobTarget (r28 Q2)", () => {
+  it("adds job_target without rewriting any frozen field", () => {
+    spec("spec_target");
+    report("run_t1", "spec_target", "2026-09-01T00:00:00.000Z", "PASS");
+    report("run_t2", "spec_target", "2026-09-21T00:00:00.000Z", "PASS");
+    report("run_t3", "spec_target", "2026-10-11T00:00:00.000Z", "PASS");
+    const frozen = writeGraduation(env(), checkEligibility(env(), "spec_target", TH), TH, "2026-10-20T00:00:00.000Z");
+    const before = JSON.parse(fs.readFileSync(frozen.path, "utf8"));
+
+    const after = attachJobTarget(env(), "spec_target", {
+      db: "/data/billing.sqlite",
+      origin: "report",
+      usable: true,
+      job_id: "job_123",
+      every_minutes: 60,
+      updated_at: "2026-10-20T01:00:00.000Z",
+    });
+    const onDisk = JSON.parse(fs.readFileSync(frozen.path, "utf8"));
+    expect(onDisk.job_target).toEqual({
+      db: "/data/billing.sqlite",
+      origin: "report",
+      usable: true,
+      job_id: "job_123",
+      every_minutes: 60,
+      updated_at: "2026-10-20T01:00:00.000Z",
+    });
+    // Identity fields stay byte-identical: the audit fact must not move with the schedule.
+    for (const k of ["spec_id", "spec_version", "run_ids", "thresholds", "history", "span_days", "data_source", "created"]) {
+      expect(JSON.stringify(onDisk[k])).toBe(JSON.stringify(before[k]));
+    }
+    expect(after.job_target?.job_id).toBe("job_123");
+  });
+
+  it("replaces only job_target on a re-attach (same spec)", () => {
+    const after = attachJobTarget(env(), "spec_target", {
+      db: "/data/other.sqlite",
+      origin: "override",
+      usable: true,
+      job_id: "job_123",
+      every_minutes: 30,
+      updated_at: "2026-10-20T02:00:00.000Z",
+    });
+    expect(after.job_target).toMatchObject({ db: "/data/other.sqlite", origin: "override", every_minutes: 30 });
+    expect(after.run_ids.length).toBe(3);
+  });
+
+  it("refuses to annotate a record that does not exist", () => {
+    expect(() =>
+      attachJobTarget(env(), "spec_absent", {
+        db: "/data/x.sqlite",
+        origin: "override",
+        usable: true,
+        job_id: null,
+        every_minutes: 60,
+      }),
+    ).toThrow(/no graduation record for spec_absent/);
+    expect(fs.existsSync(path.join(verifyPaths(env()).root, "graduations", "spec_absent.json"))).toBe(false);
   });
 });

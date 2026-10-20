@@ -402,6 +402,40 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 
   if (sub === "evidence") {
+    // Batch-nine P2-1: delete an evidence row. claim_evidence cascades on
+    // delete, so a bare DELETE would silently drop links and leave claim
+    // statuses stale — refuse while links exist unless --force (then recompute
+    // every affected claim inside the same transaction).
+    if (action === "evidence" && subAction === "rm") {
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research evidence rm <evidenceId> [--force cascade claim links]");
+        return 2;
+      }
+      const e0 = store.db.get("SELECT id, quote FROM evidence WHERE id=? AND project_id=?", [id, project.id]);
+      if (!e0) {
+        bad(ctx, `evidence not found: ${id}  (in project ${project.name})`);
+        return 1;
+      }
+      const force = args.flags.force === true;
+      return getOrm(env.db.path)
+        .then((ds) => writes.evidenceRemove(ds, id, force))
+        .then((r): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify({ id: r.id, unlinked: r.unlinked, forced: r.forced, statuses: r.statuses }, null, 2));
+          } else {
+            ok(ctx, r.unlinked.length
+              ? `evidence removed: ${r.id}  (cascade: ${r.unlinked.length} link(s) dropped; claims recomputed: ${r.unlinked.map((c) => `${c}→${r.statuses[c]}`).join(", ")})`
+              : `evidence removed: ${r.id}`);
+          }
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+
     if (subAction === "add") {
       const sourceId = rest[1];
       // Report ⑤: --file reads the quote from disk — long multi-line excerpts
@@ -736,6 +770,40 @@ if (subAction === "list" || subAction === undefined) {
           else ok(ctx, r.duplicate
             ? `claim ${id} already unverified (no change)`
             : `claim ${id}: ${c0.status} → unverified  (back in tracking; arbitration: claim resolve)`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
+    }
+    // Batch-nine P2-1 (user report): remove ONE claim↔evidence link. Before
+    // this the only repair path was a raw `db sql` DELETE — it left the claim
+    // status lying (still `supported` with zero evidence) and logged nothing.
+    if (subAction === "unlink") {
+      const [cid, eid] = [rest[1], rest[2]];
+      if (!cid || !eid) {
+        bad(ctx, "usage: research claim unlink <claimId> <evidenceId>");
+        return 2;
+      }
+      const c0 = store.db.get("SELECT id FROM claims WHERE id=? AND project_id=?", [cid, project.id]);
+      if (!c0) {
+        bad(ctx, `claim not found: ${cid}  (in project ${project.name}; ids resolve inside one project — pass -p if it lives elsewhere)`);
+        return 1;
+      }
+      const e0 = store.db.get("SELECT id FROM evidence WHERE id=? AND project_id=?", [eid, project.id]);
+      if (!e0) {
+        bad(ctx, `evidence not found: ${eid}  (in project ${project.name})`);
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.claimUnlink(ds, cid, eid))
+        .then((r): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify({ claim: r.claim, evidence: r.evidence, stance: r.stance, status: r.status, recalculated: r.recalculated }, null, 2));
+          } else {
+            ok(ctx, `unlinked ${r.stance} ${r.evidence} from claim ${r.claim}${r.recalculated ? ` — status now: ${r.status}` : " — prediction status kept (evidence is not arbitration)"}`);
+          }
           return 0;
         })
         .catch((e: any): number => {

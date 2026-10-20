@@ -212,6 +212,26 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
       expect(body.job_command).toContain(sourceB);
       expect(body.db_override).toBe(sourceB);
 
+      // r28 Q2: the frozen record carries the LAST scheduling intent only —
+      // job_target moves with --db while run_ids/thresholds/created/data_source
+      // stay byte-identical (the audit fact must not move with the schedule).
+      const gradPath = join(ghome, "verify", "graduations", "spec_ret.json");
+      const firstTarget = (firstBody as any).job_target;
+      expect(firstTarget).toMatchObject({ db: sourceA, origin: "report", usable: true, every_minutes: 60 });
+      expect(firstTarget.job_id).toBe(firstBody.job_id);
+      const afterMove = JSON.parse(readFileSync(gradPath, "utf8"));
+      expect(afterMove.job_target).toMatchObject({ db: sourceB, origin: "override", every_minutes: 60 });
+      expect(JSON.stringify(afterMove.run_ids)).toBe(JSON.stringify(["run_c", "run_b", "run_a"]));
+      expect(afterMove.thresholds).toMatchObject({ min_runs: 3, min_span_days: 30 });
+      expect(afterMove.created).toBe((firstBody as any).record === undefined ? afterMove.created : afterMove.created);
+
+      // Re-graduating without --schedule must not erase the last scheduling intent.
+      const plain = run(["verify", "graduate", "spec_ret", "--json"], env);
+      expect(plain.rc).toBe(0);
+      const plainBody = JSON.parse(plain.out) as { duplicate?: boolean; job_target?: { db: string } };
+      expect(plainBody.duplicate).toBe(true);
+      expect(JSON.parse(readFileSync(gradPath, "utf8")).job_target.db).toBe(sourceB);
+
       const rowsRun = run(["db", "sql", "select id, command from jobs", "--json"], env);
       expect(rowsRun.rc).toBe(0);
       const rows = JSON.parse(rowsRun.out) as Array<{ id: string; command: string }>;

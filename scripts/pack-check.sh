@@ -68,6 +68,20 @@ echo "── 5. --json purity (parse the whole stdout, node invocation)"
 JSONOK=$(Y --json db stats 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{JSON.parse(s);console.log('OK')}catch(e){console.log('BAD')}})")
 [ "$JSONOK" = "OK" ] && pass "--json stdout is parseable as a whole" || fail "--json output polluted"
 
+echo "── 5b. reproducible tarball (same bytes twice, same entries as npm pack)"
+node scripts/pack-repro.mjs --out "$WORK/repro1.tgz" >/dev/null 2>&1 || fail "pack:repro failed to build tarball"
+node scripts/pack-repro.mjs --out "$WORK/repro2.tgz" >/dev/null 2>&1 || fail "pack:repro failed on second run"
+if [ -f "$WORK/repro1.tgz" ] && [ -f "$WORK/repro2.tgz" ]; then
+  SHA1=$(node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" "$WORK/repro1.tgz")
+  SHA2=$(node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" "$WORK/repro2.tgz")
+  [ "$SHA1" = "$SHA2" ] && pass "pack:repro is deterministic (sha256 $SHA1)" || fail "pack:repro produced two different hashes: $SHA1 vs $SHA2"
+  # Entry lists must stay identical: a file that only npm's packer ships (or only
+  # ours) means the two packers have drifted apart.
+  NPM_LIST=$(tar -tzf "$TGZ" | sort)
+  REPRO_LIST=$(tar -tzf "$WORK/repro1.tgz" | sort)
+  [ "$NPM_LIST" = "$REPRO_LIST" ] && pass "repro tarball ships the same entries as npm pack" || fail "repro tarball entry list differs from npm pack"
+fi
+
 echo "── 6. cleanup"
 rm -rf "$WORK" 2>/dev/null && pass "scratch removed" || echo "  (scratch left: $WORK — Windows handle)"
 

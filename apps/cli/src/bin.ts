@@ -122,10 +122,12 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
   evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
-  evidence list
+  evidence list | assess <id>
+  evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)
   claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>]
   claim link <claimId> <evidenceId> [--stance supports|refutes]
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
+  claim unlink <claimId> <evidenceId>  remove one link, recompute status (prediction status kept)
   claim resolve <claimId> --as supported|refuted|contested [--note]
   claim unresolve <claimId>   reset to unverified (undo auto-promote / early arbitration)
   claim evaluate <claimId>    decision-model confidence from linked evidence (persisted)
@@ -183,6 +185,7 @@ ${paint(C.bold, "tree / node", color)}   tech-tree node model
                                       [--mode AND|OR|XOR|NOT] [--optional]
                                       [--min-level n] [--weight n]
   node unlink <parent> <child> [--rel prereq]
+  node move <key> --to <tree>        move one node between trees (refused while it still has edges)
   node cond <key> --name <c>         [--kind flag|resource|level|quest|time|expr]
                                       [--op >=|==|<=|!=|has] [--value v] [--optional]
                                       [--op eval --value "<布尔问题>"]
@@ -200,7 +203,7 @@ ${paint(C.bold, "tree / node", color)}   tech-tree node model
   node path <key>                    dependency-order path to target (all locked ancestors; OR branches not optimized)
   node parents|children <key>        direct relations
   node ancestors|descendants <key>   transitive, via closure index
-  node list | show <key> | search "<q>" | unlock|lock <key>
+  node list | show <key> | search "<q>" | unlock|lock <key> | rm <key>
   node validate                      cycles, dangling edges, dirty index
   node export [--out file.json]      portable JSON
   node import --file <file.json>     [--tree name] [--merge] — strict, transactional
@@ -701,6 +704,8 @@ export function generateLlmsManifest(): string {
       ["research claim evaluate <cid>", "decision model confidence (0-5 → A/B/C/D), persisted as claim.eval"],
       ["research claim calibration [--all]", "model-vs-human grade gap (校准预测判据 ≥60%)"],
       ["research evidence assess <eid>", "decision model quality assessment"],
+      ["research evidence rm <eid> [--force]", "delete evidence (refuse if linked)"],
+      ["research claim unlink <cid> <eid>", "remove one claim-evidence link"],
     ]],
     ["produce", "Reports + engineering artifacts", [
       ["produce outline", "auto-outline from claims"],
@@ -728,6 +733,7 @@ export function generateLlmsManifest(): string {
       ["tree new <name>", "create tree"],
       ["node add <key>", "add node (--name --kind --tier --cost --tags)"],
       ["node link <parent> <child> [--rel prereq|unlock|excludes|enables] [--mode AND|OR|XOR|NOT] [--optional]", "link nodes"],
+      ["node move <key> --to <tree>", "move one node between trees (edges inside its tree block the move)"],
       ["node cond <key> --name <c> --kind <k> [--op eval] [--value \"<question>\"]", "add condition (eval = decision model gate)"],
       ["node index", "rebuild closure + topo order"],
       ["node can <key> [--state k=v] [--eval]", "can unlock? (required vs optional + cost)"],
@@ -736,6 +742,7 @@ export function generateLlmsManifest(): string {
       ["node path <key>", "dependency-order path (OR branches not optimized)"],
       ["node unlock <key>", "mark unlocked"],
       ["node list", "list with state column (locked/unlocked)"],
+      ["node rm <key>", "delete node (FK cascades edges/conditions/state)"],
       ["node validate", "cycles, dangling edges, dirty index"],
     ]],
     ["task", "Task state machine", [

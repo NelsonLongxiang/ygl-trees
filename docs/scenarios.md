@@ -57,7 +57,7 @@
 ## 5. 多 agent 协作治理（multi-agent governance）
 
 - **入口**：多个会话/席位并行干活，需要派单-回执-对账不出乱子。
-- **最小命令序列**：写命令一律 `--project` 钉住 → 会话内 `project use`（多项目工作区不选择即拒绝）→ `job add` 定时巡检 → 事件流 `agent log` 审计。
+- **最小命令序列**：写命令一律 `--project` 钉住 → 会话内 `project use`（多项目工作区不选择即拒绝）→ 树侧同理 `-t`/`--tree` 钉住或会话内 `tree use`（各自 session 键，别依赖共享指针）→ `job add` 定时巡检 → 事件流 `agent log` 审计。
 - **出口**：每工单一回执；挂账由监督对账清零；选择来源（flag/env/session）处处可查。
 - **验收判据**：未选择时读命令 rc=2 单错误对象；跨项目操作 404/点名；锁与并发互不踩（busy_timeout + 钉住）。
 - **常见反模式**：裸 shell 共用 default 会话键互踩；挂单不回执；依赖全局指针。

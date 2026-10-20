@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.104.0",
+  "version": "0.105.0",
   "description": "Research workbench CLI for AI agents — evidence-first research pipeline, claims calibration and tech-tree skill modeling (SQLite; 猿光·科技树)",
   "type": "commonjs",
   "keywords": [
@@ -35,6 +35,7 @@
     "test:unit": "vitest run --maxWorkers=2",
     "smoke:bun": "bash scripts/bun-smoke.sh",
     "bench": "pnpm build && node benchmarks/bench.js",
+    "pack:repro": "node scripts/pack-repro.mjs",
     "pack:check": "bash scripts/pack-check.sh",
     "readme:verify": "bash scripts/readme-verify.sh",
     "contract:audit": "bash scripts/contract-audit.sh",

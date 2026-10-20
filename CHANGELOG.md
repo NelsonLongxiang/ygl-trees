@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.105.0
+
+**批九增补单 + r28 收口**：无契约形状变更（`contract_version` / `corpus_version` 仍 1.1）。
+
+- **误挂证据不再是死角（批九增补 P2-1）**：`research claim unlink <claimId> <evidenceId>` 与
+  `research evidence rm <id> [--force]` 补上——此前误挂证据只能 `db sql` 裸删，而
+  `claim_evidence` 是 `ON DELETE CASCADE`，裸删会静默丢链接、断言状态滞留 `supported`。
+  - `claim unlink`：事务内点名 `claim not found` / `evidence not found` / `link not found`
+    （后者给出 `claim show` 的查看建议），删链接后**重算状态**（supports/refutes 计数 →
+    `contested|supported|refuted|unverified`），落 `claim.unlink` 事件。**预测断言
+    （`[预测·` 前缀）不因证据增删降级**：状态由仲裁（`claim resolve`）决定，事件里写
+    `prediction: status kept`。
+  - `evidence rm`：仍有断言链接时拒绝并列出 claim id 与解绑命令；`--force` 逐条解绑 →
+    逐条重算 → 删证据 → 落 `evidence.rm` 事件（含 `(cascaded: N link(s))`）。不做成
+    `source rm` 那种「只删不级联」——证据的链接影响面比来源大。
+- **`node move <key> --to <tree>`（批九增补 P2-2）**：整节点跨树迁移。拒绝条件：节点在
+  当前树内仍有边（先 `node link` 改边，不替你猜哪些边该跟走）；目标树已有同名 key；源树
+  里找不到节点。成功时迁移 `node_states` 行、**两棵树都标脏**（`node index` 一次重建两侧闭包）、
+  落 `node.move` 事件（`from_tree`/`to_tree`/`state_rows`）。树内重挂（改 parent）不在本版——
+  那是 `unlink` + `link` 的组合，语义不同，不塞进同一个命令。
+- **`node rm` 可发现性（批九增补 P2-3）**：处理器早已存在，顶层 help 与 llms 计数里缺行；
+  补 `node rm <key>` 与「删除会连带边/条件/状态」的说明。
+- **并行会话纪律入文档**：`-t` 单次覆盖与会话级 selection（`project use`/`tree use` 落
+  session selection）都已可用，缺的是「多会话共用工作区时各自 `use` 或全程 `-t/--project`」
+  这句话；写进 `docs/scenarios.md` 与 techtree 技能，不新增机制。
+- **`$` 进 shell 元字符 denylist（r28 P3）**：POSIX sh 在双引号内仍展开 `$VAR`，
+  `--db /data/${HOME}/x.sqlite` 会被静默换成另一个库；`$` 与 `&` `|` `<` `>` `^` `%` `!` `"`
+  反引号 `(` `)` 同列。`{` `}` 在双引号内是字面量，不拒（源码与文档同步订正）。
+- **`job_target` 写入毕业记录（r28 Q2）**：`--schedule` 成功后记录里多一个
+  `job_target {db, origin:"report"|"override", usable, job_id, every_minutes, updated_at}`，
+  **只动这一个字段**——`run_ids`/`thresholds`/`created`/`data_source`/`materials_sha256`
+  逐字节不变（重毕业的 `duplicate` 路径同样只更新它；不带 `--schedule` 的重复毕业保留旧值）。
+  语义是「最后一次排期意图」，执行真相仍在 `jobs` 表，漂移靠 `job.retarget` 事件与
+  `updated_at` 审计。该字段不进 identity/重复判定/资格/patrol，旧记录缺失需容忍。
+- **可复现打包（`pnpm pack:repro`）**：`npm pack` 的 tarball 带打包机 mtime/属主/gzip 头，
+  同一 commit 每次指纹都变，只能记账不能校验。新脚本 `scripts/pack-repro.mjs` 固定
+  文件顺序（路径字节序）、`mtime=0`、`uid/gid=0`、`uname/gname` 空、`mode=0644`、ustar 无
+  pax、gzip level 9 无文件名/时间戳；文件清单仍取 `npm pack --dry-run --json`（沿用 npm 的
+  `files`/`.npmignore` 规则）。实测连打两次同 sha256。`pack:check` 继续负责「能装能跑」。
+- **闸门不再弄脏工作树（发版席发布坑②）**：`ratchet` 原来在指标变好时**自动写回基线**，
+  于是 `pnpm test`（以及任何跑它的发布钩子）会在发布过程中修改被跟踪文件，`pnpm publish`
+  随即以 `ERR_PNPM_GIT_UNCLEAN` 拒绝。度量工具不得改变被测对象：现在只在显式 `--write`
+  时落盘，变好只打印「N 项比基线更紧，可 `--write` 锁定」（`docs/measurement-ratchet.md` 同步）。
+- **`pack:check` 5b 自检两处（否则确定性断言恒挂）**：`scripts/pack-repro.mjs` 不再盲信
+  `npm_execpath`（`pnpm run` 下它指向 pnpm CLI，不支持 `pack --dry-run --json`，只在
+  `npm-cli.js` 时才用，否则回落到 node 同级的 npm）；`scripts/pack-check.sh` 第二个哈希
+  误用 `process.argv[2]`（`node -e` 只有一个参数位 → `readFileSync(undefined)` 抛
+  `ERR_INVALID_ARG_TYPE`，而 `|| fail` 只记不退，表面症状是「两次哈希不同」）。
+- 测试：unit **522**（76 文件，+25：`unlink.spec` 7、`claim-unlink.spec` 4、`node-move.spec` 6、
+  `node-move` CLI 4、`graduate.spec` 18→22）；`pnpm test` / `readme:verify` / `pack:check` 门禁数据见
+  `docs/plan.md` 0.105.0 记录。
+
 ## 0.104.0
 
 **批九可发现性 + r26 P1 安全收口**：无契约形状变更（`contract_version` / `corpus_version` 仍 1.1）。
@@ -11,7 +63,7 @@
 - **语料行尾规范化（发版席 0.103.0 复核 BLOCK 修复）**：`freeze.mjs` 按**磁盘字节**算 sha256，而 `core.autocrlf=true` 的检出会把 `corpus/cases/**` 写成 CRLF、脚本直写的 `canonical/vectors.json` 却是 LF——manifest 成了混合清单：Windows 主树自洽，CI/Linux/新 clone 上 `corpus-digest` 快照必红，且 tarball 内容随打包机漂移（产物正确性取决于哪台机器打包）。修法：仓库根新增 `.gitattributes`（`packages/verify/core/corpus/** text eol=lf`、`*.pdf -text`），在统一 LF 基上重冻 `manifest.json`（129 文件，digest `4cac21b4…` → `ee1a0a1d6dddcfcd8fcf58f70f5955ca4edab3d9fca5deb131c8c3eccc7212fc`）。语料语义零变化（仓库 blob 本来就是 LF），`corpus_version` 仍 1.1；`docs/verify-contract.md` §4.6 与 `packages/verify/core/CHANGELOG.md` 记明该 digest 取代关系。
 - **r26 收口（评审 302cb119，1 个 P1 安全缺陷 + P4 文档项）**：报告是数据不是命令——`verify report import` 只校验 payload 自洽，伪造报告把 `" & echo PWNED & rem "` 塞进 `data_source.source` 后，`--schedule` 会把它内插进 `job_command`，`job tick` 经 shell 执行。修法：`jobCommand()` 对报告 source 与 `--db` 覆盖统一做字符校验（r27 起为 denylist：拒 shell 元字符与控制字符、拒超长、拒尾随分隔符/空白；中文/`#`/`+`/空格/两种分隔符均放行），不安全 → `job_command_usable:false`、命令串打占位符、`--schedule` rc=1，且 `job_command_rejected` **只描述形状**（长度 + 首个越界字符的 offset / 尾随类原因），不回显任何原字符；`spec_id` 同白名单（不合格打 `<spec-id>`）。`verify report import` 对可疑 source 出声（`source_warning`，不拒绝——跨机绝对路径合法）。`--db` 覆盖语义钉死：只换常驻作业目标，不改资格判定/冻结记录/patrol。彻底修法（argv 存储、不经 shell）留 M13-4。
 - **schema 探针问快照库要真实列（0.104.0，发版席上报 P2）**：`probeOf(ddl)` 解析的是 `sqlite_master.sql` 里的建表语句，`ALTER TABLE … ADD COLUMN` 加的列不在那条文本里——`kb_notes.tags/created` 这类「代码里在用、DDL 文本里没有」的列被 P2 结构性拒绝（`count column "tags" is not in kb_notes (columns: …)`）。修法：新增 `probeOfDb(dbPath)`（`PRAGMA table_info` 取真实表/列，带标识符转义），CLI `prepare` 与 HTTP `prepareViaHttp` 都改用它；DDL 文本只剩红队建空库与指纹用途。回归：CLI 新增「ALTER TABLE 加的列不被结构性打回」端到端用例（ready + 无 `is not in notes`）。
-- **冷启动度量抗噪（0.104.0，门禁自伤修复）**：`ratchet` 的 `cold_start_ms` 原本「预热 1 次 + 5 次取中位数」，本机实测同一 commit 摆动 464–634ms——pre-push 钩子排在全量门禁末尾时，5 个样本一起被回收负载拖慢，中位数被顶穿 30% 容差，于是**同一个绿 commit 推不出去**（闸门测的是机器忙闲，不是产品快慢，正是该脚本开头想避免的错）。修法：预热 2 次 + 7 次取**最小值**（启动耗时存在可达下界，噪声是单侧的，真回归会把最小值一起抬上去），并在超容差时延迟 1.5s 复测一次取更优值（真回归两次都慢，噪声只命中一次）。基线不动，`docs/measurement-ratchet.md` 与脚本头注同步说明。
+- **冷启动度量抗噪（0.104.0，门禁自伤修复）**：`ratchet` 的 `cold_start_ms` 原本「预热 1 次 + 5 次取中位数」，本机实测同一 commit 摆动 464–634ms——pre-push 钩子排在全量门禁末尾时，5 个样本一起被回收负载拖慢，中位数被顶穿 30% 容差，于是**同一个绿 commit 推不出去**（闸门测的是机器忙闲，不是产品快慢，正是该脚本开头想避免的错）。修法：预热 2 次 + 7 次取**最小值**（启动耗时存在可达下界，噪声是单侧的，真回归会把最小值一起抬上去），并在超容差时延迟 1.5s 复测一次取更优值（真回归两次都慢，噪声只命中一次）。方法变了必须按新方法**重烘基线**（同版 ratchet 记账条：三项各带 `method`），`docs/measurement-ratchet.md` 与脚本头注同步说明。
 - **测试侧连接级重试（0.104.0，门禁可复现性）**：干净检出满负载跑套件会偶发 `TypeError: fetch failed / read ECONNRESET`（实测 `webui.test.ts` P1-1 与 `verify-jobs` 语料归档两例，隔离跑必绿）——服务端还没读到请求就被复位，属传输抖动。统一在 `tests/support/fetch-retry.ts`（vitest `setupFiles`）给全局 `fetch` 加「一个字节都没收到」的传输级重试：≤3 次、退避 300/600ms，body 必须可重放（流式 body 直接抛），**收到任何 HTTP 状态码都不重试**（那是被测系统的回答）。真实缺陷会三次都失败，不会被这条遮住。
 - **r27 / K3 收口（评审 302cb119 r27 PASS + K3 评审席 REJECT）**：
   - **`--db` 重排真的生效（r27 P2①）**：`--schedule` 第二次跑时 `jobAdd` 按 title 幂等回旧行，jobs 表里仍是旧路径而输出展示新命令——「retarget 静默 no-op」。新增 `writes.jobRetarget()`：同名作业存在且命令/周期变化时 `UPDATE jobs` + 落 `job.retarget` 事件，响应带 `job_retargeted:true`；不存在才新建。

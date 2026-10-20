@@ -46,6 +46,8 @@ ygl-trees research claim add "断言文本" --confidence 0.92            # 数�
 ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导（普通断言）+ 自动模型评估落账（0.84）
 ygl-trees research claim resolve <claimId> --as contested --note "矛盾待查"  # 人工仲裁出口
 ygl-trees research claim unresolve <claimId>   # 复位回 unverified（0.82.1：撤销链接副作用/抢跑仲裁）
+ygl-trees research claim unlink <claimId> <evidenceId>  # 解除单条链接并重算状态（[预测·] 保持原状态，0.105.0）
+ygl-trees research evidence rm <evidenceId> [--force]       # 删证据；仍被链接时默认拒绝，--force 级联删链并重算（0.105.0）
 ygl-trees research claim evaluate <claimId>    # 模型置信度评估（0.84：写 claim.eval 事件，不再 stdout 蒸发）
 ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（0.84：校准预测 ≥60% 判据的测量面）
 ```

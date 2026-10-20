@@ -27,6 +27,8 @@ ygl-trees node link mining smelting                      # prereq/AND/必检（�
 ygl-trees node link bronze steel --optional              # 可选：不阻塞，进 missing_optional
 ygl-trees node link bronze iron --mode OR                # 任一父解锁即可
 ygl-trees node link a b --rel excludes                   # 互斥分支：父解锁则子被封死
+ygl-trees node move stray --to other-tree                 # 跨树搬节点：树内还有边则拒绝（先 unlink），状态行随迁（0.105.0）
+ygl-trees node rm stray                                   # 删节点：FK 级联边/条件/状态
 ygl-trees node cond add steel --name lab_level --kind level --value 3       # 必检门槛（add 动作词 0.81）
 ygl-trees node cond add steel --name has_eng --kind flag --op has --optional \
             --effect cost_mul --weight 0.8                                 # 可选打折

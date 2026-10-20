@@ -1122,6 +1122,34 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
 
+    if (sub === "move") {
+      // batch-nine supplement P2-2: nodes were landing in the wrong tree and
+      // the only repair was db sql. Scope is one node at a time, and the write
+      // service refuses a node that still has edges (that would split the graph).
+      const to = flagStr("to");
+      if (!key || !to) {
+        bad(ctx, "usage: node move <key> --to <tree>   (one node at a time; a node with edges inside its tree is refused)");
+        return 2;
+      }
+      return runTreeWrite(
+        (ds) => treeWrites.nodeMove(ds, tid, key, to),
+        (r): number => {
+          if (!r.moved) {
+            if (ctx.json) console.log(JSON.stringify({ ...r.row, moved: false, duplicate: true, from_tree: r.from_tree, to_tree: r.to_tree }, null, 2));
+            else out(ctx, paint(C.yellow, `  ! node already in tree '${r.to_tree}'`, ctx.color));
+            return 0;
+          }
+          if (ctx.json) console.log(JSON.stringify({ ...r.row, moved: true, from_tree: r.from_tree, to_tree: r.to_tree, state_rows: r.state_rows, closure_rows: r.closure_rows }, null, 2));
+          else {
+            ack(ctx, r.row, `node moved: ${key}  ${r.from_tree} → ${r.to_tree}`);
+            if (r.state_rows) out(ctx, `  state rows carried over: ${r.state_rows}`);
+            out(ctx, "  index is dirty for both trees — run: node index");
+          }
+          return 0;
+        }
+      );
+    }
+
     if (sub === "rm") {
       if (!key) {
         bad(ctx, "usage: node rm <key>");

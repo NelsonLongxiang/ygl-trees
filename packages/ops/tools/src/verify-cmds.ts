@@ -30,7 +30,7 @@ import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
-import { checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
+import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 
@@ -730,6 +730,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           payload.job_id = jobRow.id;
           payload.job_every_minutes = jobRow.every ?? every;
           if (jobRow.retargeted) payload.job_retargeted = true;
+          // r28 Q2: 排期意图写进冻结记录，但只动 job_target 一个字段
+          // （run_ids/thresholds/created/data_source 逐字节不变）。
+          try {
+            const withTarget = attachJobTarget(env, el.spec_id, {
+              db: cmd.db,
+              origin: dbOverride ? "override" : "report",
+              usable: cmd.usable,
+              job_id: jobRow.id ?? null,
+              every_minutes: jobRow.every ?? every,
+            });
+            payload.job_target = withTarget.job_target;
+          } catch (e: any) {
+            // 记录已冻结但排期字段写失败：作业已经登记成功，不能把 rc 变成失败，
+            // 但必须出声——审计者需要知道记录与作业对不上。
+            payload.job_target_error = e?.message || String(e);
+          }
         }
         if (ctx.json) {
           console.log(JSON.stringify(payload, null, 2));

@@ -301,6 +301,105 @@ export async function claimLink(
   });
 }
 
+/** Recompute a claim's status from its remaining claim_evidence rows.
+ *  Prediction claims (`[预测·…]` prefix) keep their status: evidence linking is
+ *  evidence gathering, arbitration stays `claim resolve` (same guard as claimLink). */
+async function recomputeClaimStatus(mgr: EntityManager, claimId: string): Promise<{ status: string; recalculated: boolean }> {
+  const c = (await mgr.query(`SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
+  if (!c.length) throw new Error(`claim not found: ${claimId}`);
+  if (String(c[0]?.text ?? "").startsWith("[预测·")) {
+    const cur = (await mgr.query(`SELECT status FROM claims WHERE id=?`, [claimId])) as any[];
+    return { status: String(cur?.[0]?.status ?? "unverified"), recalculated: false };
+  }
+  const sup = (await mgr.query(
+    `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='supports'`, [claimId]
+  )) as any[];
+  const ref = (await mgr.query(
+    `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='refutes'`, [claimId]
+  )) as any[];
+  const sN = Number(sup?.[0]?.c ?? 0);
+  const rN = Number(ref?.[0]?.c ?? 0);
+  const status = sN && rN ? "contested" : sN ? "supported" : rN ? "refuted" : "unverified";
+  await mgr.update(Claim, { id: claimId }, { status, updated: nowIso() } as any);
+  return { status, recalculated: true };
+}
+
+/** Batch-nine P2-1: remove ONE claim↔evidence link — the symmetric counterpart
+ *  of claimLink. Without it the only repair path was a raw `db sql` DELETE,
+ *  which leaves the claim status lying (still `supported` with zero evidence)
+ *  and leaves no audit event. */
+export async function claimUnlink(
+  ds: DataSource,
+  claimId: string,
+  evidenceId: string
+): Promise<{ claim: string; evidence: string; stance: string; status: string; recalculated: boolean }> {
+  return runTx(ds, async (mgr) => {
+    const c = (await mgr.query(`SELECT id FROM claims WHERE id=?`, [claimId])) as any[];
+    if (!c.length) throw new Error(`claim not found: ${claimId}`);
+    const e = (await mgr.query(`SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
+    if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
+    const link = (await mgr.query(
+      `SELECT stance FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [claimId, evidenceId]
+    )) as any[];
+    if (!link.length) {
+      throw new Error(
+        `link not found: claim ${claimId} ↔ evidence ${evidenceId} — run research claim show ${claimId} to see its linked evidence`
+      );
+    }
+    const stance = String(link[0]?.stance ?? "supports");
+    await mgr.query(`DELETE FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [claimId, evidenceId]);
+    const r = await recomputeClaimStatus(mgr, claimId);
+    await logEvent(
+      mgr,
+      "claim.unlink",
+      "claim",
+      claimId,
+      `${stance} ${evidenceId}${r.recalculated ? ` (status → ${r.status})` : " (prediction: status kept)"}`
+    );
+    return { claim: claimId, evidence: evidenceId, stance, status: r.status, recalculated: r.recalculated };
+  });
+}
+
+/** Batch-nine P2-1: delete an evidence row. `claim_evidence` has ON DELETE
+ *  CASCADE, so a bare DELETE silently drops links and leaves claim statuses
+ *  stale — this command refuses that by default (`linked to N claim(s)`) and,
+ *  with `--force`, recomputes every affected claim inside the same transaction. */
+export async function evidenceRemove(
+  ds: DataSource,
+  evidenceId: string,
+  force = false
+): Promise<{ id: string; unlinked: string[]; forced: boolean; statuses: Record<string, string> }> {
+  return runTx(ds, async (mgr) => {
+    const e = (await mgr.query(`SELECT id, quote FROM evidence WHERE id=?`, [evidenceId])) as any[];
+    if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
+    const links = (await mgr.query(
+      `SELECT claim_id FROM claim_evidence WHERE evidence_id=? ORDER BY claim_id`, [evidenceId]
+    )) as any[];
+    const claims = links.map((l: any) => String(l.claim_id));
+    if (claims.length && !force) {
+      throw new Error(
+        `evidence ${evidenceId} is linked to ${claims.length} claim(s): ${claims.join(" ")} — ` +
+          `unlink first (research claim unlink <claim> ${evidenceId}) or pass --force to cascade`
+      );
+    }
+    const statuses: Record<string, string> = {};
+    for (const cid of claims) {
+      await mgr.query(`DELETE FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [cid, evidenceId]);
+      const r = await recomputeClaimStatus(mgr, cid);
+      statuses[cid] = r.status;
+    }
+    await mgr.query(`DELETE FROM evidence WHERE id=?`, [evidenceId]);
+    await logEvent(
+      mgr,
+      "evidence.rm",
+      "evidence",
+      evidenceId,
+      `${String(e[0]?.quote ?? "").slice(0, 60)}${claims.length ? ` (cascaded: ${claims.length} link(s))` : ""}`
+    );
+    return { id: evidenceId, unlinked: claims, forced: claims.length > 0, statuses };
+  });
+}
+
 /** 0.82.1 (user report ③): reset an auto-promoted / wrongly arbitrated claim
  * back to unverified — the repair channel for link side effects on
  * predictions (and for any claim arbitrated too early). Idempotent: already

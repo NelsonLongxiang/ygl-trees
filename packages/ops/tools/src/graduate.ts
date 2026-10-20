@@ -44,6 +44,8 @@ export interface GraduationRecord {
   span_days: number;
   /** 最近一份报告的 `data_source`（常驻执行据此挑 --db）。 */
   data_source: { kind: string; source: string; sha256?: string } | null;
+  /** 最后一次 `--schedule` 成功的排期意图（r28 Q2）；旧记录可能缺该字段。 */
+  job_target?: JobTarget;
   created: string;
 }
 
@@ -192,6 +194,51 @@ export function writeGraduation(
   return { record, path, duplicate: false };
 }
 
+/** 最后一次排期意图的快照（r28 Q2：与 `data_source` 并列，不进 identity）。 */
+export interface JobTarget {
+  /** 排期时实际写进作业的命令目标（`--db` 覆盖值或报告来源）。 */
+  db: string;
+  /** 目标从哪来：报告里的 `data_source.source`，还是操作员显式 `--db`。 */
+  origin: "report" | "override";
+  usable: boolean;
+  job_id: string | null;
+  every_minutes: number;
+  updated_at: string;
+}
+
+/**
+ * 把「这次排到哪个库、哪个作业」写进已冻结的毕业记录（r28 Q2）。
+ *
+ * 只改 `job_target` 一个字段：run_ids / thresholds / created / data_source /
+ * materials_sha256 必须逐字节不变——作业目标会漂（操作员换库、jobRetarget 改命令），
+ * 但「这份规范曾经稳定通过 N 份报告」是被冻结的审计事实，不能因为改调度而重写。
+ * 语义是「最后一次排期意图」；执行真相在 `jobs` 表，漂移靠 `job.retarget` 事件与
+ * `updated_at` 对齐。
+ */
+export function attachJobTarget(
+  env: Env,
+  specId: string,
+  target: Omit<JobTarget, "updated_at"> & { updated_at?: string },
+): GraduationRecord {
+  const path = graduationPath(env, specId);
+  let prev: GraduationRecord | null = null;
+  try {
+    prev = readJson<GraduationRecord>(path);
+  } catch {
+    prev = null; // missing record is a caller error, not a crash
+  }
+  if (!prev?.run_ids) {
+    // Never fabricate a record: job_target annotates a frozen fact.
+    throw new GraduationError(`no graduation record for ${specId} — run verify graduate first`);
+  }
+  const next: GraduationRecord = {
+    ...prev,
+    job_target: { ...target, updated_at: target.updated_at ?? new Date().toISOString() },
+  };
+  writeJson(path, next);
+  return next;
+}
+
 /**
  * 交给 `job add` 的命令串（--every 是 job 的调度参数，不属于 verify）。
  *
@@ -219,7 +266,7 @@ export interface JobCommand {
 /** 命令解释器元字符 + 控制字符（denylist）：`cmd.exe` 下 `& | < > ^ % ! ( ) " \`` 会被
  *  解释器吃掉，路径里出现任何一个都不当路径用。反过来说，**允许 Unicode**——中文、
  *  `#`、`+`、`'` 在 Windows 路径里完全合法，白名单式放行会误伤真实目录（r27 P2-3）。 */
-const SHELL_METACHARS = /[&|<>^%!"`()\u0000-\u001f\u007f]/;
+const SHELL_METACHARS = /[&|<>^%!"`$()\u0000-\u001f\u007f]/;
 /** spec_id 同为命令串的一部分，用与 HTTP 层一致的 id 白名单。 */
 const SPEC_ID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 
