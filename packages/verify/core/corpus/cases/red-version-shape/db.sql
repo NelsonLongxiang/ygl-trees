@@ -1,0 +1,4 @@
+CREATE TABLE executions (id INTEGER PRIMARY KEY);
+INSERT INTO executions (id) VALUES (1);
+CREATE TABLE policy (id INTEGER PRIMARY KEY, lim INTEGER);
+INSERT INTO policy (id,lim) VALUES (1,1);

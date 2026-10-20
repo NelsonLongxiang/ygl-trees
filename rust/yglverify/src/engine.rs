@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use crate::canonical::canonical_sha256;
 use crate::compare::{compare_values, validate_compare_spec, CompareOutcome};
 use crate::contract::*;
-use crate::predicate::{agg_alias_of, render_predicate, render_scan};
+use crate::predicate::{agg_alias_of, contains_col_ref, first_col_ref_pair, render_predicate, render_scan};
 use crate::sqlite::{column, first_value, Row, SqliteRunner};
 
 const EMPTY_SCHEMA: &str = "sha256:empty";
@@ -86,6 +86,11 @@ fn vu_result(vu: &VerifyUnit, verdict: Verdict, witness: Option<ScopeWitness>, e
 
 fn err(vu: &VerifyUnit, reason: impl Into<String>) -> VuResult {
     vu_result(vu, Verdict::Error, None, Some(json!({ "reason": reason.into() })))
+}
+
+/// 1.2: construction rejection with a closed code (`evidence.spec_error`).
+fn err_code(vu: &VerifyUnit, reason: impl Into<String>, code: &str) -> VuResult {
+    vu_result(vu, Verdict::Error, None, Some(json!({ "reason": reason.into(), "spec_error": code })))
 }
 
 fn number_of(v: &Value) -> Option<f64> {
@@ -231,9 +236,35 @@ pub fn run_fact_checker(
                 }
                 let rendered = match render_predicate(pred) {
                     Ok(r) => r,
-                    Err(e) => return err(vu, e),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        let code = if msg.starts_with("cross_table_col") {
+                            Some("cross_table_col")
+                        } else if msg.starts_with("null_rhs_for_null_op") {
+                            Some("null_rhs_for_null_op")
+                        } else {
+                            None
+                        };
+                        return match code {
+                            Some(c) => err_code(vu, msg, c),
+                            None => err(vu, msg),
+                        };
+                    }
                 };
-                let find_rows = match runner.query(&rendered.find_sql) {
+                // 1.2: project both compared sides and order by rowid so samples
+                // are deterministic across TS/Rust (mirrors engine.ts exactly).
+                let col_ref = first_col_ref_pair(pred);
+                let mut cmp_sql = rendered.find_sql.clone();
+                if let Some((lhs, rhs)) = &col_ref {
+                    if let Some(at) = cmp_sql.find(" FROM ") {
+                        cmp_sql = format!(
+                            "{}, {lhs} AS __cmp_left, {rhs} AS __cmp_right{} ORDER BY rowid",
+                            &cmp_sql[..at],
+                            &cmp_sql[at..]
+                        );
+                    }
+                }
+                let find_rows = match runner.query(&cmp_sql) {
                     Ok(r) => r,
                     Err(e) => return err(vu, format!("rendered query failed: {e}")),
                 };
@@ -265,20 +296,39 @@ pub fn run_fact_checker(
                     );
                 }
                 let bad = if fail_when == "rows>0" { find_rows.len() } else if find_rows.is_empty() { 1 } else { 0 };
-                if bad > 0 {
-                    return vu_result(
-                        vu,
-                        Verdict::Fail,
-                        Some(w),
-                        Some(json!({
-                            "violations": bad,
-                            "rows": canonical_rows(&find_rows, 1).into_iter().take(5).collect::<Vec<_>>(),
-                            "rows_total": find_rows.len(),
-                            "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql }
-                        })),
-                    );
+                let compared_value = col_ref.as_ref().map(|_| {
+                    let sampled: Vec<Value> = find_rows
+                        .iter()
+                        .take(5)
+                        .map(|r| {
+                            let left = r.iter().find(|(k, _)| k == "__cmp_left").map(|(_, v)| v.clone()).unwrap_or(Value::Null);
+                            let right = r.iter().find(|(k, _)| k == "__cmp_right").map(|(_, v)| v.clone()).unwrap_or(Value::Null);
+                            json!({ "left": left, "right": right })
+                        })
+                        .collect();
+                    json!({ "compared_rows": sampled, "compared_total": find_rows.len() })
+                });
+                let mut evidence = json!({
+                    "violations": bad,
+                    "rows": canonical_rows(&find_rows, 1).into_iter().take(5).collect::<Vec<_>>(),
+                    "rows_total": find_rows.len(),
+                    "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql }
+                });
+                if let (Some(Value::Object(extra)), Value::Object(base)) = (compared_value.clone(), &mut evidence) {
+                    for (k, v) in extra {
+                        base.insert(k, v);
+                    }
                 }
-                return vu_result(vu, Verdict::Pass, Some(w), Some(json!({ "rows": find_rows.len(), "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql } })));
+                if bad > 0 {
+                    return vu_result(vu, Verdict::Fail, Some(w), Some(evidence));
+                }
+                let mut pass_evidence = json!({ "rows": find_rows.len(), "rendered": { "findSql": rendered.find_sql, "scopeSql": rendered.scope_sql } });
+                if let (Some(Value::Object(extra)), Value::Object(base)) = (compared_value, &mut pass_evidence) {
+                    for (k, v) in extra {
+                        base.insert(k, v);
+                    }
+                }
+                return vu_result(vu, Verdict::Pass, Some(w), Some(pass_evidence));
             }
 
             if c.authored.as_deref() == Some("mechanical") {
@@ -481,12 +531,91 @@ pub fn run_fact_checker(
             if forms != 1 {
                 return err(vu, "count checker declares nothing or multiple forms — exactly one of from/sql/predicate is required");
             }
-            let (n, scanned, sources) = if let Some(from) = &c.from {
-                let key = from.trim_start_matches("$vu:");
-                match outputs.get(key) {
-                    Some(rows) => (rows.len() as f64, rows.len() as i64, Vec::new()),
-                    None => return err(vu, format!("count from {from} is not available (topological order violated)")),
+            // 1.2: right-hand side may be a scalar from another table. `agg` is
+            // mandatory (no default) — spec validity must never depend on data.
+            let mut compared: Option<Value> = None;
+            let target: f64;
+            let (n, scanned, sources) = if let Some(against) = &c.against {
+                if against.agg.is_empty() {
+                    return err_code(
+                        vu,
+                        "count.against requires agg (max|min|sum|count) — no default is applied",
+                        "missing_agg",
+                    );
                 }
+                let pred = match &c.predicate {
+                    Some(p) => p,
+                    None => return err(vu, "count.against requires the predicate form (count is the left side)"),
+                };
+                let scan = match render_scan(pred) {
+                    Ok(s) => s,
+                    Err(e) => return err(vu, e),
+                };
+                let rhs_col = match crate::predicate::ident_public(&against.col, "against column") {
+                    Ok(c) => c,
+                    Err(e) => return err(vu, e),
+                };
+                let rhs_table = match crate::predicate::ident_public(&against.from, "against table") {
+                    Ok(t) => t,
+                    Err(e) => return err(vu, e),
+                };
+                let sql = format!(
+                    "SELECT (SELECT count(*) FROM {}{}) AS left_count, (SELECT {}({}) FROM {}) AS right_value",
+                    scan.from,
+                    scan.where_sql,
+                    against.agg.to_uppercase(),
+                    rhs_col,
+                    rhs_table
+                );
+                let rows = match runner.query(&sql) {
+                    Ok(r) => r,
+                    Err(e) => return err(vu, format!("query failed: {e}")),
+                };
+                let left_n = rows
+                    .first()
+                    .and_then(|r| r.iter().find(|(k, _)| k == "left_count"))
+                    .and_then(|(_, v)| number_of(v))
+                    .unwrap_or(0.0);
+                let right_v = rows
+                    .first()
+                    .and_then(|r| r.iter().find(|(k, _)| k == "right_value"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or(Value::Null);
+                let (scanned, sources) =
+                    rows_scanned_from_sql(runner, &format!("SELECT count(*) AS n FROM {}{}", scan.from, scan.where_sql));
+                if right_v.is_null() {
+                    let w = witness(scanned, left_n as i64, sources, &fingerprint);
+                    return vu_result(
+                        vu,
+                        Verdict::Error,
+                        Some(w),
+                        Some(json!({
+                            "reason": format!(
+                                "count.against right side is NULL ({}({}.{}) over an empty/all-NULL table) — a NULL cannot satisfy '{}'",
+                                against.agg, against.from, against.col, c.op
+                            ),
+                            "compared": { "left": left_n, "right": Value::Null }
+                        })),
+                    );
+                }
+                let right_n = match number_of(&right_v) {
+                    Some(x) => x,
+                    None => return err(vu, "count.against right side is not a number"),
+                };
+                compared = Some(json!({ "left": left_n, "right": right_n }));
+                target = right_n;
+                (left_n, scanned, sources)
+            } else if let Some(from) = &c.from {
+                let key = from.trim_start_matches("$vu:");
+                let count = match outputs.get(key) {
+                    Some(rows) => rows.len() as f64,
+                    None => return err(vu, format!("count from {from} is not available (topological order violated)")),
+                };
+                target = match c.value {
+                    Some(v) => v,
+                    None => return err(vu, "count target is not a number"),
+                };
+                (count, count as i64, Vec::new())
             } else if let Some(pred) = &c.predicate {
                 if pred.agg.as_ref().map(|a| !a.is_empty()).unwrap_or(false) {
                     return err(vu, "count predicate must not carry agg — the count itself is the aggregate (r9 E2)");
@@ -500,9 +629,13 @@ pub fn run_fact_checker(
                     Ok(r) => r,
                     Err(e) => return err(vu, format!("query failed: {e}")),
                 };
-                let n = rows.first().and_then(first_value).and_then(number_of).unwrap_or(0.0);
+                let count = rows.first().and_then(first_value).and_then(number_of).unwrap_or(0.0);
                 let (scanned, sources) = rows_scanned_from_sql(runner, &sql);
-                (n, scanned, sources)
+                target = match c.value {
+                    Some(v) => v,
+                    None => return err(vu, "count target is not a number"),
+                };
+                (count, scanned, sources)
             } else {
                 let sql = c.sql.clone().unwrap_or_default();
                 if has_dollar_placeholder(&sql) {
@@ -515,25 +648,28 @@ pub fn run_fact_checker(
                 if rows.len() > 1 || rows.first().map(|r| r.len() != 1).unwrap_or(false) {
                     return err(vu, "count.sql must return exactly one row and one column");
                 }
-                let n = rows.first().and_then(first_value).and_then(number_of).unwrap_or(0.0);
+                let count = rows.first().and_then(first_value).and_then(number_of).unwrap_or(0.0);
                 let (scanned, sources) = rows_scanned_from_sql(runner, &sql);
-                (n, scanned, sources)
+                target = match c.value {
+                    Some(v) => v,
+                    None => return err(vu, "count target is not a number"),
+                };
+                (count, scanned, sources)
             };
             let pass = match c.op.as_str() {
-                ">=" => n >= c.value,
-                "<=" => n <= c.value,
-                "==" => n == c.value,
-                "!=" => n != c.value,
-                ">" => n > c.value,
-                _ => n < c.value,
+                ">=" => n >= target,
+                "<=" => n <= target,
+                "==" => n == target,
+                "!=" => n != target,
+                ">" => n > target,
+                _ => n < target,
             };
             let w = witness(scanned, n as i64, sources, &fingerprint);
-            vu_result(
-                vu,
-                if pass { Verdict::Pass } else { Verdict::Fail },
-                Some(w),
-                Some(json!({ "count": n, "op": c.op, "expected": c.value })),
-            )
+            let mut evidence = json!({ "count": n, "op": c.op, "expected": target });
+            if let (Some(compared), Value::Object(base)) = (compared, &mut evidence) {
+                base.insert("compared".into(), compared);
+            }
+            vu_result(vu, if pass { Verdict::Pass } else { Verdict::Fail }, Some(w), Some(evidence))
         }
         Checker::Exists(c) => {
             let sql = if let Some(pred) = &c.predicate {
@@ -840,8 +976,23 @@ pub fn summary_of(results: &[VuResult]) -> Summary {
 
 /// 跑整份 spec（fact 层）。`run_id` 缺省由 spec_id + as_of 派生，保证同输入同报告字节。
 pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyReport, String> {
-    // 契约钉版：1.0 引擎只跑 1.0 spec（形状变了必须升版重出）
-    if spec.contract_version != CONTRACT_VERSION {
+    // 契约钉版：旧 spec 不会"大概能跑"；1.2 起 1.1 的 spec 仍可跑（向后兼容），
+    // 但不得携带 1.2 才冻结的形态（version_shape）。
+    if spec.contract_version == "1.1" {
+        let uses12 = spec.vu.iter().any(|vu| match &vu.checker {
+            Checker::Count(c) => c.against.is_some(),
+            Checker::Sql(c) => c.predicate.as_ref().map(contains_col_ref).unwrap_or(false),
+            Checker::SqlPair(c) => {
+                c.left.predicate.as_ref().map(contains_col_ref).unwrap_or(false)
+                    || c.right.predicate.as_ref().map(contains_col_ref).unwrap_or(false)
+            }
+            Checker::Exists(c) => c.predicate.as_ref().map(contains_col_ref).unwrap_or(false),
+            _ => false,
+        });
+        if uses12 {
+            return Err("version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2".into());
+        }
+    } else if spec.contract_version != CONTRACT_VERSION {
         return Err(format!(
             "unsupported contract_version {} — this engine implements {CONTRACT_VERSION}",
             spec.contract_version
@@ -1055,7 +1206,7 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         .clone()
         .unwrap_or_else(|| format!("run_{}", &canonical_sha256(&json!({ "spec": spec.spec_id, "as_of": spec.as_of.value, "started": started }))[7..19]));
     let mut report = VerifyReport {
-        contract_version: CONTRACT_VERSION.to_string(),
+        contract_version: spec.contract_version.clone(),
         run_id,
         spec_id: Some(spec.spec_id.clone()),
         data_source: opts.data_source.clone(),

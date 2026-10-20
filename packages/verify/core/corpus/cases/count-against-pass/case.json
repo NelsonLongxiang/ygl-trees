@@ -1,0 +1,13 @@
+{
+  "checker": "count",
+  "domain": "contract-1.2",
+  "tags": [
+    "pass",
+    "count-against",
+    "aggregate"
+  ],
+  "expects": "PASS：3 次执行 > 策略上限 2",
+  "expect_verdicts": {
+    "V1": "PASS"
+  }
+}

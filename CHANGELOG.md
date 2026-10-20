@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.107.0
+
+**契约 1.2：右值可引用列**（`contract_version` / `corpus_version` 1.1 → 1.2）。1.1 spec 行为不变，
+声明 1.1 却携带 1.2 形态 → 入口 `version_shape` 拒跑；`report.contract_version` 取 spec 声明值。
+
+- **同表列对列 `{col}`**：`PredicateCondition.value` 接受 `{"col":"<column>"}`。只许引用 `predicate.from`
+  同一张表（跨表引用要 join key，属 `sql-pair`，构造期 `spec_error: cross_table_col` 指路）；
+  `is null`/`is not null` 不接受 `{col}`（`null_rhs_for_null_op`）。按 SQL（含列亲和性）语义比较，不做隐式 cast。
+- **`count.against` 单值标量**：`{from, col, agg}`，`agg` **必填**（`max|min|sum|count`；缺省 → `missing_agg`）。
+  不设默认的理由：默认 max 会在策略表意外多行时静默取值，而「多行才拒绝」是**数据依赖**判据——
+  spec 有效性只许依赖 schema。空表/全 NULL → 右值 NULL → `ERROR`；`count` 是 agg 家族里唯一不产 NULL 的
+  （空表 → 0），语料把这对不对称冻在同一例。
+- **观测面**：形态一 `evidence.compared_rows`（≤5 采样 `{left,right}`，渲染带 `ORDER BY rowid` 保证
+  TS/Rust 采样路径字节一致）+ `compared_total`（**无条件出现**，可区分「3 行」与「3/N 采样」）；
+  形态二 `evidence.compared: {left,right}`。`ScopeWitness` 四字段不变。
+- **构造期错误码**：新设 `evidence.spec_error` 封闭码表
+  （`cross_table_col` / `missing_column` / `missing_agg` / `null_rhs_for_null_op` / `version_shape`）；
+  四值 verdict 骨架冻结——加第五值会破坏报告消费者、WebUI、Rust parity 与 evaluator 协议。
+- **Rust mirror 同版**：`contract.rs`（`AgainstSpec` + CountChecker 变体 + 1.1 兼容判定）、
+  `predicate.rs`（`{col}` 渲染/跨表拒绝/`contains_col_ref`/首个引用对定位）、`engine.rs`
+  （against 渲染/NULL 右值/`compared`/版本闸/报告版本取 spec）。`rust-parity.spec.ts` 与
+  `corpus_parity.rs` 对 **44 例整份报告逐字节** parity 全绿。
+- **语料 33 → 44 例**：`count-against-pass/fail`、`col-ref-pass/fail`、`against-null`（count=0 vs max=NULL 双对比）、
+  `type-mixed`（INTEGER 亲和性把 TEXT 侧转数字，冻结 type-mixed 语义）、`agg-variants`
+  （`agg:count` = `count(col)` 跳 NULL）、`count-against-missing-agg`；红队 `red-cross-table-col`、
+  `red-null-rhs-for-null-op`、`red-version-shape`。既有 33 例逐字节不变。
+  语料 LF 重冻：digest `ee1a0a1d6dddcfcd…`（129 文件）→ **`683766f1077bb2c0…`（173 文件）**，
+  血统记录见 `packages/verify/core/CHANGELOG.md`（blob 双检纪律沿用 0.103 事故后的规则）。
+- 测试：unit **539**（含 1.2 地面工程 7 例）、Rust **31**、demo 128、contract 100/100、readme 54/54；
+  `pack:check` 与 `pack:repro` 见 handoff。
+
 ## 0.106.0
 
 **选择归属与 worker 隔离**（K3 情报：8 个 verifier 节点落错树的两个残余洞）。无契约形状变更。

@@ -1,0 +1,10 @@
+{
+  "checker": "count",
+  "domain": "contract-1.2",
+  "tags": [
+    "red",
+    "version-gate"
+  ],
+  "expects": "THROW：version_shape（declared 1.1 携带 count.against）",
+  "expect_throw": "version_shape"
+}

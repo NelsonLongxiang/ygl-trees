@@ -1,0 +1,13 @@
+{
+  "checker": "sql",
+  "domain": "contract-1.2",
+  "tags": [
+    "fail",
+    "col-ref",
+    "same-table"
+  ],
+  "expects": "FAIL：1 行 paid>due（evidence 带 compared_rows/compared_total）",
+  "expect_verdicts": {
+    "V1": "FAIL"
+  }
+}

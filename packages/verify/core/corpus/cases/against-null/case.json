@@ -1,0 +1,14 @@
+{
+  "checker": "count",
+  "domain": "contract-1.2",
+  "tags": [
+    "error",
+    "count-against",
+    "null"
+  ],
+  "expects": "ERROR+PASS：max-over-empty→NULL 报 ERROR；count-over-empty=0 可通过",
+  "expect_verdicts": {
+    "V1": "ERROR",
+    "V2": "PASS"
+  }
+}

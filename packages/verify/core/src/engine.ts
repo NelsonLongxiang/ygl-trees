@@ -107,6 +107,26 @@ export function extractTables(sql: string): string[] {
   return [...out];
 }
 
+/** 1.2: find the first column-to-column comparison so the witness evidence can
+ *  carry both sides. Only the first pair is projected (bounded, auditable);
+ *  nested predicates with several {col} leaves compare them all in SQL but
+ *  report the first pair's samples — documented in the contract. */
+function firstColRefPair(node: unknown): { lhs: string; rhs: string } | null {
+  if (!node || typeof node !== "object") return null;
+  const n = node as { col?: unknown; op?: unknown; value?: unknown; conditions?: unknown[] };
+  if (typeof n.col === "string") {
+    const v = n.value;
+    if (v && typeof v === "object" && !Array.isArray(v) && typeof (v as { col?: unknown }).col === "string") {
+      return { lhs: n.col, rhs: (v as { col: string }).col };
+    }
+  }
+  for (const c of n.conditions ?? []) {
+    const hit = firstColRefPair(c);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function canonicalRows(rows: Row[], keyFields: string[]): Row[] {
   const keyed = rows.map((r) => ({ r, k: keyFields.map((f) => String(r[f])).join("\u0000") }));
   keyed.sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : 0));
@@ -154,12 +174,33 @@ async function runFactChecker(
         try {
           rendered = renderPredicate(pred);
         } catch (e) {
-          return { verdict: "ERROR", evidence: { reason: (e as Error).message } };
+          // 1.2 closed code table: a render-time rejection carries its code so
+          // reports stay machine-comparable across TS/Rust (reason stays human).
+          const msg = (e as Error).message;
+          const code = msg.startsWith("cross_table_col")
+            ? "cross_table_col"
+            : msg.startsWith("null_rhs_for_null_op")
+              ? "null_rhs_for_null_op"
+              : undefined;
+          return { verdict: "ERROR", evidence: { reason: msg, ...(code ? { spec_error: code } : {}) } };
+        }
+        // 1.2 (freeze): when the predicate compares two columns, project both
+        // sides into the rowset (aliased) and order by rowid so samples are
+        // deterministic across TS/Rust. `compared_total` is ALWAYS present
+        // (consumers must be able to tell "3 rows" from "3 of N sampled").
+        const colRef = firstColRefPair(pred.where) ?? firstColRefPair(pred.scan);
+        let cmpSql = rendered.findSql;
+        if (colRef) {
+          const at = cmpSql.indexOf(" FROM ");
+          if (at > 0) {
+            cmpSql = `${cmpSql.slice(0, at)}, ${colRef.lhs} AS __cmp_left, ${colRef.rhs} AS __cmp_right${cmpSql.slice(at)}`;
+            cmpSql += " ORDER BY rowid";
+          }
         }
         let findRows: Row[];
         let scopeRows: Row[];
         try {
-          findRows = runner.query(rendered.findSql);
+          findRows = runner.query(cmpSql);
           scopeRows = runner.query(rendered.scopeSql);
         } catch (e) {
           return { verdict: "ERROR", evidence: { reason: `rendered query failed: ${(e as Error).message}`, rendered } };
@@ -175,14 +216,20 @@ async function runFactChecker(
         const w1 = witness(n, findRows.length, sources, fingerprint);
         if (n === 0) return { verdict: "NEEDS-MATERIAL", witness: w1, evidence: { reason: "zero rows scanned — wrong table or empty data", rendered } };
         const bad = failWhen === "rows>0" ? findRows.length : findRows.length === 0 ? 1 : 0;
+        const comparedEvidence = colRef
+          ? {
+              compared_rows: findRows.slice(0, 5).map((r) => ({ left: r.__cmp_left ?? null, right: r.__cmp_right ?? null })),
+              compared_total: findRows.length,
+            }
+          : {};
         if (bad > 0) {
           return {
             verdict: "FAIL",
             witness: w1,
-            evidence: { violations: bad, rows: canonicalRows(findRows, Object.keys(findRows[0] ?? {}).slice(0, 1)).slice(0, 5), rows_total: findRows.length, rendered },
+            evidence: { violations: bad, rows: canonicalRows(findRows, Object.keys(findRows[0] ?? {}).slice(0, 1)).slice(0, 5), rows_total: findRows.length, ...comparedEvidence, rendered },
           };
         }
-        return { verdict: "PASS", witness: w1, evidence: { rows: findRows.length, rendered } };
+        return { verdict: "PASS", witness: w1, evidence: { rows: findRows.length, ...comparedEvidence, rendered } };
       }
 
       // ---- 手写 SQL 形态：prepare 产物禁止（authored=manual 只留给存量/评审例外） ----

@@ -1,0 +1,14 @@
+{
+  "checker": "sql",
+  "domain": "contract-1.2",
+  "tags": [
+    "fail",
+    "col-ref",
+    "storage-class",
+    "parity"
+  ],
+  "expects": "PASS：INTEGER 亲和性把 TEXT 侧转成数字（10 > 20 为假），冻结 type-mixed 的亲和性语义",
+  "expect_verdicts": {
+    "V1": "PASS"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "checker": "sql",
+  "domain": "contract-1.2",
+  "tags": [
+    "red",
+    "col-ref",
+    "null-op"
+  ],
+  "expects": "ERROR：null_rhs_for_null_op",
+  "expect_verdicts": {
+    "V1": "ERROR"
+  }
+}

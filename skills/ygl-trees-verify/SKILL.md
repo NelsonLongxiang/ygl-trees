@@ -168,6 +168,6 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 
 ## 9. 契约速查
 
-- `contract_version 1.1`：spec/report 形状；`corpus_version 1.1`：黄金语料摘要。
+- `contract_version 1.2`：spec/report 形状（1.2 新增「右值可引用列」两形态：同表 `{col}` 列对列 / `count.against` 单值标量；1.1 spec 兼容运行）；`corpus_version 1.2`：黄金语料摘要（44 例）。
 - 报告字段 snake_case；witness 必带 `rows_scanned`/`rows_matched`（或 `compared`）——**没有 witness 的 PASS 不算证据**。
 - 一切写路径事务化；读端点只读；`--json` 失败也是单对象 `{"error": "..."}` + rc 承载类别。

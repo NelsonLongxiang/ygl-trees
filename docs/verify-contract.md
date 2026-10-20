@@ -3,6 +3,21 @@
 > M13-1 的第一步：契约先行。三个 JSON 是唯一接口真相——TS 参考实现、Rust 二进制、黄金语料都只认这三个形状。
 > **冻结条件**：①评审席 direct-30389fca（fdc757f6）与 direct-7510b90f（302cb119）两份意见收敛；②**七型 checker 形状齐**（sql / sql-pair / count / exists / file / command / agent，corpus 每型 ≥1 案例）；③`contract_version` 钉为 `1.0` 并在 CHANGELOG 记。冻结后任何变更走 `contract_version` 自增。
 
+## 0. 契约 1.2 增量（2026-10-21）
+
+1.1 之上新增「右值可引用列」两类形态（1.1 spec 行为不变；声明 1.1 却用 1.2 形态 → 入口 `version_shape` 拒跑）：
+
+1. **同表列对列**：`PredicateCondition.value` 接受 `{ "col": "<column>" }`。只许引用 `predicate.from` 同一张表
+   （跨表要 join key，属 `sql-pair`）；列必须存在于快照 schema（`prepare` 构造期校验）。不做隐式类型转换：
+   比较按 SQL（含列亲和性）语义，`evidence.compared_rows`（≤5 采样 `{left,right}`，`ORDER BY rowid`）+
+   `compared_total`（无条件出现）记录两侧值。
+2. **`count.against`**：`{ from, col, agg }`，`agg` 必填（`max|min|sum|count`），右值为单值标量；
+   渲染 `(SELECT count(*) …) <op> (SELECT agg(col) FROM against.from)`。空表/全 NULL → NULL → `ERROR`；
+   `count` 是唯一不产 NULL 的 agg（空表 → 0）。`evidence.compared: {left,right}` 记录两值。
+3. **构造期错误码**：`evidence.spec_error` 封闭码表
+   （`cross_table_col` / `missing_column` / `missing_agg` / `null_rhs_for_null_op` / `version_shape`），
+   四值 verdict 不变。实现映射：缺键/跨表/is-null 右值属形状错；`missing_column` 只用于「键在但 schema 无此列」。
+
 ## 1. 规范文件（spec，`.yglverify.json`）
 
 ```json
@@ -335,7 +350,8 @@ review（agent 型）与 fact 型同样有可验收形状，不是"再问一次�
 - 每个 ygl-trees 版本 = 一次**冻结语料快照** + G2/G3/G4 全量跑（不按日历排期）。
 - 语料**只增不改**：已冻结案例的文件内容是否定不得的（改了就再也证明不了旧版本行为）；要改 = 升 `corpus_version` 并在 CHANGELOG 记差异。
 - `contract_version` 钉 `1.0` 时同时钉 `corpus_version`；此后二者各自独立自增，报告里两个版本号都记。
-  （2026-10-20 起二者均为 `1.1`：contract 1.1 是封包签名身份字段，corpus 1.1 是 33 份 spec 随契约升版重铸。）
+  （2026-10-20 起二者均为 `1.1`：contract 1.1 是封包签名身份字段，corpus 1.1 是 33 份 spec 随契约升版重铸。
+  2026-10-21 起二者均为 `1.2`：contract 1.2 是「右值可引用列」两形态；corpus 1.2 是 44 例，既有 33 例逐字节不变，digest `683766f1…`（173 文件，取代 1.1 的 `ee1a0a1d…`）。）
 - **EOL 纪律（0.104.0，发版席 BLOCK 修复）**：语料是**字节级**冻结产物（`freeze.mjs` 按磁盘字节算 sha256），而 Git 的 `core.autocrlf` 会让同一提交在不同检出行尾不同——曾出现「manifest 按 CRLF 冻结、canonical 按 LF 冻结」的混合清单，导致 CI/Linux/LF 检出上 `self-check` 与语料快照必红、tarball 内容随打包机漂移。修法：仓库根 `.gitattributes` 固定 `packages/verify/core/corpus/** text eol=lf`、`*.pdf -text`（二进制附件不得被当文本改写），并在统一 LF 基上重冻 manifest。**案例如今在任何检出上都逐字节一致**；`corpus_version` 仍为 `1.1`（案例语义零变化——仓库存储的 blob 本来就是 LF，变的是工作树行尾），`1.1` 的 digest 以 LF 基为准：`ee1a0a1d6dddcfcd…`（129 文件）。旧记录里的 `4cac21b4…` 是 CRLF 工作树误冻的产物，已被取代。
 - 时间字面量纪律（W1b）：`window` 只接受「纯日期」或「带时区的 datetime」；`'2026-07-01 10:00:00'` 这类无时区时间戳构造期 ERROR（否则 Date.parse 按本机时区解释，换台机器窗口就漂）。
 - 真实网关凭证在 M13-1b（封包 fact-only 闭环）之前**不接**：review/prepare 层的模型调用一律走注入接口，测试用假 runner。
@@ -379,6 +395,7 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
 
 ## 6. 状态
 
+- **v1.5（2026-10-21）**：`contract_version` 升 **1.2**、`corpus_version` 升 **1.2**——新增「右值可引用列」两形态（同表 `{col}` 列对列 / `count.against` 单值标量，`agg` 必填）、`evidence.spec_error` 封闭码表、`compared_rows`/`compared_total`/`compared` 观测面；1.1 spec 兼容运行，1.1 声明携带 1.2 形态 → `version_shape` 入口拒跑；语料 33→44 例（digest `ee1a0a1d…`→`683766f1…`）。
 - **v1.4（2026-10-20）**：`contract_version` 升 **1.1**、`corpus_version` 升 **1.1**——报告 `verifier` 增 `signature` / `signing_scheme` / `public_key_fingerprint` 三个可选字段；封包 footer 增 `format_version` / `engine_sha256` / `sig_alg` / `key_id` / `sig`（语义布局与字节布局合一，§5）。TS 与 Rust 各自实现 ed25519，固定种子下签名逐字节一致（`seal-parity.spec.ts`）；五向篡改矩阵（spec 字节 / engine 字节 / 非规范 footer / 签名字节 / 未知或退役 key / format_version）全部点名拒绝。语料 digest 因 33 份 spec 的 `contract_version` 升版而变：`4cac21b4f5bc…`（差异仅版本字段，见 `packages/verify/core/CHANGELOG.md`）。
 - **v1.3（2026-10-20）**：双实现 parity 从「投影一致」升级为「整份报告逐字节」——`rust-parity.spec.ts` 33 例剥 `data_source` 后 `canonicalStringify` 全等，且把环境锚注入 TS 侧后两边重算的 `payload_sha256` 三方相等；Rust 侧补齐 `data_source`、`guard`、`artifacts`、`exceptions`、`evidence.rows`/`rendered`、`reason` 折叠文案与真实 `started/finished`（`--now` 可钉）。`contract_version` 仍 1.0（Rust 追平 TS，不是形状变更）。
 - **v1.2（2026-10-20）**：Rust `yglverify` 补封包形态（§5 实现形态：`seal` / 内嵌 spec / 拒绝 `--spec` / 双哈希篡改检测 / `self-check` 的 `sealed-spec` 行）；`contract_version` 仍 1.0（交付形态，不是 spec/report 形状变更）。

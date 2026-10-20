@@ -235,6 +235,25 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.107.0 记录（契约 1.2 落地，2026-10-21）**：`contract_version` / `corpus_version` 1.1 → 1.2，Rust 同版。
+- **形态一（同表列对列）**：`contract.ts` 的 `PredicateCondition.value` 收 `ColumnRef`；`engine.ts` 渲染为裸标识符，
+  `columnRefOf`/`firstColRefPair` 把首个 `{col}` 叶投影进 findSql（`… AS __cmp_left, __cmp_right` + `ORDER BY rowid`），
+  evidence 出 `compared_rows`（≤5）/`compared_total`（无条件）。跨表 → `cross_table_col`，`is null` 配 `{col}` →
+  `null_rhs_for_null_op`，两者都以 `spec_error` 封闭码进 ERROR evidence。
+- **形态二（count.against）**：`CountChecker` 新变体（`predicate + against`，`value?: never`）；渲染
+  `(SELECT count(*) …) <op> (SELECT agg(col) FROM against.from)`；`agg` 必填（缺省 `missing_agg`）；
+  右值 NULL → ERROR + `compared:{left,right:null}`；正常 → `compared:{left,right}`。
+- **版本闸**：`runVerify` 接受 1.1 与 1.2；1.1 携带 1.2 形态 → `version_shape` 入口拒跑；报告
+  `contract_version` 取 spec 声明（1.1 spec 的报告仍写 1.1，corpus 既有 33 例零改动）。
+- **prepare 构造校验**：`{col}` 右值列存在性、`against` 表/列/agg 校验（schema 可判，不依赖数据）。
+- **语料 33→44**：8 行为/构造例 + 3 红队例（清单见 CHANGELOG 0.107.0）；既有 33 例逐字节不变；LF 重冻
+  digest `ee1a0a1d…` → `683766f1…`（173 文件），血统表进 `packages/verify/core/CHANGELOG.md`。
+- **Rust mirror**：`contract.rs`（`AgainstSpec`、`CountChecker.value: Option<f64>`、`is_known_contract` 兼容 1.1）、
+  `predicate.rs`（`column_ref`/`contains_col_ref`/`first_col_ref_pair`/渲染同表规则/`ident_public`）、
+  `engine.rs`（against 渲染、NULL 右值、`compared`、版本闸、报告版本取 spec、`err_code`）。
+  `cargo test` 31 例全绿；`rust-parity.spec.ts` 44 例整份报告逐字节 parity 全绿。
+- **门禁**：unit 539、demo 128、contract 100/100、readme 54/54、Rust 31、`pack:check`/`pack:repro`（handoff 给值）。
+
 **0.107.0 实施清单（契约 1.2，设计已双审通过，地面工程已在库）**：
 - 设计方案：`docs/verify-contract-v1.2.md`（fdc757f6 四问裁定 + K3 批准 + 两个实现期冻结：`compared_total` 无条件、`ORDER BY rowid` 采样确定性、`count` 唯一不产 NULL 的 agg）。
 - 已在库（commit `fee4a37`）：`contract.ts` 类型（`ColumnRef`/`AgainstSpec`/`SpecErrorCode`/CountChecker against 变体）、`engine.ts` 的 `{col}` 同表渲染与 `count.against`（`missing_agg`/NULL 右值 ERROR/`evidence.compared`）、`version_shape` 入口拒跑、`prepare.ts` 构造校验、7 例地面测试。**行为仍是 1.1（惰性）**。

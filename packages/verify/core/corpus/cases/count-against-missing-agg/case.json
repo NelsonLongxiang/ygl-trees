@@ -1,0 +1,13 @@
+{
+  "checker": "count",
+  "domain": "contract-1.2",
+  "tags": [
+    "error",
+    "count-against",
+    "missing-agg"
+  ],
+  "expects": "ERROR：against 缺 agg（spec_error missing_agg），不静默取默认",
+  "expect_verdicts": {
+    "V1": "ERROR"
+  }
+}

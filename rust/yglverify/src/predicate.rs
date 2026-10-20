@@ -21,6 +21,11 @@ const IDENT_RE_OK: fn(&str) -> bool = |s: &str| {
 };
 
 /// 标识符守门：只允许裸列名/表名（可选 `a.b`），禁止表达式与子查询进判据。
+/// Public wrapper for the identifier guard (engine's count.against uses it).
+pub fn ident_public(name: &str, what: &str) -> Result<String, String> {
+    ident(name, what)
+}
+
 fn ident(name: &str, what: &str) -> Result<String, String> {
     let parts: Vec<&str> = name.split('.').collect();
     if parts.len() > 2 || parts.iter().any(|p| !IDENT_RE_OK(p)) {
@@ -119,10 +124,58 @@ fn assert_same_scalar_type(values: &[serde_json::Value], col: &str) -> Result<()
     Ok(())
 }
 
-fn render_condition(w: &PredicateCondition) -> Result<String, String> {
+/// 1.2: right-hand side that references a column (`{col}`).
+fn column_ref(v: &Option<serde_json::Value>) -> Option<String> {
+    match v {
+        Some(serde_json::Value::Object(m)) => m.get("col").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        _ => None,
+    }
+}
+
+/// 1.2: does the predicate contain any column-to-column comparison? Used by the
+/// version-shape gate (declared 1.1 + 1.2 shapes must be rejected).
+pub fn contains_col_ref(pred: &Predicate) -> bool {
+    fn walk_node(n: &PredicateNode) -> bool {
+        match n {
+            PredicateNode::Condition(c) => column_ref(&c.value).is_some(),
+            PredicateNode::Group(g) => g.conditions.iter().any(walk_node),
+        }
+    }
+    fn walk_group(g: &Option<PredicateGroup>) -> bool {
+        match g {
+            Some(g) => g.conditions.iter().any(walk_node),
+            None => false,
+        }
+    }
+    walk_group(&pred.where_) || walk_group(&pred.scan)
+}
+
+/// 1.2: first column-to-column comparison in render order (`where` then `scan`) —
+/// mirrors engine.ts so both implementations project the same pair.
+pub fn first_col_ref_pair(pred: &Predicate) -> Option<(String, String)> {
+    fn walk(n: &PredicateNode) -> Option<(String, String)> {
+        match n {
+            PredicateNode::Condition(c) => column_ref(&c.value).map(|rhs| (c.col.clone(), rhs)),
+            PredicateNode::Group(g) => g.conditions.iter().find_map(walk),
+        }
+    }
+    fn walk_group(g: &Option<PredicateGroup>) -> Option<(String, String)> {
+        g.as_ref().and_then(|g| g.conditions.iter().find_map(walk))
+    }
+    walk_group(&pred.where_).or_else(|| walk_group(&pred.scan))
+}
+
+fn render_condition(w: &PredicateCondition, from_table: &str) -> Result<String, String> {
     let col = ident(&w.col, "where column")?;
+    let rhs_col = column_ref(&w.value);
     match w.op.as_str() {
         "is null" | "is not null" => {
+            if rhs_col.is_some() {
+                return Err(format!(
+                    "null_rhs_for_null_op: predicate where {col} {} must not carry a {{col}} value",
+                    w.op
+                ));
+            }
             if w.value.is_some() {
                 return Err(format!("predicate where {col} {} must not carry a value", w.op));
             }
@@ -149,6 +202,21 @@ fn render_condition(w: &PredicateCondition) -> Result<String, String> {
             Ok(format!("{col} BETWEEN {} AND {}", literal(&arr[0])?, literal(&arr[1])?))
         }
         op => {
+            if let Some(rhs) = &rhs_col {
+                // 1.2 column-to-column: same table only.
+                let parts: Vec<&str> = rhs.split('.').collect();
+                let (qualifier, name) = if parts.len() > 1 {
+                    (parts[0], parts[1])
+                } else {
+                    ("", parts[0])
+                };
+                if !qualifier.is_empty() && !from_table.is_empty() && qualifier != from_table {
+                    return Err(format!(
+                        "cross_table_col: predicate where {col} {op} {rhs} — column-to-column comparison is same-table only; a cross-table compare needs sql-pair (join key)"
+                    ));
+                }
+                return Ok(format!("{col} {op} {}", ident(name, "where column ref")?));
+            }
             let v = match &w.value {
                 Some(serde_json::Value::Array(_)) | None => {
                     return Err(format!("predicate where {col} {op} needs a scalar value"))
@@ -160,7 +228,7 @@ fn render_condition(w: &PredicateCondition) -> Result<String, String> {
     }
 }
 
-fn render_node(n: &PredicateNode) -> Result<String, String> {
+fn render_node(n: &PredicateNode, from_table: &str) -> Result<String, String> {
     match n {
         PredicateNode::Group(g) => {
             if g.conditions.is_empty() {
@@ -168,7 +236,7 @@ fn render_node(n: &PredicateNode) -> Result<String, String> {
             }
             let mut parts = Vec::with_capacity(g.conditions.len());
             for c in &g.conditions {
-                parts.push(render_node(c)?);
+                parts.push(render_node(c, from_table)?);
             }
             match g.op.as_str() {
                 "not" => Ok(format!("NOT ({})", parts.join(" AND "))),
@@ -177,14 +245,14 @@ fn render_node(n: &PredicateNode) -> Result<String, String> {
                 other => Err(format!("predicate group op must be and|or|not, got {other:?}")),
             }
         }
-        PredicateNode::Condition(c) => render_condition(c),
+        PredicateNode::Condition(c) => render_condition(c, from_table),
     }
 }
 
-fn render_where(where_: Option<&PredicateGroup>) -> Result<String, String> {
+fn render_where(where_: Option<&PredicateGroup>, from_table: &str) -> Result<String, String> {
     match where_ {
         None => Ok(String::new()),
-        Some(g) => Ok(format!(" WHERE {}", render_node(&PredicateNode::Group(g.clone()))?)),
+        Some(g) => Ok(format!(" WHERE {}", render_node(&PredicateNode::Group(g.clone()), from_table)?)),
     }
 }
 
@@ -211,8 +279,8 @@ pub struct RenderedScan {
 /// 谓词渲染的公共部分：from 与 where/scan 两段（find/scope/count/exists 共用）。
 pub fn render_scan(pred: &Predicate) -> Result<RenderedScan, String> {
     let from = ident(&pred.from, "from")?;
-    let scan_sql = render_where(pred.scan.as_ref())?;
-    let where_sql = render_where(and_groups(pred.scan.as_ref(), pred.where_.as_ref()).as_ref())?;
+    let scan_sql = render_where(pred.scan.as_ref(), &pred.from)?;
+    let where_sql = render_where(and_groups(pred.scan.as_ref(), pred.where_.as_ref()).as_ref(), &pred.from)?;
     Ok(RenderedScan { from, where_sql, scan_sql })
 }
 

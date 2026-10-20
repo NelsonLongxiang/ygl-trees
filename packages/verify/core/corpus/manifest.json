@@ -1,10 +1,26 @@
 {
-  "corpus_version": "1.1",
-  "digest": "ee1a0a1d6dddcfcd8fcf58f70f5955ca4edab3d9fca5deb131c8c3eccc7212fc",
+  "corpus_version": "1.2",
+  "digest": "683766f1077bb2c0fef662f485959bcb14df2ad6100867248faef70ce3902d43",
   "entries": [
     {
       "path": "canonical/vectors.json",
       "sha256": "3bb04fce6a968277f894a7f302fdd09c14d3f6187caaf4658f4190877a9c4cc7"
+    },
+    {
+      "path": "cases/against-null/case.json",
+      "sha256": "0fdc79ed80db996dd6c6eadc4729967d9d36af815f7c34e11392e1ee1cf19707"
+    },
+    {
+      "path": "cases/against-null/db.sql",
+      "sha256": "abd171ddccb3ff93a19977ef4a9a736c3b5b7aa4e83031539cf6fd404819e9d7"
+    },
+    {
+      "path": "cases/against-null/expected-report.json",
+      "sha256": "80f0d0e1fd24deda8edaf452a2219c046c9ce146f81a40f63aaa915398cadea0"
+    },
+    {
+      "path": "cases/against-null/spec.json",
+      "sha256": "a71b5522a4bfbc90c623f738c5d0643f2de8f772ed642236d9a2e6081735adbe"
     },
     {
       "path": "cases/agent-sealed-rejected/case.json",
@@ -39,6 +55,22 @@
       "sha256": "01420fbfa2382d52b34947c598ab394522fd3a414fcd5c1d0d32ab4b6db56356"
     },
     {
+      "path": "cases/agg-variants/case.json",
+      "sha256": "1a4899d49977ae71acf03a887959bbc7375da9f8faeaf4948d9fff538e47338e"
+    },
+    {
+      "path": "cases/agg-variants/db.sql",
+      "sha256": "b74dafecc999c57abfcb5bb7ae3ecf36af5ea1806e5e4f448b11e732c6eca491"
+    },
+    {
+      "path": "cases/agg-variants/expected-report.json",
+      "sha256": "636e358805237a5695fa29e813702a70c86b5fb6a53139e674ae7fbd8b0e970c"
+    },
+    {
+      "path": "cases/agg-variants/spec.json",
+      "sha256": "94de2c61a3b6154e637e2d521974e12e292ee8990eac42e5d7b4dfbf9e9c9110"
+    },
+    {
       "path": "cases/boundary-tolerance-inclusive/case.json",
       "sha256": "f3433eb1d9c6093eddd79ac9c25c870c453b5b2b2a5b68886887d86c60a84bd6"
     },
@@ -53,6 +85,38 @@
     {
       "path": "cases/boundary-tolerance-inclusive/spec.json",
       "sha256": "d7d046c41b86bfe8931928b0fc97c838a7fde0c35870d51eada1977054f5a7d7"
+    },
+    {
+      "path": "cases/col-ref-fail/case.json",
+      "sha256": "bf2379570bd5e0b91147165c9f08661eb95d2caf51049492822a052d4d12d683"
+    },
+    {
+      "path": "cases/col-ref-fail/db.sql",
+      "sha256": "d8e00de2c823abf4f3871764a81e268e59d892292e4453873ed139fc37d804d2"
+    },
+    {
+      "path": "cases/col-ref-fail/expected-report.json",
+      "sha256": "6153e7fadea525b86b3a4b074830190e309cdd90940ac35269455c4f3a3f0658"
+    },
+    {
+      "path": "cases/col-ref-fail/spec.json",
+      "sha256": "abc0ee451514390fb264e5081d006ff90468693606e36ca85f696049103bf618"
+    },
+    {
+      "path": "cases/col-ref-pass/case.json",
+      "sha256": "fea55a63496d932298c16a1f0e9aee53075090bbb6e75f15d3ae5da2c90b79f7"
+    },
+    {
+      "path": "cases/col-ref-pass/db.sql",
+      "sha256": "ffad5f1c840fe376bae57fb098f47d74109a9de6a76076d6309a79505a79cf27"
+    },
+    {
+      "path": "cases/col-ref-pass/expected-report.json",
+      "sha256": "f288f578dd6cfe1d088994cac65ea3f481dc8d6cf42238c1ce652ad1ff34041a"
+    },
+    {
+      "path": "cases/col-ref-pass/spec.json",
+      "sha256": "abc0ee451514390fb264e5081d006ff90468693606e36ca85f696049103bf618"
     },
     {
       "path": "cases/command-exit-code/case.json",
@@ -279,6 +343,54 @@
       "sha256": "62085d30230d948e984b7e63113986a8a3a471ba566d6fc37511dd0b09effdd9"
     },
     {
+      "path": "cases/count-against-fail/case.json",
+      "sha256": "27e6f1ce633e96facf4357889f3798c165f21d8421de8b2c4f53aa8f86e88686"
+    },
+    {
+      "path": "cases/count-against-fail/db.sql",
+      "sha256": "a28c67870b0079a9f5024bff37d5de029d44fa7b759d82fcb15cc8dd1a4c3029"
+    },
+    {
+      "path": "cases/count-against-fail/expected-report.json",
+      "sha256": "c69a821a840b28fdea23dd8a65dfd9e958068e92fee9efcc4d116133b917be68"
+    },
+    {
+      "path": "cases/count-against-fail/spec.json",
+      "sha256": "d769720abf8457955a4cda337999681c8ecd7cb04b5d2fd484bfe2648c27e568"
+    },
+    {
+      "path": "cases/count-against-missing-agg/case.json",
+      "sha256": "1a546c8f118f99afb6bca2d652ba8109479e64c62a50a5e513794814006eaef8"
+    },
+    {
+      "path": "cases/count-against-missing-agg/db.sql",
+      "sha256": "3442a806830b3950a445c8d19604f08f70531c6ff7fc4b2a603dedca64f4b096"
+    },
+    {
+      "path": "cases/count-against-missing-agg/expected-report.json",
+      "sha256": "88bcd76927e1a023a75a7700f00523cfd7445e8a16bc890c80dae759d4e9c5d5"
+    },
+    {
+      "path": "cases/count-against-missing-agg/spec.json",
+      "sha256": "c0a2c062719c8870ca40e5c0b3043e6f6a99e3298ebcf41c3331760d0cc1c32c"
+    },
+    {
+      "path": "cases/count-against-pass/case.json",
+      "sha256": "4eca02939472652319b30a86b7e08250058f96f676baca26be53e00d0b9b9d17"
+    },
+    {
+      "path": "cases/count-against-pass/db.sql",
+      "sha256": "ed18a92b901095c607dd7069407680fc1f1339f8281eeac8b02930bb00f7729a"
+    },
+    {
+      "path": "cases/count-against-pass/expected-report.json",
+      "sha256": "c3f2cb5b89e643fb7695ae6b24844e4a35d7b8856831ca37b1cbe4c10ed22193"
+    },
+    {
+      "path": "cases/count-against-pass/spec.json",
+      "sha256": "e859b05b23b1935360f92ea9d969bab6d6bc9f981355d57ede319e30ebe391fb"
+    },
+    {
       "path": "cases/count-batch-coverage/case.json",
       "sha256": "4c63feb2f559109313318064ac5afcdbe384bb977fef02577ec308ad8002eafd"
     },
@@ -351,6 +463,22 @@
       "sha256": "9879ead806bd31d7ee901fbbb0c64ae475a994b37a2812e2cfbc715b0eff2cec"
     },
     {
+      "path": "cases/red-cross-table-col/case.json",
+      "sha256": "f65c552f301051a1fbc146a3d2e73da534f7859c147f40c0465db521e2494675"
+    },
+    {
+      "path": "cases/red-cross-table-col/db.sql",
+      "sha256": "1781a54fba9d41362d10a5b6cad0d002bf2492be45d22243746911de3e701216"
+    },
+    {
+      "path": "cases/red-cross-table-col/expected-report.json",
+      "sha256": "88bcd76927e1a023a75a7700f00523cfd7445e8a16bc890c80dae759d4e9c5d5"
+    },
+    {
+      "path": "cases/red-cross-table-col/spec.json",
+      "sha256": "6cae379259edbc4c32d515b55a2e0559cb1d46e8b06d23e8cf001ff35e92c6e0"
+    },
+    {
       "path": "cases/red-duplicate-key/case.json",
       "sha256": "5209f6e2d796a9f447ef53b00eb75745b65e21dcf51706b29e4497873e9281da"
     },
@@ -365,6 +493,22 @@
     {
       "path": "cases/red-duplicate-key/spec.json",
       "sha256": "d9fe505249abc47b669b524828cfd68f6f6750d1adafd1ea3dff4f8960a411df"
+    },
+    {
+      "path": "cases/red-null-rhs-for-null-op/case.json",
+      "sha256": "7237ab5db780cf6faa60d71603d0425519b1e82cd42d90b8cd3361aa353a1b91"
+    },
+    {
+      "path": "cases/red-null-rhs-for-null-op/db.sql",
+      "sha256": "8421f9b5cc1bde332228903174f9bf30f5abe496890e65615995c3d371ca8891"
+    },
+    {
+      "path": "cases/red-null-rhs-for-null-op/expected-report.json",
+      "sha256": "88bcd76927e1a023a75a7700f00523cfd7445e8a16bc890c80dae759d4e9c5d5"
+    },
+    {
+      "path": "cases/red-null-rhs-for-null-op/spec.json",
+      "sha256": "2f6d4ca388ce0ef042befaaf285e2d002d272046c2c174e54192b86d8040af6e"
     },
     {
       "path": "cases/red-scope-mismatch/case.json",
@@ -393,6 +537,22 @@
     {
       "path": "cases/red-vacuous-no-where/spec.json",
       "sha256": "615f8e0d74139887fe2439924353704ae73fe4c23dffd7b964fe10a70d87fdca"
+    },
+    {
+      "path": "cases/red-version-shape/case.json",
+      "sha256": "7ff015d8089b1b628eb9ed708047441cb4011cfd129b34c321df4b1afe5ff5b5"
+    },
+    {
+      "path": "cases/red-version-shape/db.sql",
+      "sha256": "b0b6b55c00aedeca9b008754fc0e7485fdc6a0555b91d5cc87e50cbaddc212ee"
+    },
+    {
+      "path": "cases/red-version-shape/expected-report.json",
+      "sha256": "c8cb5aeb8be14c33078c89720b23eee14aab19bd5065e2398782013e5ec1ea77"
+    },
+    {
+      "path": "cases/red-version-shape/spec.json",
+      "sha256": "7ca4e94bed1cca3fb3c9fde23bf4e4788ebf5938af80cd63268ca02d319106f4"
     },
     {
       "path": "cases/red-wrong-batch-zero-scan/case.json",
@@ -517,6 +677,22 @@
     {
       "path": "cases/throw-time-function/spec.json",
       "sha256": "28b7ae8cd3c87ee5fab557b4c08fc7806ce69f33f9a7bdf29930d24eb04c3a0b"
+    },
+    {
+      "path": "cases/type-mixed/case.json",
+      "sha256": "69f6cadb776789ac49d0a32d407479a904c79830afb63241860f9e3868aedd21"
+    },
+    {
+      "path": "cases/type-mixed/db.sql",
+      "sha256": "607096006c6a3ca067b0ec109d152e7e3613237c36a75cce75e6ed9155c07ae8"
+    },
+    {
+      "path": "cases/type-mixed/expected-report.json",
+      "sha256": "f288f578dd6cfe1d088994cac65ea3f481dc8d6cf42238c1ce652ad1ff34041a"
+    },
+    {
+      "path": "cases/type-mixed/spec.json",
+      "sha256": "cfed901febc841357ead5cd35eb9d8c750b4734d8249832da7473e8d293f1d4e"
     }
   ]
 }

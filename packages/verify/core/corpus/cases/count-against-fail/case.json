@@ -1,0 +1,13 @@
+{
+  "checker": "count",
+  "domain": "contract-1.2",
+  "tags": [
+    "fail",
+    "count-against",
+    "aggregate"
+  ],
+  "expects": "FAIL：3 次执行不 > 上限 3（相等不算超过）",
+  "expect_verdicts": {
+    "V1": "FAIL"
+  }
+}

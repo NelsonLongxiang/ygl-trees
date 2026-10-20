@@ -1,0 +1,13 @@
+{
+  "checker": "sql",
+  "domain": "contract-1.2",
+  "tags": [
+    "red",
+    "col-ref",
+    "cross-table"
+  ],
+  "expects": "ERROR：cross_table_col（跨表列比较须 sql-pair）",
+  "expect_verdicts": {
+    "V1": "ERROR"
+  }
+}

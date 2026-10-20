@@ -1,0 +1,2 @@
+CREATE TABLE bills (id INTEGER PRIMARY KEY, paid INTEGER, due INTEGER);
+INSERT INTO bills (id,paid,due) VALUES (1,100,50);

@@ -1,0 +1,14 @@
+{
+  "checker": "count",
+  "domain": "contract-1.2",
+  "tags": [
+    "mixed",
+    "count-against",
+    "count-col"
+  ],
+  "expects": "FAIL+PASS：冻结 agg:count = count(col)（跳过 NULL），非 count(*)",
+  "expect_verdicts": {
+    "V1": "FAIL",
+    "V2": "PASS"
+  }
+}

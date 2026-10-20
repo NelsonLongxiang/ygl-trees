@@ -1,0 +1,13 @@
+{
+  "checker": "sql",
+  "domain": "contract-1.2",
+  "tags": [
+    "pass",
+    "col-ref",
+    "same-table"
+  ],
+  "expects": "PASS：同表列对列 paid<=due，无违规行",
+  "expect_verdicts": {
+    "V1": "PASS"
+  }
+}

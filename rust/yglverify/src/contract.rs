@@ -6,10 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CONTRACT_VERSION: &str = "1.1";
+pub const CONTRACT_VERSION: &str = "1.2";
 
+/// 1.1 specs remain runnable under the 1.2 engine (new shapes are optional and
+/// gated by the version-shape check); anything else is rejected.
 pub fn is_known_contract(version: &str) -> bool {
-    version == CONTRACT_VERSION
+    version == CONTRACT_VERSION || version == "1.1"
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +143,17 @@ pub struct SqlPairChecker {
     pub compare: CompareSpec,
 }
 
+/// 1.2：count 的右值取自另一张表的单值标量（`agg` 必填，无默认）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgainstSpec {
+    pub from: String,
+    pub col: String,
+    /// Missing `agg` must reach the engine as `missing_agg` (a construction
+    /// verdict), not die in serde as a shape error.
+    #[serde(default)]
+    pub agg: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CountChecker {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -149,8 +162,12 @@ pub struct CountChecker {
     pub sql: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub predicate: Option<Predicate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub against: Option<AgainstSpec>,
     pub op: String,
-    pub value: f64,
+    /// 1.2: optional — a count with `against` carries no literal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
