@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.109.0
+
+**前端两项特性合流**（GitHub PR#4 / PR#5，均已评审合并；此前两版只带代码未记 release note，本版统一记录）。
+后端/契约零变更（contract/corpus 1.2，digest `683766f1…` 不变）。
+
+- **PR#4 · 深/浅色主题 + hash-router 壳**（merge `dd8cd3e`）：`DESIGN.md` 成为调色板唯一事实源
+  （`colors` / `colors-light` 双主题 + chart 系列色，OKLCH 明度带与对比度门禁），`tokens.css` / `tokens.ts`
+  两面由测试锁同步；`index.html` 首屏前应用保存的主题（无闪烁），`react-router` 引入 hash 路由壳，
+  页面拆分为 `pages.tsx` 等模块；antd 主题映射与 `KnowledgeGraph` 服务端色板同源校验。
+- **PR#5 · 研究管线重建 + 概览驾驶舱**（GitHub rebase-merge `e5f49fe`，合回发布线 `313004a`）：
+  `Pipeline.tsx` 重建（读写视图、阶段化交互）、新增 `ActivityTimeline` 概览（按 `research/tree/eval/other`
+  四类事件的 30 天窗口，含 UTC 日标注与表格视图）、`timeline.ts`/`clipboard.ts`/`flow.ts` 工具层、
+  复制结果真实反馈、未选择项目时的空态；全部消费既有 `api/*` 契约（无后端改动）。
+- **合并纪律**：PR#4 在干净 worktree 过 574/574 + `pack:check` 后合；PR#5 在作者未响应 rebase 时按预验
+  （rebase 无冲突、自有 diff 仅 14 文件、603/603 + `pack:check` 绿）走 GitHub rebase-merge，随后合回
+  Gitee 发布线并双远端对齐（`313004a`）。合并后主树实测 **605/605**、ratchet held。
+
+测试：unit **605**（83 文件，较 0.108.3 的 576 增长来自两项前端 PR 的测试）；其余门禁同 0.108.3。
+
 ## 0.108.3
 
 **GitHub issue #10 / #11**（P3，工具链韧性 + 文档名实）。无契约形状变更，无运行时行为变更。

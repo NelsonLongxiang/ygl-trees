@@ -235,6 +235,12 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.109.0 记录（前端 PR#4/#5 合流，2026-10-21）**：两项前端特性此前已合并但未进 release note（0.108.2/0.108.3 只带代码），本版统一记录并按 semver 用 feature 号。
+- **PR#4（`dd8cd3e`）**：双主题 + hash-router 壳；`DESIGN.md` 调色板唯一事实源、`tokens.css`/`tokens.ts` 两面测试锁同步、首屏主题脚本、antd 映射与 KG 服务端色板同源。合并前干净 worktree 574/574 + pack:check。
+- **PR#5（GitHub `e5f49fe` → 发布线 `313004a`）**：研究管线重建 + 概览驾驶舱/活动时间线（30 天窗口、UTC 标注、表格视图、复制反馈、空态）；只消费既有 `api/*`。作者 30 分钟未 rebase → 按预验（rebase 无冲突、自有 diff 14 文件、603/603 + pack:check）走 GitHub rebase-merge，再合回 Gitee 发布线；双远端对齐 `313004a`。
+- 合并后主树实测 **605/605**（83 文件）、ratchet held（bundle 668220 / web 1434106）、pack:check PASS。
+- 契约/语料零变更（1.2，digest 不变）。
+
 **0.108.3 记录（GitHub issue #10/#11，2026-10-21）**：P3 收口。
 - **#10 `pack-repro` pnpm 定位**：候选扩为「npm_execpath(仅 pnpm.cjs) → node-relative ×2 → `%APPDATA%/npm`、`/opt/homebrew/lib`、`/usr/local/lib` → PATH 各目录的 `node_modules/pnpm/bin/pnpm.cjs`」；仍然只跑 JS 入口（不 spawn `.cmd`），保持 Windows 无 shell 引号面。Homebrew 全局布局与 PATH sibling 都在候选内。
 - **#11 文档名实**：`node_states`→`node_state`；毕业记录字段清单去掉 `materials_sha256`（spec 字段，记录里没有），改为 `spec_id/spec_version/run_ids/thresholds/history/span_days/data_source/created`。
