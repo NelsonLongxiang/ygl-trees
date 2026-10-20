@@ -235,6 +235,18 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.107.0 实施清单（契约 1.2，设计已双审通过，地面工程已在库）**：
+- 设计方案：`docs/verify-contract-v1.2.md`（fdc757f6 四问裁定 + K3 批准 + 两个实现期冻结：`compared_total` 无条件、`ORDER BY rowid` 采样确定性、`count` 唯一不产 NULL 的 agg）。
+- 已在库（commit `fee4a37`）：`contract.ts` 类型（`ColumnRef`/`AgainstSpec`/`SpecErrorCode`/CountChecker against 变体）、`engine.ts` 的 `{col}` 同表渲染与 `count.against`（`missing_agg`/NULL 右值 ERROR/`evidence.compared`）、`version_shape` 入口拒跑、`prepare.ts` 构造校验、7 例地面测试。**行为仍是 1.1（惰性）**。
+- 剩余步骤（按序，同一 release 内完成）：
+  1. `CONTRACT_VERSION`/`CORPUS_VERSION` 升 `"1.2"`（runVerify 版本闸已支持 1.1 spec 兼容）；
+  2. 语料 +8：`count-against-pass/fail`、`col-ref-pass/fail`、`against-null`（count-over-empty=0 vs max-over-empty=NULL 同例）、`type-mixed`（存储类语义 parity 高价值）、`agg-variants`（含 NULL 列冻 `count(col)` vs `count(*)`）、`count-against-missing-agg`（ERROR 报告）；另加三个红队 throw 例（`red-cross-table-col`、`red-null-rhs-for-null-op`、`red-version-shape`），构造负例共用一目录的旧方案改为逐例 `expect_throw`（corpus-runner 的 throw 判定是整次 run，不能按 VU）；
+  3. `compared_rows`/`compared_total`：形态一在 sql 检查器 evidence 层实现（采样 ≤5、`ORDER BY rowid`），witness 四字段不变；
+  4. Rust mirror：`rust/yglverify/src/contract.rs`（两个新结构 + CountChecker 变体）、`predicate.rs`（`{col}` 渲染/跨表拒绝）、`engine.rs`（against 渲染/NULL 右值/`compared`）、`tests/parity.rs` 与 `corpus_parity.rs` 全绿；
+  5. 语言重冻：`node corpus/freeze.mjs --write --version=1.2`（LF 重冻；manifest 记 blob 内容哈希 + 门禁断言盘上字节==manifest，digest 血统写 CHANGELOG 旧→新）；
+  6. 门禁（`pnpm test`/`test:rust`/`readme:verify`/`pack:check`）→ handoff（K3 + fdc757f6 + 验证席复核清单）。
+- 注意：主树存在 `rust/yglverify/target`，`rust-parity.spec` 会跑 Rust 侧——因此 **Rust mirror 与语料必须在同一 commit 落地**，否则新 1.2 语料会让 Rust parity 红。
+
 **0.106.0 记录（选择归属与 worker 隔离）**：K3 情报把「8 verifier 节点落错树」拆成两个残余洞——`"default"` 桶（无 `YGL_SESSION` 的裸进程共享一个选择命名空间）与 sid 粒度不到 worker（同一 DSH 会话派 N 个 worker 共享 `DSH_SESSION_ID`）。本版各补一半，另加审计归因。
 - **worker 级 sid**：`job-cmds.ts` 的 `execute()` 给子进程注入 `YGL_SESSION=<parent>/<job-id>` 与 `YGL_JOB_ID`；`workerSessionId()` 导出并单测（`sess/job_1`、`sess/job_1/job_2`、`env-sid/job_3`）。作业之间、同作业并发运行之间不再共享 session 选择；父链仍可回指。
 - **选择归因**：`selection.ts` 增 `recordSelectionVia()`/`currentSelectionVia()`/`eventActor()`；`resolveProject`/`resolveTree` 解析后把 source 记入 `YGL_SELECTION_VIA`。事务写路径（research/pipeline 与 techtree/model 的 `logEvent`）`actor` 改 `eventActor()`；树域对象 payload 合并 `via`。**研究域 payload 不改字符串形态**——emit-postcommit 等既有断言把 payload 当冻结文本，形状漂移会破坏审计消费者；因此研究域只归因 actor，树域（payload 本就是对象）才带 via。测试固定这条边界。
