@@ -209,20 +209,53 @@ describe("jobCommand / patrolEligibility", () => {
       command: 'ygl-trees verify run spec_x --db "/data/billing.sqlite" --no-archive',
       db: "/data/billing.sqlite",
       usable: true,
+      unsafe: false,
+      rejected: null,
     });
     expect(jobCommand("spec_x", null)).toMatchObject({ usable: false });
     expect(jobCommand("spec_x", null).command).toContain('--db "<snapshot.sqlite>"');
   });
 
   it("never trusts a content-addressed source as --db, but an explicit override wins", () => {
-    const blob = { command: "", db: "", usable: true };
-    Object.assign(blob, jobCommand("spec_x", "blob:0123456789ab"));
+    const blob = jobCommand("spec_x", "blob:0123456789ab");
     expect(blob.usable).toBe(false);
     expect(blob.command).toContain('--db "<snapshot.sqlite>"');
 
     const overridden = jobCommand("spec_x", "blob:0123456789ab", "/data/live.sqlite");
     expect(overridden.usable).toBe(true);
     expect(overridden.command).toContain('--db "/data/live.sqlite"');
+  });
+
+  // r26 P1: a crafted report can put anything into data_source.source, and the
+  // recurring command is executed by `job tick` through a shell. A source that
+  // is not a plain path must never reach the command string.
+  it("refuses to build a shell command from an injected source", () => {
+    const injected = 'C:\\snap.sqlite" & echo PWNED > C:\\tmp\\PWNED2.txt & rem "';
+    const cmd = jobCommand("spec_x", injected);
+    expect(cmd.usable).toBe(false);
+    expect(cmd.unsafe).toBe(true);
+    expect(cmd.command).toContain('--db "<snapshot.sqlite>"');
+    expect(cmd.command).not.toContain("PWNED");
+    expect(cmd.command).not.toContain("&");
+    expect(cmd.rejected).toContain("PWNED");
+    // Same rule for an operator override: the job executes it just the same.
+    const viaOverride = jobCommand("spec_x", "/data/ok.sqlite", 'x" & whoami & "');
+    expect(viaOverride.usable).toBe(false);
+    expect(viaOverride.unsafe).toBe(true);
+    expect(viaOverride.command).not.toContain("whoami");
+  });
+
+  it("keeps ordinary paths (spaces, colons, both separators) executable", () => {
+    for (const p of ["/data/billing.sqlite", "C:\\Users\\me\\My Snapshots\\snap.sqlite", "./tmp/snap.sqlite"]) {
+      const cmd = jobCommand("spec_x", p);
+      expect(cmd.usable).toBe(true);
+      expect(cmd.unsafe).toBe(false);
+      expect(cmd.command).toContain(p);
+    }
+    // spec_id is part of the command too — placeholder it when it fails the id shape.
+    const badId = jobCommand("spec x; rm -rf /", "/data/ok.sqlite");
+    expect(badId.usable).toBe(false);
+    expect(badId.command).not.toContain("rm -rf");
   });
 
   it("only allows patrol graduation when the verified db IS the workspace db", () => {

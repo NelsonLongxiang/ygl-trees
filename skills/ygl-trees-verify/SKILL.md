@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.103.0
+version: 0.104.0
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
@@ -158,6 +158,8 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 | 想知道这次尝试落哪个文件 | CLI `prepare --json` 的 `record`（相对 verify 根）；`GET /api/verify/spec` 载荷带 `attempts:[{file,created,verdict}]` 投影 |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
 | command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |
+| `graduate --schedule` 报 `shell-unsafe` | 报告的 `data_source.source` 含引号/`&`/`\|`/`!` 等字符（`verify report import` 只校验 payload 自洽，可被伪造）——不拼 shell 命令是设计；用 `--db <真实快照路径>` 指定常驻目标，冻结记录仍记被验源 |
+| `graduate --db` 有什么用 | 只换常驻作业的目标库，不改资格判定/冻结记录/patrol；与报告 source 不同时会点名 |
 
 - `verify graduate` 报 `not eligible ...` → 不是 bug：资格不够（缺报告/N 份里有 FAIL/跨度不足），按它点名的条件补跑几次真实 `verify run`，别去改报告文件。
 - `--schedule` 报「needs --every」→ 调度必须给分钟数；不给 `--schedule` 时只打印命令串，不登记作业。

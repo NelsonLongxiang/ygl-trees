@@ -371,7 +371,7 @@ verify list                        # 规范清单与状态
 - 报告挂节点：`--rel evidenced-by`（验证结果=节点证据）。
 - **毕业通道**（M13-3，设计裁定 2026-10-20）：目标是把「一次性验证」变成「常驻检查」。关键事实（代码侦察）：`patrol run` 把 check 的 SQL 直接跑在**工作区自己的库**上（`patrol-cmds.ts:117` `store.db.all(c.sql)`），而验证规范的 VU 判的是**被验快照**里的表——两张库不同源，把 VU 的 `findSql` 抄成 patrol check 只对「被验对象就是本工作区库」的规范成立。第一版按三段拆：①**资格**：同一 `spec_version`、连续 `--min-runs`（默认 3）份报告 `overall=PASS`、跨度 ≥ `--min-span-days`（默认 30 天），任一不满足则点名拒绝（rc=1，不落盘）；②**毕业记录**：`$YGL_HOME/verify/graduations/<spec_id>.json` 冻结（spec_version、run_id 清单、阈值、created），幂等重跑返回 `duplicate:true`；③**常驻执行**：生成 `job add --every <min> -- ygl-trees verify run <spec_id> --db <source> --no-archive`（`<source>` 取毕业报告的 `data_source.source`，作业运行史落 runs 表、报告继续进 `reports/` 形成趋势）。patrol 化（S1/S2/S3 处置队列）只对被验库 == 工作区库的规范开放；**0.103.0 只做资格闸门**（`--patrol` 校验库同源后放行毕业，不自动生成 patrol check——把 VU 的 `findSql` 抄成 check 需要逐条确认空结果语义，留给后续版本）；库不对源时明确拒绝并点名。CI 集成后置（M13-4），先把「毕业 = 冻结资格 + 绑定调度」做实。
 
-**已实现（0.103.0）**：`verify graduate <spec-id> [--min-runs N] [--min-span-days DAYS] [--every MIN --schedule] [--patrol]`，代码在 `packages/ops/tools/src/graduate.ts`：
+**已实现（0.103.0）**：`verify graduate <spec-id> [--min-runs N] [--min-span-days DAYS] [--db <source>] [--every MIN --schedule] [--patrol]`，代码在 `packages/ops/tools/src/graduate.ts`：
 - 资格判定只读不写——`checkEligibility` 读 `specs/<id>/spec.json` 与 `reports/*.json`，**跨 spec_version 不算连续**（判据本身变了，"历史最好成绩"不成立），取样按 `finished` 从新到旧最多 `min_runs` 条；拒绝时逐条点名（缺几条报告、哪条不是 PASS、跨度差多少天），rc=1 且**不落盘**。
 - 毕业记录冻结在 `$YGL_HOME/verify/graduations/<spec_id>.json`：同核心内容重跑回 `duplicate:true`（保留首次 `created`）；不同形状**拒绝覆盖**并给出 `delete <path> deliberately` 的显式指引——冻结记录不可被重跑改写。
 - 常驻执行默认只打印命令串（`job_command` 字段），`--schedule --every <min>` 才真的登记作业（`job add`）；命令串固定带 `--no-archive`（趋势看报告，不看 zip 数量）。
@@ -381,6 +381,9 @@ verify list                        # 规范清单与状态
 - **窗口右移（r25 P3④）**：跨度取最近 N 份的首末，新报告进入会让窗口右移——同一规范可能「昨天够格、今天不够格」（实测 40d → 28d）。这是取证纪律：毕业看的是当前连续窗口，不是历史最长跨度。
 - **跨度闸门非真空（r25 P2-1）**：`--min-span-days > 0` 时必须取到 ≥2 份报告，否则直接点名拒绝——旧实现让 `--min-runs 1` + 单份 PASS 以 span=0 混过闸门。
 - **可执行来源（r25 P2-2）**：报告 `data_source.source` 若是 `blob:<sha12>`（HTTP 作业面的内容寻址引用），**不能当 `--db` 用**——`job_command` 打占位符、`--schedule` 拒绝登记，除非显式 `--db <file>` 覆盖。否则作业每分钟 ENOENT 失败而毕业记录已冻结。
+- **报告是数据，不是命令（r26 P1）**：`job tick` 走 shell，而 `data_source.source` 可以来自 `verify report import`（该命令只校验 payload 自洽）。伪造报告把 `" & echo PWNED & rem "` 塞进 source 曾能让 `--schedule` 生成可执行的注入命令。现在 `jobCommand()` 对**报告 source 与 `--db` 覆盖一视同仁**做路径白名单（字母数字/点/下划线/斜杠/反斜杠/冒号/连字符/空格/波浪号；拒 `" & | ; < > ^ % ( ) { } [ ] ! $ \` ' ~` 之外的一切，含换行）；不安全 → `job_command_usable:false`、`job_command_unsafe:true`、命令串打占位符、原文不回显（`job_command_rejected` 是消毒截断摘要）、`--schedule` rc=1。`spec_id` 同为命令串成分，按 id 白名单校验，不合格打 `<spec-id>`。`verify report import` 对可疑 source 出声（`source_warning`，不拒绝——跨机绝对路径合法）。彻底修法（argv 存储 + 不经 shell）留 M13-4。
+- **`--db` 覆盖的语义边界（r26 Q2）**：覆盖只换**常驻作业的目标库**，不改变资格判定、冻结记录与 patrol 判定（三者都用报告里的 `data_source`）；与报告 source 不同时人类输出点名「冻结记录仍记被验源」，`--db` 不进冻结记录。
+- **响应回冻结值（r25 Q2/P3②）**：`thresholds` 一律回冻结记录里的值（不回本次请求），重复毕业不会让响应与实际记录不一致；`job_every_minutes` 读作业行实际值。
 - **响应回冻结值（r25 Q2/P3②）**：`thresholds` 一律回冻结记录里的值（不回本次请求），重复毕业不会让响应与实际记录不一致；`job_every_minutes` 读作业行实际值。
 - **被取代 ≠ 记录错了（r25 P3③）**：spec_version 升级后重新毕业被拒时，文案是「older spec_version 被取代，跑新版本后显式删除再毕业」，与「frozen record was wrong」分开。
 

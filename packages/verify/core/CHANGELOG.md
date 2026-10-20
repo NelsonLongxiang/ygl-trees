@@ -17,6 +17,7 @@
 |---|---|---|
 | v1.0 冻结 | `388604230680f9606635caf1d55403703347097ef0337a1aba8337fdaaa076f0` | 129 文件，spec `contract_version: "1.0"` |
 | v1.1（本次） | `4cac21b4f5bc3edd…` | 129 文件，逐文件仅 `contract_version` 字段 1.0→1.1；案例与语义零变化 |
+| v1.1（0.104.0 重冻，LF 基） | `ee1a0a1d6dddcfcd…` | 同上 129 文件；**行尾规范化**——该清单此前在 `core.autocrlf=true` 的工作树上冻结（`cases/**` 为 CRLF 字节），与脚本直写 LF 的 `canonical/vectors.json` 混在同一清单里，导致 LF 检出（CI/Linux/新 clone）`corpus-digest` 必红。0.104.0 起 `.gitattributes` 固定语料 `eol=lf`，本行取代上一行的 digest 权威性（内容语义未变，`corpus_version` 仍 1.1）。 |
 
 ## contract_version 1.0 + corpus_version 1.0（2026-10-19，冻结）
 

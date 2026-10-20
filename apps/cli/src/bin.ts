@@ -99,6 +99,9 @@ ${paint(C.bold, "db", color)}
   dups                       list duplicate-content rows
   reset                      delete the database (asks nothing, be careful)
   sql "<sql>"                ad-hoc statement (can mutate — power tool, no guardrails)
+                             refs are integer ids into nodes: edges.parent_id/child_id
+                             join nodes and alias its text key, e.g.
+                             SELECT n.key AS node_key FROM edges e JOIN nodes n ON n.id=e.parent_id
 
 ${paint(C.bold, "skill", color)}        L1 description / L2 body / L3 references
   import <file.md>           import a SKILL.md (frontmatter = L1, body = L2)
@@ -134,7 +137,8 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
   prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
-  graduate <spec-id> [--min-runs N] [--min-span-days D] freeze eligibility, then make the check recurring
+  graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule]
+                                      freeze eligibility, then make the check recurring (--db retargets the job only)
   register <sealed-binary>            register a sealed build (footer chain → registrations/ + binaries/)
   signature <sealed-binary> [--expect-key <hex|file>]  verify a seal's ed25519 signature (key table, not self-signed)
   list | report <run-id> | trace <spec-id> | export <spec-id>
@@ -326,7 +330,7 @@ export async function main(argv: string[]): Promise<number> {
       console.log();
       console.log("  This workspace has no database yet. Get started in 3 steps:");
       console.log();
-      console.log("  1.  ygl-trees db init              # create workspace (9 skills auto-imported)");
+      console.log("  1.  ygl-trees db init              # create workspace (12 skills auto-imported)");
       console.log("  2.  ygl-trees agent brief           # see current state + next actions");
       console.log('  3.  ygl-trees project new my-research -q "your question"');
       console.log();
@@ -592,6 +596,13 @@ export async function main(argv: string[]): Promise<number> {
         bad(ctx, `unknown group: ${group}`);
       }
       if (!ctx.json) {
+        // 0.104.0 (batch nine P1): the research verbs are actions, not groups
+        // — `ygl-trees claim list` reads like a command and dead-ends in the
+        // suggestion list, so name the owning group instead of only guessing.
+        const owner = { claim: "research", source: "research", evidence: "research", query: "research", predict: "research" }[input];
+        if (owner) {
+          out(ctx, paint(C.dim, `  try: ygl-trees ${owner} ${input} …  (${input} is an action of the ${owner} group)`, ctx.color));
+        }
         out(ctx, paint(C.dim, "  try: ygl-trees (no args) for full usage", ctx.color));
       }
       if (!ctx.json) out(ctx, usage(ctx.color)); // usage text belongs to the human channel
@@ -769,7 +780,7 @@ export function generateLlmsManifest(): string {
       ["verify submit --title <t> --text <file|-> [--attach <f>]", "freeze material (text + attachments w/ sha256)"],
       ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--draft]", "extract → translate → blind self-review → freeze spec (--draft = dry run, writes nothing)"],
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
-      ["verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--every MIN --schedule] [--patrol]", "freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check; --patrol only when the verified db IS the workspace db"],
+      ["verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]", "freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check (--db retargets the job only); --patrol only when the verified db IS the workspace db"],
       ["verify register <sealed-binary> [--keys <file>]", "register a sealed yglverify build (footer chain + signature → registrations/ + binaries/)"],
       ["verify signature <sealed-binary> [--expect-key <hex|file>]", "verify the seal's ed25519 footer signature against the repository key table"],
       ["verify list / report <run-id> / trace <spec-id> / export <spec-id>", "catalog, reports, construction trace, .yglverify.json"],
@@ -805,8 +816,8 @@ export function generateLlmsManifest(): string {
   L.push(`## Decision Model (R15)`);
   L.push("");
   L.push(`- kb search --eval: semantic re-ranking (P(relevant) per candidate)`);
-  L.push(`- claim evaluate: confidence 0-5 → A/B/C/D (auto-triggered on claim link)`);
-  L.push(`- evidence assess: quality 0-5 → 高/中/低`);
+  L.push(`- research claim evaluate: confidence 0-5 → A/B/C/D (auto-triggered on claim link)`);
+  L.push(`- research evidence assess: quality 0-5 → 高/中/低`);
   L.push(`- node can --eval: semantic unlock gates (boolean/choice/score)`);
   L.push(`- Offline safe: no AI_GATEWAY_API_KEY → shows "离线" and falls back`);
   L.push("");

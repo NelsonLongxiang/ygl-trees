@@ -1,0 +1,7 @@
+# EOL 纪律（0.104.0，发版席 BLOCK 修复）：语料是**字节级**冻结产物。
+# freeze.mjs 按磁盘字节算 sha256，而 Windows autocrlf=true 的检出会把 text 文件写成 CRLF，
+# 导致「在哪台机器打包」决定 tarball 里 manifest 是否自洽（CI/Linux 检出必红）。
+# 因此语料与矢量表强制 LF，二进制附件显式 -text（否则会被当文本改写）。
+* text=auto
+packages/verify/core/corpus/** text eol=lf
+*.pdf -text

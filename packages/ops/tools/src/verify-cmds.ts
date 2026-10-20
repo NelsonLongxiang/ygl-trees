@@ -30,7 +30,7 @@ import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
-import { checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, writeGraduation } from "./graduate";
+import { checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 
@@ -689,14 +689,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const dbOverride = args.flags.db ? String(args.flags.db) : null;
       const cmd = jobCommand(specId, el.data_source?.source ?? null, dbOverride);
-      // 来源不可直接执行（blob:<sha12> 或空）时不能登记作业——否则作业每分钟 ENOENT 失败，
-      // 而毕业记录已经冻在那儿（r25 P2-2）。
+      // 来源不可直接执行时不能登记作业——否则作业每分钟 ENOENT 失败（blob 引用），
+      // 或者更糟：报告数据经 shell 执行（r26 P1 注入面）。两种都拒绝，且不回显原串。
       if (wantSchedule && !cmd.usable) {
-        bad(
-          ctx,
-          `cannot schedule: the verified source is not an executable --db (${el.data_source?.source ?? "none"}); ` +
-            `pass --db <snapshot.sqlite> to choose the recurring database`,
-        );
+        const why = cmd.unsafe
+          ? `the verified source contains shell-unsafe characters (${cmd.rejected ?? "?"}) — refusing to build a recurring command out of report data`
+          : `the verified source is not an executable --db (${el.data_source?.source ?? "none"})`;
+        bad(ctx, `cannot schedule: ${why}; pass --db <snapshot.sqlite> to choose the recurring database`);
         return 1;
       }
       let written;
@@ -719,6 +718,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         record: written.path,
         job_command: cmd.command,
         job_command_usable: cmd.usable,
+        job_command_unsafe: cmd.unsafe,
+        job_command_rejected: cmd.rejected,
+        // Q2 (r26): --db 只换常驻目标，不改变资格、冻结记录与 patrol 判定。
+        db_override: dbOverride ?? null,
         patrol: patrol ? "eligible" : "not-requested",
       };
       const emit = (jobRow?: { id?: string; every?: number }): number => {
@@ -734,8 +737,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, `  history: ${record.history.reports_same_version} report(s) at this version, ${record.history.non_pass} non-PASS${record.history.last_non_pass ? ` (last: ${record.history.last_non_pass.run_id}=${record.history.last_non_pass.overall})` : ""}`);
         out(ctx, paint(C.dim, `  record: ${written.path}`, ctx.color));
         if (jobRow) out(ctx, paint(C.dim, `  scheduled: job ${jobRow.id} every ${payload.job_every_minutes} min`, ctx.color));
+        else if (cmd.unsafe) out(ctx, paint(C.yellow, `  note: the verified source contains shell-unsafe characters — not echoed; job_command is a placeholder and --schedule is refused. Pass --db <file> to pick the recurring database`, ctx.color));
         else if (!cmd.usable) out(ctx, paint(C.yellow, `  note: source ${el.data_source?.source ?? "none"} is not an executable --db; pass --db <file> to register a job`, ctx.color));
         else out(ctx, paint(C.dim, `  next: job add "verify ${specId}" --every ${every || "<min>"} -- ${cmd.command}`, ctx.color));
+        if (dbOverride && cmd.usable) {
+          out(ctx, paint(C.yellow, `  note: --db only retargets the recurring job; the frozen record still names the verified source (${el.data_source?.source ?? "none"})`, ctx.color));
+        }
         return 0;
       };
       if (!wantSchedule) return emit();
@@ -899,10 +906,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         const stored = join(p.reports, `${report.run_id ?? `imported_${short(sha256(readFileSync(file)))}`}.json`);
         writeJson(stored, report);
-        if (ctx.json) console.log(JSON.stringify({ imported: true, run_id: report.run_id, report_path: stored, spec_restored: specRestored }));
-        else {
+        // 防御纵深（r26 P1）：报告是数据，但它的 data_source.source 会被毕业通道
+        // 拼进 shell 命令。导入时对可疑形态出声——不拒绝（跨机绝对路径合法），
+        // 只让"这串东西不像路径"在最早的位置可见。
+        const importedSource = (report as any)?.data_source?.source;
+        const sourceWarning =
+          typeof importedSource === "string" && importedSource.length > 0 && !importedSource.startsWith("blob:") && !shellSafePath(importedSource)
+            ? "data_source.source is not a plain filesystem path — graduation will refuse to schedule it"
+            : null;
+        if (ctx.json) {
+          console.log(JSON.stringify({ imported: true, run_id: report.run_id, report_path: stored, spec_restored: specRestored, source_warning: sourceWarning }));
+        } else {
           out(ctx, `  ✓ report imported: ${report.run_id} → ${stored}`);
           if (specRestored) out(ctx, `    spec restored from the sealed binary: ${specRestored}`);
+          if (sourceWarning) out(ctx, paint(C.yellow, `  ! ${sourceWarning}`, ctx.color));
         }
         return 0;
       }

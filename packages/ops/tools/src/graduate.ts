@@ -195,21 +195,54 @@ export function writeGraduation(
 /**
  * 交给 `job add` 的命令串（--every 是 job 的调度参数，不属于 verify）。
  *
- * 报告里的 `data_source.source` **不一定能当 `--db` 用**：HTTP 作业面的来源是
- * `blob:<sha12>`（内容寻址引用，不是文件路径），照抄进命令串只会让作业每分钟 ENOENT 失败。
- * 因此这里返回 `usable`：来源不可直接执行时打印占位符，并且 CLI 应拒绝 --schedule，
- * 除非操作员用显式 `--db` 覆盖（r25 P2-2）。
+ * 报告里的 `data_source.source` **不一定能当 `--db` 用**：
+ * - HTTP 作业面的来源是 `blob:<sha12>`（内容寻址引用，不是文件路径），照抄进命令串
+ *   只会让作业每分钟 ENOENT 失败（r25 P2-2）。
+ * - 报告是**数据**，`job tick` 走 shell（`job-cmds.ts` 的 execSync）。r26 P1 实证：
+ *   伪造报告把 `" & echo PWNED & rem "` 塞进 source，经 `verify report import`
+ *   （只校验 payload 自洽）→ `--schedule` → `job tick` 即执行。因此路径必须过
+ *   白名单：不安全时 `usable:false`、命令串打占位符、原文不回显（`rejected`
+ *   是消毒后的摘要），CLI 拒绝 --schedule。
+ *
+ * 返回值因此带四个事实：可执行与否、最终命令串、不安全标记、消毒摘要。
  */
-export function jobCommand(
-  specId: string,
-  source: string | null,
-  override?: string | null,
-): { command: string; db: string; usable: boolean } {
+export interface JobCommand {
+  command: string;
+  db: string;
+  usable: boolean;
+  /** candidate 命中 shell 白名单失败 —— CLI 必须拒绝 --schedule，且不要回显原串。 */
+  unsafe: boolean;
+  /** 消毒后的摘要（控制字符替换、截断 40 字符）；没有不安全来源时为 null。 */
+  rejected: string | null;
+}
+
+/** 路径白名单：字母数字、点、下划线、斜杠、反斜杠、冒号、连字符、空格、波浪号。
+ *  波浪号是 Windows 8.3 短路径（`C:\Users\ADMINI~1\...`）的合法字符，且命令串
+ *  始终双引号包裹——`~` 在双引号内不展开，放进命令串不构成注入面。 */
+const SHELL_PATH_SAFE = /^[A-Za-z0-9._/\\:\- ~]+$/;
+/** spec_id 同为命令串的一部分，用与 HTTP 层一致的 id 白名单。 */
+const SPEC_ID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function shellSafePath(raw: string): boolean {
+  return raw.length > 0 && raw.length <= 4096 && SHELL_PATH_SAFE.test(raw);
+}
+
+function printable(raw: string): string {
+  const clean = raw.replace(/[^\x20-\x7e]/g, "?");
+  return clean.length > 40 ? `${clean.slice(0, 40)}…` : clean;
+}
+
+export function jobCommand(specId: string, source: string | null, override?: string | null): JobCommand {
   const explicit = override && override.trim() ? override.trim() : null;
   const candidate = explicit ?? source;
-  const usable = !!candidate && !candidate.startsWith("blob:");
+  const blob = !!candidate && candidate.startsWith("blob:");
+  const unsafe = !!candidate && !blob && !shellSafePath(candidate);
+  const idUnsafe = !SPEC_ID_SAFE.test(specId);
+  const usable = !!candidate && !blob && !unsafe && !idUnsafe;
   const db = usable ? (candidate as string) : "<snapshot.sqlite>";
-  return { command: `ygl-trees verify run ${specId} --db "${db}" --no-archive`, db, usable: usable || !!explicit };
+  const rejected = unsafe ? printable(candidate as string) : null;
+  const id = idUnsafe ? "<spec-id>" : specId;
+  return { command: `ygl-trees verify run ${id} --db "${db}" --no-archive`, db, usable, unsafe: unsafe || idUnsafe, rejected };
 }
 
 /**

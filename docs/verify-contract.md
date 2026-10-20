@@ -336,6 +336,7 @@ review（agent 型）与 fact 型同样有可验收形状，不是"再问一次�
 - 语料**只增不改**：已冻结案例的文件内容是否定不得的（改了就再也证明不了旧版本行为）；要改 = 升 `corpus_version` 并在 CHANGELOG 记差异。
 - `contract_version` 钉 `1.0` 时同时钉 `corpus_version`；此后二者各自独立自增，报告里两个版本号都记。
   （2026-10-20 起二者均为 `1.1`：contract 1.1 是封包签名身份字段，corpus 1.1 是 33 份 spec 随契约升版重铸。）
+- **EOL 纪律（0.104.0，发版席 BLOCK 修复）**：语料是**字节级**冻结产物（`freeze.mjs` 按磁盘字节算 sha256），而 Git 的 `core.autocrlf` 会让同一提交在不同检出行尾不同——曾出现「manifest 按 CRLF 冻结、canonical 按 LF 冻结」的混合清单，导致 CI/Linux/LF 检出上 `self-check` 与语料快照必红、tarball 内容随打包机漂移。修法：仓库根 `.gitattributes` 固定 `packages/verify/core/corpus/** text eol=lf`、`*.pdf -text`（二进制附件不得被当文本改写），并在统一 LF 基上重冻 manifest。**案例如今在任何检出上都逐字节一致**；`corpus_version` 仍为 `1.1`（案例语义零变化——仓库存储的 blob 本来就是 LF，变的是工作树行尾），`1.1` 的 digest 以 LF 基为准：`ee1a0a1d6dddcfcd…`（129 文件）。旧记录里的 `4cac21b4…` 是 CRLF 工作树误冻的产物，已被取代。
 - 时间字面量纪律（W1b）：`window` 只接受「纯日期」或「带时区的 datetime」；`'2026-07-01 10:00:00'` 这类无时区时间戳构造期 ERROR（否则 Date.parse 按本机时区解释，换台机器窗口就漂）。
 - 真实网关凭证在 M13-1b（封包 fact-only 闭环）之前**不接**：review/prepare 层的模型调用一律走注入接口，测试用假 runner。
 

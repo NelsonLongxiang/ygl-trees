@@ -59,6 +59,30 @@ describe("condAdd 幂等（工单单1·P1）", () => {
     await closeOrm();
   });
 
+  it("--force 就地把异内容改写为同一行（不新增、不改 id）", async () => {
+    const ds = await getOrm(db.path!);
+    const before = db.get("SELECT id FROM node_conditions WHERE name='x_ready'");
+    const r = await treeWrites.condAdd(ds, tid, "a", {
+      name: "x_ready",
+      kind: "flag",
+      op: "eval",
+      value: "DIFFERENT",
+      force: true,
+    });
+    expect((r as any).updated).toBe(true);
+    expect(r.id).toBe(before.id);
+    const row = db.get("SELECT value FROM node_conditions WHERE id=?", before.id);
+    expect(row.value).toBe("DIFFERENT");
+    expect(db.get("SELECT COUNT(*) c FROM node_conditions WHERE name='x_ready'").c).toBe(1);
+    // 改写完成后再跑同内容即回到幂等 duplicate 语义。
+    const again = await treeWrites.condAdd(ds, tid, "a", { name: "x_ready", kind: "flag", op: "eval", value: "DIFFERENT" });
+    expect((again as any).duplicate).toBe(true);
+    // 事件留痕带 updated 标记（审计能区分「新增」与「就地改写」）。
+    const ev = db.get("SELECT payload FROM events WHERE kind='node.cond' AND entity_id=? ORDER BY ts DESC LIMIT 1", before.id);
+    expect(String(ev.payload)).toContain('"updated":true');
+    await closeOrm();
+  });
+
   it("可选标志不同也算异内容（required 变化影响门禁语义）", async () => {
     const ds = await getOrm(db.path!);
     await expect(

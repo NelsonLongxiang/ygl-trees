@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.104.0
+
+**批九可发现性 + r26 P1 安全收口**：无契约形状变更（`contract_version` / `corpus_version` 仍 1.1）。
+
+- **跨树边提示（批九 P1①）**：`node link` 的两端查找失败原来只说 `parent not found: na`，用户看不出「这个 key 在别的树里」。`enrichNodeNotFound` 的正则从 `^node not found:` 扩到 `^(node|parent|child) not found:`，并复用 `trees.nodeInOtherTrees()` 点名——`key exists in other tree(s): 't-a' — edges cannot cross trees; add 'na' to 't-b' (or -t t-a to work over there)`。边不跨树是数据模型边界，提示必须给出「加节点」与「换树工作」两条出路。
+- **未知组指引（批九 P1②）**：`ygl-trees claim list` 这类「把动作当组」的输入原来只说 `unknown group: claim`。现在对 `claim/source/evidence/query/predict` 五个动作补一行 `try: ygl-trees research claim …  (claim is an action of the research group)`；llms 尾注的 `- claim evaluate`、`- evidence assess` 一并订正为 `research …`。首启引导里的技能数 9 → 12（与 README / `skills/` 目录一致）。
+- **`db sql` 列名速查（批九 P2）**：裸 `db sql` 原来静默 rc=0（形似「空结果」）——现在 rc=2 并给出真值形状：`edges.parent_id/child_id` 是 `nodes.id` 整数引用，要 join 后 alias `nodes.key`（附可直接跑的示例 SQL）。help 同步三行。
+- **`node cond --force`（批九 P2）**：同键异内容原来只能 `node cond rm` 再 add（两次写、中间态缺条件）。`--force` 就地把 value/op 等改写为同一行（id 不变），落 `node.cond` 事件带 `"updated":true` 以便审计区分「新增」与「就地改写」；无 `--force` 的拒绝文案补「或 `--force` 就地改写」。
+- **语料行尾规范化（发版席 0.103.0 复核 BLOCK 修复）**：`freeze.mjs` 按**磁盘字节**算 sha256，而 `core.autocrlf=true` 的检出会把 `corpus/cases/**` 写成 CRLF、脚本直写的 `canonical/vectors.json` 却是 LF——manifest 成了混合清单：Windows 主树自洽，CI/Linux/新 clone 上 `corpus-digest` 快照必红，且 tarball 内容随打包机漂移（产物正确性取决于哪台机器打包）。修法：仓库根新增 `.gitattributes`（`packages/verify/core/corpus/** text eol=lf`、`*.pdf -text`），在统一 LF 基上重冻 `manifest.json`（129 文件，digest `4cac21b4…` → `ec2a0dcbf866f518…`）。语料语义零变化（仓库 blob 本来就是 LF），`corpus_version` 仍 1.1；`docs/verify-contract.md` §4.6 与 `packages/verify/core/CHANGELOG.md` 记明该 digest 取代关系。
+- **r26 收口（评审 302cb119，1 个 P1 安全缺陷 + P4 文档项）**：报告是数据不是命令——`verify report import` 只校验 payload 自洽，伪造报告把 `" & echo PWNED & rem "` 塞进 `data_source.source` 后，`--schedule` 会把它内插进 `job_command`，`job tick` 经 shell 执行。修法：`jobCommand()` 对报告 source 与 `--db` 覆盖统一做路径白名单（字母数字/点/下划线/斜杠/反斜杠/冒号/连字符/空格/波浪号；波浪号放行以兼容 Windows 8.3 短路径），不安全 → `job_command_usable:false`、命令串打占位符、`--schedule` rc=1 且不回显原串（`job_command_rejected` 是消毒截断摘要）；`spec_id` 同白名单（不合格打 `<spec-id>`）。`verify report import` 对可疑 source 出声（`source_warning`，不拒绝——跨机绝对路径合法）。`--db` 覆盖语义钉死：只换常驻作业目标，不改资格判定/冻结记录/patrol。彻底修法（argv 存储、不经 shell）留 M13-4。
+- 测试 unit **493**（+10：`node-qual` +3 跨树边提示、`guidance.spec.ts` 新增 3 例 unknown-group 指引、`cond-idem` +1 `--force` 就地改写、`graduate.spec.ts` +2 注入拒绝与普通路径放行、CLI +1 注入 source 拒绝拼进 shell）/ Rust 31 / demo 128 / contract 100 / readme 54。`spec-validator.md` §9 新增「报告是数据，不是命令（r26 P1）」与「`--db` 覆盖的语义边界（r26 Q2）」两段。
+- 附：r26 评审报告入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`（索引登记）。
+
 ## 0.103.0
 
 **M13-3 毕业通道**：把「一次性验证」升级为「常驻检查」——`verify graduate`（`packages/ops/tools/src/graduate.ts`）。无契约形状变更（`contract_version` / `corpus_version` 仍 1.1）。
@@ -10,7 +23,7 @@
 - **patrol 化边界**：`--patrol` 只在「被验库 == 工作区库」时放行，否则点名拒绝——`patrol run` 在工作区库上跑 SQL 而 VU 判的是被验快照，生成半对的检查比没有检查更危险。0.103.0 **只做资格闸门**，不自动生成 patrol check。
 - **r25 收口（评审 302cb119，3 个 P2 必修 + P3 记账）**：①跨度闸门不再真空——`--min-span-days > 0` 时必须 ≥2 份报告，`--min-runs 1` + 单份 PASS 不再以 span=0 混过；②报告来源是 `blob:<sha12>`（HTTP 作业面内容寻址）时**不能当 `--db`**——`job_command` 打占位符、`--schedule` 拒绝登记，除非 `--db <file>` 显式覆盖，否则作业每分钟 ENOENT 失败；③文档把「`--patrol` 交 patrol add」订正为「0.103.0 只做资格闸门」。另收：`history` 摘要（同版本总数/非 PASS 数/最近一条非 PASS）、跨度窗口右移写进文档、响应一律回冻结阈值、`--schedule` 的用法校验提前到落盘之前（旧实现 rc=2 却已冻结记录）、被取代与记录错误分开提示。
 - rc 语义与 verify 组一致：0=已毕业/duplicate，1=资格不够或运行错误，2=用法错误（缺 spec-id、`--min-runs` 非正整数、`--schedule` 缺 `--every`）。
-- 测试 unit **483**（+20：`graduate.spec.ts` 10——资格/缺报告/FAIL/跨度/跨版本隔离/缺 spec/冻结幂等/拒绝覆盖/命令串/patrol 边界；CLI 5——缺参数 rc=2、未知 spec rc=1、资格不够→够格→duplicate 全链、`--schedule` 缺 `--every` rc=2 且不冻结、blob 来源拒绝登记而 `--db` 覆盖后放行，各自用独立 `YGL_HOME` 不污染共享夹具）/ Rust 31 / demo 128 / contract 100 / readme 54。
+- 测试 unit **483**（+20：`graduate.spec.ts` 15——资格/缺报告/FAIL/跨度/跨版本隔离/缺 spec/冻结幂等/拒绝覆盖/命令串/patrol 边界/history/冻结阈值/被取代文案/blob 不可执行与 `--db` 覆盖；CLI 5——缺参数 rc=2、未知 spec rc=1、资格不够→够格→duplicate 全链、`--schedule` 缺 `--every` rc=2 且不冻结、blob 来源拒绝登记而 `--db` 覆盖后放行，各自用独立 `YGL_HOME` 不污染共享夹具）/ Rust 31 / demo 128 / contract 100 / readme 54。
 - 文档：`docs/spec-validator.md` §9 毕业通道补「已实现（0.103.0）」语义；`docs/verify-contract.md` §4.7 收 r24 三条口径——①`attempts[].file`=目录内文件名 / HTTP `record`=spec 目录相对 / CLI `record`=verify 根相对，**三个基准不同**；②小数秒 >3 位静默截断到毫秒；③有意保留的宽容边界（纯日期按 UTC、偏移 ±23:59）与「拒小写 t/z、闰秒、基本格式」显式写明。
 
 ## 0.102.4

@@ -33,6 +33,7 @@
 | `REVIEW-spec-validator-m13-r23.md` | 0.102.3 复核 | **PASS**：r22 四条（as_of 双侧校验、attempts 投影、命名续号、CLI record）实测通过（unit 454/454、contract 100、demo/readme rc=0）；**P2-1**：`verify-contract.md` §4.7 的 `--reviews` 示例仍是旧嵌套形状（照文档永远拿不到 ready，实测复现）+ P3×5（as_of 无时区/非法日历静默归一、HTTP 校验次序、prepare.json 不可变措辞、record 路径前缀、wx 原子占位）→ **0.102.4 已收口** |
 | `REVIEW-spec-validator-m13-r24.md` | 0.102.4 复核 | **PASS**：r23 六条（as_of 严格 ISO、校验次序、wx 原子续号、文档形状、措辞、±hh 说明）全部收口（unit 463/463、contract 100、demo/readme rc=0）；两问答复——接受面仅剩「纯日期 / 小数秒截断 / ±23:59 偏移」三个有意宽容边界（建议文档化），跨进程固化测试不需要（EEXIST 分支与进程数无关）；P4×3（`file` 的 basename 措辞、HTTP body `record` 基准未写、小数秒截断未写） |
 | `REVIEW-spec-validator-m13-r25.md` | 0.103.0 毕业通道复核 | **CHANGES**：资格/记录/调度三段拆成立、两问判断确认；P2×3（`--min-runs 1` 跨度闸门真空、HTTP blob 源 `job_command` 死命令且 `--schedule` 登记必败作业、§9「`--patrol` 会 `patrol add`」未兑现）+ P3×4（`--schedule` 缺 `--every` 先落盘、duplicate 回请求阈值与作业周期、版本升级后重毕业文案、窗口跨度右移语义）；unit 475/476（唯一失败为 webui ECONNRESET 环境 flake，隔离 17/17 过）、contract 100、demo 128、readme 54 |
+| `REVIEW-spec-validator-m13-r26.md` | 0.103.0 毕业通道收口复核 | r25 的 P2×3/P3×4/两问全过（定向 44/44）；**CHANGES：P1 安全**——`job_command` 内插报告 `data_source.source` 且 `job tick` 走 shell，crafted report → import → graduate → 任意命令执行（端到端实证）；修法=路径白名单+拒绝 schedule；Q1 不建议查存在性（补 db_exists warning）、Q2 `--db` 不改资格/记录/patrol 但需同防注入 |
 | `harness2-dual-validation-plan.md`（方案） | harness2 双线验证（两席共识） | 需求侧不可或缺；外强于内；P1a 方差探针 + evaluator 协议先行；红线=单一裁判权 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |

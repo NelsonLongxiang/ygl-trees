@@ -92,12 +92,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
    *  if a parallel session flipped current_tree, the key usually exists in
    *  another tree; name it instead of making the user blind-list. */
   function enrichNodeNotFound(msg: string): string {
-    const m = /^node not found: (.+)$/.exec(msg);
+    // 0.104.0 (batch nine P1): link failures name the missing endpoint as
+    // parent/child, not node — same blind alley, same enrichment. Edges stay
+    // single-tree, so for those the hint must not suggest pinning the other
+    // tree: it says how to fix the write instead.
+    const m = /^(node|parent|child) not found: (.+)$/.exec(msg);
     if (!m) return msg;
-    const others = trees.nodeInOtherTrees(m[1], tid);
+    const others = trees.nodeInOtherTrees(m[2], tid);
     if (others.length) {
       const names = others.map((o: any) => `'${o.tree}'`).join(", ");
-      return `${msg}\n  key exists in other tree(s): ${names} — pin it: ygl-trees ${env.group} ... -t ${others[0].tree}`;
+      if (m[1] === "node") {
+        return `${msg}\n  key exists in other tree(s): ${names} — pin it: ygl-trees ${env.group} ... -t ${others[0].tree}`;
+      }
+      return `${msg}\n  key exists in other tree(s): ${names} — edges cannot cross trees; add '${m[2]}' to '${tree?.name ?? "?"}' (or -t ${others[0].tree} to work over there)`;
     }
     return `${msg}  (current tree: '${tree?.name ?? "?"}' — node list to inspect, -t <tree> to switch)`;
   }
@@ -467,7 +474,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         );
       }
       if (!cKey) {
-        bad(ctx, "usage: node cond [add|rm] <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op telemetry --value 'cmd.run>=100'|'cmd.run:14d>=100'] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n]");
+        bad(ctx, "usage: node cond [add|rm] <key> --name <cond> [--kind ..] [--op >=|==|<=|!=|has] [--value n] [--op telemetry --value 'cmd.run>=100'|'cmd.run:14d>=100'] [--op eval [--value q] | eval-choice --options k=d,.. --answer k | eval-score --levels a,b,.. --min-score n] [--optional] [--effect gate|cost_mul] [--weight n] [--force rewrite an existing condition in place]");
         return 2;
       }
       const k = cKey;
@@ -479,7 +486,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // fall through to list mode ("(empty)", rc=0, zero writes) — a success-
       // shaped receipt masking a no-op (same family as the unlink fix, 单2).
       // Add-shaped flags without --name are a usage error, not a list request.
-      const addShaped = ["op", "value", "options", "answer", "levels", "min-score", "kind", "optional", "effect", "weight"].some((f) => args.flags[f] !== undefined);
+      const addShaped = ["op", "value", "options", "answer", "levels", "min-score", "kind", "optional", "effect", "weight", "force"].some((f) => args.flags[f] !== undefined);
       if (!name && addShaped) {
         bad(ctx, "usage: node cond add <key> --name <cond> [--kind ..] [--op ..] — condition add requires --name (bare `node cond <key>` lists existing conditions)");
         return 2;
@@ -547,9 +554,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             required: !flagBool("optional"),
             effect: flagStr("effect", "gate"),
             weight: flagNum("weight", 1),
+            force: flagBool("force"),
           }),
         (c): number => {
-          if ((c as any).duplicate) {
+          if ((c as any).updated) {
+            ack(ctx, c, `condition rewritten: ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]  (--force, value/op replaced in place)`);
+          } else if ((c as any).duplicate) {
             ack(ctx, c, `condition exists (duplicate): ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);
           } else {
             ack(ctx, c, `condition added: ${k} · ${c.name}  [${c.required ? "必检" : "可选"}/${c.effect}]`);

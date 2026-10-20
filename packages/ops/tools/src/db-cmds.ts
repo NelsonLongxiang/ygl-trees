@@ -495,7 +495,17 @@ ${cl.text}
     }
     case "sql": {
       const sql = rest.join(" ");
-      if (!sql) return 0;
+      // 0.104.0 (batch nine P2): a bare `db sql` used to exit 0 silently,
+      // which reads as "nothing matched" instead of "you forgot the statement".
+      // The usage line also carries the id-vs-key refs that cost reviewers a
+      // round trip: edge columns are integer ids, node text lives in nodes.key.
+      if (!sql) {
+        bad(
+          ctx,
+          'usage: db sql "<query>"   (refs are integer ids: edges.parent_id/child_id → nodes.id — join and alias nodes.key, e.g. SELECT n.key AS node_key FROM edges e JOIN nodes n ON n.id=e.parent_id)'
+        );
+        return 2;
+      }
       const rows = db.all(sql);
       table(ctx, rows);
       return 0;

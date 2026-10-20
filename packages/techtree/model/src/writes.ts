@@ -352,6 +352,10 @@ export async function condAdd(
     effect?: string;
     weight?: number;
     note?: string;
+    /** 0.104.0 (batch nine P2): rewrite an existing (node_id, name) row in
+     *  place instead of refusing — editing value/op was otherwise a rm+add
+     *  dance that threw away the natural-key idempotency. */
+    force?: boolean;
   }
 ): Promise<Record<string, any>> {
   return runTx(ds, async (mgr) => {
@@ -375,8 +379,18 @@ export async function condAdd(
         Number(cur.weight ?? 1) === Number(o.weight ?? 1) &&
         String(cur.note || "") === (o.note || "");
       if (same) return { ...cur, duplicate: true } as Record<string, any>;
+      if (o.force) {
+        await mgr.query(
+          `UPDATE node_conditions SET kind=?,expr=?,op=?,value=?,required=?,effect=?,weight=?,note=? WHERE id=?`,
+          [kind, o.expr || o.name, o.op || ">=", o.value || "", o.required === false ? 0 : 1, o.effect || "gate", o.weight ?? 1, o.note || "", cur.id]
+        );
+        await markDirty(mgr, treeId);
+        await logEvent(mgr, "node.cond", cur.id, { tree: treeId, node: keyOrId, name: o.name, kind, op: o.op || ">=", required: o.required !== false, updated: true });
+        const rows = (await mgr.query(`SELECT * FROM node_conditions WHERE id=?`, [cur.id])) as any[];
+        return { ...rows[0], updated: true } as Record<string, any>;
+      }
       throw new Error(
-        `condition '${o.name}' already exists on ${keyOrId} with different content — remove it first: ygl-trees node cond rm ${keyOrId} --name ${o.name}`
+        `condition '${o.name}' already exists on ${keyOrId} with different content — rewrite it in place: ygl-trees node cond ${keyOrId} --name ${o.name} … --force (or remove first: node cond rm ${keyOrId} --name ${o.name})`
       );
     }
     const id = shortId(["cond", n[0].id, o.name], 12);

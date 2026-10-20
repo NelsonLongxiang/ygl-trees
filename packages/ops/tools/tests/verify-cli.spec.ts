@@ -257,6 +257,59 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     }
   });
 
+  it("graduate 拒绝把注入过的 source 拼进 shell 命令（r26 P1）", () => {
+    const ghome = mkdtempSync(join(tmpdir(), "ygl-grad4-"));
+    const env = { YGL_HOME: ghome };
+    try {
+      expect(run(["db", "init"], env).rc).toBe(0);
+      const specDir = join(ghome, "verify", "specs", "spec_inj");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_inj", spec_version: 1 }), "utf8");
+      const reports = join(ghome, "verify", "reports");
+      mkdirSync(reports, { recursive: true });
+      const injected = 'C:\\snap.sqlite" & echo PWNED > C:\\tmp\\PWNED2.txt & rem "';
+      const put = (id: string, finished: string) =>
+        writeFileSync(
+          join(reports, `${id}.json`),
+          JSON.stringify({
+            run_id: id,
+            spec_id: "spec_inj",
+            finished,
+            overall: "PASS",
+            verifier: { spec_version: 1 },
+            data_source: { kind: "sqlite-snapshot", sha256: "c".repeat(64), source: injected },
+          }),
+          "utf8",
+        );
+      put("ri_a", "2026-09-01T00:00:00.000Z");
+      put("ri_b", "2026-09-20T00:00:00.000Z");
+      put("ri_c", "2026-10-11T00:00:00.000Z");
+
+      const refused = run(["verify", "graduate", "spec_inj", "--every", "60", "--schedule", "--json"], env);
+      expect(refused.rc).toBe(1);
+      const err = (JSON.parse(refused.out) as { error: string }).error;
+      expect(err).toMatch(/shell-unsafe/);
+      expect(err).not.toContain("& rem");
+
+      const dry = run(["verify", "graduate", "spec_inj", "--json"], env);
+      expect(dry.rc).toBe(0);
+      const body = JSON.parse(dry.out) as { job_command: string; job_command_usable: boolean; job_command_unsafe: boolean };
+      expect(body.job_command_unsafe).toBe(true);
+      expect(body.job_command_usable).toBe(false);
+      expect(body.job_command).toContain('--db "<snapshot.sqlite>"');
+      expect(body.job_command).not.toContain("PWNED");
+
+      const overridden = run(["verify", "graduate", "spec_inj", "--db", join(ghome, "live.sqlite"), "--every", "60", "--schedule", "--json"], env);
+      expect(overridden.rc).toBe(0);
+      const ok = JSON.parse(overridden.out) as { job_command: string; db_override: string | null };
+      expect(ok.job_command).toContain(`--db "${join(ghome, "live.sqlite")}"`);
+      expect(ok.db_override).toBe(join(ghome, "live.sqlite"));
+      expect(ok.job_command).not.toContain("PWNED");
+    } finally {
+      rmSync(ghome, { recursive: true, force: true });
+    }
+  });
+
   it("list 空工作区 → rc=0 空数组（读命令的 JSON 纯净）", () => {
     const r = run(["verify", "list", "--json"]);
     expect(r.rc).toBe(0);

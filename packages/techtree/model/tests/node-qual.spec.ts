@@ -67,6 +67,38 @@ describe.skipIf(!HAS_BIN)("0.90 qualified node refs", () => {
     expect(show.stdout).toContain("已解锁");
   });
 
+  // 0.104.0 (batch nine P1): a link naming an endpoint that lives in another
+  // tree used to answer only "parent not found" — the cross-tree lookup that
+  // plain node commands get was not applied. Both endpoints get the hint, and
+  // it must not suggest pinning the other tree (edges stay single-tree).
+  it("missing link parent names the tree that owns the key", () => {
+    const r = run(["node", "link", "na", "nb"]); // current tree is t-b
+    expect(r.rc).toBe(1);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("parent not found: na");
+    expect(out).toContain("key exists in other tree(s): 't-a'");
+    expect(out).toContain("edges cannot cross trees");
+    expect(out).toContain("add 'na' to 't-b'");
+  });
+
+  it("missing link child gets the same hint", () => {
+    const r = run(["node", "link", "nb", "na"]);
+    expect(r.rc).toBe(1);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("child not found: na");
+    expect(out).toContain("key exists in other tree(s): 't-a'");
+    expect(out).toContain("edges cannot cross trees");
+  });
+
+  it("a genuinely absent key keeps the current-tree hint", () => {
+    const r = run(["node", "link", "nb", "nope"]);
+    expect(r.rc).toBe(1);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("child not found: nope");
+    expect(out).not.toContain("key exists in other tree(s)");
+    expect(out).toContain("current tree: 't-b'");
+  });
+
   afterAll(() => {
     if (HOME) rmSync(HOME, { recursive: true, force: true });
   });
