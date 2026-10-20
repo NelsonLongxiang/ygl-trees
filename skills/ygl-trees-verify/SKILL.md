@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.102.0
+version: 0.102.1
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
@@ -114,7 +114,8 @@ ygl-trees verify self-check --no-cases       # 只跑前四环（无内核环境
 **作业式 prepare/run（0.102.0，默认关）**：`webui serve --enable-verify-jobs` 才开，否则 403。
 `POST /api/verify/prepare` 收 `{material_id, candidates, reviews, snapshot_sha256, draft?}`；
 `POST /api/verify/run` 收 `{spec_id, snapshot_sha256, no_archive?}`。三条铁律：请求体**不带可执行面**
-（夹 `submission_dir` 直接 400；command 白名单由 serve 注入 `YGL_VERIFY_ALLOW_CMD`，默认 `node`）、
+（夹 `submission_dir` 直接 400；command 白名单由 serve 注入 `YGL_VERIFY_ALLOW_CMD`——**未设置才默认
+`node`，设空串 = 显式空表**，所有 command 型 VU 判 ERROR，fail-closed）、
 快照**只能内容寻址**（先 PUT blob 再传 sha）、run **只碰副本**（报告 `data_source.source = blob:<sha12>`）。
 状态码只表达过程（400/404/405/413/415/422），PASS/FAIL 都是 200；归档失败记 `archive_error`。
 网关边界如实：jev 只回布尔概率、不产锚点引文，喂不进 `ReviewRunner`——agent 型 VU 在 HTTP 面仍
@@ -134,6 +135,7 @@ ERROR/NEEDS-MATERIAL，要 agent 型就自己实现带引文的 reviewer 走 CLI
 | 作业端点 403 | 没开执行面：`webui serve --enable-verify-jobs`（默认关是设计，不是 bug） |
 | 作业端点 422 `run rejected` | 引擎硬拒（契约版本/时间函数/scope 同表守卫）——先 `verify prepare` 出合规 spec |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
+| command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |
 
 ## 9. 契约速查
 
