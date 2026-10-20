@@ -6,11 +6,20 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { C } from "./tokens";
+import { useThemeName } from "./theme";
 
 interface GraphData {
   nodes: Array<{ id: string; label: string; type: string; color: string }>;
   edges: Array<{ source: string; target: string; label: string }>;
 }
+
+// Entity fill by type — the same semantic families as the server map in
+// ops/tools webui.ts, but as theme-following vars (the server's hex is dark-only).
+const typeFill: Record<string, string> = {
+  node: C.primary, claim: C.success, kb: C.secondary, evidence: C.warning,
+  artifact: C.tertiary, skill: C.secondary, task: C.tertiary, source: C.warning,
+};
+const fillOf = (type: string): string => typeFill[type] ?? C.secondary;
 
 const typeLabels: Record<string, string> = {
   node: "节点", claim: "断言", kb: "知识",
@@ -21,24 +30,24 @@ function EntityNode({ data }: NodeProps) {
   const d = data as any;
   return (
     <div style={{
-      background: d.color || C.secondary,
-      color: "#fff",
+      background: fillOf(d.type),
+      color: "var(--color-on-entity)", // dark: neutral ink (≥6.2:1), light: white (≥4.9:1)
       padding: "6px 12px",
-      borderRadius: 8,
+      borderRadius: "var(--radius-lg)",
       fontSize: 11,
       minWidth: 80,
       textAlign: "center",
-      border: "2px solid rgba(255,255,255,0.3)",
-      boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+      border: "2px solid var(--entity-stroke)",
+      boxShadow: "var(--shadow-entity)",
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: "#555" }} />
+      <Handle type="target" position={Position.Top} style={{ background: C.secondary }} />
       <div style={{ opacity: 0.8, fontSize: 9, marginBottom: 2 }}>
         {typeLabels[d.type] || d.type}
       </div>
       <div style={{ fontWeight: 600, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {d.label}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: "#555" }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: C.secondary }} />
     </div>
   );
 }
@@ -46,6 +55,7 @@ function EntityNode({ data }: NodeProps) {
 const nodeTypes = { entity: EntityNode };
 
 export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
+  const colorMode = useThemeName();
   const { nodes, edges } = useMemo(() => {
     if (!graph?.nodes) return { nodes: [] as Node[], edges: [] as Edge[] };
 
@@ -64,7 +74,9 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
         id: n.id,
         type: "entity" as const,
         position: { x: Math.cos(angle) * r, y: Math.sin(angle) * r },
-        data: { label: n.label, type: n.type, color: n.color },
+        initialWidth: 100, // MiniMap needs a size (see TreeFlow)
+        initialHeight: 40,
+        data: { label: n.label, type: n.type },
       };
     });
 
@@ -94,8 +106,9 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
   if (!nodes.length) return null;
 
   return (
-    <div style={{ height: 420 }}>
+    <div style={{ height: 460, border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
       <ReactFlow
+        colorMode={colorMode}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -107,8 +120,9 @@ export default function KnowledgeGraph({ graph }: { graph: GraphData }) {
         <Background color={C["border-dim"]} gap={20} />
         <Controls />
         <MiniMap
-          nodeColor={(n) => (n.data as any)?.color || C.secondary}
-          style={{ background: "#111" }}
+          pannable
+          nodeColor={(n) => fillOf(String((n.data as { type?: string })?.type ?? ""))}
+          style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)" }}
         />
       </ReactFlow>
     </div>

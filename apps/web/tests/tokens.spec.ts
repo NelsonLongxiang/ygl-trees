@@ -19,13 +19,40 @@ const ts = readFileSync(resolve(REPO, "apps/web/src/tokens.ts"), "utf8");
 const fmEnd = design.indexOf("\n---\n", 4);
 const fm = design.slice(0, fmEnd);
 
-const designColor = (name: string): string => {
-  const m = fm.match(new RegExp(`${name}:\\s*"(#[0-9a-f]{6})"`));
+// colors: (dark) and colors-light: (light) are sibling top-level maps; slice each block
+const block = (src: string, start: RegExp): string => {
+  const m = start.exec(src);
+  if (!m) return "";
+  const rest = src.slice(m.index + m[0].length);
+  const end = rest.search(/\n[^\s#]/); // next top-level key
+  return end < 0 ? rest : rest.slice(0, end);
+};
+const fmDark = block(fm, /\ncolors:\n/);
+const fmLight = block(fm, /\ncolors-light:\n/);
+
+const hexIn = (src: string, name: string): string => {
+  const m = src.match(new RegExp(`(?:^|\\n)\\s+${name}:\\s*"(#[0-9a-f]{6})"`));
   return m ? m[1].toLowerCase() : "";
 };
+const designColor = (name: string): string => hexIn(fmDark, name);
+const designLight = (name: string): string => hexIn(fmLight, name);
 
-const cssVar = (name: string): string => {
-  const m = css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6})`));
+// tokens.css: :root/[data-theme="dark"] block, then [data-theme="light"] block
+const cssDark = block(css, /\[data-theme="dark"\] \{/);
+const cssLight = block(css, /\[data-theme="light"\] \{/);
+const cssVarIn = (src: string, name: string): string => {
+  const m = src.match(new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6})`));
+  return m ? m[1].toLowerCase() : "";
+};
+const cssVar = (name: string): string => cssVarIn(cssDark, name);
+
+// tokens.ts: DARK = { … } and LIGHT = { … } literal maps
+const tsMap = (name: string): string => {
+  const m = new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\} as const`).exec(ts);
+  return m ? m[1] : "";
+};
+const tsHex = (src: string, key: string): string => {
+  const m = src.match(new RegExp(`"?${key}"?:\\s*"(#[0-9a-f]{6})"`));
   return m ? m[1].toLowerCase() : "";
 };
 
@@ -46,22 +73,46 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     "warning",
   ];
 
-  it("tokens.css stays in sync with DESIGN.md (all 13 colors)", () => {
+  it("DESIGN.md defines every color in both themes", () => {
     for (const k of colorKeys) {
-      expect(cssVar(k), `--color-${k}`).toBe(designColor(k));
+      expect(designColor(k), `colors.${k}`).toMatch(/^#[0-9a-f]{6}$/);
+      expect(designLight(k), `colors-light.${k}`).toMatch(/^#[0-9a-f]{6}$/);
     }
   });
 
-  it("tokens.ts antd theme maps DESIGN.md exactly (primary/success/warning/tertiary)", () => {
-    expect(ts).toContain(`colorPrimary: C.primary`);
-    expect(ts).toContain(`primary: "#58a6ff"`);
-    expect(ts).toContain(`colorSuccess: C.success`);
-    expect(ts).toContain(`success: "#3fb950"`);
-    expect(ts).toContain(`colorWarning: C.warning`);
-    expect(ts).toContain(`warning: "#d29922"`);
-    expect(ts).toContain(`colorInfo: C.tertiary`);
-    expect(ts).toContain(`tertiary: "#79c0ff"`);
+  it("tokens.css stays in sync with DESIGN.md (all 13 colors × dark/light)", () => {
+    for (const k of colorKeys) {
+      expect(cssVar(k), `dark --color-${k}`).toBe(designColor(k));
+      expect(cssVarIn(cssLight, k), `light --color-${k}`).toBe(designLight(k));
+    }
+  });
+
+  it("tokens.ts DARK/LIGHT palettes mirror DESIGN.md (all 13 colors × dark/light)", () => {
+    const dark = tsMap("DARK"), light = tsMap("LIGHT");
+    for (const k of colorKeys) {
+      expect(tsHex(dark, k), `DARK.${k}`).toBe(designColor(k));
+      expect(tsHex(light, k), `LIGHT.${k}`).toBe(designLight(k));
+    }
+  });
+
+  it("tokens.ts antd theme maps DESIGN.md roles in both themes", () => {
+    expect(ts).toContain("colorPrimary: p.primary");
+    expect(ts).toContain("colorSuccess: p.success");
+    expect(ts).toContain("colorWarning: p.warning");
+    expect(ts).toContain("colorError: p.danger");
+    expect(ts).toContain("colorInfo: p.tertiary");
+    expect(ts).toContain("colorBgLayout: p.neutral");
+    expect(ts).toContain("colorBgContainer: p.surface");
+    expect(ts).toContain("darkAlgorithm");
+    expect(ts).toContain("defaultAlgorithm");
     expect(ts).toContain("borderRadius: 4"); // DESIGN.md rounded.sm — controls
+  });
+
+  it("index.html pre-paint script and theme.tsx share the storage key", () => {
+    const html = readFileSync(resolve(REPO, "apps/web/index.html"), "utf8");
+    const theme = readFileSync(resolve(REPO, "apps/web/src/theme.tsx"), "utf8");
+    expect(html).toContain(`localStorage.getItem("ygl-theme")`);
+    expect(theme).toContain(`THEME_KEY = "ygl-theme"`);
   });
 
   it("tokens.ts fontFamily matches DESIGN.md typography voice", () => {
@@ -92,12 +143,11 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
     }
   });
 
-  it("statColors uses only DESIGN.md token values", () => {
-    const allowed = new Set(colorKeys.map(designColor));
+  it("statColors uses only DESIGN.md token values (as theme-following CSS vars)", () => {
     const values = [...ts.matchAll(/:\s*C\.(\w+)/g)].map((m) => m[1]);
     expect(values.length).toBeGreaterThan(0);
     for (const v of values) {
-      expect(allowed.has(designColor(v)), `statColor ${v} not a DESIGN.md color`).toBe(true);
+      expect(colorKeys.includes(v), `statColor ${v} not a DESIGN.md color`).toBe(true);
     }
   });
 });

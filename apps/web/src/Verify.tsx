@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, List, message, Space, Table, Tabs, Tag, Typography, Upload,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, List, message as antdMessage, Space, Table, Tabs, Tag, Typography, Upload,
 } from "antd";
 
 import type {
@@ -31,10 +31,15 @@ const verdictColor: Record<string, string> = {
 };
 
 function VerdictTag({ verdict }: { verdict: string }) {
-  return <Tag color={verdictColor[verdict] ?? C.secondary}>{verdict || "—"}</Tag>;
+  // outlined word + color (DESIGN.md: color is reinforcement, never a filled chip with white text)
+  const c = verdictColor[verdict] ?? C.secondary;
+  return <Tag style={{ color: c, borderColor: c, background: "transparent" }}>{verdict || "—"}</Tag>;
 }
 
 function MaterialForm() {
+  // hook API, not the static one: the holder renders under ConfigProvider, so
+  // toasts follow the theme switch (antd App wrapper would add ~27 kB of Modal)
+  const [message, messageHolder] = antdMessage.useMessage();
   const [form] = Form.useForm();
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -55,70 +60,73 @@ function MaterialForm() {
   };
 
   return (
-    <Form form={form} layout="vertical" onFinish={submit} style={{ maxWidth: 720 }}>
-      <Form.Item name="title" label="标题" rules={[{ required: true, message: "给这份材料一个标题" }]}>
-        <Input placeholder="例：7 月运费对账材料" />
-      </Form.Item>
-      <Form.Item
-        name="text"
-        label="一段话"
-        rules={[{ required: true, message: "材料是一段话，不是表单——写清楚业务事实即可" }]}
-        extra="模糊输入是常态：数字、口径、批号、判断依据都写进来；结构化是 agent 构造的产物，不是你的义务。"
-      >
-        <Input.TextArea rows={8} placeholder="例：本期账单覆盖 7 月 1 日至 7 月 31 日，共 3 单，合计 4,412.50 元；报价基准见财务 6 月 30 日邮件。" />
-      </Form.Item>
-      <Form.Item label="附件" extra="xlsx / png / pdf / zip 等原始文件；服务端按内容算 sha256 并全局去重，同一份文件重复上传不占第二份磁盘。">
-        <Space direction="vertical" size={6} style={{ width: "100%" }}>
-          <Upload
-            multiple
-            showUploadList
-            disabled={uploading}
-            customRequest={async ({ file, onSuccess, onError }) => {
-              const f = file as File;
-              setUploading(true);
-              try {
-                const ref = await uploadVerifyBlob(f);
-                setRefs((prev) => [...prev, { sha256: ref.sha256, name: f.name, mime: ref.mime }]);
-                onSuccess?.(ref as any);
-                message.success(`${f.name} 已入仓 ${ref.sha256.slice(0, 12)}… (${ref.size} B)`);
-              } catch (e: any) {
-                message.error(String(e?.message || e));
-                onError?.(e);
-              } finally {
-                setUploading(false);
-              }
-            }}
-          >
-            <Button loading={uploading}>选择文件并上传</Button>
-          </Upload>
-          {refs.length > 0 && (
-            <Space direction="vertical" size={0}>
-              {refs.map((r) => (
-                <Text key={r.sha256} type="secondary">
-                  · {r.name} — <Text code>{r.sha256.slice(0, 12)}…</Text>
-                </Text>
-              ))}
-            </Space>
-          )}
-        </Space>
-      </Form.Item>
-      <Form.Item>
-        <Button type="primary" htmlType="submit" loading={busy}>提交材料</Button>
-      </Form.Item>
-      {saved && (
-        <Alert
-          type="success"
-          showIcon
-          message={`material_id = ${saved.material_id}`}
-          description={
-            <Space direction="vertical" size={0}>
-              <Text code>text_sha256 = {saved.text_sha256}</Text>
-              <Text type="secondary">附件 {saved.files?.length ?? 0} 个（已入内容寻址仓）</Text>
-            </Space>
-          }
-        />
-      )}
-    </Form>
+    <>
+      {messageHolder}
+      <Form form={form} layout="vertical" onFinish={submit} style={{ maxWidth: 720 }}>
+        <Form.Item name="title" label="标题" rules={[{ required: true, message: "给这份材料一个标题" }]}>
+          <Input placeholder="例：7 月运费对账材料" />
+        </Form.Item>
+        <Form.Item
+          name="text"
+          label="一段话"
+          rules={[{ required: true, message: "材料是一段话，不是表单——写清楚业务事实即可" }]}
+          extra="模糊输入是常态：数字、口径、批号、判断依据都写进来；结构化是 agent 构造的产物，不是你的义务。"
+        >
+          <Input.TextArea rows={8} placeholder="例：本期账单覆盖 7 月 1 日至 7 月 31 日，共 3 单，合计 4,412.50 元；报价基准见财务 6 月 30 日邮件。" />
+        </Form.Item>
+        <Form.Item label="附件" extra="xlsx / png / pdf / zip 等原始文件；服务端按内容算 sha256 并全局去重，同一份文件重复上传不占第二份磁盘。">
+          <Space direction="vertical" size={6} style={{ width: "100%" }}>
+            <Upload
+              multiple
+              showUploadList
+              disabled={uploading}
+              customRequest={async ({ file, onSuccess, onError }) => {
+                const f = file as File;
+                setUploading(true);
+                try {
+                  const ref = await uploadVerifyBlob(f);
+                  setRefs((prev) => [...prev, { sha256: ref.sha256, name: f.name, mime: ref.mime }]);
+                  onSuccess?.(ref as any);
+                  message.success(`${f.name} 已入仓 ${ref.sha256.slice(0, 12)}… (${ref.size} B)`);
+                } catch (e: any) {
+                  message.error(String(e?.message || e));
+                  onError?.(e);
+                } finally {
+                  setUploading(false);
+                }
+              }}
+            >
+              <Button loading={uploading}>选择文件并上传</Button>
+            </Upload>
+            {refs.length > 0 && (
+              <Space direction="vertical" size={0}>
+                {refs.map((r) => (
+                  <Text key={r.sha256} type="secondary">
+                    · {r.name} — <Text code>{r.sha256.slice(0, 12)}…</Text>
+                  </Text>
+                ))}
+              </Space>
+            )}
+          </Space>
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={busy}>提交材料</Button>
+        </Form.Item>
+        {saved && (
+          <Alert
+            type="success"
+            showIcon
+            message={`material_id = ${saved.material_id}`}
+            description={
+              <Space direction="vertical" size={0}>
+                <Text code>text_sha256 = {saved.text_sha256}</Text>
+                <Text type="secondary">附件 {saved.files?.length ?? 0} 个（已入内容寻址仓）</Text>
+              </Space>
+            }
+          />
+        )}
+      </Form>
+    </>
   );
 }
 

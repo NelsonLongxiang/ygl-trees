@@ -1,8 +1,8 @@
 ---
 name: ygl-trees Workbench
 description: >-
-  Developer-console identity for an AI-agent research workbench — GitHub-dark
-  surfaces, one blue interaction driver, semantic status colors, monospace for
+  Developer-console identity for an AI-agent research workbench — GitHub
+  dark + light themes (switchable), one blue interaction driver, semantic status colors, monospace for
   anything executable. Zero-dependency rendering (inline CSS in a single HTML
   file) — tokens stay small and flat by design.
 colors:
@@ -19,6 +19,21 @@ colors:
   success: "#3fb950"        # supported / pass / unlockable
   danger: "#f85149"         # refuted / fail / excludes edges
   warning: "#d29922"        # contested / pending-adjacent emphasis
+# Light theme — same keys, same roles; every text pair AA (see ## Themes).
+colors-light:
+  primary: "#0969da"
+  secondary: "#59636e"
+  tertiary: "#0550ae"
+  neutral: "#f6f8fa"
+  surface: "#ffffff"
+  surface-hover: "#eff2f5"
+  border: "#d0d7de"
+  border-dim: "#d8dee4"
+  text: "#1f2328"
+  text-dim: "#636c76"
+  success: "#1a7f37"
+  danger: "#d1242f"
+  warning: "#8a5c00"
 typography:
   h1:
     fontFamily: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
@@ -91,14 +106,36 @@ components:
 
 ## Overview
 
-A developer console, not a marketing page. The identity is GitHub-dark by
-lineage: near-black canvas, one tier of surface cards, and **exactly one
+A developer console, not a marketing page. The identity is GitHub by
+lineage, in two switchable themes (dark is the original, light its twin):
+a two-depth canvas, one tier of surface cards, and **exactly one
 interaction color** (primary blue). Everything an agent can execute — next
 actions, commands — renders in monospace tertiary blue so "runnable" is a
 typographic property, not a button. Status is always word + color, never
 color alone.
 
+## Themes
+
+Two themes, `dark` and `light`, selected by `data-theme` on `<html>`. Every
+color key exists in both maps (`colors` = dark, `colors-light` = light) with
+the same role, so components read CSS variables and never branch on theme.
+
+- **Default** follows `prefers-color-scheme`; the user's pick persists in
+  `localStorage["ygl-theme"]` (`system` / `light` / `dark`) and is applied by an
+  inline script before first paint (no flash).
+- **Switch**: one icon button at the header's right end (切换主题), cycling
+  跟随系统 → 浅色 → 深色; the tooltip names the current mode. Switching never
+  resets selection, scroll or open panels.
+- **antd** follows the switch (`darkAlgorithm` / `defaultAlgorithm`, token map
+  applied in both); **xyflow** gets `colorMode`.
+- Light keeps the depth model: `neutral` (pale page) under `surface` (white
+  cards). Every light text pair meets AA (≥4.5:1 on neutral/surface/
+  surface-hover). Dark keeps the source's one failing pair, `text-dim` (2.3:1),
+  for decorative text only.
+
 ## Colors
+
+Hex values below are the dark theme; `colors-light` holds the light twin.
 
 - **Primary (#58a6ff):** the only interaction driver — links, focus rings,
   selected tree nodes, hovered chips. Never used for body text.

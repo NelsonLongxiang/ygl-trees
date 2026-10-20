@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ygl-trees workbench</title>
+  <script>
+    // DESIGN.md ## Themes: apply the saved theme before first paint (no flash).
+    // Same key/values as src/theme.tsx (ahooks useTheme): system | light | dark.
+    (function () {
+      var mode = "system";
+      try { mode = localStorage.getItem("ygl-theme") || "system"; } catch (e) {}
+      var dark = mode === "dark" || (mode !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
 </head>
 <body>
   <div id="root"></div>
