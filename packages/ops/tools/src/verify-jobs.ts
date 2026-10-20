@@ -17,7 +17,7 @@
  * 判定结论在 body 的 `verdict`/`overall` 里——prepare 不 ready 也是 200，run 出 FAIL 也是 200。
  */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import type { Env } from "../../../core/database/src/types";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
@@ -34,6 +34,7 @@ import {
   knownMaterialHashes,
   latestVersionOf,
   minimalRedTeam,
+  prepareRecordPath,
   probeOf,
   readJson,
   schemaOf,
@@ -121,31 +122,40 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
     title: body.title ? String(body.title) : undefined,
     domain: body.domain ? String(body.domain) : undefined,
     specVersion: Number.isInteger(requested) && requested > 0 ? requested : latestVersionOf(env, materialId) + 1,
-    asOf: { kind: "snapshot", value: new Date().toISOString() },
+    // as_of 是「材料/快照的时点」，由调用方钉（P5 冻版责任在构造方）；HTTP 给可选入口，
+    // 不给就按本次请求时刻——与 CLI --as-of 同语义，不做服务端猜测。
+    asOf: { kind: "snapshot", value: typeof body.as_of === "string" && body.as_of.trim() ? body.as_of.trim() : new Date().toISOString() },
     engineVersion: "0.1.0",
     corpusVersion: CORPUS_VERSION,
     knownMaterialHashes: knownMaterialHashes(env, materialId),
   });
-  if (!draft && res.verdict === "ready" && res.spec) {
-    const dir = specDir(env, res.spec.spec_id);
+  const ready = res.verdict === "ready" && !!res.spec;
+  let record: string | null = null;
+  if (!draft) {
+    const dir = specDir(env, `spec_${short(sha256(materialId))}`);
     mkdirSync(dir, { recursive: true });
-    writeJson(join(dir, "prepare.json"), {
+    const created = new Date().toISOString();
+    const recordPath = prepareRecordPath(dir, ready, created);
+    writeJson(recordPath, {
       material_id: materialId,
-      created: new Date().toISOString(),
+      created,
       verdict: res.verdict,
       rounds: res.rounds,
       rejected: res.rejected,
       diagnostics: res.diagnostics,
       materials_sha256: res.materials_sha256,
     });
-    writeJson(join(dir, "spec.json"), res.spec);
-    writeJson(join(dir, "trace.json"), {
-      material_id: materialId,
-      spec_id: res.spec.spec_id,
-      spec_version: res.spec.spec_version,
-      units: res.spec.vu.map((v) => ({ id: v.id, title: v.title, source_clause: v.source_clause, severity: v.severity, checker: v.checker.type, expected_from: v.expected_from })),
-      rejected: res.rejected,
-    });
+    record = relative(dir, recordPath).split(sep).join("/");
+    if (ready && res.spec) {
+      writeJson(join(dir, "spec.json"), res.spec);
+      writeJson(join(dir, "trace.json"), {
+        material_id: materialId,
+        spec_id: res.spec.spec_id,
+        spec_version: res.spec.spec_version,
+        units: res.spec.vu.map((v) => ({ id: v.id, title: v.title, source_clause: v.source_clause, severity: v.severity, checker: v.checker.type, expected_from: v.expected_from })),
+        rejected: res.rejected,
+      });
+    }
   }
   return {
     status: 200,
@@ -159,7 +169,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
       rejected: res.rejected.length,
       materials_sha256: res.materials_sha256,
       diagnostics: res.diagnostics,
-      written: !draft && res.verdict === "ready",
+      record,
+      written: !draft && ready,
     },
   };
 }

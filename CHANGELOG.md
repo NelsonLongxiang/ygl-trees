@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.102.2
+
+**评审 r21 三问收口（P2-2 / P3-2 / as_of 入口）** —— 0.102.0 作业面复核后的下一批口径统一，无契约形状变更。
+
+- **构造记录只追加（P2-2）**：`ready` 才写不可变的 `prepare.json`；未 ready 的尝试写同 spec 目录下 `attempts/<ts>.json`。此前 CLI 无论 ready 与否都覆盖 `prepare.json`（一次失败补跑会冲掉上一轮已冻结的成功记录），HTTP 面什么都不写（失败无痕）——两个面各错一半，现在一个口径：成功记录不改、失败尝试留档。CLI 人类输出多一行 `attempt recorded: <path>`，HTTP body 多 `record` 字段（`prepare.json` 或 `attempts/<ts>.json`）。
+- **`as_of` 有 HTTP 入口（P3）**：`POST /api/verify/prepare` 收可选 `as_of`（ISO 时刻）——P5 冻版时点由构造方钉（与 CLI `--as-of` 同语义），缺省按请求时刻，服务端不猜。
+- **门的形态写清（P3-2）**：作业面只由 `--enable-verify-jobs` 把门、不随绑定地址收紧（地址不是信任边界，内网自托管是正当用法；上传门按回环默认是因为它没有专属 flag 且直接写盘）。command 型 VU 继承 serve 的 cwd/env、`stdout` 入 witness 是「执行外部命令」检查器的固有边界，白名单只收窄 `argv[0]`。
+- **计数复核**：`CHANGELOG` 0.102.0 写 441、0.102.1 写 442 是按批次递增的真实值，不矛盾（r21 P3-5 的疑问据代码与 git 记录回复）。`specDir` 不分版本仍记 backlog。
+- 测试 unit **445**（+3：HTTP 未 ready 只追加 attempts / `as_of` 落 spec / CLI 未 ready 不覆盖冻结记录）/ Rust 31 / demo 128 / contract 100 / readme 54。`contract_version` / `corpus_version` 仍 1.1。
+
 ## 0.102.1
 
 **热修（发布后 P2）**：`YGL_VERIFY_ALLOW_CMD` 的空串语义是 **fail-open** 的——`String(process.env.YGL_VERIFY_ALLOW_CMD || "node")` 让「设空串 = 全禁 command」的操作员意图静默变成「放行 node」。改为 `??`：未设置才回落 `node`，空串是**显式空表**（所有 `argv[0]` 判 VU `ERROR`，fail-closed）。补回归一例（空串下跑 `command` 型 VU → `ERROR` 且 reason 含 `allowlist`）。

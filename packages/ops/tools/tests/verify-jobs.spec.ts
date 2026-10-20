@@ -177,6 +177,33 @@ describe("verify jobs — prepare", () => {
     expect(fs.existsSync(path.join(home, "verify", "specs", drafted))).toBe(false);
   }, 60_000);
 
+  it("未 ready 的构造只追加 attempts/，不覆盖已冻结的 prepare.json（P2-2，0.102.2）", async () => {
+    const specDir = path.join(home, "verify", "specs", specId);
+    const record = path.join(specDir, "prepare.json");
+    const before = createHash("sha256").update(fs.readFileSync(record)).digest("hex");
+    // 同材料、同快照，但把 where 指向 schema 里不存在的列 → P2 列校验打回，不 ready
+    const bad = JSON.parse(JSON.stringify(candidates));
+    bad[0].checker.predicate.where.conditions[0].col = "amount_cents_missing";
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates: bad, reviews, snapshot_sha256: snapshotSha });
+    expect(r.status).toBe(200);
+    expect(r.json.verdict).not.toBe("ready");
+    expect(r.json.written).toBe(false);
+    expect(String(r.json.record)).toMatch(/^attempts\//);
+    // 成功记录逐字节不变
+    const after = createHash("sha256").update(fs.readFileSync(record)).digest("hex");
+    expect(after).toBe(before);
+    expect(fs.readdirSync(path.join(specDir, "attempts")).length).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
+  it("as_of 由调用方钉（P5 责任在构造方），缺省用请求时刻", async () => {
+    const asOf = "2026-01-02T03:04:05.000Z";
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: asOf });
+    expect(r.status).toBe(200);
+    expect(r.json.verdict).toBe("ready");
+    const spec = JSON.parse(fs.readFileSync(path.join(home, "verify", "specs", specId, "spec.json"), "utf8"));
+    expect(spec.as_of.value).toBe(asOf);
+  }, 60_000);
+
   it("快照只能按内容寻址：不存在的 sha → 404 且错误里点名上传入口", async () => {
     const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: "a".repeat(64) });
     expect(r.status).toBe(404);

@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.102.1
+version: 0.102.2
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
@@ -112,7 +112,7 @@ ygl-trees verify self-check --no-cases       # 只跑前四环（无内核环境
   `verify report <run>`）——将来加"N 条损坏"脚注走旁路计数。
 
 **作业式 prepare/run（0.102.0，默认关）**：`webui serve --enable-verify-jobs` 才开，否则 403。
-`POST /api/verify/prepare` 收 `{material_id, candidates, reviews, snapshot_sha256, draft?}`；
+`POST /api/verify/prepare` 收 `{material_id, candidates, reviews, snapshot_sha256, draft?, as_of?}`（`as_of`=构造方钉的时点）；
 `POST /api/verify/run` 收 `{spec_id, snapshot_sha256, no_archive?}`。三条铁律：请求体**不带可执行面**
 （夹 `submission_dir` 直接 400；command 白名单由 serve 注入 `YGL_VERIFY_ALLOW_CMD`——**未设置才默认
 `node`，设空串 = 显式空表**，所有 command 型 VU 判 ERROR，fail-closed）、
@@ -134,6 +134,7 @@ ERROR/NEEDS-MATERIAL，要 agent 型就自己实现带引文的 reviewer 走 CLI
 | 附件 400 点名 sha | blob 仓里没有该 sha——先 PUT blob 再带 `{sha256,name}` 引用 |
 | 作业端点 403 | 没开执行面：`webui serve --enable-verify-jobs`（默认关是设计，不是 bug） |
 | 作业端点 422 `run rejected` | 引擎硬拒（契约版本/时间函数/scope 同表守卫）——先 `verify prepare` 出合规 spec |
+| 未 ready 的构造去哪了 | `$YGL_HOME/verify/specs/<spec_id>/attempts/<ts>.json`——`prepare.json` 只存最后一次 ready 的记录，不会被失败补跑覆盖 |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
 | command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |
 

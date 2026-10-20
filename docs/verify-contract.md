@@ -289,7 +289,8 @@ POST /api/verify/run                  # {spec_id,snapshot_sha256,no_archive?}   
 - **作业式 prepare/run 默认关闭**：`webui serve --enable-verify-jobs` 才开（否则 403）。执行面要求 JSON（415）、方法 POST（405），请求体上限同材料草稿。
 - **请求体永不携带可执行面**：没有 argv/allowlist/路径；夹带 `submission_dir` 直接 400（目录树没有安全的 HTTP 来源，file 型检查器仍走 CLI/封包）。command 型白名单由 serve 启动时注入（`YGL_VERIFY_ALLOW_CMD`，未设置才默认 `node`；空串 = 显式空表，全禁，fail-closed）；不在白名单的 argv[0] 判 VU `ERROR`，而不是执行。
 - **快照按内容寻址**：先 `PUT /api/verify/blob?name=snapshot.sqlite`，再传 `snapshot_sha256`（64 位小写 hex）；缺 blob 404，非法 sha 400。run 先把 blob 字节复制成临时快照再跑（裁定 A：只碰副本），报告 `data_source.source` 记 `blob:<sha12>`。
-- **HTTP 状态只表达过程**：400 用法/422 快照不可读或引擎硬拒/404 找不到/415/413；判定结论在 body——prepare 的 `verdict`（`ready`/`needs-material`/`error`，只有 ready 才落 spec/prepare/trace）、run 的 `overall`（PASS/FAIL 都 200）。归档默认做，失败记 `archive_error`（报告照落）。
+- **HTTP 状态只表达过程**：400 用法/422 快照不可读或引擎硬拒/404 找不到/415/413；判定结论在 body——prepare 的 `verdict`（`ready`/`needs-material`/`error`）、run 的 `overall`（PASS/FAIL 都 200）。归档默认做，失败记 `archive_error`（报告照落）。
+- **构造记录（0.102.2）**：只有 ready 才写不可变的 `spec.json`/`prepare.json`/`trace.json`；未 ready 的尝试落同目录 `attempts/<ts>.json`（只追加，绝不覆盖已冻结记录）。HTTP `prepare` 另收可选 `as_of`（ISO 时刻）——P5 时点由构造方钉，服务端不猜，缺省用请求时刻。
 - **构造面仍在 agent**：`candidates`/`reviews` 由 agent 提交，服务端只做 P0–P5 机械判定与冻版，绝不发明候选（缺数组 400）。
 
 **注（W7）**：`scope_sql` / `sql` 的同表守卫依赖 FROM/JOIN 粗提取——对子查询、CTE、视图展开是尽力而为；提取不到时守卫静默跳过，不视为通过证据。prepare 阶段应以同一 predicate 模板生成两段查询（同源生成才是强保证，守卫只是兜底）。

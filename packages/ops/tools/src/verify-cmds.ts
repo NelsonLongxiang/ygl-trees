@@ -164,6 +164,20 @@ export function specDir(env: Env, specId: string): string {
   return join(paths(env).specs, specId);
 }
 
+/**
+ * 构造记录落盘路径（0.102.2）：**ready 才写不可变的 `prepare.json`**；未 ready 的尝试写
+ * `attempts/<ts>.json`，只追加、不覆盖。CLI 与 HTTP 共用这一个口径——此前 CLI 无论
+ * ready 与否都覆盖 `prepare.json`（一次失败的补跑会冲掉上一轮已冻结的成功记录），
+ * HTTP 面则什么都不写（失败尝试无痕）；两个面各错一半，现在统一为「成功记录不改、
+ * 失败尝试留档」。
+ */
+export function prepareRecordPath(dir: string, ready: boolean, now = new Date().toISOString()): string {
+  if (ready) return join(dir, "prepare.json");
+  const attempts = join(dir, "attempts");
+  mkdirSync(attempts, { recursive: true });
+  return join(attempts, `${now.replace(/[:.]/g, "-")}.json`);
+}
+
 export function findMaterial(env: Env, id: string): MaterialRecord {
   const dir = join(paths(env).materials, id);
   const file = join(dir, "material.json");
@@ -424,16 +438,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         const dir = specDir(env, `spec_${short(sha256(materialId))}`);
         mkdirSync(dir, { recursive: true });
-        writeJson(join(dir, "prepare.json"), {
+        const created = new Date().toISOString();
+        const ready = res.verdict === "ready" && !!res.spec;
+        const recordPath = prepareRecordPath(dir, ready, created);
+        writeJson(recordPath, {
           material_id: materialId,
-          created: new Date().toISOString(),
+          created,
           verdict: res.verdict,
           rounds: res.rounds,
           rejected: res.rejected,
           diagnostics: res.diagnostics,
           materials_sha256: res.materials_sha256,
         });
-        if (res.verdict === "ready" && res.spec) {
+        if (ready && res.spec) {
           writeJson(join(dir, "spec.json"), res.spec);
           writeJson(join(dir, "trace.json"), {
             material_id: materialId,
@@ -453,6 +470,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         }
         out(ctx, paint(C.red, `  ✗ not ready: ${res.verdict} — ${res.diagnostics.map((d) => `[${d.stage}] ${d.message}`).join("; ")}`, ctx.color));
+        out(ctx, paint(C.dim, `  · attempt recorded: ${recordPath}`, ctx.color));
         for (const r of res.rejected.slice(0, 5)) out(ctx, paint(C.dim, `    · [${r.stage}] ${r.reason}`, ctx.color));
         return 1;
       });

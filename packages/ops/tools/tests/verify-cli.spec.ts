@@ -198,6 +198,49 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(existsSync(specs) ? readdirSync(specs).length : 0).toBe(specsBefore);
   }, 60_000);
 
+  it("prepare 未 ready：只追加 attempts/<ts>.json，不覆盖已冻结的 prepare.json（0.102.2）", () => {
+    const text = join(home, "attempt-material.txt");
+    writeFileSync(text, "退款金额不得超过原单金额。", "utf8");
+    const sub = run(["verify", "submit", "--title", "a", "--text", text, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = (JSON.parse(sub.out) as { material_id: string }).material_id;
+    const dbFile = join(home, "attempt.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY, amount_cents INTEGER)");
+    db.exec("INSERT INTO orders VALUES ('o1', 100)");
+    db.close();
+    const clause = "退款金额不得超过原单金额。";
+    const anchor = { quote: clause, locator: "material.txt#L1" };
+    // 列不在 schema 里 → P2 列校验打回，必然不 ready
+    const candidates = join(home, "cand-attempt.json");
+    writeFileSync(candidates, JSON.stringify({ candidates: [{
+      source_clause: clause,
+      anchor,
+      checker: { type: "sql", fail_when: "rows>0", predicate: { from: "orders", select: ["id"], where: { op: "and", conditions: [{ col: "amount_cents_missing", op: "<", value: 0 }] } } },
+    }] }), "utf8");
+    const reviews = join(home, "rev-attempt.json");
+    writeFileSync(reviews, JSON.stringify({ reviews: [[
+      { vu_id: "V1", question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+      { vu_id: "V1", question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+      { vu_id: "V1", question: "not-vacuous", verdict: "ok", reason: "空表会被判 NM", anchor },
+    ]] }), "utf8");
+    const specId = `spec_${createHash("sha256").update(materialId).digest("hex").slice(0, 12)}`;
+    const specDir = join(home, "verify", "specs", specId);
+    mkdirSync(specDir, { recursive: true });
+    const sentinel = join(specDir, "prepare.json");
+    writeFileSync(sentinel, JSON.stringify({ material_id: materialId, verdict: "ready", frozen: true }), "utf8");
+    const before = createHash("sha256").update(readFileSync(sentinel)).digest("hex");
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--json"]);
+    expect(r.rc).toBe(1);
+    const obj = JSON.parse(r.out) as { verdict: string };
+    expect(obj.verdict).not.toBe("ready");
+    const after = createHash("sha256").update(readFileSync(sentinel)).digest("hex");
+    expect(after).toBe(before);
+    expect(readdirSync(join(specDir, "attempts")).length).toBe(1);
+    // spec.json 不存在（没 ready 就不写规范）
+    expect(existsSync(join(specDir, "spec.json"))).toBe(false);
+  }, 60_000);
+
   it("未知子命令 → rc=2（verify 组同其他组口径）", () => {
     const r = run(["verify", "frobnicate", "--json"]);
     expect(r.rc).toBe(2);
