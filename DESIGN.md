@@ -174,8 +174,10 @@ Hex values below are the dark theme; `colors-light` holds the light twin.
   Dark therefore sets the Button's solid text (`primaryColor` / `solidTextColor` /
   `dangerColor`) to ink (`on-primary` = `neutral`: 5.7:1 normal, 8.3:1 hover, 4.6:1
   pressed); light keeps white (5.2:1 / 4.5:1 / 7.7:1). Danger fills follow the same rule. The derived state shades that fall short are slid
-  toward the nearest passing step of the same hue in `tokens.ts` (BUTTON_STATES);
-  every state in both themes is checked against antd's real derivation by a test.
+  toward the nearest passing step of the same hue, set on the Button in `tokens.ts`
+  (BUTTON_STATES) — dark: pressed `#467fc0`, danger `#f85149` (the `danger` seed
+  itself), danger pressed `#da4942`; light: hover `#1f76d6`, danger hover `#d54047`.
+  Every state in both themes is checked against antd's real derivation by a test.
   The global `colorTextLightSolid` stays white: tooltips and badges share it, and
   their grounds are dark in both themes.
 - **Chart series (`chart-research` / `chart-tree` / `chart-eval` / `chart-other`):**
