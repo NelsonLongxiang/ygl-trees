@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -18,10 +19,11 @@ let HOME = "";
 let base = "";
 let matFile = "";
 
-function jrun(args: string[]) {
+function jrun(args: string[], cwd?: string) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
     encoding: "utf8",
     env: { ...process.env, YGL_HOME: HOME },
+    ...(cwd ? { cwd } : {}),
   });
   let j: any = null;
   try {
@@ -81,12 +83,46 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
     expect(r.j.meta_error).toBe("meta_index_unknown");
   });
 
-  it("warn mode proceeds and records meta_warning in the JSON receipt", () => {
-    const dir = repo("warn-r3", true, (d) => writeFileSync(join(d, "probe.mjs"), "export {}\n", "utf8"));
-    const r = jrun(["verify", "submit", "--title", "g4", "--text", matFile, "--meta-repo", dir, "--json"]);
+  it("ladder 3: git repo without verifier markers warns, points at R1, skips (rc0)", () => {
+    const dir = join(base, "bare-git");
+    mkdirSync(dir, { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    writeFileSync(join(dir, "README.md"), "# x\n", "utf8");
+    const r = jrun(["verify", "submit", "--title", "g4", "--text", matFile, "--json"], dir);
     expect(r.rc).toBe(0);
     expect(r.j.material_id).toBeTruthy();
-    expect(String(r.j.meta_warning)).toMatch(/meta gate failed/);
+    expect(String(r.j.meta_warning)).toMatch(/no verifier markers/);
+    expect(String(r.j.meta_warning)).toMatch(/R1/);
+    expect(r.j.meta_bypassed).toBeUndefined();
+  });
+
+  it("ladder 4: outside git is silent (no warning, no bypass)", () => {
+    const dir = join(base, "plain-dir");
+    mkdirSync(dir, { recursive: true });
+    const r = jrun(["verify", "submit", "--title", "g4b", "--text", matFile, "--json"], dir);
+    expect(r.rc).toBe(0);
+    expect(r.j.meta_warning).toBeUndefined();
+    expect(r.j.meta_bypassed).toBeUndefined();
+  });
+
+  it("--no-meta bypasses and persists a meta.bypass event (0.113.0)", () => {
+    const dir = join(base, "bare-git2");
+    mkdirSync(dir, { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    const r = jrun(["verify", "submit", "--title", "g7", "--text", matFile, "--no-meta", "--json"], dir);
+    expect(r.rc).toBe(0);
+    expect(r.j.meta_bypassed).toBe(true);
+    const db = new DatabaseSync(join(HOME, "ygl-trees.db"));
+    try {
+      const rows = db.prepare("SELECT kind, entity, entity_id, payload FROM events WHERE kind='meta.bypass' ORDER BY rowid DESC LIMIT 1").all() as any[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].entity).toBe("meta");
+      const payload = JSON.parse(String(rows[0].payload));
+      expect(payload.command).toBe("submit");
+      expect(String(payload.repo)).toBe(dir);
+    } finally {
+      db.close();
+    }
   });
 
   it("zero-scan repo is meta_unverified under --require-meta (#22)", () => {

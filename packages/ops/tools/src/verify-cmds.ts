@@ -25,6 +25,7 @@ import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
+import { metaGate, refuseMeta } from "./meta-gate";
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
@@ -294,53 +295,6 @@ export function normalizeAsOf(raw: unknown, fallback: string): string {
   return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMin * 60000).toISOString();
 }
 
-/** charter §4.2 v2 (0.111.x): meta admission gate on the accept surface.
- *  Default = warn (the repo may not be a verifier repo); `--require-meta`
- *  turns a failed/unverified gate into a refusal (rc=1, ERROR + meta_error).
- *  `spec_error` (the report-level closed table) is deliberately NOT reused —
- *  there is no report object yet at this layer. */
-function metaGate(env: Env, args: any): { pass: boolean; report?: ReturnType<typeof runMeta>; meta_error?: string; message?: string } {
-  const requireMeta = args.flags["require-meta"] === true;
-  const repoArg = args.flags["meta-repo"] ? String(args.flags["meta-repo"]) : process.cwd();
-  const repo = resolve(repoArg);
-  if (!existsSync(join(repo, "AGENTS.md"))) {
-    if (requireMeta) {
-      return { pass: false, meta_error: "meta_unverified", message: `meta gate: no AGENTS.md under ${repo} (meta_unverified; pass --meta-repo <verifier repo>)` };
-    }
-    return { pass: true };
-  }
-  const report = runMeta(repo);
-  if (report.verdict === "PASS") return { pass: true, report };
-  const r2 = report.rules.find((r) => r.id === "R2");
-  const reason = String((r2?.evidence as any)?.reason ?? "");
-  // #22: zero-scan (R2 skipped) is unverified admission, not a failed rule.
-  const meta_error = /unknown meta_index_version/.test(reason)
-    ? "meta_index_unknown"
-    : report.verdict === "NEEDS-MATERIAL"
-      ? "meta_unverified"
-      : "meta_failed";
-  const failed = report.rules.filter((r) => r.verdict === "FAIL").map((r) => r.id).join(",");
-  const message = `meta gate failed (${failed}): ${report.rules.filter((r) => r.verdict === "FAIL").map((r) => `${r.id} ${JSON.stringify(r.evidence)}`).join("; ")}`;
-  if (requireMeta) return { pass: false, report, meta_error, message };
-  // warn mode: proceed, but say what failed on the human channel (JSON gets a field)
-  if (!env.ctx.json) {
-    const { out: outFn, paint: paintFn, C: Cf } = require("../../../core/text/src/fmt");
-    outFn(env.ctx, paintFn(Cf.yellow, `  ! ${message} — proceeding (warn; --require-meta to refuse)`, env.ctx.color));
-  }
-  return { pass: true, report, meta_error, message };
-}
-
-/** Refusal payload for the accept surface (single JSON object in --json mode). */
-function refuseMeta(env: Env, gate: ReturnType<typeof metaGate>): number {
-  const { ctx } = env;
-  if (ctx.json) {
-    console.log(JSON.stringify({ error: gate.message, meta_error: gate.meta_error, ...(gate.report ? { meta: gate.report } : {}) }, null, 2));
-  } else {
-    bad(ctx, gate.message || "meta gate failed");
-  }
-  return 1;
-}
-
 export function findMaterial(env: Env, id: string): MaterialRecord {
   const dir = join(paths(env).materials, id);
   const file = join(dir, "material.json");
@@ -388,8 +342,8 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 /** 每个动作认识的旗标。--json/--no-color 等全局旗标在 GLOBAL_FLAGS 里（bin 层解析）。 */
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
-  submit: ["title", "text", "attach", "meta-repo", "require-meta"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta"],
+  submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta"],
   run: ["db", "submission", "no-archive"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
@@ -482,10 +436,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "--text is empty — a submission with no material cannot be prepared");
         return 2;
       }
-      const gate = metaGate(env, args);
+      const gate = metaGate(env, args, "submit");
       if (!gate.pass) return refuseMeta(env, gate);
-      // warn-mode failure is recorded on the JSON receipt (human already warned)
-      const metaWarning = !gate.pass || gate.report?.verdict === "PASS" ? undefined : gate.message;
+      if (gate.warning && !ctx.json) out(ctx, paint(C.yellow, `  ! ${gate.warning}`, ctx.color));
+      const metaWarning = gate.warning ?? (gate.report && gate.report.verdict !== "PASS" ? gate.message : undefined);
+      const metaBypassed = gate.bypassed === true;
       const attachArgs: string[] = Array.isArray(args.flags.attach)
         ? args.flags.attach.map(String)
         : args.flags.attach
@@ -528,7 +483,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       writeJson(join(dir, "material.json"), record);
       if (ctx.json) {
-        console.log(JSON.stringify(metaWarning ? { ...record, meta_warning: metaWarning } : record));
+        console.log(JSON.stringify({ ...record, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}) }));
         return 0;
       }
       out(ctx, `  ✓ material frozen: ${materialId}  (${text.length} chars${files.length ? `, ${files.length} attachment(s)` : ""})`);
@@ -562,9 +517,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       const text = readFileSync(join(p.materials, materialId, material.text_path), "utf8");
-      const gate = metaGate(env, args);
+      const gate = metaGate(env, args, "prepare");
       if (!gate.pass) return refuseMeta(env, gate);
-      const metaWarning = gate.report && gate.report.verdict !== "PASS" ? gate.message : undefined;
+      if (gate.warning && !ctx.json) out(ctx, paint(C.yellow, `  ! ${gate.warning}`, ctx.color));
+      const metaWarning = gate.warning ?? (gate.report && gate.report.verdict !== "PASS" ? gate.message : undefined);
+      const metaBypassed = gate.bypassed === true;
       // 两种形态都收：裸数组，或 { candidates: [...] } / { reviews: [...] } 信封
       const candidatesRaw = readJson<unknown>(candidatesPath);
       const reviewsRaw = readJson<unknown>(reviewsPath);
@@ -617,7 +574,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             rejected_detail: res.rejected,
             materials_sha256: res.materials_sha256,
             diagnostics: res.diagnostics,
-            ...(metaWarning ? { meta_warning: metaWarning } : {}),
+            ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
           };
           if (ctx.json) {
@@ -654,7 +611,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, ...(metaWarning ? { meta_warning: metaWarning } : {}), record }));
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {

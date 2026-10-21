@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.113.0
+
+charter §4.2 翻转点：**meta 准入闸默认硬拒收**（阶梯检测）+ **版本键控机械门**。
+
+- **检测阶梯**（fdc757f6 裁定 A 加固版）：
+  1. `--meta-repo <path>` 显式 → 硬拒；
+  2. cwd 在 git 仓且带验证器标记（AGENTS.md / verify/ / verify/meta.json 任一）→ **默认硬拒**；
+  3. cwd 在 git 仓但无标记 → **warn+点名 R1 提示后跳过**（缺 AGENTS.md 的验证器仓库得到 R1 压力，
+     门不静默消失）；
+  4. cwd 非 git 仓（业务随机目录）→ 静默跳过（产品面无感）。
+- **`--no-meta` 逃逸**：允许应急注册，但必须**持久化审计**——每次 bypass 同步写入
+  `events(kind="meta.bypass", payload={command,cwd,repo})`；写入失败则拒绝 bypass。JSON 回执带
+  `meta_bypassed:true`。
+- `--require-meta` 保留为幂等显式开关（不再改变默认），help 用 deprecation-style 标注；CHANGELOG/help
+  双声明翻转。
+- **机械门（本版随版本落地）**：contract-audit 新增 contract 14——`version >= 0.113.0` 时断言
+  `META_DEFAULT_POLICY = "hard-for-verifier-repos"`、阶梯检测（gitRootOf）与 bypass 落账同时存在；
+  版本键控在人读声明之外提供机器拦截。
+- 门禁：unit 675 → **677**（ladder 3/4 + bypass events 三例）；contract 135 → **136**。
+
 ## 0.112.0
 
 charter §4.3 落地：**`verify probe --matrix`** —— 评审席两代临时探针（sealprobe/sigprobe）升为 CLI 命令，

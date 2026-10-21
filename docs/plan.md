@@ -319,6 +319,14 @@ unit 667→672（**#22 折入本版**：meta R2 零扫描→NEEDS-MATERIAL、R3 
 发布（2026-10-21）：commit **`1ed2b9c`**；tag **`v0.112.0 = e8c0f30f… → ^{commit}=1ed2b9c…`**（双远端）；
 npm **latest=0.112.0**、shasum **`e29bc1bd…`**；官方字节 **1,465,683 B / sha256 `608bc283…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.113.0 记录（2026-10-21，meta 硬拒收 + 机械门）**：检测阶梯（显式 --meta-repo 硬 / git+验证器标记
+默认硬 / git 无标记 warn 点名 R1 跳过 / 非 git 静默）；`--no-meta` 逃逸必须同步写
+`events(kind=meta.bypass, payload={command,cwd,repo})`，写失败即拒；`--require-meta` 幂等保留 +
+deprecation-style help；CHANGELOG/help 双声明。contract 14 版本键控机械门（version≥0.113.0 断言默认
+hard-for-verifier-repos + gitRootOf + bypass 落账）。unit 675→677；contract 135→136。
+门禁备注：默认 `pnpm test`（--maxWorkers=2）全量跑在 `webui.test.ts` P1-2 报 HTTPParser unhandled error
+（单跑该文件 17/17 绿；`npx vitest run --maxWorkers=1` 全量 677/677 绿，判定为并发 flake，同 0.110.x 钩子
+flake 族）；demo/contract 136/ratchet 分段全绿，按纪律 YGL_SKIP_HOOKS=1 推送并在 handoff 附证据。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

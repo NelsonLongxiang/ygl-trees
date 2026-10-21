@@ -360,6 +360,19 @@ else
 fi
 json_err "verify probe unknown probe" 2 -- $Y verify probe --matrix --only nope
 
+# ── contract 14: 0.113.0 版本键控机械门（charter §4.2）
+echo "── contract 14: meta 默认硬（版本键控）"
+VERSION=$(node -e "console.log(require('./package.json').version)")
+if node -e "const v=require('./package.json').version.split('.').map(Number);process.exit(v[0]>0||v[1]>113||(v[1]===113&&v[2]>=0)?0:1)"; then
+  if grep -q 'META_DEFAULT_POLICY = "hard-for-verifier-repos"' packages/ops/tools/src/meta-gate.ts && grep -q 'gitRootOf' packages/ops/tools/src/meta-gate.ts && grep -q 'meta.bypass' packages/ops/tools/src/meta-gate.ts; then
+    pass "版本 $VERSION ≥ 0.113.0：meta 默认 = hard-for-verifier-repos（阶梯 2）+ bypass 落账"
+  else
+    fail "version-keyed meta gate" "0.113.0+ but default policy markers missing"
+  fi
+else
+  pass "版本 $VERSION < 0.113.0：翻转门未到期（键控断言待 0.113.0）"
+fi
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1
