@@ -567,7 +567,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         // #25a: persist bypass provenance with the frozen spec (not for --draft,
         // which writes nothing). specDir is deterministic from res.spec.spec_id.
         if (gate.bypass && !draft && res.spec?.spec_id) {
-          writeJson(join(specDir(env, String(res.spec.spec_id)), "meta-bypass.json"), gate.bypass);
+          // The spec directory may not exist yet on a FIRST prepare of a new
+          // spec (writePrepareRecord creates it only in the ready branch
+          // below, and a not-ready verdict writes nothing) — mkdir before
+          // the atomic write or the tmp-file creation ENOENTs (0.110.2
+          // engine defect, reproduced by supervision: fresh material +
+          // --no-meta prepare crashed until the dir was hand-created).
+          const bypassDir = specDir(env, String(res.spec.spec_id));
+          mkdirSync(bypassDir, { recursive: true });
+          writeJson(join(bypassDir, "meta-bypass.json"), gate.bypass);
         }
         if (draft) {
           const payload = {
