@@ -160,6 +160,8 @@ export interface ReportRow {
   mode: string;
   binary_sha256: string;
   archived: number;
+  /** #27 Q3 / 方案 T6：报告的语义边界，原样透传；契约 ≤1.2 的报告没有该字段 → null（UI 按 structural 显示，服务端不替报告发明值） */
+  semantic_scope: string | null;
 }
 
 /** 报告清单（看板摘要行）。归档数量从 archives 侧车读，不猜。 */
@@ -192,6 +194,7 @@ export function listReports(env: Env, specId?: string): ReportRow[] {
         mode: String(r.verifier?.mode ?? ""),
         binary_sha256: String(r.verifier?.binary_sha256 ?? ""),
         archived: Array.isArray(side?.archives) ? side.archives.length : 0,
+        semantic_scope: typeof r.semantic_scope === "string" ? r.semantic_scope : null,
       } satisfies ReportRow;
     })
     .filter((r) => (specId ? r.spec_id === specId : true))

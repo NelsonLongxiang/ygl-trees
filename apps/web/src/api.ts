@@ -144,6 +144,8 @@ export interface VerifyReportRow {
   mode: string;
   binary_sha256: string;
   archived: number;
+  /** #27 Q3 / 方案 T6：报告的语义边界（structural | factual | semantic）；契约 ≤1.2 的报告没有该字段 → null，UI 按 structural 显示 */
+  semantic_scope?: string | null;
 }
 
 export interface VerifyMaterialRow {
@@ -219,6 +221,8 @@ export interface VerifyReportDetail {
     summary: { pass: number; fail: number; needs_material: number; error: number };
     started: string;
     finished: string;
+    /** 语义边界（#27 Q3）：缺失即 structural——父 PASS 不代表子结论为真 */
+    semantic_scope?: string;
     data_source?: { kind: string; sha256: string; source?: string; captured_at?: string };
     verifier?: {
       mode?: string;
@@ -235,6 +239,7 @@ export interface VerifyReportDetail {
       severity?: string;
       checker_type?: string;
       source_clause?: string;
+      semantic_scope?: string;
       evidence?: Record<string, unknown>;
       trace?: string[];
     }>;

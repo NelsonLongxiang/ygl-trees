@@ -37,6 +37,23 @@
   - 测试：verify-meta +4（v2 空登记 / tooling 登记与 sha 漂移与形状 / tooling 驱动验证 / R5a 四缺陷 + v1 不读登记）、
     meta-gate +1（v2 登记过闸）；顺手修 #25c walk-up 用例在 macOS 上的 realpath 比较（`/var` ↔ `/private/var`，
     #26 口径）；archive/submission-scan 单测扩成「任何层级无 `dir`、无本机路径、两次构建同字节、非相对路径拒绝」。
+- **#27 方案 T6：渲染面透出语义边界（缺省按 structural）**。契约 ≤1.2 的报告没有 `semantic_scope` 字段，
+  此前任何渲染面都看不出「这份 PASS 在哪一层成立」——父验证器对子归档的 PASS 容易被读成「子结论为真」（#27 Q3，K3 双钉）。
+  - **WebUI 报告看板**：运行记录每行、报告头各带一个「边界」标签（structural「仅结构」/ factual「事实」/ semantic「语义」）；
+    无字段 → 显示「仅结构·缺省」并在报告头给**一行**说明「父 PASS 不代表子结论为真」；VU 表只在报告真带 `semantic_scope`
+    （契约 1.3 起）时才加「边界」列，缺省不逐行重复。说明走 Tooltip + 可聚焦 span + 标签内视觉隐藏文本
+    （键盘 / 触屏 / 读屏可达；不给无 role 的 span 挂 `aria-label`——ARIA 1.2 禁止命名 generic 元素）；
+    缺省提示只说「按最保守读」、不描述检查器实际做了什么。`ReportDetail` / `ScopeTag` / `scopeLabel` / `scopeHint` 可测导出——
+    种子库没有报告，运行时视图验证器画不到新 UI，其证据是夹具静态渲染单测（监督席评审 ①②③）。
+  - **服务端列表投影**（`verify-web.ts listReports`）：`semantic_scope` 原样透传，无字段为 `null`——服务端不替报告发明值，
+    兜底在 UI。
+  - **CLI**：`verify run` / `verify report <run>` 的人类输出首屏增一行 `semantic_scope <值>`；无字段时写
+    `structural (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)`。**JSON 面原样**（报告不可变、形状冻结；
+    字段本体属契约 1.3 批 T4）。
+  - **闭集之外不失败开放**（评审 P3）：`semantic_scope` 不在 `structural | factual | semantic` 内的值（拼错、大小写、未来新值），
+    WebUI 标签显示「仅结构·未知值」、报告头给一行说明，CLI 行写 `structural (未知值 "<原值>" 不在闭集内，按最保守读…)`；
+    任何面都不原样透出未知值。
+  - 测试：`verify-report-scope.spec`（CLI 两面 + JSON 不变 + 投影 null）、`verify.spec.tsx` +2（缺省/闭集映射）。
 
 ## 0.113.2
 
