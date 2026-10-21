@@ -29,6 +29,7 @@ import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { dirtyPaths, assertCleanTree } from "./lib/pack-guard.mjs";
 
 const BLOCK = 512;
 
@@ -97,7 +98,31 @@ function readTarGz(tgz) {
 const args = process.argv.slice(2);
 const outFlag = args.indexOf("--out");
 const asJson = args.includes("--json");
+const allowDirty = args.includes("--allow-dirty");
+const checkDirty = args.includes("--check-dirty");
 const root = resolve(process.cwd());
+
+// 0.110.0 incident: bytes must not depend on local dirt. Guard the input face
+// before anything is packed; --check-dirty exposes the same judge for tests/CI.
+try {
+  const dirty = assertCleanTree(root, { allowDirty });
+  if (checkDirty) {
+    console.log(JSON.stringify({ dirty: false, files: [] }));
+    process.exit(0);
+  }
+  if (dirty.length) console.error(`pack:repro: WARNING — sealing bytes with --allow-dirty (${dirty.length} path(s))`);
+} catch (e) {
+  if (checkDirty) {
+    try {
+      console.log(JSON.stringify({ dirty: true, files: dirtyPaths(root) }));
+    } catch {
+      console.log(JSON.stringify({ dirty: true, files: [] }));
+    }
+    process.exit(1);
+  }
+  console.error(String(e?.message || e));
+  process.exit(1);
+}
 
 // Spawn pnpm's JS entrypoint through this node binary (no shell, no .cmd shim).
 const pnpmCandidates = [

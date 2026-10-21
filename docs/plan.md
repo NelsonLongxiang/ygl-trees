@@ -269,6 +269,11 @@ fdc757f6 裁定 A）运行 `git filter-repo` 并已强推 Gitee；随后验证�
 - **发布（2026-10-21）**：commit `b9bfd54451d95159c5d56354cb98791a1efd886c`；tag **`v0.110.0` = 89b8e0a8… → ^{commit}=b9bfd54…**（双远端 Gitee/GitHub）；npm **latest=0.110.0**、shasum `989d95072e0e9c62a4d151e5cf6928e78b1aa3dc`；发布物 **1,426,980 B / sha256 `d520921a…`**（clean-worktree@b9bfd54 正本，下载实测一致）。
 - **发布物字节修订**：初 handoff 的 1,427,867 B / `9a8368d7…` **作废**——根因=出包时主工作树含另一会话未提交的 `docs/doc-governance.md`（npm pack 拾取工作树 docs）+ 主树为 0.108 前的 CRLF 旧检出；正本以发版席 clean-worktree 产出为准。教训：`scripts/pack-repro.mjs` 只打包不构建、依赖 clean worktree 与本树 build；**0.110.1 加 clean-tree guard**（`git status --porcelain` 非空即拒绝，除非 `--allow-dirty`），发布 SOP 补「官方字节=fresh worktree + 本树 build 后 pack:repro」。
 - **C+ 口径发布记录**：HANDOFF.md 已删（b9bfd54 实证）；历史 IP 属 C 已知残风险（不改写历史、公开 fork 旧历史面在），非本次发布引入；B′ 工件封存 `refs/archive/rewrite-artifact-e11db7f`（仅本地，不入远端）。
+**0.110.1 记录（2026-10-21，issue #14 + 发布防复发）**：`claimLink` 统一走 `recomputeClaimStatus`
+（#14①）；`agent brief --json` 增 `db`（#14②）；`pack-repro` 加 clean-tree guard（`--allow-dirty`/
+`--check-dirty`），发布事故教训落成代码门；settler 夹具泛化。unit 623→629，契约零变更。
+发布：tag-anchor 与 npm 字节待发版席回执后补记（官方字节必须来自 fresh worktree + 本树 build 的 pack:repro）。
+
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

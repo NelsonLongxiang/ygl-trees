@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.110.1
+
+GitHub issue #14（zhujun，P3×2）+ 0.110.0 发布事故的防复发门（契约/语料零变更；迁移面：无）。
+
+- **claimLink 状态重算统一（#14 ①）**：删掉 `claimLink` 内联的状态推导副本，与
+  `claimUnlink`/`claimResolve`/`claimUnresolve` 共用 `recomputeClaimStatus`——两路径不再漂移
+  （内联版此前不写 `updated` 戳）；prediction 的「链接不自动升格」守卫与各自事件文案保持不变。
+- **`agent brief --json` 增 `db` 字段（#14 ②）**：报告本次 brief 解析到的工作区库路径
+  （`--db` 显式时即该路径）；此前 `--db` 在 payload 里不可见。
+- **`scripts/pack-repro.mjs` clean-tree guard**：打包前检查 `git status --porcelain`（含 untracked、
+  排除 gitignored），脏工作树直接拒绝（`--allow-dirty` 仅供本地实验、`--check-dirty` 输出同源判定）；
+  根因=0.110.0 handoff 在主树（含另一会话未提交 docs + 旧 CRLF 检出）出包，官方字节失效。
+- **测试夹具泛化**：`predict-list.spec` 的 settler 夹具 `dsh/ae07421e` → `dsh/demo0000`（C+ 扫描残留）。
+- 门禁：unit 623 → **629**（#14 两测 + guard 三测）；contract 130 不变。
+
 ## 0.110.0
 
 **可发现性主题版**（用户令 m04180；批十四四件 + F6）。契约形状零变更（contract/corpus 1.2，digest
