@@ -350,6 +350,13 @@ unit 680→682。
 发布（2026-10-21）：commit **`3bbfb79`**；tag **`v0.113.2 = 0e26972e… → ^{commit}=3bbfb79…`**（双远端）；
 npm **latest=0.113.2**、shasum **`7a054558…`**；官方字节 **1,495,730 B / sha256 `ce5468de…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**charter v1.2 修订记录（2026-10-21，#29，docs-only）**：PR #30 合并 `20242d4`（head `f84b1c3`）——
+R5 权威拆分：R5a 静态合规（path/sha/`replaced_by` 取 §4.7 第一列命令 token 并集、每条只指名一个、
+无 token 行不贡献闭集、`sunset` 完整 MAJOR.MINOR.PATCH、仓内离线无时钟）+ R5b 时间执法（时钟=审计方
+发行物内嵌能力表 `--capabilities`；`--engine-version` 仅交叉断言、不一致 usage error；默认不执行；
+npm latest/被检仓 pin 禁作时钟）；§4.7 增 `capability_version` 列（`unshipped` 无界，0.106.0 荒谬界消除）；
+verbatim 提取规则入表注（并集/无 token 行/全形三条为验证席预检补入）；CHANGELOG「未发布」记
+`#29 fault → v1.2` 谱系。生效：评审席 fdc757f6 裁定+授权合并；R5 实现仍为零。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
