@@ -396,6 +396,10 @@ npm **latest=0.114.0**、shasum **`7329021f…`**；官方字节 **1,526,476 B /
 diagnostics P1c，不冻 ready），lint-candidates --text 同源输出 coverage/COVERAGE；`--coverage-exempt`
 具名豁免（locator+reason，缺一即拒）。契约 1.2 不变（构造面）；contract 15 新增 2 检查（138→140）；
 unit 700→704。
+发布（2026-10-22）：commit **`5097879`**；tag **`v0.114.1 = 3e21b7e9… → ^{commit}=5097879…`**（双远端同对象）；
+npm **latest=0.114.1**、shasum **`80c0270b…`**；官方字节 **1,530,979 B / sha256 `c2af9add…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节；远端校验 ETIMEDOUT 时按 guard `--no-network`
+本地锚定 + ls-remote 双远端复证，非绕过）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
