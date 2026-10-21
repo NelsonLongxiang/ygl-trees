@@ -391,6 +391,11 @@ CLI `verify run` / `verify report` 人类输出增 `semantic_scope` 行（缺省
 发布（2026-10-22）：commit **`85f4c33`**；tag **`v0.114.0 = 06b27324… → ^{commit}=85f4c33…`**（双远端）；
 npm **latest=0.114.0**、shasum **`7329021f…`**；官方字节 **1,526,476 B / sha256 `6e01fbd3…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.114.1 记录（2026-10-22，#34 子句覆盖）**：材料非空行=冻结子句；`anchor.locator` 子句式（#L/#S）
+必须命中现存子句且含 quote；prepare 在 P4 前校验每条子句被 ≥1 个 P1 通过候选覆盖（否则 error +
+diagnostics P1c，不冻 ready），lint-candidates --text 同源输出 coverage/COVERAGE；`--coverage-exempt`
+具名豁免（locator+reason，缺一即拒）。契约 1.2 不变（构造面）；contract 15 新增 2 检查（138→140）；
+unit 700→704。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

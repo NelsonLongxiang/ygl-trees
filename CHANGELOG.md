@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.114.1
+
+GitHub #34（验证席 P2 · 构造面覆盖缺口）：判据不得静默消失——prepare / lint 增加**冻结子句覆盖**检查。
+
+- **子句模型**：材料每个非空行=一条冻结子句（`#L<n>`，`#S<n>` 同义别名；可带文件名前缀）。
+  `anchor.locator` 为子句式时**必须命中存在的子句且该子句含 quote**（#S9 类悬空锚点拒）。
+- **覆盖检查**：每条子句必须被**至少一个通过 P1 的候选**的 `source_clause` 覆盖；prepare 在 P1–P3 之后、
+  P4 之前校验，未覆盖 → `verdict:error` + `diagnostics[stage=P1c]` 点名（**不冻 ready**，防「丢一条规则
+  的 spec PASS 本应 FAIL 的数据」）；`verify lint-candidates --text` 同源检查，输出增
+  `coverage:{clauses,covered,exempted,uncovered}`、`issues[].stage="COVERAGE"`。
+- **具名豁免**：`--coverage-exempt <file>`（JSON 数组或 `{exempt:[{locator,reason}]}`），缺 reason /
+  locator 不存在 / 格式非法 → 拒（不可审计的豁免不生效）。
+- 契约面：报告形状不变（构造面检查，`contract_version` 1.2）；`docs/verify-contract.md` 补记 P1 与 §1.7 前口径。
+- 门禁：contract-audit +2（contract 15 覆盖/豁免）→ **140**；unit 700 → **704**。
+
 ## 0.114.0
 
 - **charter v1.2（docs-only，0.113.2 之后）**：#29 修正谱系——R5 权威拆分（R5a 静态合规 / R5b 审计方
