@@ -1,5 +1,11 @@
 # Changelog
 
+## 未发布
+
+- **charter v1.2（docs-only，0.113.2 之后）**：#29 修正谱系——R5 权威拆分（R5a 静态合规 / R5b 审计方
+  内嵌能力表、默认不执行）、§4.7 增 `capability_version` 列与 `unshipped` 无界、verbatim 提取规则入表注；
+  依据 fdc757f6 对 #29 的裁定。无代码面变更。
+
 ## 0.113.2
 
 GitHub #28（验证席 P2 · charter P5）：`verify run --submission` 的 file 检查器扫描面留痕。
