@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
-import Verify, { ScopeTag, scopeLabel } from "../src/Verify";
+import Verify, { ReportDetail, ScopeTag, scopeHint, scopeLabel } from "../src/Verify";
+import type { VerifyReportDetail } from "../src/api";
 
 /**
  * M13-2 三视图渲染验证（静态渲染，不引 jsdom——与 pipeline.spec.tsx 同法）：
@@ -40,13 +41,18 @@ describe("verify 三视图（M13-2）", () => {
  * 必须按最保守的 structural（「仅结构」）显示并标明缺省——父 PASS 不代表子结论为真。
  */
 describe("语义边界标签（T6）", () => {
-  it("缺省按 structural 读并标明缺省", () => {
+  it("缺省按 structural 读并标明缺省；说明对读屏可达（aria-label），且不描述检查器实际做了什么", () => {
     expect(scopeLabel(undefined)).toBe("仅结构");
     expect(scopeLabel(null)).toBe("仅结构");
     const html = renderToStaticMarkup(createElement(ScopeTag, { scope: undefined }));
     expect(html).toContain("边界 仅结构·缺省");
-    expect(html).toContain("不断言其内容或子结论为真");
-    expect(html).toContain("报告无 semantic_scope 字段");
+    expect(html).toMatch(/tabindex="0"/);
+    expect(html).toMatch(/aria-label="边界 仅结构·缺省：报告未声明边界/);
+    expect(scopeHint(undefined)).toContain("按最保守的 structural 读");
+    expect(scopeHint(undefined)).toContain("不据此断言子结论为真");
+    // 缺省提示只说「怎么读」：一个按缺省读的 sql 判据确实判了数据，不能被说成「文件 / 归档在场」
+    expect(scopeHint(undefined)).not.toContain("文件 / 行 / 归档可验");
+    expect(scopeHint("structural")).toContain("文件 / 行 / 归档可验");
   });
 
   it("声明值按闭集映射，未知值原样显示、不升级", () => {
@@ -54,8 +60,49 @@ describe("语义边界标签（T6）", () => {
     expect(scopeLabel("factual")).toBe("事实");
     expect(scopeLabel("semantic")).toBe("语义");
     expect(scopeLabel("whatever")).toBe("whatever");
+    expect(scopeHint("whatever")).toContain("按 structural 读");
     const html = renderToStaticMarkup(createElement(ScopeTag, { scope: "factual" }));
     expect(html).toContain("边界 事实");
     expect(html).not.toContain("缺省");
+  });
+
+  const fixture = (over: Partial<VerifyReportDetail["report"]> = {}): VerifyReportDetail => ({
+    report: {
+      run_id: "run_fixture0000000001",
+      overall: "PASS",
+      reason: "all assert units PASS",
+      summary: { pass: 2, fail: 0, needs_material: 0, error: 0 },
+      started: "2026-10-21T00:00:00.000Z",
+      finished: "2026-10-21T00:00:01.000Z",
+      verifier: { mode: "open" },
+      vu: [
+        { id: "V1", verdict: "PASS", checker_type: "sql", source_clause: "账单金额不得为负。", evidence: { violations: 0 } },
+        { id: "V2", verdict: "PASS", checker_type: "file", source_clause: "附件齐备。", evidence: { files: 2, matched: 2 } },
+      ],
+      exceptions: [],
+      ...over,
+    },
+    archives: [],
+  });
+
+  it("≤1.2 报告的详情：边界只在首屏出现一次 + 一行缺省说明；VU 表不加边界列", () => {
+    const html = renderToStaticMarkup(createElement(ReportDetail, { detail: fixture() }));
+    // 只数可见文本节点（aria-label 里还有一份同文，那是给读屏的，不算重复显示）
+    expect((html.match(/>边界 仅结构·缺省</g) ?? []).length).toBe(1);
+    expect(html).toContain("父验证器的 PASS 不代表子结论为真");
+    expect(html).not.toMatch(/<th[^>]*>边界<\/th>/);
+    expect(html).toContain("V1");
+    expect(html).toContain("V2");
+  });
+
+  it("带 semantic_scope 的报告（契约 1.3 起）：首屏显示声明值，VU 表按声明逐行显示边界", () => {
+    const d = fixture({ semantic_scope: "structural" });
+    d.report.vu[0].semantic_scope = "factual";
+    d.report.vu[1].semantic_scope = "structural";
+    const html = renderToStaticMarkup(createElement(ReportDetail, { detail: d }));
+    expect(html).not.toContain("缺省");
+    expect(html).toMatch(/<th[^>]*>边界<\/th>/);
+    expect((html.match(/>边界 事实</g) ?? []).length).toBe(1); // V1 一行
+    expect((html.match(/>边界 仅结构</g) ?? []).length).toBe(2); // 报告头一次 + V2 一行
   });
 });
