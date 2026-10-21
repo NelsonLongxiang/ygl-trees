@@ -60,16 +60,22 @@ export function scopeHint(scope?: string | null): string {
   if (scope == null) return SCOPE_HINT_DEFAULT;
   return SCOPE_HINT[scope] ?? `未知边界值 ${scope}：按 structural 读`;
 }
-/** 说明必须对键盘与触屏可达（监督席评审 ②）：Tooltip 在悬停与聚焦时都出现，span 可聚焦，
- *  aria-label 把整句说明交给读屏——不再只挂 title。 */
+/** 视觉隐藏但读屏可读（WAI 推荐的 clip 法）：不用 aria-label 给无 role 的 span 命名——ARIA 1.2 禁止给
+ *  generic 元素命名，读屏可能跳过它只读可见文字（监督席评审 ② 残留）。 */
+const VISUALLY_HIDDEN: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
+};
+/** 说明必须对键盘 / 触屏 / 读屏可达（监督席评审 ②）：Tooltip 在悬停与聚焦时都出现，span 可聚焦；
+ *  整句说明以视觉隐藏文本放在标签内，读屏按 DOM 顺序读到「边界 仅结构·缺省」+ 说明——不靠 ARIA 命名。 */
 export function ScopeTag({ scope }: { scope?: string | null }) {
   const inferred = scope == null;
   const label = `边界 ${scopeLabel(scope)}${inferred ? "·缺省" : ""}`;
   const hint = scopeHint(scope);
   return (
     <Tooltip title={hint}>
-      <span tabIndex={0} aria-label={`${label}：${hint}`} style={{ display: "inline-flex", borderRadius: "var(--radius-sm)", cursor: "help" }}>
+      <span tabIndex={0} style={{ display: "inline-flex", position: "relative", borderRadius: "var(--radius-sm)", cursor: "help" }}>
         <ToneTag color={C.secondary}>{label}</ToneTag>
+        <span style={VISUALLY_HIDDEN}>：{hint}</span>
       </span>
     </Tooltip>
   );

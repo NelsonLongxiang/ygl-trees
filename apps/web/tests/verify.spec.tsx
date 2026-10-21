@@ -47,7 +47,9 @@ describe("语义边界标签（T6）", () => {
     const html = renderToStaticMarkup(createElement(ScopeTag, { scope: undefined }));
     expect(html).toContain("边界 仅结构·缺省");
     expect(html).toMatch(/tabindex="0"/);
-    expect(html).toMatch(/aria-label="边界 仅结构·缺省：报告未声明边界/);
+    // 说明是读屏可读的视觉隐藏文本，不是给 generic span 的 aria-label（ARIA 1.2 禁止命名 generic）
+    expect(html).not.toContain("aria-label");
+    expect(html).toMatch(/clip:rect\(0 0 0 0\)[^>]*>：报告未声明边界/);
     expect(scopeHint(undefined)).toContain("按最保守的 structural 读");
     expect(scopeHint(undefined)).toContain("不据此断言子结论为真");
     // 缺省提示只说「怎么读」：一个按缺省读的 sql 判据确实判了数据，不能被说成「文件 / 归档在场」
