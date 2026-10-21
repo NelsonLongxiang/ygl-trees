@@ -401,6 +401,30 @@ else
   pass "版本 $VERSION < 0.113.0：翻转门未到期（键控断言待 0.113.0）"
 fi
 
+# ── contract 15: #34 子句覆盖（判据不静默消失）
+echo "── contract 15: 子句覆盖（clause coverage）"
+mkdir -p "$WS/cov"
+printf '第一条规则：账面必须平衡。\n第二条规则：金额不得为负。\n第三条规则：日期必须完整。\n' > "$WS/cov/material.txt"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const mk = (quote, n) => ({ source_clause: quote, anchor: { quote, locator: `material.txt#L${n}` }, checker: { type: "count", predicate: { from: "bills", select: [] }, op: ">=", value: 0 } });
+fs.writeFileSync(`${dir}/candidates.json`, JSON.stringify({ candidates: [mk("第一条规则：账面必须平衡。", 1), mk("第二条规则：金额不得为负。", 2)] }));
+fs.writeFileSync(`${dir}/exempt.json`, JSON.stringify({ exempt: [{ locator: "#L3", reason: "heading, no rule" }] }));
+' "$WS/cov"
+COVJ=$($Y verify lint-candidates "$WS/cov/candidates.json" --text "$WS/cov/material.txt" --json 2>/dev/null); COVRC=$?
+if [ "$COVRC" = "0" ] && printf '%s' "$COVJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.coverage&&j.coverage.clauses===3&&j.coverage.uncovered&&j.coverage.uncovered[0].locator==='#L3'&&j.issues.some(i=>i.stage==='COVERAGE')?0:1)}catch(e){process.exit(1)}})"; then
+  pass "lint 子句未覆盖 → ok:false + COVERAGE #L3（不静默 ready）"
+else
+  fail "coverage lint" "rc=$COVRC $(printf '%s' "$COVJ" | head -c 160)"
+fi
+COVJ2=$($Y verify lint-candidates "$WS/cov/candidates.json" --text "$WS/cov/material.txt" --coverage-exempt "$WS/cov/exempt.json" --json 2>/dev/null); COVRC2=$?
+if [ "$COVRC2" = "0" ] && printf '%s' "$COVJ2" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===true&&j.coverage&&j.coverage.exempted===1?0:1)}catch(e){process.exit(1)}})"; then
+  pass "具名豁免 → ok:true（豁免计数可审计）"
+else
+  fail "coverage exempt" "rc=$COVRC2 $(printf '%s' "$COVJ2" | head -c 160)"
+fi
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

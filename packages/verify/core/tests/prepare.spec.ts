@@ -6,10 +6,9 @@ import { CORPUS_VERSION, type ReviewFinding, type ReviewRunner } from "../src/co
 /** 条件④：as_of 必须由调用方给（快照口径），测试统一钉一个确定时刻 */
 const AS_OF = { kind: "snapshot" as const, value: "2026-07-01T00:00:00.000Z" };
 
-const MATERIAL = `运费对账材料（2026-07）
-账单合计 1,290.40 元，申报合计 1,290.40 元。
-第七行：账单金额 1290.40 元。
-`;
+// #34: coverage treats every non-empty material line as a frozen clause, so the
+// fixture is one line — tests that need extra clauses append their own newline.
+const MATERIAL = `运费对账材料（2026-07） 账单合计 1,290.40 元，申报合计 1,290.40 元。 第七行：账单金额 1290.40 元。`;
 
 function runnerOf(candidates: PrepareCandidate[], seen: unknown[] = []): PrepareRunner {
   return {
@@ -331,5 +330,64 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(res.spec?.attachments).toEqual([
       { role: "baseline", path: "bills.xlsx", sha256: "a".repeat(64), mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", size: 2048 },
     ]);
+  });
+
+  it("#34: a frozen clause no candidate claims blocks ready (P1c), an exempted clause does not", async () => {
+    const TEXT3 = ["第一条规则：账面必须平衡。", "第二条规则：金额不得为负。", "第三条规则：日期必须完整。"].join(String.fromCharCode(10));
+    const two = [
+      goodCandidate({ source_clause: "第一条规则：账面必须平衡。", anchor: { quote: "第一条规则：账面必须平衡。", locator: "material.txt#L1" } }),
+      goodCandidate({ source_clause: "第二条规则：金额不得为负。", anchor: { quote: "第二条规则：金额不得为负。", locator: "material.txt#L2" } }),
+    ];
+    const reviewOf = (vuId: string): ReviewFinding[] => [
+      { vu_id: vuId, question: "faithful", verdict: "ok", reason: "逐字复读", anchor: { quote: "第一条规则：账面必须平衡。", locator: "material.txt#L1" } },
+      { vu_id: vuId, question: "decidable", verdict: "ok", reason: "可判" },
+      { vu_id: vuId, question: "not-vacuous", verdict: "ok", reason: "非空转" },
+    ];
+    const res = await prepareSpec(TEXT3, {
+      runner: runnerOf(two),
+      reviewer: reviewerOf(reviewOf),
+      redteam: () => [],
+      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
+    });
+    expect(res.verdict).toBe("error");
+    expect(res.spec).toBeUndefined();
+    const diag = res.diagnostics.find((d) => d.stage === "P1c");
+    expect(diag?.message).toMatch(/#L3/);
+    expect(diag?.message).toMatch(/未覆盖|not covered/);
+
+    const ok = await prepareSpec(TEXT3, {
+      runner: runnerOf(two),
+      reviewer: reviewerOf(reviewOf),
+      redteam: () => [],
+      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
+      coverageExempt: [{ locator: "#L3", reason: "heading only, no rule" }],
+    });
+    expect(ok.verdict).toBe("ready");
+  });
+
+  it("#34: clause-style locators must name an existing clause and contain the quoted text", async () => {
+    const TEXT = ["第一条规则：账面必须平衡。", "第二条规则：金额不得为负。"].join(String.fromCharCode(10));
+    const reviewOf = (vuId: string): ReviewFinding[] => [
+      { vu_id: vuId, question: "faithful", verdict: "ok", reason: "逐字复读", anchor: { quote: "第一条规则：账面必须平衡。", locator: "#L1" } },
+      { vu_id: vuId, question: "decidable", verdict: "ok", reason: "可判" },
+      { vu_id: vuId, question: "not-vacuous", verdict: "ok", reason: "非空转" },
+    ];
+    const outOfRange = await prepareSpec(TEXT, {
+      runner: runnerOf([goodCandidate({ source_clause: "第一条规则：账面必须平衡。", anchor: { quote: "第一条规则：账面必须平衡。", locator: "#S9" } })]),
+      reviewer: reviewerOf(reviewOf),
+      redteam: () => [],
+      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
+    });
+    expect(outOfRange.rejected[0].stage).toBe("P1");
+    expect(outOfRange.rejected[0].reason).toMatch(/clause/);
+
+    const wrongClause = await prepareSpec(TEXT, {
+      runner: runnerOf([goodCandidate({ source_clause: "第一条规则：账面必须平衡。", anchor: { quote: "第一条规则：账面必须平衡。", locator: "#L2" } })]),
+      reviewer: reviewerOf(reviewOf),
+      redteam: () => [],
+      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
+    });
+    expect(wrongClause.rejected[0].stage).toBe("P1");
+    expect(wrongClause.rejected[0].reason).toMatch(/not in that clause/);
   });
 });

@@ -101,6 +101,9 @@ export interface PrepareOptions {
   specId?: string;
   title?: string;
   domain?: string;
+  /** #34: named exemptions for frozen-material clauses that no VU should cover
+   *  (headings/notes); every other clause must be claimed by a frozen VU. */
+  coverageExempt?: CoverageExemption[];
   /** 之前已冻结的 materials_sha256 集合（防"旧材料重放"） */
   knownMaterialHashes?: string[];
 }
@@ -148,10 +151,103 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex): s
       return `anchor.locator ${JSON.stringify(c.anchor.locator)} is not declared by the material index (wrong cell/page?)`;
     }
   }
+  const clauseLine = clauseLineOf(c.anchor.locator);
+  if (clauseLine !== null) {
+    const clauses = materialClauses(materialText);
+    const clause = clauses.find((x) => x.line === clauseLine);
+    if (!clause) {
+      return `anchor.locator ${JSON.stringify(c.anchor.locator)} names clause #${clauseLine} but the frozen material has ${clauses.length} clause(s)`;
+    }
+    if (!clause.text.includes(c.anchor.quote.trim()) && !c.anchor.quote.includes(clause.text)) {
+      return `anchor.locator ${JSON.stringify(c.anchor.locator)} is clause "#${clause.text.slice(0, 30)}" but the quoted text is not in that clause`;
+    }
+  }
   if (UNDECIDABLE.test(c.source_clause)) {
     return "criterion contains undecidable wording (应尽量/建议/合理/酌情) — machine cannot judge it";
   }
   return null;
+}
+
+/** GitHub #34: frozen-material clause coverage. A material line is a "clause";
+ *  every clause must be claimed by at least one frozen candidate (or named in an
+ *  exemption) — otherwise prepare freezes a ready spec that silently dropped a
+ *  rule (PASSing data that should FAIL). Locators of the shape `#L<n>` / `#S<n>`
+ *  (optionally prefixed `material.txt`) must name an existing clause. */
+export interface CoverageExemption {
+  locator: string;
+  reason?: string;
+}
+
+export interface MaterialClause {
+  locator: string;
+  text: string;
+  line: number;
+}
+
+export function materialClauses(materialText: string): MaterialClause[] {
+  const out: MaterialClause[] = [];
+  materialText.split(/\r?\n/).forEach((raw, i) => {
+    const text = raw.trim();
+    if (text) out.push({ locator: `#L${i + 1}`, text, line: i + 1 });
+  });
+  return out;
+}
+
+/** Parse a clause-style locator (`#L3`, `#S3`, `material.txt#L3`); null = not
+ *  clause-style (e.g. `bills!B7` / `p3` stay governed by the material index). */
+export function clauseLineOf(locator: string): number | null {
+  if (typeof locator !== "string") return null;
+  const at = locator.lastIndexOf("#");
+  if (at < 0) return null;
+  const m = /^#([LS])(\d+)$/i.exec(locator.slice(at));
+  if (!m) return null;
+  return Number(m[2]);
+}
+
+export interface CoverageResult {
+  clauses: number;
+  covered: number;
+  exempted: number;
+  uncovered: Array<{ locator: string; text: string }>;
+  problems: string[];
+}
+
+export function checkCoverage(
+  materialText: string,
+  candidates: PrepareCandidate[],
+  exempt: CoverageExemption[] = [],
+): CoverageResult {
+  const clauses = materialClauses(materialText);
+  const byLine = new Map(clauses.map((c) => [c.line, c]));
+  const exempted = new Set<number>();
+  const problems: string[] = [];
+  for (const [i, e] of exempt.entries()) {
+    const line = clauseLineOf(String(e?.locator ?? ""));
+    if (line === null) {
+      problems.push(`coverage exemption #${i} has a malformed locator ${JSON.stringify(e?.locator)} (expected #L<n>/#S<n>)`);
+      continue;
+    }
+    if (!byLine.has(line)) {
+      problems.push(`coverage exemption #${i} names ${e.locator} but the frozen material has ${clauses.length} clause(s)`);
+      continue;
+    }
+    if (typeof e.reason !== "string" || !e.reason.trim()) {
+      problems.push(`coverage exemption #${i} (${e.locator}) needs a reason — an unnamed exemption is not auditable`);
+      continue;
+    }
+    exempted.add(line);
+  }
+  const covered = new Set<number>();
+  for (const clause of clauses) {
+    if (exempted.has(clause.line)) continue;
+    const hit = candidates.some((c) => {
+      const sc = String(c?.source_clause ?? "").trim();
+      return sc && (sc.includes(clause.text) || clause.text.includes(sc));
+    });
+    if (hit) covered.add(clause.line);
+  }
+  const uncovered = clauses.filter((c) => !covered.has(c.line) && !exempted.has(c.line)).map((c) => ({ locator: c.locator, text: c.text }));
+  return { clauses: clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
 }
 
 /** P2 子步骤：谓词里的表/列必须在探针里存在（E5②/E5⑤：sql、sql-pair、count、exists 共用） */
@@ -367,29 +463,47 @@ export interface LintResult {
   schema_skipped: boolean;
   ok: boolean;
   issues: LintIssue[];
+  /** #34: frozen-material clause coverage (null when no material text was given) */
+  coverage: CoverageResult | null;
 }
 
 export function lintCandidates(
   candidates: PrepareCandidate[],
-  opts: { materialText?: string; materialIndex?: MaterialIndex; schema?: SchemaProbe } = {},
+  opts: { materialText?: string; materialIndex?: MaterialIndex; schema?: SchemaProbe; coverageExempt?: CoverageExemption[] } = {},
 ): LintResult {
   const issues: LintIssue[] = [];
+  let coverage: CoverageResult | null = null;
+  const p1Passing: PrepareCandidate[] = [];
   candidates.forEach((c, index) => {
     let stage = "P1";
     let reason: string | null = null;
     if (opts.materialText !== undefined) reason = p1(c, opts.materialText, opts.materialIndex);
     if (!reason) {
+      p1Passing.push(c);
       stage = "P2";
       reason = p2(c, opts.schema);
     }
     if (reason) issues.push({ index, source_clause: c.source_clause, stage, reason });
   });
+  if (opts.materialText !== undefined) {
+    // #34: coverage is judged on candidates that survived P1/P2 — a rejected
+    // candidate cannot claim a clause, or the drop stays invisible.
+    // #34: a clause is "claimed" once some candidate passed P1 (is a verbatim
+    // clause claim). P2/P3 rejection already blocks ready on its own; coverage is
+    // the orthogonal guard against a clause nobody even tried to assert.
+    coverage = checkCoverage(opts.materialText, p1Passing, opts.coverageExempt ?? []);
+    for (const u of coverage.uncovered) {
+      issues.push({ index: -1, source_clause: u.text, stage: "COVERAGE", reason: `clause ${u.locator} is not covered by any candidate — add a candidate or declare a named exemption` });
+    }
+    for (const p of coverage.problems) issues.push({ index: -1, source_clause: "", stage: "COVERAGE", reason: p });
+  }
   return {
     checked: candidates.length,
     p1_skipped: opts.materialText === undefined,
     schema_skipped: opts.schema === undefined,
     ok: issues.length === 0,
     issues,
+    coverage,
   };
 }
 
@@ -473,6 +587,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
 
   const kept: Array<{ candidate: PrepareCandidate; vu: VerifyUnit }> = [];
+  const p1Passing: PrepareCandidate[] = [];
   // Deterministic-rejection dedupe key (#21): a replayed P1/P2 verdict is the
   // same fact, not a new rejection — round only exists for P3 retries.
   const rejectedKeys = new Set<string>();
@@ -503,6 +618,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
         if (pushDeterministic(candidate.source_clause, "P1", r1)) feedback.push(r1);
         continue;
       }
+      p1Passing.push(candidate);
       const r2 = p2(candidate, opts.schemaProbe);
       if (r2) {
         if (pushDeterministic(candidate.source_clause, "P2", r2)) feedback.push(r2);
@@ -533,6 +649,25 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     if (reachedP3 === 0) break;
   }
 
+  if (kept.length > 0) {
+    // #34: every frozen clause must be claimed by a kept VU (or exempted).
+    const coverage = checkCoverage(materialText, p1Passing, opts.coverageExempt ?? []);
+    if (coverage.uncovered.length || coverage.problems.length) {
+      const diagnostics: Array<{ stage: string; message: string }> = coverage.uncovered.map((u) => ({
+        stage: "P1c",
+        message: `clause ${u.locator} is not covered by any frozen VU: "${u.text.slice(0, 60)}" — add a candidate or declare --coverage-exempt (an unnamed drop must not freeze)`,
+      }));
+      diagnostics.push(...coverage.problems.map((p) => ({ stage: "P1c", message: p })));
+      return {
+        verdict: "error",
+        units: kept.map((k) => k.vu),
+        rejected,
+        rounds: round,
+        materials_sha256: materialsSha,
+        diagnostics,
+      };
+    }
+  }
   if (kept.length === 0) {
     return {
       verdict: "needs-material",

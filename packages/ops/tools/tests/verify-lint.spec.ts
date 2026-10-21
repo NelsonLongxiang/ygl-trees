@@ -249,4 +249,55 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     expect(lintList.length).toBeGreaterThan(0);
     expect(prepList).toEqual(lintList);
   });
+
+  it("#34: a clause no candidate claims is a COVERAGE issue (not silently ready)", () => {
+    const nl = String.fromCharCode(10);
+    const text = ["第一条规则：账面必须平衡。", "第二条规则：金额不得为负。", "第三条规则：日期必须完整。"].join(nl) + nl;
+    const mat = join(HOME, "cov-material.txt");
+    writeFileSync(mat, text, "utf8");
+    const covCand = join(HOME, "cov-candidates.json");
+    writeFileSync(
+      covCand,
+      JSON.stringify({
+        candidates: [
+          sqlCandidate("第一条规则：账面必须平衡。", "amount_cents", 1),
+          sqlCandidate("第二条规则：金额不得为负。", "amount_cents", 2),
+        ],
+      }),
+      "utf8",
+    );
+    const r = jrun(["verify", "lint-candidates", covCand, "--text", mat, "--db", snap, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.ok).toBe(false);
+    expect(r.j.coverage).toMatchObject({ clauses: 3, covered: 2, exempted: 0 });
+    expect(r.j.coverage.uncovered).toHaveLength(1);
+    expect(String(r.j.coverage.uncovered[0].locator)).toBe("#L3");
+    const covIssues = (r.j.issues as any[]).filter((x) => x.stage === "COVERAGE");
+    expect(covIssues).toHaveLength(1);
+    expect(String(covIssues[0].reason)).toMatch(/#L3/);
+
+    const exemptFile = join(HOME, "cov-exempt.json");
+    writeFileSync(exemptFile, JSON.stringify({ exempt: [{ locator: "#L3", reason: "heading, no rule" }] }), "utf8");
+    const ok = jrun(["verify", "lint-candidates", covCand, "--text", mat, "--db", snap, "--coverage-exempt", exemptFile, "--json"]);
+    expect(ok.j.ok).toBe(true);
+    expect(ok.j.coverage).toMatchObject({ clauses: 3, covered: 2, exempted: 1 });
+  });
+
+  it("#34: a clause-style locator naming a missing clause is a P1 issue", () => {
+    const nl = String.fromCharCode(10);
+    const text = ["第一条规则：账面必须平衡。", "第二条规则：金额不得为负。"].join(nl) + nl;
+    const mat = join(HOME, "loc-material.txt");
+    writeFileSync(mat, text, "utf8");
+    const badLocator = {
+      source_clause: "第一条规则：账面必须平衡。",
+      anchor: { quote: "第一条规则：账面必须平衡。", locator: "#S9" },
+      checker: { type: "count", predicate: { from: "bills", select: [] }, op: ">=", value: 0 },
+    };
+    const f = join(HOME, "loc-candidates.json");
+    writeFileSync(f, JSON.stringify({ candidates: [badLocator] }), "utf8");
+    const r = jrun(["verify", "lint-candidates", f, "--text", mat, "--json"]);
+    expect(r.j.ok).toBe(false);
+    const issue = (r.j.issues as any[]).find((x) => x.stage === "P1");
+    expect(String(issue.reason)).toMatch(/clause/);
+  });
 });

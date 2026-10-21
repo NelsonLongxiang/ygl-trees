@@ -140,7 +140,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | 阶段 | 门 | 失败后果 |
 |---|---|---|
 | **P0** 材料冻结 | 材料非空；`materials_sha256` 由调用方文本算出；命中 `knownMaterialHashes` 只记 diagnostic（v1 是提示不是拦截） | 空材料 → `needs-material` |
-| **P1** 判据抽取 | `source_clause` 与 `anchor.quote` 都必须在冻结材料里**逐字**存在；`anchor.locator` 必须由 `material_index` 声明；含不可判词（应尽量/建议/合理/酌情/视情况/适当）→ 拒 | 记 `rejected[stage=P1]` |
+| **P1** 判据抽取 | `source_clause` 与 `anchor.quote` 都必须在冻结材料里**逐字**存在；`anchor.locator` 必须由 `material_index` 声明，子句式 locator（`#L<n>`/`#S<n>`，可带文件名前缀）必须命中存在的子句且该子句含 quote；含不可判词（应尽量/建议/合理/酌情/视情况/适当）→ 拒 | 记 `rejected[stage=P1]` |
 | **P2** 翻译成 VU | 只允许**谓词 AST**（手写 `sql` 一律拒；count/exists 的 `sql` 形态也拒）；`$vu:` 只允许出现在 `count.from` 与 sql-pair 侧，谓词内出现 → 拒（金额字面量 `$50` 不误伤）；渲染不得含时间函数；schema 探针**全量**校验表/列（sql、sql-pair 双侧、count、exists）；agent 必须带非空 rubric；`requires_execution` 只属于 agent 型；compare 走同一 `validateCompareSpec` | 记 `rejected[stage=P2]` |
 | **P3** 盲审 | 复用 run 期 `ReviewRunner`（`blind:true`）：三问 fid/decidable/not-vacuous 缺一不可，未知 verdict/同问矛盾/reject/unclear/引用别的 VU 的 ok/锚点非逐字 → 都不 ready；**上限 3 轮**，每轮新上下文，出现可冻候选即收敛 | 记 `rejected[stage=P3]`；无 reviewer → `error` |
 | **P4** 红队门禁 | 由调用方注入（要真库/真附件/真对抗样本）；未注入**不落 ready**（CLI 可退化为"空库最小红队"） | 失败 → `error`，且**不落可冻结 spec**（`spec` 省略） |
@@ -150,6 +150,8 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 
 > **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
+
+**子句覆盖（#34，0.114.1）**：材料每个非空行=一条冻结子句（`#L<n>`，`#S<n>` 为同义别名）。prepare 在 P1–P3 之后、P4 之前要求每条子句被**至少一个通过 P1 的候选**的 `source_clause` 覆盖，否则以 `error` 收口、`diagnostics[stage=P1c]` 点名未覆盖子句——判据不得静默消失（丢一条规则冻结出 ready 的 spec，会 PASS 本应 FAIL 的数据）。`--coverage-exempt <file>`（JSON 数组或 `{exempt:[{locator,reason}]}`）提供**具名**豁免，缺 reason 或 locator 不存在即拒；`verify lint-candidates --text` 同一套覆盖检查，输出增 `coverage:{clauses,covered,exempted,uncovered}`，`issues[].stage="COVERAGE"`。
 
 ## 1.7 file 检查的排除集（`ignore`，0.98.0）
 

@@ -312,6 +312,32 @@ export function normalizeAsOf(raw: unknown, fallback: string): string {
   return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMin * 60000).toISOString();
 }
 
+/** GitHub #34: load named clause exemptions (JSON array or { exempt: [...] }). */
+function loadCoverageExempt(args: any): { ok: true; exempt: Array<{ locator: string; reason?: string }> } | { ok: false; code: number; problem: string } {
+  const file = args.flags["coverage-exempt"];
+  if (file === undefined) return { ok: true, exempt: [] };
+  const path = String(file);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e: any) {
+    return { ok: false, code: 1, problem: `cannot read --coverage-exempt ${path}: ${e?.message || e}` };
+  }
+  const list = Array.isArray(raw) ? raw : (raw as { exempt?: unknown })?.exempt;
+  if (!Array.isArray(list)) return { ok: false, code: 2, problem: "--coverage-exempt must be a JSON array or { exempt: [{ locator, reason }] }" };
+  const exempt: Array<{ locator: string; reason?: string }> = [];
+  for (const [i, e] of list.entries()) {
+    if (typeof e === "string") {
+      exempt.push({ locator: e, reason: "named exemption" });
+      continue;
+    }
+    const o = (e ?? {}) as { locator?: unknown; reason?: unknown };
+    if (typeof o.locator !== "string") return { ok: false, code: 2, problem: `--coverage-exempt entry #${i} has no locator` };
+    exempt.push({ locator: o.locator, ...(typeof o.reason === "string" ? { reason: o.reason } : {}) });
+  }
+  return { ok: true, exempt };
+}
+
 export function findMaterial(env: Env, id: string): MaterialRecord {
   const dir = join(paths(env).materials, id);
   const file = join(dir, "material.json");
@@ -360,7 +386,7 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
   run: ["db", "submission", "no-archive"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
@@ -369,7 +395,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   export: ["out"],
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
-  "lint-candidates": ["text", "db"],
+  "lint-candidates": ["text", "db", "coverage-exempt"],
   example: ["checker", "null-ops"],
   meta: [],
   probe: ["matrix", "target", "only"],
@@ -559,6 +585,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       // 0.104.0：列探针问快照库要真实 schema（PRAGMA），DDL 文本漏 ALTER TABLE 加的列
       const schemaProbe = probeOfDb(dbPath);
+      const covOpt = loadCoverageExempt(args);
+      if (!covOpt.ok) {
+        bad(ctx, covOpt.problem);
+        return covOpt.code;
+      }
       const attachmentStage = stageMaterialAttachments(env, material);
       const prevVersion = latestVersionOf(env, materialId);
       // ③ --draft：干跑——跑完整 P0–P5，但不落盘（不写 spec/prepare/trace，不消耗 spec_version）
@@ -567,6 +598,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         runner: fileRunner(candidatesFile.candidates ?? []),
         reviewer: fileReviewer(reviewsFile.reviews ?? []),
         redteam: minimalRedTeam(schema.ddl, attachmentStage?.dir),
+        coverageExempt: covOpt.exempt,
         materialIndex,
         schemaProbe,
         specId: `spec_${short(sha256(materialId))}`,
@@ -1323,7 +1355,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         }
       }
-      const res = lintCandidates(candidates, { materialText, schema });
+      const covOpt = loadCoverageExempt(args);
+      if (!covOpt.ok) {
+        bad(ctx, covOpt.problem);
+        return covOpt.code;
+      }
+      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt });
       if (ctx.json) {
         console.log(JSON.stringify(res));
         return 0;
@@ -1333,6 +1370,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         res.schema_skipped ? "P2 schema skipped: no --db" : "",
       ].filter(Boolean);
       const skippedTail = skipped.length ? ` (${skipped.join("; ")})` : "";
+      if (res.coverage) {
+        out(ctx, paint(C.dim, `  coverage: ${res.coverage.covered}/${res.coverage.clauses} clause(s) covered, ${res.coverage.exempted} exempt${res.coverage.uncovered.length ? `, ${res.coverage.uncovered.length} uncovered` : ""}`, ctx.color));
+      }
       if (res.ok) {
         out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${skippedTail}`);
         return 0;
