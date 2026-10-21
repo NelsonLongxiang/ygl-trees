@@ -127,6 +127,16 @@
       "path": "scripts/verify-run.mjs",
       "sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
       "role": "test"
+    },
+    {
+      "path": "vitest.config.ts",
+      "sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
+      "role": "test"
     }
+  ],
+  "source_roots": [
+    "packages",
+    "apps",
+    "tests"
   ]
 }

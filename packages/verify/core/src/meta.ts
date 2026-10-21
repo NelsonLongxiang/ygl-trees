@@ -33,8 +33,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 /** Rule-set version: 1.0 = R1–R3 over a v1 index (0.111.0); 1.1 = v2 index
- *  registrations (R3 exemption by registration, R5a) — v1 repos judge the same. */
-export const META_VERSION = "1.1";
+ *  registrations (R3 exemption by registration, R5a); 1.2 = R3 scope ruling
+ *  (fdc757f6 2026-10-22: gitignored paths out of scope, `.ts/.mts/.cts` in the
+ *  closed set, `source_roots[]` exempts declared product source dirs) — v1 repos
+ *  judge the same throughout. */
+export const META_VERSION = "1.2";
 /** On-disk index schema versions this rule set reads. A future format must be
  *  added here and be rejected by name when unknown — never silently mis-read. */
 export const META_INDEX_VERSIONS: readonly number[] = [1, 2];
@@ -107,6 +110,9 @@ interface IndexState {
   specsListed: number;
   orchestration: OrchestrationEntry[];
   tooling: ToolingEntry[];
+  /** v2: declared product source roots (named subdirs exempt from the R3
+   *  executable-artifact scan); absent = strict (nothing exempt). */
+  sourceRoots: string[];
 }
 
 const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
@@ -131,9 +137,24 @@ function r2fail(evidence: Record<string, unknown>): MetaRule {
 
 /** Registration shape (v2): every entry must carry the declared keys with the
  *  closed-set roles; content checks (file exists, sha matches, …) are R3/R5a. */
-function registrationShapeProblems(index: { orchestration?: unknown; tooling?: unknown }): string[] {
+function registrationShapeProblems(index: { orchestration?: unknown; tooling?: unknown; source_roots?: unknown }): string[] {
   const problems: string[] = [];
   const seenPaths = new Set<string>();
+  // v2 source_roots (charter §4.4 R3, fdc757f6 2026-10-22): named subdirs only —
+  // no ".", empty, absolute, drive-letter, backslash or ".." entries (a "."
+  // entry would exempt the whole repo); absent = strict full scan.
+  if (index.source_roots !== undefined) {
+    if (!Array.isArray(index.source_roots)) problems.push("source_roots must be an array");
+    else index.source_roots.forEach((raw, i) => {
+      if (typeof raw !== "string" || !raw) {
+        problems.push(`source_roots[${i}] must be a non-empty string`);
+        return;
+      }
+      if (raw === "." || raw.startsWith("/") || /^[A-Za-z]:/.test(raw) || raw.includes("\\") || raw.split("/").includes("..") || raw.split("/").includes("")) {
+        problems.push(`source_roots[${i}] must be a named repo-relative subdir (no ".", "..", absolute, backslash or trailing slash): ${JSON.stringify(raw)}`);
+      }
+    });
+  }
   const checkPath = (kind: string, i: number, p: unknown): string | null => {
     if (typeof p !== "string" || !p) return `${kind}[${i}] without path`;
     if (p.startsWith("/") || /^[A-Za-z]:/.test(p) || p.includes("\\") || p.split("/").includes("..")) return `${kind}[${i}] path must be repo-relative POSIX (no ".."): ${p}`;
@@ -168,7 +189,7 @@ function registrationShapeProblems(index: { orchestration?: unknown; tooling?: u
 function r2(repo: string): { rule: MetaRule; index: IndexState } {
   const indexFile = join(repo, "verify", "meta.json");
   const specsDir = join(repo, "verify", "specs");
-  const unreadable = (version: number | null): IndexState => ({ version, readable: false, specsListed: 0, orchestration: [], tooling: [] });
+  const unreadable = (version: number | null): IndexState => ({ version, readable: false, specsListed: 0, orchestration: [], tooling: [], sourceRoots: [] });
   if (!existsSync(indexFile)) {
     // Nothing to reconcile: a repo without verifier artifacts has no index to
     // desync. (A present verify/specs dir without an index fails below.)
@@ -183,7 +204,7 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     }
     return { rule: r2fail({ reason: "verify/specs exists but verify/meta.json is missing" }), index: unreadable(null) };
   }
-  let index: { meta_index_version?: unknown; specs?: Array<{ file?: string; sha256?: string }>; orchestration?: unknown; tooling?: unknown };
+  let index: { meta_index_version?: unknown; specs?: Array<{ file?: string; sha256?: string }>; orchestration?: unknown; tooling?: unknown; source_roots?: unknown };
   try {
     index = JSON.parse(readFileSync(indexFile, "utf8"));
   } catch (e: any) {
@@ -223,17 +244,18 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
   }
   // v1 index: registrations are not part of the format — not read (charter:
   // "v1 索引按 v1 规则只读兼容、不读登记"). v2: the arrays must be well-formed.
-  const state: IndexState = { version, readable: true, specsListed: listed.size, orchestration: [], tooling: [] };
+  const state: IndexState = { version, readable: true, specsListed: listed.size, orchestration: [], tooling: [], sourceRoots: [] };
   if (version === 2) {
     const shape = registrationShapeProblems(index);
     problems.push(...shape);
     if (shape.length === 0) {
       state.orchestration = ((index.orchestration as OrchestrationEntry[] | undefined) ?? []).map((e) => ({ ...e, path: posix(e.path) }));
       state.tooling = ((index.tooling as ToolingEntry[] | undefined) ?? []).map((e) => ({ ...e, path: posix(e.path) }));
+      state.sourceRoots = ((index.source_roots as string[] | undefined) ?? []).map((r) => posix(r));
     }
   }
   const evidence: Record<string, unknown> = problems.length ? { problems: problems.slice(0, 10), listed: listed.size } : { listed: listed.size };
-  if (version === 2) Object.assign(evidence, { orchestration: state.orchestration.length, tooling: state.tooling.length });
+  if (version === 2) Object.assign(evidence, { orchestration: state.orchestration.length, tooling: state.tooling.length, source_roots: state.sourceRoots.length });
   return {
     rule: { id: "R2", severity: "S1", title: R2_TITLE, verdict: problems.length ? "FAIL" : "PASS", evidence },
     index: state,
@@ -243,7 +265,11 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
 /** v1 scan set (0.111.0). v2 adds `.py` (charter §4.4 R3 lists it); the v1 rule
  *  set stays byte-for-byte what v1 repos were admitted under. */
 const EXEC_EXTS_V1 = [".sh", ".mjs", ".js", ".cjs", ".ps1"];
-const EXEC_EXTS_V2 = [...EXEC_EXTS_V1, ".py"];
+/** v2 also scans `.py`, and the TypeScript family `.ts/.mts/.cts` (charter §4.4
+ *  R3, fdc757f6 2026-10-22: Node >=22 / tsx run them directly, so leaving them
+ *  out is a ready bypass). Declared `source_roots[]` keep product sources out of
+ *  this scan; everything else must be registered. */
+const EXEC_EXTS_V2 = [...EXEC_EXTS_V1, ".py", ".ts", ".mts", ".cts"];
 
 function walkFiles(dir: string, out: string[] = []): string[] {
   if (!existsSync(dir)) return out;
@@ -328,6 +354,8 @@ function r3(repo: string, index: IndexState): MetaRule {
   const problems: string[] = [];
   const v2 = index.version === 2 && index.readable;
   const exts = v2 ? EXEC_EXTS_V2 : EXEC_EXTS_V1;
+  const sourceRoots = index.sourceRoots.map((r) => r.replace(/\/+$/, ""));
+  const inSourceRoot = (rel: string): boolean => sourceRoots.some((root) => rel === root || rel.startsWith(`${root}/`));
   // v2 exemptions by registration. Orchestration entries exempt by path alone —
   // their validity (location/sha/replaced_by/sunset) is judged once, in R5a.
   // Tooling entries exempt only when the registered sha256 matches the file.
@@ -353,6 +381,9 @@ function r3(repo: string, index: IndexState): MetaRule {
     for (const rel of listFilesV2(repo)) {
       if (!exts.some((ext) => rel.endsWith(ext))) continue;
       if (orchestrationPaths.has(rel) || toolingListed.has(rel)) continue;
+      // Declared product source roots are out of the executable-artifact scan;
+      // root-level closed-set files are NOT covered by a root (guardrail 3).
+      if (inSourceRoot(rel)) continue;
       const top = rel.split("/")[0];
       if (top === "docs") problems.push(`executable artifact under docs/: ${rel}`);
       else if (!rel.includes("/")) problems.push(`loose script at repo root: ${rel}`);

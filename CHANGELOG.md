@@ -1,6 +1,6 @@
 # Changelog
 
-## 未发布
+## 0.114.0
 
 - **charter v1.2（docs-only，0.113.2 之后）**：#29 修正谱系——R5 权威拆分（R5a 静态合规 / R5b 审计方
   内嵌能力表、默认不执行）、§4.7 增 `capability_version` 列与 `unshipped` 无界、verbatim 提取规则入表注；
@@ -54,6 +54,14 @@
     WebUI 标签显示「仅结构·未知值」、报告头给一行说明，CLI 行写 `structural (未知值 "<原值>" 不在闭集内，按最保守读…)`；
     任何面都不原样透出未知值。
   - 测试：`verify-report-scope.spec`（CLI 两面 + JSON 不变 + 投影 null）、`verify.spec.tsx` +2（缺省/闭集映射）。
+
+- **#29 T8 补裁落地（charter §4.4 R3 范围 + `META_VERSION` 1.1→1.2）**：R3 扫描面=git 可见文件；
+  **gitignored 路径不属 R3 面**（其内验证驱动脚本由 P2 证据规则管辖，路径无关；`tmp/` 唯一探索白名单；
+  全局 gitignore 接受为不可机械检面）；可执行扩展名闭集 v2 起含 `.py` 与 **`.ts/.mts/.cts`**；产品源码根经
+  **`source_roots[]`** 显式声明（具名子目录，禁 `.`/`..`/绝对/反斜杠/尾斜杠，非法→R2 形状拒绝；
+  **未声明即全扫**；根级闭集文件不被 source_roots 覆盖，按登记处置）。本仓声明 `["packages","apps","tests"]`
+  并登记 `vitest.config.ts`（tooling role=test）。审计面对「source_roots 过宽」的 warning 记 §4.7 待办（不实现）。
+  测试：verify-meta +3（source_roots 豁免/非法值/严格全扫）。
 
 ## 0.113.2
 
