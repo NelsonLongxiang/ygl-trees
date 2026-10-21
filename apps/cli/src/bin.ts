@@ -828,8 +828,8 @@ export function generateLlmsManifest(): string {
       ["job tick", "run due jobs (drive with cron)"],
     ]],
     ["verify", "Spec validator (M13): material → spec → report", [
-      ["verify submit --title <t> --text <file|-> [--attach <f>]", "freeze material (text + attachments w/ sha256)"],
-      ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--draft]", "extract → translate → blind self-review → freeze spec (--draft = dry run, writes nothing)"],
+      ["verify submit --title <t> --text <file|-> [--attach <f>] [--require-meta]", "freeze material (text + attachments w/ sha256); --require-meta refuses when the repo meta gate fails"],
+      ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--draft] [--require-meta]", "extract → translate → blind self-review → freeze spec (--draft = dry run, writes nothing); meta warn by default, --require-meta refuses"],
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
       ["verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]", "freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check (--db retargets the job only); --patrol only when the verified db IS the workspace db"],
       ["verify register <sealed-binary> [--keys <file>]", "register a sealed yglverify build (footer chain + signature → registrations/ + binaries/)"],

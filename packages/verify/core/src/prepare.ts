@@ -442,6 +442,10 @@ async function p3(
 /**
  * 主流水线：多轮 prepare（≤maxRounds），每轮 P1→P2→P3 过滤，最后 P4 红队 + P5 冻版。
  * 任一候选在任何阶段被拒都记进 rejected（带阶段与原因），不静默丢。
+ *
+ * GitHub #21：P1/P2 是**确定性**拒绝（同一候选跨轮必得同一结论），轮循环只为 P3 盲审重试而存在——
+ * 因此确定性拒绝按内容键跨轮去重（保留首次顺序），且当一整轮没有任何候选进入 P3（全部确定性拒）
+ * 时直接收敛，避免 1 候选 × 3 轮 → rejected=3 的重复记账。
  */
 export async function prepareSpec(materialText: string, opts: PrepareOptions): Promise<PrepareResult> {
   const now = opts.nowIso ?? (() => new Date().toISOString());
@@ -469,6 +473,16 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
 
   const kept: Array<{ candidate: PrepareCandidate; vu: VerifyUnit }> = [];
+  // Deterministic-rejection dedupe key (#21): a replayed P1/P2 verdict is the
+  // same fact, not a new rejection — round only exists for P3 retries.
+  const rejectedKeys = new Set<string>();
+  const pushDeterministic = (source_clause: string, stage: "P1" | "P2", reason: string) => {
+    const key = `${stage} ${source_clause} ${reason}`;
+    if (rejectedKeys.has(key)) return false;
+    rejectedKeys.add(key);
+    rejected.push({ source_clause, stage, reason });
+    return true;
+  };
   let round = 0;
   let feedback: string[] | undefined;
   while (round < maxRounds) {
@@ -482,19 +496,19 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
       feedback,
     });
     feedback = [];
+    let reachedP3 = 0;
     for (const [i, candidate] of candidates.entries()) {
       const r1 = p1(candidate, materialText, opts.materialIndex);
       if (r1) {
-        rejected.push({ source_clause: candidate.source_clause, stage: "P1", reason: r1 });
-        feedback.push(r1);
+        if (pushDeterministic(candidate.source_clause, "P1", r1)) feedback.push(r1);
         continue;
       }
       const r2 = p2(candidate, opts.schemaProbe);
       if (r2) {
-        rejected.push({ source_clause: candidate.source_clause, stage: "P2", reason: r2 });
-        feedback.push(r2);
+        if (pushDeterministic(candidate.source_clause, "P2", r2)) feedback.push(r2);
         continue;
       }
+      reachedP3++;
       const r3 = await p3(candidate, kept.length + i, opts.reviewer, materialText, round);
       if (!r3.ok) {
         rejected.push({ source_clause: candidate.source_clause, stage: "P3", reason: r3.reason ?? "rejected by self-review" });
@@ -514,6 +528,9 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     }
     if (feedback.length === 0) break; // 全过，提前收敛
     if (kept.length > 0) break; // 有可用的就不再多轮（避免反复烧模型）
+    // #21 short-circuit: nothing reached P3 this round → no candidate is left
+    // for the blind-review retry loop; retrying would only duplicate facts.
+    if (reachedP3 === 0) break;
   }
 
   if (kept.length === 0) {

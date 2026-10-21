@@ -220,26 +220,33 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     const sub = jrun(["verify", "submit", "--title", "lint-equivalence", "--text", matFile, "--json"]);
     expect(sub.rc).toBe(0);
     const materialId = sub.j.material_id as string;
-    // P3 reviews for both candidates (P2 rejects the second before P3 runs)
+    // P3 reviews keyed by source_clause (fileReviewer shape); candidate 1 must
+    // pass P3 so both sides hold exactly one deterministic P2 rejection.
     const reviews = join(HOME, "reviews.json");
     writeFileSync(
       reviews,
       JSON.stringify({
-        reviews: [1, 2].map((n) => [
-          { vu_id: `V${n}`, question: "faithful", verdict: "ok", reason: "逐字对应", anchor: ANCHOR(n === 1 ? "账单金额不得为负。" : "未知列不得参与判据。", n) },
-          { vu_id: `V${n}`, question: "decidable", verdict: "ok", reason: "有机械判据", anchor: ANCHOR(n === 1 ? "账单金额不得为负。" : "未知列不得参与判据。", n) },
-          { vu_id: `V${n}`, question: "not-vacuous", verdict: "ok", reason: "空表会被判 NM", anchor: ANCHOR(n === 1 ? "账单金额不得为负。" : "未知列不得参与判据。", n) },
-        ]),
+        reviews: [
+          {
+            source_clause: "账单金额不得为负。",
+            findings: [
+              { question: "faithful", verdict: "ok", reason: "逐字对应", anchor: ANCHOR("账单金额不得为负。", 1) },
+              { question: "decidable", verdict: "ok", reason: "有机械判据", anchor: ANCHOR("账单金额不得为负。", 1) },
+              { question: "not-vacuous", verdict: "ok", reason: "空表会被判 NM", anchor: ANCHOR("账单金额不得为负。", 1) },
+            ],
+          },
+        ],
       }),
       "utf8",
     );
     const prep = jrun(["verify", "prepare", materialId, "--candidates", candFile, "--reviews", reviews, "--db", snap, "--draft", "--json"]);
     expect([0, 1]).toContain(prep.rc);
     const prepareRejected = (prep.j.rejected_detail as any[]).map((x) => ({ index: x.index ?? null, stage: x.stage, reason: x.reason, source_clause: x.source_clause }));
-    // prepare does not carry index; compare by stage+reason+clause
-    const prepSet = prepareRejected.map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
-    const lintSet = (lint.j.issues as any[]).map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
-    expect(lintSet.length).toBeGreaterThan(0);
-    for (const s of lintSet) expect(prepSet).toContain(s);
+    // #21: deterministic rejections are no longer replayed across rounds, so
+    // the two lists must be EQUAL (same order, same content) — not just sets.
+    const prepList = prepareRejected.map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
+    const lintList = (lint.j.issues as any[]).map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
+    expect(lintList.length).toBeGreaterThan(0);
+    expect(prepList).toEqual(lintList);
   });
 });

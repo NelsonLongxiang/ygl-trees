@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.111.1
+
+GitHub #21（prepare 确定性拒重放）+ charter §4.2 v2 准入闸落地（案 A：meta 拒收走 `meta_error`）。
+
+- **#21 prepare 确定性拒跨轮去重**：P1/P2 是确定性拒绝（同候选跨轮必得同一结论），轮循环只为 P3
+  盲审重试而存在——现按内容键 `(stage, source_clause, reason)` 跨轮去重并保留首次顺序；一整轮没有任何
+  候选进入 P3 时直接收敛（1 候选 × 3 轮不再产生 3 条 rejected）。**lint 拒绝集与 prepare `rejected`
+  从「集合相等」升级为「列表相等」**（同源同序，测试锁死）。
+- **meta 准入闸（charter §4.2，案 A）**：`verify submit`/`verify prepare` 增加 `--meta-repo <dir>`
+  （默认 cwd）与 `--require-meta`。默认 **warn**（失败仅警示 + `meta_warning` 字段/`diagnostics[].stage=META`）；
+  `--require-meta` 时拒收：`verdict=ERROR`、rc=1、单 JSON 对象带 `meta_error` 三码——
+  `meta_failed`（R1/R2/R3 失败）、`meta_unverified`（无 AGENTS.md/未跑）、`meta_index_unknown`
+  （`meta_index_version` 未知）。`evidence.spec_error` 五码**冻结不动**（跨层：接受面尚无 report 对象）。
+- 0.113.0 将翻转为硬拒收默认并落地版本键控机械门（charter §4.2），help 已用 deprecation-style 标注。
+- 门禁：unit 660 → **667**（#21 两测 + meta 闸五测）；contract 133 不变。
+
 ## 0.111.0
 
 **验证器生态根规范（charter）入档 + `verify meta` v1**（属主令 2026-10-21 13:18：「验证器的开发与

@@ -102,6 +102,32 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(res.rejected[0].reason).toMatch(/not declared by the material index/);
   });
 
+  it("#21 确定性 P1 拒跨轮不重放：1 候选 → rejected 1 条、rounds=1", async () => {
+    const bad = goodCandidate({ source_clause: "账单合计必须等于申报合计" });
+    const res = await prepareSpec(MATERIAL, {
+      asOf: AS_OF,
+      runner: runnerOf([bad]), // same candidate every round = replay scenario
+      reviewer: reviewerOf(okReview),
+      redteam: () => [],
+    });
+    expect(res.verdict).toBe("needs-material");
+    expect(res.rejected).toHaveLength(1);
+    expect(res.rejected[0].stage).toBe("P1");
+    expect(res.rounds).toBe(1); // no candidate reached P3 → short-circuit
+  });
+
+  it("#21 有候选过 P3 时提前收敛，确定性拒只记一次", async () => {
+    const bad = goodCandidate({ source_clause: "账单合计必须等于申报合计" });
+    const res = await prepareSpec(MATERIAL, {
+      asOf: AS_OF,
+      runner: runnerOf([bad, goodCandidate()]),
+      reviewer: reviewerOf(okReview),
+      redteam: () => [],
+    });
+    expect(res.verdict).toBe("ready");
+    expect(res.rejected.filter((r) => r.stage === "P1")).toHaveLength(1);
+  });
+
   it("P1：不可判措辞（应尽量/建议）→ 拒", async () => {
     const res = await prepareSpec(MATERIAL + "应尽量核对全部单据。", {
     asOf: AS_OF,

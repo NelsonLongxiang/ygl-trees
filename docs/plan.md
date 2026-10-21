@@ -300,6 +300,14 @@ fdc757f6；五原则保留；§4.1 对账 verify meta 0.105.x 未落=self-check�
 0.113.0 硬拒 + 版本键控机械门；§4.3 16 向 probe 并集 RFC8032；§4.4 R1-R3 + R4 缓行；§5 生效=属主令
 2026-10-21 13:18）。`verify meta [<repo>]` v1：R1 AGENTS.md、R2 verify/meta.json（meta_index_version:1）↔specs 双向+sha、
 R3 无散落可执行件；rc 镜像 verdict；contract 12 新增 3 检查（130→133）。unit 656→660。
+发布（2026-10-21）：commit **`1577fdf`**；tag **`v0.111.0 = 4a9d2b4e… → ^{commit}=1577fdf…`**（双远端）；
+npm **latest=0.111.0**、shasum **`2b78a93c…`**；官方字节 **1,451,000 B / sha256 `00ce4129…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.111.1 记录（2026-10-21，#21 + meta 准入闸）**：prepare P1/P2 确定性拒跨轮去重（内容键，保留首序）
++ 无候选进 P3 即收敛（1 候选×3 轮→1 条 rejected）；lint==prepare 升「列表相等」（测试锁）。
+charter §4.2 案 A 落地：submit/prepare 增 `--meta-repo`/`--require-meta`，默认 warn（`meta_warning`/
+diagnostics META）、require 拒收 ERROR rc1 + `meta_error` 三码（failed/unverified/index_unknown），
+`spec_error` 五码不动。unit 660→667。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

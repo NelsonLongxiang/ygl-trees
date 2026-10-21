@@ -1,0 +1,98 @@
+/**
+ * charter §4.2 v2 gate (0.111.x): meta admission on the accept surface.
+ * Default = warn; `--require-meta` refuses with ERROR + `meta_error`
+ * (meta_failed | meta_unverified | meta_index_unknown). `spec_error` (report
+ * layer) is deliberately untouched. `--meta-repo` selects the verifier repo.
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const REPO = resolve(__dirname, "../../../..");
+const BIN = resolve(REPO, "dist/bundle/bin.cjs");
+const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+
+let HOME = "";
+let base = "";
+let matFile = "";
+
+function jrun(args: string[]) {
+  const r = spawnSync(process.execPath, [BIN, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, YGL_HOME: HOME },
+  });
+  let j: any = null;
+  try {
+    j = JSON.parse((r.stdout || "").trim());
+  } catch {
+    j = null;
+  }
+  return { rc: r.status ?? -1, j, raw: (r.stdout || "") + (r.stderr || "") };
+}
+
+function repo(name: string, agents: boolean, extra?: (dir: string) => void): string {
+  const dir = join(base, name);
+  mkdirSync(dir, { recursive: true });
+  if (agents) writeFileSync(join(dir, "AGENTS.md"), "# fixture\n", "utf8");
+  extra?.(dir);
+  return dir;
+}
+
+describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
+  beforeAll(() => {
+    HOME = mkdtempSync(join(tmpdir(), "ygl-metagate-home-"));
+    base = mkdtempSync(join(tmpdir(), "ygl-metagate-repos-"));
+    jrun(["db", "init"]);
+    matFile = join(base, "material.txt");
+    writeFileSync(matFile, "退款金额不得超过原单金额。\n", "utf8");
+  });
+
+  afterAll(() => {
+    rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  it("--require-meta refuses an unverified repo (no AGENTS.md) with meta_unverified", () => {
+    const dir = repo("no-agents", false);
+    const r = jrun(["verify", "submit", "--title", "g1", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.j.meta_error).toBe("meta_unverified");
+    expect(String(r.j.error)).toMatch(/meta gate/);
+  });
+
+  it("--require-meta refuses a failing gate with meta_failed (R3 stray script)", () => {
+    const dir = repo("bad-r3", true, (d) => writeFileSync(join(d, "run.sh"), "#!/bin/sh\n", "utf8"));
+    const r = jrun(["verify", "submit", "--title", "g2", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.j.meta_error).toBe("meta_failed");
+    expect(r.j.meta.rules.find((x: any) => x.id === "R3").verdict).toBe("FAIL");
+  });
+
+  it("--require-meta distinguishes an unknown index format (meta_index_unknown)", () => {
+    const dir = repo("bad-index", true, (d) => {
+      mkdirSync(join(d, "verify", "specs"), { recursive: true });
+      writeFileSync(join(d, "verify", "specs", "s.json"), "{}\n", "utf8");
+      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, specs: [] }), "utf8");
+    });
+    const r = jrun(["verify", "submit", "--title", "g3", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.j.meta_error).toBe("meta_index_unknown");
+  });
+
+  it("warn mode proceeds and records meta_warning in the JSON receipt", () => {
+    const dir = repo("warn-r3", true, (d) => writeFileSync(join(d, "probe.mjs"), "export {}\n", "utf8"));
+    const r = jrun(["verify", "submit", "--title", "g4", "--text", matFile, "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.material_id).toBeTruthy();
+    expect(String(r.j.meta_warning)).toMatch(/meta gate failed/);
+  });
+
+  it("a clean repo leaves the receipt untouched", () => {
+    const dir = repo("clean-meta", true);
+    const r = jrun(["verify", "submit", "--title", "g5", "--text", matFile, "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.meta_warning).toBeUndefined();
+  });
+});
