@@ -7,8 +7,11 @@
   依据 fdc757f6 对 #29 的裁定。无代码面变更。
 - **#27 方案 T6：渲染面透出语义边界（缺省按 structural）**。契约 ≤1.2 的报告没有 `semantic_scope` 字段，
   此前任何渲染面都看不出「这份 PASS 在哪一层成立」——父验证器对子归档的 PASS 容易被读成「子结论为真」（#27 Q3，K3 双钉）。
-  - **WebUI 报告看板**：运行记录每行、报告头、VU 表各带「边界」标签（structural「仅结构」/ factual「事实」/ semantic「语义」）；
-    无字段 → 显示「仅结构·缺省」并在报告头给一行说明「父 PASS 不代表子结论为真」。`ScopeTag` / `scopeLabel` 可测导出。
+  - **WebUI 报告看板**：运行记录每行、报告头各带一个「边界」标签（structural「仅结构」/ factual「事实」/ semantic「语义」）；
+    无字段 → 显示「仅结构·缺省」并在报告头给**一行**说明「父 PASS 不代表子结论为真」；VU 表只在报告真带 `semantic_scope`
+    （契约 1.3 起）时才加「边界」列，缺省不逐行重复。说明走 Tooltip + 可聚焦 + `aria-label`（键盘 / 触屏 / 读屏可达）；
+    缺省提示只说「按最保守读」、不描述检查器实际做了什么。`ReportDetail` / `ScopeTag` / `scopeLabel` / `scopeHint` 可测导出——
+    种子库没有报告，运行时视图验证器画不到新 UI，其证据是夹具静态渲染单测（监督席评审 ①②③）。
   - **服务端列表投影**（`verify-web.ts listReports`）：`semantic_scope` 原样透传，无字段为 `null`——服务端不替报告发明值，
     兜底在 UI。
   - **CLI**：`verify run` / `verify report <run>` 的人类输出首屏增一行 `semantic_scope <值>`；无字段时写
