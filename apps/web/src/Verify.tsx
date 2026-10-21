@@ -9,7 +9,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, Listy, message as antdMessage, Space, Table, Tabs, Tag, Typography, Upload,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, Listy, message as antdMessage, Space, Table, Tabs, Tag, Tooltip, Typography, Upload,
 } from "antd";
 
 import type {
@@ -34,6 +34,56 @@ const verdictColor: Record<string, string> = {
 function VerdictTag({ verdict }: { verdict: string }) {
   // outlined word + color (DESIGN.md: color is reinforcement, never a filled chip with white text)
   return <ToneTag color={verdictColor[verdict] ?? C.secondary}>{verdict || "—"}</ToneTag>;
+}
+
+/**
+ * 语义边界（#27 Q3 / 方案 T6）：一份 PASS 只在它声明的层面上成立。契约 ≤1.2 的报告没有
+ * `semantic_scope` 字段，按**最保守**的 structural 读（fail-closed）——父验证器对子归档的 PASS
+ * 只说明「子归档在场、可验」，不说明子结论为真。渲染面必须首屏透出，不能只在 JSON 里。
+ */
+export const SCOPE_DEFAULT = "structural";
+const SCOPE_LABEL: Record<string, string> = { structural: "仅结构", factual: "事实", semantic: "语义" };
+/** 声明值的说明：描述该层断言了什么。 */
+const SCOPE_HINT: Record<string, string> = {
+  structural: "声明为仅结构：只断言结构在场（文件 / 行 / 归档可验），不断言其内容或子结论为真",
+  factual: "声明为事实：断言快照里可重放的事实（sql / sql-pair / count / exists 对数据的判定）",
+  semantic: "声明为语义：断言经人工认定或 review 层的语义结论",
+};
+/** 缺省的说明只讲「怎么读」，不描述检查器实际做了什么——一个按缺省读的 sql 判据确实判了数据，
+ *  把它说成「文件 / 归档在场」会误描述（监督席评审 ③）。 */
+const SCOPE_HINT_DEFAULT = "报告未声明边界（契约 ≤1.2 没有 semantic_scope 字段），按最保守的 structural 读：PASS 只按「结构在场」理解，不据此断言子结论为真；这不描述检查器实际做了什么";
+/** 闭集之内才算声明；缺失与闭集之外（拼错、未来的新值）都按最保守的 structural 读——可见面不得失败开放
+ *  （评审 P3：此前未知值原样显示，只有隐藏说明在说「按 structural 读」）。 */
+export function scopeKnown(scope?: string | null): scope is string {
+  return typeof scope === "string" && Object.prototype.hasOwnProperty.call(SCOPE_LABEL, scope);
+}
+export function scopeLabel(scope?: string | null): string {
+  return scopeKnown(scope) ? SCOPE_LABEL[scope] : SCOPE_LABEL[SCOPE_DEFAULT];
+}
+export function scopeHint(scope?: string | null): string {
+  if (scope == null) return SCOPE_HINT_DEFAULT;
+  if (scopeKnown(scope)) return SCOPE_HINT[scope];
+  return `未知边界值 ${JSON.stringify(scope)}：不在闭集 structural | factual | semantic 内，按最保守的 structural 读——不据此断言子结论为真`;
+}
+/** 视觉隐藏但读屏可读（WAI 推荐的 clip 法）：不用 aria-label 给无 role 的 span 命名——ARIA 1.2 禁止给
+ *  generic 元素命名，读屏可能跳过它只读可见文字（监督席评审 ② 残留）。 */
+const VISUALLY_HIDDEN: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
+};
+/** 说明必须对键盘 / 触屏 / 读屏可达（监督席评审 ②）：Tooltip 在悬停与聚焦时都出现，span 可聚焦；
+ *  整句说明以视觉隐藏文本放在标签内，读屏按 DOM 顺序读到「边界 仅结构·缺省」+ 说明——不靠 ARIA 命名。 */
+export function ScopeTag({ scope }: { scope?: string | null }) {
+  const suffix = scope == null ? "·缺省" : scopeKnown(scope) ? "" : "·未知值";
+  const label = `边界 ${scopeLabel(scope)}${suffix}`;
+  const hint = scopeHint(scope);
+  return (
+    <Tooltip title={hint}>
+      <span tabIndex={0} style={{ display: "inline-flex", position: "relative", borderRadius: "var(--radius-sm)", cursor: "help" }}>
+        <ToneTag color={C.secondary}>{label}</ToneTag>
+        <span style={VISUALLY_HIDDEN}>：{hint}</span>
+      </span>
+    </Tooltip>
+  );
 }
 
 /** A selectable row in the verifier's lists: click or Enter/Space picks it, aria-current marks the pick. */
@@ -298,9 +348,6 @@ function ReportBoard() {
     fetchVerifyReport(selected).then(setDetail).catch(() => setDetail(null));
   }, [selected]);
 
-  const exceptions = detail?.report.exceptions ?? [];
-  const exceptionIds = new Set(exceptions.map((e) => e.vu));
-
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Card size="small" title="运行记录">
@@ -322,6 +369,7 @@ function ReportBoard() {
                   <Text type="secondary">
                     {r.summary.pass}✓ {r.summary.fail}✗ {r.summary.needs_material}? {r.summary.error}! · 归档 {r.archived}
                   </Text>
+                  <ScopeTag scope={r.semantic_scope} />
                   <VerdictTag verdict={r.overall} />
                 </div>
               </SelectRow>
@@ -329,67 +377,91 @@ function ReportBoard() {
           />
         )}
       </Card>
-      {detail && (
-        <Card size="small" title="报告">
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-            <Space wrap>
-              <VerdictTag verdict={detail.report.overall} />
-              <Text>{detail.report.reason}</Text>
-            </Space>
-            <Descriptions size="small" column={3}>
-              <Descriptions.Item label="统计">
-                {detail.report.summary.pass}✓ / {detail.report.summary.fail}✗ /{" "}
-                {detail.report.summary.needs_material}? / {detail.report.summary.error}!
-              </Descriptions.Item>
-              <Descriptions.Item label="引擎">{detail.report.verifier?.mode ?? "—"}</Descriptions.Item>
-              <Descriptions.Item label="签名">
-                {detail.report.verifier?.signing_scheme
-                  ? `${detail.report.verifier.signing_scheme} · ${(detail.report.verifier.public_key_fingerprint ?? "").slice(0, 12)}…`
-                  : "unsig"}
-              </Descriptions.Item>
-              <Descriptions.Item label="快照" span={2}>
-                <Text code style={{ fontSize: 12 }}>{detail.report.data_source?.sha256 ?? "—"}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="归档">{detail.archives.length}</Descriptions.Item>
-            </Descriptions>
-            {exceptions.length > 0 && (
-              <Alert
-                type="warning"
-                showIcon
-                title={`处置清单：${exceptions.length} 项`}
-                description={exceptions.map((e) => `${e.vu}（${e.severity ?? "?"}，${e.row_count ?? 0} 行）`).join(" · ")}
-              />
-            )}
-            <Table
-              size="small"
-              rowKey="id"
-              pagination={false}
-              dataSource={[...detail.report.vu].sort((a, b) => Number(exceptionIds.has(b.id)) - Number(exceptionIds.has(a.id)))}
-              columns={[
-                { title: "判据", dataIndex: "id", width: 70 },
-                { title: "结论", dataIndex: "verdict", width: 130, render: (v: string) => <VerdictTag verdict={v} /> },
-                { title: "检查器", dataIndex: "checker_type", width: 110 },
-                {
-                  title: "证据 / trace",
-                  render: (_: unknown, r: VerifyReportDetail["report"]["vu"][number]) => (
-                    <Space orientation="vertical" size={0}>
-                      {r.evidence ? (
-                        <Text code style={{ fontSize: 12 }}>
-                          {JSON.stringify(r.evidence).slice(0, 160)}
-                        </Text>
-                      ) : null}
-                      {(r.trace ?? []).map((t, i) => (
-                        <Text key={i} type="secondary">· {t}</Text>
-                      ))}
-                    </Space>
-                  ),
-                },
-              ] as any}
-            />
-          </Space>
-        </Card>
-      )}
+      {detail && <ReportDetail detail={detail} />}
     </Space>
+  );
+}
+
+/**
+ * 报告详情（纯展示，可用夹具静态渲染测试——种子库没有报告，运行时验证器画不到这里）。
+ * 边界只在首屏出现一次（标签 + ≤1.2 报告的一行缺省说明）；VU 表只在报告真带
+ * `semantic_scope`（契约 1.3 起）时才加「边界」列——缺省不逐行重复（监督席评审 ①③）。
+ */
+export function ReportDetail({ detail }: { detail: VerifyReportDetail }) {
+  const exceptions = detail.report.exceptions ?? [];
+  const exceptionIds = new Set(exceptions.map((e) => e.vu));
+  const declaredPerVu = detail.report.vu.some((v) => v.semantic_scope != null);
+  const columns = [
+    { title: "判据", dataIndex: "id", width: 70 },
+    { title: "结论", dataIndex: "verdict", width: 130, render: (v: string) => <VerdictTag verdict={v} /> },
+    ...(declaredPerVu ? [{ title: "边界", dataIndex: "semantic_scope", width: 120, render: (v: string | undefined) => <ScopeTag scope={v} /> }] : []),
+    { title: "检查器", dataIndex: "checker_type", width: 110 },
+    {
+      title: "证据 / trace",
+      render: (_: unknown, r: VerifyReportDetail["report"]["vu"][number]) => (
+        <Space orientation="vertical" size={0}>
+          {r.evidence ? (
+            <Text code style={{ fontSize: 12 }}>
+              {JSON.stringify(r.evidence).slice(0, 160)}
+            </Text>
+          ) : null}
+          {(r.trace ?? []).map((t, i) => (
+            <Text key={i} type="secondary">· {t}</Text>
+          ))}
+        </Space>
+      ),
+    },
+  ];
+  return (
+    <Card size="small" title="报告">
+      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space wrap>
+          <VerdictTag verdict={detail.report.overall} />
+          <ScopeTag scope={detail.report.semantic_scope} />
+          <Text>{detail.report.reason}</Text>
+        </Space>
+        {detail.report.semantic_scope == null ? (
+          <Text type="secondary">
+            边界缺省为「仅结构」：这份报告没有 semantic_scope 字段（契约 ≤1.2），PASS 只按「结构在场」理解——父验证器的 PASS 不代表子结论为真。
+          </Text>
+        ) : !scopeKnown(detail.report.semantic_scope) ? (
+          <Text type="secondary">
+            边界值 {JSON.stringify(detail.report.semantic_scope)} 不在闭集内，按最保守的「仅结构」读——父验证器的 PASS 不代表子结论为真。
+          </Text>
+        ) : null}
+        <Descriptions size="small" column={3}>
+          <Descriptions.Item label="统计">
+            {detail.report.summary.pass}✓ / {detail.report.summary.fail}✗ /{" "}
+            {detail.report.summary.needs_material}? / {detail.report.summary.error}!
+          </Descriptions.Item>
+          <Descriptions.Item label="引擎">{detail.report.verifier?.mode ?? "—"}</Descriptions.Item>
+          <Descriptions.Item label="签名">
+            {detail.report.verifier?.signing_scheme
+              ? `${detail.report.verifier.signing_scheme} · ${(detail.report.verifier.public_key_fingerprint ?? "").slice(0, 12)}…`
+              : "unsig"}
+          </Descriptions.Item>
+          <Descriptions.Item label="快照" span={2}>
+            <Text code style={{ fontSize: 12 }}>{detail.report.data_source?.sha256 ?? "—"}</Text>
+          </Descriptions.Item>
+          <Descriptions.Item label="归档">{detail.archives.length}</Descriptions.Item>
+        </Descriptions>
+        {exceptions.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            title={`处置清单：${exceptions.length} 项`}
+            description={exceptions.map((e) => `${e.vu}（${e.severity ?? "?"}，${e.row_count ?? 0} 行）`).join(" · ")}
+          />
+        )}
+        <Table
+          size="small"
+          rowKey="id"
+          pagination={false}
+          dataSource={[...detail.report.vu].sort((a, b) => Number(exceptionIds.has(b.id)) - Number(exceptionIds.has(a.id)))}
+          columns={columns as any}
+        />
+      </Space>
+    </Card>
   );
 }
 
