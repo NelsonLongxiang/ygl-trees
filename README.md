@@ -311,9 +311,11 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 682 例) + demo（128 条断言）+ contract:audit（136 项）
+pnpm test          # 四段制回归：build + unit (vitest 690 例) + demo（128 条断言）+ contract:audit（138 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
+node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
+ygl-trees verify meta .                   # 本仓元验证（R1–R3 + R5a，meta_index_version 2）；contract-audit 12 也跑它
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
 pnpm pack:repro    # 可复现打包：mtime/owner/顺序/gzip 全固定，同一 commit 任意机器 sha256 相同

@@ -172,6 +172,11 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
 - `verify meta` 在 0.105.x **未落地**（实测 `unknown verify action: meta`；verify-cmds/verify-contract 无
   meta 章节）。0.105.x 实际落地的是 `verify self-check` 递归门。**本节曾把 self-check 误记为 meta，
   已在入档时更正**；0.111.0 起 v1 属新增，不是补对账。
+- `meta_index_version: 2`（§4.4 登记制 `orchestration[]` / `tooling[]` + v1.2 **R5a**）已在引擎落地（#27 方案 T7a，
+  未发布；见 CHANGELOG「未发布」）：v2 下 R3 的扫描面是 git 看到的已跟踪 + 未忽略文件，只豁免 `tmp/` 与依赖根，
+  **目录名白名单退场**（v1 索引按 0.112.0 规则只读兼容、不读登记）；`∉{1,2}` 按名拒；**R5b 未实现**
+  （`verify meta --capabilities` 尚无，默认不比时钟——与本节 v1.2 口径一致）。**待裁定**：R3 的扩展名闭集没有 `.ts`，
+  而 Node ≥22 可直接运行 `.ts`；引擎按闭集执行，是否补入由本规范定（评审席 2026-10-21 提出）。
 
 ### §4.7 迁往 CLI 原语的路线（v1.1；v1.2 增 capability_version）
 
