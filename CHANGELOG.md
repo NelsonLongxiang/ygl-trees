@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.111.0
+
+**验证器生态根规范（charter）入档 + `verify meta` v1**（属主令 2026-10-21 13:18：「验证器的开发与
+运维以及使用的规范，一切必须以 ygl-trees CLI 为主，禁止临时编码执行」）。契约/语料零变更。
+
+- **`docs/validator-charter.md` 入档**：五根原则 P1-P5（单一执行面 / 禁止临时编码执行且对评审席自身生效 /
+  元验证先于一切 / 判据语言封闭七型 / 审计链完整）+ §1 开发、§2 运维、§3 使用、§4 执行机制（v1/v2 闸/
+  探针 CLI 化/元规则 R1-R4）、§5 文件关系。生效依据＝属主令本身。
+- **`verify meta [<repo>]` v1**（charter §4.1）：验证器仓库准入规则 R1 AGENTS.md 根存在、R2
+  `verify/meta.json`（`meta_index_version: 1` 单一来源）↔ `verify/specs/*.json` 双向一致（含 sha256；未知版本按名拒绝）、R3 无散落可执行验证件（仓库根无
+  游离脚本、`docs/**` 无 `*.mjs/*.js/*.sh`、`tmp/` 必须 gitignored）；`--json` 单对象，
+  **rc 镜像 verdict**（0 PASS / 1 FAIL / 2 用法）。**0.105.x 未落 meta（落的是 self-check 递归门）**，
+  v1 为 greenfield，charter §4.6 已如实对账。
+- **过渡排期**：0.111.x 在 submit/prepare 接受面默认 warn + `--require-meta` 拒收；**0.113.0 翻硬拒收**
+  并同时落地版本键控机械门（contract-audit/pack:check 断言），help 用 deprecation-style 前瞻标注。
+- **探针 CLI 化（0.112.0）**：`verify probe --matrix` 16 向并集（开发席八向 + 评审席篡改八向含
+  retired-key/resign-fv），RFC8032 确定性种子、离线、`--target sealed|workspace`。
+- 门禁：unit 656 → **660**；contract-audit 130 → **133**（contract 12：meta PASS/FAIL/缺仓用法）；
+  **ratchet 认账**：bundle 685,095 → 703,423（+18,328 B，meta 模块/命令/契约 12 与 charter 文档），
+  显式 `node scripts/ratchet.mjs --write` 重设基线；cold/web 保持。
+
 ## 0.110.3
 
 0.110.x 队列批（F1/F2/F4 + `db init` 批量 + r29 Q1/Q3）+ 期间外部复审的 #19/#20 安全/发布修复。

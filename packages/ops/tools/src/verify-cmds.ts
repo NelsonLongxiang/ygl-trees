@@ -13,18 +13,19 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
 import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
-import { bad, C, out, paint, table } from "../../../core/text/src/fmt";
+import { bad, C, head, out, paint, table } from "../../../core/text/src/fmt";
 import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
+import { runMeta } from "../../../verify/core/src/meta";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
@@ -351,6 +352,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db"],
   example: ["checker", "null-ops"],
+  meta: [],
   register: ["keys", "expect-key", "no-copy"],
   signature: ["keys", "expect-key"],
 };
@@ -1113,6 +1115,32 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `archive failed: ${e?.message || e}`);
         return 1;
       }
+    }
+
+    case "meta": {
+      // charter §4.1 v1 (0.111.0): verifier-repo admission gate. Rules R1-R3
+      // are frozen in verify/core/src/meta.ts; verdict is PASS/FAIL, rc mirrors
+      // it (0/1) because the report IS the artifact here.
+      const repoArg = rest[0] ? String(rest[0]) : process.cwd();
+      const repo = resolve(repoArg);
+      if (!existsSync(repo)) {
+        bad(ctx, `repo not found: ${repoArg}`);
+        return 2;
+      }
+      const report = runMeta(repo);
+      if (ctx.json) {
+        console.log(JSON.stringify(report));
+        return report.verdict === "PASS" ? 0 : 1;
+      }
+      head(ctx, `verify meta — ${repo}`);
+      for (const r of report.rules) {
+        const mark = r.verdict === "PASS" ? "✓" : "✗";
+        const color = r.verdict === "PASS" ? C.green : C.red;
+        out(ctx, paint(color, `  ${mark} ${r.id} ${r.title}`, ctx.color));
+        if (r.verdict === "FAIL") out(ctx, paint(C.dim, `      ${JSON.stringify(r.evidence)}`, ctx.color));
+      }
+      out(ctx, `  meta_version ${report.meta_version} · verdict ${report.verdict}`);
+      return report.verdict === "PASS" ? 0 : 1;
     }
 
     case "example": {

@@ -311,7 +311,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 656 例) + demo（128 条断言）+ contract:audit（130 项）
+pnpm test          # 四段制回归：build + unit (vitest 660 例) + demo（128 条断言）+ contract:audit（133 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node benchmarks/bench.js --quick   # 缩小规模快速跑

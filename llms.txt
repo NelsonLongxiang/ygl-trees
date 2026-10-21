@@ -1,4 +1,4 @@
-# ygl-trees v0.110.3 — AI Agent Research Workbench
+# ygl-trees v0.111.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -212,6 +212,7 @@ verify archive verify <file>                                 # recompute the ful
 verify list --unarchived                                     # runs that exist but were never archived
 verify self-check                                            # recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives
 verify example [--checker <type>]                            # corpus-derived candidates for the seven checker types (null ops included)
+verify meta [<repo>]                                         # verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)
 verify lint-candidates <file> [--text <material>]            # shape-check candidates without consuming spec_version
 ```
 

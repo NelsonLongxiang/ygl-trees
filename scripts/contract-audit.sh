@@ -338,6 +338,18 @@ else
   fail "predict list --due" "rc=$PDRC $(printf '%s' "$PD" | head -c 120)"
 fi
 
+# ── contract 12: verify meta（charter §4.1，0.111.0）
+echo "── contract 12: verify meta R1-R3"
+json_ok "verify meta 本仓 PASS（rc 镜像 verdict）" -- $Y verify meta .
+mkdir -p "$WS/meta-bad"
+METAJ=$($Y verify meta "$WS/meta-bad" --json 2>/dev/null); METARC=$?
+if [ "$METARC" = "1" ] && printf '%s' "$METAJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.verdict==='FAIL'&&j.rules.some(r=>r.id==='R1'&&r.verdict==='FAIL')?0:1)}catch(e){process.exit(1)}})"; then
+  pass "verify meta 缺 AGENTS.md → rc=1 + R1 FAIL（JSON）"
+else
+  fail "verify meta FAIL path" "rc=$METARC $(printf '%s' "$METAJ" | head -c 120)"
+fi
+json_err "verify meta missing repo" 2 -- $Y verify meta "$WS/no-such-repo"
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

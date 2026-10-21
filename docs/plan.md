@@ -295,6 +295,11 @@ file 附件 staging 修复（cf31945f 回归）随本版发布，待其用 `mat_
 发布（2026-10-21）：commit **`873993d`**；tag **`v0.110.3 = 5c3e56e2… → ^{commit}=873993d…`**（双远端）；
 npm **latest=0.110.3**、shasum **`4817b46d…`**；官方字节 **1,441,572 B / sha256 `b52b8c32…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.111.0 记录（2026-10-21，charter 入档 + meta v1）**：`docs/validator-charter.md` 固化入档（draft=
+fdc757f6；五原则保留；§4.1 对账 verify meta 0.105.x 未落=self-check；§4.2 0.111.x warn+`--require-meta`、
+0.113.0 硬拒 + 版本键控机械门；§4.3 16 向 probe 并集 RFC8032；§4.4 R1-R3 + R4 缓行；§5 生效=属主令
+2026-10-21 13:18）。`verify meta [<repo>]` v1：R1 AGENTS.md、R2 verify/meta.json（meta_index_version:1）↔specs 双向+sha、
+R3 无散落可执行件；rc 镜像 verdict；contract 12 新增 3 检查（130→133）。unit 656→660。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
