@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.113.2
+
+GitHub #28（验证席 P2 · charter P5）：`verify run --submission` 的 file 检查器扫描面留痕。
+
+- **扫描 trace**：file VU 执行时（PASS/FAIL/NEEDS-MATERIAL 均记）经引擎内部 `onFileScan` 回调产出
+  `{vu_id, dir, files, ignored, matched:[{path,sha256,size}]}`；CLI 写工作区侧车
+  `verify/submission-scans/<run_id>.json`，`verify run --json` 增 `submission_scan` 摘要（path/files/dir）。
+- **archive 一等 item**：构建归档时把 trace 以 `submission-scan.json`（去绝对路径）入包，matched 文件字节
+  按内容寻址入 `submission/<sha256>`（role=`submission-file`，`original_name` 保留原相对路径）；
+  `manifest.items` 绑 sha、**manifest 顶层形状不变**；归档时重算哈希，字节已变即 fail-closed
+  （`submission file changed since the scan`）。
+- **契约面**：report `evidence` 形状与 `data_source` **未改**——路径清单/逐文件哈希入 report 属报告形状
+  变更（契约 1.3），与 #16 P1 raw-material provenance、#27 Q3 `semantic_scope` 同批升版；本版先用
+  sidecar + archive 把 P5 的可追溯性补齐（PASS 可回指被检字节、字节可复原）。
+- 测试：`submission-scan.spec`（CLI 端到端：trace 侧车 + report evidence 键集冻结 + archive items）、
+  archive 单测（入链 + 字节篡改 fail-closed）；unit 680 → **682**。
+
 ## 0.113.1
 
 GitHub #25 / #26（验证席 P2/P3）：bypass 进证据链、meta 根 walk-up、跨平台 realpath；charter 补齐闸的覆盖面。

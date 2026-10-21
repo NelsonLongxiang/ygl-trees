@@ -199,6 +199,36 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
     if (existsSync(p)) push(file, readFileSync(p), role);
   }
 
+  // #28: the file checker's scan trace is archived as a first-class item so a
+  // PASS can be audited back to the exact bytes it pointed at. The report
+  // evidence shape and the manifest top-level shape stay frozen.
+  const scanPath = join(root, "submission-scans", `${opts.runId}.json`);
+  if (existsSync(scanPath)) {
+    const scanRaw = readJsonFile<{ run_id?: string; spec_id?: string; dir?: string; scans?: Array<{ vu_id?: string; matched?: Array<{ path?: string; sha256?: string }> }> }>(scanPath);
+    const sanitized = { ...scanRaw, dir: undefined };
+    delete (sanitized as Record<string, unknown>).dir;
+    push("submission-scan.json", Buffer.from(`${JSON.stringify(sanitized, null, 2)}
+`, "utf8"), "submission-scan");
+    const dir = String(scanRaw.dir ?? "");
+    const seen = new Set<string>();
+    for (const scan of scanRaw.scans ?? []) {
+      for (const f of scan.matched ?? []) {
+        const sha = String(f.sha256 ?? "");
+        const rel = String(f.path ?? "");
+        if (!sha || !rel || seen.has(sha)) continue;
+        let bytes: Buffer;
+        try {
+          bytes = readFileSync(join(dir, rel));
+        } catch {
+          throw new Error(`submission file missing: ${rel} (${dir}) — scanned bytes cannot be archived`);
+        }
+        if (sha256(bytes) !== sha) throw new Error(`submission file changed since the scan: ${rel} — bytes no longer match the recorded sha256`);
+        seen.add(sha);
+        push(`submission/${sha}`, bytes, "submission-file", rel);
+      }
+    }
+  }
+
   const prepPath = join(specDir, "prepare.json");
   const prep = existsSync(prepPath) ? readJsonFile<{ material_id?: string; materials_sha256?: string }>(prepPath) : undefined;
 

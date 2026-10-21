@@ -195,6 +195,31 @@ describe("buildArchive + verifyArchiveBytes（§7.4）", () => {
     expect(Object.keys(res.manifest ?? {})).not.toContain("meta_bypass_sha256");
   });
 
+  it("#28: submission scan trace + matched bytes enter the archive chain", () => {
+    const root = scratch();
+    const { runId } = seedRun(root);
+    const sub = join(root, "submission");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "a.txt"), "alpha");
+    const scanDir = join(root, "submission-scans");
+    mkdirSync(scanDir, { recursive: true });
+    writeFileSync(
+      join(scanDir, `${runId}.json`),
+      JSON.stringify({ run_id: runId, dir: sub, scans: [{ vu_id: "V1", matched: [{ path: "a.txt", sha256: sha("alpha"), size: 5 }] }] }),
+    );
+    const built = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
+    const res = verifyArchiveBytes(readFileSync(built.path));
+    expect(res.ok).toBe(true);
+    expect(res.manifest?.items.find((i) => i.role === "submission-scan")?.path).toBe("submission-scan.json");
+    const bytesItem = res.manifest?.items.find((i) => i.role === "submission-file");
+    expect(bytesItem?.path).toBe(`submission/${sha("alpha")}`);
+    expect(bytesItem?.original_name).toBe("a.txt");
+
+    // fail-closed: bytes changed after the scan → archive refuses to bind them
+    writeFileSync(join(sub, "a.txt"), "ALPHA");
+    expect(() => buildArchive({ verifyRoot: root, runId, with: ["materials"] })).toThrow(/changed since the scan/);
+  });
+
   it("篡改报告字节 → payload 不一致；篡改附件 → item 哈希不一致", () => {
     const root = scratch();
     const { runId } = seedRun(root);

@@ -341,6 +341,12 @@ per-run 一条 verify.run 事件）、F5（status 走 verify-web.ts 同源只读
 发布（2026-10-21）：commit **`1100c8a`**；tag **`v0.113.1 = a57e53eb… → ^{commit}=1100c8a…`**（双远端）；
 npm **latest=0.113.1**、shasum **`92b53c2b…`**；官方字节 **1,471,880 B / sha256 `b20c8d41…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.113.2 记录（2026-10-21，#28 扫描留痕）**：file 检查器 `onFileScan` trace（matched 路径+sha256），
+CLI 侧车 `verify/submission-scans/<run_id>.json` + run JSON `submission_scan` 摘要；archive 一等 item
+（`submission-scan.json` + 内容寻址 `submission/<sha256>`，role=submission-file，manifest 顶层形状不变，
+字节变更 fail-closed）。**契约拆分**：report evidence 路径/哈希与 data_source submission provenance 属
+报告形状变更 → 契约 1.3 批（与 #16 P1 provenance、#27 Q3 semantic_scope 同批）；本版先用存档链补 P5。
+unit 680→682。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
