@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.113.1
+
+GitHub #25 / #26（验证席 P2/P3）：bypass 进证据链、meta 根 walk-up、跨平台 realpath；charter 补齐闸的覆盖面。
+
+- **#25a `--no-meta` 逃逸进证据链**：submit/prepare 在 material/spec 目录落 `meta-bypass.json`
+  （canonical JCS，`{command,cwd,repo,bypassed_at,payload_sha256}`）；archive 把它作为**一等 item**
+  （role=`meta-bypass`，manifest.items 绑定字节 sha），**不改 manifest 顶层形状**（冻结形状守卫不变）；
+  `verifyArchiveBytes` 全链可验。events 的 `meta.bypass` 携带同一份 provenance。
+- **#25b 闸的覆盖面（fdc 裁定）**：meta 是准入闸，骑在 `submit`/`prepare`；`run`/`archive` 不二次 gate，
+  以 provenance 追溯承接 P5。charter §4.2 明写，防「漏实现」误读。
+- **#25c meta 根解析 walk-up**：`verify meta <repo>/subdir` 与自动检测从给定路径向上找验证器标记/git 根；
+  自动检测阶梯**限定在 git 仓内**（普通业务目录静默），且 marker 不再把工作区 `verify/` 数据目录误判为验证器仓库
+  （改为 AGENTS.md / `verify/meta.json` / `verify/specs`）。
+- **#26 realpath 归一**：cwd/repo 双侧 `fs.realpathSync`，macOS `/var`→`/private/var` 软链不再产生审计差异。
+- 测试：meta-gate（含 bypass sidecar、subdir 回显、realpath 断言）、verify-meta（子目录 walk-up）、
+  archive（provenance item 可验 + manifest 形状不变）；unit 677 → **680**。
+
 ## 0.113.0
 
 charter §4.2 翻转点：**meta 准入闸默认硬拒收**（阶梯检测）+ **版本键控机械门**。

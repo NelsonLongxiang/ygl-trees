@@ -176,6 +176,25 @@ describe("buildArchive + verifyArchiveBytes（§7.4）", () => {
     expect(att?.original_name).toBe("账单.xlsx");
   });
 
+  it("#25a: meta.bypass provenance sidecar enters the archive chain", () => {
+    const root = scratch();
+    const { runId, specId } = seedRun(root);
+    const prov = JSON.stringify({
+      command: "prepare", cwd: "/repo", repo: "/repo",
+      bypassed_at: "2026-10-20T00:00:00.000Z",
+      payload_sha256: sha("provenance"),
+    });
+    writeFileSync(join(root, "specs", specId, "meta-bypass.json"), prov);
+    const built = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
+    const res = verifyArchiveBytes(readFileSync(built.path));
+    expect(res.ok).toBe(true);
+    const item = res.manifest?.items.find((i) => i.role === "meta-bypass");
+    expect(item?.path).toBe("meta-bypass.json");
+    expect(item?.sha256).toBe(sha(prov));
+    // Frozen manifest shape: provenance rides as an item, not a new top-level key.
+    expect(Object.keys(res.manifest ?? {})).not.toContain("meta_bypass_sha256");
+  });
+
   it("篡改报告字节 → payload 不一致；篡改附件 → item 哈希不一致", () => {
     const root = scratch();
     const { runId } = seedRun(root);

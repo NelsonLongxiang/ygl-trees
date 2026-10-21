@@ -80,6 +80,10 @@ shapes → corpus cases → archives；见 §4.6 对账）。
   机械门是机器拦的；两者同时存在才算钉死。
 - `--require-meta` 的 help 采用 **deprecation-style 前瞻标注**（「0.113.0 起将翻转为默认硬拒收」），
   不用 experimental 措辞——它已生产可用，只是默认行为会翻转。
+- **闸的覆盖面（fdc757f6 2026-10-21 裁定）**：meta 是**准入闸**，骑在构造面 `submit`/`prepare`；
+  `run`/`archive` **不二次 gate**——它们消费已准入的冻结 spec，对已冻结 spec 的重跑/换机重放是合法场景。
+  P3 的「不得执行」由构造面拒收即已阻断；run/archive 的责任是**如实携带 bypass provenance**
+  （`meta-bypass.json` 作 archive 一等 item + events payload_sha256），可追溯性承担 P5，冗余拦截不再加。
 - `spec_error` 映射表由开发席出、评审席确认后入库。
 
 ### §4.3 探针 CLI 化（0.112.0 已落地）

@@ -330,6 +330,14 @@ flake 族）；demo/contract 136/ratchet 分段全绿，按纪律 YGL_SKIP_HOOKS
 发布（2026-10-21）：commit **`feb6a8b`**；tag **`v0.113.0 = 0c25e315… → ^{commit}=feb6a8b…`**（双远端）；
 npm **latest=0.113.0**、shasum **`d9d45a2f…`**；官方字节 **1,468,892 B / sha256 `07d78c52…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.113.1 记录（2026-10-21，#25/#26）**：bypass provenance sidecar（material/spec 目录，canonical
+`{command,cwd,repo,bypassed_at,payload_sha256}`）+ archive 一等 item（manifest 顶层形状不变）；#25b 裁定
+「meta 只骑构造面，run/archive 不二次 gate」入 charter §4.2；#25c walk-up 根解析 + 自动检测限定 git 仓 +
+marker 收紧为 AGENTS.md/verify/meta.json/verify/specs（工作区 verify/ 数据目录不再误判）；#26 realpath
+双归一。unit 677→680。**T2 立项预审已过（fdc，2026-10-21）**：F3 六条件（data_source JSON 文本列 /
+run_id UNIQUE+OR IGNORE / 回填幂等续跑+失败清单进 doctor / 双写期文件优先读 / export-import 白名单断言 /
+per-run 一条 verify.run 事件）、F5（status 走 verify-web.ts 同源只读投影）、scaffold（模板只产 candidates/
+材料入口、绝不写冻结 spec；模板版本随 contract_version）。顺序：F3→F5/scaffold。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

@@ -184,6 +184,16 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
 
   push("report.json", readFileSync(reportPath), "report");
   push("spec.json", readFileSync(specPath), "spec");
+  // #25a: a --no-meta bypass leaves a canonical provenance sidecar next to the
+  // frozen spec; it enters the archive (and therefore the evidence chain) as a
+  // first-class item so the audit claim is verifiable byte-for-byte.
+  const specBypassPath = join(specDir, "meta-bypass.json");
+  if (existsSync(specBypassPath)) {
+    // The provenance file carries its own payload_sha256; the item sha256 in
+    // manifest.items binds the exact bytes into the archive chain (no extra
+    // manifest field, so the frozen manifest shape stays put).
+    push("meta-bypass.json", readFileSync(specBypassPath), "meta-bypass");
+  }
   for (const [file, role] of [["prepare.json", "prepare"], ["trace.json", "trace"]] as const) {
     const p = join(specDir, file);
     if (existsSync(p)) push(file, readFileSync(p), role);
@@ -203,6 +213,11 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
       files?: Array<{ path: string; stored: string; sha256?: string; blob?: boolean }>;
     }>(recPath);
     push(`materials/${materialId}/${safeNameSegment(rec.text_path || "material.txt")}`, readFileSync(join(matDir, rec.text_path || "material.txt")), "material");
+    const matBypassPath = join(matDir, "meta-bypass.json");
+    if (existsSync(matBypassPath)) {
+      const b = readFileSync(matBypassPath);
+      push(`materials/${materialId}/meta-bypass.json`, b, "meta-bypass");
+    }
     for (const f of rec.files ?? []) {
       // 附件字节的唯一真相：`blob: true` 的条目在内容寻址仓（CLI `--attach` 与
       // HTTP 上传共用同一写入函数）；旧工作区没有该标记，仍按 material 本地副本读。

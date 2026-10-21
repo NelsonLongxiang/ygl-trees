@@ -25,7 +25,7 @@ import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
-import { metaGate, refuseMeta } from "./meta-gate";
+import { metaGate, metaRepoRootOf, refuseMeta } from "./meta-gate";
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
@@ -482,8 +482,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         files,
       };
       writeJson(join(dir, "material.json"), record);
+      // #25a: a --no-meta bypass must survive into the evidence chain, not just
+      // the local events ledger. The canonical provenance (payload_sha256) is
+      // stored with the material and later folded into the archive manifest.
+      if (gate.bypass) writeJson(join(dir, "meta-bypass.json"), gate.bypass);
       if (ctx.json) {
-        console.log(JSON.stringify({ ...record, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}) }));
+        console.log(JSON.stringify({ ...record, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}) }));
         return 0;
       }
       out(ctx, `  ✓ material frozen: ${materialId}  (${text.length} chars${files.length ? `, ${files.length} attachment(s)` : ""})`);
@@ -559,6 +563,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         knownMaterialHashes: knownMaterialHashes(env, materialId),
       }).then((res): number => {
         if (metaWarning) res.diagnostics.push({ stage: "META", message: metaWarning });
+        // #25a: persist bypass provenance with the frozen spec (not for --draft,
+        // which writes nothing). specDir is deterministic from res.spec.spec_id.
+        if (gate.bypass && !draft && res.spec?.spec_id) {
+          writeJson(join(specDir(env, String(res.spec.spec_id)), "meta-bypass.json"), gate.bypass);
+        }
         if (draft) {
           const payload = {
             draft: true,
@@ -1137,11 +1146,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // are frozen in verify/core/src/meta.ts; verdict is PASS/FAIL, rc mirrors
       // it (0/1) because the report IS the artifact here.
       const repoArg = rest[0] ? String(rest[0]) : process.cwd();
-      const repo = resolve(repoArg);
-      if (!existsSync(repo)) {
+      const given = resolve(repoArg);
+      if (!existsSync(given)) {
         bad(ctx, `repo not found: ${repoArg}`);
         return 2;
       }
+      // #25c: a verifier repo is identified by walking UP (git root / AGENTS.md /
+      // verify/), so `verify meta <repo>/subdir` judges the repo, not the subdir.
+      const repo = metaRepoRootOf(given) ?? given;
       const report = runMeta(repo);
       if (ctx.json) {
         console.log(JSON.stringify(report));

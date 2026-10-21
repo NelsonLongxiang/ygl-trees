@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -119,7 +119,31 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
       expect(rows[0].entity).toBe("meta");
       const payload = JSON.parse(String(rows[0].payload));
       expect(payload.command).toBe("submit");
-      expect(String(payload.repo)).toBe(dir);
+      expect(String(payload.repo)).toBe(realpathSync(dir)); // #26 real-path normalization
+      expect(String(payload.payload_sha256)).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      db.close();
+    }
+    // #25a: provenance sidecar rides with the material (and later the archive)
+    const sidecar = join(HOME, "verify", "materials", String(r.j.material_id), "meta-bypass.json");
+    expect(existsSync(sidecar)).toBe(true);
+    const prov = JSON.parse(readFileSync(sidecar, "utf8"));
+    expect(prov.command).toBe("submit");
+    expect(prov.payload_sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("#25c: bypass from a repo subdir records the walk-up repo root", () => {
+    const dir = join(base, "bare-git-sub");
+    mkdirSync(join(dir, "deep"), { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    const r = jrun(["verify", "submit", "--title", "g8", "--text", matFile, "--no-meta", "--json"], join(dir, "deep"));
+    expect(r.rc).toBe(0);
+    const db = new DatabaseSync(join(HOME, "ygl-trees.db"));
+    try {
+      const rows = db.prepare("SELECT payload FROM events WHERE kind='meta.bypass' ORDER BY rowid DESC LIMIT 1").all() as any[];
+      const payload = JSON.parse(String(rows[0].payload));
+      expect(String(payload.repo)).toBe(realpathSync(dir));
+      expect(String(payload.cwd)).toBe(realpathSync(join(dir, "deep")));
     } finally {
       db.close();
     }

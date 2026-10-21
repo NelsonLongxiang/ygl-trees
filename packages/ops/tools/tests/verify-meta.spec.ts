@@ -111,6 +111,17 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     expect(JSON.stringify(r3.evidence)).toMatch(/stray executable outside tooling dirs: lib\/probe\.mjs/);
   });
 
+  it("#25c: a subdir of a verifier repo resolves to the repo root (walk-up)", () => {
+    const dir = repoFixture("walkup-repo");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs: [] }), "utf8");
+    mkdirSync(join(dir, "deep", "nested"), { recursive: true });
+    const r = jrun(["verify", "meta", join(dir, "deep", "nested"), "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.verdict).toBe("PASS");
+    expect(r.j.repo).toBe(dir);
+  });
+
   it("R2: index ↔ spec files consistency (both directions + sha)", () => {
     const dir = repoFixture("indexed");
     mkdirSync(join(dir, "verify", "specs"), { recursive: true });

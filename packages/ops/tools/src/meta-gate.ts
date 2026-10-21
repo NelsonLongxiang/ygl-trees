@@ -15,8 +15,9 @@
  * proceeds. A bypass that cannot be recorded is refused.
  */
 import { createHash } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { canonicalStringify } from "../../../verify/core/src/canonical";
 
 import type { Env } from "../../../core/database/src/types";
 import { runMeta } from "../../../verify/core/src/meta";
@@ -36,6 +37,9 @@ export interface MetaGateResult {
   skipped?: boolean;
   /** --no-meta: gate skipped explicitly and recorded in the events ledger. */
   bypassed?: boolean;
+  /** provenance sidecar (canonical JSON + payload_sha256) to persist with the
+   *  material/spec so bypass survives into the report/archive evidence chain. */
+  bypass?: MetaBypassProvenance;
   warning?: string;
 }
 
@@ -48,6 +52,29 @@ function isDir(p: string): boolean {
 }
 
 /** nearest ancestor carrying .git (file or dir), starting at dir. */
+/** #26: macOS /var → /private/var etc. Store and compare real paths. */
+export function realPathOf(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
+
+/** #25c: the meta repo root is found by walking UP from the starting dir.
+ *  A dir carrying a verifier marker (AGENTS.md / verify/) is the root; a git
+ *  root with no marker also terminates the walk (ladder step 3). */
+export function metaRepoRootOf(start: string): string | null {
+  let cur = realPathOf(start);
+  for (;;) {
+    if (hasVerifierMarker(cur)) return cur;
+    if (existsSync(join(cur, ".git"))) return cur;
+    const parent = dirname(cur);
+    if (parent === cur) return null;
+    cur = parent;
+  }
+}
+
 export function gitRootOf(dir: string): string | null {
   let cur = resolve(dir);
   for (;;) {
@@ -59,22 +86,44 @@ export function gitRootOf(dir: string): string | null {
 }
 
 export function hasVerifierMarker(repo: string): boolean {
-  return existsSync(join(repo, "AGENTS.md")) || isDir(join(repo, "verify")) || existsSync(join(repo, "verify", "meta.json"));
+  // `verify/` alone is ambiguous: a ygl workspace home keeps its data there.
+  // A verifier repo is marked by AGENTS.md or a verifier meta index/specs dir.
+  return existsSync(join(repo, "AGENTS.md")) || existsSync(join(repo, "verify", "meta.json")) || isDir(join(repo, "verify", "specs"));
 }
 
 /** Persist a meta.bypass event synchronously (node:sqlite, WAL-friendly). */
-export function recordMetaBypass(env: Env, command: string, repo: string): { ok: true } | { ok: false; problem: string } {
+export interface MetaBypassProvenance {
+  command: string;
+  cwd: string;
+  repo: string;
+  bypassed_at: string;
+  payload_sha256: string;
+}
+
+export function recordMetaBypass(
+  env: Env,
+  command: string,
+  repo: string,
+): { ok: true; provenance: MetaBypassProvenance } | { ok: false; problem: string } {
   try {
+    const base = {
+      command,
+      cwd: realPathOf(process.cwd()),
+      repo: realPathOf(repo),
+      bypassed_at: nowIso(),
+    };
+    const payload_sha256 = createHash("sha256").update(canonicalStringify(base)).digest("hex");
+    const provenance: MetaBypassProvenance = { ...base, payload_sha256 };
     env.db.run("INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)", [
       newId("evt"),
-      nowIso(),
+      base.bypassed_at,
       "cli",
       "meta.bypass",
       "meta",
-      repo,
-      JSON.stringify({ command, cwd: process.cwd(), repo, bypassed_at: nowIso() }),
+      base.repo,
+      JSON.stringify(provenance),
     ]);
-    return { ok: true };
+    return { ok: true, provenance };
   } catch (e: any) {
     return { ok: false, problem: String(e?.message || e) };
   }
@@ -86,7 +135,8 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
   const requireMeta = explicitRepo !== null || args.flags["require-meta"] === true;
 
   if (bypass) {
-    const repo = explicitRepo ?? process.cwd();
+    const start = explicitRepo ?? process.cwd();
+    const repo = explicitRepo ?? gitRootOf(start) ?? realPathOf(start);
     const rec = recordMetaBypass(env, command, repo);
     if (!rec.ok) {
       return { pass: false, meta_error: "meta_bypass_unrecorded", message: `--no-meta refused: cannot record the bypass in the events ledger (${rec.problem})` };
@@ -94,6 +144,7 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
     return {
       pass: true,
       bypassed: true,
+      bypass: rec.provenance,
       message: `meta gate bypassed via --no-meta (recorded as meta.bypass in the events ledger; command=${command}, repo=${repo})`,
     };
   }
@@ -101,8 +152,10 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
   // Ladder steps 2/3/4 when no explicit signal.
   let hard = requireMeta;
   if (!hard) {
+    // Ladder 2/3/4 are scoped to git repos (fdc ruling): outside git is an
+    // ordinary business directory, silently out of scope.
     const root = gitRootOf(process.cwd());
-    if (!root) return { pass: true, skipped: true }; // ordinary business directory
+    if (!root) return { pass: true, skipped: true };
     if (hasVerifierMarker(root)) hard = true;
     else {
       const warning = `no verifier markers under ${root} (AGENTS.md / verify/ / verify/meta.json); meta gate skipped — if this IS a verifier repo, add AGENTS.md first (R1), then re-run (or pass --meta-repo <dir> / --require-meta)`;
