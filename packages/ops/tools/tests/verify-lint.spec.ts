@@ -160,8 +160,56 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     expect(r.rc).toBe(1); // no frozen spec
     expect(r.j.verdict).toBe("error");
     const diag = (r.j.diagnostics as any[]).map((d) => String(d.message)).join("\n");
-    expect(diag).toMatch(/file checker: the red-team gate needs the submitted attachments/);
+    expect(diag).toMatch(/file checker: no attachments were staged/);
     expect(diag).toMatch(/verify submit --attach/);
+  });
+
+  it("file candidate with a submitted attachment freezes (P4 runs on staged attachments)", () => {
+    const clause = "附件清单必须包含验收记录。";
+    const mat3 = join(HOME, "file-material2.txt");
+    writeFileSync(mat3, clause + "\n", "utf8");
+    const att = join(HOME, "evidence.md");
+    writeFileSync(att, "# evidence\n", "utf8");
+    const sub = jrun(["verify", "submit", "--title", "file-with-attach", "--text", mat3, "--attach", att, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = sub.j.material_id as string;
+    const fileCand = join(HOME, "file-cand2.json");
+    writeFileSync(
+      fileCand,
+      JSON.stringify({
+        candidates: [
+          {
+            source_clause: clause,
+            anchor: ANCHOR(clause, 1),
+            checker: { type: "file", glob: "*.md", min: 1 },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const reviews = join(HOME, "file-reviews2.json");
+    writeFileSync(
+      reviews,
+      JSON.stringify({
+        reviews: [
+          {
+            source_clause: clause,
+            findings: [
+              { question: "faithful", verdict: "ok", reason: "逐字对应", anchor: ANCHOR(clause, 1) },
+              { question: "decidable", verdict: "ok", reason: "有机械判据", anchor: ANCHOR(clause, 1) },
+              { question: "not-vacuous", verdict: "ok", reason: "附件为空应 NM", anchor: ANCHOR(clause, 1) },
+            ],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const r = jrun(["verify", "prepare", materialId, "--candidates", fileCand, "--reviews", reviews, "--db", snap, "--draft", "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.verdict).toBe("ready");
+    expect(r.j.units).toBe(1);
+    // P0 may note a known-material hash; the P4 red-team gate must be clean
+    expect((r.j.diagnostics as any[]).every((d) => d.stage !== "P4")).toBe(true);
   });
 
   it("same candidates → lint rejection set == prepare rejected set (shared gate)", () => {

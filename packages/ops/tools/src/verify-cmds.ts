@@ -11,7 +11,8 @@
  * 运行契约：rc 只表达过程——0=跑完出报告（PASS/FAIL 都是有效结论），1=运行错误，2=用法错误。
  */
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
@@ -29,7 +30,7 @@ import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
-import { BLOB_LIMIT, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
+import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
 import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
@@ -97,7 +98,7 @@ export function fileReviewer(reviews: Array<{ source_clause: string; findings: A
 }
 
 /** P4 最小红队（fdc757f6 裁定①配套）：空快照上不得 ERROR、不得空洞 PASS。 */
-export function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<string[]> {
+export function minimalRedTeam(schemaSql: string[], submissionDir?: string): (s: VerifySpec) => Promise<string[]> {
   return async (s: VerifySpec) => {
     const db = openDatabaseSync(":memory:");
     try {
@@ -114,7 +115,7 @@ export function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<
         schemaFingerprint: () => "empty-snapshot",
         sourceTables: () => [] as string[],
       };
-      const report = await runVerify(s, { runner: runner as never, mode: "open", nowIso: () => "1970-01-01T00:00:00.000Z" });
+      const report = await runVerify(s, { runner: runner as never, submissionDir, mode: "open", nowIso: () => "1970-01-01T00:00:00.000Z" });
       const failures: string[] = [];
       if (report.overall === "ERROR") failures.push("spec errors out on an empty snapshot (construction bug, not a data finding)");
       for (const r of report.vu) {
@@ -124,8 +125,8 @@ export function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<
         // instead of leaking the engine's bare "--attachments <dir>" wording.
         if (r.verdict === "ERROR" && String((r as any).evidence?.reason ?? "").includes("file checker requires --attachments")) {
           failures.push(
-            `${r.id} is a file checker: the red-team gate needs the submitted attachments (verify submit --attach <file>) — ` +
-              "this prepare path has no attachment staging yet, so file specs cannot be frozen (workspace-only file checks run via verify run --submission)",
+            `${r.id} is a file checker: no attachments were staged for this prepare — submit them with ` +
+              "`verify submit --attach <file>` so the red-team gate can run the file checkers against the material's attachments",
           );
         }
       }
@@ -134,6 +135,22 @@ export function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<
       db.close();
     }
   };
+}
+
+/** Stage a material's blob-store attachments into a throwaway dir so the P4
+ *  red-team gate can evaluate file checkers (GitHub #18.2 / cf31945f report:
+ *  file specs regressed to unconditional P4 rejection because prepare never
+ *  provided a submission dir). Returns null when the material has no files. */
+function stageMaterialAttachments(env: Env, material: MaterialRecord): { dir: string; cleanup: () => void } | null {
+  if (!material.files.length) return null;
+  const dir = mkdtempSync(join(tmpdir(), "ygl-prep-attach-"));
+  for (const f of material.files) {
+    const src = blobPath(paths(env).root, f.sha256);
+    const dest = join(dir, f.path);
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(src, dest);
+  }
+  return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }) };
 }
 
 /** 从快照库取建表 DDL（红队空库用；不复制数据）。 */
@@ -506,13 +523,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       // 0.104.0：列探针问快照库要真实 schema（PRAGMA），DDL 文本漏 ALTER TABLE 加的列
       const schemaProbe = probeOfDb(dbPath);
+      const attachmentStage = stageMaterialAttachments(env, material);
       const prevVersion = latestVersionOf(env, materialId);
       // ③ --draft：干跑——跑完整 P0–P5，但不落盘（不写 spec/prepare/trace，不消耗 spec_version）
       const draft = args.flags.draft === true;
       return prepareSpec(text, {
         runner: fileRunner(candidatesFile.candidates ?? []),
         reviewer: fileReviewer(reviewsFile.reviews ?? []),
-        redteam: minimalRedTeam(schema.ddl),
+        redteam: minimalRedTeam(schema.ddl, attachmentStage?.dir),
         materialIndex,
         schemaProbe,
         specId: `spec_${short(sha256(materialId))}`,
@@ -588,7 +606,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, paint(C.dim, `  · attempt recorded: ${recordPath}`, ctx.color));
         for (const r of res.rejected.slice(0, 5)) out(ctx, paint(C.dim, `    · [${r.stage}] ${r.reason}`, ctx.color));
         return 1;
-      });
+      }).finally(() => attachmentStage?.cleanup());
     }
 
     case "run": {

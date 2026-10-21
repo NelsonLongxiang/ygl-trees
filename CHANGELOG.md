@@ -12,10 +12,12 @@ GitHub #17 / #18.1 / #18.2（zhujun，0.110.0 发布后三单）。契约/语料
 - **lint `schema_skipped`（#18.1）**：`verify lint-candidates` 输出增 `schema_skipped`（与 `p1_skipped`
   并列），无 `--db` 时人类面点明「P2 schema skipped」。**口径订正**：0.110.0 的
   「lint 拒绝集 == prepare `rejected_detail` 集」只在提供 `--db` 时成立；无 `--db` 时只比形状。
-- **file 构造面文档订正 + P4 可操作诊断（#18.2）**：`verify-contract.md`/`doc-governance.md` 更正
-  「P2 直接拒 file」的错误表述——P2 放行 file（glob/ignore 非通吃），但 prepare 的 P4 红队当前
-  没有附件 staging，file 候选会得到点明修复路径的 P4 诊断（`verify submit --attach <file>`），
-  不再泄漏引擎裸文案；工作区文件检查走 `verify run --submission`。
+**file 构造面订正 + 附件 staging（#18.2 / cf31945f 回归）**：`verify-contract.md` 更正
+  「P2 直接拒 file」的错误表述（`doc-governance.md` 同项随该文件在途治理批并入，本版未动它）——
+  P2 放行 file（glob/ignore 非通吃）。prepare 现在把 material 附件
+  从 blob store **stage 到临时目录**供 P4 红队跑 file 检查器：**带附件提交（`verify submit --attach`）的
+  file 候选可正常冻版**（修复 v0.107 后 cf31945f 报告的 22 条 file 判据全量 P4 拒绝）；无附件时才给
+  可操作 P4 诊断（提示 `--attach`），不再泄漏引擎裸文案。工作区侧文件检查仍可走 `verify run --submission`。
 - 门禁：unit 629 → **635**（guard 四测 + lint 两测）；contract 130 不变。
 
 ## 0.110.1

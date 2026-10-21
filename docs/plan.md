@@ -279,7 +279,7 @@ fdc757f6 裁定 A）运行 `git filter-repo` 并已强推 Gitee；随后验证�
 **0.110.2 记录（2026-10-21，GitHub #17/#18.1/#18.2）**：`scripts/prepublish-guard.mjs`（tag 命中 HEAD
 + 可选远端校验；`npm publish <tgz>` 不跑生命周期钩子，SOP 显式调用 + prepublishOnly 兜底目录发布）；
 lint 增 `schema_skipped`（无 `--db` 时 P2 schema 跳过，拒绝集等价仅在 `--db` 时成立——0.110.0 口径订正）；
-file 构造面文档订正 + P4 可操作诊断（`verify submit --attach`，不再泄漏引擎裸文案）。unit 629→635。
+file 构造面文档订正 + **附件 staging**：prepare 把 material 附件从 blob store stage 到临时目录供 P4 红队跑 file 检查器——带附件提交的 file 候选可冻版（修复 cf31945f 报告的 0.107 后 file 判据全量 P4 拒绝回归）；无附件时给可操作诊断。unit 629→636。
 
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
