@@ -94,14 +94,41 @@ node scripts/pack-repro.mjs --json # 机器可读：{path, bytes, sha256, files}
 时给两个指纹并说明差异来源——**repro sha256 作篡改校验**，npm 官方 tarball 的 sha256 只是
 记账（`npm publish` 仍走 npm 自己的 pack 路径）。
 
-## 二、发布命令
+**clean-tree guard（0.110.1，0.110.0 事故沉淀）**：`pnpm pack` 的文件选择面向**工作树**，
+主树里未提交的 `docs/*` 或旧 CRLF 检出会进入 tarball——官方字节因此可能与审计 commit 不符。
+`pack:repro` 打包前强制 `git status --porcelain` 干净（含 untracked、排除 gitignored）：
 
 ```bash
-pnpm publish        # 必须用 pnpm，不能用 npm
+node scripts/pack-repro.mjs --check-dirty   # {"dirty":false} 才可出包
+node scripts/pack-repro.mjs                 # 官方字节（clean worktree + 本树 build）
 ```
 
-**为什么必须 pnpm 发布**：npm 不重写 `workspace:` 协议 → 发出去的包消费者装不上。
-`prepublishOnly` 已挂 `pnpm test && pnpm pack:check`（发布前强制全绿 + 产物验证）。
+`--allow-dirty` 仅供本地实验，**不得用于发布字节**。官方流程固定为：fresh worktree@release-commit
+→ 该树 `pnpm install && pnpm build` → `pack:repro`；主树脏时禁止出包。
+
+## 二、发布命令
+
+**官方字节流（0.110.1 起）**——tarball 直发，保证「审计字节 = 发布字节」：
+
+```bash
+node scripts/pack-repro.mjs --check-dirty        # 必须 clean
+node scripts/pack-repro.mjs                      # 产出并记录 bytes + sha256
+git tag -a v<version> <commit> -m "v<version>"   # 先 tag
+git push <remote> v<version>
+node scripts/prepublish-guard.mjs --remote github  # tag 必须在 HEAD 且远端存在
+npm publish <pack:repro 产出的 tgz> --registry=https://registry.npmjs.org/
+```
+
+`prepublishOnly` 只覆盖**目录发布**（`npm/pnpm publish` 在包目录内），对 `npm publish <tgz>`
+**不执行**——所以 exact-bytes 流程必须显式跑 `prepublish-guard.mjs`（GitHub #17 的两层闸）。
+
+目录发布仍可用 pnpm（`workspace:` 协议重写是 npm 的缺口）：
+
+```bash
+pnpm publish        # 目录发布：prepublishOnly 会先跑 tag guard
+```
+
+**为什么优先 pnpm 发布（目录流）**：npm 不重写 `workspace:` 协议 → 发出去的包消费者装不上。
 
 ## 三、Windows `.cmd` shim 污染陷阱（重要）
 

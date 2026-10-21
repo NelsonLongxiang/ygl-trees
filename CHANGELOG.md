@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.110.2
+
+GitHub #17 / #18.1 / #18.2（zhujun，0.110.0 发布后三单）。契约/语料零变更；迁移面：无。
+
+- **发布序 guard（#17）**：`scripts/prepublish-guard.mjs` 校验发布 tag 必须命中 HEAD
+  （`git tag --points-at HEAD` 含 `v<version>`）且可选校验远端（`--remote <name>`，
+  `--no-network` 跳过）；`package.json` 的 `prepublishOnly` 同源调用。
+  关键事实：`npm publish <tgz>` **不执行**生命周期钩子，exact-bytes 发布流必须显式跑 guard——
+  两层闸（SOP 脚本 + 目录发布 backstop）已写进 `docs/release.md`。
+- **lint `schema_skipped`（#18.1）**：`verify lint-candidates` 输出增 `schema_skipped`（与 `p1_skipped`
+  并列），无 `--db` 时人类面点明「P2 schema skipped」。**口径订正**：0.110.0 的
+  「lint 拒绝集 == prepare `rejected_detail` 集」只在提供 `--db` 时成立；无 `--db` 时只比形状。
+- **file 构造面文档订正 + P4 可操作诊断（#18.2）**：`verify-contract.md`/`doc-governance.md` 更正
+  「P2 直接拒 file」的错误表述——P2 放行 file（glob/ignore 非通吃），但 prepare 的 P4 红队当前
+  没有附件 staging，file 候选会得到点明修复路径的 P4 诊断（`verify submit --attach <file>`），
+  不再泄漏引擎裸文案；工作区文件检查走 `verify run --submission`。
+- 门禁：unit 629 → **635**（guard 四测 + lint 两测）；contract 130 不变。
+
 ## 0.110.1
 
 GitHub issue #14（zhujun，P3×2）+ 0.110.0 发布事故的防复发门（契约/语料零变更；迁移面：无）。

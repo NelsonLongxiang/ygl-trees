@@ -119,6 +119,15 @@ export function minimalRedTeam(schemaSql: string[]): (s: VerifySpec) => Promise<
       if (report.overall === "ERROR") failures.push("spec errors out on an empty snapshot (construction bug, not a data finding)");
       for (const r of report.vu) {
         if (r.verdict === "PASS" && (r.witness?.rows_scanned ?? 0) === 0) failures.push(`${r.id} passes on an empty snapshot — vacuous pass`);
+        // GitHub #18.2: file checkers are constructible in P2 (glob/ignore only),
+        // but this red-team gate runs without attachment staging — say what to do
+        // instead of leaking the engine's bare "--attachments <dir>" wording.
+        if (r.verdict === "ERROR" && String((r as any).evidence?.reason ?? "").includes("file checker requires --attachments")) {
+          failures.push(
+            `${r.id} is a file checker: the red-team gate needs the submitted attachments (verify submit --attach <file>) — ` +
+              "this prepare path has no attachment staging yet, so file specs cannot be frozen (workspace-only file checks run via verify run --submission)",
+          );
+        }
       }
       return failures;
     } finally {
@@ -1150,11 +1159,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         console.log(JSON.stringify(res));
         return 0;
       }
+      const skipped = [
+        res.p1_skipped ? "P1 skipped: no --text" : "",
+        res.schema_skipped ? "P2 schema skipped: no --db" : "",
+      ].filter(Boolean);
+      const skippedTail = skipped.length ? ` (${skipped.join("; ")})` : "";
       if (res.ok) {
-        out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${res.p1_skipped ? " (P1 skipped: no --text)" : ""}`);
+        out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${skippedTail}`);
         return 0;
       }
-      out(ctx, paint(C.red, `  ✗ candidates lint: ${res.issues.length}/${res.checked} rejected${res.p1_skipped ? " (P1 skipped: no --text)" : ""}`, ctx.color));
+      out(ctx, paint(C.red, `  ✗ candidates lint: ${res.issues.length}/${res.checked} rejected${skippedTail}`, ctx.color));
       for (const i of res.issues) out(ctx, paint(C.dim, `    #${i.index} [${i.stage}] ${i.source_clause}: ${i.reason}`, ctx.color));
       return 0;
     }

@@ -27,9 +27,11 @@
   **corpus digest 传递性地钉住示例输出**。`--null-ops` 是 syntax note（`is null`/`is not null` 写法 +
   `count(col)` 跳 NULL / 空表 0 / max|min|sum 产 NULL 的不对称），不是语料案例。
 - **`verify lint-candidates <file> [--text <material>] [--db <snapshot>]`**：与 prepare 共用同一
-  p1/p2 校验器（lint 拒绝集 == prepare `rejected_detail` 集）；rc 只表达过程（0 成功 / 2 用法），
-  判定在输出 `{ok, checked, p1_skipped, issues:[{index,source_clause,stage,reason}]}`；不写 spec、
+  p1/p2 校验器；rc 只表达过程（0 成功 / 2 用法），判定在输出
+  `{ok, checked, p1_skipped, schema_skipped, issues:[{index,source_clause,stage,reason}]}`；不写 spec、
   不耗 `spec_version`、不发事件。`checker.type` 为闭集（七型），未知类型在 P2 被点名拒绝。
+  **口径订正（#18.1）**：「lint 拒绝集 == prepare `rejected_detail` 集」仅在提供 `--db`（schema 探针）时
+  成立；无 `--db` 时 P2 的 schema 子检查跳过（`schema_skipped:true`），两集合只比形状。
 - **`research predict list|audit --due`**：`days_left = floor((deadline - as_of) / 86400s)`（deadline 与
   as_of 均按 UTC 午夜解析）；`due = days_left ≤ 0`；audit 的 `near` 桶 = `1..30`（含 30），`future`
   = `31+`；`--due` 在 JSON 与人类两面都过滤，空集 rc=0。未知旗标 → rc=2 单 `{"error":...}`。
@@ -144,7 +146,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | **P4** 红队门禁 | 由调用方注入（要真库/真附件/真对抗样本）；未注入**不落 ready**（CLI 可退化为"空库最小红队"） | 失败 → `error`，且**不落可冻结 spec**（`spec` 省略） |
 | **P5** 冻版 | `as_of` 由调用方给（快照口径）；`attachments` 从 `material_index.files` 映射（带**文件级 sha256/size**，防同一文本不同二进制重放）；`spec_version` 由调用方递增；`engine_version`/`corpus_version` 取构建版本 | `ready` 才产出 frozen spec |
 
-**发射集（当前 = 四型 fact）**：prepare 的 P2 闸只放行 `sql` / `sql-pair` / `count` / `exists`；`file` / `command` / `agent` 的构造面尚未开放（P2 直接拒），它们只在引擎执行面可用（手写 spec + 评审例外）。七型是**引擎闭集**，不是构造面闭集——两者口径分开读（验证席回灌 ②）。
+**发射集（0.110.1 口径）**：prepare 的 P2 闸放行 `sql` / `sql-pair` / `count` / `exists` / **`file`**（file 的构造面校验=glob/ignore 非通吃）；`command` / `agent` 的构造面仍关（P2 直接拒）。**file 的可冻结另需附件**：P4 红队跑在提交物附件目录上，当前 prepare 路径没有附件 staging，故 file 候选会以可操作 P4 诊断被拦（「red-team gate needs the submitted attachments（`verify submit --attach`）…」）；工作区侧文件检查走 `verify run --submission`。七型是**引擎闭集**，不是构造面闭集——两者口径分开读（验证席回灌 ②；#18.2 订正：旧文「P2 直接拒 file」与实现不符）。
 
 > **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。

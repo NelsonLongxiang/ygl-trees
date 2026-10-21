@@ -86,6 +86,7 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     expect(r.rc).toBe(0); // process semantics: verdict lives in the payload
     expect(r.j.checked).toBe(2);
     expect(r.j.p1_skipped).toBe(false);
+    expect(r.j.schema_skipped).toBe(false);
     expect(r.j.ok).toBe(false);
     expect(r.j.issues).toHaveLength(1);
     expect(r.j.issues[0]).toMatchObject({ index: 1, stage: "P2", source_clause: "未知列不得参与判据。" });
@@ -103,10 +104,64 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     expect(r.j.ok).toBe(false);
   });
 
+  it("declares P2 schema skipped without --db (rejection set == prepare only with schema)", () => {
+    const r = jrun(["verify", "lint-candidates", candFile, "--text", matFile, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.schema_skipped).toBe(true);
+    // the bad-column candidate cannot be judged without a probed snapshot
+    expect(r.j.ok).toBe(true);
+  });
+
   it("unknown flags are usage errors (rc=2, single object)", () => {
     const r = jrun(["verify", "lint-candidates", candFile, "--bogus", "--json"]);
     expect(r.rc).toBe(2);
     expect(String(r.j?.error)).toMatch(/unknown flag/);
+  });
+
+  it("file candidate gets an actionable P4 diagnostic (no attachment staging)", () => {
+    const clause = "附件清单必须包含验收记录。";
+    const mat2 = join(HOME, "file-material.txt");
+    writeFileSync(mat2, clause + "\n", "utf8");
+    const sub = jrun(["verify", "submit", "--title", "file-candidate", "--text", mat2, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = sub.j.material_id as string;
+    const fileCand = join(HOME, "file-cand.json");
+    writeFileSync(
+      fileCand,
+      JSON.stringify({
+        candidates: [
+          {
+            source_clause: clause,
+            anchor: ANCHOR(clause, 1),
+            checker: { type: "file", glob: "*.md", min: 1 },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const reviews = join(HOME, "file-reviews.json");
+    writeFileSync(
+      reviews,
+      JSON.stringify({
+        reviews: [
+          {
+            source_clause: clause,
+            findings: [
+              { question: "faithful", verdict: "ok", reason: "逐字对应", anchor: ANCHOR(clause, 1) },
+              { question: "decidable", verdict: "ok", reason: "有机械判据", anchor: ANCHOR(clause, 1) },
+              { question: "not-vacuous", verdict: "ok", reason: "附件为空应 NM/ERROR", anchor: ANCHOR(clause, 1) },
+            ],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const r = jrun(["verify", "prepare", materialId, "--candidates", fileCand, "--reviews", reviews, "--db", snap, "--draft", "--json"]);
+    expect(r.rc).toBe(1); // no frozen spec
+    expect(r.j.verdict).toBe("error");
+    const diag = (r.j.diagnostics as any[]).map((d) => String(d.message)).join("\n");
+    expect(diag).toMatch(/file checker: the red-team gate needs the submitted attachments/);
+    expect(diag).toMatch(/verify submit --attach/);
   });
 
   it("same candidates → lint rejection set == prepare rejected set (shared gate)", () => {

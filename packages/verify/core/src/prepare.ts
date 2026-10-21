@@ -328,6 +328,9 @@ export interface LintIssue {
 export interface LintResult {
   checked: number;
   p1_skipped: boolean;
+  /** P2's schema sub-checks (columns/tables) need a probed snapshot; without
+   *  `--db` they are skipped exactly like P1 without material text. */
+  schema_skipped: boolean;
   ok: boolean;
   issues: LintIssue[];
 }
@@ -347,7 +350,13 @@ export function lintCandidates(
     }
     if (reason) issues.push({ index, source_clause: c.source_clause, stage, reason });
   });
-  return { checked: candidates.length, p1_skipped: opts.materialText === undefined, ok: issues.length === 0, issues };
+  return {
+    checked: candidates.length,
+    p1_skipped: opts.materialText === undefined,
+    schema_skipped: opts.schema === undefined,
+    ok: issues.length === 0,
+    issues,
+  };
 }
 
 async function p3(
