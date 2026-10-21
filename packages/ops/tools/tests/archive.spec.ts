@@ -22,6 +22,7 @@ import { payloadHash } from "../../../verify/core/src/engine";
 import type { VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 
 const sha = (s: string): string => require("node:crypto").createHash("sha256").update(s).digest("hex");
+const sha256 = (b: Buffer): string => require("node:crypto").createHash("sha256").update(b).digest("hex");
 
 function scratch(): string {
   return mkdtempSync(join(tmpdir(), "ygl-archive-"));
@@ -203,9 +204,11 @@ describe("buildArchive + verifyArchiveBytes（§7.4）", () => {
     writeFileSync(join(sub, "a.txt"), "alpha");
     const scanDir = join(root, "submission-scans");
     mkdirSync(scanDir, { recursive: true });
+    // The engine's FileScanRecord carries `dir` per scan too (0.113.2); both the
+    // top-level and the per-scan copy are machine-local absolute paths.
     writeFileSync(
       join(scanDir, `${runId}.json`),
-      JSON.stringify({ run_id: runId, dir: sub, scans: [{ vu_id: "V1", matched: [{ path: "a.txt", sha256: sha("alpha"), size: 5 }] }] }),
+      JSON.stringify({ run_id: runId, spec_id: "spec_x", dir: sub, scans: [{ vu_id: "V1", dir: sub, files: 1, ignored: 0, matched: [{ path: "a.txt", sha256: sha("alpha"), size: 5 }] }] }),
     );
     const built = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
     const res = verifyArchiveBytes(readFileSync(built.path));
@@ -214,6 +217,31 @@ describe("buildArchive + verifyArchiveBytes（§7.4）", () => {
     const bytesItem = res.manifest?.items.find((i) => i.role === "submission-file");
     expect(bytesItem?.path).toBe(`submission/${sha("alpha")}`);
     expect(bytesItem?.original_name).toBe("a.txt");
+
+    // #27 plan T1 (#28 residual): the archived trace is a whitelist projection —
+    // no `dir` at any level, no machine-local path anywhere in the zip's text
+    // entries, and the same sidecar yields byte-identical zips.
+    const entries = readZipStore(readFileSync(built.path));
+    const scanEntry = entries.find((e) => e.path === "submission-scan.json")!;
+    const archivedScan = JSON.parse(scanEntry.data.toString("utf8"));
+    expect(archivedScan).toEqual({ run_id: runId, spec_id: "spec_x", scans: [{ vu_id: "V1", files: 1, ignored: 0, matched: [{ path: "a.txt", sha256: sha("alpha"), size: 5 }] }] });
+    expect(JSON.stringify(archivedScan)).not.toContain('"dir"');
+    const texts = entries.filter((e) => e.path.endsWith(".json")).map((e) => e.data.toString("utf8")).join("\n");
+    expect(texts).not.toContain(sub);
+    expect(texts).not.toMatch(/\/Users\/|\/private\/|\/tmp\/|[A-Za-z]:\\/);
+    const again = buildArchive({ verifyRoot: root, runId, with: ["materials"] });
+    expect(sha256(readFileSync(again.path))).toBe(sha256(readFileSync(built.path)));
+
+    // a non-relative matched path is refused, never archived
+    writeFileSync(
+      join(scanDir, `${runId}.json`),
+      JSON.stringify({ run_id: runId, dir: sub, scans: [{ vu_id: "V1", dir: sub, files: 1, ignored: 0, matched: [{ path: join(sub, "a.txt"), sha256: sha("alpha"), size: 5 }] }] }),
+    );
+    expect(() => buildArchive({ verifyRoot: root, runId, with: ["materials"] })).toThrow(/not relative/);
+    writeFileSync(
+      join(scanDir, `${runId}.json`),
+      JSON.stringify({ run_id: runId, dir: sub, scans: [{ vu_id: "V1", dir: sub, files: 1, ignored: 0, matched: [{ path: "a.txt", sha256: sha("alpha"), size: 5 }] }] }),
+    );
 
     // fail-closed: bytes changed after the scan → archive refuses to bind them
     writeFileSync(join(sub, "a.txt"), "ALPHA");

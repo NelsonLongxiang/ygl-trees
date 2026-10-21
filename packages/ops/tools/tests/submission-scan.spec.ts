@@ -119,5 +119,13 @@ describe.skipIf(!HAS_BIN)("verify run --submission file-scan trace (#28)", () =>
     expect(roles).toContain(`submission/${sha(Buffer.from("beta"))}`);
     const archivedScan = JSON.parse(entries.find((e) => e.path === "submission-scan.json")!.data.toString("utf8"));
     expect(archivedScan.dir).toBeUndefined(); // local absolute path never enters the archive
+    // #27 plan T1 (#28 residual): the per-scan `dir` and any other machine-local
+    // path are gone too — the archived trace is relative paths + hashes only.
+    expect(archivedScan.scans.every((s: any) => s.dir === undefined)).toBe(true);
+    expect(archivedScan.scans.find((s: any) => s.vu_id === "V1").matched.map((m: any) => m.path).sort()).toEqual(["a.txt", "b.txt"]);
+    const archiveTexts = entries.filter((e) => e.path.endsWith(".json")).map((e) => e.data.toString("utf8")).join("\n");
+    expect(archiveTexts).not.toContain(sub);
+    expect(archiveTexts).not.toContain(HOME);
+    expect(archiveTexts).not.toMatch(/\/Users\/|\/private\/|\/tmp\/|[A-Za-z]:\\/);
   }, 60_000);
 });

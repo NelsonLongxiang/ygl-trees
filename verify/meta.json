@@ -1,4 +1,12 @@
 {
-  "meta_index_version": 1,
-  "specs": []
+  "meta_index_version": 2,
+  "specs": [],
+  "orchestration": [],
+  "tooling": [
+    {
+      "path": "packages/verify/core/corpus/freeze.mjs",
+      "sha256": "057fc10809e4b2f8300f609af24c730fd5b818244304151f67ac9a3639d7c79e",
+      "role": "gate"
+    }
+  ]
 }

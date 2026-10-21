@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -73,14 +74,39 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
   });
 
   it("--require-meta distinguishes an unknown index format (meta_index_unknown)", () => {
+    // meta_index_version 2 is known since the registrations landed (#27 plan
+    // T7a); the "unknown" code now means exactly that — a version not in {1, 2}.
     const dir = repo("bad-index", true, (d) => {
       mkdirSync(join(d, "verify", "specs"), { recursive: true });
       writeFileSync(join(d, "verify", "specs", "s.json"), "{}\n", "utf8");
-      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, specs: [] }), "utf8");
+      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, specs: [] }), "utf8");
     });
     const r = jrun(["verify", "submit", "--title", "g3", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
     expect(r.rc).toBe(1);
     expect(r.j.meta_error).toBe("meta_index_unknown");
+  });
+
+  it("a v2 index with a registered tooling script passes the gate (no warning, no bypass)", () => {
+    const body = "#!/bin/sh\necho build\n";
+    const dir = repo("v2-registered", true, (d) => {
+      mkdirSync(join(d, "verify"), { recursive: true });
+      writeFileSync(join(d, "build.sh"), body, "utf8");
+      writeFileSync(
+        join(d, "verify", "meta.json"),
+        JSON.stringify({ meta_index_version: 2, specs: [], orchestration: [], tooling: [{ path: "build.sh", sha256: createHash("sha256").update(body).digest("hex"), role: "build" }] }),
+        "utf8",
+      );
+    });
+    const r = jrun(["verify", "submit", "--title", "g9", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.material_id).toBeTruthy();
+    expect(r.j.meta_warning).toBeUndefined();
+    expect(r.j.meta_bypassed).toBeUndefined();
+    // the same script unregistered is R3-stray → meta_failed (registration is the only exemption)
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, specs: [], orchestration: [], tooling: [] }), "utf8");
+    const bad = jrun(["verify", "submit", "--title", "g10", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
+    expect(bad.rc).toBe(1);
+    expect(bad.j.meta_error).toBe("meta_failed");
   });
 
   it("ladder 3: git repo without verifier markers warns, points at R1, skips (rc0)", () => {
