@@ -32,7 +32,7 @@ react-pdf（+88%，且用户裁定不做导出）· remix（framework 模式需 
 
 ## 交付验收（验证器口径，2026-10-20 起）
 
-每个视图提交前过本地门禁，提交后由外部结果验证器 ygl-webui-verifier 实测（独立仓库，不随上游发布，监督席运行：对指定提交构建、起 `webui serve`，用 Playwright 逐视图逐场景实测并归档结果，文件按 `<sha12>--<run_id>.json` 命名）；下面的口径是给维护者看的契约，不依赖那个仓库也能照着验。
+每个视图提交前过本地门禁，提交后由外部结果验证器实测（独立仓库，不随上游发布；监督席运行：对指定提交构建、起 `webui serve`，用 Playwright 逐视图逐场景实测并归档结果，文件按 `<sha12>--<run_id>.json` 命名）；下面的口径是给维护者看的契约，不依赖那个仓库也能照着验。
 里程碑节点（ygl-trees 树 `webui` 的 `webui-release`）只在验证器对被验提交 root PASS 后解锁，证据 = run_id + 结果文件路径。
 
 - **本地门禁**（仓库内命令）：`pnpm test` 全绿（build + 单测 + demo + contract:audit + ratchet：web_dist

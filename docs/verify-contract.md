@@ -18,6 +18,24 @@
    （`cross_table_col` / `missing_column` / `missing_agg` / `null_rhs_for_null_op` / `version_shape`），
    四值 verdict 不变。实现映射：缺键/跨表/is-null 右值属形状错；`missing_column` 只用于「键在但 schema 无此列」。
 
+## 0.1 可发现性命令（0.110.0）
+
+三面都是**只读投影或加法字段**，不改 spec/report 形状，也不升 `contract_version`：
+
+- **`verify example [--checker <type>] [--null-ops]`**：七型示例从冻结 corpus 派生（显式 checker→case
+  映射 + golden 测试），输出自 declare `_derived_from: corpus <version> (<n> files, digest …)`——即
+  **corpus digest 传递性地钉住示例输出**。`--null-ops` 是 syntax note（`is null`/`is not null` 写法 +
+  `count(col)` 跳 NULL / 空表 0 / max|min|sum 产 NULL 的不对称），不是语料案例。
+- **`verify lint-candidates <file> [--text <material>] [--db <snapshot>]`**：与 prepare 共用同一
+  p1/p2 校验器（lint 拒绝集 == prepare `rejected_detail` 集）；rc 只表达过程（0 成功 / 2 用法），
+  判定在输出 `{ok, checked, p1_skipped, issues:[{index,source_clause,stage,reason}]}`；不写 spec、
+  不耗 `spec_version`、不发事件。`checker.type` 为闭集（七型），未知类型在 P2 被点名拒绝。
+- **`research predict list|audit --due`**：`days_left = floor((deadline - as_of) / 86400s)`（deadline 与
+  as_of 均按 UTC 午夜解析）；`due = days_left ≤ 0`；audit 的 `near` 桶 = `1..30`（含 30），`future`
+  = `31+`；`--due` 在 JSON 与人类两面都过滤，空集 rc=0。未知旗标 → rc=2 单 `{"error":...}`。
+- **prepare `rejected_detail`**：加法字段 `[{source_clause,stage,reason}]`；旧 `rejected:<count>` 保留
+  一版，移除时按输出破坏性变更在 CHANGELOG 显式记账。
+
 ## 1. 规范文件（spec，`.yglverify.json`）
 
 ```json

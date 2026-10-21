@@ -281,7 +281,7 @@ case "$UR2" in *'"duplicate": true'*) echo "  ✓ unresolve 幂等（already unv
 PA=$($Y research predict audit --offline --json -p techtree 2>&1)
 case "$PA" in *"$PRED"*'"verdict": "pending"'*) echo "  ✓ 预测复位后仍在跟踪表（pending，非 resolved）";; *) echo "  ✗ audit: $PA"; exit 1;; esac
 
-echo "── 5j2. 0.90 predict list 投影 + channel 字段 + 结算三段式 note（direct-ce7e561b/ce9eaf7a）"
+echo "── 5j2. 0.90 predict list 投影 + channel 字段 + 结算三段式 note（A2A 评审任务，id 略）"
 # ① 注册即登记台账通道 → 结算时防通道错配（39c93624f6 实例）
 P90=$($Y research claim add "[预测·14天] 2027-01-01 前 demo 投影断言——npm 版本 ≥99" --channel npm-registry --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
 PL90=$($Y research predict list --json -p techtree)

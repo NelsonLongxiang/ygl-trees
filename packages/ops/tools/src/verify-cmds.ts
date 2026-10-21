@@ -23,7 +23,8 @@ import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../.
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
-import { prepareSpec } from "../../../verify/core/src/prepare";
+import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
+import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
@@ -322,6 +323,8 @@ const ACTION_FLAGS: Record<string, string[]> = {
   export: ["out"],
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
+  "lint-candidates": ["text", "db"],
+  example: ["checker", "null-ops"],
   register: ["keys", "expect-key", "no-copy"],
   signature: ["keys", "expect-key"],
 };
@@ -522,6 +525,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             rounds: res.rounds,
             units: res.units.length,
             rejected: res.rejected.length,
+            // 0.110.0: structured rejection detail (additive). `rejected` stays
+            // a count for one release for old consumers; it will be removed in a
+            // later minor with an explicit breaking-change note in CHANGELOG.
+            rejected_detail: res.rejected,
             materials_sha256: res.materials_sha256,
             diagnostics: res.diagnostics,
             record: null,
@@ -560,7 +567,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, diagnostics: res.diagnostics, record }));
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {
@@ -1065,6 +1072,91 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `archive failed: ${e?.message || e}`);
         return 1;
       }
+    }
+
+    case "example": {
+      // 0.110.0 (可发现性): examples are DERIVED from the frozen corpus by
+      // scripts/gen-examples.mjs (explicit checker→case map; golden-tested by
+      // verify-example.spec.ts). The payload self-declares its source so a
+      // consumer can trace which corpus digest it came from.
+      const want = args.flags.checker ? String(args.flags.checker) : "";
+      const types = CHECKER_EXAMPLES.map((e) => e.checker);
+      if (want && !types.includes(want)) {
+        bad(ctx, `unknown checker '${want}' — the seven types are: ${types.join(", ")}`);
+        return 2;
+      }
+      const examples = want ? CHECKER_EXAMPLES.filter((e) => e.checker === want) : CHECKER_EXAMPLES;
+      const payload: Record<string, unknown> = { _derived_from: EXAMPLES_DERIVED_FROM, examples };
+      if (args.flags["null-ops"]) payload.null_ops = NULL_OPS_NOTE;
+      if (ctx.json) {
+        console.log(JSON.stringify(payload));
+        return 0;
+      }
+      out(ctx, paint(C.dim, `  ${EXAMPLES_DERIVED_FROM} — paste a vu under candidates[], then: verify lint-candidates <file>`, ctx.color));
+      for (const ex of examples) {
+        out(ctx, `\n  ## ${ex.checker} — case ${ex.case_id}${ex.expects ? `  (${ex.expects})` : ""}`);
+        out(ctx, paint(C.dim, JSON.stringify(ex.vu, null, 2).split("\n").map((l) => `  ${l}`).join("\n"), ctx.color));
+      }
+      if (args.flags["null-ops"]) {
+        out(ctx, `\n  ## null ops\n  ${NULL_OPS_NOTE.note}`);
+        out(ctx, paint(C.dim, JSON.stringify(NULL_OPS_NOTE.example, null, 2).split("\n").map((l) => `  ${l}`).join("\n"), ctx.color));
+      }
+      return 0;
+    }
+
+    case "lint-candidates": {
+      // 0.110.0: the prepare gate without the ceremony — no spec file, no
+      // spec_version bump, no events. rc expresses process only (0/2); the
+      // verdict lives in the payload. P1 is skipped (and declared) when
+      // --text is absent because verbatim matching needs the frozen material.
+      const file = rest[0];
+      if (!file) {
+        bad(ctx, "usage: verify lint-candidates <candidates.json> [--text <material>] [--db <snapshot.sqlite>] [--json]");
+        return 2;
+      }
+      let parsed: any;
+      try {
+        parsed = JSON.parse(readFileSync(file, "utf8"));
+      } catch (e: any) {
+        bad(ctx, `cannot read candidates ${file}: ${e?.message || e}`);
+        return 1;
+      }
+      const candidates = Array.isArray(parsed) ? parsed : parsed?.candidates;
+      if (!Array.isArray(candidates)) {
+        bad(ctx, "candidates file must be a JSON array or { candidates: [...] }");
+        return 2;
+      }
+      let materialText: string | undefined;
+      if (args.flags.text !== undefined) {
+        const t = String(args.flags.text);
+        try {
+          materialText = t === "-" ? readFileSync(0, "utf8") : readFileSync(t, "utf8");
+        } catch (e: any) {
+          bad(ctx, `cannot read --text ${t}: ${e?.message || e}`);
+          return 1;
+        }
+      }
+      let schema: ReturnType<typeof probeOfDb> | undefined;
+      if (args.flags.db) {
+        try {
+          schema = probeOfDb(String(args.flags.db));
+        } catch (e: any) {
+          bad(ctx, `cannot probe --db ${args.flags.db}: ${e?.message || e}`);
+          return 1;
+        }
+      }
+      const res = lintCandidates(candidates, { materialText, schema });
+      if (ctx.json) {
+        console.log(JSON.stringify(res));
+        return 0;
+      }
+      if (res.ok) {
+        out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${res.p1_skipped ? " (P1 skipped: no --text)" : ""}`);
+        return 0;
+      }
+      out(ctx, paint(C.red, `  ✗ candidates lint: ${res.issues.length}/${res.checked} rejected${res.p1_skipped ? " (P1 skipped: no --text)" : ""}`, ctx.color));
+      for (const i of res.issues) out(ctx, paint(C.dim, `    #${i.index} [${i.stage}] ${i.source_clause}: ${i.reason}`, ctx.color));
+      return 0;
     }
 
     case "register": {

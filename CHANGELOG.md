@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.110.0
+
+**可发现性主题版**（用户令 m04180；批十四四件 + F6）。契约形状零变更（contract/corpus 1.2，digest
+`683766f1…`），全部为命令/输出加法；迁移面：无。
+
+- **`verify example [--checker <type>] [--null-ops]`**：从**冻结语料**派生的七型示例（`sql` /
+  `sql-pair` / `count` / `exists` / `file` / `command` / `agent`），生成器 `scripts/gen-examples.mjs`
+  用**显式 checker→case 常量映射**（不看 readdir 顺序），生成物 `examples.generated.ts` 由 golden
+  `--check` 测试锁；输出自 declare `_derived_from: corpus 1.2 (173 files, digest 683766f1…)`。
+  `--null-ops` 附 NULL 谓词语法说明（`is null`/`is not null`，`count(col)` 跳 NULL、空表 0，
+  而 max/min/sum 产 NULL），明标为 syntax note 而非语料案例。
+- **`verify lint-candidates <file> [--text <material>] [--db <snap>]`**：prepare 闸门的只读投影——
+  与 prepare 共用同一 p1/p2 校验器（共享夹具测试证明 lint 拒绝集 == prepare `rejected_detail` 集）；
+  不写 spec、不耗 `spec_version`、不发事件；无 `--text` 时 `p1_skipped:true` 显式声明。
+  顺带修 p2 不校验未知 `checker.type` 的旧缺口（现由闭集点名拒绝）。
+- **prepare `rejected_detail`**：`--draft` 与正常路径 JSON 增结构化
+  `[{source_clause,stage,reason}]`；旧 `rejected:<count>` 保留一版（下版移除时按破坏性变更显式记账）。
+- **七型选型表（`--help` + llms 双面同源）**：`CHECKER_SELECTION` 单常量渲染两面，含
+  「count=存在断言 vs sql=违例扫描」的 PASS 反向坑、sql-pair 需 join key、file/command/agent 边界；
+  测试锁七型与三条坑字面。
+- **F6 predict 结算日历**：
+  - `research predict list [--all] [--due]`：JSON 增 `due` / `days_left`（`floor((deadline-as_of)/86400s)`，
+    两端 UTC 午夜）；`--due` 只留到期（deadline ≤ 今天）。
+  - `research predict audit [--offline] [--state <file|url>] [--all] [--due]`：每行增
+    `bucket: due|near|future`（near = 1..30 天，边界字面锁定）与 `days_left`；`--due` 只留 due 桶，
+    空集 rc=0；人类输出表头带三段计数。
+  - 两条命令的**未知旗标 → rc=2 单 `{"error":...}`**（此前静默忽略，`--due` 会被读成"无到期"）。
+- **隐私清理（发版席 P0，前向清除）**：删除仓库根 `HANDOFF.md`（含真实内网拓扑的个人交接文档）；
+  `packages/techtree/eval/src/eval.ts` 与 `docs/plan-archive-2026-10-20.md` 的个人盘符路径改为
+  「本地参考文档」（该路径此前随 tarball 分发）；`examples/demo.sh` 注释里的真实 A2A 任务 id 泛化。
+  **历史改写（旧提交中的内网 IP、`Jun<jun@Mac.local>` 身份 redact）属属主裁定项，未裁定前不动 git 历史。**
+- 门禁：`contract-audit` 新增 contract 11 段 8 项（example/lint/predict）→ **130/130**。
+
+测试：unit **608 → 623**（predict-cli +4、verify-lint +4、verify-example +4、help-checker +3）；
+contract-audit 122 → 130。
+
+**ratchet 认账**：bundle 667,562 → 683,862（+16,300 B，约 +2.4%：corpus 派生七型示例、选型表与三条
+新命令的代码/数据），显式 `node scripts/ratchet.mjs --write` 接受并重设基线；web dist 1,434,106 按
+当前构建重烘（PR#5 合并后的真实值）；cold start 481 → 441（收紧）。
+
 ## 0.109.1
 
 **作者复审四连收口**（verification seat 派单：#7 余项 / #10 / #11 + PR#13）。契约零变更（1.2，digest 不变）。

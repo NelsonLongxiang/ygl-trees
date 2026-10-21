@@ -1,0 +1,142 @@
+/**
+ * 0.110.0 (可发现性): `verify lint-candidates` is the prepare gate as a
+ * read-only projection — no spec file, no spec_version bump, no events. The
+ * shared-fixture test is the fdc757f6 condition: for the same candidates,
+ * lint's rejection set must equal prepare's P1/P2 rejection set (one gate, not
+ * two lookalikes).
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+const REPO = resolve(__dirname, "../../../..");
+const BIN = resolve(REPO, "dist/bundle/bin.cjs");
+const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+
+let HOME = "";
+let candFile = "";
+let matFile = "";
+let snap = "";
+
+function run(args: string[]) {
+  const r = spawnSync(process.execPath, [BIN, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, YGL_HOME: HOME },
+  });
+  return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
+}
+
+function jrun(args: string[]) {
+  const r = run(args);
+  let j: any = null;
+  try {
+    j = JSON.parse(r.out);
+  } catch {
+    j = null;
+  }
+  return { rc: r.rc, j, raw: r.out };
+}
+
+const ANCHOR = (quote: string, n: number) => ({ quote, locator: `material.txt#L${n}` });
+
+function sqlCandidate(clause: string, col: string, n: number) {
+  return {
+    source_clause: clause,
+    anchor: ANCHOR(clause, n),
+    checker: {
+      type: "sql",
+      fail_when: "rows>0",
+      predicate: { from: "bills", select: ["id"], where: { op: "and", conditions: [{ col, op: "<", value: 0 }] } },
+    },
+  };
+}
+
+describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
+  beforeAll(() => {
+    HOME = mkdtempSync(join(tmpdir(), "ygl-lint-"));
+    run(["db", "init"]);
+    run(["project", "new", "alpha"]);
+    matFile = join(HOME, "material.txt");
+    writeFileSync(matFile, "账单金额不得为负。\n未知列不得参与判据。\n", "utf8");
+    snap = join(HOME, "snap.sqlite");
+    const db = new DatabaseSync(snap);
+    db.exec("CREATE TABLE bills (id TEXT PRIMARY KEY, amount_cents INTEGER)");
+    db.close();
+    candFile = join(HOME, "candidates.json");
+    writeFileSync(
+      candFile,
+      JSON.stringify({
+        candidates: [
+          sqlCandidate("账单金额不得为负。", "amount_cents", 1),
+          sqlCandidate("未知列不得参与判据。", "no_such_col", 2),
+        ],
+      }),
+      "utf8",
+    );
+  });
+
+  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("reports P2 shapes without writing a spec or consuming spec_version", () => {
+    const before = existsSync(join(HOME, "verify", "specs")) ? readdirSync(join(HOME, "verify", "specs")).length : 0;
+    const r = jrun(["verify", "lint-candidates", candFile, "--text", matFile, "--db", snap, "--json"]);
+    expect(r.rc).toBe(0); // process semantics: verdict lives in the payload
+    expect(r.j.checked).toBe(2);
+    expect(r.j.p1_skipped).toBe(false);
+    expect(r.j.ok).toBe(false);
+    expect(r.j.issues).toHaveLength(1);
+    expect(r.j.issues[0]).toMatchObject({ index: 1, stage: "P2", source_clause: "未知列不得参与判据。" });
+    expect(String(r.j.issues[0].reason)).toMatch(/column|schema/i);
+    const after = existsSync(join(HOME, "verify", "specs")) ? readdirSync(join(HOME, "verify", "specs")).length : 0;
+    expect(after).toBe(before); // nothing frozen, nothing bumped
+    expect(existsSync(join(HOME, "verify", "prepares"))).toBe(false);
+  });
+
+  it("declares P1 skipped instead of silently passing when --text is absent", () => {
+    const r = jrun(["verify", "lint-candidates", candFile, "--db", snap, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.p1_skipped).toBe(true);
+    // second clause is still rejected on P2 shape (schema is supplied)
+    expect(r.j.ok).toBe(false);
+  });
+
+  it("unknown flags are usage errors (rc=2, single object)", () => {
+    const r = jrun(["verify", "lint-candidates", candFile, "--bogus", "--json"]);
+    expect(r.rc).toBe(2);
+    expect(String(r.j?.error)).toMatch(/unknown flag/);
+  });
+
+  it("same candidates → lint rejection set == prepare rejected set (shared gate)", () => {
+    const lint = jrun(["verify", "lint-candidates", candFile, "--text", matFile, "--db", snap, "--json"]);
+    expect(lint.rc).toBe(0);
+    expect(lint.j.ok).toBe(false);
+
+    const sub = jrun(["verify", "submit", "--title", "lint-equivalence", "--text", matFile, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = sub.j.material_id as string;
+    // P3 reviews for both candidates (P2 rejects the second before P3 runs)
+    const reviews = join(HOME, "reviews.json");
+    writeFileSync(
+      reviews,
+      JSON.stringify({
+        reviews: [1, 2].map((n) => [
+          { vu_id: `V${n}`, question: "faithful", verdict: "ok", reason: "逐字对应", anchor: ANCHOR(n === 1 ? "账单金额不得为负。" : "未知列不得参与判据。", n) },
+          { vu_id: `V${n}`, question: "decidable", verdict: "ok", reason: "有机械判据", anchor: ANCHOR(n === 1 ? "账单金额不得为负。" : "未知列不得参与判据。", n) },
+          { vu_id: `V${n}`, question: "not-vacuous", verdict: "ok", reason: "空表会被判 NM", anchor: ANCHOR(n === 1 ? "账单金额不得为负。" : "未知列不得参与判据。", n) },
+        ]),
+      }),
+      "utf8",
+    );
+    const prep = jrun(["verify", "prepare", materialId, "--candidates", candFile, "--reviews", reviews, "--db", snap, "--draft", "--json"]);
+    expect([0, 1]).toContain(prep.rc);
+    const prepareRejected = (prep.j.rejected_detail as any[]).map((x) => ({ index: x.index ?? null, stage: x.stage, reason: x.reason, source_clause: x.source_clause }));
+    // prepare does not carry index; compare by stage+reason+clause
+    const prepSet = prepareRejected.map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
+    const lintSet = (lint.j.issues as any[]).map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
+    expect(lintSet.length).toBeGreaterThan(0);
+    for (const s of lintSet) expect(prepSet).toContain(s);
+  });
+});

@@ -75,6 +75,32 @@ export function appVersion(): string {
 // text; the old `paint(..., true)` template leaked 16 ANSI lines into
 // redirected --help output.
 
+/**
+ * 0.110.0 (可发现性): the seven checker types are easy to pick wrong — notably
+ * `count` is an existence assertion while `sql` is a violation scan, and using
+ * one where the other belongs produces a PASS that means the opposite of what
+ * the author thinks. This table is the single source for BOTH `--help` and the
+ * llms manifest (双面同源); tests pin the literals below.
+ */
+export const CHECKER_SELECTION: ReadonlyArray<{ type: string; use: string; pitfall: string }> = [
+  { type: "count", use: "存在性断言：期望匹配行数 ≥N（等价 SQL count(*)）", pitfall: "用它表达「不得存在违规行」会反向：count>0 才是违规，PASS 含义相反" },
+  { type: "sql", use: "违例扫描：fail_when=rows>0，PASS=没扫到违规行", pitfall: "空表/错表会假 PASS——scan 域或 where 缺一即触发空转守卫" },
+  { type: "sql-pair", use: "两表 join 键的两侧标量对比（sum/count per key）", pitfall: "没有可对齐的 join key 时不可用；列对列只许同表（{col}）" },
+  { type: "exists", use: "存在性：expect true 要求至少一行，expect false 要求零行", pitfall: "只判有无、不计数；要数量阈值用 count" },
+  { type: "file", use: "附件文件：glob + size/sha256 + require 清单", pitfall: "附件未提交时 min 缺省不等于 0；--submission 未给会直接 ERROR" },
+  { type: "command", use: "argv 直执行：exit code / stdout 契约", pitfall: "命令来自报告数据时会被拒（shell 注入面）；需 --allow-command 语义见契约" },
+  { type: "agent", use: "rubric 自审：checkpoint 覆盖 + 引用原文", pitfall: "fact 模式（M13-1）拒 agent 型；sealed.review=false 时 agent 不参与" },
+];
+
+/** Render the checker-selection block for the human --help channel. */
+function checkerHelpLines(color: boolean): string {
+  const rows = CHECKER_SELECTION.map(
+    (c) => `  ${paint(C.bold, c.type.padEnd(8), color)} ${c.use}${color ? "" : ""}
+            ${paint(C.dim, "坑: " + c.pitfall, color)}`
+  );
+  return "\n  " + paint(C.bold, "checker 选型（prepare candidates 的 checker.type）:", color) + "\n" + rows.join("\n");
+}
+
 function usageText(color: boolean): string {
   return `
 ${paint(C.bold, "ygl-trees", color)}  猿光 · 科技树
@@ -148,6 +174,8 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   archive <run-id|spec-id> [--snapshot <db>]         take-away archive; --snapshot feeds cross-impl runs
   archive verify <file>                              re-verify an archive's full hash chain
   self-check [--corpus <dir>] [--no-cases]           recursive gate: vectors → digest → shapes → cases → archives
+  example [--checker <type>]                         corpus-derived candidate examples (seven checker types)
+  lint-candidates <file> [--text <material>]         shape-check candidates only (no spec_version consumed)${checkerHelpLines(color)}
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
@@ -808,6 +836,8 @@ export function generateLlmsManifest(): string {
       ["verify archive verify <file>", "recompute the full hash chain of an archive bundle"],
       ["verify list --unarchived", "runs that exist but were never archived"],
       ["verify self-check", "recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives"],
+      ["verify example [--checker <type>]", "corpus-derived candidates for the seven checker types (null ops included)"],
+      ["verify lint-candidates <file> [--text <material>]", "shape-check candidates without consuming spec_version"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [
       ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],
@@ -832,6 +862,12 @@ export function generateLlmsManifest(): string {
     L.push("");
   }
 
+  L.push(`## Checker Selection (prepare candidates)`);
+  L.push("");
+  L.push(`| checker | use | pitfall |`);
+  L.push(`|---|---|---|`);
+  for (const c of CHECKER_SELECTION) L.push(`| ${c.type} | ${c.use} | ${c.pitfall} |`);
+  L.push("");
   L.push(`## Decision Model (R15)`);
   L.push("");
   L.push(`- kb search --eval: semantic re-ranking (P(relevant) per candidate)`);

@@ -191,6 +191,13 @@ function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "pre
 function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
   const checker = c.checker as Checker;
   if (!checker || typeof checker !== "object" || !("type" in checker)) return "checker is missing or malformed";
+  // 0.110.0: an unknown checker.type used to fall through every branch and
+  // "pass" P2 (then only the engine rejected it later). The closed set is
+  // contract 1.x; lint-candidates relies on this same gate (single projection).
+  const KNOWN_CHECKERS = ["sql", "sql-pair", "count", "exists", "file", "command", "agent"];
+  if (!KNOWN_CHECKERS.includes(String((checker as { type?: unknown }).type))) {
+    return `unknown checker type ${JSON.stringify((checker as { type?: unknown }).type)} — the closed set is ${KNOWN_CHECKERS.join(", ")}`;
+  }
 
   if (checker.type === "sql") {
     const sqlChecker = checker as SqlChecker;
@@ -304,6 +311,45 @@ function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
 }
 
 /** P3：盲审结论映射为"候选是否可进 spec"（fail-closed，与 run 期 judgeReview 同口径） */
+/** 0.110.0 (可发现性): read-only shape check for candidates.
+ *
+ * Shares p1/p2 with prepareSpec so `verify lint-candidates` is the same gate as
+ * prepare, not a lookalike: a candidate that lint rejects is exactly one prepare
+ * would record as rejected (fdc757f6 pre-audit condition ⑤).
+ * P1 needs the frozen material text; when it is not supplied that check is
+ * skipped and reported (`p1_skipped:true`) rather than silently passing. */
+export interface LintIssue {
+  index: number;
+  source_clause: string;
+  stage: string;
+  reason: string;
+}
+
+export interface LintResult {
+  checked: number;
+  p1_skipped: boolean;
+  ok: boolean;
+  issues: LintIssue[];
+}
+
+export function lintCandidates(
+  candidates: PrepareCandidate[],
+  opts: { materialText?: string; materialIndex?: MaterialIndex; schema?: SchemaProbe } = {},
+): LintResult {
+  const issues: LintIssue[] = [];
+  candidates.forEach((c, index) => {
+    let stage = "P1";
+    let reason: string | null = null;
+    if (opts.materialText !== undefined) reason = p1(c, opts.materialText, opts.materialIndex);
+    if (!reason) {
+      stage = "P2";
+      reason = p2(c, opts.schema);
+    }
+    if (reason) issues.push({ index, source_clause: c.source_clause, stage, reason });
+  });
+  return { checked: candidates.length, p1_skipped: opts.materialText === undefined, ok: issues.length === 0, issues };
+}
+
 async function p3(
   candidate: PrepareCandidate,
   index: number,

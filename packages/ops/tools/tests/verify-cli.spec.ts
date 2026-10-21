@@ -586,8 +586,14 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--draft", "--json"]);
     // ready 与否都可能（红队/自审），关键是 rc 与「什么都没写」
     expect([0, 1]).toContain(r.rc);
-    const obj = JSON.parse(r.out) as { draft: boolean };
+    const obj = JSON.parse(r.out) as { draft: boolean; rejected: number; rejected_detail: any[] };
     expect(obj.draft).toBe(true);
+    // 0.110.0: structured detail is additive; the count stays for one release
+    expect(typeof obj.rejected).toBe("number");
+    expect(Array.isArray(obj.rejected_detail)).toBe(true);
+    for (const d of obj.rejected_detail) {
+      expect(Object.keys(d).sort()).toEqual(["reason", "source_clause", "stage"]);
+    }
     const specs = join(home, "verify", "specs");
     expect(existsSync(specs) ? readdirSync(specs).length : 0).toBe(specsBefore);
   }, 60_000);

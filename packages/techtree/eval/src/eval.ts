@@ -4,7 +4,8 @@
  * Speaks the Vercel AI Gateway v4 evaluation-model protocol (TypeSafe jev):
  * deterministic P(true) judgments, 1-2s/call, native CJK, collapses toward
  * the gray band instead of hard-answering on thin evidence. Material:
- * F:/Users/Administrator/Downloads/vercel-ai-gateway-eval-api.md.
+ * Protocol reference: the Vercel AI Gateway eval API documentation
+ * (protocol summarized in docs/spec.md R8; no local path ships with the package).
  *
  * Offline-safe by design: callers map "no token / network failure" to a
  * PENDING gate outcome (never a hard fail) — the evaluator is an

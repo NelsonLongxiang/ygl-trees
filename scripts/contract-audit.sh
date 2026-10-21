@@ -307,6 +307,37 @@ json_ok "source rm --force" -- $Y research source rm "$RMS" --force
 badref "source rm → gone" "source not found" -- $Y research source rm "$RMS"
 usage2 "source rm without id" -- $Y research source rm
 
+# ── contract 11: 0.110.0 可发现性命令（example / lint-candidates / predict --due）
+echo "── contract 11: 0.110.0 可发现性（example/lint/predict --due）"
+EX=$($Y verify example --json 2>/dev/null); EXRC=$?
+if [ "$EXRC" = "0" ] && printf '%s' "$EX" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(/corpus/.test(j._derived_from||'')&&Array.isArray(j.examples)&&j.examples.length===7?0:1)}catch(e){process.exit(1)}})"; then
+  pass "verify example 七型派生（自declare corpus 来源）"
+else
+  fail "verify example" "rc=$EXRC $(printf '%s' "$EX" | head -c 120)"
+fi
+json_err "verify example unknown checker" 2 -- $Y verify example --checker nope
+json_err "verify example unknown flag" 2 -- $Y verify example --bogus
+
+cat > "$WS/lint-cands.json" <<'JSON'
+{"candidates":[{"source_clause":"X","anchor":{"quote":"X","locator":"m#L1"},"checker":{"type":"bogus"}}]}
+JSON
+LJ=$($Y verify lint-candidates "$WS/lint-cands.json" --json 2>/dev/null); LRC=$?
+if [ "$LRC" = "0" ] && printf '%s' "$LJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.issues.length===1?0:1)}catch(e){process.exit(1)}})"; then
+  pass "verify lint-candidates 只读投影（rc=0、ok:false、单条 issue）"
+else
+  fail "verify lint-candidates" "rc=$LRC $(printf '%s' "$LJ" | head -c 120)"
+fi
+json_err "verify lint unknown flag" 2 -- $Y verify lint-candidates "$WS/lint-cands.json" --bogus
+
+json_err "predict list unknown flag" 2 -- $Y research predict list --bogus
+json_err "predict audit unknown flag" 2 -- $Y research predict audit --bogus
+PD=$($Y research predict list --due --json 2>/dev/null); PDRC=$?
+if [ "$PDRC" = "0" ] && printf '%s' "$PD" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(Array.isArray(j)?0:1)}catch(e){process.exit(1)}})"; then
+  pass "predict list --due 空集 rc=0（JSON 数组）"
+else
+  fail "predict list --due" "rc=$PDRC $(printf '%s' "$PD" | head -c 120)"
+fi
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

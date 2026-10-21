@@ -1006,11 +1006,31 @@ if (subAction === "list" || subAction === undefined) {
   // Measures locally-measurable criteria, reports hit/miss/pending/manual —
   // never auto-resolves (arbitration stays human, frozen contract).
   if (sub === "predict") {
+    // F6 (0.110.0): predict is the one command family whose flags are part of
+    // the audit workflow — a silently-ignored `--due` reads as "nothing is due"
+    // and silently-ignored typos read as success. Same strict-flag discipline
+    // as `verify submit` (unknown flag → rc=2, single JSON error object).
+    const PREDICT_GLOBAL = new Set([
+      "json", "color", "no-color", "quiet", "home", "db", "project", "p", "global", "force", "verbose",
+    ]);
+    const rejectPredictFlags = (subAction: string, allowed: string[]): boolean => {
+      const unknown = Object.keys(args.flags ?? {}).filter((k) => !allowed.includes(k) && !PREDICT_GLOBAL.has(k));
+      if (!unknown.length) return false;
+      bad(ctx, `unknown flag${unknown.length > 1 ? "s" : ""} for research predict ${subAction}: ${unknown.map((k) => `--${k}`).join(" ")}`);
+      return true;
+    };
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const daysLeftOf = (deadline: string): number | null => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return null;
+      // days_left = floor((deadline - as_of) / 86400s), both parsed at UTC midnight
+      return Math.floor((Date.parse(`${deadline}T00:00:00Z`) - Date.parse(`${todayIso}T00:00:00Z`)) / 86_400_000);
+    };
     // 0.90 (direct-ce7e561b ②): settlement projection — every [预测·] claim
     // with outcome (未结算/1/0/ND), parsed settlement note tail
     // (`outcome=1|0, brier=…, settler=…`) and registered channel. The
     // calibration curve becomes SQL-direct: no re-parsing of prose.
     if (subAction === "list") {
+      if (rejectPredictFlags("list", ["all", "due"])) return 2;
       // --all (gate-exempted above) = workspace scan, matching calibration
       // --all semantics; without it, single-project view (settled hidden).
       const ws = args.flags.all === true;
@@ -1044,22 +1064,29 @@ if (subAction === "list" || subAction === undefined) {
       const { parsePrediction } = require("./predict");
       const outcomeOf = (s: string): string =>
         s === "supported" ? "1" : s === "refuted" ? "0" : s === "contested" ? "ND" : "未结算";
-      const rows = claims.map((c: any) => {
+      let rows = claims.map((c: any) => {
         const { horizon, deadline } = parsePrediction(c.text, c.created);
-        const s = settled.get(c.id);
+        const st = settled.get(c.id);
+        const daysLeft = daysLeftOf(deadline);
         return {
           claim_id: c.id, text: c.text, horizon, deadline, status: c.status,
-          outcome: outcomeOf(c.status), brier: s?.brier ?? null, settler: s?.settler ?? null,
+          outcome: outcomeOf(c.status), brier: st?.brier ?? null, settler: st?.settler ?? null,
           channel: c.channel || "", created: c.created,
+          // F6: machine-readable due projection — `deadline <= today` is the
+          // settlement-due predicate, days_left lets callers sort urgency.
+          due: daysLeft !== null && daysLeft <= 0,
+          days_left: daysLeft,
         };
       });
+      const dueOnly = args.flags.due === true;
+      if (dueOnly) rows = rows.filter((r: any) => r.due);
       if (ctx.json) {
         console.log(JSON.stringify(rows, null, 2));
         return 0;
       }
       const visible = args.flags.all ? rows : rows.filter((r: any) => r.outcome === "未结算");
-      head(ctx, `predict list — ${ws ? "workspace" : project.name} (${visible.length}/${rows.length}${rows.length !== visible.length ? " · 已结案隐藏 (--all)" : ""})`);
-      table(ctx, visible, ["claim", "deadline", "outcome", "brier", "settler", "channel"], ["claim_id", "deadline", "outcome", "brier", "settler", "channel"]);
+      head(ctx, `predict list — ${ws ? "workspace" : project.name} (${visible.length}/${rows.length}${dueOnly ? " · due" : rows.length !== visible.length ? " · 已结案隐藏 (--all)" : ""})`);
+      table(ctx, visible, ["claim", "deadline", "days", "outcome", "brier", "settler", "channel"], ["claim_id", "deadline", "days_left", "outcome", "brier", "settler", "channel"]);
       const noChannel = rows.filter((r: any) => r.outcome === "未结算" && !r.channel);
       if (noChannel.length) {
         out(ctx, paint(C.yellow, `  ⚠ ${noChannel.length} 条未结算预测未登记 channel（claim add --channel github-issues|review-rounds|…）——结算时可能通道错配`, ctx.color));
@@ -1067,6 +1094,7 @@ if (subAction === "list" || subAction === undefined) {
       return 0;
     }
     if (subAction === "audit") {
+      if (rejectPredictFlags("audit", ["offline", "state", "all", "due"])) return 2;
       const claims = store.db.all(
         "SELECT id, text, status, created FROM claims WHERE project_id=? AND text LIKE '[预测·%' ORDER BY created",
         [project.id]
@@ -1087,15 +1115,30 @@ if (subAction === "list" || subAction === undefined) {
             out(ctx, paint(C.yellow, `  ⚠ --state ${args.flags.state} 加载失败（文件/URL 不可读或非 JSON）——相关判据回落 manual`, ctx.color));
           }
         }
-        const rows = await auditPredictions({ claims, db: store.db, npmProbe: args.flags.offline !== true, state });
+        const audited = await auditPredictions({ claims, db: store.db, npmProbe: args.flags.offline !== true, state });
+        // F6: three-bucket settlement calendar. due = deadline reached (or no
+        // deadline recorded → unknown, stays future), near = ≤30 days out,
+        // future = everything else. `--due` is the cron/日报 view.
+        const rows = audited.map((r: any) => {
+          const d = daysLeftOf(String(r.deadline ?? ""));
+          const bucket = d === null ? "future" : d <= 0 ? "due" : d <= 30 ? "near" : "future";
+          return { ...r, bucket, days_left: d };
+        });
+        const dueN = rows.filter((r: any) => r.bucket === "due").length;
+        const nearN = rows.filter((r: any) => r.bucket === "near").length;
+        const futureN = rows.filter((r: any) => r.bucket === "future").length;
         const resolvedN = rows.filter((r: any) => r.verdict === "resolved").length;
-        const visible = args.flags.all ? rows : rows.filter((r: any) => r.verdict !== "resolved");
+        const visible = args.flags.due
+          ? rows.filter((r: any) => r.bucket === "due")
+          : args.flags.all ? rows : rows.filter((r: any) => r.verdict !== "resolved");
         if (ctx.json) {
-          console.log(JSON.stringify(rows, null, 2));
+          // --due is a filter on the JSON face too; without it JSON keeps the
+          // historical full projection (--all only shaped the human table).
+          console.log(JSON.stringify(args.flags.due ? visible : rows, null, 2));
         } else if (!visible.length) {
           out(ctx, paint(C.dim, `  全部 ${rows.length} 条预测已结案（resolved）——--all 查看终态表`, ctx.color));
         } else {
-          head(ctx, `prediction audit — ${project.name} (${visible.length}/${rows.length}${resolvedN && !args.flags.all ? ` · ${resolvedN} resolved 隐藏 (--all)` : ""})`);
+          head(ctx, `prediction audit — ${project.name} (${visible.length}/${rows.length} · due ${dueN} / near ${nearN} / future ${futureN}${resolvedN && !args.flags.all && !args.flags.due ? ` · ${resolvedN} resolved 隐藏 (--all)` : ""})`);
           table(ctx, visible, ["claim", "horizon", "deadline", "判据", "实测", "判定", "days"], [
             "claim_id", "horizon", "deadline", "criterion", "actual", "verdict", "days_left",
           ]);
@@ -1110,7 +1153,7 @@ if (subAction === "list" || subAction === undefined) {
         return 0;
       })();
     }
-    bad(ctx, "usage: research predict list [--all] · research predict audit [--offline] [--state <file|url>] [--all]");
+    bad(ctx, "usage: research predict list [--all] [--due] · research predict audit [--offline] [--state <file|url>] [--all] [--due]");
     return 2;
   }
 

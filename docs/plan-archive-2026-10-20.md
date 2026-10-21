@@ -45,7 +45,7 @@
 
 ## M5 — Gate 决策模型布尔评估（0.14.0，spec R8，2026-10-16 立项）
 
-背景：必检条件的 quest/expr 类语义门槛现静默 false；引入评估模型 boolean 模式（TypeSafe jev via Vercel AI Gateway，材料 `F:\Users\Administrator\Downloads\vercel-ai-gateway-eval-api.md`）补上下文判定能力。
+背景：必检条件的 quest/expr 类语义门槛现静默 false；引入评估模型 boolean 模式（TypeSafe jev via Vercel AI Gateway，材料 `vercel-ai-gateway-eval-api.md`（本地参考文档，未随仓库分发））补上下文判定能力。
 
 | # | 任务 | 涉及 | 规模 | 验收 |
 |---|---|---|---|---|
