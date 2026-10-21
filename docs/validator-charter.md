@@ -143,6 +143,11 @@ shapes → corpus cases → archives；见 §4.6 对账）。
 
 - **R5（S1，v1.1）** 编排按期退场：`orchestration[]` 每条的 `replaced_by` 必须逐字取自 §4.7 原语表（闭集），
   `sunset` 必须是具体版本号；当前引擎版本 ≥ `sunset` 的条目必须为 0。延期只能修订本规范（属主裁定），不得改登记。
+  「当前引擎版本」= 运行 `verify meta` 的进程读到的 `package.json.version`（与 `--version` 同源）——规则因此可机械执行。
+
+**索引版本（开发席合并澄清，PR #23 评审）**：`orchestration[]` / `tooling[]` 属 **`meta_index_version: 2`**；
+v1 索引（`meta_index_version: 1`）按 v1 规则只读兼容、不读登记；未知版本按名拒绝。现行实现对 `≠1` 已
+fail-closed（0.113.x），升 2 时须同版更新 R2 与 meta 闸的版本映射（`meta_index_unknown` 语义随之收窄为「未知」）。
 
 元规格规则以 `spec_meta_*` 版本化，冻结走 digest 血统纪律。
 
@@ -168,11 +173,11 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
 | 快照：原始 JSON → SQLite 快照表 | `verify snapshot build` | 声明式字段映射（JSON path → 表/列），不开任意代码 |
 | 构造面：material → candidates/reviews | （无需新原语） | agent 构造面（§3）+ `verify lint-candidates`（0.110.x 已有）——仓内生成脚本可立即退场 |
 | 递归聚合：后序遍历、组节点聚合子报告 | `verify tree run` | 内建组节点聚合（子报告 overall / 归档自校验 / 同轮次），每层真实 run + 归档 |
-| 自检：固定夹具 + 注入缺陷 | `verify selfcheck` | 声明式缺陷注入（改某表某行某列），断言「只翻对应叶子」 |
+| 自检：固定夹具 + 注入缺陷 | `verify self-check`（升级既有命令，不新增同义命令） | 声明式缺陷注入（改某表某行某列），断言「只翻对应叶子」 |
 | 入账 / 结果契约 / 通知 | `verify package`、`verify notify` | 交付轮次打包（spec/report/manifest/zip_sha256）、结果契约输出、outbox 渲染与回执重放 |
 | 跨仓聚合（读成员结果） | `verify import-report` | 按 payload_sha256 引入外部子报告，验签 / 验归档 / 时效判据 |
 
-建议顺序：`verify tree run` → `verify selfcheck` → `verify collect`（含 `verify snapshot build`）→
+建议顺序：`verify tree run` → `verify self-check`（升级既有）→ `verify collect`（含 `verify snapshot build`）→
 `verify package` / `verify notify` → `verify import-report`。每条原语发布后的下一个次版本即对应编排的 `sunset` 上限。
 
 ## §5 与现行文件的关系
