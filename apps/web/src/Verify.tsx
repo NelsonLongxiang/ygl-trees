@@ -36,6 +36,34 @@ function VerdictTag({ verdict }: { verdict: string }) {
   return <ToneTag color={verdictColor[verdict] ?? C.secondary}>{verdict || "—"}</ToneTag>;
 }
 
+/**
+ * 语义边界（#27 Q3 / 方案 T6）：一份 PASS 只在它声明的层面上成立。契约 ≤1.2 的报告没有
+ * `semantic_scope` 字段，按**最保守**的 structural 读（fail-closed）——父验证器对子归档的 PASS
+ * 只说明「子归档在场、可验」，不说明子结论为真。渲染面必须首屏透出，不能只在 JSON 里。
+ */
+export const SCOPE_DEFAULT = "structural";
+const SCOPE_LABEL: Record<string, string> = { structural: "仅结构", factual: "事实", semantic: "语义" };
+const SCOPE_HINT: Record<string, string> = {
+  structural: "只断言结构在场（文件 / 行 / 归档可验），不断言其内容或子结论为真",
+  factual: "断言快照里可重放的事实（sql / sql-pair / count / exists 对数据的判定）",
+  semantic: "断言经人工认定或 review 层的语义结论",
+};
+export function scopeLabel(scope?: string | null): string {
+  const s = scope ?? SCOPE_DEFAULT;
+  return SCOPE_LABEL[s] ?? s;
+}
+export function ScopeTag({ scope }: { scope?: string | null }) {
+  const s = scope ?? SCOPE_DEFAULT;
+  const inferred = scope == null;
+  return (
+    <ToneTag color={C.secondary} style={{ cursor: "help" }}>
+      <span title={`${SCOPE_HINT[s] ?? "未知边界值"}${inferred ? "（报告无 semantic_scope 字段，按最保守读）" : ""}`}>
+        边界 {scopeLabel(s)}{inferred ? "·缺省" : ""}
+      </span>
+    </ToneTag>
+  );
+}
+
 /** A selectable row in the verifier's lists: click or Enter/Space picks it, aria-current marks the pick. */
 function SelectRow({ selected, onSelect, children }: { selected: boolean; onSelect: () => void; children: ReactNode }) {
   return (
@@ -322,6 +350,7 @@ function ReportBoard() {
                   <Text type="secondary">
                     {r.summary.pass}✓ {r.summary.fail}✗ {r.summary.needs_material}? {r.summary.error}! · 归档 {r.archived}
                   </Text>
+                  <ScopeTag scope={r.semantic_scope} />
                   <VerdictTag verdict={r.overall} />
                 </div>
               </SelectRow>
@@ -334,9 +363,16 @@ function ReportBoard() {
           <Space orientation="vertical" size={8} style={{ width: "100%" }}>
             <Space wrap>
               <VerdictTag verdict={detail.report.overall} />
+              <ScopeTag scope={detail.report.semantic_scope} />
               <Text>{detail.report.reason}</Text>
             </Space>
+            {detail.report.semantic_scope == null && (
+              <Text type="secondary">
+                边界缺省为「仅结构」：这份报告没有 semantic_scope 字段（契约 ≤1.2），PASS 只说明结构在场——父验证器的 PASS 不代表子结论为真。
+              </Text>
+            )}
             <Descriptions size="small" column={3}>
+              <Descriptions.Item label="边界">{scopeLabel(detail.report.semantic_scope)}</Descriptions.Item>
               <Descriptions.Item label="统计">
                 {detail.report.summary.pass}✓ / {detail.report.summary.fail}✗ /{" "}
                 {detail.report.summary.needs_material}? / {detail.report.summary.error}!
@@ -368,6 +404,7 @@ function ReportBoard() {
               columns={[
                 { title: "判据", dataIndex: "id", width: 70 },
                 { title: "结论", dataIndex: "verdict", width: 130, render: (v: string) => <VerdictTag verdict={v} /> },
+                { title: "边界", dataIndex: "semantic_scope", width: 120, render: (v: string | undefined) => <ScopeTag scope={v} /> },
                 { title: "检查器", dataIndex: "checker_type", width: 110 },
                 {
                   title: "证据 / trace",

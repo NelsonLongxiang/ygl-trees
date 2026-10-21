@@ -5,6 +5,16 @@
 - **charter v1.2（docs-only，0.113.2 之后）**：#29 修正谱系——R5 权威拆分（R5a 静态合规 / R5b 审计方
   内嵌能力表、默认不执行）、§4.7 增 `capability_version` 列与 `unshipped` 无界、verbatim 提取规则入表注；
   依据 fdc757f6 对 #29 的裁定。无代码面变更。
+- **#27 方案 T6：渲染面透出语义边界（缺省按 structural）**。契约 ≤1.2 的报告没有 `semantic_scope` 字段，
+  此前任何渲染面都看不出「这份 PASS 在哪一层成立」——父验证器对子归档的 PASS 容易被读成「子结论为真」（#27 Q3，K3 双钉）。
+  - **WebUI 报告看板**：运行记录每行、报告头、VU 表各带「边界」标签（structural「仅结构」/ factual「事实」/ semantic「语义」）；
+    无字段 → 显示「仅结构·缺省」并在报告头给一行说明「父 PASS 不代表子结论为真」。`ScopeTag` / `scopeLabel` 可测导出。
+  - **服务端列表投影**（`verify-web.ts listReports`）：`semantic_scope` 原样透传，无字段为 `null`——服务端不替报告发明值，
+    兜底在 UI。
+  - **CLI**：`verify run` / `verify report <run>` 的人类输出首屏增一行 `semantic_scope <值>`；无字段时写
+    `structural (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)`。**JSON 面原样**（报告不可变、形状冻结；
+    字段本体属契约 1.3 批 T4）。
+  - 测试：`verify-report-scope.spec`（CLI 两面 + JSON 不变 + 投影 null）、`verify.spec.tsx` +2（缺省/闭集映射）。
 
 ## 0.113.2
 
