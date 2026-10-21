@@ -1,9 +1,18 @@
-# 验证器生态根规范（charter v1）
+---
+name: validator-charter
+description: 验证器生态根规范——五条根原则、开发/运维/使用规范、元验证准入规则与迁往 CLI 原语的路线
+kind: 规范
+---
+
+# 验证器生态根规范（charter v1.1）
 
 > 起草：评审席 GLM-5.3（fdc757f6），2026-10-21；开发席（ygl-trees 引擎线）按属主令固化入档。
 > 属主令：「验证器的开发与运维以及使用的规范，一切必须以 ygl-trees CLI 为主，禁止临时编码执行」。
 > 定位：本规范是**元验证器之上、契约（[verify-contract.md](verify-contract.md)）之外**的治理层根规范——
 > 元验证器是它的执行机制，不是全部。契约细节仍以 verify-contract 为准，本规范只引用不重复。
+> **v1.1 修订（2026-10-21）**：P2 增「声明式编排」过渡例外；§4.4 修订 R2/R3、增 R5；增 §4.7 迁往 CLI 原语的路线。
+> 依据：属主裁定「同意方案一：起草章程修订提案（编排白名单 + 迁往 CLI 原语的路线），由评审会话提给上游。」
+> 提案：监督席（YGL Trees 生命周期监督）；提交：评审席 Claude-OPS-5.5。属主令原文不变。
 
 ## §0 根原则（五条，按序优先）
 
@@ -18,6 +27,21 @@
   带 report/payload_sha256）；
 - 复核探针同理：评审席的篡改/注入探针必须 CLI 化（`verify probe` 族），临时探针只算勘察不算复核证据。
   **本条对评审席自身生效。**
+
+**声明式编排（v1.1 过渡例外）**：在 §4.7 的 CLI 原语落地之前，验证器仓库可以在 `verify/orchestration/`
+下保留编排代码，须同时满足：
+1. **登记**：逐文件登记在 `verify/meta.json` 的 `orchestration[]`：`{path, sha256, role, replaced_by, sunset}`；
+   `role ∈ collect`（采集原始数据进快照/材料）`| invoke`（按序调用 CLI 命令）`| aggregate-input`（把子报告的
+   CLI 输出整理成上层快照）；
+2. **只经 CLI**：调用引擎只能以子进程执行 `ygl-trees` 命令——不 import 引擎模块、不直调 `runVerify()`；
+3. **不判定**：不含判据常量、不产出判定列——凡「比较两个测量值」都写进 spec（契约 1.2 `value:{col}`），
+   判定唯一出自 `verify run`；
+4. **不作证**：编排输出只作 CLI 的输入（快照、材料、树描述），不得作为证据引用；证据只能是 CLI 产物
+   （report / archive / payload_sha256）；
+5. **有自检**：仓库自带 selfcheck（固定夹具入仓 + 注入缺陷各只翻对应叶子），改编排后必跑；
+6. **会退场**：`replaced_by` 取自 §4.7 原语表，`sunset` 为具体版本号，到期由 §4.4 R5 拦截。
+
+不满足任一条的代码，仍按本条视为临时编码执行。
 
 **P3 元验证先于一切**：每个验证器仓库（聚合验证器集合，含 ygl-trees 自身）必须先过 `verify meta`；
 未过的仓库，其 spec 不得登记、不得执行、不得归档。元规格规则可由属主扩展（加 VU 即加规则，
@@ -37,7 +61,7 @@
 | 契约纪律：升版 = 形状/语义变化；digest 血统（同版本内 digest 变必须带取代记录，理由限表示层） | freeze.mjs + CHANGELOG 血统表 + corpus-freeze 守卫 |
 | 双实现 parity：TS/Rust 整份报告逐字节相等才算实现完成 | rust-parity 门禁（44 例，随语料增长） |
 | 新检查器能力 → 先契约草案（两席裁定）后实现 | verify-contract-vN.md 草案流 |
-| 元规格规则集（验证器仓库准入）：见 §4.4（R1–R3 首版；R4 缓行） | `verify meta`（v1 排 0.111.0；v2 挂 submit/prepare 接受面，FAIL=拒收） |
+| 元规格规则集（验证器仓库准入）：见 §4.4（R1–R3 首版，v1.1 修订 R2/R3 并增 R5；R4 缓行） | `verify meta`（v1 排 0.111.0；v2 挂 submit/prepare 接受面，FAIL=拒收） |
 | 提交前全门禁绿 + demo/单测覆盖新行为 | pnpm test 四段制 |
 
 ## §2 运维规范（谁跑验证器）
@@ -85,6 +109,7 @@ shapes → corpus cases → archives；见 §4.6 对账）。
   P3 的「不得执行」由构造面拒收即已阻断；run/archive 的责任是**如实携带 bypass provenance**
   （`meta-bypass.json` 作 archive 一等 item + events payload_sha256），可追溯性承担 P5，冗余拦截不再加。
 - `spec_error` 映射表由开发席出、评审席确认后入库。
+- **v1.1**：0.113.0 硬拒收照常翻转。登记了声明式编排（P2 例外）且 R1–R3、R5 通过的仓库，按 meta PASS 接受。
 
 ### §4.3 探针 CLI 化（0.112.0 已落地）
 
@@ -101,12 +126,23 @@ shapes → corpus cases → archives；见 §4.6 对账）。
 - **R1（S1）** AGENTS.md 仓库根存在（属主原始指令，规则之首）；
 - **R2（S1）** `verify/meta` 索引一致（`verify/meta.json` 单一来源 ↔ 实际 spec 文件双向；索引携带
   `meta_index_version: 1`，未知版本按名拒绝、绝不静默错读）；**无索引域时 zero-scan = NEEDS-MATERIAL，
-  不得 PASS**（#22：SKIP ≠ OK）；
-- **R3（S1）** 无散落可执行验证件——**全树扫描**（#22：不只 root+docs）：`docs/**` 无
-  `*.mjs`/`*.js`/`*.sh`；仓库根无游离脚本；工具/构建目录白名单（`scripts`/`benchmarks`/`examples`/`rust`/
-  `vendor`/`node_modules`/`dist`/`tmp`/`.git` 等）之外不得有散落可执行件——即 **P2 的静态面**；
+  不得 PASS**（#22：SKIP ≠ OK）；**v1.1**：不持有 spec 的仓库以 `specs: []` 的显式空索引声明，显式空索引判 PASS
+  （本仓 `verify/meta.json` 即如此）；
+- **R3（S1）** 无散落可执行验证件——**全树扫描**（#22：不只 root+docs）——即 **P2 的静态面**。**v1.1 起豁免改为登记制**：
+  0.112.0 的工具/构建目录按名白名单（`scripts`/`benchmarks`/`examples`/`rust`/…）不看内容、不需登记，验证器仓库把
+  编排挪进 `scripts/` 即可通过（#22 在 0.112.0 上的复核：实测 PASS）。已跟踪文件中的 `*.mjs` / `*.js` / `*.cjs` /
+  `*.sh` / `*.ps1` / `*.py` 每个都必须属于以下之一，否则 FAIL：
+  - `tmp/` 下（`tmp/` 必须 gitignored），或依赖根（`node_modules/`、`vendor/`）；
+  - 登记在 `verify/meta.json` 的 `orchestration[]`，路径在 `verify/orchestration/` 下且 sha256 一致（P2 例外）；
+  - 登记在 `verify/meta.json` 的 `tooling[]`：`{path, sha256, role}`，`role ∈ build | test | release | gate`——
+    产品自身的构建 / 测试 / 发布 / 门禁脚本（如本仓 `scripts/`、`examples/demo.sh`），**不得产出或汇总验证判定**；
+    `verify/meta.json` 列有 spec 的仓库里，`tooling[]` 文件不得调用 `ygl-trees verify run|prepare|submit|archive`
+    （可机械检查）——驱动验证的代码只能登记在 `orchestration[]`（带 sunset）；
 - **R4（S2，缓行 0.113+）** 干净检出可复现——command 型需 `git` 进 meta 运行面 allowlist 且输出入
   evidence（注意隐私：`git status` 安全，build 输出要筛）。
+
+- **R5（S1，v1.1）** 编排按期退场：`orchestration[]` 每条的 `replaced_by` 必须逐字取自 §4.7 原语表（闭集），
+  `sunset` 必须是具体版本号；当前引擎版本 ≥ `sunset` 的条目必须为 0。延期只能修订本规范（属主裁定），不得改登记。
 
 元规格规则以 `spec_meta_*` 版本化，冻结走 digest 血统纪律。
 
@@ -120,6 +156,24 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
 - `verify meta` 在 0.105.x **未落地**（实测 `unknown verify action: meta`；verify-cmds/verify-contract 无
   meta 章节）。0.105.x 实际落地的是 `verify self-check` 递归门。**本节曾把 self-check 误记为 meta，
   已在入档时更正**；0.111.0 起 v1 属新增，不是补对账。
+
+### §4.7 迁往 CLI 原语的路线（v1.1）
+
+声明式编排的每项职责都必须有取代它的 CLI 原语；本节只排序、给出原语名（即 R5 `replaced_by` 的闭集），
+不越权定实现——每条原语照 §1「新检查器能力 → 先契约草案（两席裁定）后实现」走，原语清单的来由见 PR #16。
+
+| 编排职责（舰队现状） | 取代它的 CLI 原语 | 原语须提供的 |
+|---|---|---|
+| 采集：检出被验提交、跑测试/构建、读 API，落原始 JSON | `verify collect` | 命令型采集步骤（沿用 `command` 型 allowlist 与 r26 注入防线），输出内容寻址进快照仓，记来源提交与 sha256 |
+| 快照：原始 JSON → SQLite 快照表 | `verify snapshot build` | 声明式字段映射（JSON path → 表/列），不开任意代码 |
+| 构造面：material → candidates/reviews | （无需新原语） | agent 构造面（§3）+ `verify lint-candidates`（0.110.x 已有）——仓内生成脚本可立即退场 |
+| 递归聚合：后序遍历、组节点聚合子报告 | `verify tree run` | 内建组节点聚合（子报告 overall / 归档自校验 / 同轮次），每层真实 run + 归档 |
+| 自检：固定夹具 + 注入缺陷 | `verify selfcheck` | 声明式缺陷注入（改某表某行某列），断言「只翻对应叶子」 |
+| 入账 / 结果契约 / 通知 | `verify package`、`verify notify` | 交付轮次打包（spec/report/manifest/zip_sha256）、结果契约输出、outbox 渲染与回执重放 |
+| 跨仓聚合（读成员结果） | `verify import-report` | 按 payload_sha256 引入外部子报告，验签 / 验归档 / 时效判据 |
+
+建议顺序：`verify tree run` → `verify selfcheck` → `verify collect`（含 `verify snapshot build`）→
+`verify package` / `verify notify` → `verify import-report`。每条原语发布后的下一个次版本即对应编排的 `sunset` 上限。
 
 ## §5 与现行文件的关系
 
