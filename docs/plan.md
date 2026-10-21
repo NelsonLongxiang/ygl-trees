@@ -327,6 +327,9 @@ hard-for-verifier-repos + gitRootOf + bypass 落账）。unit 675→677；contra
 门禁备注：默认 `pnpm test`（--maxWorkers=2）全量跑在 `webui.test.ts` P1-2 报 HTTPParser unhandled error
 （单跑该文件 17/17 绿；`npx vitest run --maxWorkers=1` 全量 677/677 绿，判定为并发 flake，同 0.110.x 钩子
 flake 族）；demo/contract 136/ratchet 分段全绿，按纪律 YGL_SKIP_HOOKS=1 推送并在 handoff 附证据。
+发布（2026-10-21）：commit **`feb6a8b`**；tag **`v0.113.0 = 0c25e315… → ^{commit}=feb6a8b…`**（双远端）；
+npm **latest=0.113.0**、shasum **`d9d45a2f…`**；官方字节 **1,468,892 B / sha256 `07d78c52…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
