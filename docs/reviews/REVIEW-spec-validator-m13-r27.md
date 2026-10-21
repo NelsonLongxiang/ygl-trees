@@ -33,11 +33,11 @@
 ## 2. P2（建议 0.104.0 发布前修，均小改）
 
 ### P2-1 `--db` 对已存在作业的 retarget 是静默 no-op
-实测：某 spec 已有毕业记录与作业 `7f7226ccaa`（命令 `--db "C:\tmp\r27 db.sqlite"`）；再次 `verify graduate ... --db 'C:\Users\ADMINI~1\AppData\Local\Temp\' --schedule` → rc=0，响应 `job_command` 已指向新路径、`job_id` 仍是 `7f7226ccaa`；但 `jobs` 表只有一行且命令仍是旧路径。根因：`jobAdd` 按 title 幂等（存在即返回旧 id，不更新命令），于是「--db retargets the job only」的承诺落空，而输出又让操作者以为已换目标。
+实测：某 spec 已有毕业记录与作业 `7f7226ccaa`（命令 `--db "C:\tmp\r27 db.sqlite"`）；再次 `verify graduate ... --db '<tmp>\' --schedule` → rc=0，响应 `job_command` 已指向新路径、`job_id` 仍是 `7f7226ccaa`；但 `jobs` 表只有一行且命令仍是旧路径。根因：`jobAdd` 按 title 幂等（存在即返回旧 id，不更新命令），于是「--db retargets the job only」的承诺落空，而输出又让操作者以为已换目标。
 修法：`--schedule` 时若作业已存在，走作业更新路径改命令（或明确拒绝并点名「作业已存在，先 job remove/update」），二者取一；补一条 retarget 回归。
 
 ### P2-2 尾随路径分隔符被判 usable，但命令必坏
-实测：`--db 'C:\Users\ADMINI~1\AppData\Local\Temp\'` → `job_command_usable:true`、命令 `… --db "C:\Users\ADMINI~1\AppData\Local\Temp\" --no-archive`。把该命令交给 node 实测：`node: bad option: --db`——闭合引号被末尾 `\` 转义，argv 崩坏（cmd.exe；POSIX sh 双引号内 `\"` 同理）。当前 `shellSafePath` 允许尾随分隔符。
+实测：`--db '<tmp>\'` → `job_command_usable:true`、命令 `… --db "<tmp>\" --no-archive`。把该命令交给 node 实测：`node: bad option: --db`——闭合引号被末尾 `\` 转义，argv 崩坏（cmd.exe；POSIX sh 双引号内 `\"` 同理）。当前 `shellSafePath` 允许尾随分隔符。
 修法：尾随 `/` 或 `\` 一律 `unsafe`（理由写进 `unsafe`/错误文案），补命令级回归（不只断言字符串）。
 
 ### P2-3 白名单过窄，合法路径被拒 → 无法排期

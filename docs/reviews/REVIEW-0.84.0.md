@@ -77,7 +77,7 @@
 #### P1-3（测试基建）demo 与 audit 使用固定共享 home，并发运行互删
 
 - **位置**：`examples/demo.sh:8-9`（`YGL_HOME=/tmp/ygl-demo` + 启动 `rm -rf`）；`scripts/contract-audit.sh:19-20`（`tmp/contract-audit` + 启动 `rm -rf`）。
-- **问题**：两次运行并发时互相删除数据库，表现为误导性失败：`no database at C:\Users\…\ygl-demo\ygl-trees.db`、`claim not found`。本次评审真实发生（与另一会话并发，双方向各挂一次）；隔离 home 下插桩版 demo **118 条断言全绿**（`tmp/demo-debug.log`，RC=0），可确认脚本逻辑本身确定性 OK，故障来自共享 home。
+- **问题**：两次运行并发时互相删除数据库，表现为误导性失败：`no database at <tmp>/ygl-demo/ygl-trees.db`、`claim not found`。本次评审真实发生（与另一会话并发，双方向各挂一次）；隔离 home 下插桩版 demo **118 条断言全绿**（`tmp/demo-debug.log`，RC=0），可确认脚本逻辑本身确定性 OK，故障来自共享 home。
 - **修法**：`mktemp -d` + `trap 'rm -rf "$YGL_HOME"' EXIT`，保留 `YGL_HOME` 覆盖口子；audit 同理。
 - **验收**：两个 demo 并发运行互不影响；或至少错误信息不再误导。
 
@@ -88,9 +88,9 @@
 - **证据**（实测复现，空 home 下 `kb add --json`）：
 
 ```text
-{"error":"no database at C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\ygl-demo\\ygl-trees.db"}
+{"error":"no database at <tmp>\\ygl-demo\\ygl-trees.db"}
   run: ygl-trees db init
-  workspace: C:\Users\ADMINI~1\AppData\Local\Temp\ygl-demo  (from YGL_HOME)
+  workspace: <tmp>\ygl-demo  (from YGL_HOME)
 → JSON.parse: Unexpected non-whitespace character after JSON at position 100 (line 4 column 3)
 ```
 

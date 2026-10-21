@@ -76,7 +76,7 @@
 
 ## 七、临时文件规范（2026-10-15 用户裁定）
 
-**一切临时测试脚本、调试脚本、临时数据（语料暂存、测试工作区、dump）一律放 `<repo>/tmp/`**，禁止写入系统临时目录（Git Bash 的 `/tmp` = `C:\Users\...\AppData\Local\Temp`）。
+**一切临时测试脚本、调试脚本、临时数据（语料暂存、测试工作区、dump）一律放 `<repo>/tmp/`**，禁止写入系统临时目录（Git Bash 的 `/tmp` 即系统 TEMP，例如 Windows 的 `%LOCALAPPDATA%\Temp`）。
 
 理由：系统 temp 随轮次/清理丢失、跨机器不可移植、埋在用户配置目录里不可巡视；repo 内 `tmp/` 让调试现场可回溯、可直接重跑、且 `.gitignore` 已排除不入库。
 
