@@ -18,6 +18,9 @@
   - **CLI**：`verify run` / `verify report <run>` 的人类输出首屏增一行 `semantic_scope <值>`；无字段时写
     `structural (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)`。**JSON 面原样**（报告不可变、形状冻结；
     字段本体属契约 1.3 批 T4）。
+  - **闭集之外不失败开放**（评审 P3）：`semantic_scope` 不在 `structural | factual | semantic` 内的值（拼错、大小写、未来新值），
+    WebUI 标签显示「仅结构·未知值」、报告头给一行说明，CLI 行写 `structural (未知值 "<原值>" 不在闭集内，按最保守读…)`；
+    任何面都不原样透出未知值。
   - 测试：`verify-report-scope.spec`（CLI 两面 + JSON 不变 + 投影 null）、`verify.spec.tsx` +2（缺省/闭集映射）。
 
 ## 0.113.2

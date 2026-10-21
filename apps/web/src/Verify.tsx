@@ -52,13 +52,18 @@ const SCOPE_HINT: Record<string, string> = {
 /** 缺省的说明只讲「怎么读」，不描述检查器实际做了什么——一个按缺省读的 sql 判据确实判了数据，
  *  把它说成「文件 / 归档在场」会误描述（监督席评审 ③）。 */
 const SCOPE_HINT_DEFAULT = "报告未声明边界（契约 ≤1.2 没有 semantic_scope 字段），按最保守的 structural 读：PASS 只按「结构在场」理解，不据此断言子结论为真；这不描述检查器实际做了什么";
+/** 闭集之内才算声明；缺失与闭集之外（拼错、未来的新值）都按最保守的 structural 读——可见面不得失败开放
+ *  （评审 P3：此前未知值原样显示，只有隐藏说明在说「按 structural 读」）。 */
+export function scopeKnown(scope?: string | null): scope is string {
+  return typeof scope === "string" && Object.prototype.hasOwnProperty.call(SCOPE_LABEL, scope);
+}
 export function scopeLabel(scope?: string | null): string {
-  const s = scope ?? SCOPE_DEFAULT;
-  return SCOPE_LABEL[s] ?? s;
+  return scopeKnown(scope) ? SCOPE_LABEL[scope] : SCOPE_LABEL[SCOPE_DEFAULT];
 }
 export function scopeHint(scope?: string | null): string {
   if (scope == null) return SCOPE_HINT_DEFAULT;
-  return SCOPE_HINT[scope] ?? `未知边界值 ${scope}：按 structural 读`;
+  if (scopeKnown(scope)) return SCOPE_HINT[scope];
+  return `未知边界值 ${JSON.stringify(scope)}：不在闭集 structural | factual | semantic 内，按最保守的 structural 读——不据此断言子结论为真`;
 }
 /** 视觉隐藏但读屏可读（WAI 推荐的 clip 法）：不用 aria-label 给无 role 的 span 命名——ARIA 1.2 禁止给
  *  generic 元素命名，读屏可能跳过它只读可见文字（监督席评审 ② 残留）。 */
@@ -68,8 +73,8 @@ const VISUALLY_HIDDEN: React.CSSProperties = {
 /** 说明必须对键盘 / 触屏 / 读屏可达（监督席评审 ②）：Tooltip 在悬停与聚焦时都出现，span 可聚焦；
  *  整句说明以视觉隐藏文本放在标签内，读屏按 DOM 顺序读到「边界 仅结构·缺省」+ 说明——不靠 ARIA 命名。 */
 export function ScopeTag({ scope }: { scope?: string | null }) {
-  const inferred = scope == null;
-  const label = `边界 ${scopeLabel(scope)}${inferred ? "·缺省" : ""}`;
+  const suffix = scope == null ? "·缺省" : scopeKnown(scope) ? "" : "·未知值";
+  const label = `边界 ${scopeLabel(scope)}${suffix}`;
   const hint = scopeHint(scope);
   return (
     <Tooltip title={hint}>
@@ -415,11 +420,15 @@ export function ReportDetail({ detail }: { detail: VerifyReportDetail }) {
           <ScopeTag scope={detail.report.semantic_scope} />
           <Text>{detail.report.reason}</Text>
         </Space>
-        {detail.report.semantic_scope == null && (
+        {detail.report.semantic_scope == null ? (
           <Text type="secondary">
             边界缺省为「仅结构」：这份报告没有 semantic_scope 字段（契约 ≤1.2），PASS 只按「结构在场」理解——父验证器的 PASS 不代表子结论为真。
           </Text>
-        )}
+        ) : !scopeKnown(detail.report.semantic_scope) ? (
+          <Text type="secondary">
+            边界值 {JSON.stringify(detail.report.semantic_scope)} 不在闭集内，按最保守的「仅结构」读——父验证器的 PASS 不代表子结论为真。
+          </Text>
+        ) : null}
         <Descriptions size="small" column={3}>
           <Descriptions.Item label="统计">
             {detail.report.summary.pass}✓ / {detail.report.summary.fail}✗ /{" "}
