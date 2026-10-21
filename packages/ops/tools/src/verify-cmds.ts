@@ -189,6 +189,20 @@ function pruneSnapshots(dir: string): number {
   return removed;
 }
 
+/**
+ * 语义边界行（#27 Q3 / 方案 T6）：人类可读输出首屏必须透出「这份 PASS 在哪一层成立」。
+ * 契约 ≤1.2 的报告没有 `semantic_scope` 字段 → 按最保守的 structural 读并标明缺省——
+ * 父验证器对子归档的 PASS 只说明子归档在场、可验，不代表子结论为真。只改人类输出，JSON 面原样。
+ */
+export function scopeLine(report: object): string {
+  // 契约 1.2 的 VerifyReport 类型没有这个字段（它属 1.3 批）；按索引读，字段出现时原样透出
+  const raw = (report as Record<string, unknown>).semantic_scope;
+  const declared = typeof raw === "string" ? raw : null;
+  return declared
+    ? `semantic_scope ${declared}`
+    : "semantic_scope structural  (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)";
+}
+
 export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string } {
   const stat = statSync(dbPath);
   if (!stat.isFile()) throw new Error(`--db must point to a SQLite file (snapshot copy), not a directory: ${dbPath}`);
@@ -704,6 +718,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             }));
           } else {
             out(ctx, `  ${report.overall === "PASS" ? paint(C.green, "PASS", ctx.color) : report.overall === "FAIL" ? paint(C.red, "FAIL", ctx.color) : paint(C.yellow, report.overall, ctx.color)}  ${report.run_id}`);
+            out(ctx, paint(C.dim, `  ${scopeLine(report)}`, ctx.color));
             out(ctx, `  pass ${report.summary.pass} · fail ${report.summary.fail} · needs-material ${report.summary.needs_material} · error ${report.summary.error}`);
             const titles = new Map(spec.vu.map((u) => [u.id, u.title]));
             for (const v of report.vu) {
@@ -1074,6 +1089,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 0;
       }
       out(ctx, `  ${report.overall}  ${report.run_id}  (spec ${report.spec_id ?? "?"} v${report.verifier.spec_version})`);
+      out(ctx, paint(C.dim, `  ${scopeLine(report)}`, ctx.color));
       out(ctx, `  pass ${report.summary.pass} · fail ${report.summary.fail} · needs-material ${report.summary.needs_material} · error ${report.summary.error}`);
       for (const v of report.vu) out(ctx, `    ${v.verdict}  ${v.id}`);
       return 0;

@@ -357,6 +357,11 @@ R5 权威拆分：R5a 静态合规（path/sha/`replaced_by` 取 §4.7 第一列�
 npm latest/被检仓 pin 禁作时钟）；§4.7 增 `capability_version` 列（`unshipped` 无界，0.106.0 荒谬界消除）；
 verbatim 提取规则入表注（并集/无 token 行/全形三条为验证席预检补入）；CHANGELOG「未发布」记
 `#29 fault → v1.2` 谱系。生效：评审席 fdc757f6 裁定+授权合并；R5 实现仍为零。
+**#27 方案 T6 记录（2026-10-21，未发布；方案 = PR #31 §5 T6「渲染面透出边界」，按「先按约定做」路径）**：
+WebUI 报告看板三处（运行记录行 / 报告头 / VU 表）加「边界」标签，`semantic_scope` 缺失按最保守的 structural
+显示并标「缺省」，报告头说明「父 PASS 不代表子结论为真」；`verify-web.ts listReports` 透传 `semantic_scope`（无字段 null）；
+CLI `verify run` / `verify report` 人类输出增 `semantic_scope` 行（缺省文案同上），JSON 面不变。字段本体留给契约 1.3（T4）。
+测试：`verify-report-scope.spec`、`verify.spec.tsx` +2。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

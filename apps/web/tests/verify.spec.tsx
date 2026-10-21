@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
-import Verify from "../src/Verify";
+import Verify, { ScopeTag, scopeLabel } from "../src/Verify";
 
 /**
  * M13-2 三视图渲染验证（静态渲染，不引 jsdom——与 pipeline.spec.tsx 同法）：
@@ -32,5 +32,30 @@ describe("verify 三视图（M13-2）", () => {
     expect(html).not.toContain("确认通过");
     expect(html).not.toContain("批准");
     expect(html).not.toContain("✓ 通过");
+  });
+});
+
+/**
+ * #27 Q3 / 方案 T6：报告看板首屏透出语义边界。契约 ≤1.2 的报告没有 semantic_scope 字段，
+ * 必须按最保守的 structural（「仅结构」）显示并标明缺省——父 PASS 不代表子结论为真。
+ */
+describe("语义边界标签（T6）", () => {
+  it("缺省按 structural 读并标明缺省", () => {
+    expect(scopeLabel(undefined)).toBe("仅结构");
+    expect(scopeLabel(null)).toBe("仅结构");
+    const html = renderToStaticMarkup(createElement(ScopeTag, { scope: undefined }));
+    expect(html).toContain("边界 仅结构·缺省");
+    expect(html).toContain("不断言其内容或子结论为真");
+    expect(html).toContain("报告无 semantic_scope 字段");
+  });
+
+  it("声明值按闭集映射，未知值原样显示、不升级", () => {
+    expect(scopeLabel("structural")).toBe("仅结构");
+    expect(scopeLabel("factual")).toBe("事实");
+    expect(scopeLabel("semantic")).toBe("语义");
+    expect(scopeLabel("whatever")).toBe("whatever");
+    const html = renderToStaticMarkup(createElement(ScopeTag, { scope: "factual" }));
+    expect(html).toContain("边界 事实");
+    expect(html).not.toContain("缺省");
   });
 });
