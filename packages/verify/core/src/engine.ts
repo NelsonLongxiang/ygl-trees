@@ -46,6 +46,17 @@ export interface QueryRunner {
   sourceTables?: (sql: string) => string[];
 }
 
+/** #28: the file checker's scan trace. Emitted only to callers that ask for it
+ *  (CLI → workspace sidecar + archive); the report evidence shape stays frozen
+ *  on contract 1.2 (adding paths/hashes there is a contract 1.3 change). */
+export interface FileScanRecord {
+  vu_id: string;
+  dir: string;
+  files: number;
+  ignored: number;
+  matched: Array<{ path: string; sha256: string; size: number }>;
+}
+
 export interface VerifyOptions {
   runner: QueryRunner;
   /** 提交物根目录（file 型）与 program 执行 cwd */
@@ -69,6 +80,8 @@ export interface VerifyOptions {
   signature?: string;
   signingScheme?: string;
   publicKeyFingerprint?: string;
+  /** #28: optional file-scan recorder (CLI persists it as run provenance). */
+  onFileScan?: (record: FileScanRecord) => void;
 }
 
 const EMPTY_SCHEMA = "sha256:unknown";
@@ -559,6 +572,25 @@ async function runFactChecker(
       const re = globToRegExp(c.glob);
       const matched = visible.filter((p) => re.test(relOf(p)));
       const w = witness(visible.length, matched.length, [], fingerprint);
+      if (opts.onFileScan) {
+        // Trace what PASS/FAIL actually pointed at: matched paths + per-file
+        // sha256. Runs even for NEEDS-MATERIAL/FAIL so audit sees the scan.
+        const rec: FileScanRecord = {
+          vu_id: vu.id,
+          dir,
+          files: visible.length,
+          ignored: all.length - visible.length,
+          matched: matched.map((p) => {
+            const bytes = readFileSync(p);
+            return { path: relOf(p), sha256: createHash("sha256").update(bytes).digest("hex"), size: statSync(p).size };
+          }),
+        };
+        try {
+          opts.onFileScan(rec);
+        } catch {
+          /* trace recording must never change the verdict */
+        }
+      }
       const problems: string[] = [];
       if (c.min !== undefined && matched.length < c.min) problems.push(`expected >=${c.min} files, got ${matched.length}`);
       if (c.max !== undefined && matched.length > c.max) problems.push(`expected <=${c.max} files, got ${matched.length}`);

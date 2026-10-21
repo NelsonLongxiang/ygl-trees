@@ -28,6 +28,7 @@ import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
 import { metaGate, metaRepoRootOf, refuseMeta } from "./meta-gate";
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
+import type { FileScanRecord } from "../../../verify/core/src/engine";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
@@ -662,12 +663,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         // 快照留存失败不阻塞判定；只有 `--with snapshot` 归档会要求它
       }
       const runner = new SqliteRunner(snap.path);
-      return runVerify(spec, { runner, submissionDir: submission, mode: "open" })
+      const fileScans: FileScanRecord[] = [];
+      return runVerify(spec, { runner, submissionDir: submission, mode: "open", onFileScan: (r) => fileScans.push(r) })
         .then((report): number => {
           const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
           withSource.payload_sha256 = payloadHash(withSource);
           const file = join(p.reports, `${report.run_id}.json`);
           writeJson(file, withSource);
+          // #28: file-scan provenance (paths + per-file sha256). This is not
+          // report evidence (contract 1.2 frozen); it rides as a workspace
+          // sidecar and enters the archive as an item.
+          let scanFile: string | undefined;
+          if (fileScans.length) {
+            mkdirSync(join(p.root, "submission-scans"), { recursive: true });
+            scanFile = join(p.root, "submission-scans", `${report.run_id}.json`);
+            writeJson(scanFile, { run_id: report.run_id, spec_id: report.spec_id, dir: submission, scans: fileScans });
+          }
           let archived: { path: string; filename: string; archive_id: string; archive_sha256: string; zip_sha256: string } | undefined;
           let archiveError = "";
           if (args.flags["no-archive"] !== true) {
@@ -687,6 +698,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               report_path: file,
               archive: archived ?? null,
               archive_error: archiveError || undefined,
+              submission_scan: scanFile
+                ? { path: scanFile, files: fileScans.reduce((n, x) => n + x.matched.length, 0), dir: submission }
+                : undefined,
             }));
           } else {
             out(ctx, `  ${report.overall === "PASS" ? paint(C.green, "PASS", ctx.color) : report.overall === "FAIL" ? paint(C.red, "FAIL", ctx.color) : paint(C.yellow, report.overall, ctx.color)}  ${report.run_id}`);
@@ -695,6 +709,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             for (const v of report.vu) {
               const mark = v.verdict === "PASS" ? paint(C.green, "✓", ctx.color) : v.verdict === "FAIL" ? paint(C.red, "✗", ctx.color) : paint(C.yellow, "…", ctx.color);
               out(ctx, `    ${mark} ${v.id} ${v.verdict}${titles.get(v.id) ? `  ${titles.get(v.id)}` : ""}${"witness" in v && v.witness ? `  (scanned ${v.witness.rows_scanned} / matched ${v.witness.rows_matched})` : ""}`);
+            }
+            if (scanFile) {
+              const n = fileScans.reduce((acc, x) => acc + x.matched.length, 0);
+              out(ctx, paint(C.dim, `  submission scan: ${n} matched file(s) hashed → ${scanFile}`, ctx.color));
             }
             out(ctx, paint(C.dim, `  report: ${file}`, ctx.color));
             if (archived) out(ctx, paint(C.dim, `  archive: ${archived.path}  (${archived.archive_id})`, ctx.color));
