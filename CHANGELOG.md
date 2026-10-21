@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.109.1
+
+**作者复审四连收口**（verification seat 派单：#7 余项 / #10 / #11 + PR#13）。契约零变更（1.2，digest 不变）。
+
+- **#7 余项 · plain-shell 兜底双名（P1）**：`workerSessionId` 的父会话原用 actor 兜底 `"cli"`，而
+  `project use` 无语境时写 `current_project@default`——worker 爬 `current_project@cli` 无人写，
+  多项目工作区里**裸 shell 的 job tick 仍 ambiguous**（此前只测了有会话路径）。修法：父会话改取选择桶
+  `sessionId()`（缺省 `"default"`）——选择与审计身份是两个命名空间。回归 `job-plain-shell.spec`：
+  无 `YGL_SESSION`/`DSH_SESSION_ID` 环境跑 `job tick`，断言子作业解析出 `alpha` 且无 ambiguous。
+- **#10 契约体检补四命令（P2）**：`node move` / `claim unlink` / `evidence rm` / `source rm` 此前
+  contract-audit **零覆盖**。新增 contract 10 段（22 项）：重跑语义（move 重试幂等 + duplicate:true、
+  unlink 重跑 named `link not found`、rm 重跑 named gone）、用法 rc=2、坏引用点名、`--json` 单对象错误
+  （含 `--force` 级联成功形状）。**100 → 122 通过**。
+- **#11 文档字段名（P3）**：`docs/plan.md` node.move 事件 payload 由 `from_tree/to_tree/state_rows`
+  订正为实况 `from/to/key/state_rows/closure_rows`。
+- **PR#13（zhujun）**：`tokens.spec` 漂移守卫读取即归一化 CRLF（解析收进 `parse()`，加 CRLF 回归用例），
+  `apps/web/README` 可选工具措辞「要求」→「建议保持」。集成评审 + 干净 worktree 门禁
+  （604 passed/2 skipped + web build + `pack:check`）后合并为 `7ab0ce7`。
+
+测试：unit **605 → 608**（tokens CRLF +1、job-at 桶断言 +1、plain-shell +1）；contract-audit 122/122。
+
 ## 0.109.0
 
 **前端两项特性合流**（GitHub PR#4 / PR#5，均已评审合并；此前两版只带代码未记 release note，本版统一记录）。

@@ -73,4 +73,22 @@ describe("workerSessionId (K3 0.106.0)", () => {
       if (prev === undefined) delete process.env.YGL_SESSION; else process.env.YGL_SESSION = prev;
     }
   });
+
+  it("plain shell parents under the selection bucket (default), never the actor fallback (cli)", async () => {
+    const { workerSessionId } = await import("../src/job-cmds");
+    const prevSid = process.env.YGL_SESSION;
+    const prevDsh = process.env.DSH_SESSION_ID;
+    delete process.env.YGL_SESSION;
+    delete process.env.DSH_SESSION_ID;
+    try {
+      // GitHub #7 余项: `project use` in a plain shell writes
+      // current_project@default, so the worker chain must start at "default";
+      // "cli" is the audit-actor bucket and has no selection key.
+      expect(workerSessionId("job_plain")).toBe("default/job_plain");
+      expect(workerSessionId("job_plain")).not.toBe("cli/job_plain");
+    } finally {
+      if (prevSid === undefined) delete process.env.YGL_SESSION; else process.env.YGL_SESSION = prevSid;
+      if (prevDsh === undefined) delete process.env.DSH_SESSION_ID; else process.env.DSH_SESSION_ID = prevDsh;
+    }
+  });
 });

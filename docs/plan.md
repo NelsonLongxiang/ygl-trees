@@ -235,6 +235,13 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 - **测试侧连接级重试（门禁可复现性）**：干净检出 `pnpm test` 偶发 `fetch failed / read ECONNRESET`（`webui.test.ts` P1-1、`verify-jobs` 语料归档各一例；隔离必绿、主树必绿），确认是传输抖动而非判据失败。新增 `tests/support/fetch-retry.ts` 挂 vitest `setupFiles`：只重试「一个字节都没收到」的连接级失败（≤3 次、退避 300/600ms、body 可重放才重试），收到任何状态码原样返回。逐文件加 retry 会散落 20+ 处调用点，且会掩盖 server 真崩（那种情况三次都失败）。
 - **schema 探针订正（发版席上报）**：`probeOf(ddl)` 只认建表语句，`ALTER TABLE` 加的列被 P2 误判「列不在 schema」（实证：`kb_notes.tags/created` 结构性拒绝）。新增 `probeOfDb(dbPath)` 走 `PRAGMA table_info` 取真实列，CLI 与 HTTP 两条 prepare 路径都换用；DDL 文本保留给红队建空库与 schema 指纹。r26 报告原文入库 `docs/reviews/REVIEW-spec-validator-m13-r26.md`，索引行登记。批九增补单（claim unlink / evidence rm、node move、node rm help、并行会话 -t 文档）排 0.105.0。
 
+**0.109.1 记录（作者复审四连，2026-10-21）**：
+- **#7 余项（P1）**：worker 父会话从 actor 兜底 `"cli"` 改为选择桶 `sessionId()`（缺省 `default`）；`job-plain-shell.spec` 在**无 YGL_SESSION** 环境跑 `job tick` 验证裸 shell 路径（此前只测有会话路径，0.108.1 复测漏检即此）。
+- **#10（P2）**：contract-audit 补 contract 10 段覆盖 `node move` / `claim unlink` / `evidence rm` / `source rm` 四命令（重跑语义/用法 rc=2/坏引用点名/`--json` 单对象错误），100→122 项全绿。
+- **#11（P3）**：plan 的 node.move payload 字段订正为 `from/to/key/state_rows/closure_rows`。
+- **PR#13**：tokens.spec CRLF 归一化 + CRLF 回归用例、web README 措辞；干净 worktree 门禁 604/606 + pack:check 后合入（merge `7ab0ce7`）。
+- 测试 unit 605→**608**。
+
 **0.109.0 记录（前端 PR#4/#5 合流，2026-10-21）**：两项前端特性此前已合并但未进 release note（0.108.2/0.108.3 只带代码），本版统一记录并按 semver 用 feature 号。
 - **PR#4（`dd8cd3e`）**：双主题 + hash-router 壳；`DESIGN.md` 调色板唯一事实源、`tokens.css`/`tokens.ts` 两面测试锁同步、首屏主题脚本、antd 映射与 KG 服务端色板同源。合并前干净 worktree 574/574 + pack:check。
 - **PR#5（GitHub `e5f49fe` → 发布线 `313004a`）**：研究管线重建 + 概览驾驶舱/活动时间线（30 天窗口、UTC 标注、表格视图、复制反馈、空态）；只消费既有 `api/*`。作者 30 分钟未 rebase → 按预验（rebase 无冲突、自有 diff 14 文件、603/603 + pack:check）走 GitHub rebase-merge，再合回 Gitee 发布线；双远端对齐 `313004a`。
@@ -325,7 +332,7 @@ M13-3 实现：`verify graduate`（`packages/ops/tools/src/graduate.ts`，264 �
 
 **0.105.0 记录（批九增补单 + r28 收口）**：验证席批九增补（task direct-1d11bff7，用户误挂 4 条证据只能用 `db sql` 裸删）与 302cb119 r28（P3 `$` 展开、Q2 `job_target`）合并本版；无契约形状变更。
 - **claim unlink / evidence rm（P2-1）**：`packages/research/pipeline/src/writes.ts` 新增 `claimUnlink()`（点名三类 not-found、删链接、`recomputeClaimStatus()`、`claim.unlink` 事件）与 `evidenceRemove()`（有链接时拒绝并列出 claim 与解绑命令；`--force` 逐条解绑 + 重算 + 删行 + `evidence.rm` 事件含 `(cascaded: N link(s))`）。`recomputeClaimStatus()` 对 `[预测·` 前缀断言**保持原状态并回 `recalculated:false`**——预测状态由 `claim resolve` 仲裁，证据增删不改变裁决；这是「证据是材料，仲裁是动作」的直接后果。不做成 `source rm` 那种只删不级联的形式：证据的链接面比来源大，静默丢链接会让断言状态说谎。
-- **node move（P2-2）**：`packages/techtree/model/src/writes.ts` `nodeMove()` + `cmds.ts:1130` case：整节点跨树迁移，先拒绝「本树内还有边」（先改边，不替用户猜哪些边该跟走）与「目标树已有同名 key」，成功后迁 `node_state` 行、双树 `markDirty`、落 `node.move` 事件（`from_tree/to_tree/state_rows`）。树内改 parent 不塞进本命令（语义是 unlink+link 的组合）。
+- **node move（P2-2）**：`packages/techtree/model/src/writes.ts` `nodeMove()` + `cmds.ts:1130` case：整节点跨树迁移，先拒绝「本树内还有边」（先改边，不替用户猜哪些边该跟走）与「目标树已有同名 key」，成功后迁 `node_state` 行、双树 `markDirty`、落 `node.move` 事件（payload 实为 `from/to/key/state_rows/closure_rows`）。树内改 parent 不塞进本命令（语义是 unlink+link 的组合）。
 - **可发现性（P2-3）**：顶层 help 与 llms 补 `node rm <key>`（处理器早已存在，缺行等于没有），并写「删除连带边/条件/状态」；`docs/scenarios.md` 与 techtree 技能补并行会话纪律（各自 `use` 或全程 `-t/--project`，session selection 已存在，不新增机制）。
 - **r28 P3 `$` 进 denylist**：POSIX sh 双引号内仍展开 `$VAR` → `--db /data/${HOME}/x.sqlite` 被判 usable 后跑成另一个库；`SHELL_METACHARS` 加 `$`。`{` `}` 在双引号内是字面量，**不拒**——0.104.0 文档误写、源码本没拒，本版订正文档并加测试（`/data/{a}/x.sqlite` usable）。
 - **r28 Q2 `job_target`**：`graduate.ts` 新增 `attachJobTarget()`，`--schedule` 成功后写入 `job_target {db, origin, usable, job_id, every_minutes, updated_at}`；**只更新这一个字段**，`spec_id/spec_version/run_ids/thresholds/history/span_days/data_source/created` 逐字节不变（毕业记录里没有 `materials_sha256` 字段——它是 spec 字段）（`duplicate` 路径同样只动它；不带 `--schedule` 的重复毕业保留旧值）。理由：冻结记录的审计事实不能随排期漂移，但「最后排期意图」需要可审计（`job.retarget` 事件 + `updated_at`）；该字段不进 identity/重复判定/资格/patrol，旧记录缺失容忍。

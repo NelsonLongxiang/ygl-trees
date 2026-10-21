@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.109.0",
+  "version": "0.109.1",
   "description": "Research workbench CLI for AI agents — evidence-first research pipeline, claims calibration and tech-tree skill modeling (SQLite; 猿光·科技树)",
   "type": "commonjs",
   "keywords": [

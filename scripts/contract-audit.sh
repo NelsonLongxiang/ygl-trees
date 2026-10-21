@@ -262,6 +262,51 @@ else
 fi
 $Y patrol rm pc-audit >/dev/null 2>&1 || true
 
+# ── contract 10: 批九增补写命令（node move / claim unlink / evidence rm / source rm）
+#    verification-seat P2: these four had ZERO contract-audit coverage — rerun
+#    behavior, usage rc=2, named bad refs and single-object JSON errors are now
+#    pinned here (they only showed up when run by hand, same reason this script
+#    exists at all).
+echo "── contract 10: 批九增补命令（move/unlink/rm 契约）"
+jid() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);console.log(j.id||j.row?.id||'')}catch(e){console.log('')}})"; }
+
+$Y tree new mv-target >/dev/null 2>&1
+$Y node add lonely-move -t audit >/dev/null 2>&1
+idem "node move (retry idempotent)" -- $Y node move lonely-move --to mv-target -t audit
+dup_flag "node move (retry duplicate flag)" "j.duplicate===true" -- $Y node move lonely-move --to mv-target -t audit
+badref "node move → missing node" "node not found" -- $Y node move no-such-node --to mv-target -t audit
+badref "node move → missing target tree" "tree not found" -- $Y node move a --to no-such-tree -t audit
+usage2 "node move without --to" -- $Y node move a -t audit
+json_err "node move bad ref" 1 -- $Y node move no-such-node --to mv-target -t audit
+
+MVS=$($Y --json research source add --title MVS --url https://e.com/mv-s 2>/dev/null | jid)
+MVE=$($Y --json research evidence add "$MVS" --quote "mv quote" 2>/dev/null | jid)
+MVC=$($Y --json research claim add "mv 断言" 2>/dev/null | jid)
+$Y research claim link "$MVC" "$MVE" --stance supports >/dev/null 2>&1
+json_ok "claim unlink" -- $Y research claim unlink "$MVC" "$MVE"
+badref "claim unlink → not linked" "link not found" -- $Y research claim unlink "$MVC" "$MVE"
+json_err "claim unlink not linked" 1 -- $Y research claim unlink "$MVC" "$MVE"
+badref "claim unlink → missing claim" "claim not found" -- $Y research claim unlink no-such "$MVE"
+badref "claim unlink → missing evidence" "evidence not found" -- $Y research claim unlink "$MVC" no-such
+usage2 "claim unlink missing args" -- $Y research claim unlink "$MVC"
+
+RME=$($Y --json research evidence add "$MVS" --quote "rm quote" 2>/dev/null | jid)
+RMC=$($Y --json research claim add "rm 断言" 2>/dev/null | jid)
+$Y research claim link "$RMC" "$RME" --stance supports >/dev/null 2>&1
+badref "evidence rm → linked refuses" "is linked to 1 claim" -- $Y research evidence rm "$RME"
+json_err "evidence rm linked" 1 -- $Y research evidence rm "$RME"
+json_ok "evidence rm --force" -- $Y research evidence rm "$RME" --force
+badref "evidence rm → gone" "evidence not found" -- $Y research evidence rm "$RME"
+usage2 "evidence rm without id" -- $Y research evidence rm
+
+RMS=$($Y --json research source add --title RMS --url https://e.com/rm-s 2>/dev/null | jid)
+$Y --json research evidence add "$RMS" --quote "src rm quote" >/dev/null 2>&1
+badref "source rm → evidence refuses" "still has 1 evidence row" -- $Y research source rm "$RMS"
+json_err "source rm with evidence" 1 -- $Y research source rm "$RMS"
+json_ok "source rm --force" -- $Y research source rm "$RMS" --force
+badref "source rm → gone" "source not found" -- $Y research source rm "$RMS"
+usage2 "source rm without id" -- $Y research source rm
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

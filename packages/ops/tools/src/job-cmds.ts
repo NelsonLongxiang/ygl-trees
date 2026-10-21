@@ -7,6 +7,7 @@ import { nowIso } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
+import { sessionId } from "../../../core/database/src/selection";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -132,8 +133,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
  *  selection. Concurrent runs of the SAME job share the id (same job ⇒ same
  *  namespace); that is intentional — the guarantee is per-job isolation, not
  *  per-run. Nested workers keep appending (`<parent>/<job>/<run>`), so the
- *  chain stays traceable. */
-export function workerSessionId(jobId: string, parent = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli"): string {
+ *  chain stays traceable.
+ *
+ *  GitHub #7 余项: the parent MUST come from the selection bucket (`sessionId()`,
+ *  default "default"), not the event-actor fallback ("cli"). A plain shell has
+ *  no YGL_SESSION; `project use` then writes `current_project@default`, so a
+ *  worker parented "cli" climbs a bucket nobody wrote and the job still dies
+ *  "ambiguous project". Selection and audit identity are different namespaces. */
+export function workerSessionId(jobId: string, parent = sessionId()): string {
   return `${parent}/${jobId}`;
 }
 
