@@ -4,7 +4,7 @@ description: 验证器生态根规范——五条根原则、开发/运维/使�
 kind: 规范
 ---
 
-# 验证器生态根规范（charter v1.1）
+# 验证器生态根规范（charter v1.2）
 
 > 起草：评审席 GLM-5.3（fdc757f6），2026-10-21；开发席（ygl-trees 引擎线）按属主令固化入档。
 > 属主令：「验证器的开发与运维以及使用的规范，一切必须以 ygl-trees CLI 为主，禁止临时编码执行」。
@@ -13,6 +13,9 @@ kind: 规范
 > **v1.1 修订（2026-10-21）**：P2 增「声明式编排」过渡例外；§4.4 修订 R2/R3、增 R5；增 §4.7 迁往 CLI 原语的路线。
 > 依据：属主裁定「同意方案一：起草章程修订提案（编排白名单 + 迁往 CLI 原语的路线），由评审会话提给上游。」
 > 提案：监督席（YGL Trees 生命周期监督）；提交：评审席 Claude-OPS-5.5。属主令原文不变。
+> **v1.2 修订（2026-10-21，#29）**：R5 拆 **R5a 静态合规 / R5b 时间执法**（时钟=审计方发行物内嵌能力表，
+> 默认不执行）；§4.7 增 `capability_version` 列（`unshipped` 无界）；verbatim 提取规则入表注。
+> 依据：评审席 fdc757f6 对 #29 的裁定（两 fault 属实、拆法与接口精化批准）。
 
 ## §0 根原则（五条，按序优先）
 
@@ -109,7 +112,7 @@ shapes → corpus cases → archives；见 §4.6 对账）。
   P3 的「不得执行」由构造面拒收即已阻断；run/archive 的责任是**如实携带 bypass provenance**
   （`meta-bypass.json` 作 archive 一等 item + events payload_sha256），可追溯性承担 P5，冗余拦截不再加。
 - `spec_error` 映射表由开发席出、评审席确认后入库。
-- **v1.1**：0.113.0 硬拒收照常翻转。登记了声明式编排（P2 例外）且 R1–R3、R5 通过的仓库，按 meta PASS 接受。
+- **v1.1**：0.113.0 硬拒收照常翻转。登记了声明式编排（P2 例外）且 R1–R3、R5a 通过的仓库，按 meta PASS 接受（R5b 由审计面判定，不进自检）。
 
 ### §4.3 探针 CLI 化（0.112.0 已落地）
 
@@ -141,9 +144,17 @@ shapes → corpus cases → archives；见 §4.6 对账）。
 - **R4（S2，缓行 0.113+）** 干净检出可复现——command 型需 `git` 进 meta 运行面 allowlist 且输出入
   evidence（注意隐私：`git status` 安全，build 输出要筛）。
 
-- **R5（S1，v1.1）** 编排按期退场：`orchestration[]` 每条的 `replaced_by` 必须逐字取自 §4.7 原语表（闭集），
-  `sunset` 必须是具体版本号；当前引擎版本 ≥ `sunset` 的条目必须为 0。延期只能修订本规范（属主裁定），不得改登记。
-  「当前引擎版本」= 运行 `verify meta` 的进程读到的 `package.json.version`（与 `--version` 同源）——规则因此可机械执行。
+- **R5（S1，v1.2）** 编排按期退场，**权威拆分两段**：
+  - **R5a（静态合规；`verify meta` 默认执行、离线、不做时钟比较）**：`orchestration[]` 每条必须满足
+    `path` 在 `verify/orchestration/` 下、`sha256` 与实际文件一致、`replaced_by` ∈ §4.7 第一列提取出的
+    命令 token **并集**（每条编排只指名其中一个；剥离反引号、忽略单元格括注——规则见 §4.7 表注，
+    只定义一次）、`sunset` 为**完整 `MAJOR.MINOR.PATCH` 形 semver**（禁 partial / range）。
+  - **R5b（时间执法；审计面显式开启，不进仓内自检）**：时钟 = **审计方发行物内嵌的能力表**——
+    `verify meta --capabilities <file>`，该文件必须内嵌 `engine_version`/能力版本；`--engine-version <v>`
+    仅作**交叉断言**，与表内嵌值不一致 → usage error（点名）。默认 `verify meta` 不执行 R5b；任何运行时
+    查询（如 npm latest）不得作为时钟；被检仓自身的 pin 不构成时钟（stale pin 不能冻结自己的 sunset）。
+    界规则：对已交付能力，`sunset` ≤ `capability_version` 的下一个 minor；`capability_version: unshipped`
+    视为无界（R5b 跳过该条）。延期只能修订本规范（属主裁定），不得改登记。
 
 **索引版本（开发席合并澄清，PR #23 评审）**：`orchestration[]` / `tooling[]` 属 **`meta_index_version: 2`**；
 v1 索引（`meta_index_version: 1`）按 v1 规则只读兼容、不读登记；未知版本按名拒绝。现行实现对 `≠1` 已
@@ -162,23 +173,30 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
   meta 章节）。0.105.x 实际落地的是 `verify self-check` 递归门。**本节曾把 self-check 误记为 meta，
   已在入档时更正**；0.111.0 起 v1 属新增，不是补对账。
 
-### §4.7 迁往 CLI 原语的路线（v1.1）
+### §4.7 迁往 CLI 原语的路线（v1.1；v1.2 增 capability_version）
 
 声明式编排的每项职责都必须有取代它的 CLI 原语；本节只排序、给出原语名（即 R5 `replaced_by` 的闭集），
 不越权定实现——每条原语照 §1「新检查器能力 → 先契约草案（两席裁定）后实现」走，原语清单的来由见 PR #16。
 
-| 编排职责（舰队现状） | 取代它的 CLI 原语 | 原语须提供的 |
-|---|---|---|
-| 采集：检出被验提交、跑测试/构建、读 API，落原始 JSON | `verify collect` | 命令型采集步骤（沿用 `command` 型 allowlist 与 r26 注入防线），输出内容寻址进快照仓，记来源提交与 sha256 |
-| 快照：原始 JSON → SQLite 快照表 | `verify snapshot build` | 声明式字段映射（JSON path → 表/列），不开任意代码 |
-| 构造面：material → candidates/reviews | （无需新原语） | agent 构造面（§3）+ `verify lint-candidates`（0.110.x 已有）——仓内生成脚本可立即退场 |
-| 递归聚合：后序遍历、组节点聚合子报告 | `verify tree run` | 内建组节点聚合（子报告 overall / 归档自校验 / 同轮次），每层真实 run + 归档 |
-| 自检：固定夹具 + 注入缺陷 | `verify self-check`（升级既有命令，不新增同义命令） | 声明式缺陷注入（改某表某行某列），断言「只翻对应叶子」 |
-| 入账 / 结果契约 / 通知 | `verify package`、`verify notify` | 交付轮次打包（spec/report/manifest/zip_sha256）、结果契约输出、outbox 渲染与回执重放 |
-| 跨仓聚合（读成员结果） | `verify import-report` | 按 payload_sha256 引入外部子报告，验签 / 验归档 / 时效判据 |
+| 编排职责（舰队现状） | 取代它的 CLI 原语 | 能力版本（`capability_version`） | 原语须提供的 |
+|---|---|---|---|
+| 采集：检出被验提交、跑测试/构建、读 API，落原始 JSON | `verify collect` | `unshipped` | 命令型采集步骤（沿用 `command` 型 allowlist 与 r26 注入防线），输出内容寻址进快照仓，记来源提交与 sha256 |
+| 快照：原始 JSON → SQLite 快照表 | `verify snapshot build` | `unshipped` | 声明式字段映射（JSON path → 表/列），不开任意代码 |
+| 构造面：material → candidates/reviews | （无需新原语） | `—`（无需退场界） | agent 构造面（§3）+ `verify lint-candidates`（0.110.x 已有）——仓内生成脚本可立即退场 |
+| 递归聚合：后序遍历、组节点聚合子报告 | `verify tree run` | `unshipped` | 内建组节点聚合（子报告 overall / 归档自校验 / 同轮次），每层真实 run + 归档 |
+| 自检：固定夹具 + 注入缺陷 | `verify self-check`（升级既有命令，不新增同义命令） | `unshipped`（声明式缺陷注入能力尚未交付；基础 self-check 已随 0.105.x 交付，不构成 R5 界） | 声明式缺陷注入（改某表某行某列），断言「只翻对应叶子」 |
+| 入账 / 结果契约 / 通知 | `verify package`、`verify notify` | `unshipped` | 交付轮次打包（spec/report/manifest/zip_sha256）、结果契约输出、outbox 渲染与回执重放 |
+| 跨仓聚合（读成员结果） | `verify import-report` | `unshipped` | 按 payload_sha256 引入外部子报告，验签 / 验归档 / 时效判据 |
 
 建议顺序：`verify tree run` → `verify self-check`（升级既有）→ `verify collect`（含 `verify snapshot build`）→
-`verify package` / `verify notify` → `verify import-report`。每条原语发布后的下一个次版本即对应编排的 `sunset` 上限。
+`verify package` / `verify notify` → `verify import-report`。每条原语**能力交付版本**（`capability_version`）
+的下一个次版本即对应编排的 `sunset` 上限；`unshipped` 无界。
+
+**表注（verbatim 与界规则，只在此处定义一次）**：`replaced_by` 的闭集 = §4.7 第一列**所有命令 token
+的并集**（多 token 单元格如 `verify package`、`verify notify` 各贡献一项；每条编排只指名其中一个）；
+第一列无命令 token 的行（如构造面「无需新原语」）**不贡献闭集**。逐字提取 = 剥离反引号、忽略单元格
+括注。`capability_version` = 该原语到达 R5 所需能力的交付版本；`unshipped` 表示能力尚未交付、
+R5b 不对该条设界；`—` 表示该职责无需退场界（不产生编排登记）。`sunset` 一律完整 `MAJOR.MINOR.PATCH`。
 
 ## §5 与现行文件的关系
 
