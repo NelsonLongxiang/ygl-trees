@@ -57,15 +57,27 @@ describe("语义边界标签（T6）", () => {
     expect(scopeHint("structural")).toContain("文件 / 行 / 归档可验");
   });
 
-  it("声明值按闭集映射，未知值原样显示、不升级", () => {
+  it("声明值按闭集映射；闭集外的值在可见面也回落 structural 并标「未知值」（不失败开放）", () => {
     expect(scopeLabel("structural")).toBe("仅结构");
     expect(scopeLabel("factual")).toBe("事实");
     expect(scopeLabel("semantic")).toBe("语义");
-    expect(scopeLabel("whatever")).toBe("whatever");
-    expect(scopeHint("whatever")).toContain("按 structural 读");
-    const html = renderToStaticMarkup(createElement(ScopeTag, { scope: "factual" }));
-    expect(html).toContain("边界 事实");
-    expect(html).not.toContain("缺省");
+    expect(scopeLabel("whatever")).toBe("仅结构");
+    expect(scopeLabel("Factual")).toBe("仅结构"); // 大小写也不放过
+    expect(scopeHint("whatever")).toContain('未知边界值 "whatever"');
+    expect(scopeHint("whatever")).toContain("按最保守的 structural 读");
+    const declared = renderToStaticMarkup(createElement(ScopeTag, { scope: "factual" }));
+    expect(declared).toContain("边界 事实");
+    expect(declared).not.toContain("缺省");
+    const unknown = renderToStaticMarkup(createElement(ScopeTag, { scope: "whatever" }));
+    expect(unknown).toContain("边界 仅结构·未知值");
+    expect(unknown).not.toMatch(/>边界 whatever/);
+  });
+
+  it("≤1.2 报告之外：闭集外的报告级值在详情头也回落「仅结构」并给一行说明", () => {
+    const html = renderToStaticMarkup(createElement(ReportDetail, { detail: fixture({ semantic_scope: "bogus" }) }));
+    expect(html).toContain(">边界 仅结构·未知值<");
+    expect(html).toContain("不在闭集内，按最保守的「仅结构」读");
+    expect(html).not.toContain("缺省为「仅结构」"); // 不是缺省，是未知值
   });
 
   const fixture = (over: Partial<VerifyReportDetail["report"]> = {}): VerifyReportDetail => ({

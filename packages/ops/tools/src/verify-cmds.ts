@@ -194,13 +194,15 @@ function pruneSnapshots(dir: string): number {
  * 契约 ≤1.2 的报告没有 `semantic_scope` 字段 → 按最保守的 structural 读并标明缺省——
  * 父验证器对子归档的 PASS 只说明子归档在场、可验，不代表子结论为真。只改人类输出，JSON 面原样。
  */
+/** 闭集（#27 fdc 提案；契约 1.3 草案 §2）：闭集之外的值不得原样透出——可见面失败开放会让拼错或未来的新值
+ *  读起来像更强的承诺（评审 P3）。 */
+const SEMANTIC_SCOPES = new Set(["structural", "factual", "semantic"]);
 export function scopeLine(report: object): string {
-  // 契约 1.2 的 VerifyReport 类型没有这个字段（它属 1.3 批）；按索引读，字段出现时原样透出
+  // 契约 1.2 的 VerifyReport 类型没有这个字段（它属 1.3 批）；按索引读
   const raw = (report as Record<string, unknown>).semantic_scope;
-  const declared = typeof raw === "string" ? raw : null;
-  return declared
-    ? `semantic_scope ${declared}`
-    : "semantic_scope structural  (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)";
+  if (typeof raw !== "string") return "semantic_scope structural  (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)";
+  if (SEMANTIC_SCOPES.has(raw)) return `semantic_scope ${raw}`;
+  return `semantic_scope structural  (未知值 ${JSON.stringify(raw)} 不在闭集 structural|factual|semantic 内，按最保守读——父 PASS 不代表子结论为真)`;
 }
 
 export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string } {

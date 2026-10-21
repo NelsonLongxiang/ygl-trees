@@ -28,11 +28,16 @@ function run(args: string[]) {
 }
 
 describe("scopeLine（纯函数）", () => {
-  it("无字段 → structural 并标明缺省；有字段 → 原样", () => {
+  it("无字段 → structural 并标明缺省；闭集内 → 原样；闭集外 → structural 并点名未知值（不失败开放）", () => {
     expect(scopeLine({})).toMatch(/^semantic_scope structural/);
     expect(scopeLine({})).toMatch(/缺省/);
     expect(scopeLine({ semantic_scope: "factual" })).toBe("semantic_scope factual");
-    expect(scopeLine({ semantic_scope: 42 })).toMatch(/structural/); // 非字符串不算声明
+    expect(scopeLine({ semantic_scope: "semantic" })).toBe("semantic_scope semantic");
+    expect(scopeLine({ semantic_scope: 42 })).toMatch(/^semantic_scope structural.*缺省/); // 非字符串不算声明
+    const bogus = scopeLine({ semantic_scope: "Factual " });
+    expect(bogus).toMatch(/^semantic_scope structural/);
+    expect(bogus).toMatch(/未知值 "Factual "/);
+    expect(bogus).not.toMatch(/^semantic_scope Factual/);
   });
 });
 
