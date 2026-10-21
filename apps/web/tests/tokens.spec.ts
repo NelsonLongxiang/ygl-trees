@@ -13,13 +13,23 @@ import { PALETTES, themeConfig } from "../src/tokens";
  */
 
 const REPO = resolve(__dirname, "../../.."); // tests → web → apps → repo
-const design = readFileSync(resolve(REPO, "DESIGN.md"), "utf8");
-const css = readFileSync(resolve(REPO, "apps/web/src/tokens.css"), "utf8");
-const ts = readFileSync(resolve(REPO, "apps/web/src/tokens.ts"), "utf8");
+
+/**
+ * Line endings (review-66d10ab; upstream 0.108.0 hit the same): every parse
+ * below is line-based and written for LF. A Windows checkout with
+ * core.eol=native reads "colors:\r\n", an LF-only regex then yields "" and the
+ * drift guard fails for the wrong reason. Normalise once at the read instead
+ * of hedging every regex — and again inside parse(), so the CRLF test below
+ * can hand it raw text.
+ */
+const normalize = (src: string): string => src.replace(/\r\n/g, "\n");
+const read = (rel: string): string => normalize(readFileSync(resolve(REPO, rel), "utf8"));
 
 // frontmatter ends at the first line that is exactly "---" after line 1
-const fmEnd = design.indexOf("\n---\n", 4);
-const fm = design.slice(0, fmEnd);
+const frontmatter = (src: string): string => {
+  const end = src.indexOf("\n---\n", 4);
+  return end < 0 ? "" : src.slice(0, end);
+};
 
 // colors: (dark) and colors-light: (light) are sibling top-level maps; slice each block
 const block = (src: string, start: RegExp): string => {
@@ -29,34 +39,46 @@ const block = (src: string, start: RegExp): string => {
   const end = rest.search(/\n[^\s#]/); // next top-level key
   return end < 0 ? rest : rest.slice(0, end);
 };
-const fmDark = block(fm, /\ncolors:\n/);
-const fmLight = block(fm, /\ncolors-light:\n/);
 
 const hexIn = (src: string, name: string): string => {
   const m = src.match(new RegExp(`(?:^|\\n)\\s+${name}:\\s*"(#[0-9a-f]{6})"`));
   return m ? m[1].toLowerCase() : "";
 };
-const designColor = (name: string): string => hexIn(fmDark, name);
-const designLight = (name: string): string => hexIn(fmLight, name);
-
-// tokens.css: :root/[data-theme="dark"] block, then [data-theme="light"] block
-const cssDark = block(css, /\[data-theme="dark"\] \{/);
-const cssLight = block(css, /\[data-theme="light"\] \{/);
 const cssVarIn = (src: string, name: string): string => {
   const m = src.match(new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6})`));
   return m ? m[1].toLowerCase() : "";
 };
-const cssVar = (name: string): string => cssVarIn(cssDark, name);
-
 // tokens.ts: DARK = { … } and LIGHT = { … } literal maps
-const tsMap = (name: string): string => {
-  const m = new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\} as const`).exec(ts);
+const tsMap = (src: string, name: string): string => {
+  const m = new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\} as const`).exec(src);
   return m ? m[1] : "";
 };
 const tsHex = (src: string, key: string): string => {
   const m = src.match(new RegExp(`"?${key}"?:\\s*"(#[0-9a-f]{6})"`));
   return m ? m[1].toLowerCase() : "";
 };
+
+/** The whole line-based parse, from raw text, so one CRLF test covers every piece of it. */
+const parse = (designSrc: string, cssSrc: string, tsSrc: string) => {
+  const design = normalize(designSrc), css = normalize(cssSrc), ts = normalize(tsSrc);
+  const fm = frontmatter(design);
+  return {
+    design, css, ts,
+    fmDark: block(fm, /\ncolors:\n/),
+    fmLight: block(fm, /\ncolors-light:\n/),
+    // tokens.css: :root/[data-theme="dark"] block, then [data-theme="light"] block
+    cssDark: block(css, /\[data-theme="dark"\] \{/),
+    cssLight: block(css, /\[data-theme="light"\] \{/),
+    tsDark: tsMap(ts, "DARK"),
+    tsLight: tsMap(ts, "LIGHT"),
+  };
+};
+
+const SRC = { design: read("DESIGN.md"), css: read("apps/web/src/tokens.css"), ts: read("apps/web/src/tokens.ts") };
+const { design, css, ts, fmDark, fmLight, cssDark, cssLight, tsDark, tsLight } = parse(SRC.design, SRC.css, SRC.ts);
+const designColor = (name: string): string => hexIn(fmDark, name);
+const designLight = (name: string): string => hexIn(fmLight, name);
+const cssVar = (name: string): string => cssVarIn(cssDark, name);
 
 describe("0.92 visual token single-source (单B drift guard)", () => {
   const colorKeys = [
@@ -111,10 +133,25 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
   });
 
   it("tokens.ts DARK/LIGHT palettes mirror DESIGN.md (all colors × dark/light)", () => {
-    const dark = tsMap("DARK"), light = tsMap("LIGHT");
     for (const k of colorKeys) {
-      expect(tsHex(dark, k), `DARK.${k}`).toBe(designColor(k));
-      expect(tsHex(light, k), `LIGHT.${k}`).toBe(designLight(k));
+      expect(tsHex(tsDark, k), `DARK.${k}`).toBe(designColor(k));
+      expect(tsHex(tsLight, k), `LIGHT.${k}`).toBe(designLight(k));
+    }
+  });
+
+  it("reads a CRLF checkout the same (Windows core.eol=native; review-66d10ab)", () => {
+    const crlf = (s: string) => s.replace(/\n/g, "\r\n");
+    const lf = parse(SRC.design, SRC.css, SRC.ts);
+    const win = parse(crlf(SRC.design), crlf(SRC.css), crlf(SRC.ts));
+    expect(win.fmDark, "colors: block from CRLF frontmatter").not.toBe("");
+    expect(win.fmLight, "colors-light: block from CRLF frontmatter").not.toBe("");
+    for (const k of colorKeys) {
+      expect(hexIn(win.fmDark, k), `CRLF colors.${k}`).toBe(hexIn(lf.fmDark, k));
+      expect(hexIn(win.fmLight, k), `CRLF colors-light.${k}`).toBe(hexIn(lf.fmLight, k));
+      expect(cssVarIn(win.cssDark, k), `CRLF dark --color-${k}`).toBe(cssVarIn(lf.cssDark, k));
+      expect(cssVarIn(win.cssLight, k), `CRLF light --color-${k}`).toBe(cssVarIn(lf.cssLight, k));
+      expect(tsHex(win.tsDark, k), `CRLF DARK.${k}`).toBe(tsHex(lf.tsDark, k));
+      expect(tsHex(win.tsLight, k), `CRLF LIGHT.${k}`).toBe(tsHex(lf.tsLight, k));
     }
   });
 
@@ -132,8 +169,8 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
   });
 
   it("index.html pre-paint script and theme.tsx share the storage key", () => {
-    const html = readFileSync(resolve(REPO, "apps/web/index.html"), "utf8");
-    const theme = readFileSync(resolve(REPO, "apps/web/src/theme.tsx"), "utf8");
+    const html = read("apps/web/index.html");
+    const theme = read("apps/web/src/theme.tsx");
     expect(html).toContain(`localStorage.getItem("ygl-theme")`);
     expect(theme).toContain(`THEME_KEY = "ygl-theme"`);
   });
@@ -143,13 +180,13 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
   });
 
   it("App.tsx has no raw hex color left (palette lives in tokens.ts only)", () => {
-    const app = readFileSync(resolve(REPO, "apps/web/src/App.tsx"), "utf8");
+    const app = read("apps/web/src/App.tsx");
     const hexes = app.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
     expect(hexes, `raw hex in App.tsx: ${hexes.join(", ")}`).toEqual([]);
   });
 
   it("KnowledgeGraph.tsx: every hex is a DESIGN.md token", () => {
-    const src = readFileSync(resolve(REPO, "apps/web/src/KnowledgeGraph.tsx"), "utf8");
+    const src = read("apps/web/src/KnowledgeGraph.tsx");
     const tokenSet = new Set(colorKeys.map(designColor));
     const hexes = src.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
     for (const h of hexes) {
@@ -158,7 +195,7 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
   });
 
   it("webui.ts server-side KG palette uses DESIGN.md tokens only", () => {
-    const src = readFileSync(resolve(REPO, "packages/ops/tools/src/webui.ts"), "utf8");
+    const src = read("packages/ops/tools/src/webui.ts");
     const tokenSet = new Set(colorKeys.map(designColor));
     const hexes = src.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
     for (const h of hexes) {
@@ -169,10 +206,10 @@ describe("0.92 visual token single-source (单B drift guard)", () => {
   it("KnowledgeGraph type fills match the server's dark colour map type for type", () => {
     // webui.ts still ships a dark hex per entity (snapshot.json contract); the
     // client themes by type instead — the two maps must name the same token.
-    const server = readFileSync(resolve(REPO, "packages/ops/tools/src/webui.ts"), "utf8");
+    const server = read("packages/ops/tools/src/webui.ts");
     const sMap = /const colors: Record<string, string> = \{([\s\S]*?)\};/.exec(server)?.[1] ?? "";
     const serverHex = Object.fromEntries([...sMap.matchAll(/(\w+):\s*"(#[0-9a-f]{6})"/g)].map((m) => [m[1], m[2]]));
-    const kg = readFileSync(resolve(REPO, "apps/web/src/KnowledgeGraph.tsx"), "utf8");
+    const kg = read("apps/web/src/KnowledgeGraph.tsx");
     const cMap = /const typeFill: Record<string, string> = \{([\s\S]*?)\};/.exec(kg)?.[1] ?? "";
     const clientKey = Object.fromEntries([...cMap.matchAll(/(\w+):\s*C\.(\w+)/g)].map((m) => [m[1], m[2]]));
     expect(Object.keys(clientKey).sort()).toEqual(Object.keys(serverHex).sort());
