@@ -38,6 +38,7 @@
 | `REVIEW-spec-validator-m13-r28.md` | 0.104.0 复核（r27 P2×3/P3×4 收口） | **PASS**：r27 七项全部实证落位（retarget 同 id 改写 jobs、尾随分隔符/中文路径判定、掩码只描述形状、timeout 旗标删除、Rust 交接 31/31、ratchet method、source_warning 投影）；干净树 `814a7c3` 门禁 unit 497/497、contract 100/100、ratchet held（余量 1118B）。**P3×1**：denylist 未含 `$`，POSIX sh 会展开路径变量 → 可能静默验证另一个库；**P4×4**：文档称拒 `{}` 实现放行、CHANGELOG「基线不动」与同版重烘矛盾、基线早于最终提交、同 subject 提交残留。两问裁定：干净树复现已由本轮覆盖、无需重复；**同意加 `job_target`**（origin/写入时机/不变性/隔离/读面 五条规则） → **0.104.0 已收口** |
 | `REVIEW-spec-validator-m13-r29.md` | 0.105.0 复核（批九增补单 + r28 收口，事后） | **发布物 BLOCK / 代码 CHANGES**：0.105.0 tarball 含 4×`workspace:~` → `npm install` 报 `EUNSUPPORTEDPROTOCOL`（独立实测；**0.105.1** 修：pack-repro 以 pnpm 产物为源 + 拒绝残留 + 5b 加 npm 真装探针）；代码 P2×2（`evidence_fts` 影子未删、node move 重试非幂等）→ **0.105.2** 修；P3×3/P4×2（空白 `--db` origin 误标、cascaded 类型、CLI Q2 断言同义反复）→ **0.108.2** 修/记账。r28 的 `$` denylist 与 `job_target` identity 边界复核通过；Q2 答「带 tree_id 的 5 张表无遗漏」；Q3 答「预测断言保状态与 predict 纪律一致」。仍开放：`updated_at` 未变也刷新、非预测 unlink 可覆盖人工仲裁 → **已闭环**（0.105.1/0.105.2/0.108.2）；Q1（`updated_at` 仅变更时刷新）/Q3（仲裁锁：resolve 后链接增删保持状态、unresolve 解锁）/`db init` 冷启动（实测 85s，12 技能逐事务导入 → 批量单事务候选）转 0.110 候选 |
 | `harness2-dual-validation-plan.md`（方案） | harness2 双线验证（两席共识） | 需求侧不可或缺；外强于内；P1a 方差探针 + evaluator 协议先行；红线=单一裁判权 |
+| `verifier-production-line-plan.md`（方案） | 按《验证器协同规范》评审引擎与舰队验证器 | 判定半边已生产级、生产半边未开工；定位冲突（报告≠产品）；P0 舰队止血 → P1 引擎小步 → P2 生产线原语 → P3 迁移 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |
 
