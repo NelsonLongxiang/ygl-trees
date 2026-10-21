@@ -27,6 +27,7 @@
  * R4 (clean-checkout reproducibility) is deliberately deferred — it needs a
  * command allowlist and privacy-filtered output, see charter §4.4.
  */
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -40,8 +41,9 @@ export const META_INDEX_VERSIONS: readonly number[] = [1, 2];
 /** Latest index schema version (what a new verifier repo should declare). */
 export const META_INDEX_VERSION = 2;
 
-/** charter §4.7 table note: `replaced_by` closed set = the union of command
- *  tokens in the first column (backticks stripped, parentheticals ignored). */
+/** charter §4.7 table note: `replaced_by` closed set = the union of the command
+ *  tokens in the 「取代它的 CLI 原语」 column (backticks stripped, parentheticals
+ *  ignored; multi-token cells contribute one entry per token). */
 export const R5_REPLACED_BY: readonly string[] = [
   "verify collect",
   "verify snapshot build",
@@ -56,8 +58,11 @@ export const TOOLING_ROLES: readonly string[] = ["build", "test", "release", "ga
 const ORCHESTRATION_DIR = "verify/orchestration/";
 const SEMVER_FULL = /^\d+\.\d+\.\d+$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
-/** charter §4.4 R3: in a repo that lists specs, tooling must not drive verification. */
-const DRIVES_VERIFY = /\bverify\s+(run|prepare|submit|archive)\b/;
+/** charter §4.4 R3: in a repo that lists specs, tooling must not drive verification.
+ *  Matches the shell form (`ygl-trees verify run …`) and the argv-array idiom the
+ *  fleet actually uses (`ygl(["verify", "run", …])`): between `verify` and the verb
+ *  only whitespace, quotes, commas and brackets may appear. */
+const DRIVES_VERIFY = /\bverify\b[\s"'`,[\]]*\b(run|prepare|submit|archive)\b/;
 
 export type MetaVerdict = "PASS" | "FAIL" | "NEEDS-MATERIAL";
 export type MetaRuleId = "R1" | "R2" | "R3" | "R5a";
@@ -259,15 +264,55 @@ function walkFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** Directories that intentionally host repo tooling or build output — their
- *  scripts are not "stray verification artifacts". `docs/` is deliberately NOT
- *  allowlisted (docs must stay prose). charter v1.1: these stay name-allowlisted
- *  without registration. */
+/** v1 only (0.112.0 rules, byte-for-byte): directories that host repo tooling or
+ *  build output are allowlisted by NAME. `docs/` is deliberately not allowlisted.
+ *  Under a v2 index this allowlist is retired — charter v1.1 §4.4 R3 makes
+ *  registration the only exemption (#22: a `scripts/run.mjs` that drives
+ *  `verify run` must be seen, not waved through by its directory). */
 const REPO_TOOLING = new Set(["scripts", "benchmarks", "examples", "rust", "vendor", "node_modules", "dist", "tmp", ".git", "coverage", ".claude"]);
-/** v1 only: named repo-tooling files outside the tooling dirs. Under a v2 index
- *  this hardcode is retired — the file is registered in `tooling[]` instead
- *  (this repo's own verify/meta.json does exactly that). */
+/** v1 only: named repo-tooling files outside the tooling dirs. Under v2 the file
+ *  is registered in `tooling[]` instead (this repo's own verify/meta.json does). */
 const REPO_TOOLING_FILES_V1 = new Set(["packages/verify/core/corpus/freeze.mjs"]);
+/** v2: the only unregistered exemptions besides tmp/ (charter: 「tmp/ 下，或依赖根」). */
+const DEP_ROOTS = new Set(["node_modules", "vendor"]);
+
+/** v2 scan set. The charter's R3 speaks of 已跟踪文件, so in a git checkout the set
+ *  is what git sees — tracked plus untracked-but-not-ignored (a script forgotten
+ *  before `git add` is still a stray; build output such as dist/ is gitignored and
+ *  out of scope). Without git: every file on disk. tmp/ and the dependency roots
+ *  are dropped either way; `.git` itself is never a candidate. */
+function listFilesV2(repo: string): string[] {
+  let rels: string[] | null = null;
+  if (existsSync(join(repo, ".git"))) {
+    const r = spawnSync("git", ["-C", repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (r.status === 0) rels = r.stdout.split("\0").filter(Boolean).map(posix);
+  }
+  if (rels === null) {
+    const out: string[] = [];
+    const visit = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        if (name === ".git") continue;
+        const full = join(dir, name);
+        let st;
+        try {
+          st = statSync(full);
+        } catch {
+          continue;
+        }
+        if (st.isDirectory()) visit(full);
+        else out.push(posix(relative(repo, full)));
+      }
+    };
+    visit(repo);
+    rels = out;
+  }
+  return rels
+    .filter((rel) => {
+      const top = rel.split("/")[0];
+      return top !== "tmp" && !DEP_ROOTS.has(top);
+    })
+    .sort();
+}
 
 function fileSha(repo: string, rel: string): string | null {
   const full = join(repo, rel);
@@ -287,7 +332,9 @@ function r3(repo: string, index: IndexState): MetaRule {
   // their validity (location/sha/replaced_by/sunset) is judged once, in R5a.
   // Tooling entries exempt only when the registered sha256 matches the file.
   const orchestrationPaths = new Set(v2 ? index.orchestration.map((e) => e.path) : []);
-  const toolingOk = new Set<string>();
+  // A listed tooling path is judged once, here (missing / sha drift / drives
+  // verification); it is not reported a second time as a stray below.
+  const toolingListed = new Set(v2 ? index.tooling.map((e) => e.path) : []);
   if (v2) {
     for (const t of index.tooling) {
       const got = fileSha(repo, t.path);
@@ -295,22 +342,36 @@ function r3(repo: string, index: IndexState): MetaRule {
       else if (got !== t.sha256) problems.push(`registered tooling sha256 mismatch: ${t.path}`);
       else if (index.specsListed > 0 && DRIVES_VERIFY.test(readFileSync(join(repo, t.path), "utf8"))) {
         problems.push(`tooling must not drive verification (verify run|prepare|submit|archive) when specs are listed: ${t.path} — register it in orchestration[]`);
-      } else toolingOk.add(t.path);
+      }
     }
   }
-  // #22: scan the WHOLE tree (root-only + docs/ let lib/probe.mjs through).
-  // `tmp/` is excluded from the scan but must be gitignored (checked below);
-  // tooling homes are allowlisted as a directory, never as a filename pattern.
-  for (const full of walkFiles(repo)) {
-    const rel = posix(relative(repo, full));
-    const top = rel.split("/")[0];
-    if (REPO_TOOLING.has(top)) continue;
-    if (!v2 && REPO_TOOLING_FILES_V1.has(rel)) continue;
-    if (!exts.some((ext) => rel.endsWith(ext))) continue;
-    if (orchestrationPaths.has(rel) || toolingOk.has(rel)) continue;
-    if (top === "docs") problems.push(`executable artifact under docs/: ${rel}`);
-    else if (!rel.includes("/")) problems.push(`loose script at repo root: ${rel}`);
-    else problems.push(`stray executable outside tooling dirs: ${rel}`);
+  if (v2) {
+    // charter v1.1 §4.4 R3: exemption by registration only. No directory allowlist —
+    // the 0.112.0 name-allowlist let an unregistered scripts/run.mjs drive
+    // `verify run` with R3 PASS (#22 survived); now every executable git sees must
+    // be registered in tooling[] (sha-bound) or orchestration[] (R5a-bound).
+    for (const rel of listFilesV2(repo)) {
+      if (!exts.some((ext) => rel.endsWith(ext))) continue;
+      if (orchestrationPaths.has(rel) || toolingListed.has(rel)) continue;
+      const top = rel.split("/")[0];
+      if (top === "docs") problems.push(`executable artifact under docs/: ${rel}`);
+      else if (!rel.includes("/")) problems.push(`loose script at repo root: ${rel}`);
+      else problems.push(`unregistered executable: ${rel} — register it in tooling[] (build|test|release|gate) or orchestration[]`);
+    }
+  } else {
+    // v1 (#22, 0.112.0): scan the WHOLE tree (root-only + docs/ let lib/probe.mjs
+    // through); `tmp/` excluded but must be gitignored (checked below); tooling
+    // homes allowlisted as a directory, never as a filename pattern.
+    for (const full of walkFiles(repo)) {
+      const rel = posix(relative(repo, full));
+      const top = rel.split("/")[0];
+      if (REPO_TOOLING.has(top)) continue;
+      if (REPO_TOOLING_FILES_V1.has(rel)) continue;
+      if (!exts.some((ext) => rel.endsWith(ext))) continue;
+      if (top === "docs") problems.push(`executable artifact under docs/: ${rel}`);
+      else if (!rel.includes("/")) problems.push(`loose script at repo root: ${rel}`);
+      else problems.push(`stray executable outside tooling dirs: ${rel}`);
+    }
   }
   const tmpDir = join(repo, "tmp");
   if (existsSync(tmpDir)) {
@@ -319,7 +380,7 @@ function r3(repo: string, index: IndexState): MetaRule {
     if (!ignored) problems.push("tmp/ exists but is not gitignored");
   }
   const evidence: Record<string, unknown> = problems.length ? { problems: problems.slice(0, 10) } : { root: "clean", docs: "clean" };
-  if (v2) Object.assign(evidence, { registered: { orchestration: orchestrationPaths.size, tooling: toolingOk.size } });
+  if (v2) Object.assign(evidence, { registered: { orchestration: orchestrationPaths.size, tooling: toolingListed.size } });
   return {
     id: "R3",
     severity: "S1",
