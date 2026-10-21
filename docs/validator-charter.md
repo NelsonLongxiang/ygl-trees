@@ -146,8 +146,9 @@ shapes → corpus cases → archives；见 §4.6 对账）。
 
 - **R5（S1，v1.2）** 编排按期退场，**权威拆分两段**：
   - **R5a（静态合规；`verify meta` 默认执行、离线、不做时钟比较）**：`orchestration[]` 每条必须满足
-    `path` 在 `verify/orchestration/` 下、`sha256` 与实际文件一致、`replaced_by` 逐字取自 §4.7 第一列
-    命令 token（剥离反引号、忽略单元格括注——规则见 §4.7 表注，只定义一次）、`sunset` 为具体 semver。
+    `path` 在 `verify/orchestration/` 下、`sha256` 与实际文件一致、`replaced_by` ∈ §4.7 第一列提取出的
+    命令 token **并集**（每条编排只指名其中一个；剥离反引号、忽略单元格括注——规则见 §4.7 表注，
+    只定义一次）、`sunset` 为**完整 `MAJOR.MINOR.PATCH` 形 semver**（禁 partial / range）。
   - **R5b（时间执法；审计面显式开启，不进仓内自检）**：时钟 = **审计方发行物内嵌的能力表**——
     `verify meta --capabilities <file>`，该文件必须内嵌 `engine_version`/能力版本；`--engine-version <v>`
     仅作**交叉断言**，与表内嵌值不一致 → usage error（点名）。默认 `verify meta` 不执行 R5b；任何运行时
@@ -191,9 +192,11 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
 `verify package` / `verify notify` → `verify import-report`。每条原语**能力交付版本**（`capability_version`）
 的下一个次版本即对应编排的 `sunset` 上限；`unshipped` 无界。
 
-**表注（verbatim 与界规则，只在此处定义一次）**：`replaced_by` 的逐字提取 = §4.7 第一列命令 token
-（剥离反引号、忽略单元格括注）；`capability_version` = 该原语到达 R5 所需能力的交付版本；
-`unshipped` 表示能力尚未交付、R5b 不对该条设界；`—` 表示该职责无需退场界（不产生编排登记）。
+**表注（verbatim 与界规则，只在此处定义一次）**：`replaced_by` 的闭集 = §4.7 第一列**所有命令 token
+的并集**（多 token 单元格如 `verify package`、`verify notify` 各贡献一项；每条编排只指名其中一个）；
+第一列无命令 token 的行（如构造面「无需新原语」）**不贡献闭集**。逐字提取 = 剥离反引号、忽略单元格
+括注。`capability_version` = 该原语到达 R5 所需能力的交付版本；`unshipped` 表示能力尚未交付、
+R5b 不对该条设界；`—` 表示该职责无需退场界（不产生编排登记）。`sunset` 一律完整 `MAJOR.MINOR.PATCH`。
 
 ## §5 与现行文件的关系
 
