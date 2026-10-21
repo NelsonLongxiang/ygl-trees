@@ -1,4 +1,132 @@
 {
-  "meta_index_version": 1,
-  "specs": []
+  "meta_index_version": 2,
+  "specs": [],
+  "orchestration": [],
+  "tooling": [
+    {
+      "path": "benchmarks/bench.js",
+      "sha256": "ab21178fe450e0da894be53e75565f0e473e3d5d3dd08c3bded6dfd3c8278b66",
+      "role": "test"
+    },
+    {
+      "path": "benchmarks/knowledge-search/knowledge-search.bench.js",
+      "sha256": "06731d7f3d051130e7ebaa56c9bb78ae137d11a4e6f0a9d61ae56dd6224f7857",
+      "role": "test"
+    },
+    {
+      "path": "benchmarks/research-write/research-write.bench.js",
+      "sha256": "4a1f6e9f53d5885add878a52f291f9a7adf23e11832692ac1e11f8fb890206a3",
+      "role": "test"
+    },
+    {
+      "path": "benchmarks/startup/startup.bench.js",
+      "sha256": "6b73db6b6e15e962d1522a586bcf4668c507265f75049a226445512b4a6cb11e",
+      "role": "test"
+    },
+    {
+      "path": "benchmarks/support/helpers.js",
+      "sha256": "8f607a2b10661d21fc2b70b9f63593e47dbdb9c02cffb1c6759784096206fdb3",
+      "role": "test"
+    },
+    {
+      "path": "benchmarks/techtree-index/techtree-index.bench.js",
+      "sha256": "6c7eb714a78c0d3f078a4f253ece4c26dddbbc93b96baee6456063b1b5abf7aa",
+      "role": "test"
+    },
+    {
+      "path": "examples/demo.sh",
+      "sha256": "d7f30d3b82599518b5eaabab35f726f54348ef93a7ed6b977217721313905104",
+      "role": "test"
+    },
+    {
+      "path": "examples/plugin-demo/index.js",
+      "sha256": "147aa99e53672f8c6c442797e8c2b96ca8303c5ee6099041aa79687e05186a11",
+      "role": "test"
+    },
+    {
+      "path": "packages/verify/core/corpus/freeze.mjs",
+      "sha256": "057fc10809e4b2f8300f609af24c730fd5b818244304151f67ac9a3639d7c79e",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/bun-smoke.sh",
+      "sha256": "777a5065b4634a58c40ffb014054a3905e846a63c643cfe30d23ba1a29d80710",
+      "role": "test"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "sha256": "6d575bf62d250fcaecec795a17a81bad188a5e2903279b619d14af397e8f0ce4",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/cordis-drift.mjs",
+      "sha256": "bbfd4fa152c6b7c9e84c1a2baea6f0fb7f91ed2d51c3aee62632f103ba56816b",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/cordis-scan.mjs",
+      "sha256": "ae1f7bb27cf98cdc9818e3c84be6e6519d1f601475520d89d92bfd7d611aa693",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/gate.js",
+      "sha256": "2799c7a6263a8ea13022fd1ed72e0e26dc49f1f470030603220027a0e722fb27",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/gen-examples.mjs",
+      "sha256": "8239520b0dace19c3ebd6387fb13c6a4be23d35f4a87dd348814b6d8377dba08",
+      "role": "build"
+    },
+    {
+      "path": "scripts/json-check.mjs",
+      "sha256": "064ffbbd3c8649d1fbf150a73f1e989fa41daf7b56de780f1cd4571ea80e094a",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/lib/pack-guard.mjs",
+      "sha256": "b9d52f8c0d5210e5fb73ce68f1e281432326586d4fe94f93b3c7a44b7270e7d7",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "sha256": "24efaab26716c6865cb7ca03f05274b7c80625951b360aed56771608bdd8cc3a",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/pack-check.sh",
+      "sha256": "9157e820bd69f662d9deae4a244ca83701daf41264b1da35be3354e4da817206",
+      "role": "release"
+    },
+    {
+      "path": "scripts/pack-repro.mjs",
+      "sha256": "4d52f27a191be13c609c7c51448f46d3a7b65df6eb23c5412a54baa907ac7d1e",
+      "role": "build"
+    },
+    {
+      "path": "scripts/prepublish-guard.mjs",
+      "sha256": "3e70e0f0fe27041652d7007226d5c2529de167592473e3a1adf3f71165de6588",
+      "role": "release"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "sha256": "d322e1211cfa953f5f8b9ebb5c7b15a6cd1f0640542e808d589a504ec256577f",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "sha256": "df68024262b31b0f621b9d20bc48ab07c2bab2eb3de0a432ea29a9e938be6fd7",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/stage-web-dist.mjs",
+      "sha256": "64a5e1067bc27612fd0aae2c7c9e9e6e8b1aadaf7a53aaa1c36ca1e73623d380",
+      "role": "build"
+    },
+    {
+      "path": "scripts/verify-run.mjs",
+      "sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
+      "role": "test"
+    }
+  ]
 }

@@ -357,6 +357,27 @@ R5 权威拆分：R5a 静态合规（path/sha/`replaced_by` 取 §4.7 第一列�
 npm latest/被检仓 pin 禁作时钟）；§4.7 增 `capability_version` 列（`unshipped` 无界，0.106.0 荒谬界消除）；
 verbatim 提取规则入表注（并集/无 token 行/全形三条为验证席预检补入）；CHANGELOG「未发布」记
 `#29 fault → v1.2` 谱系。生效：评审席 fdc757f6 裁定+授权合并；R5 实现仍为零。
+**#27 方案 T1 / T7a 记录（2026-10-21，未发布；方案 = PR #31 `docs/reviews/taste-extraction-plan.md`）**：
+- **T1（#28 残留）**：`archive.ts` 的归档项 `submission-scan.json` 由「侧车去顶层 `dir`」改为**白名单投影**
+  `projectSubmissionScan()`——`{run_id, spec_id?, scans[]: {vu_id, files, ignored, matched[]: {path, sha256, size}}}`，
+  逐 scan 的 `dir`（0.113.2 仍漏进包的本机绝对路径）一并不进包；`matched[].path` 非相对 → 拒绝归档点名。
+  验收（方案 §5 T1 原文）：归档内 grep 不到 `/Users/`、`/private/`、`/tmp/`；同输入两次构建 zip 字节相同；
+  字节篡改仍 fail-closed——三条都进 `archive.spec` / `submission-scan.spec`。契约 §7.2 补记三类新条目与本形状。
+- **T7a（charter v1.1 §4.4 登记制 + v1.2 R5a）**：`meta.ts` 读 `meta_index_version: 2`——R2 校验
+  `orchestration[]`/`tooling[]` 登记形状；R3 豁免改登记制：扫描面 = git 看到的文件（已跟踪 + 未忽略；非 git 全树），
+  只豁免 `tmp/` 与依赖根，**目录名白名单在 v2 下退场**（评审 P2：#22 的 `scripts/run.mjs` 绕过在首版仍在，已修）；
+  orchestration 按登记放行、有效性归 R5a；tooling 须 sha 一致，列有 spec 的仓库里不得调用
+  `verify run|prepare|submit|archive`（shell 与 argv 数组形式都命中，评审 P3）；v2 起扫 `.py`（`.ts` 不在 charter 闭集，留裁定）；
+  新增 **R5a**（path 在 `verify/orchestration/`、sha 一致、`replaced_by` ∈ §4.7 命令 token 闭集、`sunset` 完整 semver；
+  **不比时钟**，R5b 本版不提供 `--capabilities`）。`META_INDEX_VERSIONS=[1,2]`、`META_VERSION` 1.0→1.1；v1 索引只读兼容
+  不读登记（报告仍 R1–R3，目录白名单照旧）；`∉{1,2}` 按名拒，闸 `meta_index_unknown` 收窄为「未知」；报告增 `meta_index_version`。
+  本仓 `verify/meta.json` 升 v2，25 个脚本登记为 `tooling[]`，`scripts/meta-tooling.mjs` 维护登记（`--check`/刷新/`--add`）。
+  ratchet：bundle 722,820→739,621 B 认账，只重设 `bundle_bytes`（冷启动/web 基线属属主 win32 机器，不覆盖）。
+- **T4 草案**：`docs/verify-contract-v1.3.md`（`semantic_scope` 三值闭集最弱折叠 / `file` evidence `scanned[]`+`scanned_total` /
+  `data_source.provenance` / 视 D3 的 `distinct` 与 VU `channel`；报告版本口径 (a)/(b) 待裁定）。实现等 D3 + T1 合入。
+- 顺手：`verify-meta.spec` #25c walk-up 用例在 macOS 上按 realpath 比较（#26 口径，此前 `/var`≠`/private/var` 必红）。
+- 门禁：contract-audit 136 → **138**（12b 两项：v2 登记 PASS 报告四规则 / `replaced_by` 不在闭集 → R5a FAIL）；
+  unit 计数见 README 收口行。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

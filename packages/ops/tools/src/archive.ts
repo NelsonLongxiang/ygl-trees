@@ -133,6 +133,47 @@ function readJsonFile<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
+/** Workspace sidecar written by `verify run --submission` (0.113.2, #28). `dir`
+ *  fields are local absolute paths and never enter the archive. */
+interface SubmissionScanSidecar {
+  run_id?: string;
+  spec_id?: string;
+  dir?: string;
+  scans?: Array<{ vu_id?: string; dir?: string; files?: number; ignored?: number; matched?: Array<{ path?: string; sha256?: string; size?: number }> }>;
+}
+
+/** Archive-facing shape of the scan trace: relative paths + hashes only. */
+export interface ArchivedSubmissionScan {
+  run_id: string;
+  spec_id?: string;
+  scans: Array<{ vu_id: string; files: number; ignored: number; matched: Array<{ path: string; sha256: string; size: number }> }>;
+}
+
+/** Whitelist projection sidecar → archive item (no `dir`, no absolute paths). */
+export function projectSubmissionScan(raw: SubmissionScanSidecar): ArchivedSubmissionScan {
+  const out: ArchivedSubmissionScan = {
+    run_id: String(raw.run_id ?? ""),
+    scans: (raw.scans ?? []).map((s) => ({
+      vu_id: String(s.vu_id ?? ""),
+      files: Number(s.files ?? 0),
+      ignored: Number(s.ignored ?? 0),
+      matched: (s.matched ?? []).map((m) => ({ path: String(m.path ?? ""), sha256: String(m.sha256 ?? ""), size: Number(m.size ?? 0) })),
+    })),
+  };
+  if (raw.spec_id) out.spec_id = String(raw.spec_id);
+  for (const s of out.scans) {
+    for (const m of s.matched) {
+      // The engine records `relOf(p)` (POSIX, relative to --submission). A leak
+      // of an absolute or parent-escaping path is a bug upstream of us; refuse
+      // rather than archive it.
+      if (m.path.startsWith("/") || /^[A-Za-z]:/.test(m.path) || m.path.split("/").includes("..")) {
+        throw new Error(`submission scan path is not relative: ${m.path} — refusing to archive it`);
+      }
+    }
+  }
+  return out;
+}
+
 export interface BuildArchiveOptions {
   /** $YGL_HOME/verify */
   verifyRoot: string;
@@ -204,11 +245,13 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
   // evidence shape and the manifest top-level shape stay frozen.
   const scanPath = join(root, "submission-scans", `${opts.runId}.json`);
   if (existsSync(scanPath)) {
-    const scanRaw = readJsonFile<{ run_id?: string; spec_id?: string; dir?: string; scans?: Array<{ vu_id?: string; matched?: Array<{ path?: string; sha256?: string }> }> }>(scanPath);
-    const sanitized = { ...scanRaw, dir: undefined };
-    delete (sanitized as Record<string, unknown>).dir;
-    push("submission-scan.json", Buffer.from(`${JSON.stringify(sanitized, null, 2)}
-`, "utf8"), "submission-scan");
+    const scanRaw = readJsonFile<SubmissionScanSidecar>(scanPath);
+    // #27 plan T1 (#28 residual): the archived copy is a WHITELIST projection of
+    // the sidecar, not "the sidecar minus `dir`". Every `dir` (top level and per
+    // scan) is a machine-local absolute path; dropping them by projection means
+    // the archive never carries one, and the same scan yields the same bytes on
+    // any machine (zip determinism, contract §7.3).
+    push("submission-scan.json", Buffer.from(`${JSON.stringify(projectSubmissionScan(scanRaw), null, 2)}\n`, "utf8"), "submission-scan");
     const dir = String(scanRaw.dir ?? "");
     const seen = new Set<string>();
     for (const scan of scanRaw.scans ?? []) {

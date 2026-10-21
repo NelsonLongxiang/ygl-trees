@@ -462,12 +462,23 @@ report.json
 spec.json
 prepare.json  (可选)
 trace.json    (可选)
+meta-bypass.json             (仅 --no-meta 旁路的构造件，role=meta-bypass；0.113.1)
+submission-scan.json         (仅 run --submission 且有 file VU，role=submission-scan；0.113.2)
+submission/<sha256>          (扫描命中的文件字节，内容寻址，role=submission-file；0.113.2)
 materials/<material_id>/material.txt
 materials/<material_id>/files/<sha12>-<safe-basename>
 snapshot/<sha12>.sqlite      (仅 --with snapshot)
 verifier/registration.json   (仅 --with binary 且存在登记)
 verifier/binary/yglverify    (仅 --with binary 且存在字节)
 ```
+
+**`submission-scan.json` 的归档形状（#28 → #27 方案 T1）**：归档里的扫描清单是工作区侧车
+（`$YGL_HOME/verify/submission-scans/<run_id>.json`）的**白名单投影**，只有
+`{run_id, spec_id?, scans[]: {vu_id, files, ignored, matched[]: {path, sha256, size}}}`；
+侧车里的 `dir`（顶层与逐 scan，均为本机绝对路径）一律不进包，`matched[].path` 必须是相对
+`--submission` 根的 POSIX 路径（绝对路径 / `..` 段 → 拒绝归档、点名）。因此同一份扫描在任何机器上
+产出同一字节（§7.3），归档内 grep 不到本机路径；每个 `matched[].sha256` 对应一个 `submission/<sha256>`
+条目，归档时重算哈希，字节已变即 fail-closed。
 
 规则（违反 → 拒绝归档/拒绝校验）：顶层只允许固定名；空目录不建；POSIX `/`；深度 ≤4；全路径 ≤240、单段 ≤100；
 包内名 ASCII 化（`[A-Za-z0-9._-]`，其它 → `_`，截断 60，Windows 保留名加 `_` 前缀），原文件名记 `items[].original_name`；

@@ -350,6 +350,34 @@ else
 fi
 json_err "verify meta missing repo" 2 -- $Y verify meta "$WS/no-such-repo"
 
+# ── contract 12b: meta_index_version 2 登记制（charter §4.4 R3 登记豁免 + v1.2 R5a 静态合规；#27 方案 T7a）
+#    登记的 orchestration（verify/orchestration/ 下、sha 一致、replaced_by ∈ §4.7 闭集、完整 semver sunset）
+#    与 tooling（sha 一致）放行；replaced_by 不在闭集 → R5a FAIL（rc=1，JSON 点名）。
+SHA256_OF() { node -e "console.log(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex'))" "$1"; }
+mkdir -p "$WS/meta-v2/verify/orchestration"
+printf '# fixture\n' > "$WS/meta-v2/AGENTS.md"
+printf 'export const run = () => 0;\n' > "$WS/meta-v2/verify/orchestration/run.mjs"
+printf '#!/bin/sh\necho build\n' > "$WS/meta-v2/build.sh"
+V2_ORCH_SHA=$(SHA256_OF "$WS/meta-v2/verify/orchestration/run.mjs")
+V2_TOOL_SHA=$(SHA256_OF "$WS/meta-v2/build.sh")
+write_meta_v2() { # write_meta_v2 <replaced_by>
+  printf '{"meta_index_version":2,"specs":[],"orchestration":[{"path":"verify/orchestration/run.mjs","sha256":"%s","role":"invoke","replaced_by":"%s","sunset":"0.120.0"}],"tooling":[{"path":"build.sh","sha256":"%s","role":"build"}]}\n' "$V2_ORCH_SHA" "$1" "$V2_TOOL_SHA" > "$WS/meta-v2/verify/meta.json"
+}
+write_meta_v2 "verify tree run"
+METAV2J=$($Y verify meta "$WS/meta-v2" --json 2>/dev/null); METAV2RC=$?
+if [ "$METAV2RC" = "0" ] && printf '%s' "$METAV2J" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);const ids=j.rules.map(r=>r.id).join(',');process.exit(j.verdict==='PASS'&&j.meta_index_version===2&&ids==='R1,R2,R3,R5a'?0:1)}catch(e){process.exit(1)}})"; then
+  pass "verify meta v2 登记制 PASS（orchestration + tooling 放行，报告 R1,R2,R3,R5a，R5a 无时钟）"
+else
+  fail "verify meta v2 PASS path" "rc=$METAV2RC $(printf '%s' "$METAV2J" | head -c 160)"
+fi
+write_meta_v2 "verify tree-run"
+METAV2J=$($Y verify meta "$WS/meta-v2" --json 2>/dev/null); METAV2RC=$?
+if [ "$METAV2RC" = "1" ] && printf '%s' "$METAV2J" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);const r=j.rules.find(x=>x.id==='R5a');process.exit(j.verdict==='FAIL'&&r&&r.verdict==='FAIL'&&JSON.stringify(r.evidence).includes('verify tree-run')?0:1)}catch(e){process.exit(1)}})"; then
+  pass "verify meta v2 replaced_by 不在 §4.7 闭集 → rc=1 + R5a FAIL 点名"
+else
+  fail "verify meta v2 R5a FAIL path" "rc=$METAV2RC $(printf '%s' "$METAV2J" | head -c 160)"
+fi
+
 # ── contract 13: verify probe matrix（charter §4.3，0.112.0）
 echo "── contract 13: verify probe --matrix"
 PROBEJ=$($Y verify probe --matrix --json 2>/dev/null); PROBERC=$?
