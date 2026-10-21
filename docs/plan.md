@@ -316,6 +316,9 @@ npm **latest=0.111.1**、shasum **`3a403cec…`**；官方字节 **1,454,872 B /
 失败不中断、rc 镜像；每向 `{probe,verdict,detail,evidence_sha256}`。contract 13 新增 2 检查（133→135）；
 unit 667→672（**#22 折入本版**：meta R2 零扫描→NEEDS-MATERIAL、R3 全树扫描；+3 → 675）。
 0.113.0 待办：meta 硬拒收默认 + 版本键控机械门。
+发布（2026-10-21）：commit **`1ed2b9c`**；tag **`v0.112.0 = e8c0f30f… → ^{commit}=1ed2b9c…`**（双远端）；
+npm **latest=0.112.0**、shasum **`e29bc1bd…`**；官方字节 **1,465,683 B / sha256 `608bc283…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
