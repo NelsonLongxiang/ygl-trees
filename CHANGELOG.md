@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.114.2
+
+r32 讨论催办（GLM Q3）：**tooling 登记漂移修复显式化 + 可审计**，并修掉本仓 `verify meta .` 的 R3 漂移。
+
+- **漂移修复**：`scripts/meta-tooling.mjs` 重写为三模式——`--check`（只比对）、
+  `--reregister <path> --reason "<why>"`（显式重登记）、`--add <path> --role`；**删除隐式 auto-rehash**
+  （无参数 = usage rc2）。重登记**先写 `meta.reregister` 事件**（events：path/old_sha256/new_sha256/reason/actor，
+  append-only、level=warn）再改 `verify/meta.json`——事件写失败则拒绝改索引（fail-closed）。
+- **本仓漂移**：`scripts/contract-audit.sh`（0.114.1 contract 15 改动）与 `scripts/meta-tooling.mjs`（本版改动）
+  两条登记已按上述流程重登记；`verify meta .` 恢复 PASS（R1/R2/R3/R5a）。
+- **机械门**：contract-audit 增 12c——`meta-tooling --check` 必须 rc=0（与 `verify meta` R3 同源）；
+  contract 140 → **141**。
+- 测试：`meta-tooling.spec`（drift 红 → 无 reason 拒 → 显式重登记写事件+索引 → check 绿 → 无 drift 拒重登记 →
+  bare run usage rc2）；unit 704 → **706**。
+- charter §4.4 R3 补记⑤：登记漂移只能显式修复，禁 auto-rehash。
+
 ## 0.114.1
 
 GitHub #34（验证席 P2 · 构造面覆盖缺口）：判据不得静默消失——prepare / lint 增加**冻结子句覆盖**检查。
