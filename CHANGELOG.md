@@ -5,6 +5,31 @@
 - **charter v1.2（docs-only，0.113.2 之后）**：#29 修正谱系——R5 权威拆分（R5a 静态合规 / R5b 审计方
   内嵌能力表、默认不执行）、§4.7 增 `capability_version` 列与 `unshipped` 无界、verbatim 提取规则入表注；
   依据 fdc757f6 对 #29 的裁定。无代码面变更。
+- **#27 方案 T1（#28 残留）：归档内 `submission-scan.json` 改为白名单投影**。0.113.2 只去掉了侧车顶层的
+  `dir`，逐 scan 的 `dir`（本机绝对路径）仍进了包。现在归档项只含
+  `{run_id, spec_id?, scans[]: {vu_id, files, ignored, matched[]: {path, sha256, size}}}`；`matched[].path`
+  非相对（绝对 / `..`）→ 拒绝归档并点名。同一份扫描在任何机器上产出同一 zip 字节；归档内 grep 不到
+  `/Users/`、`/private/`、`/tmp/`；字节篡改仍 fail-closed。契约 §7.2 补记 0.113.1/0.113.2 新增的三类条目与
+  本形状。报告形状未动（契约 1.3 批另议，见 `docs/verify-contract-v1.3.md` 草案）。
+- **#27 方案 T7a（charter v1.1 §4.4 / v1.2 R5a）：`verify meta` 读 `meta_index_version: 2` 登记制**。
+  - v2 索引新增 `orchestration[]`（`{path, sha256, role ∈ collect|invoke|aggregate-input, replaced_by, sunset}`）
+    与 `tooling[]`（`{path, sha256, role ∈ build|test|release|gate}`）；**R2** 校验登记形状（键集、角色闭集、
+    64 位小写 hex、路径仓内相对且不重复）。
+  - **R3 豁免改登记制**：已跟踪可执行件（v2 起含 `.py`）除工具目录白名单外，只在登记于 `orchestration[]`
+    （有效性归 R5a）或 `tooling[]`（sha256 必须一致）时放行；列有 spec 的仓库里 `tooling[]` 文件不得调用
+    `verify run|prepare|submit|archive`（机械 grep，点名并指路 `orchestration[]`）。v1 的
+    `REPO_TOOLING_FILES` 硬编码（`freeze.mjs`）只对 v1 索引生效——本仓 `verify/meta.json` 已升 v2 并把
+    `packages/verify/core/corpus/freeze.mjs` 登记为 `tooling[]`（role=gate）。
+  - **新增 R5a**（仅 v2 报告）：`orchestration[]` 每条 `path` 在 `verify/orchestration/` 下、sha256 一致、
+    `replaced_by` ∈ §4.7 命令 token 闭集（`verify collect` / `verify snapshot build` / `verify tree run` /
+    `verify self-check` / `verify package` / `verify notify` / `verify import-report`）、`sunset` 为完整
+    `MAJOR.MINOR.PATCH`；**不做时钟比较**（R5b 审计面显式开启，本版未提供 `--capabilities`，#29 口径）。
+  - **版本映射**：`META_INDEX_VERSIONS = [1, 2]`，`META_VERSION` 1.0 → **1.1**；v1 索引按 v1 规则只读兼容、
+    不读登记（报告仍是 R1–R3 三条）；`meta_index_version ∉ {1,2}` 按名拒绝，闸的 `meta_index_unknown` 语义
+    随之收窄为「未知」。报告增 `meta_index_version` 字段（无索引为 null）。
+  - 测试：verify-meta +4（v2 空登记 / tooling 登记与 sha 漂移与形状 / tooling 驱动验证 / R5a 四缺陷 + v1 不读登记）、
+    meta-gate +1（v2 登记过闸）；顺手修 #25c walk-up 用例在 macOS 上的 realpath 比较（`/var` ↔ `/private/var`，
+    #26 口径）；archive/submission-scan 单测扩成「任何层级无 `dir`、无本机路径、两次构建同字节、非相对路径拒绝」。
 
 ## 0.113.2
 
