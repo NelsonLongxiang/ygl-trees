@@ -285,6 +285,13 @@ file 构造面文档订正 + **附件 staging**：prepare 把 material 附件从
 （发版席 fresh worktree@ab2d8f8 本树 build + `pack:repro --check-dirty` clean；npm 下载实测同字节）。
 file 附件 staging 修复（cf31945f 回归）随本版发布，待其用 `mat_52e267f26eae` 复测。
 
+**0.110.3 记录（2026-10-21，0.110.x 批）**：F2 两条 show（全字段+双侧关联）；F4 跨项目 link 提示
+（claim link + rel add，`cross_project` 事实字段，project 字段为判据）；F1 写回执 `project`/`project_source`
++ 多项目 stderr cwd 提示；`db init` 单事务+savepoint 批量（`skill.import` 汇总事件、部分失败 rc=1），
+实测冷启动 **85-86s → ~0.8s**；Q1 job_target change-only + `job_target_retargeted`；Q3 仲裁锁纯事件读
+（latest resolve 锁、unresolve 释放，`auto_promote` 如实）+ 幂等索引 `idx_events_kind_entity`（计划断言走索引）；
+#19 谓词 op 闭集双层校验（P2+renderer）防 SQL 片段注入；#20 prepublishOnly 双键合并
+（guard && test && pack:check）+ 重复键 lint 测试。unit 636→656。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

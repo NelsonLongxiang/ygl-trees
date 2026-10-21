@@ -64,7 +64,7 @@ export interface WriteResult {
   dup: boolean;
 }
 
-async function logEvent(mgr: EntityManager, kind: string, entity: string, entityId: string, payload: any, level: "info" | "warn" | "error" = "info"): Promise<void> {
+export async function logEvent(mgr: EntityManager, kind: string, entity: string, entityId: string, payload: any, level: "info" | "warn" | "error" = "info"): Promise<void> {
   // R10.3: object payloads carry the run id so `agent log --run` can
   // reconstruct one CLI invocation; R10.2 severity is pre-mapped here.
   let obj = typeof payload === "string" ? payload : payload ?? "";
@@ -295,9 +295,11 @@ export async function claimLink(
     }
     // GitHub #14 ①: one implementation for the status derivation — the old
     // inline copy here drifted from recomputeClaimStatus (it skipped `updated`).
+    // Q3: an arbitrated claim is locked (recalculated:false) — the receipt must
+    // say so instead of claiming an auto-promotion that did not happen.
     const r = await recomputeClaimStatus(mgr, claimId);
     await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId}`);
-    return { status: r.status, auto_promote: true };
+    return { status: r.status, auto_promote: r.recalculated };
   });
 }
 
@@ -310,6 +312,21 @@ async function recomputeClaimStatus(mgr: EntityManager, claimId: string): Promis
   if (String(c[0]?.text ?? "").startsWith("[预测·")) {
     const cur = (await mgr.query(`SELECT status FROM claims WHERE id=?`, [claimId])) as any[];
     return { status: String(cur?.[0]?.status ?? "unverified"), recalculated: false };
+  }
+  // Q3 (r29, 0.110.x): arbitration lock — an explicit `claim resolve` is a
+  // human decision on top of the evidence graph; later link/unlink operations
+  // must not silently re-derive it away. The events table is the truth source
+  // (no schema v13): latest event wins; `claim.unresolve` explicitly releases
+  // the lock (derive from links again). Prediction claims already keep status.
+  const arb = (await mgr.query(
+    `SELECT kind, payload FROM events
+      WHERE kind IN ('claim.resolve','claim.unresolve') AND entity='claim' AND entity_id=?
+      ORDER BY ts DESC, rowid DESC LIMIT 1`,
+    [claimId]
+  )) as any[];
+  if (arb.length && String(arb[0].kind) === "claim.resolve") {
+    const status = String(arb[0].payload || "").split(/[\s|]/)[0] || "unverified";
+    return { status, recalculated: false };
   }
   const sup = (await mgr.query(
     `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='supports'`, [claimId]
@@ -724,30 +741,39 @@ export async function taskSetStatus(ds: DataSource, taskId: string, status: stri
 
 // ================================================================ skills (batch 2)
 
+/** Skill upsert inside an EXISTING transaction/EntityManager. Batch importers
+ *  (db init cold-start) use this to keep one transaction + savepoints; `emit`
+ *  lets them aggregate one summary event instead of N per-skill events. */
+export async function skillUpsertIn(
+  mgr: EntityManager,
+  o: { name: string; description?: string; body?: string; tags?: string; version?: string; origin?: string },
+  opts: { emit?: boolean } = {},
+): Promise<Record<string, any>> {
+  const now = nowIso();
+  await mgr.query(
+    `INSERT INTO skills(id,name,version,description,body,tags,origin,created,updated)
+     VALUES(?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(name) DO UPDATE SET
+       version=excluded.version, description=excluded.description, body=excluded.body,
+       tags=excluded.tags, origin=excluded.origin, updated=excluded.updated`,
+    [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", now, now]
+  );
+  const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
+  const s = rows[0];
+  // FTS shadow refresh in the SAME transaction (delete+reinsert, Store-era discipline)
+  await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [s.id]);
+  await ftsShadow(mgr, `INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
+    s.id, s.name, s.description, s.tags, ngram(`${s.name} ${s.description} ${s.tags} ${s.body}`),
+  ]);
+  if (opts.emit !== false) await logEvent(mgr, "skill.upsert", "skill", s.id, s.name);
+  return s;
+}
+
 export async function skillUpsert(
   ds: DataSource,
   o: { name: string; description?: string; body?: string; tags?: string; version?: string; origin?: string }
 ): Promise<Record<string, any>> {
-  return runTx(ds, async (mgr) => {
-    const now = nowIso();
-    await mgr.query(
-      `INSERT INTO skills(id,name,version,description,body,tags,origin,created,updated)
-       VALUES(?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(name) DO UPDATE SET
-         version=excluded.version, description=excluded.description, body=excluded.body,
-         tags=excluded.tags, origin=excluded.origin, updated=excluded.updated`,
-      [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", now, now]
-    );
-    const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
-    const s = rows[0];
-    // FTS shadow refresh in the SAME transaction (delete+reinsert, Store-era discipline)
-    await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [s.id]);
-    await ftsShadow(mgr, `INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
-      s.id, s.name, s.description, s.tags, ngram(`${s.name} ${s.description} ${s.tags} ${s.body}`),
-    ]);
-    await logEvent(mgr, "skill.upsert", "skill", s.id, s.name);
-    return s;
-  });
+  return runTx(ds, (mgr) => skillUpsertIn(mgr, o));
 }
 
 export async function skillDel(ds: DataSource, name: string): Promise<void> {

@@ -116,9 +116,17 @@ export function dump(ctx: Ctx, data: any): void {
  * `duplicate: true`); human-readable lines are tty-only, so agents can
  * always JSON.parse the full stdout of a write command.
  */
-export function writeResult(ctx: Ctx, o: { row: any; dup: boolean }, human: (row: any) => string): void {
+export function writeResult(
+  ctx: Ctx,
+  o: { row: any; dup: boolean },
+  human: (row: any) => string,
+  /** F1 (0.110.x): write-target amplification. Callers pass the resolved
+   *  project + the selection layer that authorized it; JSON keeps one object. */
+  extra?: { project?: string; project_source?: string },
+): void {
   if (ctx.json) {
-    console.log(JSON.stringify(o.dup ? { ...o.row, duplicate: true } : o.row, null, 2));
+    const payload = { ...o.row, ...(extra?.project ? { project: extra.project } : {}), ...(extra?.project_source ? { project_source: extra.project_source } : {}), ...(o.dup ? { duplicate: true } : {}) };
+    console.log(JSON.stringify(payload, null, 2));
     return;
   }
   if (o.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${o.row.id}`, ctx.color));

@@ -778,6 +778,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           // r28 Q2: 排期意图写进冻结记录，但只动 job_target 一个字段
           // （run_ids/thresholds/created/data_source 逐字节不变）。
           try {
+            const beforeTarget = (() => {
+              try {
+                return readJson<{ job_target?: { db?: string; job_id?: string | null; every_minutes?: number; updated_at?: string } }>(graduationPath(env, el.spec_id)).job_target ?? null;
+              } catch {
+                return null;
+              }
+            })();
             const withTarget = attachJobTarget(env, el.spec_id, {
               db: cmd.db,
               origin: dbOverride ? "override" : "report",
@@ -785,7 +792,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               job_id: jobRow.id ?? null,
               every_minutes: jobRow.every ?? every,
             });
-            payload.job_target = withTarget.job_target;
+            const jt = withTarget.job_target!;
+            payload.job_target = jt;
+            payload.job_target_retargeted =
+              !beforeTarget ||
+              beforeTarget.db !== jt.db ||
+              beforeTarget.job_id !== jt.job_id ||
+              beforeTarget.every_minutes !== jt.every_minutes ||
+              beforeTarget.updated_at !== jt.updated_at;
           } catch (e: any) {
             // 记录已冻结但排期字段写失败：作业已经登记成功，不能把 rc 变成失败，
             // 但必须出声——审计者需要知道记录与作业对不上。

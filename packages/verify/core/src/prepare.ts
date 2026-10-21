@@ -155,9 +155,43 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex): s
 }
 
 /** P2 子步骤：谓词里的表/列必须在探针里存在（E5②/E5⑤：sql、sql-pair、count、exists 共用） */
+const PREDICATE_OPS = new Set(["=", "!=", ">", ">=", "<", "<=", "in", "between", "is null", "is not null"]);
+const GROUP_OPS = new Set(["and", "or", "not"]);
+
+/** GitHub #19: the op value is interpolated into SQL, so an unknown op is an
+ *  injection surface (arbitrary fragments/subqueries). Typed closed set at the
+ *  construction gate; engine's renderCondition enforces the same set again. */
+function validatePredicateOps(n: unknown): string | null {
+  if (!n || typeof n !== "object") return null;
+  const node = n as { op?: unknown; conditions?: unknown[] };
+  if (typeof node.op === "string") {
+    if (GROUP_OPS.has(node.op)) {
+      for (const c of node.conditions ?? []) {
+        const err = validatePredicateOps(c);
+        if (err) return err;
+      }
+      return null;
+    }
+    if (!PREDICATE_OPS.has(node.op)) {
+      return `unknown predicate op ${JSON.stringify(node.op)} — closed set is ${[...PREDICATE_OPS].join(", ")}`;
+    }
+  }
+  for (const c of node.conditions ?? []) {
+    const err = validatePredicateOps(c);
+    if (err) return err;
+  }
+  return null;
+}
+
 function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "predicate"): string | null {
   const table = pred.from;
   const cols = schema.tables[table];
+  const opErr = validatePredicateOps(pred.where as unknown);
+  if (opErr) return `${label}: ${opErr}`;
+  if (pred.scan) {
+    const scanErr = validatePredicateOps(pred.scan as unknown);
+    if (scanErr) return `${label}: ${scanErr}`;
+  }
   if (!cols) {
     return `${label}.from ${JSON.stringify(table)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
   }

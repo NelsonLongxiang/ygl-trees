@@ -148,7 +148,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
   evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
-  evidence list | assess <id>
+  evidence list | show <id> | assess <id>
   evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)
   claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>]
   claim link <claimId> <evidenceId> [--stance supports|refutes]
@@ -158,7 +158,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   claim unresolve <claimId>   reset to unverified (undo auto-promote / early arbitration)
   claim evaluate <claimId>    decision-model confidence from linked evidence (persisted)
   claim calibration [--all]   model-vs-human grade gap readout (校准预测判据)
-  claim list
+  claim list | show <id>
   predict list [--all]        settlement projection: outcome 未结算/1/0/ND + channel + 结算三段式 note（brier/settler）
 
 ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec → report
@@ -736,6 +736,7 @@ export function generateLlmsManifest(): string {
       ["research source add --title --url", "add a source (also: --relevance 0-5 --confidence A|B|C)"],
       ["research source fetch <url>", "fetch page, extract title/meta/text"],
       ["research evidence add <sid> --quote \"...\"", "verbatim quote from source"],
+      ["research evidence show <eid> [--json]", "full evidence row + linked claims + source summary"],
       ["research claim add \"<text>\"", "refutable assertion"],
       ["research claim link <cid> <eid> --stance supports|refutes", "link claim to evidence"],
       ["research claim resolve <cid> --as supported|refuted|contested", "manual arbitration"],
@@ -745,6 +746,7 @@ export function generateLlmsManifest(): string {
       ["research evidence assess <eid>", "decision model quality assessment"],
       ["research evidence rm <eid> [--force]", "delete evidence (refuse if linked)"],
       ["research claim unlink <cid> <eid>", "remove one claim-evidence link"],
+      ["research claim show <cid> [--json]", "full claim row + linked evidence + source summary"],
     ]],
     ["produce", "Reports + engineering artifacts", [
       ["produce outline", "auto-outline from claims"],

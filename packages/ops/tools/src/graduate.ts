@@ -231,6 +231,19 @@ export function attachJobTarget(
     // Never fabricate a record: job_target annotates a frozen fact.
     throw new GraduationError(`no graduation record for ${specId} — run verify graduate first`);
   }
+  const same =
+    !!prev.job_target &&
+    prev.job_target.db === target.db &&
+    prev.job_target.job_id === target.job_id &&
+    prev.job_target.every_minutes === target.every_minutes &&
+    prev.job_target.origin === target.origin &&
+    prev.job_target.usable === target.usable;
+  if (same) {
+    // Q1 (r29, 0.110.x): change-only refresh — a repeated --schedule with the
+    // same target must not touch updated_at (it is the retarget witness) nor
+    // rewrite the frozen record.
+    return prev;
+  }
   const next: GraduationRecord = {
     ...prev,
     job_target: { ...target, updated_at: target.updated_at ?? new Date().toISOString() },

@@ -350,6 +350,35 @@ describe("attachJobTarget (r28 Q2)", () => {
     expect(after.run_ids.length).toBe(3);
   });
 
+  it("re-attaching the SAME target is a no-op (updated_at preserved, no rewrite) — Q1", () => {
+    const gradPath = path.join(verifyPaths(env()).root, "graduations", "spec_target.json");
+    const before = JSON.parse(fs.readFileSync(gradPath, "utf8"));
+    // state carried over from the previous test: db=/data/other.sqlite, every=30
+    const after = attachJobTarget(env(), "spec_target", {
+      db: "/data/other.sqlite",
+      origin: "override",
+      usable: true,
+      job_id: "job_123",
+      every_minutes: 30,
+    });
+    expect(after.job_target?.updated_at).toBe("2026-10-20T02:00:00.000Z"); // unchanged
+    const onDisk = JSON.parse(fs.readFileSync(gradPath, "utf8"));
+    expect(onDisk.job_target.updated_at).toBe("2026-10-20T02:00:00.000Z");
+    expect(JSON.stringify(onDisk.job_target)).toBe(JSON.stringify(before.job_target));
+  });
+
+  it("a CHANGED target refreshes updated_at — Q1", () => {
+    const after = attachJobTarget(env(), "spec_target", {
+      db: "/data/third.sqlite",
+      origin: "override",
+      usable: true,
+      job_id: "job_123",
+      every_minutes: 30,
+    });
+    expect(after.job_target?.db).toBe("/data/third.sqlite");
+    expect(after.job_target?.updated_at).not.toBe("2026-10-20T02:00:00.000Z");
+  });
+
   it("refuses to annotate a record that does not exist", () => {
     expect(() =>
       attachJobTarget(env(), "spec_absent", {

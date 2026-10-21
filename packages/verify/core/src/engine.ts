@@ -812,6 +812,15 @@ function renderCondition(w: PredicateCondition, fromTable = ""): string {
       return `${col} BETWEEN ${literal(w.value[0])} AND ${literal(w.value[1])}`;
     }
     default: {
+      // GitHub #19: the switch used to treat every unknown op as an operator
+      // and interpolate it into SQL (`${col} ${w.op} ${literal}`), so
+      // `op:"= 1 OR 1=(SELECT …)"` smuggled a subquery past the closed-set
+      // promise. Enforce the typed closed set at the renderer too (P2 rejects
+      // it first; this is the defence-in-depth layer).
+      const COMPARE = new Set(["=", "!=", ">", ">=", "<", "<="]);
+      if (!COMPARE.has(String(w.op))) {
+        throw new Error(`unknown predicate op ${JSON.stringify(w.op)} — closed set is ${[...COMPARE].join(", ")}, plus in|between|is null|is not null`);
+      }
       if (rhsCol !== null) {
         // 1.2 column-to-column: same table only (a cross-table compare needs an
         // explicit join key, which belongs to sql-pair).

@@ -11,7 +11,7 @@ import { syncToPg, migrateToPg } from "./pgsync";
  * fresh workspace immediately has capability discovery (agent match) working.
  * Resolves skills/ relative to the CLI installation (repo root or npm package).
  */
-async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<number> {
+async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<{ imported: number; failed: string[]; ms: number }> {
   const fs2 = require("node:fs");
   const path2 = require("node:path");
   // probe upward from this module to find skills/ (same approach as repoRoot)
@@ -38,33 +38,72 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<number
       outFn(env.ctx, paintFn(Cf.yellow, "  ! built-in skills: 0 found (skills/ not shipped or not in package)", env.ctx.color));
       outFn(env.ctx, paintFn(Cf.dim, "    this is a packaging bug — skills/ should be in the npm tarball", env.ctx.color));
     }
-    return 0;
+    return { imported: 0, failed: [], ms: 0 };
   }
   const { getOrm } = require("../../../core/database/src/orm");
   const writes = require("../../../research/pipeline/src/writes");
   const { parseFrontmatter } = require("../../../core/text/src/text");
   const ds = await getOrm(dbFile);
-  let count = 0;
-  // Note: getOrm caches the DataSource; the lock is released when the outer
-  // DB.close() runs. For db init's short-lived process this is fine.
+  // Parse every SKILL.md OUTSIDE the transaction (file IO must not hold it).
+  const parsed: Array<{ name: string; input: any }> = [];
   for (const entry of fs2.readdirSync(skillsDir)) {
     const skillFile = path2.join(skillsDir, entry, "SKILL.md");
     if (!fs2.existsSync(skillFile)) continue;
     try {
       const raw = fs2.readFileSync(skillFile, "utf8");
       const { meta, body } = parseFrontmatter(raw);
-      await writes.skillUpsert(ds, {
+      parsed.push({
         name: meta.name || entry,
-        description: meta.description || "",
-        body,
-        tags: (meta.tags || "").toString(),
-        version: meta.version || "0.1.0",
-        origin: `builtin:${entry}`,
+        input: {
+          name: meta.name || entry,
+          description: meta.description || "",
+          body,
+          tags: (meta.tags || "").toString(),
+          version: meta.version || "0.1.0",
+          origin: `builtin:${entry}`,
+        },
       });
-      count++;
-    } catch { /* per-skill isolation: one bad skill must not block the rest */ }
+    } catch {
+      /* unreadable/malformed SKILL.md: counted as failed below */
+      parsed.push({ name: entry, input: null as any });
+    }
   }
-  return count;
+  // 0.110.x: ONE transaction for the cold-start import (was one per skill:
+  // 85-86s on this host). Each skill keeps its own savepoint so one bad skill
+  // rolls back alone; the summary event records the whole batch (not N rows).
+  const failed: string[] = [];
+  let count = 0;
+  const started = Date.now();
+  await ds.transaction(async (mgr: any) => {
+    let i = 0;
+    for (const cand of parsed) {
+      i++;
+      if (!cand.input) {
+        failed.push(cand.name);
+        continue;
+      }
+      const sp = `sk_${i}`;
+      await mgr.query(`SAVEPOINT ${sp}`);
+      try {
+        await writes.skillUpsertIn(mgr, cand.input, { emit: false });
+        await mgr.query(`RELEASE SAVEPOINT ${sp}`);
+        count++;
+      } catch (e: any) {
+        await mgr.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+        await mgr.query(`RELEASE SAVEPOINT ${sp}`);
+        failed.push(cand.name);
+      }
+    }
+    await writes.logEvent(
+      mgr,
+      "skill.import",
+      "skills",
+      "builtin",
+      JSON.stringify({ imported: count, failed }),
+      failed.length ? "warn" : "info",
+    );
+  });
+  return { imported: count, failed, ms: Date.now() - started };
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -78,18 +117,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       d.metaSet("created", new Date().toISOString());
       d.metaSet("schema_version", String(require("../../../core/database/src/db").SCHEMA_VERSION));
       d.close();
-      ok(ctx, `workspace ready: ${home}`);
-      ok(ctx, `database:        ${file}`);
+      if (!ctx.json) {
+        ok(ctx, `workspace ready: ${home}`);
+        ok(ctx, `database:        ${file}`);
+      }
       // Cold-start fix (0.48): a fresh workspace has ZERO skills, so agent match
       // returns nothing and a cold user thinks the tool has no capabilities.
       // Auto-import the built-in skills that ship with this package.
-      autoImportBuiltinSkills(env, file).then(async (n) => {
-        if (n > 0) ok(ctx, `built-in skills:  ${n} imported (agent match ready)`);
+      return autoImportBuiltinSkills(env, file).then(async (r: any) => {
+        const secs = (r.ms / 1000).toFixed(1);
+        if (ctx.json) console.log(JSON.stringify({ created: true, db: file, imported: r.imported, failed: r.failed, ms: r.ms }));
+        else if (r.imported > 0) ok(ctx, `built-in skills:  ${r.imported} imported in ${secs}s (agent match ready)`);
         else warn(ctx, "built-in skills:  0 imported — skills/ directory not found in package");
+        if (r.failed.length && !ctx.json) warn(ctx, `built-in skills:  ${r.failed.length} failed: ${r.failed.join(", ")}`);
         // Release the ORM connection so the lock doesn't linger
         try { const { closeOrm } = require("../../../core/database/src/orm"); await closeOrm(); } catch { /* */ }
+        // Partial import is a failure signal (fdc757f6 pre-audit ④): callers
+        // must not read rc=0 as "cold-start is fully ready" when skills dropped.
+        return r.failed.length ? 1 : 0;
       });
-      return 0;
     }
     case "path":
       if (ctx.json) console.log(JSON.stringify({ path: file }, null, 2));

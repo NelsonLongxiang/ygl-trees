@@ -45,6 +45,28 @@ function spec(vu: VerifyUnit[]): VerifySpec {
   };
 }
 
+describe("engine: predicate op closed set (#19)", () => {
+  it("unknown op is rejected at the renderer (no SQL interpolation)", async () => {
+    const s = spec([
+      unit({
+        id: "V1",
+        checker: {
+          type: "sql",
+          fail_when: "rows>0",
+          predicate: {
+            from: "bills",
+            select: ["id"],
+            where: { op: "and", conditions: [{ col: "batch", op: "= 1 OR 1=(SELECT 1)" as any, value: "x" }] },
+          },
+        } as any,
+      }),
+    ]);
+    const report = await runVerify(s, { runner: fakeRunner({ bills: [{ id: "b1" }] }) });
+    expect(report.vu[0].verdict).toBe("ERROR");
+    expect(String((report.vu[0].evidence as any)?.reason)).toMatch(/unknown predicate op/);
+  });
+});
+
 describe("engine: 防空洞与折叠（评审 B1/B2/R1/R4）", () => {
   it("空表上的 sql 断言绝不落 PASS，降级 NEEDS-MATERIAL 并带 witness", async () => {
     const report = await runVerify(

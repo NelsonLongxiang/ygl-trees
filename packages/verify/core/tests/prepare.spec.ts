@@ -126,6 +126,29 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(res.rejected[0].reason).toMatch(/hand-written sql is not allowed/);
   });
 
+  it("P2：未知谓词 op 是注入面 → 构造期拒绝（#19，闭集）", async () => {
+    const res = await prepareSpec(MATERIAL, {
+      asOf: AS_OF,
+      runner: runnerOf([
+        goodCandidate({
+          checker: {
+            type: "sql",
+            predicate: {
+              from: "bills",
+              select: ["id"],
+              where: { op: "and", conditions: [{ col: "batch", op: "= 1 OR 1=(SELECT 1)" as any, value: "x" }] },
+            },
+          } as any,
+        }),
+      ]),
+      reviewer: reviewerOf(okReview),
+      redteam: () => [],
+    });
+    expect(res.verdict).toBe("needs-material");
+    expect(res.rejected[0].stage).toBe("P2");
+    expect(res.rejected[0].reason).toMatch(/unknown predicate op/);
+  });
+
   it("P2：schema 探针里不存在的表/列 → 拒", async () => {
     const res = await prepareSpec(MATERIAL, {
     asOf: AS_OF,

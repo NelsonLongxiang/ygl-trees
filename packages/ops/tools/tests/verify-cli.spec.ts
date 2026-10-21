@@ -710,7 +710,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     writeFileSync(candidates, JSON.stringify({ candidates: [{
       source_clause: clause,
       anchor,
-      checker: { type: "sql", fail_when: "rows==0", predicate: { from: "notes", select: ["id", "tags"], where: { op: "and", conditions: [{ col: "tags", op: "==", value: "" }] } } },
+      checker: { type: "sql", fail_when: "rows==0", predicate: { from: "notes", select: ["id", "tags"], where: { op: "and", conditions: [{ col: "tags", op: "=", value: "" }] } } },
     }] }), "utf8");
     const reviews = join(home, "rev-alter.json");
     writeFileSync(reviews, JSON.stringify({ reviews: [{

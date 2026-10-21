@@ -8,7 +8,7 @@ import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../..
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
-import { resolveProject, ambiguousProject, projectSample, projectCount } from "../../../core/database/src/selection";
+import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
@@ -25,10 +25,21 @@ function nowCompact(): string {
 
 function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
+  // F1 (0.110.x): write receipts name the target project + the selection layer;
+  // a bare write riding session/global selection in a multi-project workspace
+  // gets a one-line stderr hint (JSON stdout stays a single object).
+  const projectName = process.env.YGL_SELECTION_PROJECT || "";
+  const via = currentSelectionVia();
+  if (!ctx.json && projectName && via && via !== "flag" && via !== "env") {
+    const n = Number((env.db.get("SELECT COUNT(*) AS n FROM projects") as any)?.n ?? 0);
+    if (n > 1) {
+      console.error(`  note: writing to project '${projectName}' via ${via} selection (cwd=${process.cwd()}) — pass -p <name> to bind the target explicitly`);
+    }
+  }
   return getOrm(env.db.path)
     .then(fn)
     .then((r) => {
-      writeResult(ctx, r as any, human);
+      writeResult(ctx, r as any, human, projectName ? { project: projectName, project_source: via || undefined } : undefined);
       return 0;
     })
     .catch((e: any) => {
@@ -75,6 +86,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 1;
     }
   }
+  process.env.YGL_SELECTION_PROJECT = project?.name || "";
 
   const readBody = (): string => {
     if (args.flags.body) return String(args.flags.body);
@@ -547,7 +559,76 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     
-if (subAction === "list" || subAction === undefined) {
+if (subAction === "show") {
+      // F2 (0.110.3): single-evidence full view + both link directions.
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research evidence show <evidenceId> [--json]");
+        return 2;
+      }
+      const e = store.db.get(
+        `SELECT e.id, e.project_id, e.source_id, e.quote, e.note, e.locator, e.created,
+                s.title AS source_title, s.url AS source_url, s.relevance AS source_relevance,
+                s.confidence AS source_confidence
+           FROM evidence e LEFT JOIN sources s ON s.id=e.source_id
+          WHERE e.id=? AND e.project_id=?`,
+        [id, project.id]
+      ) as any;
+      if (!e) {
+        const other = store.db.get("SELECT project_id FROM evidence WHERE id=?", [id]) as any;
+        if (other) {
+          const pname = (store.db.get("SELECT name FROM projects WHERE id=?", [other.project_id]) as any)?.name || other.project_id;
+          bad(ctx, `evidence not found in project '${project.name}': ${id} (it belongs to project '${pname}' — use -p ${pname})`);
+        } else {
+          bad(ctx, `evidence not found: ${id}`);
+        }
+        return 1;
+      }
+      const links = store.db.all(
+        `SELECT ce.claim_id, ce.stance, c.text AS claim_text, c.status AS claim_status
+           FROM claim_evidence ce JOIN claims c ON c.id=ce.claim_id
+          WHERE ce.evidence_id=? ORDER BY c.created`,
+        [id]
+      ) as any[];
+      const payload = {
+        id: e.id,
+        project: project.name,
+        quote: e.quote,
+        note: e.note || "",
+        locator: e.locator || "",
+        created: e.created,
+        source: {
+          id: e.source_id,
+          title: e.source_title || "",
+          url: e.source_url || "",
+          relevance: e.source_relevance ?? null,
+          confidence: e.source_confidence || null,
+        },
+        claims: links.map((l) => ({
+          claim_id: l.claim_id,
+          stance: l.stance,
+          status: l.claim_status,
+          text: l.claim_text,
+        })),
+      };
+      if (ctx.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return 0;
+      }
+      head(ctx, `evidence ${e.id} — ${project.name}`);
+      out(ctx, `  source: ${e.source_title || "(unknown)"} ${e.source_url ? `· ${e.source_url}` : ""}`);
+      out(ctx, `  quote: ${e.quote}`);
+      if (e.note) out(ctx, `  note: ${e.note}`);
+      out(ctx, paint(C.dim, `  locator ${e.locator || "(none)"} · created ${e.created}`, ctx.color));
+      if (!links.length) {
+        out(ctx, paint(C.dim, "  claims: (none linked)", ctx.color));
+      } else {
+        table(ctx, links, ["claim", "stance", "status", "text"], ["claim_id", "stance", "claim_status", "claim_text"]);
+      }
+      return 0;
+    }
+
+    if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const evs = await ds.getRepository(Evidence).find({
@@ -699,6 +780,15 @@ if (subAction === "list" || subAction === undefined) {
             return 1;
           });
       }
+      // F4 (0.110.x): cross-project link hint — the stored project_id is the
+      // criterion (a link-time snapshot, not dynamic visibility); either end
+      // with no project → no hint.
+      const crossProject = (() => {
+        const cp = store.db.get("SELECT p.name AS name FROM claims c JOIN projects p ON p.id=c.project_id WHERE c.id=?", [rest[1]]) as any;
+        const ep = store.db.get("SELECT p.name AS name FROM evidence e JOIN projects p ON p.id=e.project_id WHERE e.id=?", [rest[2]]) as any;
+        if (!cp?.name || !ep?.name || cp.name === ep.name) return null;
+        return { claim: cp.name, evidence: ep.name };
+      })();
       // F4：duplicate 检出在 link 前完成（幂等重跑跳过评估 + 回执如实标 duplicate）
       const wasDup = !!store.db.get("SELECT 1 FROM claim_evidence WHERE claim_id=? AND evidence_id=?", [rest[1], rest[2]]);
       return getOrm(env.db.path)
@@ -713,11 +803,14 @@ if (subAction === "list" || subAction === undefined) {
           // 0.82.1: prediction claims never auto-promote on link — the receipt
           // says so explicitly instead of showing a silently-unchanged status.
           if (ctx.json) {
-            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(wasDup ? { duplicate: true } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
+            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(wasDup ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
           } else if (r.auto_promote === false) {
             ok(ctx, `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`);
           } else {
             ok(ctx, `linked; claim status now: ${r.status}`);
+          }
+          if (crossProject && !ctx.json) {
+            out(ctx, paint(C.yellow, `  跨项目：claim 属 '${crossProject.claim}'，evidence 属 '${crossProject.evidence}'（用 -p 分别解析）`, ctx.color));
           }
           return 0;
         })
@@ -967,7 +1060,74 @@ if (subAction === "list" || subAction === undefined) {
     }
 
     
-if (subAction === "list" || subAction === undefined) {
+if (subAction === "show") {
+      // F2 (0.110.3): single-claim full view — list only projected 7 columns;
+      // reading one record's full row + both link directions required sql/ORM.
+      const id = rest[1];
+      if (!id) {
+        bad(ctx, "usage: research claim show <claimId> [--json]");
+        return 2;
+      }
+      const c = store.db.get(
+        "SELECT id, project_id, text, status, confidence, channel, created, updated FROM claims WHERE id=? AND project_id=?",
+        [id, project.id]
+      ) as any;
+      if (!c) {
+        // distinguish workspace-visible-but-other-project from truly missing
+        const other = store.db.get("SELECT project_id FROM claims WHERE id=?", [id]) as any;
+        if (other) {
+          const pname = (store.db.get("SELECT name FROM projects WHERE id=?", [other.project_id]) as any)?.name || other.project_id;
+          bad(ctx, `claim not found in project '${project.name}': ${id} (it belongs to project '${pname}' — use -p ${pname})`);
+        } else {
+          bad(ctx, `claim not found: ${id}`);
+        }
+        return 1;
+      }
+      const links = store.db.all(
+        `SELECT ce.evidence_id, ce.stance, e.quote, e.locator, e.note, e.created,
+                s.id AS source_id, s.title AS source_title, s.url AS source_url
+           FROM claim_evidence ce
+           JOIN evidence e ON e.id=ce.evidence_id
+           LEFT JOIN sources s ON s.id=e.source_id
+          WHERE ce.claim_id=? ORDER BY e.created`,
+        [id]
+      ) as any[];
+      const payload = {
+        id: c.id,
+        project: project.name,
+        text: c.text,
+        status: c.status,
+        confidence: c.confidence,
+        channel: c.channel || "",
+        created: c.created,
+        updated: c.updated || "",
+        evidence: links.map((l) => ({
+          evidence_id: l.evidence_id,
+          stance: l.stance,
+          quote: l.quote,
+          locator: l.locator || "",
+          note: l.note || "",
+          source: { id: l.source_id, title: l.source_title || "", url: l.source_url || "" },
+          created: l.created,
+        })),
+      };
+      if (ctx.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return 0;
+      }
+      head(ctx, `claim ${c.id} — ${project.name}`);
+      out(ctx, `  status ${c.status} · confidence ${c.confidence} · channel ${c.channel || "(none)"}`);
+      out(ctx, `  text: ${c.text}`);
+      out(ctx, paint(C.dim, `  created ${c.created}${c.updated ? ` · updated ${c.updated}` : ""}`, ctx.color));
+      if (!links.length) {
+        out(ctx, paint(C.dim, "  evidence: (none linked)", ctx.color));
+      } else {
+        table(ctx, links, ["evidence", "stance", "source", "locator", "quote"], ["evidence_id", "stance", "source_title", "locator", "quote"]);
+      }
+      return 0;
+    }
+
+    if (subAction === "list" || subAction === undefined) {
       return getOrm(env.db.path)
         .then(async (ds): Promise<number> => {
           const cls = await ds.getRepository(Claim).find({

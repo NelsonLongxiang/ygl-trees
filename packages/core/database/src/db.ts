@@ -395,6 +395,9 @@ CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id);
 CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_proj   ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts        ON events(ts);
+-- Q3 (r29): claim arbitration lock reads the latest resolve/unresolve
+-- event per claim; without a composite index that lookup scans the events table.
+CREATE INDEX IF NOT EXISTS idx_events_kind_entity ON events(kind, entity_id, ts);
 CREATE INDEX IF NOT EXISTS idx_jobs_enabled     ON jobs(enabled);
 
 -- idempotent-write uniqueness (schema v3; named indexes serve both fresh
@@ -638,6 +641,15 @@ export class DB {
         `INSERT OR IGNORE INTO schema_migrations(backend,version,applied_at,note) VALUES('sqlite',?,?,?)`,
         [SCHEMA_VERSION, nowIso(), 'v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
       );
+    }
+    // Q3 (r29) hot-path index for the arbitration lookup. Existing workspaces
+    // are already at SCHEMA_VERSION, so the version-gated SCHEMA_SQL replay
+    // above would never create it; CREATE INDEX IF NOT EXISTS is idempotent and
+    // cheap (no table rebuild, no version bump, no column added).
+    try {
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_events_kind_entity ON events(kind, entity_id, ts)");
+    } catch {
+      /* non-fatal: the Q3 lookup falls back to the ts index */
     }
   }
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.110.3
+
+0.110.x 队列批（F1/F2/F4 + `db init` 批量 + r29 Q1/Q3）+ 期间外部复审的 #19/#20 安全/发布修复。
+契约版本与语料零变更；schema **无**列变更（Q3 仅加幂等索引）。
+
+- **F2 `research claim show` / `research evidence show`**：单条全字段 + 双侧关联（claim↔evidence、
+  evidence↔claims、source 摘要），`--json` 单对象；非本项目的 id 点明归属并给 `-p` 出路（读命令，不写）。
+- **F4 跨项目 link 提示**：`research claim link` 与 `rel add` 在两端存储 project 不同时输出一行提示，
+  JSON 增 `cross_project` 事实字段（实体 project 字段是唯一判据；任一端无项目→不提示；link 不阻断）。
+- **F1 写回执放大目标**：写命令 JSON 增 `project` / `project_source`（闭集 `flag|env|session|global|only|none`）；
+  多项目工作区里未显式 `-p` 的写会在 **stderr** 打 cwd 提示（JSON stdout 仍单对象）。
+- **`db init` 冷启动批量导入**：单事务 + 每技能 savepoint 容错；`skill.import` 一条汇总事件替代 N 条；
+  部分失败显形（`failed[]` + rc=1）；二次 init 幂等。实测冷启动 **85-86s → ~0.8s**（观察值，不设硬门）。
+- **r29 Q1**：`job_target` **change-only** 刷新（同目标重复 `--schedule` 不动 `updated_at`、不重写冻结记录），
+  输出增 `job_target_retargeted`。
+- **r29 Q3**：claim 仲裁锁——最新 `claim.resolve` 事件锁住状态，后续 link/unlink 不再静默改写
+  （`auto_promote:false` 如实回执）；`claim.unresolve` 释放锁；**无 schema v13**，纯事件读 +
+  幂等索引 `idx_events_kind_entity(kind, entity_id, ts)`（测试断言查询计划走索引、不全表扫）。
+- **#19（P2 安全）**：谓词 `op` 闭集双层校验（prepare P2 typed 拒 + `renderCondition` 入口拒），
+  杜绝 `op:"= 1 OR 1=(SELECT …)"` 类 SQL 片段注入；红测试覆盖。
+- **#20（P3 发布闸）**：`package.json` 双 `prepublishOnly` 键合并为单链
+  `prepublish-guard && pnpm test && pnpm pack:check`；新增重复键 lint 测试防回归。
+- 门禁：unit 636 → **656**；contract 130 不变。
+
 ## 0.110.2
 
 GitHub #17 / #18.1 / #18.2（zhujun，0.110.0 发布后三单）。契约/语料零变更；迁移面：无。

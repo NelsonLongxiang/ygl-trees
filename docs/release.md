@@ -94,6 +94,9 @@ node scripts/pack-repro.mjs --json # 机器可读：{path, bytes, sha256, files}
 时给两个指纹并说明差异来源——**repro sha256 作篡改校验**，npm 官方 tarball 的 sha256 只是
 记账（`npm publish` 仍走 npm 自己的 pack 路径）。
 
+**发布前自扫（0.110.3 起，外部复审常态化后的例行步）**：以 reviewer 视角过一遍本版 diff——
+谓词/SQL 注入面、根级命令 JSON 单对象、发布生命周期钩子（`prepublishOnly` 单键）、
+tag→npm 顺序；本轮 #17-#20 即来自这一视角，模板见 GitHub issue 复盘。
 **clean-tree guard（0.110.1，0.110.0 事故沉淀）**：`pnpm pack` 的文件选择面向**工作树**，
 主树里未提交的 `docs/*` 或旧 CRLF 检出会进入 tarball——官方字节因此可能与审计 commit 不符。
 `pack:repro` 打包前强制 `git status --porcelain` 干净（含 untracked、排除 gitignored）：
@@ -125,7 +128,7 @@ npm publish <pack:repro 产出的 tgz> --registry=https://registry.npmjs.org/
 目录发布仍可用 pnpm（`workspace:` 协议重写是 npm 的缺口）：
 
 ```bash
-pnpm publish        # 目录发布：prepublishOnly 会先跑 tag guard
+pnpm publish        # 目录发布：prepublishOnly = tag guard && pnpm test && pnpm pack:check
 ```
 
 **为什么优先 pnpm 发布（目录流）**：npm 不重写 `workspace:` 协议 → 发出去的包消费者装不上。

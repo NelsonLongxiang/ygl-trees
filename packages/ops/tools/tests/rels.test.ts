@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
 import { getOrm, closeOrm } from "../../../core/database/src/orm";
-import { resolveRef, relAdd, relRm, REL_TYPES, RelError, orphanRelations } from "../src/rels";
+import { resolveRef, relAdd, relRm, REL_TYPES, RelError, orphanRelations, projectNameOf } from "../src/rels";
 
 let db: DB;
 let dir: string;
@@ -35,6 +35,23 @@ afterAll(async () => {
   await closeOrm();
   db?.close();
   fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup
+});
+
+describe("F4 跨项目判定（projectNameOf）", () => {
+  it("uses the stored project field; project-less types are null", async () => {
+    const writes = await import("../../../research/pipeline/src/writes");
+    const ds = await getOrm(db.path!);
+    const beta = await writes.projectCreate(ds, "rels-beta", "另一个项目");
+    const clB = await writes.claimAdd(ds, beta.id, "beta 断言");
+    const clA = (globalThis as any).__ids.cl as string;
+    const nodeRow = db.get("SELECT id FROM nodes LIMIT 1") as any;
+    const kbRow = db.get("SELECT id FROM kb_notes LIMIT 1") as any;
+    expect(projectNameOf(db, "claim", clA)).toBe("rels-unit");
+    expect(projectNameOf(db, "claim", clB.row.id)).toBe("rels-beta");
+    expect(projectNameOf(db, "node", nodeRow.id)).toBe("rels-unit");
+    expect(projectNameOf(db, "kb", kbRow.id)).toBeNull();
+    expect(projectNameOf(db, "claim", "cls_nope")).toBeNull();
+  });
 });
 
 describe("引用解析", () => {

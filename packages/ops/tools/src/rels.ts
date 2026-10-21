@@ -174,6 +174,25 @@ export function relationEndExists(db: any, type: string, id: string): boolean {
   return !!db.get(sql, [id]);
 }
 
+/** F4 (0.110.x): stored project name for a relation end — the link-time fact,
+ *  not dynamic visibility. Returns null for project-less types (kb/skill) and
+ *  unset projects, which must never produce a cross-project hint. */
+export function projectNameOf(db: any, type: string, id: string): string | null {
+  const SQL: Record<string, string> = {
+    node: "SELECT p.name FROM nodes n JOIN trees t ON t.id=n.tree_id JOIN projects p ON p.id=t.project_id WHERE n.id=?",
+    claim: "SELECT p.name FROM claims x JOIN projects p ON p.id=x.project_id WHERE x.id=?",
+    evidence: "SELECT p.name FROM evidence x JOIN projects p ON p.id=x.project_id WHERE x.id=?",
+    source: "SELECT p.name FROM sources x JOIN projects p ON p.id=x.project_id WHERE x.id=?",
+    query: "SELECT p.name FROM queries x JOIN projects p ON p.id=x.project_id WHERE x.id=?",
+    artifact: "SELECT p.name FROM artifacts x JOIN projects p ON p.id=x.project_id WHERE x.id=?",
+    task: "SELECT p.name FROM artifacts x JOIN projects p ON p.id=x.project_id WHERE x.id=? AND x.kind='task'",
+  };
+  const sql = SQL[type];
+  if (!sql) return null;
+  const row = db.get(sql, [id]) as any;
+  return row?.name ? String(row.name) : null;
+}
+
 /** Relations whose src or dst row no longer exists (detection; `rel prune`
  *  is the explicit cleanup — deletion paths must not cascade silently). */
 export function orphanRelations(env: Env): any[] {
@@ -198,12 +217,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return (async () => {
       try {
         const r = await relAdd(env, a, b, rel);
+        // F4: cross-project hint (stored project is the criterion; either end
+        // project-less → no hint). The link itself always succeeds.
+        const srcP = projectNameOf(env.db, r.row.src_type, r.row.src_id);
+        const dstP = projectNameOf(env.db, r.row.dst_type, r.row.dst_id);
+        const crossProject = srcP && dstP && srcP !== dstP ? { src: srcP, dst: dstP } : null;
         if (ctx.json) {
-          console.log(JSON.stringify({ id: r.row.id, src: `${r.row.src_type}:${r.row.src_id}`, dst: `${r.row.dst_type}:${r.row.dst_id}`, rel: r.row.rel, duplicate: r.duplicate }));
+          console.log(JSON.stringify({ id: r.row.id, src: `${r.row.src_type}:${r.row.src_id}`, dst: `${r.row.dst_type}:${r.row.dst_id}`, rel: r.row.rel, duplicate: r.duplicate, ...(crossProject ? { cross_project: crossProject } : {}) }));
           return 0;
         }
         if (r.duplicate) out(ctx, paint(C.yellow, `  ⚠ duplicate: ${a} ${rel} ${b} (already linked)`, ctx.color));
         else ok(ctx, `linked: ${a} ${paint(C.dim, `—${rel}→`, ctx.color)} ${b}`);
+        if (crossProject) {
+          out(ctx, paint(C.yellow, `  跨项目：${a} 属 '${crossProject.src}'，${b} 属 '${crossProject.dst}'（实体 project 字段是判定口径）`, ctx.color));
+        }
         return 0;
       } catch (e: any) {
         if (e instanceof RelError) {
