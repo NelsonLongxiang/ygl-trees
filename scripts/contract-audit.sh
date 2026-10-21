@@ -350,6 +350,14 @@ else
 fi
 json_err "verify meta missing repo" 2 -- $Y verify meta "$WS/no-such-repo"
 
+# 12c: tooling 登记漂移（meta-tooling --check 与 verify meta R3 同源；GLM Q3：禁 auto-rehash）
+echo "── contract 12c: tooling 登记漂移"
+if node scripts/meta-tooling.mjs --check >/dev/null 2>&1; then
+  pass "meta-tooling --check 无漂移（与 verify meta R3 同源）"
+else
+  fail "tooling drift" "$(node scripts/meta-tooling.mjs --check 2>&1 | head -3)"
+fi
+
 # ── contract 12b: meta_index_version 2 登记制（charter §4.4 R3 登记豁免 + v1.2 R5a 静态合规；#27 方案 T7a）
 #    登记的 orchestration（verify/orchestration/ 下、sha 一致、replaced_by ∈ §4.7 闭集、完整 semver sunset）
 #    与 tooling（sha 一致）放行；replaced_by 不在闭集 → R5a FAIL（rc=1，JSON 点名）。
