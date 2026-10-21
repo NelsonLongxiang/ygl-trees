@@ -26,6 +26,7 @@ import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
 import { runMeta } from "../../../verify/core/src/meta";
+import { runProbeMatrix } from "../../../verify/core/src/probe";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
@@ -312,7 +313,12 @@ function metaGate(env: Env, args: any): { pass: boolean; report?: ReturnType<typ
   if (report.verdict === "PASS") return { pass: true, report };
   const r2 = report.rules.find((r) => r.id === "R2");
   const reason = String((r2?.evidence as any)?.reason ?? "");
-  const meta_error = /unknown meta_index_version/.test(reason) ? "meta_index_unknown" : "meta_failed";
+  // #22: zero-scan (R2 skipped) is unverified admission, not a failed rule.
+  const meta_error = /unknown meta_index_version/.test(reason)
+    ? "meta_index_unknown"
+    : report.verdict === "NEEDS-MATERIAL"
+      ? "meta_unverified"
+      : "meta_failed";
   const failed = report.rules.filter((r) => r.verdict === "FAIL").map((r) => r.id).join(",");
   const message = `meta gate failed (${failed}): ${report.rules.filter((r) => r.verdict === "FAIL").map((r) => `${r.id} ${JSON.stringify(r.evidence)}`).join("; ")}`;
   if (requireMeta) return { pass: false, report, meta_error, message };
@@ -395,6 +401,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   "lint-candidates": ["text", "db"],
   example: ["checker", "null-ops"],
   meta: [],
+  probe: ["matrix", "target", "only"],
   register: ["keys", "expect-key", "no-copy"],
   signature: ["keys", "expect-key"],
 };
@@ -1222,6 +1229,44 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, paint(C.dim, JSON.stringify(NULL_OPS_NOTE.example, null, 2).split("\n").map((l) => `  ${l}`).join("\n"), ctx.color));
       }
       return 0;
+    }
+
+    case "probe": {
+      // charter §4.3 (0.112.0): the 16-probe union as a CLI command — review
+      // evidence must come from a command, never from ad-hoc scripts (P2).
+      if (!args.flags.matrix && !args.flags.only) {
+        bad(ctx, "usage: verify probe --matrix [--target <sealed-binary>] [--only <probe>] [--json]");
+        return 2;
+      }
+      const target = args.flags.target ? String(args.flags.target) : undefined;
+      if (target && !existsSync(target)) {
+        bad(ctx, `target not found: ${target}`);
+        return 1;
+      }
+      const only = args.flags.only ? String(args.flags.only) : undefined;
+      return runProbeMatrix({ target }).then((report): number => {
+        let probes = report.probes;
+        if (only) {
+          probes = probes.filter((p) => p.probe === only);
+          if (!probes.length) {
+            bad(ctx, `unknown probe '${only}' — known: ${report.probes.map((p) => p.probe).join(", ")}`);
+            return 2;
+          }
+        }
+        const verdict = probes.every((p) => p.verdict === "PASS") ? "PASS" : "FAIL";
+        const payload = { ...report, probes, verdict };
+        if (ctx.json) {
+          console.log(JSON.stringify(payload));
+          return verdict === "PASS" ? 0 : 1;
+        }
+        head(ctx, `verify probe --matrix — ${report.target}`);
+        for (const p of probes) {
+          const ok = p.verdict === "PASS";
+          out(ctx, paint(ok ? C.green : C.red, `  ${ok ? "✓" : "✗"} ${p.probe}`, ctx.color));
+        }
+        out(ctx, `  probe_version ${report.probe_version} · ${probes.length} probes · verdict ${verdict}`);
+        return verdict === "PASS" ? 0 : 1;
+      });
     }
 
     case "lint-candidates": {

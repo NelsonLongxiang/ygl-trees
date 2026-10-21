@@ -82,9 +82,9 @@ shapes → corpus cases → archives；见 §4.6 对账）。
   不用 experimental 措辞——它已生产可用，只是默认行为会翻转。
 - `spec_error` 映射表由开发席出、评审席确认后入库。
 
-### §4.3 探针 CLI 化（排 0.112.0）
+### §4.3 探针 CLI 化（0.112.0 已落地）
 
-`verify probe --matrix <target> [--target sealed|workspace] [--json]`：把 sealprobe/sigprobe 两代临时脚本
+`verify probe --matrix [--target <sealed-file>] [--only <probe>] [--json]`（`--matrix` 布尔全量，`--only` 单探针）：把 sealprobe/sigprobe 两代临时脚本
 升为命令，产出带 report/payload_sha256 的正式复核证据。矩阵取**并集**（16 向）：
 - 开发席八向：封包 / 签名 / 摘要 / 时间戳 / 越权 / 注入 / 跨机 / 重放；
 - 评审席篡改向：tamper-spec / tamper-engine / tamper-footer / noncanon / sig-byte / unknown-key /
@@ -96,9 +96,11 @@ shapes → corpus cases → archives；见 §4.6 对账）。
 
 - **R1（S1）** AGENTS.md 仓库根存在（属主原始指令，规则之首）；
 - **R2（S1）** `verify/meta` 索引一致（`verify/meta.json` 单一来源 ↔ 实际 spec 文件双向；索引携带
-  `meta_index_version: 1`，未知版本按名拒绝、绝不静默错读）；
-- **R3（S1）** 无散落可执行验证件——file 型：`docs/**` 无 `*.mjs`/`*.js`/`*.sh` + 仓库根无游离脚本
-  （`tmp/` 除外且必须 gitignored）——即 **P2 的静态面**；
+  `meta_index_version: 1`，未知版本按名拒绝、绝不静默错读）；**无索引域时 zero-scan = NEEDS-MATERIAL，
+  不得 PASS**（#22：SKIP ≠ OK）；
+- **R3（S1）** 无散落可执行验证件——**全树扫描**（#22：不只 root+docs）：`docs/**` 无
+  `*.mjs`/`*.js`/`*.sh`；仓库根无游离脚本；工具/构建目录白名单（`scripts`/`benchmarks`/`examples`/`rust`/
+  `vendor`/`node_modules`/`dist`/`tmp`/`.git` 等）之外不得有散落可执行件——即 **P2 的静态面**；
 - **R4（S2，缓行 0.113+）** 干净检出可复现——command 型需 `git` 进 meta 运行面 allowlist 且输出入
   evidence（注意隐私：`git status` 安全，build 输出要筛）。
 

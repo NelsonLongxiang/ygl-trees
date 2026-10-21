@@ -51,9 +51,11 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
-  it("PASS: AGENTS.md present, no verifier artifacts, no stray scripts", () => {
+  it("PASS: AGENTS.md present, empty but valid meta index, no stray scripts", () => {
     const dir = repoFixture("good");
     mkdirSync(join(dir, "scripts"), { recursive: true });
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs: [] }), "utf8");
     writeFileSync(join(dir, "scripts", "release.sh"), "#!/bin/sh\n", "utf8"); // intentional home, not loose
     const r = jrun(["verify", "meta", dir, "--json"]);
     expect(r.rc).toBe(0);
@@ -86,6 +88,27 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     expect(jrun(["verify", "meta", unignoredTmp, "--json"]).j.rules.find((x: any) => x.id === "R3").verdict).toBe("FAIL");
     writeFileSync(join(unignoredTmp, ".gitignore"), "tmp/\n", "utf8");
     expect(jrun(["verify", "meta", unignoredTmp, "--json"]).j.rules.find((x: any) => x.id === "R3").verdict).toBe("PASS");
+  });
+
+  it("#22 zero-scan is NEEDS-MATERIAL, not PASS (no index domain)", () => {
+    const dir = repoFixture("no-index-domain");
+    const r = jrun(["verify", "meta", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.j.verdict).toBe("NEEDS-MATERIAL");
+    const r2 = r.j.rules.find((x: any) => x.id === "R2");
+    expect(r2.verdict).toBe("NEEDS-MATERIAL");
+    expect(r2.evidence.skipped).toBe(true);
+  });
+
+  it("#22 R3 scans the whole tree (lib/probe.mjs rejected; tooling dirs allowed)", () => {
+    const dir = repoFixture("stray-lib");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs: [] }), "utf8");
+    mkdirSync(join(dir, "lib"), { recursive: true });
+    writeFileSync(join(dir, "lib", "probe.mjs"), "export {}\n", "utf8");
+    const r3 = jrun(["verify", "meta", dir, "--json"]).j.rules.find((x: any) => x.id === "R3");
+    expect(r3.verdict).toBe("FAIL");
+    expect(JSON.stringify(r3.evidence)).toMatch(/stray executable outside tooling dirs: lib\/probe\.mjs/);
   });
 
   it("R2: index ↔ spec files consistency (both directions + sha)", () => {

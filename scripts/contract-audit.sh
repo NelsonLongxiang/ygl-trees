@@ -350,6 +350,16 @@ else
 fi
 json_err "verify meta missing repo" 2 -- $Y verify meta "$WS/no-such-repo"
 
+# ── contract 13: verify probe matrix（charter §4.3，0.112.0）
+echo "── contract 13: verify probe --matrix"
+PROBEJ=$($Y verify probe --matrix --json 2>/dev/null); PROBERC=$?
+if [ "$PROBERC" = "0" ] && printf '%s' "$PROBEJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);const want=['envelope','signature','digest','timestamp','escalation','injection','cross-machine','replay','tamper-spec','tamper-engine','tamper-footer','noncanon','sig-byte','unknown-key','retired-key','resign-fv'];process.exit(j.verdict==='PASS'&&JSON.stringify(j.probes.map(p=>p.probe))===JSON.stringify(want)?0:1)}catch(e){process.exit(1)}})"; then
+  pass "verify probe --matrix 16 向全 PASS（离线 RFC8032 种子）"
+else
+  fail "verify probe matrix" "rc=$PROBERC $(printf '%s' "$PROBEJ" | head -c 120)"
+fi
+json_err "verify probe unknown probe" 2 -- $Y verify probe --matrix --only nope
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

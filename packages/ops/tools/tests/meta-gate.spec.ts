@@ -89,8 +89,19 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
     expect(String(r.j.meta_warning)).toMatch(/meta gate failed/);
   });
 
+  it("zero-scan repo is meta_unverified under --require-meta (#22)", () => {
+    const dir = repo("no-index-domain", true);
+    const r = jrun(["verify", "submit", "--title", "g6", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(r.j.meta_error).toBe("meta_unverified");
+    expect(String(r.j.error)).toMatch(/meta gate failed/);
+  });
+
   it("a clean repo leaves the receipt untouched", () => {
-    const dir = repo("clean-meta", true);
+    const dir = repo("clean-meta", true, (d) => {
+      mkdirSync(join(d, "verify"), { recursive: true });
+      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs: [] }), "utf8");
+    });
     const r = jrun(["verify", "submit", "--title", "g5", "--text", matFile, "--meta-repo", dir, "--json"]);
     expect(r.rc).toBe(0);
     expect(r.j.meta_warning).toBeUndefined();

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.112.0
+
+charter §4.3 落地：**`verify probe --matrix`** —— 评审席两代临时探针（sealprobe/sigprobe）升为 CLI 命令，
+复核证据必须来自命令（P2 自我约束的正式化）。
+
+- **16 向并集**（开发席八 + 评审席篡改八）：
+  `envelope` / `signature` / `digest` / `timestamp` / `escalation` / `injection` / `cross-machine` / `replay`
+  + `tamper-spec` / `tamper-engine` / `tamper-footer` / `noncanon` / `sig-byte` / `unknown-key` /
+  `retired-key` / `resign-fv`。
+- **确定性/离线**：fixture 用 RFC8032 确定性测试种子（`sha256(probe-label)`）自签，禁网、禁生产钥；
+  `timestamp` 探针以「同输入两次封包字节逐字节相同」验证无时间/随机泄漏。
+- 输出 `{probe_version, target, seeds, probes:[{probe,verdict,detail,evidence_sha256}], verdict, checked_at}`；
+  `--matrix` 全量、`--only <name>` 单探针、`--target <sealed-file>` 以真实封包为基；失败不中断、
+  rc 镜像 verdict（0 PASS / 1 FAIL / 2 用法）。`retired-key` / `resign-fv` 保留（fdc 0.99 复核实证语义）。
+- charter §4.3 状态更新为已落地；contract-audit 新增 contract 13（16 向全 PASS + 未知探针 rc=2）→ **135**。
+- **#22 meta soundness（评审席 P 级）**：R2 无索引域从「PASS skipped」改为 **NEEDS-MATERIAL**（zero-scan
+  不是通过；闸映射 `meta_unverified`），R3 改为**全树扫描**（工具目录白名单，`lib/probe.mjs` 这类散件会被拒），
+  charter §4.4 口径同步；`verify meta`/meta 闸测试补零扫描与全树散件两例。
+- 门禁：unit 667 → **675**（probe 5 + #22 三测）；**ratchet 认账**：bundle 703,423 → 722,820
+  （+19,397 B，probe 矩阵 + meta 全树扫描），显式 `node scripts/ratchet.mjs --write` 重设基线。
+
 ## 0.111.1
 
 GitHub #21（prepare 确定性拒重放）+ charter §4.2 v2 准入闸落地（案 A：meta 拒收走 `meta_error`）。

@@ -176,6 +176,7 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   self-check [--corpus <dir>] [--no-cases]           recursive gate: vectors → digest → shapes → cases → archives
   example [--checker <type>]                         corpus-derived candidate examples (seven checker types)
   meta [<repo>]                                      verifier-repo admission rules R1-R3 (charter §4.1, rc=PASS/FAIL)
+  probe --matrix [--target <sealed>] [--only <name>]  16-probe union (charter §4.3; offline RFC8032 seeds)
   lint-candidates <file> [--text <material>]         shape-check candidates only (no spec_version consumed)${checkerHelpLines(color)}
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
@@ -842,6 +843,7 @@ export function generateLlmsManifest(): string {
       ["verify self-check", "recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives"],
       ["verify example [--checker <type>]", "corpus-derived candidates for the seven checker types (null ops included)"],
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],
+      ["verify probe --matrix [--target <sealed>] [--only <probe>]", "16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)"],
       ["verify lint-candidates <file> [--text <material>]", "shape-check candidates without consuming spec_version"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [

@@ -22,7 +22,7 @@ export const META_VERSION = "1.0";
  *  this and be rejected by name when unknown — never silently mis-read. */
 export const META_INDEX_VERSION = 1;
 
-export type MetaVerdict = "PASS" | "FAIL";
+export type MetaVerdict = "PASS" | "FAIL" | "NEEDS-MATERIAL";
 
 export interface MetaRule {
   id: "R1" | "R2" | "R3";
@@ -62,7 +62,10 @@ function r2(repo: string): MetaRule {
     // Nothing to reconcile: a repo without verifier artifacts has no index to
     // desync. (A present verify/specs dir without an index fails below.)
     if (!existsSync(specsDir)) {
-      return { id: "R2", severity: "S1", title: "verify/meta.json ↔ spec files consistent", verdict: "PASS", evidence: { skipped: true, reason: "no verify/meta.json or verify/specs" } };
+      // #22: zero-scan is NOT a pass (SKIP ≠ OK). A repo with no verifier
+      // artifacts has unproven admission — NEEDS-MATERIAL, not PASS. The gate
+      // maps it to meta_unverified (mirrors the charter's "must pass meta").
+      return { id: "R2", severity: "S1", title: "verify/meta.json ↔ spec files consistent", verdict: "NEEDS-MATERIAL", evidence: { skipped: true, reason: "no verify/meta.json or verify/specs — nothing was scanned, so admission is unproven" } };
     }
     return {
       id: "R2",
@@ -126,6 +129,9 @@ const EXEC_EXTS = [".sh", ".mjs", ".js", ".cjs", ".ps1"];
 function walkFiles(dir: string, out: string[] = []): string[] {
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
+    // Tooling/build dirs are pruned during traversal (scanning node_modules
+    // would take minutes and is never a verifier artifact).
+    if (REPO_TOOLING.has(name)) continue;
     const full = join(dir, name);
     let st;
     try {
@@ -139,24 +145,29 @@ function walkFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/** Directories that intentionally host repo tooling or build output — their
+ *  scripts are not "stray verification artifacts". `docs/` is deliberately NOT
+ *  allowlisted (docs must stay prose). */
+const REPO_TOOLING = new Set(["scripts", "benchmarks", "examples", "rust", "vendor", "node_modules", "dist", "tmp", ".git", "coverage", ".claude"]);
+/** Named repo-tooling files outside the tooling dirs (pure utils, never a
+ *  verification artifact). Each entry needs a reason: freeze.mjs freezes the
+ *  golden corpus; it produces no spec/report. */
+const REPO_TOOLING_FILES = new Set(["packages/verify/core/corpus/freeze.mjs"]);
+
 function r3(repo: string): MetaRule {
   const problems: string[] = [];
-  // root-level loose scripts (directories like scripts/ or tmp/ are intentional
-  // homes, not "loose" files); tmp/ itself must be gitignored.
-  for (const name of readdirSync(repo)) {
-    const full = join(repo, name);
-    let st;
-    try {
-      st = statSync(full);
-    } catch {
-      continue;
-    }
-    if (st.isFile() && EXEC_EXTS.some((ext) => name.endsWith(ext))) problems.push(`loose script at repo root: ${name}`);
-  }
-  const docs = join(repo, "docs");
-  for (const full of walkFiles(docs)) {
+  // #22: scan the WHOLE tree (root-only + docs/ let lib/probe.mjs through).
+  // `tmp/` is excluded from the scan but must be gitignored (checked below);
+  // tooling homes are allowlisted as a directory, never as a filename pattern.
+  for (const full of walkFiles(repo)) {
     const rel = posix(relative(repo, full));
-    if (EXEC_EXTS.some((ext) => rel.endsWith(ext))) problems.push(`executable artifact under docs/: ${rel}`);
+    const top = rel.split("/")[0];
+    if (REPO_TOOLING.has(top)) continue;
+    if (REPO_TOOLING_FILES.has(rel)) continue;
+    if (!EXEC_EXTS.some((ext) => rel.endsWith(ext))) continue;
+    if (top === "docs") problems.push(`executable artifact under docs/: ${rel}`);
+    else if (!rel.includes("/")) problems.push(`loose script at repo root: ${rel}`);
+    else problems.push(`stray executable outside tooling dirs: ${rel}`);
   }
   const tmpDir = join(repo, "tmp");
   if (existsSync(tmpDir)) {
@@ -176,11 +187,12 @@ function r3(repo: string): MetaRule {
 /** Run the frozen v1 meta rules against a repository tree. */
 export function runMeta(repo: string, now = new Date().toISOString()): MetaReport {
   const rules = [r1(repo), r2(repo), r3(repo)];
-  return {
-    meta_version: META_VERSION,
-    repo,
-    rules,
-    verdict: rules.every((r) => r.verdict === "PASS") ? "PASS" : "FAIL",
-    checked_at: now,
-  };
+  // Four-value skeleton applied to admission: FAIL beats NEEDS-MATERIAL beats
+  // PASS; a zero-scan rule (R2 skipped) makes the whole report NEEDS-MATERIAL.
+  const verdict: MetaVerdict = rules.some((r) => r.verdict === "FAIL")
+    ? "FAIL"
+    : rules.some((r) => r.verdict === "NEEDS-MATERIAL")
+      ? "NEEDS-MATERIAL"
+      : "PASS";
+  return { meta_version: META_VERSION, repo, rules, verdict, checked_at: now };
 }
