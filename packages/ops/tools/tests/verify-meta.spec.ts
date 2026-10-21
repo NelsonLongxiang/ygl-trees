@@ -117,6 +117,69 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     expect(rule(jrun(["verify", "meta", dir, "--json"]), "R3").evidence.problems.join(" ")).toMatch(/loose script at repo root: probe\.py/);
   });
 
+  it("v2 R3 (#22, reviewer P2): a scripts/ file is no longer exempt by directory name — registration is the only exemption", () => {
+    const dir = repoFixture("v2-scripts-dir");
+    mkdirSync(join(dir, "verify", "specs"), { recursive: true });
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    const specRel = "verify/specs/s1.json";
+    const specBody = '{"spec_id":"spec_meta_3"}\n';
+    writeFileSync(join(dir, specRel), specBody, "utf8");
+    const runner = "#!/usr/bin/env node\nimport { spawnSync } from 'node:child_process';\nspawnSync('ygl-trees', ['verify', 'run', 'spec_x', '--db', 'snap.sqlite']);\n";
+    writeFileSync(join(dir, "scripts", "run.mjs"), runner, "utf8");
+    const specs = [{ file: specRel, sha256: sha(specBody) }];
+    // unregistered → stray, even under scripts/ (v1 would have waved it through by directory)
+    writeFileSync(join(dir, "verify", "meta.json"), v2({ specs }), "utf8");
+    const stray = jrun(["verify", "meta", dir, "--json"]);
+    expect(stray.rc).toBe(1);
+    expect(rule(stray, "R3").evidence.problems.join(" ")).toMatch(/unregistered executable: scripts\/run\.mjs/);
+    // registered as tooling → still refused: it drives verification in a repo that lists specs
+    writeFileSync(join(dir, "verify", "meta.json"), v2({ specs, tooling: [{ path: "scripts/run.mjs", sha256: sha(runner), role: "test" }] }), "utf8");
+    const drives = rule(jrun(["verify", "meta", dir, "--json"]), "R3");
+    expect(drives.verdict).toBe("FAIL");
+    expect(drives.evidence.problems.join(" ")).toMatch(/tooling must not drive verification.*scripts\/run\.mjs/);
+    expect(drives.evidence.problems.join(" ")).not.toMatch(/unregistered executable/); // judged once, not twice
+    // the v1 index keeps the 0.112.0 directory allowlist (read-compat): same file, no finding
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs }), "utf8");
+    expect(rule(jrun(["verify", "meta", dir, "--json"]), "R3").verdict).toBe("PASS");
+  });
+
+  it("v2 R3: the argv-array idiom ygl([\"verify\", \"run\", …]) counts as driving verification", () => {
+    const dir = repoFixture("v2-argv-form");
+    mkdirSync(join(dir, "verify", "specs"), { recursive: true });
+    const specRel = "verify/specs/s1.json";
+    const specBody = '{"spec_id":"spec_meta_4"}\n';
+    writeFileSync(join(dir, specRel), specBody, "utf8");
+    const body = 'import { ygl } from "./lib/common.mjs";\nconst r = ygl(["verify", "run", specId, "--db", file]);\n';
+    writeFileSync(join(dir, "judge.mjs"), body, "utf8");
+    writeFileSync(join(dir, "verify", "meta.json"), v2({ specs: [{ file: specRel, sha256: sha(specBody) }], tooling: [{ path: "judge.mjs", sha256: sha(body), role: "gate" }] }), "utf8");
+    const r3 = rule(jrun(["verify", "meta", dir, "--json"]), "R3");
+    expect(r3.verdict).toBe("FAIL");
+    expect(r3.evidence.problems.join(" ")).toMatch(/tooling must not drive verification.*judge\.mjs/);
+  });
+
+  it("v2 R3 in a git checkout: gitignored build output is out of scope, an untracked script is in", () => {
+    const dir = repoFixture("v2-git");
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    mkdirSync(join(dir, "tmp"), { recursive: true });
+    writeFileSync(join(dir, ".gitignore"), "dist/\ntmp/\n", "utf8");
+    writeFileSync(join(dir, "dist", "bin.cjs"), "module.exports = 1;\n", "utf8"); // ignored → never a candidate
+    writeFileSync(join(dir, "tmp", "scratch.sh"), "#!/bin/sh\n", "utf8"); // tmp/ exempt and gitignored
+    const hack = "#!/bin/sh\necho hack\n";
+    writeFileSync(join(dir, "hack.sh"), hack, "utf8"); // untracked, not ignored → a stray
+    writeFileSync(join(dir, "verify", "meta.json"), v2(), "utf8");
+    const r = jrun(["verify", "meta", dir, "--json"]);
+    const problems = rule(r, "R3").evidence.problems.join(" ");
+    expect(problems).toMatch(/loose script at repo root: hack\.sh/);
+    expect(problems).not.toMatch(/dist\/bin\.cjs/);
+    expect(problems).not.toMatch(/tmp\/scratch\.sh/);
+    writeFileSync(join(dir, "verify", "meta.json"), v2({ tooling: [{ path: "hack.sh", sha256: sha(hack), role: "build" }] }), "utf8");
+    const ok = jrun(["verify", "meta", dir, "--json"]);
+    expect(ok.rc).toBe(0);
+    expect(rule(ok, "R3")).toMatchObject({ verdict: "PASS", evidence: { registered: { tooling: 1 } } });
+  });
+
   it("v2 R3: tooling must not drive verification in a repo that lists specs", () => {
     const dir = repoFixture("v2-tooling-drives");
     mkdirSync(join(dir, "verify", "specs"), { recursive: true });

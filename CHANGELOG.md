@@ -15,11 +15,18 @@
   - v2 索引新增 `orchestration[]`（`{path, sha256, role ∈ collect|invoke|aggregate-input, replaced_by, sunset}`）
     与 `tooling[]`（`{path, sha256, role ∈ build|test|release|gate}`）；**R2** 校验登记形状（键集、角色闭集、
     64 位小写 hex、路径仓内相对且不重复）。
-  - **R3 豁免改登记制**：已跟踪可执行件（v2 起含 `.py`）除工具目录白名单外，只在登记于 `orchestration[]`
-    （有效性归 R5a）或 `tooling[]`（sha256 必须一致）时放行；列有 spec 的仓库里 `tooling[]` 文件不得调用
-    `verify run|prepare|submit|archive`（机械 grep，点名并指路 `orchestration[]`）。v1 的
-    `REPO_TOOLING_FILES` 硬编码（`freeze.mjs`）只对 v1 索引生效——本仓 `verify/meta.json` 已升 v2 并把
-    `packages/verify/core/corpus/freeze.mjs` 登记为 `tooling[]`（role=gate）。
+  - **R3 豁免改登记制（v2）**：扫描面 = git 看到的文件（已跟踪 + 未忽略的未跟踪；`dist/` 等 gitignored 构建产物不在面上；
+    非 git 目录则全树），只豁免 `tmp/` 与依赖根（`node_modules/`、`vendor/`）；**目录名白名单在 v2 下退场**（评审 P2：
+    0.112.0 的按名放行让未登记的 `scripts/run.mjs` 驱动 `verify run` 而 R3 PASS，#22 绕过仍在）。其余可执行件（v2 起含 `.py`）
+    只在登记于 `orchestration[]`（有效性归 R5a）或 `tooling[]`（sha256 必须一致）时放行；列有 spec 的仓库里 `tooling[]`
+    文件不得调用 `verify run|prepare|submit|archive`——机械匹配同时覆盖 shell 形式与舰队惯用的 argv 数组形式
+    `ygl(["verify", "run", …])`（评审 P3）。v1 索引仍按 0.112.0 规则（目录白名单 + `freeze.mjs` 硬编码）只读兼容。
+  - **本仓登记**：`verify/meta.json` 升 v2，25 个已跟踪脚本（`scripts/`、`benchmarks/`、`examples/`、`freeze.mjs`）登记为
+    `tooling[]`；新增 `scripts/meta-tooling.mjs`（`--check` / 刷新 sha / `--add`）维护登记，contract-audit 12 的
+    `verify meta .` 让登记漂移变红。`.ts` 不在 charter 的扩展名闭集里（Node ≥22 可直接运行 .ts；本仓 254 个 .ts 源文件）——
+    留给 charter 裁定，引擎按闭集扫描。
+  - **ratchet 认账**：bundle 722,820 → 739,621 B（+16.8 KB，超 2% 容差；meta v2 登记制 + R5a + git 扫描面 + 归档投影），
+    只重设 `bundle_bytes` 基线；冷启动与 web 基线不动（基线由属主的 win32 机器测得，本机不得覆盖）。
   - **新增 R5a**（仅 v2 报告）：`orchestration[]` 每条 `path` 在 `verify/orchestration/` 下、sha256 一致、
     `replaced_by` ∈ §4.7 命令 token 闭集（`verify collect` / `verify snapshot build` / `verify tree run` /
     `verify self-check` / `verify package` / `verify notify` / `verify import-report`）、`sunset` 为完整
