@@ -405,6 +405,10 @@ npm **latest=0.114.1**、shasum **`80c0270b…`**；官方字节 **1,530,979 B /
 删除 auto-rehash（bare run rc2）。本仓两条漂移（`scripts/contract-audit.sh` 0.114.1 改动、
 `scripts/meta-tooling.mjs` 本版改动）已按流程重登记，`verify meta .` 恢复 PASS。contract 12c
 （`meta-tooling --check` rc0）+1 → 141；unit 704→706。charter §4.4 R3 补记⑤（禁 auto-rehash）。
+发布（2026-10-22）：commit **`51f103e`**；tag **`v0.114.2 = f2234d61… → ^{commit}=51f103e…`**（双远端同对象）；
+npm **latest=0.114.2**、shasum **`5b164793…`**；官方字节 **1,531,869 B / sha256 `4b9f3633…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节；远端校验 ETIMEDOUT 按 `--no-network` 本地锚定 +
+ls-remote 双远端复证，非绕过）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
