@@ -287,23 +287,17 @@ export async function claimLink(
     // `claim resolve` (frozen contract, same discipline as predict audit).
     const text = String(c[0]?.text ?? "");
     if (text.startsWith("[预测·")) {
-      const cur = (await mgr.query(`SELECT status FROM claims WHERE id=?`, [claimId])) as any[];
-      const status = String(cur?.[0]?.status ?? "unverified");
+      // GitHub #14 ①: reuse the single status recomputation (prediction prefix
+      // keeps its arbitrated status and updated stamp untouched).
+      const r = await recomputeClaimStatus(mgr, claimId);
       await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId} (prediction: auto-promote skipped)`);
-      return { status, auto_promote: false };
+      return { status: r.status, auto_promote: false };
     }
-    const sup = (await mgr.query(
-      `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='supports'`, [claimId]
-    )) as any[];
-    const ref = (await mgr.query(
-      `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='refutes'`, [claimId]
-    )) as any[];
-    const s = Number(sup?.[0]?.c ?? 0);
-    const r = Number(ref?.[0]?.c ?? 0);
-    const status = s && r ? "contested" : s ? "supported" : r ? "refuted" : "unverified";
-    await mgr.update(Claim, { id: claimId }, { status });
+    // GitHub #14 ①: one implementation for the status derivation — the old
+    // inline copy here drifted from recomputeClaimStatus (it skipped `updated`).
+    const r = await recomputeClaimStatus(mgr, claimId);
     await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId}`);
-    return { status, auto_promote: true };
+    return { status: r.status, auto_promote: true };
   });
 }
 

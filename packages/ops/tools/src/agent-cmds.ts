@@ -22,6 +22,9 @@ export function buildBrief(env: Env): any {
 
   const payload: any = {
     workspace: env.home,
+    // GitHub #14 ②: callers need to know WHICH database a brief was resolved
+    // against — with `--db` the path used to be invisible.
+    db: (env as any).dbFile ?? null,
     current_project: cur,
     selection_source: sel.source,
     session: sessionId(),

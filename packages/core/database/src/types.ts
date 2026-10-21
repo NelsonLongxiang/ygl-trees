@@ -20,6 +20,8 @@ export interface Env {
   args: Args;
   home: string;
   group: string;
+  /** Resolved workspace database file for this invocation (--db or default). */
+  dbFile?: string;
 }
 
 // ── Arg parsing (pure function, no CLI awareness) ──

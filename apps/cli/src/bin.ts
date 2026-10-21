@@ -552,6 +552,7 @@ export async function main(argv: string[]): Promise<number> {
     store,           // Store (from ctx.research or fallback)
     plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
     args, home, group,
+    dbFile: file,   // resolved --db (or workspace default) for the brief payload
   };
 
   /** Async commands (e.g. source fetch) return a promise; main must keep the

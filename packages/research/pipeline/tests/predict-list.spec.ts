@@ -104,7 +104,7 @@ describe.skipIf(!HAS_BIN)("0.90 predict list projection", () => {
   });
 
   it("parses the settlement note tail into brier + settler (outcome 1)", () => {
-    const e = jrun(["research", "evidence", "add", sidShared, "--quote", "spec settle quote", "--json", "--note", "outcome=1, brier=0.0225, settler=dsh/ae07421e", "-p", "alpha"]);
+    const e = jrun(["research", "evidence", "add", sidShared, "--quote", "spec settle quote", "--json", "--note", "outcome=1, brier=0.0225, settler=dsh/demo0000", "-p", "alpha"]);
     const eid = e.j?.id ?? e.j?.row?.id;
     // link the first claim (alpha's prediction) — find it from list
     const list0 = jrun(["research", "predict", "list", "--json", "-p", "alpha"]);
@@ -115,7 +115,7 @@ describe.skipIf(!HAS_BIN)("0.90 predict list projection", () => {
     const row = (list.j as any[]).find((x) => x.claim_id === cid);
     expect(row.outcome).toBe("1");
     expect(row.brier).toBe("0.0225");
-    expect(row.settler).toBe("dsh/ae07421e");
+    expect(row.settler).toBe("dsh/demo0000");
   });
 
   it("maps refuted → 0 and contested → ND", () => {

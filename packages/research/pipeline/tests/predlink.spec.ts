@@ -63,6 +63,23 @@ describe("claimLink prediction guard (0.82.1)", () => {
     expect(r.status).toBe("supported");
     await closeOrm();
   });
+
+  // GitHub #14 ①: claimLink used to carry an inline copy of the status
+  // derivation that skipped `updated`; both paths now share
+  // recomputeClaimStatus (plain claims advance the stamp, predictions don't).
+  it("plain link advances claims.updated; prediction link keeps the arbitrated stamp", async () => {
+    const ds = await getOrm(db.path!);
+    const OLD = "2020-01-01T00:00:00.000Z";
+    db.run("UPDATE claims SET updated=? WHERE id=?", [OLD, plainClaim]);
+    await writes.claimLink(ds, plainClaim, evId, "supports");
+    expect((db.get("SELECT updated FROM claims WHERE id=?", [plainClaim]) as any).updated).not.toBe(OLD);
+
+    db.run("UPDATE claims SET updated=? WHERE id=?", [OLD, predClaim]);
+    const r = await writes.claimLink(ds, predClaim, evId, "refutes");
+    expect(r.status).toBe("unverified"); // prediction guard still wins
+    expect((db.get("SELECT updated FROM claims WHERE id=?", [predClaim]) as any).updated).toBe(OLD);
+    await closeOrm();
+  });
 });
 
 describe("claimUnresolve repair channel (0.82.1)", () => {
