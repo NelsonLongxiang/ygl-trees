@@ -144,6 +144,14 @@ shapes → corpus cases → archives；见 §4.6 对账）。
 - **R4（S2，缓行 0.113+）** 干净检出可复现——command 型需 `git` 进 meta 运行面 allowlist 且输出入
   evidence（注意隐私：`git status` 安全，build 输出要筛）。
 
+**R3 范围补裁（fdc757f6 2026-10-22）**：①**gitignored 路径不属 R3 扫描面**——其内的验证驱动脚本由
+**P2 证据规则**管辖（非 CLI 产出不得作为证据，与路径无关）；探索区唯一白名单=`tmp/`；全局
+gitignore（`~/.gitignore_global`）仓外不可见，接受为不可机械检面。②v2 可执行扩展名闭集含 `.py` 与
+**`.ts` / `.mts` / `.cts`**（Node ≥22 / tsx 可直接执行，漏掉即现成绕道）。③**产品源码根**经
+`source_roots[]` 显式声明：条目必须是**具名子目录**（禁 `.`、空串、绝对路径、反斜杠、`..`、尾斜杠）——
+非法条目 → R2 形状拒绝；**未声明即全扫**（fail-closed）；仓库**根级**闭集文件不受 `source_roots`
+覆盖，按登记处置。④规则集随 `spec_meta_*` 版本化（`META_VERSION` 1.1→1.2），不碰契约。
+
 - **R5（S1，v1.2）** 编排按期退场，**权威拆分两段**：
   - **R5a（静态合规；`verify meta` 默认执行、离线、不做时钟比较）**：`orchestration[]` 每条必须满足
     `path` 在 `verify/orchestration/` 下、`sha256` 与实际文件一致、`replaced_by` ∈ §4.7 第一列提取出的
@@ -196,6 +204,9 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
 建议顺序：`verify tree run` → `verify self-check`（升级既有）→ `verify collect`（含 `verify snapshot build`）→
 `verify package` / `verify notify` → `verify import-report`。每条原语**能力交付版本**（`capability_version`）
 的下一个次版本即对应编排的 `sunset` 上限；`unshipped` 无界。
+
+**审计面待办（护栏④）**：`--capabilities` 审计模式对 `source_roots` 广度可疑（如声明覆盖全仓）出
+warning——现不实现；滥用面 ≤ `--no-meta` 且后者有 events 审计，绊线威胁模型是意外+漂移而非恶意。
 
 **表注（verbatim 与界规则，只在此处定义一次）**：`replaced_by` 的闭集 = §4.7 第一列**所有命令 token
 的并集**（多 token 单元格如 `verify package`、`verify notify` 各贡献一项；每条编排只指名其中一个）；

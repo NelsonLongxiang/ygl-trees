@@ -383,6 +383,11 @@ WebUI 报告看板三处（运行记录行 / 报告头 / VU 表）加「边界�
 显示并标「缺省」，报告头说明「父 PASS 不代表子结论为真」；`verify-web.ts listReports` 透传 `semantic_scope`（无字段 null）；
 CLI `verify run` / `verify report` 人类输出增 `semantic_scope` 行（缺省文案同上），JSON 面不变。字段本体留给契约 1.3（T4）。
 测试：`verify-report-scope.spec`、`verify.spec.tsx` +2。
+**0.114.0 记录（2026-10-22，T1/T7a/T6/T8 收口）**：#32（T1 归档白名单投影 + meta v2 登记制 + R5a）merge
+`856398f`；#33（T6 语义边界渲染）3-way 合并 `60f008e`；#31（#27 品味提取计划）merge `7bd2b2a` + 执行状态
+注记 `659cd4f`；**T8 补裁落地**（charter §4.4 R3 范围：ignored 路径归 P2 证据规则、`.ts/.mts/.cts` 入闭集、
+`source_roots[]` 具名子目录声明、未声明全扫；`META_VERSION` 1.2）。本仓 meta.json v2 声明
+`["packages","apps","tests"]` + `vitest.config.ts` tooling。整合门禁见发布记录。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

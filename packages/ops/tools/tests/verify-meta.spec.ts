@@ -60,7 +60,7 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     const r = jrun(["verify", "meta", dir, "--json"]);
     expect(r.rc).toBe(0);
     expect(r.j.verdict).toBe("PASS");
-    expect(r.j.meta_version).toBe("1.1");
+    expect(r.j.meta_version).toBe("1.2");
     // a v1 index keeps the v1 report shape: R1–R3 only, registrations not read
     expect(r.j.meta_index_version).toBe(1);
     expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3"]);
@@ -82,6 +82,47 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3", "R5a"]);
     expect(rule(r, "R5a").evidence).toMatchObject({ entries: 0 });
     expect(String(rule(r, "R5a").evidence.clock)).toMatch(/not compared/);
+  });
+
+  it("v2 source_roots: declared product root exempts .ts; a root-level .ts still needs registration", () => {
+    const dir = repoFixture("v2-roots");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "app.ts"), "export const x = 1;\n", "utf8");
+    writeFileSync(join(dir, "vitest.config.ts"), "export default {};\n", "utf8");
+    writeFileSync(join(dir, "verify", "meta.json"), v2({ source_roots: ["src"] }), "utf8");
+    // src/app.ts is exempt by declaration; vitest.config.ts is root-level → scanned
+    let r = jrun(["verify", "meta", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(JSON.stringify(rule(r, "R3").evidence)).toMatch(/vitest\.config\.ts/);
+    expect(JSON.stringify(rule(r, "R3").evidence)).not.toMatch(/src\/app\.ts/);
+    writeFileSync(join(dir, "verify", "meta.json"), v2({ source_roots: ["src"], tooling: [{ path: "vitest.config.ts", sha256: sha("export default {};\n"), role: "test" }] }), "utf8");
+    r = jrun(["verify", "meta", dir, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.verdict).toBe("PASS");
+  });
+
+  it("v2 source_roots: '.', '..' or absolute entries are R2 shape failures", () => {
+    const dir = repoFixture("v2-roots-bad");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    for (const bad of [".", "../x", "/abs", "src/"]) {
+      writeFileSync(join(dir, "verify", "meta.json"), v2({ source_roots: [bad] }), "utf8");
+      const r = jrun(["verify", "meta", dir, "--json"]);
+      expect(r.rc, bad).toBe(1);
+      expect(rule(r, "R2").verdict, bad).toBe("FAIL");
+      expect(JSON.stringify(rule(r, "R2").evidence), bad).toMatch(/source_roots/);
+    }
+  });
+
+  it("v2 .ts closure: without source_roots every tracked .ts is an unregistered executable", () => {
+    const dir = repoFixture("v2-ts-strict");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    mkdirSync(join(dir, "lib"), { recursive: true });
+    writeFileSync(join(dir, "lib", "run.ts"), "console.log(1);\n", "utf8");
+    writeFileSync(join(dir, "verify", "meta.json"), v2(), "utf8");
+    const r = jrun(["verify", "meta", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(JSON.stringify(rule(r, "R3").evidence)).toMatch(/lib\/run\.ts/);
   });
 
   it("v2 R3: a root script is admissible only when registered in tooling[] with a matching sha256", () => {
