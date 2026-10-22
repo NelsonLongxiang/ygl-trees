@@ -438,6 +438,8 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(res.coverage).toMatchObject({ enforced: false, clauses: 0 });
     const lint = lintCandidates([goodCandidate({ anchor: { quote: "账单合计 1,290.40 元", locator: "material.md#Q7" } })], { materialText: MATERIAL });
     expect(lint).toMatchObject({ ok: true, coverage_skipped: true, coverage: { enforced: false, clauses: 0 } });
+    // a gate that reads issues sees the skip: one COVERAGE warning (not a rejection, so ok stays the prepare projection)
+    expect(lint.issues).toEqual([expect.objectContaining({ stage: "COVERAGE", level: "warning", reason: expect.stringMatching(/^no clause lines matched pattern/) })]);
     expect(lintCandidates(ALL3, { materialText: ID_MATERIAL }).coverage_skipped).toBe(false);
   });
 

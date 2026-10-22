@@ -184,6 +184,17 @@ describe.skipIf(!HAS_BIN)("#34 fleet consumer fixtures via the CLI (release gate
     expect(dflt.j.verdict).toBe("ready");
     expect(dflt.j.coverage).toMatchObject({ enforced: false, clauses: 0 });
     expect(dflt.j.diagnostics.find((d: any) => d.stage === "P1c").message).toMatch(/^no clause lines matched pattern/);
+    const lintSkip = jrun(["verify", "lint-candidates", c, "--text", mat, "--json"]);
+    expect(lintSkip.j).toMatchObject({ ok: true, coverage_skipped: true });
+    expect(lintSkip.j.issues).toEqual([expect.objectContaining({ stage: "COVERAGE", level: "warning" })]);
+  });
+
+  it("prepare.json records the clause scope it was judged by (structured)", () => {
+    const f = fx("review/prs");
+    const prep = jrun(["verify", "prepare", f.material_id, "--candidates", join(f.dir, "candidates.json"), "--reviews", join(f.dir, "reviews.json"), "--db", f.db, "--no-meta", "--json"]);
+    expect(prep.j.verdict).toBe("ready");
+    const record = JSON.parse(readFileSync(join(HOME, "verify", prep.j.record), "utf8"));
+    expect(record.clause_scope).toEqual({ pattern: "^([A-Z]+[0-9]+) ", declared: false, enforced: true, clauses: 7 });
   });
 
   it("an exemption without a reason (bare string) is a usage error", () => {
