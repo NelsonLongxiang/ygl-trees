@@ -55,7 +55,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "e6bf02b03192308f9ab45976606a159767731a345e97e94b035f3592f16e5a8f",
+      "sha256": "dafc024058f19a983e6e65f2987255e0289a0fd89025d1b53986ae66371c489d",
       "role": "gate"
     },
     {
@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "fb944aa3b95f587e24b412761a7491b16317f247da5fceef2ffc2079293e61d5",
+      "sha256": "3be584f0e861340bbc0970554b31c34f30c9b335e42e275ed699497e4e2fa455",
       "role": "gate"
     },
     {
@@ -138,5 +138,42 @@
     "packages",
     "apps",
     "tests"
+  ],
+  "reregistrations": [
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "6d575bf62d250fcaecec795a17a81bad188a5e2903279b619d14af397e8f0ce4",
+      "new_sha256": "a555e64d45a6bcf007b516824b0df0d50887cb2c4aaecf9acab398abb7edeb1e",
+      "reason": "0.114.1 contract 15 (#34 coverage) + 0.114.2 contract 12c (drift gate): bytes changed, registration refreshed explicitly",
+      "at": "2026-10-22T03:00:00.000Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "24efaab26716c6865cb7ca03f05274b7c80625951b360aed56771608bdd8cc3a",
+      "new_sha256": "fb944aa3b95f587e24b412761a7491b16317f247da5fceef2ffc2079293e61d5",
+      "reason": "0.114.2: explicit --reregister + audited drift repair (no auto-rehash)",
+      "at": "2026-10-22T03:05:00.000Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "fb944aa3b95f587e24b412761a7491b16317f247da5fceef2ffc2079293e61d5",
+      "new_sha256": "3be584f0e861340bbc0970554b31c34f30c9b335e42e275ed699497e4e2fa455",
+      "reason": "#37: audit record travels in verify/meta.json reregistrations[] (no local-DB-only ledger)",
+      "at": "2026-10-22T00:41:23.991Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "a555e64d45a6bcf007b516824b0df0d50887cb2c4aaecf9acab398abb7edeb1e",
+      "new_sha256": "591755c2c2ba7af00d9bde11a63d846bfbfc6fccd382512c45743ab3afaf07ee",
+      "reason": "0.114.3 (#37): 12c now asserts reregistrations[] chain ends at the live sha (audit travels with repo)",
+      "at": "2026-10-22T00:41:39.485Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "591755c2c2ba7af00d9bde11a63d846bfbfc6fccd382512c45743ab3afaf07ee",
+      "new_sha256": "dafc024058f19a983e6e65f2987255e0289a0fd89025d1b53986ae66371c489d",
+      "reason": "#34 (PR #38): contract 15 rewritten for clause scope by rule — id clauses, exemption by id, line-number exemption refused, skip visible as a COVERAGE warning, fleet fixtures lint+prepare 24/24; merged onto 0.114.3 (this branch's pre-#37 local-DB re-registrations 7b367f41, c241e42c, e6bf02b0 are superseded by this record)",
+      "at": "2026-10-22T01:16:52.890Z"
+    }
   ]
 }

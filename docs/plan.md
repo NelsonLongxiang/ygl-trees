@@ -409,6 +409,14 @@ npm **latest=0.114.1**、shasum **`80c0270b…`**；官方字节 **1,530,979 B /
 npm **latest=0.114.2**、shasum **`5b164793…`**；官方字节 **1,531,869 B / sha256 `4b9f3633…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节；远端校验 ETIMEDOUT 按 `--no-network` 本地锚定 +
 ls-remote 双远端复证，非绕过）。
+**0.114.3 记录（2026-10-22，#36/#37 双派单）**：#36 predict-cli 墙钟 fixture 改相对 today 滚动
+（created=今天−11d、deadline=今天−4d、days_left 恒 −4），红门恢复稳定。**#37 重登记审计入仓**：审计记录
+从操作员本地 DB 迁到 `verify/meta.json` `reregistrations[]`（path/old/new/reason/at，append-only，
+随 commit 走；原子写、无 DB 依赖）；R2 校验形状；contract 12c 增链一致性（每条 last new_sha == 活 sha）；
+本仓三笔历史重登记迁入。unit 706→707；contract 141（12c 加强）。
+发布（2026-10-22）：commit **`e62241e`**；tag **`v0.114.3 = 32cfda1b… → ^{commit}=e62241e…`**（双远端）；
+npm **latest=0.114.3**、shasum **`f8efa8e1…`**；官方字节 **1,533,430 B / sha256 `ae03a6c1…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
 **#34 修正记录（2026-10-22，未发布；fork PR #38，对齐审查席 #34 设计提案 a–d）**：证据链——0.114.1 把材料每个非空行当子句
 （标题/散文全挂 COVERAGE）且把 `#S<n>`/`#L<n>` 读成行号（与舰队的子句 id 锚点冲突），舰队 spec 全部无法重冻，舰队引擎上限钉在 0.114.0。
 裁定：**a** 子句按规则界定——默认舰队约定 `^([A-Z]+[0-9]+) `（捕获组=id），材料可 `submit --clause-pattern` 声明并冻进
@@ -417,7 +425,7 @@ ls-remote 双远端复证，非绕过）。
 0.114.1 的回归形态）。**b** 豁免只认 id/原文 + 必填 reason（裸字符串 rc=2，行号拒）。**c** `#<id>` 先解析为子句，`#line=<n>` 为行，
 诊断分开计数。**评审配对**：孤儿评审阻断 ready，lint `--reviews` 同源。**d** 4 仓 24 份真实 spec 冻结进
 `packages/verify/core/tests/fixtures/fleet/`，contract 15 跑 lint+prepare（141→144），库面 + 发布产物两层单测（在 0.114.2 代码上 57/58 红）。
-契约/语料版本不变（构造面加法字段 + 文档改写）；charter 不涉及；Rust 不镜像 prepare/lint。#37（重登记审计落点）不在本 PR。
+契约/语料版本不变（构造面加法字段 + 文档改写）；charter 不涉及；Rust 不镜像 prepare/lint。#37（重登记审计落点）不在本 PR——合并 0.114.3 后本 PR 的 contract-audit.sh 重登记已走 #37 的 `reregistrations[]`。
 已知非本 PR：#36 `predict-cli.spec.ts` 日期炸弹。
 审查席 COMMENT 评审（0c6e47c，两条 P3 + 一条 P4）收口：跳过时 lint `issues[]` 增 `level:"warning"` 的 COVERAGE 条目（`ok` 只计拒绝——lint 仍是
 prepare 的投影；「必须有覆盖」的门禁判 `ok && !coverage_skipped`）；默认模式放宽为 `^([A-Z]+[0-9]+) `（已在 a5f655b）；prepare 记录增结构化

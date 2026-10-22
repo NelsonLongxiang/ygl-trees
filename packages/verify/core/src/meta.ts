@@ -137,12 +137,29 @@ function r2fail(evidence: Record<string, unknown>): MetaRule {
 
 /** Registration shape (v2): every entry must carry the declared keys with the
  *  closed-set roles; content checks (file exists, sha matches, …) are R3/R5a. */
-function registrationShapeProblems(index: { orchestration?: unknown; tooling?: unknown; source_roots?: unknown }): string[] {
+function registrationShapeProblems(index: { orchestration?: unknown; tooling?: unknown; source_roots?: unknown; reregistrations?: unknown }): string[] {
   const problems: string[] = [];
   const seenPaths = new Set<string>();
   // v2 source_roots (charter §4.4 R3, fdc757f6 2026-10-22): named subdirs only —
   // no ".", empty, absolute, drive-letter, backslash or ".." entries (a "."
   // entry would exempt the whole repo); absent = strict full scan.
+  // #37: reregistration audit travels in the repo index (verify/meta.json),
+  // not in the operator's local DB — shape must be checkable at admission time.
+  if (index.reregistrations !== undefined) {
+    const list = index.reregistrations;
+    if (!Array.isArray(list)) problems.push("reregistrations must be an array");
+    else
+      list.forEach((raw, i) => {
+        const e = (raw ?? {}) as { path?: unknown; old_sha256?: unknown; new_sha256?: unknown; reason?: unknown; at?: unknown };
+        if (typeof e.path !== "string" || !e.path.trim()) problems.push(`reregistrations[${i}] needs a path`);
+        else if (e.path.startsWith("/") || e.path.includes("\\") || e.path.split("/").includes("..")) problems.push(`reregistrations[${i}] path must be repo-relative: ${JSON.stringify(e.path)}`);
+        for (const k of ["old_sha256", "new_sha256"] as const) {
+          if (typeof e[k] !== "string" || !/^[0-9a-f]{64}$/.test(e[k])) problems.push(`reregistrations[${i}].${k} must be 64 lowercase hex`);
+        }
+        if (typeof e.reason !== "string" || !e.reason.trim()) problems.push(`reregistrations[${i}] needs a reason`);
+        if (typeof e.at !== "string" || Number.isNaN(Date.parse(e.at))) problems.push(`reregistrations[${i}].at must be an ISO timestamp`);
+      });
+  }
   if (index.source_roots !== undefined) {
     if (!Array.isArray(index.source_roots)) problems.push("source_roots must be an array");
     else index.source_roots.forEach((raw, i) => {
@@ -204,7 +221,7 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     }
     return { rule: r2fail({ reason: "verify/specs exists but verify/meta.json is missing" }), index: unreadable(null) };
   }
-  let index: { meta_index_version?: unknown; specs?: Array<{ file?: string; sha256?: string }>; orchestration?: unknown; tooling?: unknown; source_roots?: unknown };
+  let index: { meta_index_version?: unknown; specs?: Array<{ file?: string; sha256?: string }>; orchestration?: unknown; tooling?: unknown; source_roots?: unknown; reregistrations?: unknown };
   try {
     index = JSON.parse(readFileSync(indexFile, "utf8"));
   } catch (e: any) {

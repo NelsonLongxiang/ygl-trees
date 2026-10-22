@@ -151,8 +151,9 @@ gitignore（`~/.gitignore_global`）仓外不可见，接受为不可机械检�
 `source_roots[]` 显式声明：条目必须是**具名子目录**（禁 `.`、空串、绝对路径、反斜杠、`..`、尾斜杠）——
 非法条目 → R2 形状拒绝；**未声明即全扫**（fail-closed）；仓库**根级**闭集文件不受 `source_roots`
 覆盖，按登记处置。④规则集随 `spec_meta_*` 版本化（`META_VERSION` 1.1→1.2），不碰契约。⑤**登记漂移只能显式修复**：
-`meta-tooling --reregister <path> --reason`（禁 auto-rehash）先写 `meta.reregister` 事件（old/new sha +
-reason + actor，append-only）再改索引——把 red 改绿的动作本身必须可审计。
+`meta-tooling --reregister <path> --reason`（禁 auto-rehash）把一条审计记录追加进 `verify/meta.json` 的
+`reregistrations[]`（{path, old_sha256, new_sha256, reason, at}，append-only，**随仓库走**）再改对应条目——
+clone/评审者能看到「为什么重登记」；把 red 改绿的动作本身必须可审计，且审计不得只留在操作员本地。
 
 - **R5（S1，v1.2）** 编排按期退场，**权威拆分两段**：
   - **R5a（静态合规；`verify meta` 默认执行、离线、不做时钟比较）**：`orchestration[]` 每条必须满足

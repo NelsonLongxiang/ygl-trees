@@ -114,6 +114,30 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     }
   });
 
+  it("v2 reregistrations[]: audit entries are shape-checked at admission (R2)", () => {
+    const dir = repoFixture("v2-rereg");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    const BODY = "#!/bin/sh\necho x\n";
+    writeFileSync(join(dir, "scripts", "x.sh"), BODY, "utf8");
+    const body = sha(BODY);
+    const bad = v2({ tooling: [{ path: "scripts/x.sh", sha256: body, role: "build" }], reregistrations: [{ path: "scripts/x.sh" }] });
+    writeFileSync(join(dir, "verify", "meta.json"), bad, "utf8");
+    let r = jrun(["verify", "meta", dir, "--json"]);
+    expect(r.rc).toBe(1);
+    expect(rule(r, "R2").verdict).toBe("FAIL");
+    expect(JSON.stringify(rule(r, "R2").evidence)).toMatch(/reregistrations/);
+
+    const good = v2({
+      tooling: [{ path: "scripts/x.sh", sha256: body, role: "build" }],
+      reregistrations: [{ path: "scripts/x.sh", old_sha256: "0".repeat(64), new_sha256: body, reason: "byte change", at: "2026-10-22T00:00:00.000Z" }],
+    });
+    writeFileSync(join(dir, "verify", "meta.json"), good, "utf8");
+    r = jrun(["verify", "meta", dir, "--json"]);
+    expect(r.rc).toBe(0);
+    expect(r.j.verdict).toBe("PASS");
+  });
+
   it("v2 .ts closure: without source_roots every tracked .ts is an unregistered executable", () => {
     const dir = repoFixture("v2-ts-strict");
     mkdirSync(join(dir, "verify"), { recursive: true });

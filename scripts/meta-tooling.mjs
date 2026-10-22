@@ -8,16 +8,15 @@
  *
  * 纪律（GLM Q3，r32）：
  * - **禁 auto-rehash**：没有隐式刷新路径；重登记必须逐条显式 `--reregister` 且带 reason。
- * - 每次重登记写 `meta.reregister` 事件（workspace events 表，append-only）：{path, old_sha256,
- *   new_sha256, reason, actor}——漂移修复本身可审计，不是把 red 改成 green。
+ * - 每次重登记把一条审计记录追加进 `verify/meta.json` 的 **`reregistrations[]`**（append-only，
+ *   随仓库走）：{path, old_sha256, new_sha256, reason, at}——clone/评审者能看到「为什么重登记」，
+ *   不是把 red 改成 green；本地 DB 事件不随 commit 走，故不再作为唯一账本（#37）。
  * - 只维护登记，不产出也不汇总任何验证判定（tooling 的定义）；`verify meta .` 才是判定。
  */
-import { createHash, randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 
 const ROOT = process.env.YGL_META_ROOT ? resolve(process.env.YGL_META_ROOT) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX = join(ROOT, "verify", "meta.json");
@@ -45,38 +44,10 @@ index.tooling ??= [];
 
 const add = flag("add");
 
-function writeEvent(payload) {
-  // append-only audit of the drift repair; missing workspace DB = fail-closed
-  // (an unrecorded re-registration would be an unauditable green edit).
-  const home = process.env.YGL_HOME ? resolve(process.env.YGL_HOME) : join(homedir(), ".ygl-trees");
-  const dbPath = join(home, "ygl-trees.db");
-  if (!existsSync(dbPath)) {
-    console.error(`meta-tooling: --reregister needs a workspace DB at ${dbPath} to record the meta.reregister event`);
-    process.exit(1);
-  }
-  let DatabaseSync;
-  try {
-    ({ DatabaseSync } = createRequire(import.meta.url)("node:sqlite"));
-  } catch (e) {
-    console.error(`meta-tooling: cannot open sqlite to record the event: ${e?.message || e}`);
-    process.exit(1);
-  }
-  const actor = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli";
-  const db = new DatabaseSync(dbPath);
-  try {
-    db.prepare("INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)").run(
-      `evt_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
-      new Date().toISOString(),
-      actor,
-      "meta.reregister",
-      "meta",
-      payload.path,
-      JSON.stringify(payload),
-      "warn",
-    );
-  } finally {
-    db.close();
-  }
+function atomicWriteIndex(next) {
+  const tmp = INDEX + ".tmp-" + process.pid;
+  writeFileSync(tmp, JSON.stringify(next, null, 2) + String.fromCharCode(10), "utf8");
+  renameSync(tmp, INDEX);
 }
 
 const reregister = flag("reregister");
@@ -103,10 +74,19 @@ if (reregister) {
     process.exit(2);
   }
   const old = entry.sha256;
+  // #37: the audit record lives IN the repo index (reregistrations[]) so it
+  // travels with the commit; one atomic write keeps old/new/reason consistent.
+  index.reregistrations ??= [];
+  index.reregistrations.push({
+    path: entry.path,
+    old_sha256: old,
+    new_sha256: got,
+    reason: reason.trim(),
+    at: new Date().toISOString(),
+  });
   entry.sha256 = got;
-  writeFileSync(INDEX, `${JSON.stringify(index, null, 2)}\n`, "utf8");
-  writeEvent({ path: entry.path, old_sha256: old, new_sha256: got, reason: reason.trim() });
-  console.log(`meta-tooling: re-registered ${entry.path} ${old.slice(0, 8)} → ${got.slice(0, 8)} (meta.reregister recorded)`);
+  atomicWriteIndex(index);
+  console.log(`meta-tooling: re-registered ${entry.path} ${old.slice(0, 8)} -> ${got.slice(0, 8)} (reregistrations[] recorded)`);
   process.exit(0);
 }
 
@@ -149,7 +129,7 @@ if (add) {
   }
   index.tooling.push({ path: rel, sha256: sha256(join(ROOT, rel)), role });
   index.tooling.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  writeFileSync(INDEX, `${JSON.stringify(index, null, 2)}\n`, "utf8");
+  atomicWriteIndex(index);
   console.log(`meta-tooling: added ${rel} (${role})`);
   process.exit(0);
 }

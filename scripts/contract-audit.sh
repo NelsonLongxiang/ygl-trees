@@ -352,10 +352,24 @@ json_err "verify meta missing repo" 2 -- $Y verify meta "$WS/no-such-repo"
 
 # 12c: tooling 登记漂移（meta-tooling --check 与 verify meta R3 同源；GLM Q3：禁 auto-rehash）
 echo "── contract 12c: tooling 登记漂移"
-if node scripts/meta-tooling.mjs --check >/dev/null 2>&1; then
-  pass "meta-tooling --check 无漂移（与 verify meta R3 同源）"
+if node scripts/meta-tooling.mjs --check >/dev/null 2>&1 && node -e '
+const fs = require("fs");
+const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const sha = (s) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s);
+const byPath = new Map((j.tooling || []).map((t) => [t.path, t.sha256]));
+const last = new Map();
+for (const e of j.reregistrations || []) {
+  if (!byPath.has(e.path)) process.exit(1);          // audit entry for an unregistered path
+  if (!e.reason || !String(e.reason).trim()) process.exit(1);
+  if (!sha(e.old_sha256) || !sha(e.new_sha256)) process.exit(1);
+  if (Number.isNaN(Date.parse(e.at))) process.exit(1);
+  last.set(e.path, e.new_sha256);
+}
+for (const [p, s] of byPath) if (last.has(p) && last.get(p) !== s) process.exit(1); // chain must end at the live sha
+' verify/meta.json; then
+  pass "meta-tooling --check 0 drift + reregistrations[] 链与活 sha 一致（随仓库审计）"
 else
-  fail "tooling drift" "$(node scripts/meta-tooling.mjs --check 2>&1 | head -3)"
+  fail "tooling drift / audit chain" "$(node scripts/meta-tooling.mjs --check 2>&1 | head -2; node -e 'const j=require("./verify/meta.json");process.stdout.write("reregistrations="+(j.reregistrations||[]).length)' 2>&1)"
 fi
 
 # ── contract 12b: meta_index_version 2 登记制（charter §4.4 R3 登记豁免 + v1.2 R5a 静态合规；#27 方案 T7a）

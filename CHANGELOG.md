@@ -39,11 +39,25 @@ GitHub #34 修正（0.114.1 / 0.114.2 的回归：舰队全部材料 lint `ok:fa
   `clause_pattern`、lint `coverage_skipped`、prepare `--json` `coverage`）；`docs/verify-contract.md` §1.6 改写。
   charter 不涉及。Rust 侧不镜像 prepare / lint，无改动。
 - 门禁：contract 15 改写（id 子句 + 按 id 豁免 + 行号豁免拒绝 + 跳过可见 + 舰队夹具 lint/prepare 24/24），
-  141 → **144**；`scripts/contract-audit.sh` 按 0.114.2 流程显式重登记（`meta.reregister` 事件，reason 见提交说明；
-  审计落点问题另见 #37，不在本修正内）。
+  141 → **144**；`scripts/contract-audit.sh` 合并 0.114.3 后按 #37 机制显式重登记一次（`verify/meta.json`
+  `reregistrations[]` 追加 591755c2 → 新 sha 一条，reason 写明合并前本分支三次旧机制重登记 7b367f41 / c241e42c / e6bf02b0）。
 - 棘轮：bundle 基线 739,621 → **757,018 B**（本 PR 自行抬升，**需维护者显式认账**；master 的上限是 754,413）。同源对比：
   0.114.2 自身 748,195 B，本修正 head 757,602 B（+9,407：子句清单 / 定位解析 / 评审配对 / 豁免校验与其可操作诊断文案；
   已把新增顶层 JSDoc 改为 `//` 注释省下约 2.3 KB——tsdown 保留顶层 JSDoc、剥离行注释）。只认 bundle 一项，web dist 与冷启动保持原 win32 基线不动。
+## 0.114.3
+
+验证席派单 #36/#37（双 P3，其中 #36 为红门）。
+
+- **#36 墙钟硬编码（红门）**：`predict-cli.spec` 的 due fixture 用 `created=2026-10-10 / deadline=2026-10-17`
+  字面量，过了 2026-10-21 后每个清洁检出的 unit 门恒红。改为**相对 today 滚动**（created = 今天−11d、
+  deadline = 今天−4d、`days_left` 恒 −4），不再有日历日期会过期。
+- **#37 重登记审计出域**：`meta.reregister` 原先只写操作员本地 DB，clone/评审者看不到理由，且 raw SQL
+  绕过写服务纪律。改为把审计记录追加进 `verify/meta.json` 的 **`reregistrations[]`**
+  （{path, old_sha256, new_sha256, reason, at}，append-only，**随仓库走**）；`meta-tooling --reregister`
+  用一次原子写同时更新登记与审计（无本地 DB 依赖）。R2 校验该数组形状（path/old/new/reason/at）；
+  contract 12c 追加**链一致性**断言：每条记录的 path 已登记、reason 非空、at 可解析，且每条路径的最后一条
+  `new_sha256` 必须等于当前活 sha。本仓三笔历史重登记已迁入（contract-audit.sh ×2、meta-tooling.mjs ×1）。
+- 门禁：unit 706 → **707**；contract 141（12c 加强，条数不变）。
 
 ## 0.114.2
 
