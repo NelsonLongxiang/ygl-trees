@@ -19,7 +19,7 @@ import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
-import { bad, C, head, out, paint, table } from "../../../core/text/src/fmt";
+import { bad, C, head, ok, out, paint, table } from "../../../core/text/src/fmt";
 import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
@@ -40,7 +40,7 @@ import { attachJobTarget, checkEligibility, GraduationError, graduationPath, job
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 
-const KINDS = ["materials", "specs", "reports", "registrations", "binaries"] as const;
+const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees"] as const;
 
 function paths(env: Env) {
   const root = join(env.home, "verify");
@@ -52,6 +52,7 @@ function paths(env: Env) {
     reports: join(root, "reports"),
     registrations: join(root, "registrations"),
     binaries: join(root, "binaries"),
+    trees: join(root, "trees"),
   };
 }
 
@@ -68,6 +69,135 @@ export interface MaterialRecord {
   /** #34: clause pattern declared at submit (`--clause-pattern`), frozen with the
    *  material; absent = the default fleet convention `^([A-Z]+[0-9]+) `. */
   clause_pattern?: string;
+}
+
+/** A1 契约 v1.0（docs/reviews/verify-tree-run-contract.md）：树 spec 冻结面。 */
+export interface TreeSpecNode {
+  id: string;
+  kind: "leaf" | "group";
+  spec_id?: string;
+  spec_version?: number;
+  aggregate?: string;
+  children?: string[];
+}
+export interface TreeSpec {
+  tree_spec_id: string;
+  tree_spec_version: 1;
+  tree_spec_sha256: string;
+  source_material_id: string;
+  title: string;
+  created: string;
+  root: string;
+  nodes: TreeSpecNode[];
+  pinned: Record<string, string>;
+}
+
+/** Freeze-time validation (A1 §3.1): everything invalid → rc=2. */
+function validateTreeSpec(
+  raw: any,
+  materialId: string,
+  title: string,
+  specExists: (id: string) => boolean
+): { spec?: TreeSpec; error?: string } {
+  if (!raw || typeof raw !== "object") return { error: "tree spec must be a JSON object" };
+  if (raw.tree_spec_version !== 1) return { error: "tree_spec_version must be 1" };
+  if (typeof raw.root !== "string" || !raw.root) return { error: "root must be a node id" };
+  if (!Array.isArray(raw.nodes) || !raw.nodes.length) return { error: "nodes must be a non-empty array" };
+  const nodes: TreeSpecNode[] = [];
+  const byId = new Map<string, TreeSpecNode>();
+  for (const n of raw.nodes) {
+    if (!n || typeof n !== "object") return { error: "node must be an object" };
+    if (typeof n.id !== "string" || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(n.id)) return { error: "bad node id: " + String(n.id) };
+    if (byId.has(n.id)) return { error: "duplicate node id: " + n.id };
+    if (n.kind !== "leaf" && n.kind !== "group") return { error: "node " + n.id + ": kind must be leaf|group" };
+    const node: TreeSpecNode = { id: n.id, kind: n.kind };
+    if (n.kind === "leaf") {
+      if (typeof n.spec_id !== "string" || !n.spec_id) return { error: "leaf " + n.id + ": spec_id required" };
+      if (!specExists(n.spec_id)) return { error: "leaf " + n.id + ": spec not found: " + n.spec_id + " (prepare it first)" };
+      node.spec_id = n.spec_id;
+      if (Number.isInteger(n.spec_version)) node.spec_version = n.spec_version;
+      if (n.children !== undefined) return { error: "leaf " + n.id + ": children not allowed" };
+    } else {
+      if (!Array.isArray(n.children) || (n.children as any[]).some((c) => typeof c !== "string")) {
+        return { error: "group " + n.id + ": children must be an array of node ids" };
+      }
+      if (!n.children.length) return { error: "group " + n.id + ": empty group rejected (Q6)" };
+      const agg = String(n.aggregate ?? "");
+      const m = /^(all_pass|count_fail|quorum)\(?([0-9]+)?\)?$/.exec(agg);
+      if (!m) return { error: "group " + n.id + ": unknown aggregate '" + agg + "' (want all_pass|count_fail|quorum(N))" };
+      if (m[1] === "quorum") {
+        const q = Number(m[2] ?? "");
+        if (!Number.isInteger(q) || q < 1 || q > n.children.length) {
+          return { error: "group " + n.id + ": quorum(N) needs 1 <= N <= " + n.children.length };
+        }
+      } else if (m[2] !== undefined) {
+        return { error: "group " + n.id + ": aggregate '" + m[1] + "' takes no argument" };
+      }
+      node.aggregate = m[1] === "quorum" ? "quorum(" + Number(m[2]) + ")" : m[1];
+      node.children = [...n.children];
+    }
+    nodes.push(node);
+    byId.set(node.id, node);
+  }
+  // reachability + dangling + cycle + depth (Q7 = 16)
+  const seen = new Set<string>();
+  const stack = new Set<string>();
+  const walk = (id: string, depth: number): string | null => {
+    if (depth > 16) return "tree depth exceeds 16 at node " + id + " (Q7)";
+    if (stack.has(id)) return "cycle detected at node " + id;
+    if (seen.has(id)) return "node reached twice: " + id;
+    const n = byId.get(id);
+    if (!n) return "dangling child reference: " + id;
+    stack.add(id);
+    seen.add(id);
+    for (const c of n.children ?? []) {
+      const err = walk(c, depth + 1);
+      if (err) return err;
+    }
+    stack.delete(id);
+    return null;
+  };
+  const walkErr = walk(raw.root, 0);
+  if (walkErr) return { error: walkErr };
+  if (seen.size !== nodes.length) {
+    const missing = nodes.map((n) => n.id).filter((id) => !seen.has(id));
+    return { error: "unreachable node(s) from root: " + missing.join(", ") };
+  }
+  // pinned frozen at prepare (v0.3 R-2): leaf ids only, sha256 shape.
+  const pinned: Record<string, string> = {};
+  if (raw.pinned !== undefined) {
+    if (!raw.pinned || typeof raw.pinned !== "object" || Array.isArray(raw.pinned)) {
+      return { error: "pinned must be an object {nodeId: sha256}" };
+    }
+    for (const [nid, sha] of Object.entries(raw.pinned as Record<string, unknown>)) {
+      const node = byId.get(nid);
+      if (!node) return { error: "pinned target not found: " + nid };
+      if (node.kind !== "leaf") return { error: "pinned target must be a leaf: " + nid };
+      if (typeof sha !== "string" || !/^[0-9a-f]{64}$/.test(sha)) {
+        return { error: "pinned " + nid + ": sha256 must be 64 lowercase hex chars" };
+      }
+      pinned[nid] = sha;
+    }
+  }
+  const canonical = JSON.stringify({
+    root: raw.root,
+    nodes: nodes.slice().sort((a, b) => a.id.localeCompare(b.id)),
+    pinned,
+  });
+  const digest = sha256(canonical);
+  return {
+    spec: {
+      tree_spec_id: "ts_" + short(digest),
+      tree_spec_version: 1,
+      tree_spec_sha256: digest,
+      source_material_id: materialId,
+      title,
+      created: new Date().toISOString(),
+      root: raw.root,
+      nodes,
+      pinned,
+    },
+  };
 }
 
 export function readJson<T>(path: string): T {
@@ -415,6 +545,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
   run: ["db", "submission", "no-archive"],
+  tree: ["pinned"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
@@ -488,6 +619,73 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 
   switch (action) {
+    case "tree": {
+      const sub = rest[0];
+      if (sub !== "prepare") {
+        bad(ctx, "usage: verify tree prepare <material-id> [--pinned <node>=<sha256> ...] [--json]  (run/report/trace/archive land with A1 runtime)");
+        return 2;
+      }
+      const materialId = rest[1];
+      if (!materialId) {
+        bad(ctx, "usage: verify tree prepare <material-id> [--pinned <node>=<sha256> ...] [--json]");
+        return 2;
+      }
+      const p = paths(env);
+      const mDir = join(p.materials, materialId);
+      const mFile = join(mDir, "material.json");
+      if (!existsSync(mFile)) {
+        bad(ctx, "material not found: " + materialId + " (verify submit first)");
+        return 1;
+      }
+      const material = readJson<MaterialRecord>(mFile);
+      const textFile = join(mDir, material.text_path || "material.txt");
+      let raw: any;
+      try {
+        raw = JSON.parse(readFileSync(textFile, "utf8"));
+      } catch (e: any) {
+        bad(ctx, "tree spec is not valid JSON: " + (e?.message || e));
+        return 2;
+      }
+      const extraPinned: Record<string, string> = {};
+      const pinnedArgs: string[] = Array.isArray(args.flags.pinned)
+        ? args.flags.pinned.map(String)
+        : args.flags.pinned
+          ? [String(args.flags.pinned)]
+          : [];
+      for (const pv of pinnedArgs) {
+        const idx = pv.indexOf("=");
+        if (idx <= 0) {
+          bad(ctx, "bad --pinned '" + pv + "' (want <node>=<sha256>)");
+          return 2;
+        }
+        extraPinned[pv.slice(0, idx)] = pv.slice(idx + 1);
+      }
+      if (Object.keys(extraPinned).length) raw = { ...raw, pinned: { ...(raw.pinned || {}), ...extraPinned } };
+      const res = validateTreeSpec(raw, materialId, material.title, (sid) => existsSync(join(p.specs, sid, "spec.json")));
+      if (res.error || !res.spec) {
+        bad(ctx, "tree spec invalid: " + res.error);
+        return 2;
+      }
+      const outFile = join(p.trees, res.spec.tree_spec_id + ".json");
+      writeJson(outFile, res.spec);
+      if (ctx.json) {
+        console.log(JSON.stringify({
+          tree_spec_id: res.spec.tree_spec_id,
+          tree_spec_sha256: res.spec.tree_spec_sha256,
+          title: res.spec.title,
+          root: res.spec.root,
+          nodes: res.spec.nodes.length,
+          pinned: Object.keys(res.spec.pinned).length,
+          path: outFile,
+        }));
+      } else {
+        ok(ctx, "tree spec frozen: " + res.spec.tree_spec_id + "  (" + res.spec.nodes.length + " nodes, root " + res.spec.root + ")");
+        out(ctx, paint(C.dim, "  sha256: " + res.spec.tree_spec_sha256, ctx.color));
+        out(ctx, paint(C.dim, "  file:   " + outFile, ctx.color));
+      }
+      return 0;
+    }
+
     case "submit": {
       const title = String(args.flags.title || "").trim();
       const textArg = args.flags.text ? String(args.flags.text) : "";
