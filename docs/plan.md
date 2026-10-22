@@ -510,6 +510,12 @@ getOrm/boot 打开期锁重试。`kb-fts.spec` 2 例（rm 一致性 + 12 并发 
 发布（2026-10-22）：commit **`4ba39cd`**；tag **`v0.114.11 = 88a4a4fd… → ^{commit}=4ba39cd…`**（双远端）；
 npm **latest=0.114.11**、shasum **`32f3c1d5…`**；官方字节 **1,579,312 B / sha256 `69073803…`**
 （publish `2026-10-22T10:19:08Z`，fileCount 177）。
+**0.114.12 记录（2026-10-22，#51 单驱动 + #50 sweep 残余）**：#51 P1——主库改为 better-sqlite3（与 ORM
+同 native 驱动），消除 wasm 点锁 vs native fcntl 在 POSIX 互不可见导致的丢事件行/假 IOERR；适配层保留
+all/get/run/finalize；`db sql` 非 SELECT 回退 run；12 并发 kb add 增「事件行不丢」断言。测试收尾补 native
+句柄关闭（ops-service/verify-jobs/lock-retry）。#50——五 node 读动词缺 key rc=2（sweep 81 动词）；
+六条 --json 成功路径单对象（kb link/promote、db export、webui export、skill refs add/show）。unit 891→899。
+`node-sqlite3-wasm` 依赖清理列后续（已不在运行时路径）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

@@ -387,6 +387,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (q2.ref !== rest[1]) rest[1] = q2.ref;
     }
     const key = rest[0];
+    if (["show", "parents", "children", "ancestors", "descendants"].includes(sub) && !key) {
+      bad(ctx, `usage: node ${sub} <key>`);
+      return 2;
+    }
 
     if (sub === "add") {
       if (!key) {

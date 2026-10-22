@@ -58,6 +58,7 @@ describe("db open lock retry (0.94, 68d051ae71)", () => {
     } finally {
       if (db) db.close();
       child.kill();
+      if (child.exitCode === null) await new Promise((r) => child.once("exit", r));
     }
   }, 20_000);
 
@@ -74,6 +75,7 @@ describe("db open lock retry (0.94, 68d051ae71)", () => {
     } finally {
       if (prev === undefined) delete process.env.YGL_LOCK_RETRY_MS; else process.env.YGL_LOCK_RETRY_MS = prev;
       child.kill();
+      if (child.exitCode === null) await new Promise((r) => child.once("exit", r));
       try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
     }
   }, 20_000);

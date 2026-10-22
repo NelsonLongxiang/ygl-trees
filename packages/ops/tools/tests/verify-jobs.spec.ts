@@ -96,7 +96,8 @@ afterAll(async () => {
     });
   }
   await closeOrm();
-  fs.rmSync(dir, { recursive: true, force: true });
+  testEnv.db.close();
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 const clause = "账单金额不得为负。";

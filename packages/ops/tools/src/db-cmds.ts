@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, warn, out, head, table, paint, C, show } from "../../../core/text/src/fmt";
+import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
 import { dbPath, pidAlive } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
 
@@ -530,8 +530,8 @@ ${cl.text}
       // atomic: a truncated SQL dump restores as data loss — never half-write
       const { writeFileAtomic } = require("@deepseek-ai/dsh-atomic-write");
       return writeFileAtomic(dest, lines.join("\n") + "\n", {} as any).then((): number => {
-        ok(ctx, `dumped to ${dest}`);
-        out(ctx, paint(C.dim, `  ${counts.join("  ")}`, ctx.color));
+        ack(ctx, { path: dest, bytes: fs.statSync(dest).size, tables: dataTables.length - skip.size }, `dumped to ${dest}`);
+        if (!ctx.json) out(ctx, paint(C.dim, `  ${counts.join("  ")}`, ctx.color));
         return 0;
       });
     }
@@ -556,7 +556,17 @@ ${cl.text}
         );
         return 2;
       }
-      const rows = db.all(sql);
+      // better-sqlite3 (single driver, #51) rejects .all() on statements that
+      // return no data; the wasm driver used to return []. Keep the ad-hoc
+      // power tool usable for INSERT/UPDATE/DELETE too.
+      let rows: any[];
+      try {
+        rows = db.all(sql);
+      } catch (e: any) {
+        if (!/does not return data/i.test(String(e?.message || e))) throw e;
+        const r = db.run(sql);
+        rows = [{ changes: r.changes }];
+      }
       table(ctx, rows);
       return 0;
     }

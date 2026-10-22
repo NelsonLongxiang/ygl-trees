@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.114.12
+
+GitHub #51（P1 · 并发正确性）+ #50（P3 · sweep 残余）。
+
+- **#51 单驱动收敛**：主库从 `node-sqlite3-wasm` 切到 **better-sqlite3**（与 ORM 同一 native 驱动）——wasm
+  VFS 的点锁/`mkdir` 协议与 native fcntl 在 POSIX 互不可见，两个驱动同时写会丢已提交事件行并抛假
+  `SQLITE_IOERR`（macOS 并发 2/3 失败）。适配层保留 `all/get/run/finalize` 语句面；FTS5 由 better-sqlite3
+  预编译提供。`db sql` 对非 SELECT 语句回退 `run()`（native 不允许 `all()` 非读语句）。并发回归断言
+  加强：12 并发 `kb add` 后 `base == fts` 且**事件行不丢**（`kb.add` 事件 join 现存 note = base）。
+- 测试资源：native 句柄在 Windows 会锁住 tmp 目录——`ops-service` / `verify-jobs` 收尾显式关闭 DB、
+  `lock-retry` 等待 holder 子进程退出后再开，均按真实句柄生命周期修正。
+- **#50 sweep 残余**：五 node 读动词（`show/parents/children/ancestors/descendants`）缺 key → rc=2；
+  `missing-args.spec` 扩到 **81 动词**。六条 `--json` 成功路径收编为单对象：`kb link`（a/b/rel）、
+  `kb promote`（name/description/origin）、`db export`（path/bytes/tables）、`webui export`（path/bytes）、
+  `skill refs add`（skill/path）、`skill refs show`（skill/path/content）；人类提示行在 JSON 模式抑制。
+- 测试：unit 891 → **899**（+5 sweep 读动词、+3 JSON 成功路径）；contract 144 不变。
+- 注：`node-sqlite3-wasm` 依赖已不在运行时路径，清理列后续版本（不影响本版字节/安装）。
+
 ## 0.114.11
 
 批十六用户观察（验证席转发）：kb 池高并发导入场景出现 `kb_notes` ↔ `kb_fts` 漂移（doctor `fts_sync_kb` 可见）。
