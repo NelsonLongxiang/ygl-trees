@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.114.13
+
+GitHub #53（P2 · 升级破坏面）+ #52（P3 · 测试污染）+ wasm 依赖清理。
+
+### 升级注记（0.114.11 → 0.114.12+，必读）
+
+0.114.12 把主库切到 **native better-sqlite3** 后，`PRAGMA journal_mode=WAL` 才首次真实生效：打开
+**≤0.114.11 创建的旧工作区**时，会把 `DELETE` 日志模式**持久转换**为 `WAL`，而旧版 wasm 驱动无法再打开
+WAL 库。0.114.13 起：
+
+- 首次转换在 **stderr** 打一行提示（stdout 机器通道不受影响），并给出降级步骤；
+- **`YGL_LEGACY_JOURNAL=1`** 保持旧 `DELETE` 模式（可反复切换，升级/降级安全）；`YGL_JOURNAL_MODE=<mode>`
+  可显式指定 `wal|delete|truncate|persist|memory|off`；
+- 已转 WAL 后要降级旧版：关闭所有 ygl 会话，执行
+  `sqlite3 "<db>" "PRAGMA journal_mode=DELETE;"`（或 `YGL_LEGACY_JOURNAL=1 ygl-trees db stats` 一次），
+  再用 ≤0.114.11 打开。
+
+### 变更
+
+- **#53**：`journal_mode` 迁移检测 + stderr 升级提示 + `YGL_LEGACY_JOURNAL` / `YGL_JOURNAL_MODE` 开关；
+  `journal-mode.spec` 3 例（全新无提示、旧库转换提示、legacy 回切）。
+- **#52**：`verify-example.spec` 与 `apps/cli/tests/help-checker.spec` 的 CLI spawn 补临时 `YGL_HOME`
+  （此前写开发者真实 `~/.ygl-trees`，实测 313 条 `cmd.run` 污染）；两 spec 同时 seed 工作区，避免无库时
+  首启欢迎页/选择门改变断言。
+- **依赖清理**：移除 `node-sqlite3-wasm`（root + core/database），bundle externals 同步；运行时仅
+  better-sqlite3 一个 SQLite 驱动。`docs/bun-compat.md` 顶部标注原 wasm VFS 结论已过时、Bun 面待重评。
+- 测试：unit 899 → **902**（+3 journal-mode）；contract 144 不变。
+
 ## 0.114.12
 
 GitHub #51（P1 · 并发正确性）+ #50（P3 · sweep 残余）。

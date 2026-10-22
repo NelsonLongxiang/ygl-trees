@@ -10,7 +10,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "node-sqlite3-wasm": "^0.8.60",
     "typeorm": "^1.1.0",
     "better-sqlite3": "^13.0.0",
     "reflect-metadata": "^0.2.0",

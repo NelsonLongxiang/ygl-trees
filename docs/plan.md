@@ -519,6 +519,12 @@ all/get/run/finalize；`db sql` 非 SELECT 回退 run；12 并发 kb add 增「�
 发布（2026-10-22）：commit **`e8b2381`**；tag **`v0.114.12 = e14de947… → ^{commit}=e8b2381…`**（双远端）；
 npm **latest=0.114.12**、shasum **`840c4b25…`**；官方字节 **1,582,108 B / sha256 `20d8d1f5…`**
 （publish `2026-10-22T11:39:11Z`，fileCount 177）。macOS POSIX 并发复跑仍待有 mac 环境的席位。
+**0.114.13 记录（2026-10-22，#53 升级破坏面 + #52 测试污染）**：#53——native 驱动使 WAL 首次真实生效，
+旧库（≤0.114.11 DELETE）首开会持久转 WAL；本版加迁移检测 + stderr 提示 + `YGL_LEGACY_JOURNAL=1` /
+`YGL_JOURNAL_MODE` 开关，CHANGELOG 升级注记（含降级 sqlite3 步骤）。#52——verify-example/help-checker 两
+spec 的 CLI spawn 补临时 YGL_HOME（真实 home 313 条 cmd.run 污染根因），并 seed 工作区。依赖清理：
+root+core/database 移除 node-sqlite3-wasm，bundle externals 同步；bun-compat 标注旧结论过时。
+journal-mode.spec 3 例；unit 899→902。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

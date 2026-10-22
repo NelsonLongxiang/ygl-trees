@@ -4,17 +4,31 @@
  * readdir order), a golden test on the generated data, and the payload
  * self-declares its derivation source so consumers can trace the digest.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const REPO = resolve(__dirname, "../../../.."); // tests → tools → ops → packages → repo
 const BIN = resolve(REPO, "dist/bundle/bin.cjs");
 const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+// #52: isolate the workspace — an unset YGL_HOME wrote cmd.run events into the
+// developer's real ~/.ygl-trees on every CLI spawn.
+const HOME = mkdtempSync(join(tmpdir(), "ygl-verify-example-"));
+beforeAll(() => {
+  expect(jrun(["db", "init"]).rc).toBe(0);
+  expect(jrun(["project", "new", "p"]).rc).toBe(0);
+});
+afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
 const TYPES = ["sql", "sql-pair", "count", "exists", "file", "command", "agent"];
 
 function jrun(args: string[]) {
-  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [BIN, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, YGL_HOME: HOME },
+  });
   let j: any = null;
   try {
     j = JSON.parse((r.stdout || "").trim());

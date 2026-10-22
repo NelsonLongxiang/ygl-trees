@@ -174,7 +174,7 @@ gitee release create -R NelsonLongXiang/ygl-trees --tag v0.39.0   --name "v0.39.
 ```
 bin        dist/bundle/bin.cjs     ← tsdown 单文件（cordis + 全部 packages 已内联）
 files      dist/ ygl.bundle.json README.md docs/ skills/ examples/ LICENSE
-externals  better-sqlite3 · node-sqlite3-wasm · typeorm · reflect-metadata · pg
+externals  better-sqlite3 · typeorm · reflect-metadata · pg
            @deepseek-ai/dsh-atomic-write（native/可选，不进 bundle）
 ```
 

@@ -459,14 +459,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_content       ON kb_notes(content_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_refs ON skill_refs(skill_id, path);
 `;
 
+/** Effective journal mode (#53). Default WAL; YGL_LEGACY_JOURNAL=1 keeps the
+ *  pre-0.114.12 DELETE mode so a downgrade can still open the workspace. */
+const JOURNAL_MODES = new Set(["wal", "delete", "truncate", "persist", "memory", "off"]);
+export function journalModeDesired(): string {
+  const raw = process.env.YGL_JOURNAL_MODE;
+  if (raw) {
+    const m = raw.toLowerCase();
+    if (JOURNAL_MODES.has(m)) return m;
+  }
+  if (process.env.YGL_LEGACY_JOURNAL === "1") return "delete";
+  return "wal";
+}
+
 export class DB {
   readonly db: SqliteDatabase;
   readonly path: string;
   /** True when THIS instance acquired the .ygllock (0.79.1) — lock-less
    *  instances (serve, db unlock) never release a foreign lock. */
   ownsLock = false;
+  /** Set when opening an EXISTING workspace changed journal_mode (#53): the
+   *  first native-driver open converts DELETE→WAL, which ≤0.114.11 cannot
+   *  reopen. CLI surfaces one stderr line; YGL_LEGACY_JOURNAL=1 opts out. */
+  journalMigration: { from: string; to: string } | null = null;
 
   constructor(file: string, opts?: { lock?: boolean }) {
+    const existed = fs.existsSync(file) && (() => { try { return fs.statSync(file).size > 0; } catch { return false; } })();
     this.path = file;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const useLock = opts?.lock === true; // opt-in: only the CLI entry point locks
@@ -586,7 +604,17 @@ export class DB {
     // made acute by lock-free `db unlock`).
     this.ownsLock = acquired;
     this.db = new SqliteDatabase(file);
-    this.db.exec("PRAGMA journal_mode=WAL");
+    {
+      const desired = journalModeDesired();
+      const cur = String((this.db.prepare("PRAGMA journal_mode").get() as any)?.journal_mode || "").toLowerCase();
+      if (cur && cur !== desired) {
+        const res = this.db.prepare(`PRAGMA journal_mode=${desired}`).get() as any;
+        const to = String(res?.journal_mode || desired).toLowerCase();
+        // Only an EXISTING workspace is a migration worth surfacing; fresh
+        // `db init` starts in whatever the desired mode is.
+        if (existed && to !== cur) this.journalMigration = { from: cur, to };
+      }
+    }
     // 0.90.1 P1-2 (review direct-a35d58ae): readers wait instead of failing
     // instantly when another process holds the write lock — the serve panel
     // must survive concurrent CLI writes (same family as the 0.83 DB.close

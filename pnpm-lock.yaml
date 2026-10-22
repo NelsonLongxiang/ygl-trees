@@ -26,9 +26,6 @@ importers:
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
-      node-sqlite3-wasm:
-        specifier: ^0.8.61
-        version: 0.8.61
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -137,9 +134,6 @@ importers:
       better-sqlite3:
         specifier: ^13.0.0
         version: 13.0.3
-      node-sqlite3-wasm:
-        specifier: ^0.8.60
-        version: 0.8.60
       reflect-metadata:
         specifier: ^0.2.0
         version: 0.2.2
@@ -2083,12 +2077,6 @@ packages:
   node-releases@2.0.59:
     resolution: {integrity: sha512-5qr2okC4ItAI0hG5SaV0HoYMpnM/Y6+Oqr7AmPYy/2uEoGvS+GbSKLeRxSS1uAdu59yz0ouzcuXievSgg///WA==}
     engines: {node: '>=18'}
-
-  node-sqlite3-wasm@0.8.60:
-    resolution: {integrity: sha512-woDEJy/Df0EBFKJ2N7HSL4SiH5UL1GDwxvBeBjaKvqmUApgTKapcoQiAgZKrLSUmrWU6VYyHz41Sz58Hi6YPmg==}
-
-  node-sqlite3-wasm@0.8.61:
-    resolution: {integrity: sha512-Yqp6mz/CqmoUU4dCQOda9KtxC0+ToDX2w7p9/bv0hwaIXNbcGiGnfrkzE22reefoBvB1gYAUpJImsf0L7NQ9wg==}
 
   obug@3.0.0:
     resolution: {integrity: sha512-5vvB5+W7ePv+p3uqxi+RcW1XAzLW0/hxt3/4X4Lc4qHudzOhmBiBwOY6DRob4WnanAEGvNcLjF+KNOufrUoEQw==}
@@ -4345,10 +4333,6 @@ snapshots:
   node-addon-api@8.9.2: {}
 
   node-releases@2.0.59: {}
-
-  node-sqlite3-wasm@0.8.60: {}
-
-  node-sqlite3-wasm@0.8.61: {}
 
   obug@3.0.0: {}
 

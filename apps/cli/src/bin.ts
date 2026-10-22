@@ -550,6 +550,27 @@ export async function main(argv: string[]): Promise<number> {
   const store = booted.store;
   const pluginCommands = booted.pluginCommands;
   const loadedPlugins = booted.loadedPlugins;
+  // #53: first native-driver open of an OLD workspace converts DELETE→WAL.
+  // That is durable and one-way for ≤0.114.11; surface it on stderr (stdout
+  // stays the machine channel) and name the downgrade escape hatch.
+  {
+    const jm = (booted.db as any)?.journalMigration as { from: string; to: string } | null | undefined;
+    if (jm) {
+      console.error(
+        paint(
+          C.yellow,
+          `  ! journal_mode ${jm.from} → ${jm.to}: existing workspace ${
+            jm.to === "wal" ? "converted (≤0.114.11 cannot reopen WAL)" : "set to legacy (downgrade-compatible)"
+          }.
+` +
+            `    keep legacy: YGL_LEGACY_JOURNAL=1 (upgrade-proof) · downgrade: close all sessions, then
+` +
+            `    sqlite3 "<db>" "PRAGMA journal_mode=DELETE;"`,
+          ctx.color
+        )
+      );
+    }
+  }
   const shutdown = createProcessShutdown(async () => {
     try { db?.close(); } catch { /* best effort */ }
     // P0-2 belt-and-suspenders: force-release the lock on any exit path —
