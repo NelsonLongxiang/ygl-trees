@@ -249,7 +249,7 @@ ${paint(C.bold, "webui", color)}            React client (0.88: the only front e
 
 ${paint(C.bold, "rel", color)}             关联织物（spec R9：任意两类实体互相挂接）
   add <src> <dst> [--rel t]   link two refs: node:key claim:id kb:id artifact:id
-                             skill:name evidence:id source:id query:id
+                             skill:name evidence:id source:id query:id task:id
   rm <src> <dst> [--rel t]    unlink
   list [--src r] [--dst r]    browse (either side filter, resolves displays)
 

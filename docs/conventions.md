@@ -10,15 +10,15 @@
 
 | # | 触点 | 文件 | 说明 |
 |---|---|---|---|
-| 1 | SCHEMA_SQL | src/db.ts | 建表 + 索引；FK 全部 `ON DELETE CASCADE`；命名 snake_case |
-| 2 | 可检索？ | src/db.ts + src/store.ts | 若需全文检索：建 FTS5 虚表 + 写路径同步 ngram（见 §三） |
-| 3 | 幂等？ | src/db.ts + src/store.ts | 若写命令可重复执行：content_hash 列 + 唯一索引 + store 判重 + `--force`（见 §二） |
-| 4 | Store 方法 | src/store.ts | **唯一写入面**。裸 SQL、参数化、事件留痕（`this.log`） |
-| 5 | db export dataTables | src/cmds/db.ts | 漏了 = 备份静默丢数据（`query_sources` 事故） |
-| 6 | MIRROR_TABLES | src/pgsync.ts | 漏了 = PG 镜像丢数据；可检索表还要加 NGRAM_INPUT 映射 |
-| 7 | stats() | src/store.ts | `db stats` / `agent brief` 的口径；漏了 = 计数审计失真 |
-| 8 | MIGRATE_DDL | src/pgsync.ts | 手写全保真 DDL（FK/UNIQUE/索引）；**漂移守卫**会在迁移期拦截漏改，但别依赖它兜底 |
-| 9 | TypeORM 实体 | src/entities/research.ts | schema v5 的类型化快照，**与 SCHEMA_SQL 同 commit 改**；`synchronize` 永久 false |
+| 1 | SCHEMA_SQL | packages/core/database/src/db.ts | 建表 + 索引；FK 全部 `ON DELETE CASCADE`；命名 snake_case |
+| 2 | 可检索？ | packages/core/database/src/db.ts + packages/research/pipeline/src/writes.ts | 若需全文检索：建 FTS5 虚表 + 写路径同步 ngram（见 §三；tree 侧在 treeWrites.ts） |
+| 3 | 幂等？ | packages/core/database/src/db.ts + packages/research/pipeline/src/writes.ts | 若写命令可重复执行：content_hash 列 + 唯一索引 + 写服务判重 + `--force`（见 §二） |
+| 4 | 写服务 | packages/research/pipeline/src/writes.ts（tree 域 packages/techtree/model/src/treeWrites.ts） | **写命令的唯一写入面**：事务化服务（幂等 + 基表 + FTS 双写 + events 同事务）。Store（reads.ts）只剩读、配置面（project/tree use）与历史例外 |
+| 5 | db export dataTables | packages/ops/tools/src/db-cmds.ts | 漏了 = 备份静默丢数据（`query_sources` 事故） |
+| 6 | MIRROR_TABLES | packages/ops/tools/src/pgsync.ts | 漏了 = PG 镜像丢数据；可检索表还要加 NGRAM_INPUT 映射 |
+| 7 | stats() | packages/research/pipeline/src/reads.ts | `db stats` / `agent brief` 的口径；漏了 = 计数审计失真 |
+| 8 | MIGRATE_DDL | packages/ops/tools/src/pgsync.ts | 手写全保真 DDL（FK/UNIQUE/索引）；**漂移守卫**会在迁移期拦截漏改，但别依赖它兜底 |
+| 9 | TypeORM 实体 | packages/research/pipeline/src/entities.ts + packages/core/database/src/entities.ts | schema 的类型化快照，**与 SCHEMA_SQL 同 commit 改**；`synchronize` 永久 false |
 | ✓ | 验收面 | examples/demo.sh | 新行为要有断言；跨库操作加计数审计（对照 `db stats --json`） |
 
 ## 二、幂等判重决策树
@@ -58,7 +58,7 @@
 | **读命令**：`project show`、`research query/source/evidence/claim list`（异步命令 + relations 取派生计数） | FTS5 检索（source/kb/node search、skill match）——ORM 无 FTS5 概念 |
 | **写命令**（0.10.0 起）：research 组 add/link/resolve/attach、source add/fetch、kb add/ingest、job add —— 全部经 **src/writes.ts 事务化写服务**：幂等判定 + 基表写入 + FTS 双写 + events 留痕在**同一个 ds.transaction** 内（Store 时代是分离语句，FTS 失败会留孤儿行——事务关闭了该缺陷） | PRAGMA、schema 迁移（user_version 轨道） |
 | | PG sync/migrate（pgclient 直连） |
-| | Store/TreeStore 的**读方法**与未迁移写方法（produce、skill、tree 域）——渐进迁移中 |
+| | Store/TreeStore 的**读方法**（writes 服务不承载读）；写迁移已收官，例外见下 |
 
 **async 裁决（2026-10-15）**：否决"全栈异步一步到位"——main() 已支持异步命令，传染面收敛在命令层 await + 写服务层，无需改造 Store 读方法。写命令统一经 `runWrite` 助手（6 行/命令），返回**显式 snake_case 映射对象**（输出契约冻结：实体 camelCase 属性绝不直接外泄）。事件 kind 字符串与 Store 时代逐字一致（`agent log` 历史同质）。
 

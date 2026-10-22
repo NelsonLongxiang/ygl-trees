@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.114.16
+
+GitHub #58（P3 · 文档漂移三处，docs-only）。
+
+- **`rel --help`**：引用类型补 **`task:id`**（代码 `REL_TYPES` 九类，帮助只列八类）。
+- **`docs/plugin-authoring.md`**：插件可用服务改为真实服务面——`ctx.database.db`（SQLite）、
+  `ctx.research.store`、`ctx.ops`（evalClaim/assessEvidence/semanticRank）；删除不存在的
+  `ctx.techtree` / `ctx.webApp`。
+- **`docs/conventions.md` §一**：九触点路径改 monorepo 现行位置（`packages/core/database/src/db.ts`、
+  `packages/research/pipeline/src/writes.ts`、`packages/ops/tools/src/{db-cmds,pgsync}.ts` 等）；
+  第 4 触点从「Store 唯一写入面」改为「**写服务唯一写入面**（writes.ts / treeWrites.ts），Store 只剩读、
+  配置面与历史例外」；第 2/3 触点同步 writes 路径。
+- 无代码行为变化；测试数不变（unit 908 / contract 144）。
+
 ## 0.114.15
 
 GitHub #55（P3 · `--attach` 边角）+ #57（P3 · doctor `sqlite_driver` 假阳）。
