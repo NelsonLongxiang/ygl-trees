@@ -1,5 +1,31 @@
 # Changelog
 
+## 未发布
+
+GitHub #25 ③（0.113.1 后唯一未闭项）：**submit / prepare 的 meta 闸从子目录误拒**。`verify meta` 自 0.113.1 起从子目录上溯到
+仓库根判定（PASS），但闸的硬分支仍判 `process.cwd()`——在合规仓库的 `sub/` 里 `verify submit` 得 rc=1
+`meta gate: no AGENTS.md under …/sub (meta_unverified)`，两者判的不是同一个仓库。
+
+- **同一解析**（`packages/ops/tools/src/meta-gate.ts`）：新增 `judgedRepoOf(start)` = `verify meta` 用的
+  `metaRepoRootOf`（从起点的**真实路径**上溯到最近的标记目录 / git 根），回落起点真实路径。闸的三条路径
+  （`--no-meta` 旁路的 provenance、阶梯 2/3 的标记判定、硬分支的 AGENTS.md + `runMeta`）都判这一个仓库。
+- **阶梯不变**：显式 `--meta-repo` 优先于 cwd（且与 `verify meta <dir>` 一样从给定目录上溯）；cwd 不在任何
+  git 仓库内 → 按 fdc 裁定静默跳过；git 仓库无标记 → 警告并跳过（警告点名判定的仓库）。差异只在「哪个目录」：
+  标记在 git 根与 cwd 之间的嵌套目录时，闸与 `verify meta` 一样判那个目录（此前闸只看 git 根的标记）。
+- **嵌套 AGENTS.md 不截断上溯**（审查席观察，0.113.1 起 `verify meta` 同病）：git 仓库内，上溯只停在带 meta 索引的目录
+  （`verify/meta.json` 或 `verify/specs/`）或 git 根；单独的 `AGENTS.md` 不再算终点——monorepo 的 `packages/AGENTS.md`
+  是指引不是验证器仓库，`packages/x` 应判为仓库根，而不是 `packages`（否则 NEEDS-MATERIAL、submit rc=1；本仓即如此）。
+  git 外，最近的 `AGENTS.md` 仍标记独立验证器目录。`verify meta` 与闸共用 `metaRepoRootOf`，两面一起收紧。
+  仅有 AGENTS.md 的目录本来就过不了 meta（无索引 = meta_unverified，#22），故不丢任何能 PASS 的情形。
+- **realpath**（#26 同族）：起点先取真实路径，符号链接 / macOS `/var → /private/var` 下判到同一个真实仓库，
+  bypass provenance 的 `repo` 记真实路径。
+- 测试：`meta-gate-subdir.spec`（发布产物 10 例：合规仓 `sub/`、`sub/deep/` submit 通过且与 `verify meta` 同判；
+  `sub/` prepare 过闸到构造判定；不合规仓（R3 散脚本）从子目录仍 `meta_failed`、与 `verify meta` 同判；仅有索引无
+  AGENTS.md → `meta_unverified` 点名仓库根而非子目录；`--meta-repo` 覆盖 cwd（双向）；符号链接起点判真实仓库；
+  git 外仍跳过；monorepo 嵌套 `packages/AGENTS.md` 不截断、`verify meta` 与 submit 都判仓库根；git 内带自有索引的
+  嵌套验证器目录判为自身；git 外 AGENTS.md 独立目录判为自身）。在 0.114.6 的 `meta-gate.ts` 上 8/10 红。
+- 契约 / 语料 / charter 不变；无 tooling 改动（无需重登记）。
+
 ## 0.114.6
 
 - **#39 Rust 封包判定去启发式**：`looks_sealed()` 原先在「尾 4 字节回扫窗口含 `YGLVF1` 字面量」时也判封包，
