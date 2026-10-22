@@ -181,6 +181,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "show": {
+      if (!rest[0]) {
+        bad(ctx, "usage: kb show <note-key> [--json]");
+        return 2;
+      }
       const n = store.kbGet(rest[0]);
       if (!n) {
         bad(ctx, `note not found: ${rest[0]}`);

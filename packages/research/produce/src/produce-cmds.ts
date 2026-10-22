@@ -7,7 +7,7 @@ import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt"
 import { rejectBare } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
-import { resolveProject, ambiguousProject, projectCount, projectSample } from "../../../core/database/src/selection";
+import { resolveProject, ambiguousProject, projectCount, projectSample, idNotFound } from "../../../core/database/src/selection";
 import * as writes from "../../pipeline/src/writes";
 import { relAdd, RelError } from "../../../ops/tools/src/rels";
 
@@ -223,6 +223,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: task doing|done|todo <taskId>");
         return 2;
       }
+      {
+        const t = store.db.get("SELECT project_id FROM artifacts WHERE id=? AND kind='task'", [id]) as any;
+        if (t && t.project_id !== pid) {
+          bad(ctx, idNotFound(env.db, "artifacts", id, "task"));
+          return 1;
+        }
+      }
       return getOrm(env.db.path)
         .then((ds) => writes.taskSetStatus(ds, id, status))
         .then((r): number => {
@@ -334,9 +341,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
 
     case "show": {
+      if (!rest[0]) {
+        bad(ctx, "usage: produce show <artifactId> [--json]");
+        return 2;
+      }
       const a = store.artifactGet(rest[0]);
       if (!a) {
-        bad(ctx, "artifact not found");
+        bad(ctx, idNotFound(env.db, "artifacts", rest[0], "artifact"));
+        return 1;
+      }
+      if (a.project_id !== pid) {
+        bad(ctx, idNotFound(env.db, "artifacts", a.id, "artifact"));
         return 1;
       }
       if (ctx.json) console.log(JSON.stringify(a, null, 2));
@@ -348,9 +363,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     case "export": {
+      if (!rest[0]) {
+        bad(ctx, "usage: produce export <artifactId> [<file>] [--json]");
+        return 2;
+      }
       const a = store.artifactGet(rest[0]);
       if (!a) {
-        bad(ctx, "artifact not found");
+        bad(ctx, idNotFound(env.db, "artifacts", rest[0], "artifact"));
+        return 1;
+      }
+      if (a.project_id !== pid) {
+        bad(ctx, idNotFound(env.db, "artifacts", a.id, "artifact"));
         return 1;
       }
       const dest = rest[1] || `${a.kind}-${a.id}.md`;

@@ -78,4 +78,17 @@ describe.skipIf(!HAS_BIN)("usage rc contract (0.91.0)", () => {
     expect(serverInfo.name).toBe("ygl-trees");
     expect(serverInfo.version, "stale version stamp — read from package.json at runtime").toBe(pkgVersion);
   }, 30_000);
+
+  it("#48 missing positional id → rc 2 usage + single JSON error (no driver leak)", () => {
+    expect(run(["db", "init"]).rc).toBe(0);
+    expect(run(["project", "new", "alpha", "-q", "probe"]).rc).toBe(0);
+    for (const cmd of ["produce show", "produce export", "kb show", "research source show"]) {
+      const r = run([...cmd.split(" "), "--json"]);
+      expect(r.rc, cmd).toBe(2);
+      const j = JSON.parse(r.stdout.trim());
+      expect(j, cmd).toHaveProperty("error");
+      expect(String(j.error), cmd).toMatch(/^usage: /);
+      expect(r.stderr, cmd).not.toMatch(/Unsupported type for binding/);
+    }
+  });
 });
