@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.114.15
+
+GitHub #55（P3 · `--attach` 边角）+ #57（P3 · doctor `sqlite_driver` 假阳）。
+
+- **#55 `verify submit --attach`**：
+  - 同名不同目录文件不再互相覆盖：`path` 保留目录限定（`x/c.txt` / `y/c.txt`）；绝对路径只取末两段，
+    不把临时/home 前缀写进材料清单；
+  - 同一文件重复传入只记一条（blob 本就按 sha 去重，清单不再双份）；
+  - 目录参数改 **rc=2 用法错**（`usage: verify submit --attach <file> — directories are not accepted …`），
+    此前是 rc=1 运行错。
+  - `attach-paths.spec` 3 例。
+- **#57 doctor `sqlite_driver` 假阳**：改为从 **typeorm 的解析路径**取版本，并比较两侧 `realpath`——
+  同一物理副本才 pass；split 布局（两份 better-sqlite3）报 **warn** 并点名 `npm dedupe`；typeorm 完全
+  解析不到才是 fail。`sqlite-driver.spec` 增细节断言。
+- 测试：unit 905 → **908**；contract 144 不变。
+
 ## 0.114.14
 
 #53 升级面跟进（验证席探针口径）。

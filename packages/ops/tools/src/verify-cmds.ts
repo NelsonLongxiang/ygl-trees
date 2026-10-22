@@ -530,17 +530,44 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       mkdirSync(join(dir, "files"), { recursive: true });
       writeFileSync(join(dir, "material.txt"), text, "utf8");
       const files: MaterialRecord["files"] = [];
+      const seenSha = new Set<string>();
+      const usedPaths = new Set<string>();
+      /** #55: keep the directory part in `path` (x/c.txt and y/c.txt are two
+       *  files), but strip traversal/absolute prefixes so staging stays under
+       *  its temp dir. */
+      const attachPath = (raw: string): string => {
+        const norm = raw.split("\\").join("/");
+        const absolute = /^(?:[A-Za-z]:)?\//.test(norm);
+        let comps = norm.split("/").filter((c) => c && c !== "." && c !== ".." && !c.endsWith(":"));
+        // Absolute inputs would leak the whole temp/home path into the material
+        // manifest; two trailing components keep same-basename files distinct
+        // (x/c.txt vs y/c.txt) without the absolute prefix.
+        if (absolute && comps.length > 2) comps = comps.slice(-2);
+        let cand = comps.join("/") || "attachment";
+        if (usedPaths.has(cand)) {
+          // same relative path twice with different content: qualify by parent
+          for (let i = comps.length - 2; i >= 0; i--) {
+            const alt = comps.slice(i).join("/");
+            if (!usedPaths.has(alt)) { cand = alt; break; }
+          }
+        }
+        let n = 2;
+        const base = cand;
+        while (usedPaths.has(cand)) cand = `${base.replace(/(\.[^./]+)$/, "")}-${n++}$1`;
+        usedPaths.add(cand);
+        return cand;
+      };
       for (const a of attachArgs) {
         if (!existsSync(a)) {
           bad(ctx, `attachment not found: ${a}`);
           return 1;
         }
-        // Directory attachments refuse with an actionable message (0.114.12
-        // gap: the raw EISDIR said nothing about the fix — attach each file).
+        // #55: a directory is a usage error (rc=2), not a runtime failure;
+        // --attach can repeat, so name the fix.
         const st = statSync(a);
         if (st.isDirectory()) {
-          bad(ctx, `attachment is a directory: ${a} — attach files individually (--attach can repeat)`);
-          return 1;
+          bad(ctx, `usage: verify submit --attach <file> — directories are not accepted (attach files individually; --attach can repeat): ${a}`);
+          return 2;
         }
         let ref;
         try {
@@ -550,8 +577,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           bad(ctx, `cannot store attachment ${a}: ${e?.message || e}`);
           return 1;
         }
+        // #55: the same file passed twice is one material file (blob store
+        // already deduped bytes; the manifest must not list it twice).
+        if (seenSha.has(ref.sha256)) continue;
+        seenSha.add(ref.sha256);
         files.push({
-          path: basename(a),
+          path: attachPath(a),
           sha256: ref.sha256,
           mime: ref.mime,
           size: ref.size,

@@ -149,10 +149,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // leave typeorm without a driver ("SQLite package has not been found").
   // Pin ^12 + this check: name the fix instead of a dead ORM write path.
   try {
+    // #57: judge from TYPORM's resolution (not ours) and compare both copies.
+    // A split tree can resolve two different better-sqlite3 packages while a
+    // bare require from ygl-trees still reports one — that false pass is what
+    // this check must not repeat.
     const typeormDir = require("node:path").dirname(require.resolve("typeorm"));
-    require.resolve("better-sqlite3", { paths: [typeormDir] });
-    const driverVersion = require("better-sqlite3/package.json").version;
-    checks.push({ name: "sqlite_driver", status: "pass", detail: `better-sqlite3 ${driverVersion} resolves for typeorm (single driver)` });
+    const theirsPkg = require.resolve("better-sqlite3/package.json", { paths: [typeormDir] });
+    const oursPkg = require.resolve("better-sqlite3/package.json");
+    const theirVersion = require(theirsPkg).version;
+    const ourVersion = require(oursPkg).version;
+    const sameCopy = require("node:fs").realpathSync(theirsPkg) === require("node:fs").realpathSync(oursPkg);
+    if (!sameCopy) {
+      checks.push({
+        name: "sqlite_driver",
+        status: "warn",
+        detail: `split better-sqlite3 tree: ygl-trees ${ourVersion} vs typeorm ${theirVersion} — run npm dedupe (or reinstall); see CHANGELOG 0.114.14 upgrade note`,
+      });
+    } else {
+      checks.push({ name: "sqlite_driver", status: "pass", detail: `better-sqlite3 ${theirVersion} resolves for typeorm (single copy)` });
+    }
   } catch {
     checks.push({
       name: "sqlite_driver",
