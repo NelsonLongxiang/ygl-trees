@@ -144,6 +144,23 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     });
   }
 
+  // ── 3b. ORM SQLite driver resolution (#54) ──
+  // npm upgrades used to split better-sqlite3 (ours ^13, typeorm peer ^12) and
+  // leave typeorm without a driver ("SQLite package has not been found").
+  // Pin ^12 + this check: name the fix instead of a dead ORM write path.
+  try {
+    const typeormDir = require("node:path").dirname(require.resolve("typeorm"));
+    require.resolve("better-sqlite3", { paths: [typeormDir] });
+    const driverVersion = require("better-sqlite3/package.json").version;
+    checks.push({ name: "sqlite_driver", status: "pass", detail: `better-sqlite3 ${driverVersion} resolves for typeorm (single driver)` });
+  } catch {
+    checks.push({
+      name: "sqlite_driver",
+      status: "fail",
+      detail: "typeorm cannot resolve better-sqlite3 — run: npm dedupe (or reinstall) so the driver resolves; see CHANGELOG 0.114.14 upgrade note",
+    });
+  }
+
   // ── 4. Duplicate content ──
   const dupChecks = [
     { table: "claims", group: "project_id, text", label: "claims" },

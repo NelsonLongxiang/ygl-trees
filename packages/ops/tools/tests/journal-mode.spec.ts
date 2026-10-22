@@ -58,7 +58,23 @@ describe.skipIf(!HAS_BIN)("journal_mode upgrade notice (#53)", () => {
     expect(mode()).toBe("wal");
   });
 
+  it("switch back works even with another idle connection open (checkpoint retry)", () => {
+    // WAL->DELETE needs an exclusive moment; an idle holder used to make the
+    // pragma silently return "wal". The constructor checkpoints, retries, and
+    // (if truly blocked) prints a BLOCKED warning instead of a no-op.
+    const holder = new DatabaseSync(join(HOME, "ygl-trees.db"));
+    try {
+      const back = run(["db", "stats"], { YGL_LEGACY_JOURNAL: "1" });
+      expect(back.rc).toBe(0);
+      expect(mode()).toBe("delete");
+    } finally {
+      holder.close();
+    }
+  });
+
   it("YGL_LEGACY_JOURNAL=1 switches back (downgrade escape hatch)", () => {
+    expect(run(["db", "stats"]).rc).toBe(0); // (re)enter WAL first
+    expect(mode()).toBe("wal");
     const back = run(["db", "stats"], { YGL_LEGACY_JOURNAL: "1" });
     expect(back.rc).toBe(0);
     expect(back.err).toMatch(/journal_mode wal → delete/);

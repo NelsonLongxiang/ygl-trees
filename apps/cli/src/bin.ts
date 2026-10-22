@@ -554,6 +554,18 @@ export async function main(argv: string[]): Promise<number> {
   // That is durable and one-way for ≤0.114.11; surface it on stderr (stdout
   // stays the machine channel) and name the downgrade escape hatch.
   {
+    const jb = (booted.db as any)?.journalBlocked as { want: string; actual: string } | null | undefined;
+    if (jb) {
+      console.error(
+        paint(
+          C.yellow,
+          `  ! journal_mode ${jb.want} switch BLOCKED (another open connection; DB stays ${jb.actual}).
+` +
+            `    close every ygl/serve/probe process, then retry; or set YGL_LEGACY_JOURNAL=1 on a clean session.`,
+          ctx.color
+        )
+      );
+    }
     const jm = (booted.db as any)?.journalMigration as { from: string; to: string } | null | undefined;
     if (jm) {
       console.error(

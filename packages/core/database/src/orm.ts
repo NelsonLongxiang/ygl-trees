@@ -48,6 +48,18 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
     } catch (e: any) {
       lastErr = e;
       const msg = String(e?.message || e);
+      // #54: typeorm's optional peer can lose the driver during npm upgrades
+      // (peer ^12 vs our ^13 used to split the tree) — name the fix instead of
+      // the bare "SQLite package has not been found".
+      if (/SQLite package has not been found/i.test(msg)) {
+        throw new Error(
+          `ORM driver missing: typeorm cannot resolve better-sqlite3 (${msg}).
+` +
+            `  fix: npm dedupe  (or rm -rf node_modules && npm install) so better-sqlite3@^12 is installed once;
+` +
+            `  see the 0.114.14 upgrade note in CHANGELOG.md`
+        );
+      }
       if (attempt === 5 || !/database is locked|SQLITE_BUSY/i.test(msg)) throw e;
       try { await ds.destroy(); } catch { /* connection never opened */ }
       await new Promise((r) => setTimeout(r, 50 * 2 ** attempt + Math.random() * 80));
