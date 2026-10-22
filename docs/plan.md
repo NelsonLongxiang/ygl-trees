@@ -443,6 +443,9 @@ v2 标题重建已在库（fdc 处置核验通过）。测试 `job-schedule-toke
 发布（2026-10-22）：commit **`5eef44c`**；tag **`v0.114.4 = 6614e489… → ^{commit}=5eef44c…`**（双远端）；
 npm **latest=0.114.4**、shasum **`0d9c8d6c…`**；官方字节 **1,535,136 B / sha256 `2cb8c977…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**#39 记录（2026-10-22，验证席派单；未发布）**：`looks_sealed()` 去「窗口含 YGLVF1 字符串」启发式，
+改为 footer 形态判定（对象四键 / 括号成对 + JCS 首键 `build_sha256`）；开构建尾窗仅含 MAGIC → 不判封包，
+括号成对 + `build_sha256` → 仍判封包（不静默降级）。`cargo test` 全绿（含新增回归）；契约/语料不变。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
