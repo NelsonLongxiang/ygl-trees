@@ -218,13 +218,28 @@ pub fn looks_sealed(bytes: &[u8]) -> bool {
     }
     let start = bytes.len() - TRAILER_LEN - footer_len;
     let window = &bytes[start..bytes.len() - TRAILER_LEN];
-    if let Ok(f) = serde_json::from_slice::<Footer>(window) {
-        if f.magic == MAGIC {
+    // #39: no "contains MAGIC" fallback. An open build's last 4 bytes are read
+    // as a footer length by this probe; if that window happens to contain the
+    // MAGIC literal (it is embedded in the engine's own rodata) the build was
+    // misjudged as "sealed but tampered", and whether the window lands on the
+    // literal depended on the checkout path. A sealed candidate must instead be
+    // footer-SHAPED: parse as an object carrying magic/format_version/
+    // spec_offset/spec_sha256, or (JSON syntax damaged) a brace/bracket-paired
+    // window that still carries the JCS footer's first key, "build_sha256".
+    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(window) {
+        if v.get("magic").and_then(|m| m.as_str()).is_some()
+            && v.get("format_version").is_some()
+            && v.get("spec_offset").is_some()
+            && v.get("spec_sha256").is_some()
+        {
             return true;
         }
     }
     let text = String::from_utf8_lossy(window);
-    text.contains(MAGIC) || (text.trim_start().starts_with('{') && text.trim_end().ends_with('}'))
+    let trimmed = text.trim();
+    (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && trimmed.ends_with('}')
+        && trimmed.contains("\"build_sha256\"")
 }
 
 /// 从 32 字节种子派生公钥指纹（与 TS `fingerprintOfRawPublicKey` 同口径：sha256(raw pubkey) hex）。
@@ -274,6 +289,26 @@ mod tests {
         bad_json[brace] = b'[';
         assert!(looks_sealed(&bad_json), "broken footer JSON must still look sealed");
         assert!(open_sealed(&bad_json).is_err());
+    }
+
+    /// #39：开构建尾 4 字节指向自身 rodata 里的 MAGIC 字面量时，不得被判成
+    /// 「封包但篡改」——footer 形态判定不含「窗口内出现 YGLVF1 字符串」兜底。
+    #[test]
+    fn open_binary_with_magic_literal_in_trailer_window_is_not_sealed() {
+        let mut bytes = b"OPEN-ENGINE rodata ".to_vec();
+        let window = b"YGLVF1-garbage"; // MAGIC literal, but not footer-shaped
+        bytes.extend_from_slice(window);
+        bytes.extend_from_slice(&(window.len() as u32).to_le_bytes());
+        assert!(!looks_sealed(&bytes), "a MAGIC literal in the trailer window must not imply a sealed build");
+        assert!(!looks_sealed(b"plain engine bytes, no trailer"));
+
+        // a brace/bracket-paired window carrying the footer's first JCS key is
+        // still a tamper candidate (never silently downgraded to open mode)
+        let mut braced = b"OPEN-ENGINE ".to_vec();
+        let w = b"{\"build_sha256\":\"x\" }";
+        braced.extend_from_slice(w);
+        braced.extend_from_slice(&(w.len() as u32).to_le_bytes());
+        assert!(looks_sealed(&braced));
     }
 
     /// RFC 8032 测试向量 seed：签名字节必须与 TS 侧逐字节一致（parity 锚）。
