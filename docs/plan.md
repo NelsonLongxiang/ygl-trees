@@ -435,6 +435,10 @@ prepare 的投影；「必须有覆盖」的门禁判 `ok && !coverage_skipped`�
 demo、ratchet held、readme 54/54；`verify meta .` PASS / `meta-tooling --check` 0 drift；维护者认账 bundle 基线
 739,621→757,018（仅 bundle）。#37 重登记审计随仓库走（本 PR 合并后 contract-audit.sh 重登记走 `reregistrations[]`，
 末条 dafc0240 = 活 sha）。
+发布（2026-10-22）：commit **`457ed78`**；tag **`v0.114.5 = 5e565d0b… → ^{commit}=457ed78…`**（双远端）；
+npm **latest=0.114.5**、shasum **`16876fc0…`**；官方字节 **1,548,768 B / sha256 `a853fd5d…`**。
+发版席侧 registry 不可达，授权开发席代发（tarball=发版席 clean-worktree 产出，字节核一致；publish
+`2026-10-22T03:27:26Z`）。
 
 **0.114.4 记录（2026-10-22，fdc 评审：job add 静默误注册）**：坏行 `0b88263172` 根因=尾拉回要求串尾
 `--every`，`--json` 后缀击穿 → every=0 静默 manual。修复：F1+F3 绊线（残留 `--every/--at` → 人类 stderr +
