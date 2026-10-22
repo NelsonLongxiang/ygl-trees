@@ -2,12 +2,12 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-21T10:08:19.181Z",
+  "measured_at": "2026-10-22T08:16:44.920Z",
   "metrics": {
     "bundle_bytes": {
-      "value": 757018,
+      "value": 772395,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-22T00:31:03.242Z",
+      "measured_at": "2026-10-22T08:16:39.814Z",
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {

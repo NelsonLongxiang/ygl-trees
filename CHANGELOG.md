@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.114.9
+
+GitHub #47（验证席 P3 · #44 残余）：selection 作用域残面按 #45 语义做**全 id 动词清单过堂**，统一
+「项目内解析；跨项目时拒绝并点名 owner」（R16.3）。
+
+- **produce / task**：`produce show` / `produce export` 增项目作用域（此前跨项目 rc=0）；`task done/doing/todo`
+  按 artifact(kind=task) 的 project_id 校验，跨项目拒绝并点名。
+- **research 补全**：`claim evaluate`、`evidence assess`、`evidence rm`、`source rm`、`query done`、
+  `claim link --by-source` 的 source 缺失路径，统一 owner 点名；`query done` 同时补项目作用域（此前跨项目 rc=0）。
+- 共享 `idNotFound` / `ownerProjectName`（core selection）作为唯一规则；本版只改 id 动词作用域与拒绝文案，
+  不改变选择授权语义（#45 D1–D5 仍待属主）。
+- 测试：`selection-signals.spec` 增 #47 用例（task / produce show+export / evidence assess+rm / source rm /
+  query done 八个动词 owner 点名）；unit 811 → **812**；contract 144 不变。
+- **#48 缺 id 位 → rc 2 用法错**：`produce show` / `produce export` / `kb show` / `research source show`
+  缺参数时前置校验，输出单 `{"error":"usage: …"}`、rc=2（此前 `research source show` 会把驱动层
+  `Unsupported type for binding undefined` 泄漏成 rc=1）；`usage-rc.spec` 增四例；unit 812 → **813**。
+- 棘轮：bundle 基线 **757,018 → 772,395 B**（维护者认账；来源为 PR #42 walk-up + #44/#46/#47/#48 的
+  真实逻辑；web dist 与 cold start 基线保持旧值不动，实测均在容忍带内）。
+
 ## 0.114.8
 
 GitHub #46（验证席 P3 · JSON 契约违例）：`produce export` 成功路径在 `--json` 下打印人类 ack（`written: …`），

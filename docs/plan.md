@@ -482,6 +482,16 @@ fileCount 177）。
 **0.114.8 记录（2026-10-22，#46 JSON 契约）**：`produce export --json` 成功路径改单对象
 `{artifact_id,path,chars,bytes}`（此前人类 ack 泄漏到机器通道）；错误路径单 `{error}` 不变；人类模式 ack 不变。
 测试 `produce-export-json.spec` 3 例；unit 808→811；contract 144。
+发布（2026-10-22）：commit **`1dc584c`**；tag **`v0.114.8 = 21a0158b… → ^{commit}=1dc584c…`**（双远端）；
+npm **latest=0.114.8**、shasum **`bf09b634…`**；官方字节 **1,574,314 B / sha256 `e16a6c39…`**
+（publish `2026-10-22T07:51:00Z`，fileCount 177）。
+**0.114.9 记录（2026-10-22，#47 selection 残面）**：按 #45 语义梳理做全 id 动词清单过堂——
+`produce show/export`、`task done/doing/todo` 增项目作用域；`claim evaluate`、`evidence assess/rm`、
+`source rm`、`query done`、`claim link --by-source` 的 source 缺失统一 owner 点名；`query done` 补作用域。
+共享 `idNotFound/ownerProjectName`（core selection）单一规则；不改变选择授权语义（D1–D5 待属主）。
+unit 811→812；contract 144。同批 #48：`produce show/export`、`kb show`、`research source show` 缺 id 前置
+rc=2 单 usage 错误（不再泄驱动错误）；`usage-rc.spec` 四例；unit 812→813。棘轮：bundle 基线 757,018→772,395（维护者认账；PR42+#44/#46/#47/#48
+真实逻辑；web dist/cold start 基线不动）。#48 与 #47 同批发布。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

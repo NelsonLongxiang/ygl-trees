@@ -8,7 +8,7 @@ import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../..
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
-import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia } from "../../../core/database/src/selection";
+import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
@@ -19,19 +19,6 @@ import { Claim, Evidence, Query, Source } from "./entities";
 /** Run a write through the TypeORM transactional write service and print
  *  with JSON discipline. Keeps every write command 6 lines. */
 /** 0.80: compact timestamp for session:// adjudication urls (yyyymmddhhmm). */
-/** #44 F3: ids are workspace-unique, so a refusal for a row that lives in
- *  another project can always name the owner. */
-function ownerProjectOf(env: Env, table: "claims" | "evidence" | "sources", id: string): string | null {
-  if (!id) return null;
-  const r = env.db.get(`SELECT p.name AS name FROM ${table} t JOIN projects p ON p.id=t.project_id WHERE t.id=?`, [id]) as any;
-  return r?.name ?? null;
-}
-
-function notFoundRefusal(env: Env, table: "claims" | "evidence" | "sources", id: string, label: string): string {
-  const owner = ownerProjectOf(env, table, id);
-  return owner ? `${label} not found: ${id}  (it belongs to project '${owner}' — use -p ${owner})` : `${label} not found: ${id}`;
-}
-
 function nowCompact(): string {
   return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
 }
@@ -168,9 +155,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     if (subAction === "done") {
-      if (!rest[1] || !store.db.get("SELECT 1 AS hit FROM queries WHERE id=?", [rest[1]])) {
-        bad(ctx, `query not found: ${rest[1]}`);
-        return 1;
+      if (!rest[1]) {
+        bad(ctx, "usage: research query done <queryId>");
+        return 2;
+      }
+      {
+        const q = store.db.get("SELECT project_id FROM queries WHERE id=?", [rest[1]]) as any;
+        if (!q || q.project_id !== project.id) {
+          bad(ctx, idNotFound(env.db, "queries", rest[1], "query"));
+          return 1;
+        }
       }
       store.queryDone(rest[1]);
       ok(ctx, `query marked done: ${rest[1]}`);
@@ -401,16 +395,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (subAction === "show") {
+      if (!rest[1]) {
+        bad(ctx, "usage: research source show <sourceId> [--json]");
+        return 2;
+      }
       const s = store.sourceGet(rest[1]);
       if (!s) {
-        bad(ctx, notFoundRefusal(env, "sources", rest[1], "source"));
+        bad(ctx, idNotFound(env.db, "sources", rest[1], "source"));
         return 1;
       }
       // F3 (#44): R16.3 says reads fail closed; source show was the one
       // id-addressed read that returned another project's row. The owning
       // project is knowable, so the refusal names it.
       if (s.project_id !== project.id) {
-        const owner = ownerProjectOf(env, "sources", rest[1]) ?? "another project";
+        const owner = ownerProjectName(env.db, "sources", rest[1]) ?? "another project";
         bad(ctx, `source not found in project '${project.name}': ${rest[1]} (it belongs to project '${owner}' — use -p ${owner})`);
         return 1;
       }
@@ -433,7 +431,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // pointed at project A delete project B's source.
       const s0 = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [id, project.id]);
       if (!s0) {
-        bad(ctx, `source not found: ${id}  (in project ${project.name}; ids resolve inside one project — pass -p if it lives elsewhere)`);
+        bad(ctx, idNotFound(env.db, "sources", id, "source"));
         return 1;
       }
       const force = args.flags.force === true;
@@ -469,7 +467,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const e0 = store.db.get("SELECT id, quote FROM evidence WHERE id=? AND project_id=?", [id, project.id]);
       if (!e0) {
-        bad(ctx, `evidence not found: ${id}  (in project ${project.name}; ids resolve inside one project — pass -p if it lives elsewhere)`);
+        bad(ctx, idNotFound(env.db, "evidence", id, "evidence"));
         return 1;
       }
       const force = args.flags.force === true;
@@ -521,7 +519,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       {
         const srcOwner = store.db.get("SELECT project_id FROM sources WHERE id=?", [sourceId]) as any;
         if (srcOwner && srcOwner.project_id !== project.id) {
-          bad(ctx, notFoundRefusal(env, "sources", sourceId, "source"));
+          bad(ctx, idNotFound(env.db, "sources", sourceId, "source"));
           return 1;
         }
       }
@@ -547,7 +545,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         [id, project.id]
       ) as any;
       if (!ev) {
-        bad(ctx, `evidence not found: ${id}`);
+        bad(ctx, idNotFound(env.db, "evidence", id, "evidence"));
         return 1;
       }
       // 0.86 M7-1: model-eval via ctx.ops (Cordis service) — no cross-package
@@ -781,7 +779,7 @@ if (subAction === "show") {
           const srcExists = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [rest[2], project.id]);
           bad(ctx, srcExists
             ? `source ${rest[2]} has no evidence yet — research evidence add ${rest[2]} --quote ".." first`
-            : `source not found: ${rest[2]}`);
+            : idNotFound(env.db, "sources", rest[2], "source"));
           return 1;
         }
         return getOrm(env.db.path)
@@ -880,7 +878,7 @@ if (subAction === "show") {
       }
       const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
       if (!c0) {
-        bad(ctx, notFoundRefusal(env, "claims", id, "claim"));
+        bad(ctx, idNotFound(env.db, "claims", id, "claim"));
         return 1;
       }
       const note = String(args.flags.note || "");
@@ -907,7 +905,7 @@ if (subAction === "show") {
       }
       const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
       if (!c0) {
-        bad(ctx, notFoundRefusal(env, "claims", id, "claim"));
+        bad(ctx, idNotFound(env.db, "claims", id, "claim"));
         return 1;
       }
       return getOrm(env.db.path)
@@ -935,12 +933,12 @@ if (subAction === "show") {
       }
       const c0 = store.db.get("SELECT id FROM claims WHERE id=? AND project_id=?", [cid, project.id]);
       if (!c0) {
-        bad(ctx, notFoundRefusal(env, "claims", cid, "claim"));
+        bad(ctx, idNotFound(env.db, "claims", cid, "claim"));
         return 1;
       }
       const e0 = store.db.get("SELECT id FROM evidence WHERE id=? AND project_id=?", [eid, project.id]);
       if (!e0) {
-        bad(ctx, notFoundRefusal(env, "evidence", eid, "evidence"));
+        bad(ctx, idNotFound(env.db, "evidence", eid, "evidence"));
         return 1;
       }
       return getOrm(env.db.path)
@@ -967,7 +965,7 @@ if (subAction === "show") {
       }
       const claim = store.db.get("SELECT id, text, status, confidence FROM claims WHERE id=? AND project_id=?", [id, project.id]) as any;
       if (!claim) {
-        bad(ctx, `claim not found: ${id}`);
+        bad(ctx, idNotFound(env.db, "claims", id, "claim"));
         return 1;
       }
       const evidenceRows = store.db.all(

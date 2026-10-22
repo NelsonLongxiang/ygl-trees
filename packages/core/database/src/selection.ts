@@ -152,6 +152,21 @@ export function ambiguousProject(db: DB, sel: Selection): boolean {
 }
 
 /** First 8 project names for the ambiguous-error payload (R16.3). */
+/** #47: id-addressed verbs resolve inside one project. Ids are workspace
+ *  unique, so when the row exists in another project the refusal can always
+ *  name the owner (one rule for research / produce / task surface). */
+export type IdTable = "claims" | "evidence" | "sources" | "artifacts" | "tasks" | "queries";
+export function ownerProjectName(db: DB, table: IdTable, id: string): string | null {
+  if (!id) return null;
+  const r = db.get(`SELECT p.name AS name FROM ${table} t JOIN projects p ON p.id=t.project_id WHERE t.id=?`, [id]) as any;
+  return r?.name ?? null;
+}
+
+export function idNotFound(db: DB, table: IdTable, id: string, label: string): string {
+  const owner = ownerProjectName(db, table, id);
+  return owner ? `${label} not found: ${id}  (it belongs to project '${owner}' — use -p ${owner})` : `${label} not found: ${id}`;
+}
+
 export function projectSample(db: DB, limit = 8): string[] {
   return (db.all("SELECT name FROM projects ORDER BY updated DESC LIMIT ?", [limit]) || []).map(
     (r: any) => r.name

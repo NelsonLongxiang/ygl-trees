@@ -100,6 +100,39 @@ describe.skipIf(!HAS_BIN)("#44 selection signals (0.114.7)", () => {
     expect(String(unlink.j?.error)).toMatch(/belongs to project 'p1'/);
   });
 
+  it("#47: task / produce / remaining research id verbs name the owning project", () => {
+    // p2 owns a task, an artifact, an evidence row and a query; selection p3.
+    const t = run(["task", "add", "跨项目任务", "-p", "p2", "--json"]);
+    expect(t.rc).toBe(0);
+    const taskId = t.j.id as string;
+    const outline = run(["produce", "outline", "-p", "p2", "--json"]);
+    expect(outline.rc).toBe(0);
+    const artifactId = outline.j.id as string;
+    const src = run(["research", "source", "add", "p2源", "--url", "https://example.com/z", "-p", "p2", "--json"]);
+    const ev = run(["research", "evidence", "add", src.j.id, "--quote", "p2证据", "-p", "p2", "--json"]);
+    const q = run(["research", "query", "add", "p2问题", "-p", "p2", "--json"]);
+    expect(ev.rc).toBe(0);
+    expect(q.rc).toBe(0);
+
+    expect(run(["project", "use", "p3", "--json"]).rc).toBe(0);
+
+    const cases: Array<[string[], RegExp]> = [
+      [["task", "done", taskId, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["produce", "show", artifactId, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["produce", "export", artifactId, join(HOME, "x.md"), "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["research", "claim", "evaluate", "dummy", "-p", "p3", "--json"], /claim not found: dummy/],
+      [["research", "evidence", "assess", ev.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["research", "evidence", "rm", ev.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["research", "source", "rm", src.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["research", "query", "done", q.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
+    ];
+    for (const [args, needle] of cases) {
+      const r = run(args);
+      expect(r.rc, `${args.join(" ")} → ${r.out}${r.err}`).toBe(1);
+      expect(String(r.j?.error), `${args.join(" ")}`).toMatch(needle);
+    }
+  });
+
   it("F2: a cross-project link made on an implicit selection reports that the selection owned neither end", () => {
     const claim = run(["research", "claim", "add", "跨项目断言", "-p", "p1", "--json"]);
     const src = run(["research", "source", "add", "跨项目来源", "--url", "https://example.com/y", "-p", "p2", "--json"]);
