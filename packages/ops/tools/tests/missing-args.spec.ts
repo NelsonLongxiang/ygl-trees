@@ -115,6 +115,11 @@ const VERBS: Array<[string[], string]> = [
   [["node", "move"], "node move <key>"],
   [["node", "cond"], "node cond <key>"],
   [["node", "can"], "node can <key>"],
+  [["node", "show"], "node show <key>"],
+  [["node", "parents"], "node parents <key>"],
+  [["node", "children"], "node children <key>"],
+  [["node", "ancestors"], "node ancestors <key>"],
+  [["node", "descendants"], "node descendants <key>"],
   [["node", "path"], "node path <key>"],
   // kb / rel
   [["kb", "show"], "kb show <key>"],

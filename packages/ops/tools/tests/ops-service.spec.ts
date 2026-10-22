@@ -13,6 +13,11 @@ describe("OpsService（ctx.ops）eval services", () => {
   process.env.YGL_EVAL_OFFLINE = "1"; // deterministic: no gateway calls
   process.env.YGL_TEST = "1";         // skip dir-lock in unit context
 
+  const close = (app: Context) => {
+    // #51 single native driver: an open better-sqlite3 handle keeps the file
+    // (and therefore its tmp dir) locked on Windows.
+    try { (app as any).database?.stop?.(); } catch { /* already stopped */ }
+  };
   const boot = () => {
     const dir = path.join(process.cwd(), "tmp", `ops-svc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -30,23 +35,25 @@ describe("OpsService（ctx.ops）eval services", () => {
       expect(typeof svc.semanticRank).toBe("function");
       expect(typeof (app as any).ops?.evalClaim).toBe("function"); // name registration (ctx.ops)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      close(app);
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
   it("evalClaim 离线安全：ok:false（判定链不因无凭证崩溃）", async () => {
-    const { svc, dir } = boot();
+    const { svc, app, dir } = boot();
     try {
       const r = await svc.evalClaim({ claim_text: "t", claim_status: "unverified", evidence: [] });
       expect(r.ok).toBe(false);
       expect(typeof r.reasoning).toBe("string");
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      close(app);
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
   it("assessEvidence 离线安全 + semanticRank 离线透传（保序、null 分）", async () => {
-    const { svc, dir } = boot();
+    const { svc, app, dir } = boot();
     try {
       const a = await svc.assessEvidence({ quote: "q", locator: "", source_title: "s" });
       expect(a.ok === false || a.quality_score === null).toBe(true);
@@ -57,7 +64,8 @@ describe("OpsService（ctx.ops）eval services", () => {
       expect(ranked.map((r: any) => r.id)).toEqual(["k1", "k2"]);
       expect(ranked.every((r: any) => r.semantic_relevance == null)).toBe(true);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      close(app);
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 

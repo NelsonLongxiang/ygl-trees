@@ -33,13 +33,15 @@ function run(args: string[]) {
   return { rc: r.status ?? -1, j, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
 }
 
-function counts(): { base: number; fts: number; events: number } {
+function counts(): { base: number; fts: number; events: number; added: number } {
   const db = new DatabaseSync(join(HOME, "ygl-trees.db"));
   try {
     return {
       base: Number((db.prepare("SELECT COUNT(*) c FROM kb_notes").get() as any).c),
       fts: Number((db.prepare("SELECT COUNT(*) c FROM kb_fts").get() as any).c),
       events: Number((db.prepare("SELECT COUNT(*) c FROM events WHERE kind='kb.rm'").get() as any).c),
+      // events whose entity still exists (the earlier rm test removed one note)
+      added: Number((db.prepare("SELECT COUNT(*) c FROM events e JOIN kb_notes n ON n.id=e.entity_id WHERE e.kind='kb.add'").get() as any).c),
     };
   } finally {
     db.close();
@@ -90,5 +92,7 @@ describe.skipIf(!HAS_BIN)("kb FTS transactional removal (batch 16)", () => {
     const c = counts();
     expect(c.base).toBeGreaterThanOrEqual(N);
     expect(c.fts).toBe(c.base);
+    // #51: no committed event row may be lost under concurrent writers.
+    expect(c.added).toBe(c.base);
   });
 });

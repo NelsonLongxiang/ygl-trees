@@ -10,7 +10,7 @@
 import { join } from "node:path";
 
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, paint, C } from "../../../core/text/src/fmt";
+import { ok, bad, out, paint, C, ack } from "../../../core/text/src/fmt";
 import { resolveDistRoot } from "../../../web/app/src/index";
 import { TreeStore } from "../../../techtree/model/src/reads";
 import { buildBrief } from "./agent-cmds";
@@ -64,8 +64,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     // atomic write: a half-written snapshot on process kill is worse than none
     const { writeFileAtomic } = require("@deepseek-ai/dsh-atomic-write");
     await writeFileAtomic(dest, snapshot, {} as any);
-    ok(env.ctx, `snapshot written to ${dest} (${(snapshot.length / 1024).toFixed(1)} KB)`);
-    out(env.ctx, paint(C.dim, `  service payload — visualize with: ygl-trees webui serve`, env.ctx.color));
+    ack(env.ctx, { path: dest, bytes: snapshot.length }, `snapshot written to ${dest} (${(snapshot.length / 1024).toFixed(1)} KB)`);
+    if (!env.ctx.json) out(env.ctx, paint(C.dim, `  service payload — visualize with: ygl-trees webui serve`, env.ctx.color));
     return 0;
   })();
 }

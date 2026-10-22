@@ -104,7 +104,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return getOrm(env.db.path)
           .then((ds) => writes.skillRefAdd(ds, skillName, p, content))
           .then((): number => {
-            ok(ctx, `ref saved: ${skillName}/${p}`);
+            ack(ctx, { skill: skillName, path: p }, `ref saved: ${skillName}/${p}`);
             return 0;
           })
           .catch((e: any): number => {
@@ -123,6 +123,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         }
         const r = store.db.get("SELECT content FROM skill_refs WHERE skill_id=? AND path=?", [(skill as any).id, rest[2]]);
+        if (ctx.json) {
+          console.log(JSON.stringify({ skill: rest[1], path: rest[2], content: r?.content ?? null }, null, 2));
+          return 0;
+        }
         out(ctx, r ? r.content : paint(C.red, "  ref not found", ctx.color));
         return 0;
       }

@@ -3,7 +3,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, show, paint, C, writeResult } from "../../../core/text/src/fmt";
+import { ok, bad, out, head, table, show, paint, C, writeResult, ack } from "../../../core/text/src/fmt";
 import { clip, parseFrontmatter } from "../../../core/text/src/text";
 import { emitEvent } from "../../../core/text/src/eventbus";
 import { getOrm } from "../../../core/database/src/orm";
@@ -206,8 +206,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "both notes must exist");
         return 1;
       }
-      store.kbLink(a.id, b.id, String(args.flags.rel || "related"));
-      ok(ctx, `linked ${a.title} --${args.flags.rel || "related"}--> ${b.title}`);
+      const rel = String(args.flags.rel || "related");
+      store.kbLink(a.id, b.id, rel);
+      ack(ctx, { a: { id: a.id, title: a.title }, b: { id: b.id, title: b.title }, rel }, `linked ${a.title} --${rel}--> ${b.title}`);
       return 0;
     }
     case "ingest": {
@@ -249,8 +250,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           })
         )
         .then((s): number => {
-          ok(ctx, `promoted to skill: ${s.name}`);
-          out(ctx, paint(C.dim, `  L1: ${clip(String(s.description), 100)}`, ctx.color));
+          ack(
+            ctx,
+            { name: s.name, description: s.description, origin: `kb:${note.id}` },
+            `promoted to skill: ${s.name}`
+          );
+          if (!ctx.json) out(ctx, paint(C.dim, `  L1: ${clip(String(s.description), 100)}`, ctx.color));
           return 0;
         })
         .catch((e: any): number => {

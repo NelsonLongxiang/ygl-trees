@@ -4,12 +4,59 @@
  * Everything — skills, research state, evidence, drafts, knowledge notes and
  * schedules — lives in one SQLite file. No sidecar JSON, no git-as-database.
  */
-import { Database } from "node-sqlite3-wasm";
+// @ts-ignore — better-sqlite3 ships no type declarations; it is a runtime dep of TypeORM
+import NativeDatabase from "better-sqlite3";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1, nowIso } from "../../text/src/text";
 
 export const SCHEMA_VERSION = 12;
+
+/** #51: ONE SQLite driver for every write path. The wasm driver's Node VFS
+ *  implements its own lock protocol that native SQLite (better-sqlite3, used
+ *  by the ORM) cannot see — on POSIX the two drivers do not exclude each
+ *  other, so concurrent writers lost committed rows and surfaced fake
+ *  SQLITE_IOERR. better-sqlite3 is already a runtime dependency (TypeORM),
+ *  ships FTS5, and honors fcntl/WAL across processes; this adapter keeps the
+ *  statement surface (all/get/run/finalize) the raw readers already use. */
+class StmtAdapter {
+  constructor(private readonly st: any) {}
+  all(params: any[] = []): any[] {
+    return this.st.all(params);
+  }
+  get(params: any[] = []): any {
+    const r = this.st.get(params);
+    return r === undefined ? null : r;
+  }
+  run(params: any[] = []): { changes: number; lastInsertRowid: number } {
+    const r = this.st.run(params);
+    return { changes: r.changes, lastInsertRowid: Number(r.lastInsertRowid) };
+  }
+  finalize(): void {
+    /* native statements are GC-managed; kept for call-site compatibility */
+  }
+}
+
+class SqliteDatabase {
+  private readonly db: any;
+  constructor(file: string) {
+    this.db = new NativeDatabase(file);
+  }
+  prepare(sql: string): StmtAdapter {
+    return new StmtAdapter(this.db.prepare(sql));
+  }
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+  run(sql: string, params: any[] = []): { changes: number; lastInsertRowid: number } {
+    const st = this.db.prepare(sql);
+    const r = st.run(params);
+    return { changes: r.changes, lastInsertRowid: Number(r.lastInsertRowid) };
+  }
+  close(): void {
+    this.db.close();
+  }
+}
 
 /** Shared ORM-opened signal: orm.ts flips this when a DataSource settles.
  * plugin.ts stop() reads it WITHOUT importing orm (which pulls typeorm) so
@@ -413,7 +460,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_refs ON skill_refs(skill_id, path);
 `;
 
 export class DB {
-  readonly db: Database;
+  readonly db: SqliteDatabase;
   readonly path: string;
   /** True when THIS instance acquired the .ygllock (0.79.1) — lock-less
    *  instances (serve, db unlock) never release a foreign lock. */
@@ -538,7 +585,7 @@ export class DB {
     // never release a FOREIGN lock on close/exit (latent since serve existed,
     // made acute by lock-free `db unlock`).
     this.ownsLock = acquired;
-    this.db = new Database(file);
+    this.db = new SqliteDatabase(file);
     this.db.exec("PRAGMA journal_mode=WAL");
     // 0.90.1 P1-2 (review direct-a35d58ae): readers wait instead of failing
     // instantly when another process holds the write lock — the serve panel
