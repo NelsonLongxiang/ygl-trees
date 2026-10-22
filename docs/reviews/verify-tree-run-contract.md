@@ -1,0 +1,131 @@
+# 递归验证器契约草案 · `verify tree run`（A1，v0.1 DRAFT）
+
+> **状态：草案（DRAFT）——不构成已裁定契约。** 按现行治理，本文件需 **属主裁定 + 双评审席签署**
+> （默认发布席 `dsh/0672e341`、验证席 `dsh/ae07421e`，最终以属主指定为准）后方可进入施工。
+> 语义节（S-1…S-7）与验收场景（V1…V10）来自主队席 `dsh/e9a87677` 的《A1 共同作者材料 v0.1》；
+> 接口/CLI 形状由 ygl-trees 主开发线起草。开放点 §6 未裁定前，实现不得锁定行为。
+
+日期：2026-10-22 ｜ 关联：charter §4.7（原语表）、#16（验证器生产线 P2/P3）、#35（身份判据 Q4/Q6/Q7）
+
+## 1. 范围与非目标
+
+**范围**：新增 `verify tree` 命令族，把现有「单 spec → 单 run → 单 archive」的执行单元组合成可递归的
+树形验证：组节点（group）聚合子判定，叶节点（leaf）复用既有七型检查器；每层真实 run + archive。
+
+**非目标**：不引入任意表达式/脚本钩子（P4 闭包）；不改变现有 `verify submit/prepare/run/report/archive`
+语义；不做并行调度器（本轮顺序后序即可）；不碰 pi 依赖（WP-B 属 jf 仓）。
+
+## 2. 递归语义（S-1…S-7，来自主队席材料）
+
+- **S-1 树形任务描述**：组节点（group）与叶节点（leaf）两类；叶 = 可执行 spec（现有七型检查器）；
+  组 = 聚合策略容器。树描述经 `verify tree prepare` 冻结（digest 血统），禁止手写绕过冻结。
+- **S-2 后序遍历**：children 全判定后才判定父；父只读子报告的列，聚合算子限**封闭集**：
+  `count_fail` / `all_pass` / `quorum(N)` / `min` / `max` / `and` / `or`（初始名单待裁定，见 §6-Q1）。
+- **S-3 每层真实 run + 归档**：组节点不是逻辑视图——聚合层产真实 report + archive（`payload_sha256` 链）；
+  子报告以归档验签引入，与 `report import` 原语同语义接缝。
+- **S-4 同轮次约束**：一次 tree run 全体叶共享轮次 id/时钟域；跨轮次引用旧报告必须显式
+  `pinned`（archive sha256）并带 `stale` 判据。
+- **S-5 失败面三分**：叶 FAIL → 按组策略聚合（默认 AND）；叶 ERROR（基础设施故障）≠ 判定失败，
+  不入聚合，标 `infra-blocked`；环/悬空引用 → prepare 期拒绝（闭包 + 拓扑校验）。
+- **S-6 归档验签失败** → 该子树整体 `NEUTRALIZED`（显式中性化，不静默丢弃）；NEUTRALIZED 阻断根层 PASS。
+- **S-7 确定性与幂等**：同 tree spec + 同输入 digest → 同 verdict；重放按 archive 链去重
+  （幂等键 = 轮次 id + spec digest）；全程 events 只增。
+
+## 3. 接口草案（CLI / JSON / RC）
+
+### 3.1 命令面（新增子组，命名沿用既有 kv 风格）
+
+```bash
+ygl-trees verify tree prepare <tree-material-id> [--draft] [--json]
+ygl-trees verify tree run <tree-spec-id> --db <snapshot.sqlite> [--pinned <node>=<archive-sha256> ...] [--json]
+ygl-trees verify tree report <tree-run-id> [--json]
+ygl-trees verify tree trace <tree-spec-id> [--json]
+ygl-trees verify tree archive <tree-run-id> [--json]
+```
+
+- `prepare`：读 tree material → 抽取树描述 → 拓扑/闭包校验（环、悬空引用）→ 冻结 `tree_spec`
+  （`tree_spec_version`、`tree_spec_sha256`、每个叶的 `spec_id`/`spec_version` 锁定）。**环/悬空 → rc=2**。
+- `run`：后序执行；每叶复用现有 `run` 引擎与 archive 格式；每组按聚合算子产独立 report + archive；
+  根 verdict 写报告，**rc=0 表示执行完成，判定在报告**（与现有 `verify run` 一致）。
+- 其余三命令为读面（`report/trace/archive`），沿用现有输出契约。
+
+### 3.2 JSON 形状（冻结前先给形状，不带实现）
+
+写命令成功 = 单对象：
+
+```json
+{
+  "tree_run_id": "tr_…",
+  "tree_spec_id": "ts_…",
+  "tree_spec_sha256": "…",
+  "round_id": "…",
+  "verdict": "PASS | FAIL | NEUTRALIZED | INFRA_BLOCKED",
+  "nodes": [
+    { "node_id": "n1", "kind": "leaf", "spec_id": "spec_…", "report_id": "…",
+      "archive_sha256": "…", "verdict": "PASS", "stale": false },
+    { "node_id": "root", "kind": "group", "aggregate": "quorum(2)",
+      "children": ["n1", "n2", "n3"], "report_id": "…", "archive_sha256": "…",
+      "verdict": "PASS" }
+  ],
+  "pinned": { "n_onc": "…" },
+  "events": "appended"
+}
+```
+
+- 叶 ERROR → `verdict: "ERROR"` + `infra_blocked: true`，不参与父聚合；父若全为 infra → `INFRA_BLOCKED`。
+- `NEUTRALIZED` 为**独立 verdict**（推荐，见 §6-Q2），阻断根 PASS。
+
+### 3.3 RC 契约（沿用全局）
+
+| rc | 含义 |
+|---|---|
+| 0 | 执行完成（判定在 `--json` 对象/报告，不因 FAIL 变 rc） |
+| 1 | 运行错误（快照不可读、归档验签失败后的运行失败、内部错误） |
+| 2 | 用法/冻结错误（缺参、环、悬空引用、未知聚合算子、未知 pinned 目标） |
+
+### 3.4 事件与归档
+
+- events 只增：`verify.tree.prepare` / `verify.tree.run` / `verify.tree.node`（每层）/ `verify.tree.archive`。
+- 归档 payload 含：tree spec 摘要、轮次 id、节点报告引用（sha256）、verdict、pinned 表；
+  archive 可被现有 `verify archive verify` 验签，也可作为其它树 run 的 pinned 输入。
+
+## 4. 与既有原语的关系
+
+- 叶 = 现有 `spec`：`prepare` 只锁定 spec id/version，不复制检查器逻辑。
+- 组 report/archive = 现有 report/archive 格式 + `tree` 信封字段（additive；不改既有字段）。
+- `report import` 的 payload/version 校验复用；树归档引入子报告走同一验签路径（V8）。
+- `verify meta`（charter §4.1 R1–R3）不因树引入变化；树 spec 材料仍受 meta gate 约束。
+
+## 5. 验收场景（V1…V10，机械可断言）
+
+| # | 场景 | 断言要点 |
+|---|---|---|
+| V1 | 三层嵌套注入一叶 FAIL | 根 FAIL；逐层 report 存在；传播正确 |
+| V2 | quorum 组 3 叶 1 FAIL + quorum=2 | 组 PASS、根 PASS；minority 留痕 |
+| V3 | 叶 ERROR（缺 DB）注入 | 组 infra-blocked，非 FAIL；不入聚合 |
+| V4 | pinned 旧子报告 | stale 标记生效 |
+| V5 | 树含环 | prepare rc=2 拒绝 |
+| V6 | 子归档改一字节 | 验签失败 → 子树 NEUTRALIZED；根不得 PASS |
+| V7 | 同输入双跑 | 全树 report digest 逐字节相等 |
+| V8 | 外部仓 archive 作为叶引入 | 与本地归档同验签路径 |
+| V9 | 规模基线 4 层 × 64 叶 | bench 门内完成（阈值 §6-Q4） |
+| V10 | 全程 events 留痕 | 只增；节点/轮次可追溯 |
+
+## 6. 开放点（定稿前必须裁定）
+
+| # | 问题 | 草案建议 | 备注 |
+|---|---|---|---|
+| Q1 | 聚合算子初始名单 | 先 `count_fail` / `all_pass` / `quorum(N)` 三个，`min/max/and/or` 后置 | 封闭集宁小勿大 |
+| Q2 | NEUTRALIZED 独立 verdict 还是 FAIL 子码 | **独立 verdict** | 阻断根 PASS 语义更清晰 |
+| Q3 | 轮次 id 发行者 | CLI 在 run 发起时生成，写进所有层 archive | 与幂等键一致 |
+| Q4 | V9 bench 阈值（4 层 × 64 叶） | CI 安全线 ≤ **180s**（含 archive 写盘） | 需属主/验证席按机器定 |
+| Q5 | 树 spec 描述格式（文本 DSL vs JSON） | JSON（可机械校验、可 digest） | 与 material 冻结一致 |
+
+## 7. 评审与裁定
+
+1. 发布席 `dsh/0672e341`、验证席 `dsh/ae07421e` 评审本草案（接口/契约/失败面）；
+2. 属主对 §6 五项与 charter §4.7 增补做裁定；
+3. 裁定后本文件改为「已裁定契约」并落实现（A1 施工；A2 self-check 缺陷注入紧随）；
+4. A3 发布门两段式（先 warn 后硬门）另立小契约，candidate 0.114.17。
+
+**未裁定前，不实现 `verify tree` 代码路径。**
