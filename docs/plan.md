@@ -431,6 +431,14 @@ npm **latest=0.114.3**、shasum **`f8efa8e1…`**；官方字节 **1,533,430 B /
 prepare 的投影；「必须有覆盖」的门禁判 `ok && !coverage_skipped`）；默认模式放宽为 `^([A-Z]+[0-9]+) `（已在 a5f655b）；prepare 记录增结构化
 `clause_scope`。棘轮：本 PR 自行抬升 bundle 基线（head 757,602 B，master 上限 754,413 B，超 3,189 B），已把新增顶层 JSDoc 改为行注释省约 2.3 KB，
 余量是真实逻辑与可操作诊断——需维护者显式认账。
+
+**0.114.4 记录（2026-10-22，fdc 评审：job add 静默误注册）**：坏行 `0b88263172` 根因=尾拉回要求串尾
+`--every`，`--json` 后缀击穿 → every=0 静默 manual。修复：F1+F3 绊线（残留 `--every/--at` → 人类 stderr +
+JSON `diagnostics`，不硬拒）；F2 usage 改序（旗标在 `--` 前）；README/llms 示例同批改序。坏行已 disable、
+v2 标题重建已在库（fdc 处置核验通过）。测试 `job-schedule-token.spec` 5 例；unit 707→712。
+发布（2026-10-22）：commit **`5eef44c`**；tag **`v0.114.4 = 6614e489… → ^{commit}=5eef44c…`**（双远端）；
+npm **latest=0.114.4**、shasum **`0d9c8d6c…`**；官方字节 **1,535,136 B / sha256 `2cb8c977…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
