@@ -482,7 +482,11 @@ ${cl.text}
       return 0;
     }
     case "export": {
-      const dest = rest[0] || `ygl-trees-dump-${Date.now()}.sql`;
+      if (!rest[0]) {
+        bad(ctx, "usage: db export <file.sql> [--lean]");
+        return 2;
+      }
+      const dest = rest[0];
       // --lean: skip derived-table data (node_closure / node_index are
       // rebuilt by `node index`; their DDL still ships).
       const lean = args.flags.lean === true || args.flags.lean === "true";

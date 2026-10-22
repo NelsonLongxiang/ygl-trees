@@ -84,10 +84,52 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "refs":
     case "references": {
-      // v2: show all references linked to a skill (L3 progressive disclosure)
+      const sub = rest[0];
+      if (sub === "add") {
+        const skillName = rest[1];
+        if (!skillName) {
+          bad(ctx, "usage: skill refs add <skill> <path> [--body|-f]");
+          return 2;
+        }
+        const p = rest[2];
+        if (!p) {
+          bad(ctx, "usage: skill refs add <skill> <path> [--body|-f]");
+          return 2;
+        }
+        const content = args.flags.body
+          ? String(args.flags.body)
+          : args.flags.f
+          ? fs.readFileSync(String(args.flags.f), "utf8")
+          : "";
+        return getOrm(env.db.path)
+          .then((ds) => writes.skillRefAdd(ds, skillName, p, content))
+          .then((): number => {
+            ok(ctx, `ref saved: ${skillName}/${p}`);
+            return 0;
+          })
+          .catch((e: any): number => {
+            bad(ctx, e?.message || String(e));
+            return 1;
+          });
+      }
+      if (sub === "show") {
+        if (!rest[1] || !rest[2]) {
+          bad(ctx, "usage: skill refs show <skill> <path>");
+          return 2;
+        }
+        const skill = store.skillGet(rest[1]);
+        if (!skill) {
+          bad(ctx, `skill not found: ${rest[1]}`);
+          return 1;
+        }
+        const r = store.db.get("SELECT content FROM skill_refs WHERE skill_id=? AND path=?", [(skill as any).id, rest[2]]);
+        out(ctx, r ? r.content : paint(C.red, "  ref not found", ctx.color));
+        return 0;
+      }
+      // bare `skill refs <name>`: list references (L3 progressive disclosure)
       const skillName = rest[0];
       if (!skillName) {
-        bad(ctx, "usage: skill refs <name>");
+        bad(ctx, "usage: skill refs <name> | skill refs add <skill> <path> | skill refs show <skill> <path>");
         return 2;
       }
       const sk = store.skillGet(skillName);
@@ -96,11 +138,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       const refs = env.db.all("SELECT * FROM skill_refs WHERE skill_id=? ORDER BY path", [(sk as any).id]) as any[];
-      head(ctx, `Skill: ${skillName}`);
       if (ctx.json) {
         console.log(JSON.stringify(refs, null, 2));
         return 0;
       }
+      head(ctx, `Skill: ${skillName}`);
       if (!refs.length) {
         out(ctx, paint(C.dim, "  (no references — add with: skill refs add <name> <path> --body ...)", ctx.color));
         return 0;
@@ -293,6 +335,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "rm":
+      if (!name) {
+        bad(ctx, "usage: skill rm <name>");
+        return 2;
+      }
       return getOrm(env.db.path)
         .then((ds) => writes.skillDel(ds, name))
         .then((): number => {
@@ -305,6 +351,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     case "enable":
     case "disable": {
+      if (!name) {
+        bad(ctx, `usage: skill ${action} <name>`);
+        return 2;
+      }
       const on = action === "enable";
       return getOrm(env.db.path)
         .then((ds) => writes.skillEnabled(ds, name, on))
@@ -320,42 +370,6 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           bad(ctx, e?.message || String(e));
           return 1;
         });
-    }
-    case "refs": {
-      const sub = rest[0];
-      if (sub === "add") {
-        const skillName = rest[1];
-        if (!need(skillName || "", "skill name")) return 2;
-        const p = rest[2];
-        if (!need(p || "", "ref path")) return 2;
-        const content = args.flags.body
-          ? String(args.flags.body)
-          : args.flags.f
-          ? fs.readFileSync(String(args.flags.f), "utf8")
-          : "";
-        return getOrm(env.db.path)
-          .then((ds) => writes.skillRefAdd(ds, skillName, p, content))
-          .then((): number => {
-            ok(ctx, `ref saved: ${skillName}/${p}`);
-            return 0;
-          })
-          .catch((e: any): number => {
-            bad(ctx, e?.message || String(e));
-            return 1;
-          });
-      }
-      if (sub === "show") {
-        const skill = store.skillGet(rest[1]);
-        if (!skill) {
-          bad(ctx, `skill not found: ${rest[1]}`);
-          return 1;
-        }
-        const r = store.db.get("SELECT content FROM skill_refs WHERE skill_id=? AND path=?", [skill.id, rest[2]]);
-        out(ctx, r ? r.content : paint(C.red, "  ref not found", ctx.color));
-        return 0;
-      }
-      out(ctx, paint(C.dim, "  skill refs add <skill> <path> [--body|-f] | show <skill> <path>", ctx.color));
-      return 0;
     }
     case "":
       out(

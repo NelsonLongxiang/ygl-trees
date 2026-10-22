@@ -113,6 +113,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   if (env.group === "tree") {
     const sub = action;               // new | list | use
     const name = rest[0];
+    if ((sub === "new" || sub === "use") && !name) {
+      bad(ctx, `usage: tree ${sub} <name>`);
+      return 2;
+    }
     if (sub === "new") {
       if (!name) {
         bad(ctx, "usage: tree new <name> [--project <name>]");
