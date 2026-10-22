@@ -1,7 +1,7 @@
 # verify 契约 1.3 设计草案：报告的语义边界与取证面（semantic_scope / provenance / 扫描清单）
 
-> 状态：**草案，未实现**。对应 #27 方案（`docs/reviews/taste-extraction-plan.md`）§5 工作流 **T4**，
-> 等待裁定 **D3**（契约 1.3 批的内容）与 **T1** 合入（相邻面：archive 的扫描清单形状）。
+> 状态：**草案，未实现**。对应 #27 方案（`docs/reviews/taste-extraction-plan.md`）§5 工作流 **T4**；
+> **T1（archive 扫描清单）已随 #32 合入**，剩余阻塞为裁定 **D3**（契约 1.3 批内容）。
 > 目标评审：K3 评审席、fdc757f6（契约持闸）、开发席（引擎维护者）。
 > 现行契约为 1.2（`CONTRACT_VERSION` / `CORPUS_VERSION` = 1.2）。
 > 写法沿用 [verify-contract-v1.2.md](verify-contract-v1.2.md)：先问题、再形态、再版本与语料、最后明确不做什么。

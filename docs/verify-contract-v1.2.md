@@ -1,7 +1,7 @@
 # verify 契约 1.2 设计草案：可引用列的判据（col-to-col 与 count.against）
 
-> 状态：**草案，未实现**。目标评审：K3 评审席、fdc757f6（契约持闸）。实现排 0.107.0。
-> 现行契约为 1.1（`CONTRACT_VERSION` / `CORPUS_VERSION` = 1.1）。
+> 状态：**已实现 / 已被取代（历史设计稿）**。1.2 已随 0.107.0 实现；现行契约见
+> [verify-contract.md](verify-contract.md)（`CONTRACT_VERSION` / `CORPUS_VERSION` = 1.2）。本文仅保留设计历史。
 
 ## 1. 要解决的真实问题
 
