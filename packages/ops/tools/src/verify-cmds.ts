@@ -24,7 +24,7 @@ import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../.
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
-import { lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
+import { compileClausePattern, lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
 import { metaGate, metaRepoRootOf, refuseMeta } from "./meta-gate";
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
@@ -312,8 +312,11 @@ export function normalizeAsOf(raw: unknown, fallback: string): string {
   return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMin * 60000).toISOString();
 }
 
-/** GitHub #34: load named clause exemptions (JSON array or { exempt: [...] }). */
-function loadCoverageExempt(args: any): { ok: true; exempt: Array<{ locator: string; reason?: string }> } | { ok: false; code: number; problem: string } {
+/** GitHub #34: load named clause exemptions (JSON array or { exempt: [...] }).
+ *  Each entry names a declared clause by `id`, `locator` (`#S3`) or exact `text`
+ *  — never by line number; a bare string is an id/locator. */
+type ExemptEntry = { id?: string; locator?: string; text?: string; reason?: string };
+function loadCoverageExempt(args: any): { ok: true; exempt: ExemptEntry[] } | { ok: false; code: number; problem: string } {
   const file = args.flags["coverage-exempt"];
   if (file === undefined) return { ok: true, exempt: [] };
   const path = String(file);
@@ -324,18 +327,28 @@ function loadCoverageExempt(args: any): { ok: true; exempt: Array<{ locator: str
     return { ok: false, code: 1, problem: `cannot read --coverage-exempt ${path}: ${e?.message || e}` };
   }
   const list = Array.isArray(raw) ? raw : (raw as { exempt?: unknown })?.exempt;
-  if (!Array.isArray(list)) return { ok: false, code: 2, problem: "--coverage-exempt must be a JSON array or { exempt: [{ locator, reason }] }" };
-  const exempt: Array<{ locator: string; reason?: string }> = [];
+  if (!Array.isArray(list)) return { ok: false, code: 2, problem: "--coverage-exempt must be a JSON array or { exempt: [{ id | locator | text, reason }] }" };
+  const exempt: ExemptEntry[] = [];
   for (const [i, e] of list.entries()) {
     if (typeof e === "string") {
       exempt.push({ locator: e, reason: "named exemption" });
       continue;
     }
-    const o = (e ?? {}) as { locator?: unknown; reason?: unknown };
-    if (typeof o.locator !== "string") return { ok: false, code: 2, problem: `--coverage-exempt entry #${i} has no locator` };
-    exempt.push({ locator: o.locator, ...(typeof o.reason === "string" ? { reason: o.reason } : {}) });
+    const o = (e ?? {}) as { id?: unknown; locator?: unknown; text?: unknown; reason?: unknown };
+    const keys = (["id", "locator", "text"] as const).filter((k) => typeof o[k] === "string");
+    if (keys.length !== 1) return { ok: false, code: 2, problem: `--coverage-exempt entry #${i} must name its clause by exactly one of id / locator / text` };
+    exempt.push({ [keys[0]]: o[keys[0]] as string, ...(typeof o.reason === "string" ? { reason: o.reason } : {}) });
   }
   return { ok: true, exempt };
+}
+
+/** GitHub #34: `--clause-pattern <regex>` declares the material's clause lines
+ *  (first capture group = id); default is the fleet convention `^([A-Z][0-9]+) `. */
+function loadClausePattern(args: any): { ok: true; pattern: RegExp } | { ok: false; problem: string } {
+  const raw = args.flags["clause-pattern"];
+  if (raw === true) return { ok: false, problem: "--clause-pattern needs a regular expression, e.g. --clause-pattern '^([A-Z][0-9]+) '" };
+  const p = compileClausePattern(raw === undefined ? undefined : String(raw));
+  return typeof p === "string" ? { ok: false, problem: p } : { ok: true, pattern: p };
 }
 
 export function findMaterial(env: Env, id: string): MaterialRecord {
@@ -386,7 +399,7 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "clause-pattern"],
   run: ["db", "submission", "no-archive"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
@@ -395,7 +408,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   export: ["out"],
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
-  "lint-candidates": ["text", "db", "coverage-exempt"],
+  "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
   example: ["checker", "null-ops"],
   meta: [],
   probe: ["matrix", "target", "only"],
@@ -590,6 +603,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, covOpt.problem);
         return covOpt.code;
       }
+      const patOpt = loadClausePattern(args);
+      if (!patOpt.ok) {
+        bad(ctx, patOpt.problem);
+        return 2;
+      }
       const attachmentStage = stageMaterialAttachments(env, material);
       const prevVersion = latestVersionOf(env, materialId);
       // ③ --draft：干跑——跑完整 P0–P5，但不落盘（不写 spec/prepare/trace，不消耗 spec_version）
@@ -599,6 +617,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         reviewer: fileReviewer(reviewsFile.reviews ?? []),
         redteam: minimalRedTeam(schema.ddl, attachmentStage?.dir),
         coverageExempt: covOpt.exempt,
+        clausePattern: patOpt.pattern,
+        reviewedClauses: (reviewsFile.reviews ?? []).map((r) => String(r?.source_clause ?? "")),
         materialIndex,
         schemaProbe,
         specId: `spec_${short(sha256(materialId))}`,
@@ -1321,7 +1341,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // --text is absent because verbatim matching needs the frozen material.
       const file = rest[0];
       if (!file) {
-        bad(ctx, "usage: verify lint-candidates <candidates.json> [--text <material>] [--db <snapshot.sqlite>] [--json]");
+        bad(ctx, "usage: verify lint-candidates <candidates.json> [--text <material>] [--db <snapshot.sqlite>] [--reviews <file>] [--coverage-exempt <file>] [--clause-pattern <regex>] [--json]");
         return 2;
       }
       let parsed: any;
@@ -1360,7 +1380,31 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, covOpt.problem);
         return covOpt.code;
       }
-      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt });
+      const patOpt = loadClausePattern(args);
+      if (!patOpt.ok) {
+        bad(ctx, patOpt.problem);
+        return 2;
+      }
+      // #34: --reviews checks the 1:1 candidate↔review pairing (orphan reviews,
+      // unreviewed candidates) — the same pairing prepare refuses to freeze without.
+      let reviewedClauses: string[] | undefined;
+      if (args.flags.reviews !== undefined) {
+        const rp = String(args.flags.reviews);
+        let rawReviews: any;
+        try {
+          rawReviews = JSON.parse(readFileSync(rp, "utf8"));
+        } catch (e: any) {
+          bad(ctx, `cannot read --reviews ${rp}: ${e?.message || e}`);
+          return 1;
+        }
+        const list = Array.isArray(rawReviews) ? rawReviews : rawReviews?.reviews;
+        if (!Array.isArray(list)) {
+          bad(ctx, "reviews file must be a JSON array or { reviews: [...] }");
+          return 2;
+        }
+        reviewedClauses = list.map((r: any) => String(r?.source_clause ?? ""));
+      }
+      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, reviewedClauses });
       if (ctx.json) {
         console.log(JSON.stringify(res));
         return 0;
@@ -1371,7 +1415,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ].filter(Boolean);
       const skippedTail = skipped.length ? ` (${skipped.join("; ")})` : "";
       if (res.coverage) {
-        out(ctx, paint(C.dim, `  coverage: ${res.coverage.covered}/${res.coverage.clauses} clause(s) covered, ${res.coverage.exempted} exempt${res.coverage.uncovered.length ? `, ${res.coverage.uncovered.length} uncovered` : ""}`, ctx.color));
+        const cov = res.coverage;
+        out(
+          ctx,
+          paint(
+            C.dim,
+            cov.clauses
+              ? `  coverage: ${cov.covered}/${cov.clauses} clause(s) covered, ${cov.exempted} exempt${cov.uncovered.length ? `, ${cov.uncovered.length} uncovered` : ""} (clauses = lines matching ${cov.pattern})`
+              : `  coverage: not enforced — no material line matches ${cov.pattern} (number criteria "<id> <text>", or pass --clause-pattern)`,
+            ctx.color,
+          ),
+        );
       }
       if (res.ok) {
         out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${skippedTail}`);

@@ -1,0 +1,186 @@
+{
+  "reviews": [
+    {
+      "source_clause": "P1 正文类文字角色在三种底色上都必须达到 WCAG AA：contrast_pairs 中 kind 为 role、fg 不为 text-dim 且 ratio 小于 4.5 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "kind=role、fg 不为 text-dim、ratio<4.5 逐字映射",
+          "anchor": {
+            "quote": "P1 正文类文字角色在三种底色上都必须达到 WCAG AA：contrast_pairs 中 kind 为 role、fg 不为 text-dim 且 ratio 小于 4.5 的行必须为 0。",
+            "locator": "material.md#P1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "WCAG 2.1 公式按十六进制色值计算，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "行数下限 P5 防空转",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P2 text-dim 只作非文字装饰，在三种底色上都必须达到非文字对比度 3:1：contrast_pairs 中 kind 为 role、fg 为 text-dim 且 ratio 小于 3 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "kind=role、fg=text-dim、ratio<3 逐字映射",
+          "anchor": {
+            "quote": "P2 text-dim 只作非文字装饰，在三种底色上都必须达到非文字对比度 3:1：contrast_pairs 中 kind 为 role、fg 为 text-dim 且 ratio 小于 3 的行必须为 0。",
+            "locator": "material.md#P2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "text-dim 缺失时 P5 行数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P3 DESIGN.md 声明的每个组件文字与底色配对都必须达到 AA：contrast_pairs 中 kind 为 component 且 ratio 小于 4.5 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "kind=component、ratio<4.5 逐字映射",
+          "anchor": {
+            "quote": "P3 DESIGN.md 声明的每个组件文字与底色配对都必须达到 AA：contrast_pairs 中 kind 为 component 且 ratio 小于 4.5 的行必须为 0。",
+            "locator": "material.md#P3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "组件的颜色引用按主题解析后计算，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "组件块解析失败时 P6 行数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P4 知识图谱实体标签在每种实体填充色上都必须达到 AA：contrast_pairs 中 kind 为 entity 且 ratio 小于 4.5 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "kind=entity、ratio<4.5 逐字映射",
+          "anchor": {
+            "quote": "P4 知识图谱实体标签在每种实体填充色上都必须达到 AA：contrast_pairs 中 kind 为 entity 且 ratio 小于 4.5 的行必须为 0。",
+            "locator": "material.md#P4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "实体配色表解析失败时 P7 行数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P5 文字角色配对必须完整：contrast_pairs 中 kind 为 role 的行数不得少于 48（8 个角色 × 3 种底色 × 2 套主题）。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "48 = 8 个文字角色 × 3 种底色 × 2 套主题，逐字取自材料",
+          "anchor": {
+            "quote": "P5 文字角色配对必须完整：contrast_pairs 中 kind 为 role 的行数不得少于 48（8 个角色 × 3 种底色 × 2 套主题）。",
+            "locator": "material.md#P5"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "任一角色或底色缺失时计数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P6 组件配对必须完整：contrast_pairs 中 kind 为 component 的行数不得少于 24（12 个组件 × 2 套主题）。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "24 = 12 个带文字与底色的组件 × 2 套主题，逐字取自材料",
+          "anchor": {
+            "quote": "P6 组件配对必须完整：contrast_pairs 中 kind 为 component 的行数不得少于 24（12 个组件 × 2 套主题）。",
+            "locator": "material.md#P6"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "组件被删或引用解析不出时计数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P7 实体标签配对必须完整：contrast_pairs 中 kind 为 entity 的行数不得少于 10（5 种实体填充色 × 2 套主题）。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "10 = 5 种实体填充色 × 2 套主题，逐字取自材料",
+          "anchor": {
+            "quote": "P7 实体标签配对必须完整：contrast_pairs 中 kind 为 entity 的行数不得少于 10（5 种实体填充色 × 2 套主题）。",
+            "locator": "material.md#P7"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "实体配色表解析失败时计数为 0",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

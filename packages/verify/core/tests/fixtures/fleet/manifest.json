@@ -1,0 +1,9 @@
+{
+  "purpose": "GitHub #34 consumer fixtures: real fleet materials with their committed candidates/reviews, frozen as the release gate's clause-scope/locator regression set. Copied verbatim from `git show HEAD:specs/<name>/<file>`; do not edit by hand — re-copy from the source repo and update the sha.",
+  "sources": {
+    "review": { "repo": "ygl-review-verifier", "commit": "fd2f676bffcb163e6078fe6b10c689bb087690fc", "skipped": { "gaps": "gap register, not a spec (no reviews.json)" } },
+    "webui": { "repo": "ygl-webui-verifier", "commit": "dbad503515e6298127524fdc12787565a70466d1" },
+    "fleet": { "repo": "ygl-fleet-verifier", "commit": "d90c9fb0dc98977017d83c12e947838c9547a680" },
+    "design": { "repo": "ygl-design-verifier", "commit": "c11fb72c89d45325de03aa69f6ad6500e7bbe894" }
+  }
+}

@@ -1,0 +1,264 @@
+{
+  "reviews": [
+    {
+      "source_clause": "M1 成员必须按契约报到：member 中 present 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "present 为 0 逐字映射",
+          "anchor": {
+            "quote": "M1 成员必须按契约报到：member 中 present 为 0 的行必须为 0。",
+            "locator": "material.md#M1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "文件存在与契约名是确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "未报到的成员仍写一行 present=0，缺席不会被跳过",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M2 成员的根结论必须通过：member 中 overall 不为 PASS 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "overall 不为 PASS 逐字映射",
+          "anchor": {
+            "quote": "M2 成员的根结论必须通过：member 中 overall 不为 PASS 的行必须为 0。",
+            "locator": "material.md#M2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "取自成员冻结报告的结论",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "FAIL/NEEDS-MATERIAL/ERROR 全部命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M3 成员的结论不得过期：member 中 age_minutes 大于 1440 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "1440 分钟 = 24 小时，逐字取自材料",
+          "anchor": {
+            "quote": "M3 成员的结论不得过期：member 中 age_minutes 大于 1440 的行必须为 0。",
+            "locator": "material.md#M3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "时间差由本轮探测时刻与 judged_at 算出",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "长期不跑的成员会被抓到",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M4 成员的根报告归档必须自校验通过：member 中 archive_ok 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "archive_ok 为 0 逐字映射",
+          "anchor": {
+            "quote": "M4 成员的根报告归档必须自校验通过：member 中 archive_ok 为 0 的行必须为 0。",
+            "locator": "material.md#M4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "verify archive verify 结论确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "归档缺失或被改动都会判 0",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M5 成员必须有自检且全部符合预期：member 中 present 为 1 且（selfcheck_cases 为空、selfcheck_cases 小于 1 或 selfcheck_pass 不等于 selfcheck_cases）的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "三个分支逐字对应材料（空、小于 1、通过数不等于用例数，契约 1.2 列对列）",
+          "anchor": {
+            "quote": "M5 成员必须有自检且全部符合预期：member 中 present 为 1 且（selfcheck_cases 为空、selfcheck_cases 小于 1 或 selfcheck_pass 不等于 selfcheck_cases）的行必须为 0。",
+            "locator": "material.md#M5"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "用例数与通过数是成员自报的整数",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "空值显式判违规；未报到的成员由 M1 负责，这里只看报到的",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M6 成员必须写明自己的目标：member 中 goal_chars 小于 8 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "8 字下限逐字取自材料",
+          "anchor": {
+            "quote": "M6 成员必须写明自己的目标：member 中 goal_chars 小于 8 的行必须为 0。",
+            "locator": "material.md#M6"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "字数确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "空目标或占位词命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M7 成员验的必须是被验分支的当前提交：member 中 target_is_git 为 1 且（target_now 为空或 target_now 不等于 target_sha）的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "逐字对应材料：只看 git 被验对象，target_now 为空或不等于 target_sha",
+          "anchor": {
+            "quote": "M7 成员验的必须是被验分支的当前提交：member 中 target_is_git 为 1 且（target_now 为空或 target_now 不等于 target_sha）的行必须为 0。",
+            "locator": "material.md#M7"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "rev-parse 结果与声明的提交都是确定字符串",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "被验分支前进而成员没重跑时命中；解析失败记 (unresolvable) 也命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M9 成员钉的引擎不得高于舰队审计所用的 0.114.0：member 中 present 为 1 且（engine_major 为空、engine_minor 为空、engine_patch 为空、engine_minor 大于 114，或 engine_minor 等于 114 且 engine_patch 大于 0）的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "0.114.0 的三段与五个分支逐字取自材料",
+          "anchor": {
+            "quote": "M9 成员钉的引擎不得高于舰队审计所用的 0.114.0：member 中 present 为 1 且（engine_major 为空、engine_minor 为空、engine_patch 为空、engine_minor 大于 114，或 engine_minor 等于 114 且 engine_patch 大于 0）的行必须为 0。",
+            "locator": "material.md#M9"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "版本号三段取自成员仓库 package.json，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "读不到任一段也判违规；0.114.1 这类同 minor 更高 patch 由第五个分支命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M10 成员仓库必须通过元验证（章程 v1.1 声明式编排登记）：member 中 present 为 1 且（meta_failed 为空或 meta_failed 大于 0）的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "空值与大于 0 两个分支逐字取自材料",
+          "anchor": {
+            "quote": "M10 成员仓库必须通过元验证（章程 v1.1 声明式编排登记）：member 中 present 为 1 且（meta_failed 为空或 meta_failed 大于 0）的行必须为 0。",
+            "locator": "material.md#M10"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "verify meta 的规则结论由舰队钉的引擎给出，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "跑不出 meta 结果记空值，同样判违规",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "M8 快照必须包含该成员：member 的行数不得少于 1。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "下限 1 逐字取自材料",
+          "anchor": {
+            "quote": "M8 快照必须包含该成员：member 的行数不得少于 1。",
+            "locator": "material.md#M8"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "空快照计数 0 即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

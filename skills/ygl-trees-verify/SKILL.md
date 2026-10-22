@@ -155,6 +155,9 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 | 未 ready 的构造去哪了 | `$YGL_HOME/verify/specs/<spec_id>/attempts/<ts>.json`——`prepare.json` 只存最后一次 ready 的记录，不会被失败补跑覆盖 |
 | `prepare --as-of` 报 as_of 错 / 作业端点 400 `as_of` | 时间串不合严格 ISO：用纯日期 `2026-10-24` 或带时区 `2026-10-24T08:00:00+08:00`（`+0800` 也收）；无时区/空格分隔/`2026-02-30` 这类非法日历一律拒（服务端不猜本机时区）。CLI rc=2 先于 material/db I/O |
 | `needs-material`：`no candidate survived…` 但 reviews 明明写了 | `--reviews` 必须是**对象数组** `[{source_clause, findings:[三问]}]`，`source_clause` 与候选逐字相同；写成旧嵌套 `[[{vu_id…}]]` 一条都匹配不上（vu_id 由 prepare 生成，不要自己写） |
+| prepare `error` + `[P1c] clause S3 is not covered` | 子句 = 匹配 `^([A-Z][0-9]+) ` 的材料行（标题/散文不算）；每条都要有候选认领（`anchor.locator: "material.md#S3"` 或 `source_clause` 含整行），或 `--coverage-exempt` 按 `{id\|text, reason}` 具名豁免（不认行号）。先跑 `verify lint-candidates <c> --text <material> --reviews <r>` |
+| `[P1] … names clause "S9", which the frozen material does not declare` | `#<片段>` 先按子句 id 解析（`#S1`/`#L2` 是 id 不是行号）；引用物理行写 `#line=<n>`；编号约定不同用 `--clause-pattern '<含一个捕获组的正则>'` |
+| prepare `error` + `[P3] orphan review` | 评审文件里有条 `source_clause` 没有任何候选携带（判据被删或改名）——候选与评审要 1:1 |
 | 想知道这次尝试落哪个文件 | CLI `prepare --json` 的 `record`（相对 verify 根）；`GET /api/verify/spec` 载荷带 `attempts:[{file,created,verdict}]` 投影 |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
 | command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |

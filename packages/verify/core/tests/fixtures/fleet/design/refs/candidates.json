@@ -1,0 +1,59 @@
+{
+  "candidates": [
+    {
+      "source_clause": "R1 源码引用的每个色令牌键都必须是 DESIGN.md 两套色板都有的键：token_refs 中 dark_value 为空或 light_value 为空的行必须为 0。",
+      "anchor": {
+        "quote": "R1 源码引用的每个色令牌键都必须是 DESIGN.md 两套色板都有的键：token_refs 中 dark_value 为空或 light_value 为空的行必须为 0。",
+        "locator": "material.md#R1"
+      },
+      "title": "引用的键都已定义",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "token_refs",
+          "select": [
+            "file",
+            "line",
+            "ref",
+            "key",
+            "dark_value",
+            "light_value"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "dark_value",
+                "op": "is null"
+              },
+              {
+                "col": "light_value",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R2 引用扫描不得空转：token_refs 的行数不得少于 100（2026-10-21 上游 master f2f91de 实测 119 处）。",
+      "anchor": {
+        "quote": "R2 引用扫描不得空转：token_refs 的行数不得少于 100（2026-10-21 上游 master f2f91de 实测 119 处）。",
+        "locator": "material.md#R2"
+      },
+      "title": "引用扫描不空转",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "token_refs",
+          "select": []
+        },
+        "op": ">=",
+        "value": 100
+      }
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "candidates": [
+    {
+      "source_clause": "A1 前端依赖的每个接口必须正常返回：endpoints 中 status 不为 200 的行必须为 0。",
+      "anchor": {
+        "quote": "A1 前端依赖的每个接口必须正常返回：endpoints 中 status 不为 200 的行必须为 0。",
+        "locator": "material.md#A1"
+      },
+      "title": "前端依赖接口全部 200",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "endpoints",
+          "select": [
+            "path",
+            "status"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "status",
+                "op": "!=",
+                "value": 200
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A2 数据接口必须返回可解析的 JSON：endpoints 中 kind 为 api 且 json_ok 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "A2 数据接口必须返回可解析的 JSON：endpoints 中 kind 为 api 且 json_ok 为 0 的行必须为 0。",
+        "locator": "material.md#A2"
+      },
+      "title": "数据接口返回合法 JSON",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "endpoints",
+          "select": [
+            "path",
+            "ctype",
+            "json_ok"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "json_ok",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "kind",
+                "op": "=",
+                "value": "api"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A3 主数据接口必须带内容：endpoints 中 path 为 /api/data 且 items 小于 1 的行必须为 0。",
+      "anchor": {
+        "quote": "A3 主数据接口必须带内容：endpoints 中 path 为 /api/data 且 items 小于 1 的行必须为 0。",
+        "locator": "material.md#A3"
+      },
+      "title": "主数据接口带内容",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "endpoints",
+          "select": [
+            "path",
+            "items"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "items",
+                "op": "<",
+                "value": 1
+              },
+              {
+                "col": "items",
+                "op": "is null"
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "path",
+                "op": "=",
+                "value": "/api/data"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A4 接口面不得缩水：endpoints 的行数不得少于 7。",
+      "anchor": {
+        "quote": "A4 接口面不得缩水：endpoints 的行数不得少于 7。",
+        "locator": "material.md#A4"
+      },
+      "title": "接口面不缩水",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "endpoints",
+          "select": []
+        },
+        "op": ">=",
+        "value": 7
+      }
+    }
+  ]
+}

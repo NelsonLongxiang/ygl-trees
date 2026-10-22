@@ -1,0 +1,134 @@
+{
+  "reviews": [
+    {
+      "source_clause": "C1 时间线上相邻两个系列在红色盲与绿色盲模拟下都必须可区分：chart_adjacent 中 vision 为 protan 或 deutan 且 delta_e 小于 8 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "vision 取 protan、deutan，delta_e<8 逐字映射；tritan 只记录不判，与材料一致",
+          "anchor": {
+            "quote": "C1 时间线上相邻两个系列在红色盲与绿色盲模拟下都必须可区分：chart_adjacent 中 vision 为 protan 或 deutan 且 delta_e 小于 8 的行必须为 0。",
+            "locator": "material.md#C1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "Machado 2009 模拟 + OKLab ΔE×100，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "相邻对缺失时 C5 下限失败",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "C2 相邻两个系列在正常视觉下必须明显可区分：chart_adjacent 中 vision 为 normal 且 delta_e 小于 15 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "vision=normal、delta_e<15 逐字映射",
+          "anchor": {
+            "quote": "C2 相邻两个系列在正常视觉下必须明显可区分：chart_adjacent 中 vision 为 normal 且 delta_e 小于 15 的行必须为 0。",
+            "locator": "material.md#C2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "C5 下限防空转",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "C3 每个系列色对卡片底色都必须达到非文字对比度 3:1：chart_series 中 contrast_surface 小于 3 或为空的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "contrast_surface<3 逐字映射，并把引用了未定义色键（算不出）的空值一并视为不达标",
+          "anchor": {
+            "quote": "C3 每个系列色对卡片底色都必须达到非文字对比度 3:1：chart_series 中 contrast_surface 小于 3 或为空的行必须为 0。",
+            "locator": "material.md#C3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "C4 下限防空转",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "C4 两套主题的系列都必须解析出来：chart_series 的行数不得少于 8（4 个系列 × 2 套主题）。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "8 = 4 个系列 × 2 套主题，逐字取自材料",
+          "anchor": {
+            "quote": "C4 两套主题的系列都必须解析出来：chart_series 的行数不得少于 8（4 个系列 × 2 套主题）。",
+            "locator": "material.md#C4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "堆叠顺序或系列填充表解析失败时计数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "C5 相邻对必须全部测到：chart_adjacent 的行数不得少于 24（3 个相邻对 × 4 种视觉 × 2 套主题）。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "24 = 3 个相邻对 × 4 种视觉 × 2 套主题，逐字取自材料",
+          "anchor": {
+            "quote": "C5 相邻对必须全部测到：chart_adjacent 的行数不得少于 24（3 个相邻对 × 4 种视觉 × 2 套主题）。",
+            "locator": "material.md#C5"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "某系列色解析不出时其相邻对缺行，计数不足",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

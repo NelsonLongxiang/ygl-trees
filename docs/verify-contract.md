@@ -26,9 +26,10 @@
   映射 + golden 测试），输出自 declare `_derived_from: corpus <version> (<n> files, digest …)`——即
   **corpus digest 传递性地钉住示例输出**。`--null-ops` 是 syntax note（`is null`/`is not null` 写法 +
   `count(col)` 跳 NULL / 空表 0 / max|min|sum 产 NULL 的不对称），不是语料案例。
-- **`verify lint-candidates <file> [--text <material>] [--db <snapshot>]`**：与 prepare 共用同一
-  p1/p2 校验器；rc 只表达过程（0 成功 / 2 用法），判定在输出
-  `{ok, checked, p1_skipped, schema_skipped, issues:[{index,source_clause,stage,reason}]}`；不写 spec、
+- **`verify lint-candidates <file> [--text <material>] [--db <snapshot>] [--reviews <file>] [--coverage-exempt <file>] [--clause-pattern <regex>]`**：与 prepare 共用同一
+  p1/p2 校验器与子句覆盖检查；rc 只表达过程（0 成功 / 2 用法），判定在输出
+  `{ok, checked, p1_skipped, schema_skipped, issues:[{index,source_clause,stage,reason}], coverage}`；`--reviews`
+  另查候选↔评审 1:1（孤儿评审 / 无评审候选 → `stage:"REVIEW"`）；不写 spec、
   不耗 `spec_version`、不发事件。`checker.type` 为闭集（七型），未知类型在 P2 被点名拒绝。
   **口径订正（#18.1）**：「lint 拒绝集 == prepare `rejected_detail` 集」仅在提供 `--db`（schema 探针）时
   成立；无 `--db` 时 P2 的 schema 子检查跳过（`schema_skipped:true`），两集合只比形状。
@@ -140,7 +141,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 | 阶段 | 门 | 失败后果 |
 |---|---|---|
 | **P0** 材料冻结 | 材料非空；`materials_sha256` 由调用方文本算出；命中 `knownMaterialHashes` 只记 diagnostic（v1 是提示不是拦截） | 空材料 → `needs-material` |
-| **P1** 判据抽取 | `source_clause` 与 `anchor.quote` 都必须在冻结材料里**逐字**存在；`anchor.locator` 必须由 `material_index` 声明，子句式 locator（`#L<n>`/`#S<n>`，可带文件名前缀）必须命中存在的子句且该子句含 quote；含不可判词（应尽量/建议/合理/酌情/视情况/适当）→ 拒 | 记 `rejected[stage=P1]` |
+| **P1** 判据抽取 | `source_clause` 与 `anchor.quote` 都必须在冻结材料里**逐字**存在；`anchor.locator` 必须由 `material_index` 声明；带 `#` 片段的 locator 按 §1.6「子句覆盖」的定位语法解析（`#<子句 id>` 先解析为子句、`#line=<n>` 为物理行），必须命中且含 quote；含不可判词（应尽量/建议/合理/酌情/视情况/适当）→ 拒 | 记 `rejected[stage=P1]` |
 | **P2** 翻译成 VU | 只允许**谓词 AST**（手写 `sql` 一律拒；count/exists 的 `sql` 形态也拒）；`$vu:` 只允许出现在 `count.from` 与 sql-pair 侧，谓词内出现 → 拒（金额字面量 `$50` 不误伤）；渲染不得含时间函数；schema 探针**全量**校验表/列（sql、sql-pair 双侧、count、exists）；agent 必须带非空 rubric；`requires_execution` 只属于 agent 型；compare 走同一 `validateCompareSpec` | 记 `rejected[stage=P2]` |
 | **P3** 盲审 | 复用 run 期 `ReviewRunner`（`blind:true`）：三问 fid/decidable/not-vacuous 缺一不可，未知 verdict/同问矛盾/reject/unclear/引用别的 VU 的 ok/锚点非逐字 → 都不 ready；**上限 3 轮**，每轮新上下文，出现可冻候选即收敛 | 记 `rejected[stage=P3]`；无 reviewer → `error` |
 | **P4** 红队门禁 | 由调用方注入（要真库/真附件/真对抗样本）；未注入**不落 ready**（CLI 可退化为"空库最小红队"） | 失败 → `error`，且**不落可冻结 spec**（`spec` 省略） |
@@ -151,7 +152,14 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 > **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
 
-**子句覆盖（#34，0.114.1）**：材料每个非空行=一条冻结子句（`#L<n>`，`#S<n>` 为同义别名）。prepare 在 P1–P3 之后、P4 之前要求每条子句被**至少一个通过 P1 的候选**的 `source_clause` 覆盖，否则以 `error` 收口、`diagnostics[stage=P1c]` 点名未覆盖子句——判据不得静默消失（丢一条规则冻结出 ready 的 spec，会 PASS 本应 FAIL 的数据）。`--coverage-exempt <file>`（JSON 数组或 `{exempt:[{locator,reason}]}`）提供**具名**豁免，缺 reason 或 locator 不存在即拒；`verify lint-candidates --text` 同一套覆盖检查，输出增 `coverage:{clauses,covered,exempted,uncovered}`，`issues[].stage="COVERAGE"`。
+**子句覆盖（#34；0.114.1 引入，修正版按规则界定子句）**——判据不得静默消失（丢一条规则冻结出 ready 的 spec，会 PASS 本应 FAIL 的数据），但子句的范围由**规则**决定，不由豁免清单决定：
+
+- **子句 = 匹配声明的子句模式的行**；模式的第 1 个捕获组是子句 id。默认模式是舰队约定 `^([A-Z][0-9]+) `（id + 一个空格：`S1 …`、`P12 …`）；`--clause-pattern <regex>`（prepare 与 lint-candidates，库面 `PrepareOptions.clausePattern`）可改声明，模式缺捕获组或非法 → rc=2。标题（`#`/`##`）、空行、散文（`验收对象：…`）、纪律列表**按规则不在范围内**。同一 id 声明两次 → 覆盖问题（点名两处行号）。
+- **未声明任何子句的材料**（没有一行匹配模式）不会被「每行都是子句」地凭空造出子句：覆盖记为未执行（`coverage.clauses:0`），prepare 的 ready 记录里有一条 `diagnostics[stage=P1c]` 写明「not enforced」——不静默，也不把散文当判据（0.114.1/0.114.2 的回归）。要开启覆盖，把判据编号成 `<id> <text>`。
+- **定位语法**（`[文件名]#<片段>`，取最后一个 `#` 之后）：`#<id>` **先**按声明的子句 id 解析（所以 `#S1`、`#L2` 是子句 id，不是行号）；`#line=<n>` 是物理行（1 起）的独立写法。材料声明了子句时，其他任何 `#片段` 都是 P1 拒绝（点名「声明了 N 条子句：S1, S2, …」——诊断数子句就只说子句，说行就只说行，不混用）；未声明子句时 id 片段无从解析，保持 0.114.0 口径（只受 material_index 约束）。不带 `#` 的 locator（`bills!B7`、`p3`）只受 material_index 约束。
+- **覆盖**：每条声明子句必须被一个**通过 P1** 的候选认领——其 `anchor.locator` 解析到该子句（或其所在行），或其 `source_clause` 包含整行子句原文；只引片段又无可解析 locator 的候选不认领任何子句（`S1` 不能顺带覆盖 `S10`）。prepare 在 P1–P3 之后、P4 之前校验，未覆盖 → `verdict:error`、`diagnostics[stage=P1c]` 按 id 点名；lint 同源，`coverage:{pattern,clauses,covered,exempted,uncovered:[{id,locator,line,text}],problems}`、`issues[].stage="COVERAGE"`。
+- **豁免**（`--coverage-exempt <file>`：JSON 数组或 `{exempt:[…]}`）：每条恰好用 `id`、`locator`（`#S3`）或 `text`（整行原文）之一指明子句，并带 `reason`；**不认行号**（`#line=<n>` 豁免被拒——材料一改行号就静默改靶）。指向未声明子句、缺 reason、或豁免一条已被覆盖的子句 → 覆盖问题。裸字符串条目按 id/locator 读。
+- **评审配对**：prepare 把评审文件里的 `source_clause` 交给构造面（`PrepareOptions.reviewedClauses`）；没有任何候选携带的评审是**孤儿评审**（判据在评审后被删或改名）→ `verdict:error`、`diagnostics[stage=P3]`。无评审的候选本来就在 P3 以「self-review incomplete」被拒。
 
 ## 1.7 file 检查的排除集（`ignore`，0.98.0）
 

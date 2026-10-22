@@ -1,0 +1,82 @@
+{
+  "reviews": [
+    {
+      "source_clause": "S1 必须拿到上游的最新状态：sync_state 中 fetched_ok 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "fetched_ok 为 0 逐字映射",
+          "anchor": {
+            "quote": "S1 必须拿到上游的最新状态：sync_state 中 fetched_ok 为 0 的行必须为 0。",
+            "locator": "material.md#S1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "git fetch 退出码确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "离线时用陈旧的 origin/master 比对会假装一致，这条拦住",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "S2 本地与上游的差异只能来自仍在评审中的 PR：sync_state 中 uncovered_files 大于 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "uncovered_files 大于 0 逐字映射；判在恒有一行的 sync_state 上，完全一致（明细表为空）时照样有扫描面",
+          "anchor": {
+            "quote": "S2 本地与上游的差异只能来自仍在评审中的 PR：sync_state 中 uncovered_files 大于 0 的行必须为 0。",
+            "locator": "material.md#S2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "文件差异与 PR 文件清单都是确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "探针没写 sync_state 时扫描 0 行降级 NEEDS-MATERIAL，S3 另设下限",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "S3 同步状态必须被测量：sync_state 的行数不得少于 1。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "下限 1 逐字取自材料",
+          "anchor": {
+            "quote": "S3 同步状态必须被测量：sync_state 的行数不得少于 1。",
+            "locator": "material.md#S3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "探针未执行比对时计数 0 即 FAIL，S2 的空表不会冒充一致",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

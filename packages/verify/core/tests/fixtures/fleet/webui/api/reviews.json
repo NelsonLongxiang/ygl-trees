@@ -1,0 +1,108 @@
+{
+  "reviews": [
+    {
+      "source_clause": "A1 前端依赖的每个接口必须正常返回：endpoints 中 status 不为 200 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "status 不为 200 逐字映射",
+          "anchor": {
+            "quote": "A1 前端依赖的每个接口必须正常返回：endpoints 中 status 不为 200 的行必须为 0。",
+            "locator": "material.md#A1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "HTTP 状态码确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "服务没起来时探针写 status=0 的行，照样命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "A2 数据接口必须返回可解析的 JSON：endpoints 中 kind 为 api 且 json_ok 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "kind 为 api 作扫描域、json_ok 为 0 作判据，逐字映射",
+          "anchor": {
+            "quote": "A2 数据接口必须返回可解析的 JSON：endpoints 中 kind 为 api 且 json_ok 为 0 的行必须为 0。",
+            "locator": "material.md#A2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "解析成功与否确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "无 api 行时扫描 0 行降级 NEEDS-MATERIAL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "A3 主数据接口必须带内容：endpoints 中 path 为 /api/data 且 items 小于 1 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "path 为 /api/data 作扫描域；items 小于 1 映射为 < 1，并把解析失败的空值一并视作无内容（比材料更严，不放松）",
+          "anchor": {
+            "quote": "A3 主数据接口必须带内容：endpoints 中 path 为 /api/data 且 items 小于 1 的行必须为 0。",
+            "locator": "material.md#A3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "/api/data 缺失时扫描 0 行降级 NEEDS-MATERIAL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "A4 接口面不得缩水：endpoints 的行数不得少于 7。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "7 = 首页 + 5 个固定接口 + api/node，逐字取自材料",
+          "anchor": {
+            "quote": "A4 接口面不得缩水：endpoints 的行数不得少于 7。",
+            "locator": "material.md#A4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "api/data 里没有节点时 api/node 拼不出来，计数不足即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

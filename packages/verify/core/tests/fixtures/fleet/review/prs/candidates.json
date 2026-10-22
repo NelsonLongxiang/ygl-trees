@@ -1,0 +1,280 @@
+{
+  "candidates": [
+    {
+      "source_clause": "P1 每个已合并 PR 必须登记过验证器放行提交：merged_prs 中 verified_tip 为空的行必须为 0。",
+      "anchor": {
+        "quote": "P1 每个已合并 PR 必须登记过验证器放行提交：merged_prs 中 verified_tip 为空的行必须为 0。",
+        "locator": "material.md#P1"
+      },
+      "title": "已合并 PR 都有放行登记",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "merged_prs",
+          "select": [
+            "pr",
+            "head_sha",
+            "verified_tip"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "verified_tip",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "P2 合并时的 PR head 必须等于验证器放行的提交：merged_prs 中 head_sha 为空、verified_tip 为空，或 head_sha 不等于 verified_tip 的行必须为 0。",
+      "anchor": {
+        "quote": "P2 合并时的 PR head 必须等于验证器放行的提交：merged_prs 中 head_sha 为空、verified_tip 为空，或 head_sha 不等于 verified_tip 的行必须为 0。",
+        "locator": "material.md#P2"
+      },
+      "title": "合并的 head = 放行提交",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "merged_prs",
+          "select": [
+            "pr",
+            "head_sha",
+            "verified_tip"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "head_sha",
+                "op": "is null"
+              },
+              {
+                "col": "verified_tip",
+                "op": "is null"
+              },
+              {
+                "col": "head_sha",
+                "op": "!=",
+                "value": {
+                  "col": "verified_tip"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "P3 放行证据必须存在且结论为 PASS：merged_prs 中 evidence_overall 不为 PASS 的行必须为 0。",
+      "anchor": {
+        "quote": "P3 放行证据必须存在且结论为 PASS：merged_prs 中 evidence_overall 不为 PASS 的行必须为 0。",
+        "locator": "material.md#P3"
+      },
+      "title": "放行证据存在且为 PASS",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "merged_prs",
+          "select": [
+            "pr",
+            "verify_run",
+            "evidence_overall"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "evidence_overall",
+                "op": "!=",
+                "value": "PASS"
+              },
+              {
+                "col": "evidence_overall",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "P4 放行证据验的必须是同一个提交：merged_prs 中 evidence_sha 为空，或 evidence_sha 不等于 verified_tip 的行必须为 0。",
+      "anchor": {
+        "quote": "P4 放行证据验的必须是同一个提交：merged_prs 中 evidence_sha 为空，或 evidence_sha 不等于 verified_tip 的行必须为 0。",
+        "locator": "material.md#P4"
+      },
+      "title": "放行证据验的是同一提交",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "merged_prs",
+          "select": [
+            "pr",
+            "verified_tip",
+            "evidence_sha"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "evidence_sha",
+                "op": "is null"
+              },
+              {
+                "col": "evidence_sha",
+                "op": "!=",
+                "value": {
+                  "col": "verified_tip"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "P6 归档形态的放行证据必须通过归档自校验：merged_prs 中 evidence_kind 为 archive，且 evidence_archive_ok 为空或为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "P6 归档形态的放行证据必须通过归档自校验：merged_prs 中 evidence_kind 为 archive，且 evidence_archive_ok 为空或为 0 的行必须为 0。",
+        "locator": "material.md#P6"
+      },
+      "title": "归档证据通过自校验",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "merged_prs",
+          "select": [
+            "pr",
+            "verify_run",
+            "evidence_archive_ok"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "evidence_kind",
+                "op": "=",
+                "value": "archive"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "evidence_archive_ok",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "evidence_archive_ok",
+                    "op": "=",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "P7 放行证据形态只能是 archive，legacy-summary 只限 format v2 之前的登记：merged_prs 中 evidence_kind 为空、evidence_kind 既不是 archive 也不是 legacy-summary，或 evidence_kind 为 legacy-summary 而 pr 不在 4、5、13、15、16 之中的行必须为 0。",
+      "anchor": {
+        "quote": "P7 放行证据形态只能是 archive，legacy-summary 只限 format v2 之前的登记：merged_prs 中 evidence_kind 为空、evidence_kind 既不是 archive 也不是 legacy-summary，或 evidence_kind 为 legacy-summary 而 pr 不在 4、5、13、15、16 之中的行必须为 0。",
+        "locator": "material.md#P7"
+      },
+      "title": "证据形态受限（legacy 只限旧登记）",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "merged_prs",
+          "select": [
+            "pr",
+            "evidence_kind"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "evidence_kind",
+                "op": "is null"
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "evidence_kind",
+                    "op": "!=",
+                    "value": "archive"
+                  },
+                  {
+                    "col": "evidence_kind",
+                    "op": "!=",
+                    "value": "legacy-summary"
+                  }
+                ]
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "evidence_kind",
+                    "op": "=",
+                    "value": "legacy-summary"
+                  },
+                  {
+                    "op": "not",
+                    "conditions": [
+                      {
+                        "col": "pr",
+                        "op": "in",
+                        "value": [
+                          4,
+                          5,
+                          13,
+                          15,
+                          16
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "P5 交付面不缩水：merged_prs 的行数不得少于 3。",
+      "anchor": {
+        "quote": "P5 交付面不缩水：merged_prs 的行数不得少于 3。",
+        "locator": "material.md#P5"
+      },
+      "title": "交付面不缩水",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "merged_prs",
+          "select": []
+        },
+        "op": ">=",
+        "value": 3
+      }
+    }
+  ]
+}

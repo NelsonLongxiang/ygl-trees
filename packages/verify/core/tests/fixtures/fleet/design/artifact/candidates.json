@@ -1,0 +1,377 @@
+{
+  "candidates": [
+    {
+      "source_clause": "A1 artifact 的每个色令牌在两套主题下都必须与 DESIGN.md 同键取值一致，且 DESIGN.md 的每个色键都必须出现在 artifact 里：artifact_values 中 kind 为 palette，且 artifact_value 为空、design_value 为空或两者不相等的行必须为 0。",
+      "anchor": {
+        "quote": "A1 artifact 的每个色令牌在两套主题下都必须与 DESIGN.md 同键取值一致，且 DESIGN.md 的每个色键都必须出现在 artifact 里：artifact_values 中 kind 为 palette，且 artifact_value 为空、design_value 为空或两者不相等的行必须为 0。",
+        "locator": "material.md#A1"
+      },
+      "title": "artifact 色令牌与 DESIGN.md 一致且覆盖全部色键",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_values",
+          "select": [
+            "token",
+            "theme",
+            "key",
+            "artifact_value",
+            "design_value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "kind",
+                "op": "=",
+                "value": "palette"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "artifact_value",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "design_value",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "artifact_value",
+                    "op": "!=",
+                    "value": {
+                      "col": "design_value"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A2 artifact 记录的知识图谱实体配色必须与组件实际用色一致：artifact_values 中 kind 为 entity，且 artifact_value 为空、design_value 为空或两者不相等的行必须为 0。",
+      "anchor": {
+        "quote": "A2 artifact 记录的知识图谱实体配色必须与组件实际用色一致：artifact_values 中 kind 为 entity，且 artifact_value 为空、design_value 为空或两者不相等的行必须为 0。",
+        "locator": "material.md#A2"
+      },
+      "title": "实体配色与组件实际用色一致",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_values",
+          "select": [
+            "token",
+            "theme",
+            "key",
+            "artifact_value",
+            "design_value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "kind",
+                "op": "=",
+                "value": "entity"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "artifact_value",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "design_value",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "artifact_value",
+                    "op": "!=",
+                    "value": {
+                      "col": "design_value"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A3 artifact 的圆角与间距档位必须与 DESIGN.md 一致：artifact_values 中 kind 为 scale，且 artifact_value 为空、design_value 为空或两者不相等的行必须为 0。",
+      "anchor": {
+        "quote": "A3 artifact 的圆角与间距档位必须与 DESIGN.md 一致：artifact_values 中 kind 为 scale，且 artifact_value 为空、design_value 为空或两者不相等的行必须为 0。",
+        "locator": "material.md#A3"
+      },
+      "title": "圆角 / 间距档位与 DESIGN.md 一致",
+      "severity": "S2",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_values",
+          "select": [
+            "token",
+            "key",
+            "artifact_value",
+            "design_value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "kind",
+                "op": "=",
+                "value": "scale"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "artifact_value",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "design_value",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "artifact_value",
+                    "op": "!=",
+                    "value": {
+                      "col": "design_value"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A4 artifact 的版本戳必须指向能在被验仓库解析的提交：artifact_refs 中 resolvable 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "A4 artifact 的版本戳必须指向能在被验仓库解析的提交：artifact_refs 中 resolvable 为 0 的行必须为 0。",
+        "locator": "material.md#A4"
+      },
+      "title": "版本戳提交可解析",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_refs",
+          "select": [
+            "stamp",
+            "ref",
+            "resolvable"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "resolvable",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A5 artifact 引用的源文件路径必须在被验提交里存在：artifact_paths 中 present 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "A5 artifact 引用的源文件路径必须在被验提交里存在：artifact_paths 中 present 为 0 的行必须为 0。",
+        "locator": "material.md#A5"
+      },
+      "title": "artifact 引用的源文件存在",
+      "severity": "S2",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_paths",
+          "select": [
+            "path",
+            "present"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "present",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A6 artifact 的色令牌必须覆盖两套主题：artifact_values 中 kind 为 palette 的行数不得少于 38（19 个色键 × 2 套主题）。",
+      "anchor": {
+        "quote": "A6 artifact 的色令牌必须覆盖两套主题：artifact_values 中 kind 为 palette 的行数不得少于 38（19 个色键 × 2 套主题）。",
+        "locator": "material.md#A6"
+      },
+      "title": "artifact 色令牌覆盖两主题",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "artifact_values",
+          "select": [],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "kind",
+                "op": "=",
+                "value": "palette"
+              }
+            ]
+          }
+        },
+        "op": ">=",
+        "value": 38
+      }
+    },
+    {
+      "source_clause": "A7 两处版本戳都必须在：artifact_refs 的行数不得少于 2。",
+      "anchor": {
+        "quote": "A7 两处版本戳都必须在：artifact_refs 的行数不得少于 2。",
+        "locator": "material.md#A7"
+      },
+      "title": "两处版本戳都在",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "artifact_refs",
+          "select": []
+        },
+        "op": ">=",
+        "value": 2
+      }
+    },
+    {
+      "source_clause": "A8 artifact 的其余取值（描边、阴影、DESIGN.md 没有档位的圆角）都必须写在 DESIGN.md 里：artifact_values 中 kind 为 literal，且 design_occurrences 为空或小于 1 的行必须为 0。",
+      "anchor": {
+        "quote": "A8 artifact 的其余取值（描边、阴影、DESIGN.md 没有档位的圆角）都必须写在 DESIGN.md 里：artifact_values 中 kind 为 literal，且 design_occurrences 为空或小于 1 的行必须为 0。",
+        "locator": "material.md#A8"
+      },
+      "title": "其余取值写在 DESIGN.md",
+      "severity": "S2",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_values",
+          "select": [
+            "token",
+            "theme",
+            "artifact_value",
+            "design_occurrences"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "kind",
+                "op": "=",
+                "value": "literal"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "design_occurrences",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "design_occurrences",
+                    "op": "<",
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A9 版本戳提交的 DESIGN.md 色板必须与被验提交逐键一致：artifact_ref_palette 中 ref_value 为空、target_value 为空或两者不相等的行必须为 0。",
+      "anchor": {
+        "quote": "A9 版本戳提交的 DESIGN.md 色板必须与被验提交逐键一致：artifact_ref_palette 中 ref_value 为空、target_value 为空或两者不相等的行必须为 0。",
+        "locator": "material.md#A9"
+      },
+      "title": "版本戳提交色板与被验提交一致",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "artifact_ref_palette",
+          "select": [
+            "stamp",
+            "ref",
+            "theme",
+            "key",
+            "ref_value",
+            "target_value"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "ref_value",
+                "op": "is null"
+              },
+              {
+                "col": "target_value",
+                "op": "is null"
+              },
+              {
+                "col": "ref_value",
+                "op": "!=",
+                "value": {
+                  "col": "target_value"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "A10 两处版本戳的色板都必须逐键比到：artifact_ref_palette 的行数不得少于 76（2 处版本戳 × 19 个色键 × 2 套主题）。",
+      "anchor": {
+        "quote": "A10 两处版本戳的色板都必须逐键比到：artifact_ref_palette 的行数不得少于 76（2 处版本戳 × 19 个色键 × 2 套主题）。",
+        "locator": "material.md#A10"
+      },
+      "title": "两处版本戳色板都比到",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "artifact_ref_palette",
+          "select": []
+        },
+        "op": ">=",
+        "value": 76
+      }
+    }
+  ]
+}

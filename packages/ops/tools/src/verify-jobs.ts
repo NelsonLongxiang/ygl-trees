@@ -125,6 +125,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   const res = await prepareSpec(text, {
     runner: fileRunner(candidates),
     reviewer: fileReviewer(reviews),
+    // #34: same candidate↔review pairing as CLI prepare (orphan review blocks ready)
+    reviewedClauses: reviews.map((r) => String(r?.source_clause ?? "")),
     redteam: minimalRedTeam(schema.ddl),
     materialIndex: { text, files: material.files.map((f) => ({ path: f.path, sha256: f.sha256, mime: f.mime, size: f.size })) },
     schemaProbe: probeOfDb(snap.path),

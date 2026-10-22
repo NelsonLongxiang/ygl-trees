@@ -101,9 +101,16 @@ export interface PrepareOptions {
   specId?: string;
   title?: string;
   domain?: string;
-  /** #34: named exemptions for frozen-material clauses that no VU should cover
-   *  (headings/notes); every other clause must be claimed by a frozen VU. */
+  /** #34: named exemptions (clause id or exact text, never a line number) for
+   *  declared clauses that no VU should cover; every other clause must be
+   *  claimed by a frozen VU. */
   coverageExempt?: CoverageExemption[];
+  /** #34: the declared clause pattern (first capture group = clause id);
+   *  default DEFAULT_CLAUSE_PATTERN, the fleet convention `^([A-Z][0-9]+) `. */
+  clausePattern?: RegExp;
+  /** #34: the source_clauses the caller's review file carries; one that no
+   *  candidate claims is an orphan review and blocks ready (P3). */
+  reviewedClauses?: string[];
   /** 之前已冻结的 materials_sha256 集合（防"旧材料重放"） */
   knownMaterialHashes?: string[];
 }
@@ -137,7 +144,7 @@ function hasTimeFunction(sql: string): boolean {
 }
 
 /** P1：判据必须能在冻结材料里逐字找到，锚点必须落在 material_index 声明的 locator 上 */
-function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex): string | null {
+function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex, inventory?: ClauseInventory): string | null {
   if (!c.source_clause || !containsVerbatim(materialText, c.source_clause)) {
     return "source_clause is not a verbatim excerpt of the frozen materials (fabricated criterion)";
   }
@@ -151,103 +158,220 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex): s
       return `anchor.locator ${JSON.stringify(c.anchor.locator)} is not declared by the material index (wrong cell/page?)`;
     }
   }
-  const clauseLine = clauseLineOf(c.anchor.locator);
-  if (clauseLine !== null) {
-    const clauses = materialClauses(materialText);
-    const clause = clauses.find((x) => x.line === clauseLine);
-    if (!clause) {
-      return `anchor.locator ${JSON.stringify(c.anchor.locator)} names clause #${clauseLine} but the frozen material has ${clauses.length} clause(s)`;
-    }
-    if (!clause.text.includes(c.anchor.quote.trim()) && !c.anchor.quote.includes(clause.text)) {
-      return `anchor.locator ${JSON.stringify(c.anchor.locator)} is clause "#${clause.text.slice(0, 30)}" but the quoted text is not in that clause`;
-    }
-  }
+  const locErr = checkLocator(c.anchor.locator, c.anchor.quote, inventory ?? clauseInventory(materialText));
+  if (locErr) return locErr;
   if (UNDECIDABLE.test(c.source_clause)) {
     return "criterion contains undecidable wording (应尽量/建议/合理/酌情) — machine cannot judge it";
   }
   return null;
 }
 
-/** GitHub #34: frozen-material clause coverage. A material line is a "clause";
- *  every clause must be claimed by at least one frozen candidate (or named in an
- *  exemption) — otherwise prepare freezes a ready spec that silently dropped a
- *  rule (PASSing data that should FAIL). Locators of the shape `#L<n>` / `#S<n>`
- *  (optionally prefixed `material.txt`) must name an existing clause. */
+/** GitHub #34 (follow-up to 0.114.1): frozen-material clause scope **by rule**.
+ *
+ *  A clause is a material line that matches the declared clause pattern; the
+ *  pattern's first capture group is the clause id. The default is the fleet
+ *  convention `^([A-Z][0-9]+) ` (an id, then a space: `S1 …`, `P12 …`). Titles,
+ *  `##` headings, blank lines and prose (`验收对象：…`) are out of scope by rule —
+ *  never by exemption. A material with no matching line declares no clauses:
+ *  coverage is reported as not enforced (`coverage.clauses:0`) instead of
+ *  inventing clauses out of prose (the 0.114.1 regression).
+ *
+ *  Locator grammar (the fragment after the last `#`, file prefix optional):
+ *    `#<id>`      — a declared clause id; resolved first, so `#S1`/`#L2` are ids;
+ *    `#line=<n>`  — physical line n (1-based) of the frozen material.
+ *  When the material declares clauses, any other `#fragment` is a P1 rejection
+ *  (a typo or a stale id must not pass as an unverified anchor). Locators
+ *  without `#` (`bills!B7`, `p3`) stay governed by the material index. */
+export const DEFAULT_CLAUSE_PATTERN = /^([A-Z][0-9]+) /;
+
 export interface CoverageExemption {
-  locator: string;
+  /** clause id (`S3`) */
+  id?: string;
+  /** `#S3` / `material.md#S3` — must resolve as a clause id; `#line=<n>` is refused */
+  locator?: string;
+  /** exact clause line text (trimmed) */
+  text?: string;
   reason?: string;
 }
 
 export interface MaterialClause {
+  id: string;
   locator: string;
   text: string;
+  /** physical line (1-based), for humans only — never an anchor */
   line: number;
 }
 
-export function materialClauses(materialText: string): MaterialClause[] {
-  const out: MaterialClause[] = [];
-  materialText.split(/\r?\n/).forEach((raw, i) => {
-    const text = raw.trim();
-    if (text) out.push({ locator: `#L${i + 1}`, text, line: i + 1 });
-  });
-  return out;
-}
-
-/** Parse a clause-style locator (`#L3`, `#S3`, `material.txt#L3`); null = not
- *  clause-style (e.g. `bills!B7` / `p3` stay governed by the material index). */
-export function clauseLineOf(locator: string): number | null {
-  if (typeof locator !== "string") return null;
-  const at = locator.lastIndexOf("#");
-  if (at < 0) return null;
-  const m = /^#([LS])(\d+)$/i.exec(locator.slice(at));
-  if (!m) return null;
-  return Number(m[2]);
-}
-
-export interface CoverageResult {
-  clauses: number;
-  covered: number;
-  exempted: number;
-  uncovered: Array<{ locator: string; text: string }>;
+export interface ClauseInventory {
+  pattern: string;
+  clauses: MaterialClause[];
+  /** physical lines of the material (for `#line=<n>`) */
+  lines: string[];
+  /** declaration problems (duplicate ids) */
   problems: string[];
 }
 
+/** Validate a caller-supplied clause pattern (string or RegExp); it needs a
+ *  capture group for the id. Returns the RegExp or a usage error message. */
+export function compileClausePattern(p: string | RegExp | undefined): RegExp | string {
+  if (p === undefined) return DEFAULT_CLAUSE_PATTERN;
+  let re: RegExp;
+  try {
+    re = typeof p === "string" ? new RegExp(p) : p;
+  } catch (e) {
+    return `clause pattern ${JSON.stringify(String(p))} is not a valid regular expression: ${(e as Error).message}`;
+  }
+  const flags = re.flags.replace(/[gy]/g, "");
+  // an alternation with the empty string always matches; its length = groups + 1
+  if (new RegExp(`(?:${re.source})|`, flags).exec("")!.length < 2) {
+    return `clause pattern ${JSON.stringify(re.source)} needs a capture group for the clause id, e.g. "^([A-Z][0-9]+) "`;
+  }
+  return new RegExp(re.source, flags);
+}
+
+export function clauseInventory(materialText: string, pattern: RegExp = DEFAULT_CLAUSE_PATTERN): ClauseInventory {
+  const lines = materialText.split(/\r?\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop(); // trailing newline ends the last line
+  const clauses: MaterialClause[] = [];
+  const problems: string[] = [];
+  const firstLine = new Map<string, number>();
+  lines.forEach((raw, i) => {
+    const m = pattern.exec(raw);
+    const id = m?.[1]?.trim();
+    if (!m || !id) return;
+    const prev = firstLine.get(id);
+    if (prev !== undefined) {
+      problems.push(`clause id ${id} is declared more than once (lines ${prev} and ${i + 1}) — ids must be unique`);
+      return;
+    }
+    firstLine.set(id, i + 1);
+    clauses.push({ id, locator: `#${id}`, text: raw.trim(), line: i + 1 });
+  });
+  return { pattern: pattern.source, clauses, lines, problems };
+}
+
+/** Back-compat name (0.114.1): now the declared-clause list, not every line. */
+export function materialClauses(materialText: string, pattern?: RegExp): MaterialClause[] {
+  return clauseInventory(materialText, pattern).clauses;
+}
+
+export type LocatorRef = { kind: "clause"; clause: MaterialClause } | { kind: "line"; line: number } | { kind: "unresolved"; fragment: string } | null;
+
+/** Resolve a locator against the inventory; null = no `#` fragment (index-governed). */
+export function resolveLocator(locator: string, inv: ClauseInventory): LocatorRef {
+  if (typeof locator !== "string") return null;
+  const at = locator.lastIndexOf("#");
+  if (at < 0) return null;
+  const fragment = locator.slice(at + 1);
+  const clause = inv.clauses.find((c) => c.id === fragment);
+  if (clause) return { kind: "clause", clause };
+  const lm = /^line=([0-9]+)$/.exec(fragment);
+  if (lm) return { kind: "line", line: Number(lm[1]) };
+  return { kind: "unresolved", fragment };
+}
+
+function checkLocator(locator: string, quote: string, inv: ClauseInventory): string | null {
+  const ref = resolveLocator(locator, inv);
+  if (!ref) return null;
+  const q = quote.trim();
+  if (ref.kind === "clause") {
+    if (!ref.clause.text.includes(q) && !q.includes(ref.clause.text)) {
+      return `anchor.locator ${JSON.stringify(locator)} is clause ${ref.clause.id} ("${ref.clause.text.slice(0, 30)}") but the quoted text is not in that clause`;
+    }
+    return null;
+  }
+  if (ref.kind === "line") {
+    const text = (inv.lines[ref.line - 1] ?? "").trim();
+    if (ref.line < 1 || ref.line > inv.lines.length) {
+      return `anchor.locator ${JSON.stringify(locator)} names line ${ref.line} but the frozen material has ${inv.lines.length} line(s)`;
+    }
+    if (!text) return `anchor.locator ${JSON.stringify(locator)} names line ${ref.line}, which is blank`;
+    if (!text.includes(q) && !q.includes(text)) {
+      return `anchor.locator ${JSON.stringify(locator)} is line ${ref.line} ("${text.slice(0, 30)}") but the quoted text is not on that line`;
+    }
+    return null;
+  }
+  // No declared clauses → nothing to resolve an id against (0.114.0 behaviour:
+  // the fragment is unverified, not invented). With clauses, it must resolve.
+  if (inv.clauses.length === 0) return null;
+  const ids = inv.clauses.map((c) => c.id);
+  return `anchor.locator ${JSON.stringify(locator)} names clause ${JSON.stringify(ref.fragment)}, which the frozen material does not declare (${ids.length} clause(s): ${ids.slice(0, 12).join(", ")}${ids.length > 12 ? ", …" : ""}); use #<clause id> or #line=<n>`;
+}
+
+export interface CoverageResult {
+  /** declared clause pattern (source) */
+  pattern: string;
+  clauses: number;
+  covered: number;
+  exempted: number;
+  uncovered: Array<{ id: string; locator: string; line: number; text: string }>;
+  problems: string[];
+}
+
+/** Every declared clause must be claimed by a P1-passing candidate — one whose
+ *  anchor.locator resolves to that clause (or its line), or whose source_clause
+ *  contains the whole clause line — or be named in an exemption. A fragment
+ *  quote without a resolving locator claims nothing (`S1` must not cover `S10`). */
 export function checkCoverage(
   materialText: string,
   candidates: PrepareCandidate[],
   exempt: CoverageExemption[] = [],
+  pattern: RegExp = DEFAULT_CLAUSE_PATTERN,
 ): CoverageResult {
-  const clauses = materialClauses(materialText);
-  const byLine = new Map(clauses.map((c) => [c.line, c]));
-  const exempted = new Set<number>();
-  const problems: string[] = [];
+  const inv = clauseInventory(materialText, pattern);
+  const problems = [...inv.problems];
+  const covered = new Set<string>();
+  for (const c of candidates) {
+    const sc = String(c?.source_clause ?? "").trim();
+    const ref = resolveLocator(String(c?.anchor?.locator ?? ""), inv);
+    for (const clause of inv.clauses) {
+      const byRef = (ref?.kind === "clause" && ref.clause.id === clause.id) || (ref?.kind === "line" && ref.line === clause.line);
+      if (byRef || (sc && sc.includes(clause.text))) covered.add(clause.id);
+    }
+  }
+  const exempted = new Set<string>();
   for (const [i, e] of exempt.entries()) {
-    const line = clauseLineOf(String(e?.locator ?? ""));
-    if (line === null) {
-      problems.push(`coverage exemption #${i} has a malformed locator ${JSON.stringify(e?.locator)} (expected #L<n>/#S<n>)`);
+    const label = JSON.stringify(e?.id ?? e?.locator ?? e?.text);
+    let clause: MaterialClause | undefined;
+    if (typeof e?.id === "string") clause = inv.clauses.find((x) => x.id === e.id);
+    else if (typeof e?.locator === "string") {
+      const ref = resolveLocator(e.locator.includes("#") ? e.locator : `#${e.locator}`, inv);
+      if (ref?.kind === "line") {
+        problems.push(`coverage exemption #${i} (${label}) anchors on a line number — exemptions name a clause id or its exact text, so an edit above it cannot retarget them`);
+        continue;
+      }
+      if (ref?.kind === "clause") clause = ref.clause;
+    } else if (typeof e?.text === "string") clause = inv.clauses.find((x) => x.text === e.text!.trim());
+    else {
+      problems.push(`coverage exemption #${i} names no clause (expected { id | locator | text, reason })`);
       continue;
     }
-    if (!byLine.has(line)) {
-      problems.push(`coverage exemption #${i} names ${e.locator} but the frozen material has ${clauses.length} clause(s)`);
+    if (!clause) {
+      problems.push(`coverage exemption #${i} (${label}) names no declared clause (${inv.clauses.length} clause(s) match ${inv.pattern})`);
       continue;
     }
     if (typeof e.reason !== "string" || !e.reason.trim()) {
-      problems.push(`coverage exemption #${i} (${e.locator}) needs a reason — an unnamed exemption is not auditable`);
+      problems.push(`coverage exemption #${i} (${clause.id}) needs a reason — an unnamed exemption is not auditable`);
       continue;
     }
-    exempted.add(line);
+    if (covered.has(clause.id)) {
+      problems.push(`coverage exemption #${i} (${clause.id}) exempts a clause a candidate already covers — drop the exemption`);
+      continue;
+    }
+    exempted.add(clause.id);
   }
-  const covered = new Set<number>();
-  for (const clause of clauses) {
-    if (exempted.has(clause.line)) continue;
-    const hit = candidates.some((c) => {
-      const sc = String(c?.source_clause ?? "").trim();
-      return sc && (sc.includes(clause.text) || clause.text.includes(sc));
-    });
-    if (hit) covered.add(clause.line);
-  }
-  const uncovered = clauses.filter((c) => !covered.has(c.line) && !exempted.has(c.line)).map((c) => ({ locator: c.locator, text: c.text }));
-  return { clauses: clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
+  const uncovered = inv.clauses
+    .filter((c) => !covered.has(c.id) && !exempted.has(c.id))
+    .map((c) => ({ id: c.id, locator: c.locator, line: c.line, text: c.text }));
+  return { pattern: inv.pattern, clauses: inv.clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
+}
+
+/** GitHub #34 negative fixture "orphan review": a review whose source_clause no
+ *  candidate carries means a criterion was dropped or renamed after review — the
+ *  1:1 candidate↔review pairing is part of the construction evidence. */
+export function orphanReviews(candidates: Array<{ source_clause?: unknown }>, reviewedClauses: string[]): string[] {
+  const claimed = new Set(candidates.map((c) => String(c?.source_clause ?? "")));
+  return reviewedClauses.filter((s) => !claimed.has(s));
 }
 
 /** P2 子步骤：谓词里的表/列必须在探针里存在（E5②/E5⑤：sql、sql-pair、count、exists 共用） */
@@ -469,15 +593,25 @@ export interface LintResult {
 
 export function lintCandidates(
   candidates: PrepareCandidate[],
-  opts: { materialText?: string; materialIndex?: MaterialIndex; schema?: SchemaProbe; coverageExempt?: CoverageExemption[] } = {},
+  opts: {
+    materialText?: string;
+    materialIndex?: MaterialIndex;
+    schema?: SchemaProbe;
+    coverageExempt?: CoverageExemption[];
+    clausePattern?: RegExp;
+    /** source_clauses of the review file, when given (`--reviews`) */
+    reviewedClauses?: string[];
+  } = {},
 ): LintResult {
   const issues: LintIssue[] = [];
   let coverage: CoverageResult | null = null;
   const p1Passing: PrepareCandidate[] = [];
+  const pattern = opts.clausePattern ?? DEFAULT_CLAUSE_PATTERN;
+  const inventory = opts.materialText !== undefined ? clauseInventory(opts.materialText, pattern) : undefined;
   candidates.forEach((c, index) => {
     let stage = "P1";
     let reason: string | null = null;
-    if (opts.materialText !== undefined) reason = p1(c, opts.materialText, opts.materialIndex);
+    if (opts.materialText !== undefined) reason = p1(c, opts.materialText, opts.materialIndex, inventory);
     if (!reason) {
       p1Passing.push(c);
       stage = "P2";
@@ -491,11 +625,22 @@ export function lintCandidates(
     // #34: a clause is "claimed" once some candidate passed P1 (is a verbatim
     // clause claim). P2/P3 rejection already blocks ready on its own; coverage is
     // the orthogonal guard against a clause nobody even tried to assert.
-    coverage = checkCoverage(opts.materialText, p1Passing, opts.coverageExempt ?? []);
+    coverage = checkCoverage(opts.materialText, p1Passing, opts.coverageExempt ?? [], pattern);
     for (const u of coverage.uncovered) {
-      issues.push({ index: -1, source_clause: u.text, stage: "COVERAGE", reason: `clause ${u.locator} is not covered by any candidate — add a candidate or declare a named exemption` });
+      issues.push({ index: -1, source_clause: u.text, stage: "COVERAGE", reason: `clause ${u.id} is not covered by any candidate — add a candidate or declare a named exemption` });
     }
     for (const p of coverage.problems) issues.push({ index: -1, source_clause: "", stage: "COVERAGE", reason: p });
+  }
+  if (opts.reviewedClauses) {
+    for (const s of orphanReviews(candidates, opts.reviewedClauses)) {
+      issues.push({ index: -1, source_clause: s, stage: "REVIEW", reason: "orphan review: no candidate carries this source_clause (dropped or renamed criterion?)" });
+    }
+    const reviewed = new Set(opts.reviewedClauses);
+    candidates.forEach((c, index) => {
+      if (!reviewed.has(String(c?.source_clause ?? ""))) {
+        issues.push({ index, source_clause: c.source_clause, stage: "REVIEW", reason: "candidate has no review (P3 would reject it: self-review incomplete)" });
+      }
+    });
   }
   return {
     checked: candidates.length,
@@ -588,6 +733,9 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
 
   const kept: Array<{ candidate: PrepareCandidate; vu: VerifyUnit }> = [];
   const p1Passing: PrepareCandidate[] = [];
+  const pattern = opts.clausePattern ?? DEFAULT_CLAUSE_PATTERN;
+  const inventory = clauseInventory(materialText, pattern);
+  const seenClauses = new Set<string>();
   // Deterministic-rejection dedupe key (#21): a replayed P1/P2 verdict is the
   // same fact, not a new rejection — round only exists for P3 retries.
   const rejectedKeys = new Set<string>();
@@ -613,7 +761,8 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     feedback = [];
     let reachedP3 = 0;
     for (const [i, candidate] of candidates.entries()) {
-      const r1 = p1(candidate, materialText, opts.materialIndex);
+      seenClauses.add(String(candidate?.source_clause ?? ""));
+      const r1 = p1(candidate, materialText, opts.materialIndex, inventory);
       if (r1) {
         if (pushDeterministic(candidate.source_clause, "P1", r1)) feedback.push(r1);
         continue;
@@ -650,14 +799,19 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
 
   if (kept.length > 0) {
-    // #34: every frozen clause must be claimed by a kept VU (or exempted).
-    const coverage = checkCoverage(materialText, p1Passing, opts.coverageExempt ?? []);
-    if (coverage.uncovered.length || coverage.problems.length) {
+    // #34: every declared clause must be claimed by a P1-passing candidate (or
+    // exempted by id/text), and every review must pair with a candidate.
+    const coverage = checkCoverage(materialText, p1Passing, opts.coverageExempt ?? [], pattern);
+    const orphans = orphanReviews([...seenClauses].map((source_clause) => ({ source_clause })), opts.reviewedClauses ?? []);
+    if (coverage.uncovered.length || coverage.problems.length || orphans.length) {
       const diagnostics: Array<{ stage: string; message: string }> = coverage.uncovered.map((u) => ({
         stage: "P1c",
-        message: `clause ${u.locator} is not covered by any frozen VU: "${u.text.slice(0, 60)}" — add a candidate or declare --coverage-exempt (an unnamed drop must not freeze)`,
+        message: `clause ${u.id} is not covered by any frozen VU: "${u.text.slice(0, 60)}" — add a candidate or declare --coverage-exempt (an unnamed drop must not freeze)`,
       }));
       diagnostics.push(...coverage.problems.map((p) => ({ stage: "P1c", message: p })));
+      diagnostics.push(
+        ...orphans.map((o) => ({ stage: "P3", message: `orphan review: no candidate carries source_clause "${o.slice(0, 60)}" — a reviewed criterion was dropped or renamed` })),
+      );
       return {
         verdict: "error",
         units: kept.map((k) => k.vu),
@@ -724,7 +878,13 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     };
   }
 
-  // P5：冻版
+  // P5：冻版（#34: the clause scope the coverage gate ran with is part of the record）
+  diagnostics.push({
+    stage: "P1c",
+    message: inventory.clauses.length
+      ? `clause coverage: ${inventory.clauses.length} clause(s) declared by ${inventory.pattern}, all covered or exempted`
+      : `clause coverage not enforced: no material line matches ${inventory.pattern} (number criteria "<id> <text>" to enable it)`,
+  });
   diagnostics.push({ stage: "P5", message: `frozen with ${spec.vu.length} units after ${round} round(s)` });
   return { verdict: "ready", spec, units: spec.vu, rejected, rounds: round, materials_sha256: materialsSha, diagnostics };
 }

@@ -1,0 +1,84 @@
+{
+  "candidates": [
+    {
+      "source_clause": "S1 必须拿到上游的最新状态：sync_state 中 fetched_ok 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "S1 必须拿到上游的最新状态：sync_state 中 fetched_ok 为 0 的行必须为 0。",
+        "locator": "material.md#S1"
+      },
+      "title": "拿到上游最新状态",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "sync_state",
+          "select": [
+            "fetched_ok",
+            "origin_sha"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "fetched_ok",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "S2 本地与上游的差异只能来自仍在评审中的 PR：sync_state 中 uncovered_files 大于 0 的行必须为 0。",
+      "anchor": {
+        "quote": "S2 本地与上游的差异只能来自仍在评审中的 PR：sync_state 中 uncovered_files 大于 0 的行必须为 0。",
+        "locator": "material.md#S2"
+      },
+      "title": "差异只来自评审中的 PR",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "sync_state",
+          "select": [
+            "origin_sha",
+            "local_sha",
+            "diff_files",
+            "uncovered_files"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "uncovered_files",
+                "op": ">",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "S3 同步状态必须被测量：sync_state 的行数不得少于 1。",
+      "anchor": {
+        "quote": "S3 同步状态必须被测量：sync_state 的行数不得少于 1。",
+        "locator": "material.md#S3"
+      },
+      "title": "同步状态被测量",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "sync_state",
+          "select": []
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}
