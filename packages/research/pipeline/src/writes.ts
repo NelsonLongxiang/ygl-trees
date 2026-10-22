@@ -35,19 +35,36 @@ import { emitEvent, YglEvent } from "../../../core/text/src/eventbus";
  * rollback (fn throws → transaction rejects) discards the pending bag:
  * zero ghost events by construction (acceptance ① of the batch). */
 export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promise<T>): Promise<T> {
-  const pending: YglEvent[] = [];
-  const result = await ds.transaction(async (mgr) => {
-    (mgr as any).__yglPendingEvents = pending;
-    return fn(mgr);
-  });
-  // 0.91a review (direct-55b4ca85): never block the write path — a throwing
-  // subscriber must not surface out of a COMMITTED transaction (the write is
-  // durable; only the notification is lost, same contract as the old
-  // require-in-catch form).
-  try {
-    for (const ev of pending) emitEvent(ev);
-  } catch { /* bus subscribers are best-effort — write already committed */ }
-  return result;
+  // Batch-16 (user high-concurrency kb import): concurrent writers can exhaust
+  // busy_timeout; a transaction that failed to ACQUIRE the lock rolls back
+  // cleanly, so retry the whole body a few times with jittered backoff.
+  // Content-level dedupe (hash checks inside the bodies) keeps this idempotent.
+  let attempt = 0;
+  for (;;) {
+    const pending: YglEvent[] = [];
+    try {
+      const result = await ds.transaction(async (mgr) => {
+        (mgr as any).__yglPendingEvents = pending;
+        return fn(mgr);
+      });
+      // 0.91a review (direct-55b4ca85): never block the write path — a throwing
+      // subscriber must not surface out of a COMMITTED transaction (the write is
+      // durable; only the notification is lost, same contract as the old
+      // require-in-catch form).
+      try {
+        for (const ev of pending) emitEvent(ev);
+      } catch { /* bus subscribers are best-effort — write already committed */ }
+      return result;
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (attempt < 4 && /SQLITE_BUSY|database is locked/i.test(msg)) {
+        attempt++;
+        await new Promise((r) => setTimeout(r, 40 * 2 ** attempt + Math.random() * 60));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 /** 0.89 (PG-A ②): FTS5 shadow tables are SQLite-only virtual tables — the PG
@@ -566,6 +583,22 @@ export async function kbAdd(
       },
       dup: false,
     };
+  });
+}
+
+/** kb rm: base row + FTS shadow + links + event in ONE transaction. The old
+ *  command deleted kb_fts and kb_notes with two autocommit statements, so a
+ *  crash/busy error between them left the shadow out of sync (doctor's
+ *  fts/kb mismatch), which is what users hit under high-concurrency imports. */
+export async function kbRemove(ds: DataSource, id: string): Promise<WriteResult> {
+  return runTx(ds, async (mgr) => {
+    const note = (await mgr.query(`SELECT id,title FROM kb_notes WHERE id=?`, [id])) as any[];
+    if (!note.length) throw new Error(`note not found: ${id}`);
+    await mgr.query(`DELETE FROM kb_links WHERE from_id=? OR to_id=?`, [id, id]);
+    await ftsShadow(mgr, `DELETE FROM kb_fts WHERE id=?`, [id]);
+    await mgr.query(`DELETE FROM kb_notes WHERE id=?`, [id]);
+    await logEvent(mgr, "kb.rm", "kb_note", id, note[0].title);
+    return { row: { id, title: note[0].title }, dup: false };
   });
 }
 
