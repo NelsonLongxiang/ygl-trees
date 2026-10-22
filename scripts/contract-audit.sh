@@ -411,7 +411,7 @@ fi
 
 # ── contract 15: #34 子句覆盖（判据不静默消失）——#34 修正后子句按规则界定：
 #    匹配 `^([A-Z][0-9]+) ` 的行才是子句（标题/散文不是）；#<id> 先按子句 id 解析，行引用写 #line=<n>；
-#    豁免只认 id / 原文，不认行号；舰队真实材料（tests/fixtures/fleet）必须 lint ok。
+#    豁免只认 id / 原文 + 必填 reason，不认行号；舰队真实材料（tests/fixtures/fleet）必须 lint ok 且 prepare ready。
 echo "── contract 15: 子句覆盖（clause coverage）"
 mkdir -p "$WS/cov"
 printf '# 账单验收\n\n验收对象：bills 表。\n\n## 判据\nS1 账面必须平衡。\nL2 金额不得为负。\nS3 日期必须完整。\n' > "$WS/cov/material.txt"
@@ -424,7 +424,7 @@ fs.writeFileSync(`${dir}/exempt.json`, JSON.stringify({ exempt: [{ id: "S3", rea
 fs.writeFileSync(`${dir}/exempt-line.json`, JSON.stringify({ exempt: [{ locator: "#line=8", reason: "line anchor" }] }));
 ' "$WS/cov"
 COVJ=$($Y verify lint-candidates "$WS/cov/candidates.json" --text "$WS/cov/material.txt" --json 2>/dev/null); COVRC=$?
-if [ "$COVRC" = "0" ] && printf '%s' "$COVJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.coverage&&j.coverage.clauses===3&&j.coverage.covered===2&&j.coverage.uncovered.length===1&&j.coverage.uncovered[0].id==='S3'&&j.issues.every(i=>i.stage==='COVERAGE')?0:1)}catch(e){process.exit(1)}})"; then
+if [ "$COVRC" = "0" ] && printf '%s' "$COVJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.coverage_skipped===false&&j.coverage&&j.coverage.clauses===3&&j.coverage.covered===2&&j.coverage.uncovered.length===1&&j.coverage.uncovered[0].id==='S3'&&j.issues.every(i=>i.stage==='COVERAGE')?0:1)}catch(e){process.exit(1)}})"; then
   pass "lint 子句未覆盖 → ok:false + COVERAGE S3（标题/散文不计子句；#S1/#L2 按 id 解析）"
 else
   fail "coverage lint" "rc=$COVRC $(printf '%s' "$COVJ" | head -c 160)"
@@ -441,15 +441,70 @@ if printf '%s' "$COVJ3" | node -e "let s='';process.stdin.on('data',d=>s+=d).on(
 else
   fail "coverage exempt by line" "$(printf '%s' "$COVJ3" | head -c 160)"
 fi
-FLEETBAD=""
-for d in packages/verify/core/tests/fixtures/fleet/*/*/; do
-  FJ=$($Y verify lint-candidates "$d/candidates.json" --text "$d/material.md" --reviews "$d/reviews.json" --json 2>/dev/null)
-  printf '%s' "$FJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.exit(JSON.parse(s).ok===true?0:1)}catch(e){process.exit(1)}})" || FLEETBAD="$FLEETBAD $d"
-done
-if [ -z "$FLEETBAD" ]; then
-  pass "舰队真实材料（fixtures/fleet）lint --text --reviews 全部 ok"
+printf '# 无编号材料\n\n验收对象：bills 表。账面必须平衡。\n' > "$WS/cov/prose.md"
+printf '{"candidates":[{"source_clause":"账面必须平衡。","anchor":{"quote":"账面必须平衡。","locator":"prose.md#line=3"},"checker":{"type":"count","predicate":{"from":"bills","select":[]},"op":">=","value":0}}]}' > "$WS/cov/prose-c.json"
+COVJ4=$($Y verify lint-candidates "$WS/cov/prose-c.json" --text "$WS/cov/prose.md" --json 2>/dev/null)
+if printf '%s' "$COVJ4" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.coverage_skipped===true&&j.coverage.enforced===false&&j.coverage.clauses===0?0:1)}catch(e){process.exit(1)}})"; then
+  pass "无编号材料 → coverage_skipped:true（跳过≠通过，机器可读）"
 else
-  fail "fleet fixtures lint" "$FLEETBAD"
+  fail "coverage skip visible" "$(printf '%s' "$COVJ4" | head -c 160)"
+fi
+# 舰队真实材料（tests/fixtures/fleet，24 份：review 7 + webui 6（含 view）+ fleet 2 + design 9，全部带标题/散文/纪律节）：
+# 每份 lint --text --reviews 必须 ok，submit → prepare --draft 必须 ready（快照 schema 由候选谓词合成，P4 空库红队照跑）。
+# 任何 not-ok / not-ready 都是发布阻断。
+FLEETOUT=$(Y_BIN="dist/bundle/bin.cjs" FX="packages/verify/core/tests/fixtures/fleet" node - "$WS/fleet" <<'NODE' 2>&1
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
+const out = process.argv[2];
+fs.mkdirSync(out, { recursive: true });
+const y = (args) => {
+  const r = spawnSync(process.execPath, [process.env.Y_BIN, "--no-color", ...args, "--json"], { encoding: "utf8" });
+  try { return { rc: r.status, j: JSON.parse(r.stdout.trim()) }; } catch { return { rc: r.status, j: null, raw: (r.stdout + r.stderr).slice(0, 200) }; }
+};
+const schema = (cands) => {
+  const t = new Map();
+  const tb = (n) => t.get(n) ?? t.set(n, new Set()).get(n);
+  const cols = (n, acc) => { if (!n || typeof n !== "object") return; if (Array.isArray(n)) return n.forEach((x) => cols(x, acc)); for (const [k, v] of Object.entries(n)) k === "col" && typeof v === "string" ? acc.add(v.split(".").pop()) : cols(v, acc); };
+  const walk = (n) => {
+    if (!n || typeof n !== "object") return;
+    if (Array.isArray(n)) return n.forEach(walk);
+    const p = n.predicate;
+    if (p && typeof p.from === "string" && !p.from.startsWith("$vu:")) { const s = tb(p.from); (p.select ?? []).forEach((c) => s.add(String(c).split(".").pop())); cols(p.where, s); cols(p.scan, s); cols(p.agg, s); }
+    if (n.against && n.against.from) tb(n.against.from).add(n.against.col);
+    Object.values(n).forEach(walk);
+  };
+  cands.forEach((c) => walk(c.checker));
+  return t;
+};
+let n = 0, bad = 0;
+for (const repo of fs.readdirSync(process.env.FX)) {
+  const rd = path.join(process.env.FX, repo);
+  if (!fs.statSync(rd).isDirectory()) continue;
+  for (const spec of fs.readdirSync(rd)) {
+    const d = path.join(rd, spec), name = `${repo}/${spec}`;
+    const c = path.join(d, "candidates.json"), r = path.join(d, "reviews.json"), m = path.join(d, "material.md");
+    const db = path.join(out, `${repo}-${spec}.sqlite`);
+    const h = new DatabaseSync(db);
+    for (const [t, cs] of schema(JSON.parse(fs.readFileSync(c, "utf8")).candidates)) h.exec(`CREATE TABLE "${t}" (${[...cs].map((x) => `"${x}"`).join(", ") || "x"})`);
+    h.close();
+    n++;
+    const lint = y(["verify", "lint-candidates", c, "--text", m, "--reviews", r, "--db", db]);
+    if (lint.rc !== 0 || lint.j?.ok !== true || lint.j?.coverage_skipped !== false) { bad++; console.log(`✗ ${name} lint ${JSON.stringify(lint.j?.issues ?? lint.raw).slice(0, 160)}`); continue; }
+    const sub = y(["verify", "submit", "--title", name, "--text", m, "--no-meta"]);
+    const prep = y(["verify", "prepare", sub.j?.material_id ?? "", "--candidates", c, "--reviews", r, "--db", db, "--no-meta", "--draft"]);
+    if (prep.rc !== 0 || prep.j?.verdict !== "ready") { bad++; console.log(`✗ ${name} prepare ${JSON.stringify(prep.j?.diagnostics ?? prep.raw).slice(0, 160)}`); }
+  }
+}
+console.log(`fleet fixtures: ${n - bad}/${n}`);
+process.exit(bad || n === 0 ? 1 : 0);
+NODE
+); FLEETRC=$?
+if [ "$FLEETRC" = "0" ]; then
+  pass "舰队真实材料 lint --text --reviews ok + prepare ready（$(printf '%s' "$FLEETOUT" | tail -1)）"
+else
+  fail "fleet fixtures lint+prepare" "$(printf '%s' "$FLEETOUT" | head -c 400)"
 fi
 
 rm -rf "$WS"

@@ -409,14 +409,16 @@ npm **latest=0.114.1**、shasum **`80c0270b…`**；官方字节 **1,530,979 B /
 npm **latest=0.114.2**、shasum **`5b164793…`**；官方字节 **1,531,869 B / sha256 `4b9f3633…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节；远端校验 ETIMEDOUT 按 `--no-network` 本地锚定 +
 ls-remote 双远端复证，非绕过）。
-**#34 修正记录（2026-10-22，未发布；fork PR，验证席 0.114.1/0.114.2 复核的两条 P2）**：证据链——0.114.1 把材料每个非空行当子句
+**#34 修正记录（2026-10-22，未发布；fork PR #38，对齐审查席 #34 设计提案 a–d）**：证据链——0.114.1 把材料每个非空行当子句
 （标题/散文全挂 COVERAGE）且把 `#S<n>`/`#L<n>` 读成行号（与舰队的子句 id 锚点冲突），舰队 spec 全部无法重冻，舰队引擎上限钉在 0.114.0。
-裁定：**子句按规则界定**——默认舰队约定 `^([A-Z][0-9]+) `（捕获组=id），`--clause-pattern` 可改声明（选「默认约定 + 显式声明」而非
-材料 front-matter：front-matter 会改冻结材料的字节与 `materials_sha256`，且舰队材料已按约定编号，零迁移）；未声明子句的材料不造子句，
-覆盖记为未执行并在 ready 记录写 `[P1c] not enforced`（向后兼容 0.114.0，且不静默）。**定位**：`#<id>` 先解析为子句，`#line=<n>` 为行，
-诊断分开计数。**豁免**只认 id/原文。**评审配对**：孤儿评审阻断 ready（`reviewedClauses`），lint `--reviews` 同源。**消费方夹具**：4 仓 24 份
-真实 spec 冻结进 `packages/verify/core/tests/fixtures/fleet/`，库面 + 发布产物两层断言（在 0.114.2 代码上 57/58 红），contract 15 改写
-（141→143）。契约/语料版本不变；Rust 不镜像 prepare/lint。已知非本 PR：#36 `predict-cli.spec.ts` 日期炸弹。
+裁定：**a** 子句按规则界定——默认舰队约定 `^([A-Z]+[0-9]+) `（捕获组=id），材料可 `submit --clause-pattern` 声明并冻进
+`material.json`（参与 material_id；prepare 只认冻结值，不收临时旗标）；**SKIP≠OK**——声明的模式一行不中=错误，默认模式一行不中=
+具名跳过（lint `coverage_skipped`、prepare `[P1c] no clause lines matched pattern`），不造子句（不选「整份材料逐行」模式：那正是
+0.114.1 的回归形态）。**b** 豁免只认 id/原文 + 必填 reason（裸字符串 rc=2，行号拒）。**c** `#<id>` 先解析为子句，`#line=<n>` 为行，
+诊断分开计数。**评审配对**：孤儿评审阻断 ready，lint `--reviews` 同源。**d** 4 仓 24 份真实 spec 冻结进
+`packages/verify/core/tests/fixtures/fleet/`，contract 15 跑 lint+prepare（141→144），库面 + 发布产物两层单测（在 0.114.2 代码上 57/58 红）。
+契约/语料版本不变（构造面加法字段 + 文档改写）；charter 不涉及；Rust 不镜像 prepare/lint。#37（重登记审计落点）不在本 PR。
+已知非本 PR：#36 `predict-cli.spec.ts` 日期炸弹。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

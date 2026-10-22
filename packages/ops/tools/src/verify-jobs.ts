@@ -33,6 +33,7 @@ import {
   findMaterial,
   knownMaterialHashes,
   latestVersionOf,
+  materialClausePattern,
   minimalRedTeam,
   normalizeAsOf,
   writePrepareRecord,
@@ -120,6 +121,9 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   } catch (e: any) {
     return fail(422, `snapshot is not a readable sqlite file: ${e?.message || e}`);
   }
+  // #34: the clause pattern frozen with the material (same source as CLI prepare)
+  const pat = materialClausePattern(material);
+  if (!pat.ok) return fail(422, pat.problem);
   const draft = body.draft === true;
   const requested = Number(body.spec_version);
   const res = await prepareSpec(text, {
@@ -127,6 +131,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
     reviewer: fileReviewer(reviews),
     // #34: same candidate↔review pairing as CLI prepare (orphan review blocks ready)
     reviewedClauses: reviews.map((r) => String(r?.source_clause ?? "")),
+    clausePattern: pat.pattern,
+    clausePatternDeclared: pat.declared,
     redteam: minimalRedTeam(schema.ddl),
     materialIndex: { text, files: material.files.map((f) => ({ path: f.path, sha256: f.sha256, mime: f.mime, size: f.size })) },
     schemaProbe: probeOfDb(snap.path),
