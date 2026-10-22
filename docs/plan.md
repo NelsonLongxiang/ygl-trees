@@ -547,6 +547,9 @@ npm **latest=0.114.15**、shasum **`f5b41ed7…`**；官方字节 **1,590,149 B 
 **0.114.16 记录（2026-10-22，#58 文档漂移）**：`rel --help` 补 `task:id`（代码九类）；plugin-authoring
 服务面改为真实 `ctx.database.db`/`ctx.research.store`/`ctx.ops`（删 ctx.techtree/ctx.webApp）；conventions §一
 九触点路径改 monorepo 位置，第 4 触点改为写服务唯一写入面（Store 只剩读/配置/例外）。docs-only，unit 908 不变。
+发布（2026-10-22）：commit **`35f286a`**；tag **`v0.114.16 = 1c63ed5f… → ^{commit}=35f286a…`**（双远端）；
+npm **latest=0.114.16**、shasum **`edd92449…`**；官方字节 **1,591,031 B / sha256 `dd99c8ee…`**
+（publish `2026-10-22T16:17:56Z`，fileCount 177）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
