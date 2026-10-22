@@ -54,7 +54,7 @@ ygl-trees plugin list                         # state（启用/停用）+ cfg（
 
 | 导出 | 必填 | 语义 |
 |---|---|---|
-| `apply(ctx, config)` | 否 | Cordis 插件体。可用服务：`ctx.database.db`、`ctx.research.store`、`ctx.techtree.trees`、`ctx.webApp` |
+| `apply(ctx, config)` | 否 | Cordis 插件体。可用服务：`ctx.database.db`（SQLite）、`ctx.research.store`（研究域读）、`ctx.ops`（evalClaim / assessEvidence / semanticRank） |
 | `commands` | 否 | `{ <组名>: { run(env, action, rest, args) → rc } }`——贡献 CLI 命令组；dispatch 顺序：插件命令 → 内建 DOMAIN_ROUTES → unknown |
 | `package.json` 的 `yglTrees` | 否 | 兼容声明（如 `"^0.36"`）；主版本不符启动时 stderr 警告（不拒绝） |
 
