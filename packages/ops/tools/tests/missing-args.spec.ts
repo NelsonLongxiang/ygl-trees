@@ -6,6 +6,11 @@
  *
  * The table is the command-surface inventory: adding a verb with a required
  * positional means adding a row here (same discipline as llms/help).
+ *
+ * SCOPE: selection gates run before action dispatch (R16.3), so this sweep
+ * seeds one project + one tree — rc=2 is the missing-ARGUMENT contract once
+ * the workspace gate passes. Without a selection the same verb reports
+ * rc=1 "no project/tree selected" + remediation, by design (probe口径对齐).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
