@@ -63,7 +63,7 @@
 | B8 | `B8 产线步骤顺序必须等于材料声明的顺序：pipeline_steps 与 declared_steps 按 position 对比的违规对数必须为 0。` | M | `sql-pair` | 产线配置 → `pipeline_steps(step, position)`；材料声明 → `declared_steps(step, position)`（S1 → S4 → S4b → S5 → S2 → S3） | 违规对 | R-T5（结构） | structural。「手术顺序是隐含契约」：改公式在缓存注入前，文本规范化在验证前 |
 | B9 | `B9 依赖升级提交必须引用目标版本的 CHANGELOG：dep_changes 中 bumped 为 1 且 changelog_ref 为空的行必须为 0。` | M+H | `sql` | 同 A2 表 | 违规 (sha, pkg)；H 侧：是否读懂 | R-T1 | structural。教训①「工具升级先查 CHANGELOG 全文」（本例 0.114.5 无品味功能） |
 | B10 | `B10 每条品味裁决必须有字段齐全的认定记录：taste_decisions 中 candidates、selected、reason、decider、decided_at 任一为空的行必须为 0。` | M | `sql` | `taste_decisions(rule_id, candidates, selected, reason, decider, decided_at, review_by)` | 违规 rule_id | R-T1 R-T3 | structural。资料 B 已登记选型 A 的候选 / 理由 / 决策者，是这张表的首行 |
-| B11 | `B11 被推翻的品味判据必须升版留痕：overturned 中 new_spec_version 为空的行必须为 0。` | M | `sql` | 台账：`overturned(rule_id, old_spec_version, new_spec_version, reason, at)` | 违规 rule_id | R-T4 | structural。「推翻回流 → spec_version +1，旧报告仍可复核」 |
+| B11 | `B11 被推翻的品味判据必须升版留痕：overturned 中 new_spec_ref 为空、等于 old_spec_ref 或 new_spec_registered 为 0 的行必须为 0。` | M | `sql` | 台账：`overturned(rule_id, old_spec_ref, new_spec_ref, new_spec_registered, reason, overturned_by, overturned_at)`；spec 引用形如 `spec_id@v<n>`；`new_spec_registered` 由探针核对冻结谱系 `ledger/specs/<id>/v<n>/`（或现行索引） | 违规 rule_id 行 | R-T4 | structural。**干跑修正（2026-10-22，ygl-taste-pilot-verifier）**：材料改动后引擎产生的是**新 spec_id（v1）**，`spec_version +1` 只发生在同一份冻结材料重新 prepare 时，所以升版留痕必须记 `spec_id@版本` 而非整数版本号；「已登记」要核对冻结谱系而不是只列现行 spec 的索引（被取代的旧「新 spec」在索引里查不到） |
 
 ## 3. 统计 / 认定层（R-T2，试点必备，与域无关）
 
@@ -83,6 +83,21 @@
 - **D4**（复审期）：S5 走约定版（材料条款 + 探针 `as_of` 列）；有数据后再决定是否进契约。
 - **D5**（试点域与数据）：方案提议「科目归放」；本表 B 组提供第二个候选域「数据来源列拼接风格」，已有真实案例、脱敏易（只涉及格式）。案例数据只留本地。
 - **D6**（工作区）：独立 `YGL_HOME`，与方案建议一致。
+
+## 4b. 干跑记录（2026-10-22，`~/workspace/ygl-taste-pilot-verifier`，本地仓，不碰上游）
+
+闭环基础设施按 §3 S1–S6 + B10（L1）/ B11（L2）+ L3 做成两份材料，首行数据 = 资料 B 的真实裁决（判断者只用角色词）。六轮结果：
+
+| 轮 | 事件 | statistics | ledger | 根 |
+|---|---|---|---|---|
+| 1 | 首冻结 + 首行数据 | FAIL（S1 样本 1 / S2 判断者 1 / S3 κ 为空） | NEEDS-MATERIAL（无推翻记录，零扫描） | FAIL |
+| 2 | 推翻 L2（非空 → 必须大于旧版本号），overturned 首行 | FAIL | PASS | FAIL |
+| 3 | 推翻 L2（整数版本号 → spec_id@v + 已登记核对），新 spec 未登记 | FAIL | FAIL（L2 抓到未完成的回填） | FAIL |
+| 4 | 登记新 spec 后重跑 | FAIL | FAIL（第 1 行的新 spec 已被取代，索引查不到） | FAIL |
+| 5 | 推翻 L2 数据源口径（已登记 = 冻结谱系 ledger/specs），新 spec 未登记 | FAIL | FAIL | FAIL |
+| 6 | 登记后重跑 | FAIL | **PASS**（L1 / L2 / L3） | FAIL |
+
+与预测对照：S1–S3 红、S4 / S5 / S6 绿、L1 绿如预期；L2 / L3 首轮零扫描 NEEDS-MATERIAL 如预期；预料之外的是**两条口径修正**（整数版本号不成立；已登记须查谱系），它们本身就是闭环的产出——三次推翻全部记在 `overturned.json`，冻结谱系保留四个 ledger spec 版本。根结论 FAIL 是对「单一决策者尚不构成认定品味」的如实陈述，不是故障。
 
 ## 5. 建议的试点最小集（供 T3 排期参考，全部 M，可在 0.114.5 直接 submit → prepare）
 
