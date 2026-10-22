@@ -1,3 +1,6 @@
+> **2026-10-22 注**：0.114.12 起主库改为 native better-sqlite3（与 ORM 同一驱动），本文记录的
+> `node-sqlite3-wasm` VFS/Windows 建库受阻链路已不在当前运行时路径；Bun 兼容需按 native addon 面重评。
+
 # Bun 运行时兼容方案（目标运行时）
 
 日期：2026-10-16 ｜ 复探：2026-10-17 ｜ 状态：**Windows 上受阻（BLOCKED）** ｜ 决策：未来用 Bun 封装 CLI（用户指示 2026-10-16）
