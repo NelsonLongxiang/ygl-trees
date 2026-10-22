@@ -204,7 +204,7 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
 ${paint(C.bold, "patrol", color)}       boundary assertions + disposition queue (S1|S2|S3)
   add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]
-  list | run <id> | tick | enable <id> | disable <id> | logs
+  list | run [--name <check>] | tick | enable <id> | disable <id> | logs
 
 ${paint(C.bold, "tree / node", color)}   tech-tree node model
   tree new <name> [--project p]      create a tree (nodes live in it)

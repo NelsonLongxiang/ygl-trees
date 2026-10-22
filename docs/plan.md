@@ -495,6 +495,11 @@ rc=2 单 usage 错误（不再泄驱动错误）；`usage-rc.spec` 四例；unit
 发布（2026-10-22）：commit **`15c3a6f`**；tag **`v0.114.9 = 0a6858ad… → ^{commit}=15c3a6f…`**（双远端）；
 npm **latest=0.114.9**、shasum **`945fd61a…`**；官方字节 **1,575,543 B / sha256 `684e1a30…`**
 （publish `2026-10-22T08:41:19Z`，fileCount 177）。
+**0.114.10 记录（2026-10-22，#49 缺参 sweep）**：`kb link`、`job run/enable/disable`、`tree use`、
+`skill rm/enable/disable`、`skill refs add/show` 缺参统一 rc=2 单 usage 错误；合并 `skill refs` 双 case
+（`refs add` 文档写法此前被列表分支截获）；`tree new/use` 前置校验；`db export` 按文档要求 `<file.sql>`；
+`patrol run` help 纠正为 `[--name <check>]`。新增 `missing-args.spec` 机械 sweep（76 动词，逐行断言
+rc=2+单 JSON error+stderr 干净），一次收全类。unit 813→889；contract 144。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

@@ -206,6 +206,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "link": {
+      if (!rest[0] || !rest[1]) {
+        bad(ctx, "usage: kb link <note-a> <note-b> [--rel <type>]");
+        return 2;
+      }
       const a = store.kbGet(rest[0]);
       const b = store.kbGet(rest[1]);
       if (!a || !b) {

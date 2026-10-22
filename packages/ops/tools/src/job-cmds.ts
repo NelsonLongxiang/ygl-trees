@@ -91,6 +91,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ]);
       return 0;
     case "run": {
+      if (!rest[0]) {
+        bad(ctx, "usage: job run <jobId|title>");
+        return 2;
+      }
       const j = store.db.get("SELECT * FROM jobs WHERE id=? OR title=?", [rest[0], rest[0]]);
       if (!j) {
         bad(ctx, `job not found: ${rest[0]}`);
@@ -114,6 +118,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       });
     }
     case "disable": {
+      if (!rest[0]) {
+        bad(ctx, "usage: job disable <jobId|title>");
+        return 2;
+      }
       const r = store.db.run("UPDATE jobs SET enabled=0 WHERE id=? OR title=?", [rest[0], rest[0]]);
       if (!r.changes) {
         bad(ctx, `job not found: ${rest[0]}`);
@@ -123,6 +131,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "enable": {
+      if (!rest[0]) {
+        bad(ctx, "usage: job enable <jobId|title>");
+        return 2;
+      }
       const r = store.db.run("UPDATE jobs SET enabled=1 WHERE id=? OR title=?", [rest[0], rest[0]]);
       if (!r.changes) {
         bad(ctx, `job not found: ${rest[0]}`);

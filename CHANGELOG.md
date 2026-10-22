@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.114.10
+
+GitHub #49（验证席 P3 · #48 残余）：带必选 id/name 的动词缺参时泄漏驱动错误/静默 rc=0。按验证席建议
+做**一次全命令面缺参 sweep**，而非逐批补丁。
+
+- **八动词修复**：`kb link`、`job run|enable|disable`、`tree use`、`skill rm|enable|disable`、
+  `skill refs add|show` 缺参 → **rc=2 单 `{"error":"usage: …"}`**（不再泄 `Unsupported type for binding`
+  /`not found: undefined`）。`skill refs` 的两个 `case` 合并（此前 `refs add` 被前面的列表分支截获，文档里的
+  写法实际不可用）；`tree new/use` 在树解析前置校验。
+- **同批收敛**：`db export` 按 help/README 声明要求 `<file.sql>`（此前无参静默生成默认文件名并 rc=0）；
+  `patrol run` help 改为 `[--name <check>]`（实际接口，此前写成必选位置参数）。
+- **机械 sweep**：`missing-args.spec` 维护全命令面必选参数表（76 个动词）——每行以「缺全部位置参数」调用，
+  断言 rc=2 + 单个 JSON error、stderr 干净；新增带必选参数的动词要同步加行（与 llms/help 同纪律）。
+  该测试一次收全类，后续无需第三轮逐动词派单。
+- 测试：unit 813 → **889**（+76 sweep 例）；contract 144 不变。
+
 ## 0.114.9
 
 GitHub #47（验证席 P3 · #44 残余）：selection 作用域残面按 #45 语义做**全 id 动词清单过堂**，统一
