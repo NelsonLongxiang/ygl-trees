@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.114.17
+
+A1 契约 v1.0（已裁定）落地第一刀：`verify tree prepare`。契约正文 `docs/reviews/verify-tree-run-contract.md`，
+属主 2026-10-23 裁定 Q1–Q7 通过（经主队席转发）；双席已签。
+
+- **`verify tree prepare <material-id> [--pinned <node>=<sha256>]`**：读已冻结 material 的 JSON 树描述，
+  做冻结期校验并写 `verify/trees/<ts_*.json>`：
+  - 节点/根/schema、id 唯一、leaf 必须引用已冻结 spec（`specs/<id>/spec.json` 存在）；
+  - 组节点非空（Q6 空组 rc=2）、聚合算子封闭集（`all_pass` / `count_fail` / `quorum(N)`，N 边界）；
+  - 环/悬空引用/不可达节点 → rc=2；深度 >16（Q7）→ rc=2；
+  - `pinned` 在 prepare 冻结（Q3/R-2 纪律），目标必须是叶子、sha256 64 hex；`--pinned` 可追加。
+  - 成功 JSON：`{tree_spec_id, tree_spec_sha256, title, root, nodes, pinned, path}`；错误单对象 rc=2。
+- 该切只含 prepare；`run/report/trace/archive`（每层真实 run+archive、V1–V19 运行时验收）随下一刀。
+- 测试：`verify-tree.spec` 8 例（valid/环/未知算子/空组/深度/悬空+重复+不可达/缺 spec/pinned 形状）。
+- unit 908 → **916**；contract 144；无 schema 变更。
+
 ## 0.114.16
 
 GitHub #58（P3 · 文档漂移三处，docs-only）。
