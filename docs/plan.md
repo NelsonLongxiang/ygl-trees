@@ -500,6 +500,13 @@ npm **latest=0.114.9**、shasum **`945fd61a…`**；官方字节 **1,575,543 B /
 （`refs add` 文档写法此前被列表分支截获）；`tree new/use` 前置校验；`db export` 按文档要求 `<file.sql>`；
 `patrol run` help 纠正为 `[--name <check>]`。新增 `missing-args.spec` 机械 sweep（76 动词，逐行断言
 rc=2+单 JSON error+stderr 干净），一次收全类。unit 813→889；contract 144。
+发布（2026-10-22）：commit **`e09d07f`**；tag **`v0.114.10 = f523e4ec… → ^{commit}=e09d07f…`**（双远端）；
+npm **latest=0.114.10**、shasum **`8f4a4429…`**；官方字节 **1,576,841 B / sha256 `67f92907…`**
+（publish `2026-10-22T09:51:18Z`，fileCount 177）。
+**0.114.11 记录（2026-10-22，批十六 kb FTS 漂移）**：`kb rm` 的 FTS/基表/links/事件改单事务写服务
+（此前两条 autocommit 之间有崩溃/忙错窗口）；并发加固 busy_timeout 10s + runTx SQLITE_BUSY 退避重试 +
+getOrm/boot 打开期锁重试。`kb-fts.spec` 2 例（rm 一致性 + 12 并发 add 后 base==fts）。unit 889→891。
+验证席结论：用户库漂移发生于高并发导入场景；本版把写侧缝与并发失败面一起收掉。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
