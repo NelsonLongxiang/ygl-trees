@@ -24,7 +24,7 @@ kind: 评审
    - webui 验证器里，一份 `view` 规格挂在 6 个节点上；
    - 舰队聚合仓库里，一份 `member` 规格挂在 7 个成员上。
 4. **「验证器集合模块」的职责是三件事：命名、标记、模式。** 详见 §4。
-   - 命名：`<scope>/<name>@<semver>`，并钉住其中每份规格的 `spec_id@spec_version` + sha256 和引擎版本。
+   - 命名：`ygl-v-<name>@<semver>`（第三方 `@<scope>/ygl-v-<name>`），并钉住其中每份规格的 `spec_id@spec_version` + sha256 和引擎版本。
    - 标记：三条轴，领域 / 业务范围 / 工作流模式；只有模式轴是受控词表。
    - 模式：6 种预设，见 §5，每种都已经在舰队里跑过。
 5. **最大的前置依赖是 `verify tree run`（SDK-2）。** 没有它，组合只能继续靠每仓的编排代码。本方案的分期（§6）因此排在 SDK 路线之上，而不是另起一条线。
@@ -110,7 +110,7 @@ kind: 评审
 
 ```json
 {
-  "pack": "ygl/core-aggregate",
+  "pack": "ygl-v-core-aggregate",
   "version": "1.0.0",
   "engine": "0.114.13",
   "contract_version": "1.2",
@@ -129,10 +129,15 @@ kind: 评审
 }
 ```
 
-- **名字**：`<scope>/<name>@<semver>`。包版本的规则：
-  - 改判据材料 → 升 major；
-  - 加节点或规格 → 升 minor；
-  - 只换夹具或文档 → 升 patch。
+- **名字**（用户 2026-10-22 定：最低要有前置 `ygl-v-*`）：包名一律以 **`ygl-v-`** 开头，包身份 = npm 包名，不另设映射。
+  - 官方 / 舰队包：`ygl-v-<name>`，例：`ygl-v-core-aggregate`、`ygl-v-pr-gate`、`ygl-v-release-audit`。
+  - 第三方包：`@<scope>/ygl-v-<name>`，前缀照样保留。
+  - 前缀是硬规则：`pack lint` 拒绝不带前缀的包名（rc=2）；`pack list` 也按前缀发现已装的包，与 `eslint-plugin-*` 一样，前缀即类别。
+  - 2026-10-22 查询 npm：`ygl-v-*` 下没有任何已发布的包，`ygl-v-core-aggregate`、`ygl-v-pr-gate`、`ygl-v-release-audit` 均未被占用。
+  - 包版本的规则：
+    - 改判据材料 → 升 major；
+    - 加节点或规格 → 升 minor；
+    - 只换夹具或文档 → 升 patch。
 - **钉版**：清单写死引擎版本和每份规格的 `spec_id@spec_version` + sha256。装包时逐一核对，不符即拒。
 - **接口**：`requires` 声明每份规格需要哪些快照表和列。这就是「绑定」的契约：谁提供这些表，谁就能用这个包。在 `snapshot build` / `collect` 交付之前，数据由使用方自己准备。
 
@@ -174,12 +179,12 @@ kind: 评审
 | 期 | 内容 | 验收 | 依赖 |
 |---|---|---|---|
 | **VP-0 裁定与命名** | 属主裁定 D1–D6；发布 `ygl-verifier-pack/1` 清单 JSON Schema、模式词表、领域与业务的登记表；不写代码 | 文档 PR 合入；schema 进包内 `schemas/` | — |
-| **VP-1 `pack build / lint`** | 从一个验证器仓库产出确定性包（复用归档的确定性 zip）；`lint` = 一致性套件 | 对 `ygl/core-aggregate` 两次 build 字节相同；夹具「好全绿、坏只翻对应叶子」；坏清单 rc=2 | SDK-0（契约与 schema） |
+| **VP-1 `pack build / lint`** | 从一个验证器仓库产出确定性包（复用归档的确定性 zip）；`lint` = 一致性套件 | 对 `ygl-v-core-aggregate` 两次 build 字节相同；夹具「好全绿、坏只翻对应叶子」；坏清单 rc=2 | SDK-0（契约与 schema） |
 | **VP-2 `pack install / list / show`** | 经插件通道装数据包；核对钉版与签名；按标签检索 | 钉版或 sha 不符时拒装 rc=1；`list --tag mode=gate` 只列门禁包；装包不执行任何代码（grep 装包路径无 `require`） | VP-1、签名（已有） |
 | **VP-3 模式即树模板** | 6 种模式各出一个树模板；工作流 = 模板 + 包节点 + 绑定 | 评审验证器改由「release 包 + core/aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
 | **VP-4 跨包与跨仓** | 组节点引用外部包的报告（payload_sha256 验签、验归档、时效） | 舰队聚合仓库改用包 + `import-report`，`ledger.mjs` 退场 | SDK-5 `import-report` |
 
-首个试点建议用 `ygl/core-aggregate`：
+首个试点建议用 `ygl-v-core-aggregate`：
 - 9 个仓库都在用；
 - 判据只有 4 条；
 - 收敛 6 种抄本本身就是可量化的收益（6 → 1）。
@@ -203,7 +208,7 @@ kind: 评审
 | D1 | 包的形态：纯数据包，还是可执行插件 | 纯数据。可执行插件与 charter P1/P2/P4 冲突 |
 | D2 | 命名与标记放在哪里：包清单，还是规格契约 | 包清单。不升 `contract_version`，规格保持冻结 |
 | D3 | 6 种预设模式是否作为首版受控词表；首批与哪些业务结合 | 6 种全收；首批试点 tree（`core/aggregate`）与 gate（PR 评审） |
-| D4 | 分发：复用 `plugin install` 通道（声明式 `yglVerifiers` 字段），还是独立的 `verify pack install` | 复用通道、独立加载语义：装在同一 profile，引擎只读数据 |
+| D4 | 分发：复用 `plugin install` 通道（声明式 `yglVerifiers` 字段），还是独立的 `verify pack install` | 复用通道、独立加载语义：装在同一 profile，引擎只读数据；npm 包名即包名（`ygl-v-*` 前缀，用户 2026-10-22 已定），不另设映射 |
 | D5 | 第三方包是否强制签名 | 强制；无签名只允许 `--local` |
 | D6 | 与 SDK 路线的先后 | VP-0/1 可与 SDK-0 并行；VP-3 起排在 SDK-2 `tree run` 之后 |
 
