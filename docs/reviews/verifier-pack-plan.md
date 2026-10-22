@@ -203,7 +203,7 @@ kind: 评审
 | **loop 判断闭环** | 案例 → 统计 → 认定 → 冻结 → 执行 → 推翻回流 → 新规格 | #27 taste-pilot（六轮实证：推翻 → 新规格 → 登记） | 品味 / 专业判断的沉淀（`taste-extraction-plan.md`） |
 
 - 组合规则：一个工作流 = 一棵树，叶子来自一个或多个包的节点，组节点的语义由模式决定。
-- 例：「发布审批」= gate(根) ← { release 包的 R1–R6、frontend 包的 view 节点、core/aggregate }。
+- 例：「发布审批」= gate(根) ← { release 包的 R1–R6、frontend 包的 view 节点、ygl-v-core-aggregate }。
 - 「时空可组合性」：
   - **空间**：同一个包可以在多棵树里绑定不同数据（规格 × 绑定）；每棵树有自己的工作区，与今天舰队成员各用自己的 `state/home` 一致。
   - **时间**：包和引擎精确钉版，规格的 `as_of`、`supersedes` 与谱系（#27 的推翻回流），加上升级时的 A/B 并跑（SDK 方案的 K 轮一致）。
@@ -215,7 +215,7 @@ kind: 评审
 | **VP-0 裁定与命名** | 属主裁定 D1–D6；发布 `ygl-verifier-pack/1` 清单 JSON Schema、模式词表、领域与业务的登记表；不写代码 | 文档 PR 合入；schema 进包内 `schemas/` | — |
 | **VP-1 `pack build / lint`** | 从一个验证器仓库产出确定性包（复用归档的确定性 zip）；`lint` = 一致性套件 | 对 `ygl-v-core-aggregate` 两次 build 字节相同；夹具「好全绿、坏只翻对应叶子」；坏清单 rc=2 | SDK-0（契约与 schema） |
 | **VP-2 `pack install / list / show` + 项目层激活** | 装进项目根 `.ygl-trees/plugins`；从 cwd 向上发现；`plugin trust`；全局 CLI 按清单 `commands` 注册子命令（执行体为内建模式运行器）；版本委派；核对钉版与签名；按标签检索 | 钉版或 sha 不符时拒装 rc=1；未 trust 的项目层不激活；钉定版本不在时拒绝并点名 `npx`；`list --tag mode=gate` 只列门禁包；装包不执行任何代码（grep 装包路径无 `require`） | VP-1、签名（已有） |
-| **VP-3 模式即树模板** | 6 种模式各出一个树模板；工作流 = 模板 + 包节点 + 绑定 | 评审验证器改由「release 包 + core/aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
+| **VP-3 模式即树模板** | 6 种模式各出一个树模板；工作流 = 模板 + 包节点 + 绑定 | 评审验证器改由「ygl-v-release-audit + ygl-v-core-aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
 | **VP-4 跨包与跨仓** | 组节点引用外部包的报告（payload_sha256 验签、验归档、时效） | 舰队聚合仓库改用包 + `import-report`，`ledger.mjs` 退场 | SDK-5 `import-report` |
 
 首个试点建议用 `ygl-v-core-aggregate`：
