@@ -365,7 +365,8 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(inv.clauses.map((c) => c.id)).toEqual(["S1", "L2", "S3"]);
     const res = await prep(ALL3);
     expect(res.verdict).toBe("ready");
-    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/3 clause\(s\) declared/);
+    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/3 clause\(s\) match/);
+    expect(res.coverage).toMatchObject({ enforced: true, clauses: 3, covered: 3 });
   });
 
   it("#34: #S<n>/#L<n> resolve as clause ids, not line numbers (fleet locators)", () => {
@@ -430,11 +431,34 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(cov.problems[0]).toMatch(/S1 is declared more than once \(lines 1 and 2\)/);
   });
 
-  it("#34: a material declaring no clauses is not invented into clauses — coverage is reported as not enforced", async () => {
+  it("#34: no line matching the default pattern is a named skip (SKIP ≠ OK), never invented clauses", async () => {
     const res = await prepareSpec(MATERIAL, { runner: runnerOf([goodCandidate()]), reviewer: reviewerOf(okReview), redteam: () => [], asOf: AS_OF });
     expect(res.verdict).toBe("ready");
-    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/not enforced/);
-    expect(lintCandidates([goodCandidate({ anchor: { quote: "账单合计 1,290.40 元", locator: "material.md#Q7" } })], { materialText: MATERIAL }).ok).toBe(true);
+    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/^no clause lines matched pattern \^\(\[A-Z\]\+\[0-9\]\+\)  — clause coverage not enforced/);
+    expect(res.coverage).toMatchObject({ enforced: false, clauses: 0 });
+    const lint = lintCandidates([goodCandidate({ anchor: { quote: "账单合计 1,290.40 元", locator: "material.md#Q7" } })], { materialText: MATERIAL });
+    expect(lint).toMatchObject({ ok: true, coverage_skipped: true, coverage: { enforced: false, clauses: 0 } });
+    expect(lintCandidates(ALL3, { materialText: ID_MATERIAL }).coverage_skipped).toBe(false);
+  });
+
+  it("#34: a declared pattern that matches no line is an error, not a skip", async () => {
+    const res = await prepareSpec(MATERIAL, {
+      runner: runnerOf([goodCandidate()]),
+      reviewer: reviewerOf(okReview),
+      redteam: () => [],
+      asOf: AS_OF,
+      clausePattern: compileClausePattern("^(R-[0-9]+)：") as RegExp,
+      clausePatternDeclared: true,
+    });
+    expect(res.verdict).toBe("error");
+    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/no clause lines matched pattern .* misconfiguration/);
+    const lint = lintCandidates([goodCandidate()], { materialText: MATERIAL, clausePattern: compileClausePattern("^(R-[0-9]+)：") as RegExp, clausePatternDeclared: true });
+    expect(lint.ok).toBe(false);
+    expect(lint.coverage_skipped).toBe(false);
+  });
+
+  it("#34: the default convention is letters + digits (^[A-Z]+[0-9]+ )", () => {
+    expect(clauseInventory(["AB12 多字母 id。", "S1 单字母。", "s2 小写不算。", "S3: 冒号不算。"].join(NL)).clauses.map((c) => c.id)).toEqual(["AB12", "S1"]);
   });
 
   it("#34: a declared clause pattern replaces the default convention; a pattern without a capture group is refused", () => {

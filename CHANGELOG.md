@@ -3,34 +3,43 @@
 ## 未发布
 
 GitHub #34 修正（0.114.1 / 0.114.2 的回归：舰队全部材料 lint `ok:false`、prepare 拒冻）：**子句按规则界定 +
-不冲突的定位语法 + 舰队材料消费方夹具**。原修复的意图保留——丢一条判据、错一个锚点仍然被点名，prepare 不静默冻结。
+不冲突的定位语法 + 舰队材料消费方夹具**，对齐审查席在 #34 的设计提案 a–d。原修复的意图保留——丢一条判据、
+错一个锚点仍然被点名，prepare 不静默冻结；孤儿评审也被点名。
 
-- **子句 = 匹配声明模式的行**（`packages/verify/core/src/prepare.ts`）：默认舰队约定 `^([A-Z][0-9]+) `
+- **a. 子句 = 匹配子句模式的行**（`packages/verify/core/src/prepare.ts`）：默认舰队约定 `^([A-Z]+[0-9]+) `
   （捕获组 = 子句 id）；标题 / `##` 小节 / 空行 / 散文（`验收对象：…`）按规则不在范围内，不再靠豁免。
-  `--clause-pattern <regex>`（prepare / lint-candidates）可改声明，缺捕获组或非法 → rc=2。同 id 重复声明 →
-  覆盖问题。**未声明任何子句的材料**不再被逐行造出子句：覆盖记为未执行（`clauses:0`），ready 记录带一条
-  `[P1c] … not enforced` 诊断（不静默）。
-- **定位语法**：`[文件]#<片段>` 先按子句 id 解析（`#S1`、`#L2` 是 id，不再被当成第 1/2 行）；物理行写
-  `#line=<n>`。材料声明了子句时，无法解析的片段是 P1 拒绝，诊断只按子句计数（`declares 3 clause(s): S1, L2, S3`），
+  材料可在冻结时声明自己的模式：`verify submit --clause-pattern <regex>` 写进 `material.json`
+  `clause_pattern`（参与 `material_id` 哈希；未声明时 id 不变），prepare（CLI / WebUI 作业端点）只认冻结的模式；
+  `lint-candidates --clause-pattern` 面向裸文本。缺捕获组或非法 → rc=2。同 id 重复声明 → 覆盖问题。
+  **SKIP ≠ OK**：声明了模式却一行不中 → 覆盖问题（lint `ok:false` / prepare `error`）；默认模式一行不中 →
+  具名跳过（lint `coverage_skipped:true`、`coverage.enforced:false`；prepare ready 记录
+  `[P1c] no clause lines matched pattern … — clause coverage not enforced (a skip, not a pass)`，`--json` 带 `coverage`），
+  不再逐行造出子句。
+- **c. 定位语法**：`[文件]#<片段>` 先按子句 id 解析（`#S1`、`#L2` 是 id，不再被当成第 1/2 行）；物理行写
+  `#line=<n>`。材料有子句时，无法解析的片段是 P1 拒绝，诊断只按子句计数（`declares 3 clause(s): S1, L2, S3`），
   行诊断只按行计数（`material has 12 line(s)` / `line 2, which is blank`）。旧的 `#L<n>`/`#S<n>` 行号写法删除，
   `clauseLineOf` 导出随之移除（0.114.1 引入，无消费方）。
 - **覆盖认领收紧**：候选的 locator 解析到该子句（或其行），或 `source_clause` 含整行子句，才算认领；只引片段
-  又无可解析 locator 的候选不认领（`S1` 不再顺带覆盖 `S10`）。`coverage` 输出增 `pattern`，`uncovered[]` 增
-  `id`/`line`。
-- **豁免只认子句 id 或原文**：`{id | locator | text, reason}` 恰好一个指明字段；`#line=<n>` 豁免被拒（编辑会静默改靶），
-  豁免已被覆盖的子句 → 问题。
+  又无可解析 locator 的候选不认领（`S1` 不再顺带覆盖 `S10`）。`coverage` 输出增 `pattern` / `enforced`，
+  `uncovered[]` 增 `id` / `line`。
+- **b. 豁免只认子句 id 或原文 + 必填 reason**：`{id | locator | text, reason}` 恰好一个指明字段；裸字符串条目 rc=2
+  （不再隐式补 reason）；`#line=<n>` 豁免被拒（编辑会静默改靶）；豁免已被覆盖的子句 → 问题。
 - **评审配对**：prepare 把评审文件的 `source_clause` 交给构造面，**孤儿评审**（无候选携带）→ `error` +
-  `[P3] orphan review`；`lint-candidates --reviews <file>` 同源检查（孤儿评审 / 无评审候选 → `stage:"REVIEW"`）。
-- **消费方夹具进发布门禁**：`packages/verify/core/tests/fixtures/fleet/` 冻结 4 个舰队验证器仓（review / webui /
-  fleet / design）共 24 份真实 spec 的 `material.md` + 已提交 `candidates.json` / `reviews.json`（来源 commit 见
-  `manifest.json`）。`fleet-fixtures.spec`（库面：全部 lint ok + prepare ready；S/L 开头 id 的三份材料上做
-  丢子句 / 坏锚点 / 孤儿评审负例）+ `verify-fleet-fixtures.spec`（发布产物 `dist/bundle/bin.cjs`：全部
-  `lint --text --reviews` ok + `prepare --draft` ready（含 P4 空库红队）+ CLI 负例）。在 0.114.2 的 `prepare.ts`
-  上该夹具 57/58 红。
-- 契约面：报告与 spec 形状不变（`contract_version` 1.2、`corpus_version` 1.2 不变；构造面检查）。Rust 侧不镜像
-  prepare / lint，无改动。
-- 门禁：contract 15 改写为按 id 的子句 + 行号豁免拒绝 + 舰队夹具 lint 全 ok（141 → **143**）；
-  `scripts/contract-audit.sh` 按 0.114.2 流程显式重登记（`meta.reregister` 事件，reason 同提交说明）。
+  `[P3] orphan review`（CLI 与 WebUI 作业端点）；`lint-candidates --reviews <file>` 同源检查（孤儿评审 / 无评审候选 →
+  `stage:"REVIEW"`）。
+- **d. 消费方夹具进发布门禁**：`packages/verify/core/tests/fixtures/fleet/` 冻结 4 个舰队验证器仓（review 7 /
+  webui 6 含 view / fleet 2 / design 9）共 24 份真实 spec 的 `material.md` + 已提交 `candidates.json` / `reviews.json`
+  （来源 commit 见 `manifest.json`；全部带标题/散文/纪律节）。contract 15 对全部 24 份跑 `lint --text --reviews` 与
+  `submit → prepare --draft`（快照 schema 由候选谓词合成，P4 空库红队照跑），任何非 ok / 非 ready 即发布阻断。
+  单测：`fleet-fixtures.spec`（库面：全部 lint ok + prepare ready；S/L 开头 id 的三份材料上做丢子句 / 坏锚点 /
+  孤儿评审负例；在 0.114.2 的 `prepare.ts` 上 57/58 红）+ `verify-fleet-fixtures.spec`（发布产物：全部 ok/ready +
+  CLI 负例 + submit 冻结模式 + 裸字符串豁免 rc=2）。
+- 契约面：spec 与报告形状不变（`contract_version` 1.2、`corpus_version` 1.2）；构造面加法字段（`material.json`
+  `clause_pattern`、lint `coverage_skipped`、prepare `--json` `coverage`）；`docs/verify-contract.md` §1.6 改写。
+  charter 不涉及。Rust 侧不镜像 prepare / lint，无改动。
+- 门禁：contract 15 改写（id 子句 + 按 id 豁免 + 行号豁免拒绝 + 跳过可见 + 舰队夹具 lint/prepare 24/24），
+  141 → **144**；`scripts/contract-audit.sh` 按 0.114.2 流程显式重登记（`meta.reregister` 事件，reason 见提交说明；
+  审计落点问题另见 #37，不在本修正内）。
 - 棘轮：bundle 基线 739,621 → **757,018 B** 显式认账（0.114.2 已 +8,574，本修正 +8,823：子句清单/定位解析/评审配对与诊断文案，
   合计超 2% 容差）；只认 bundle 一项，web dist 与冷启动保持原 win32 基线不动。
 

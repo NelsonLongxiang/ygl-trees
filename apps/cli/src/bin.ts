@@ -829,7 +829,7 @@ export function generateLlmsManifest(): string {
       ["job tick", "run due jobs (drive with cron)"],
     ]],
     ["verify", "Spec validator (M13): material → spec → report", [
-      ["verify submit --title <t> --text <file|-> [--attach <f>] [--no-meta]", "freeze material; verifier repos must pass verify meta (default hard since 0.113.0); --no-meta bypasses, recorded as meta.bypass"],
+      ["verify submit --title <t> --text <file|-> [--attach <f>] [--clause-pattern <regex>] [--no-meta]", "freeze material (+ its clause pattern, default ^([A-Z]+[0-9]+) ); verifier repos must pass verify meta (default hard since 0.113.0); --no-meta bypasses, recorded as meta.bypass"],
       ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--draft] [--no-meta]", "extract → translate → blind self-review → freeze spec (--draft = dry run); meta gate default hard for verifier repos (0.113.0), --no-meta bypasses with a ledger event"],
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
       ["verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]", "freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check (--db retargets the job only); --patrol only when the verified db IS the workspace db"],

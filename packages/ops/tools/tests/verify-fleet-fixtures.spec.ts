@@ -156,6 +156,44 @@ describe.skipIf(!HAS_BIN)("#34 fleet consumer fixtures via the CLI (release gate
     expect(prep.j.diagnostics.find((d: any) => d.stage === "P3").message).toMatch(/orphan review/);
   });
 
+  it("submit --clause-pattern freezes the pattern in material.json and prepare judges coverage by it", () => {
+    const f = fx("review/sync");
+    const nl = String.fromCharCode(10);
+    const text = ["# 自定义编号的材料", "", "说明：判据用 R-<n>：编号。", "", "R-1：sync_state 中 fetched_ok 为 0 的行必须为 0。", "R-2：sync_state 的行数不得少于 1。"].join(nl) + nl;
+    const mat = join(HOME, "custom.md");
+    writeFileSync(mat, text, "utf8");
+    const base = JSON.parse(readFileSync(join(f.dir, "candidates.json"), "utf8")).candidates[0];
+    const reviews = JSON.parse(readFileSync(join(f.dir, "reviews.json"), "utf8")).reviews[0];
+    const clause = "R-1：sync_state 中 fetched_ok 为 0 的行必须为 0。";
+    const c = write("custom-c.json", { candidates: [{ ...base, source_clause: clause, anchor: { quote: clause, locator: "custom.md#R-1" } }] });
+    const r = write("custom-r.json", {
+      reviews: [{ source_clause: clause, findings: reviews.findings.map((x: any) => (x.anchor ? { ...x, anchor: { quote: clause, locator: "custom.md#R-1" } } : x)) }],
+    });
+    expect(jrun(["verify", "submit", "--title", "custom", "--text", mat, "--clause-pattern", "^R-[0-9]+：", "--no-meta", "--json"]).rc).toBe(2);
+    const plain = jrun(["verify", "submit", "--title", "custom", "--text", mat, "--no-meta", "--json"]);
+    const sub = jrun(["verify", "submit", "--title", "custom", "--text", mat, "--clause-pattern", "^(R-[0-9]+)：", "--no-meta", "--json"]);
+    expect(sub.rc).toBe(0);
+    expect(sub.j.clause_pattern).toBe("^(R-[0-9]+)：");
+    expect(sub.j.material_id).not.toBe(plain.j.material_id);
+    const declared = jrun(["verify", "prepare", sub.j.material_id, "--candidates", c, "--reviews", r, "--db", f.db, "--no-meta", "--draft", "--json"]);
+    expect(declared.j.verdict).toBe("error");
+    expect(declared.j.coverage).toMatchObject({ pattern: "^(R-[0-9]+)：", clauses: 2, covered: 1 });
+    expect(declared.j.diagnostics.find((d: any) => d.stage === "P1c").message).toMatch(/clause R-2 is not covered/);
+    // the same text under the default convention declares no clauses: a named skip
+    const dflt = jrun(["verify", "prepare", plain.j.material_id, "--candidates", c, "--reviews", r, "--db", f.db, "--no-meta", "--draft", "--json"]);
+    expect(dflt.j.verdict).toBe("ready");
+    expect(dflt.j.coverage).toMatchObject({ enforced: false, clauses: 0 });
+    expect(dflt.j.diagnostics.find((d: any) => d.stage === "P1c").message).toMatch(/^no clause lines matched pattern/);
+  });
+
+  it("an exemption without a reason (bare string) is a usage error", () => {
+    const f = fx("review/sync");
+    const ex = write("bare-ex.json", ["S3"]);
+    const r = jrun(["verify", "lint-candidates", join(f.dir, "candidates.json"), "--text", join(f.dir, "material.md"), "--coverage-exempt", ex, "--json"]);
+    expect(r.rc).toBe(2);
+    expect(r.j.error).toMatch(/reason is mandatory/);
+  });
+
   it("--clause-pattern without an id capture group is a usage error (rc=2, JSON error)", () => {
     const f = fx("webui/unit");
     copyFileSync(join(f.dir, "candidates.json"), join(HOME, "unit-c.json"));

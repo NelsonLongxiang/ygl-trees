@@ -24,7 +24,7 @@ import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../.
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
-import { compileClausePattern, lintCandidates, prepareSpec } from "../../../verify/core/src/prepare";
+import { compileClausePattern, lintCandidates, noClauseLinesMessage, prepareSpec } from "../../../verify/core/src/prepare";
 import { metaGate, metaRepoRootOf, refuseMeta } from "./meta-gate";
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
@@ -65,6 +65,9 @@ export interface MaterialRecord {
   text_sha256: string;
   text_path: string;
   files: Array<{ path: string; sha256: string; mime: string; size: number; stored: string; blob?: boolean }>;
+  /** #34: clause pattern declared at submit (`--clause-pattern`), frozen with the
+   *  material; absent = the default fleet convention `^([A-Z]+[0-9]+) `. */
+  clause_pattern?: string;
 }
 
 export function readJson<T>(path: string): T {
@@ -313,8 +316,8 @@ export function normalizeAsOf(raw: unknown, fallback: string): string {
 }
 
 /** GitHub #34: load named clause exemptions (JSON array or { exempt: [...] }).
- *  Each entry names a declared clause by `id`, `locator` (`#S3`) or exact `text`
- *  — never by line number; a bare string is an id/locator. */
+ *  Each entry names a declared clause by exactly one of `id`, `locator` (`#S3`)
+ *  or exact `text` — never by line number — and carries a mandatory `reason`. */
 type ExemptEntry = { id?: string; locator?: string; text?: string; reason?: string };
 function loadCoverageExempt(args: any): { ok: true; exempt: ExemptEntry[] } | { ok: false; code: number; problem: string } {
   const file = args.flags["coverage-exempt"];
@@ -331,8 +334,7 @@ function loadCoverageExempt(args: any): { ok: true; exempt: ExemptEntry[] } | { 
   const exempt: ExemptEntry[] = [];
   for (const [i, e] of list.entries()) {
     if (typeof e === "string") {
-      exempt.push({ locator: e, reason: "named exemption" });
-      continue;
+      return { ok: false, code: 2, problem: `--coverage-exempt entry #${i} is a bare string — write { id: ${JSON.stringify(e)}, reason: "<why no VU covers it>" } (the reason is mandatory)` };
     }
     const o = (e ?? {}) as { id?: unknown; locator?: unknown; text?: unknown; reason?: unknown };
     const keys = (["id", "locator", "text"] as const).filter((k) => typeof o[k] === "string");
@@ -343,12 +345,19 @@ function loadCoverageExempt(args: any): { ok: true; exempt: ExemptEntry[] } | { 
 }
 
 /** GitHub #34: `--clause-pattern <regex>` declares the material's clause lines
- *  (first capture group = id); default is the fleet convention `^([A-Z][0-9]+) `. */
-function loadClausePattern(args: any): { ok: true; pattern: RegExp } | { ok: false; problem: string } {
+ *  (first capture group = id); default is the fleet convention `^([A-Z]+[0-9]+) `. */
+function loadClausePattern(args: any): { ok: true; pattern: RegExp; declared: boolean } | { ok: false; problem: string } {
   const raw = args.flags["clause-pattern"];
-  if (raw === true) return { ok: false, problem: "--clause-pattern needs a regular expression, e.g. --clause-pattern '^([A-Z][0-9]+) '" };
+  if (raw === true) return { ok: false, problem: "--clause-pattern needs a regular expression, e.g. --clause-pattern '^([A-Z]+[0-9]+) '" };
   const p = compileClausePattern(raw === undefined ? undefined : String(raw));
-  return typeof p === "string" ? { ok: false, problem: p } : { ok: true, pattern: p };
+  return typeof p === "string" ? { ok: false, problem: p } : { ok: true, pattern: p, declared: raw !== undefined };
+}
+
+/** The clause pattern frozen with a material (absent = default convention). */
+export function materialClausePattern(material: MaterialRecord): { ok: true; pattern: RegExp; declared: boolean } | { ok: false; problem: string } {
+  if (material.clause_pattern === undefined) return { ok: true, pattern: compileClausePattern(undefined) as RegExp, declared: false };
+  const p = compileClausePattern(String(material.clause_pattern));
+  return typeof p === "string" ? { ok: false, problem: `material ${material.material_id} has an unusable clause_pattern: ${p}` } : { ok: true, pattern: p, declared: true };
 }
 
 export function findMaterial(env: Env, id: string): MaterialRecord {
@@ -398,8 +407,8 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 /** 每个动作认识的旗标。--json/--no-color 等全局旗标在 GLOBAL_FLAGS 里（bin 层解析）。 */
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
-  submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "clause-pattern"],
+  submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
   run: ["db", "submission", "no-archive"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
@@ -478,9 +487,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const title = String(args.flags.title || "").trim();
       const textArg = args.flags.text ? String(args.flags.text) : "";
       if (!title || !textArg) {
-        bad(ctx, 'usage: verify submit --title "<what>" --text <file|-> [--attach <file> ...]');
+        bad(ctx, 'usage: verify submit --title "<what>" --text <file|-> [--attach <file> ...] [--clause-pattern <regex>]');
         return 2;
       }
+      // #34: the clause pattern is part of the frozen material (validated before any I/O)
+      const patOpt = loadClausePattern(args);
+      if (!patOpt.ok) {
+        bad(ctx, patOpt.problem);
+        return 2;
+      }
+      const clausePattern = patOpt.declared ? patOpt.pattern.source : undefined;
       let text: string;
       try {
         text = textArg === "-" ? readFileSync(0, "utf8") : readFileSync(textArg, "utf8");
@@ -502,7 +518,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         : args.flags.attach
           ? [String(args.flags.attach)]
           : [];
-      const materialId = `mat_${short(sha256(`${title}\n${text}`))}`;
+      // A declared clause pattern is part of the material's identity: the same
+      // text under another pattern is another material, never a silent retarget.
+      const materialId = `mat_${short(sha256(clausePattern === undefined ? `${title}\n${text}` : `${title}\n${text}\n${clausePattern}`))}`;
       const dir = join(p.materials, materialId);
       mkdirSync(join(dir, "files"), { recursive: true });
       writeFileSync(join(dir, "material.txt"), text, "utf8");
@@ -536,6 +554,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         text_sha256: sha256(text),
         text_path: "material.txt",
         files,
+        ...(clausePattern !== undefined ? { clause_pattern: clausePattern } : {}),
       };
       writeJson(join(dir, "material.json"), record);
       // #25a: a --no-meta bypass must survive into the evidence chain, not just
@@ -603,10 +622,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, covOpt.problem);
         return covOpt.code;
       }
-      const patOpt = loadClausePattern(args);
+      const patOpt = materialClausePattern(material);
       if (!patOpt.ok) {
         bad(ctx, patOpt.problem);
-        return 2;
+        return 1;
       }
       const attachmentStage = stageMaterialAttachments(env, material);
       const prevVersion = latestVersionOf(env, materialId);
@@ -618,6 +637,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         redteam: minimalRedTeam(schema.ddl, attachmentStage?.dir),
         coverageExempt: covOpt.exempt,
         clausePattern: patOpt.pattern,
+        clausePatternDeclared: patOpt.declared,
         reviewedClauses: (reviewsFile.reviews ?? []).map((r) => String(r?.source_clause ?? "")),
         materialIndex,
         schemaProbe,
@@ -660,6 +680,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             rejected_detail: res.rejected,
             materials_sha256: res.materials_sha256,
             diagnostics: res.diagnostics,
+            ...(res.coverage ? { coverage: res.coverage } : {}),
             ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
           };
@@ -697,7 +718,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, ...(res.coverage ? { coverage: res.coverage } : {}), ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {
@@ -1404,7 +1425,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         reviewedClauses = list.map((r: any) => String(r?.source_clause ?? ""));
       }
-      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, reviewedClauses });
+      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, clausePatternDeclared: patOpt.declared, reviewedClauses });
       if (ctx.json) {
         console.log(JSON.stringify(res));
         return 0;
@@ -1422,7 +1443,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             C.dim,
             cov.clauses
               ? `  coverage: ${cov.covered}/${cov.clauses} clause(s) covered, ${cov.exempted} exempt${cov.uncovered.length ? `, ${cov.uncovered.length} uncovered` : ""} (clauses = lines matching ${cov.pattern})`
-              : `  coverage: not enforced — no material line matches ${cov.pattern} (number criteria "<id> <text>", or pass --clause-pattern)`,
+              : `  coverage: SKIPPED — ${noClauseLinesMessage(cov.pattern)}`,
             ctx.color,
           ),
         );

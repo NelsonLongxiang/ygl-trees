@@ -28,7 +28,7 @@
   `count(col)` 跳 NULL / 空表 0 / max|min|sum 产 NULL 的不对称），不是语料案例。
 - **`verify lint-candidates <file> [--text <material>] [--db <snapshot>] [--reviews <file>] [--coverage-exempt <file>] [--clause-pattern <regex>]`**：与 prepare 共用同一
   p1/p2 校验器与子句覆盖检查；rc 只表达过程（0 成功 / 2 用法），判定在输出
-  `{ok, checked, p1_skipped, schema_skipped, issues:[{index,source_clause,stage,reason}], coverage}`；`--reviews`
+  `{ok, checked, p1_skipped, schema_skipped, issues:[{index,source_clause,stage,reason}], coverage, coverage_skipped}`；`--reviews`
   另查候选↔评审 1:1（孤儿评审 / 无评审候选 → `stage:"REVIEW"`）；不写 spec、
   不耗 `spec_version`、不发事件。`checker.type` 为闭集（七型），未知类型在 P2 被点名拒绝。
   **口径订正（#18.1）**：「lint 拒绝集 == prepare `rejected_detail` 集」仅在提供 `--db`（schema 探针）时
@@ -152,14 +152,18 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 > **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
 
-**子句覆盖（#34；0.114.1 引入，修正版按规则界定子句）**——判据不得静默消失（丢一条规则冻结出 ready 的 spec，会 PASS 本应 FAIL 的数据），但子句的范围由**规则**决定，不由豁免清单决定：
+**子句覆盖（#34；0.114.1 引入，修正版按规则界定子句——对齐审查席 #34 设计提案 a–d）**——判据不得静默消失（丢一条规则冻结出 ready 的 spec，会 PASS 本应 FAIL 的数据），但子句的范围由**规则**决定，不由豁免清单决定：
 
-- **子句 = 匹配声明的子句模式的行**；模式的第 1 个捕获组是子句 id。默认模式是舰队约定 `^([A-Z][0-9]+) `（id + 一个空格：`S1 …`、`P12 …`）；`--clause-pattern <regex>`（prepare 与 lint-candidates，库面 `PrepareOptions.clausePattern`）可改声明，模式缺捕获组或非法 → rc=2。标题（`#`/`##`）、空行、散文（`验收对象：…`）、纪律列表**按规则不在范围内**。同一 id 声明两次 → 覆盖问题（点名两处行号）。
-- **未声明任何子句的材料**（没有一行匹配模式）不会被「每行都是子句」地凭空造出子句：覆盖记为未执行（`coverage.clauses:0`），prepare 的 ready 记录里有一条 `diagnostics[stage=P1c]` 写明「not enforced」——不静默，也不把散文当判据（0.114.1/0.114.2 的回归）。要开启覆盖，把判据编号成 `<id> <text>`。
-- **定位语法**（`[文件名]#<片段>`，取最后一个 `#` 之后）：`#<id>` **先**按声明的子句 id 解析（所以 `#S1`、`#L2` 是子句 id，不是行号）；`#line=<n>` 是物理行（1 起）的独立写法。材料声明了子句时，其他任何 `#片段` 都是 P1 拒绝（点名「声明了 N 条子句：S1, S2, …」——诊断数子句就只说子句，说行就只说行，不混用）；未声明子句时 id 片段无从解析，保持 0.114.0 口径（只受 material_index 约束）。不带 `#` 的 locator（`bills!B7`、`p3`）只受 material_index 约束。
-- **覆盖**：每条声明子句必须被一个**通过 P1** 的候选认领——其 `anchor.locator` 解析到该子句（或其所在行），或其 `source_clause` 包含整行子句原文；只引片段又无可解析 locator 的候选不认领任何子句（`S1` 不能顺带覆盖 `S10`）。prepare 在 P1–P3 之后、P4 之前校验，未覆盖 → `verdict:error`、`diagnostics[stage=P1c]` 按 id 点名；lint 同源，`coverage:{pattern,clauses,covered,exempted,uncovered:[{id,locator,line,text}],problems}`、`issues[].stage="COVERAGE"`。
-- **豁免**（`--coverage-exempt <file>`：JSON 数组或 `{exempt:[…]}`）：每条恰好用 `id`、`locator`（`#S3`）或 `text`（整行原文）之一指明子句，并带 `reason`；**不认行号**（`#line=<n>` 豁免被拒——材料一改行号就静默改靶）。指向未声明子句、缺 reason、或豁免一条已被覆盖的子句 → 覆盖问题。裸字符串条目按 id/locator 读。
-- **评审配对**：prepare 把评审文件里的 `source_clause` 交给构造面（`PrepareOptions.reviewedClauses`）；没有任何候选携带的评审是**孤儿评审**（判据在评审后被删或改名）→ `verdict:error`、`diagnostics[stage=P3]`。无评审的候选本来就在 P3 以「self-review incomplete」被拒。
+- **子句 = 匹配子句模式的行**；模式的第 1 个捕获组是子句 id。默认模式是舰队约定 `^([A-Z]+[0-9]+) `（大写字母 + 数字 + 一个空格：`S1 …`、`P12 …`、`AB3 …`）。材料可在冻结时声明自己的模式：`verify submit --clause-pattern <regex>` 把它写进 `material.json` 的 `clause_pattern`，**与材料一起冻结**（声明的模式参与 `material_id` 哈希——同一文本换模式即另一份材料，不会静默改靶；未声明时 id 与旧版一致）。prepare（CLI 与 WebUI 作业端点）只认材料里冻结的模式，不接受临时旗标；`lint-candidates` 面对的是裸文本文件，用 `--clause-pattern` 声明。模式缺捕获组或非法 → rc=2。标题（`#`/`##`）、空行、表格/结构行、散文（`验收对象：…`）、纪律列表**按规则不在范围内**。同一 id 声明两次 → 覆盖问题（点名两处行号）。
+- **没有一行匹配不是静默通过（SKIP ≠ OK）**：
+  - 材料**声明了**模式却一行不中 → 覆盖问题（`no clause lines matched pattern … misconfiguration`），lint `ok:false`，prepare `error`。
+  - 用**默认**模式一行不中（未编号的旧材料）→ 具名跳过：lint 输出 `coverage_skipped:true`、`coverage.enforced:false`；prepare 的 ready 记录带 `diagnostics[stage=P1c]` = `no clause lines matched pattern … — clause coverage not enforced (a skip, not a pass)`，`--json` 带 `coverage`。不造子句（0.114.1/0.114.2 的「每行都是子句」回归），也不把跳过折成 OK。要开启覆盖：把判据编号成 `<id> <text>`，或 submit 时声明模式。
+- **定位语法**（`[文件名]#<片段>`，取最后一个 `#` 之后）：`#<片段>` **先**按子句 id 解析（所以 `#S1`、`#L2` 是子句 id，不是行号）；`#line=<n>` 是物理行（1 起）的独立写法。材料有子句时，其他任何 `#片段` 都是 P1 拒绝（点名「declares N clause(s): S1, S2, …」——诊断数子句就只说子句，说行就只说行，不混用）；无子句时 id 片段无从解析，只受 material_index 约束。不带 `#` 的 locator（`bills!B7`、`p3`）只受 material_index 约束。quote 必须落在 locator 所指的子句 / 行内。
+- **覆盖**：每条子句必须被一个**通过 P1** 的候选认领——其 `anchor.locator` 解析到该子句（或其所在行），或其 `source_clause` 包含整行子句原文；只引片段又无可解析 locator 的候选不认领任何子句（`S1` 不能顺带覆盖 `S10`）。prepare 在 P1–P3 之后、P4 之前校验，未覆盖 → `verdict:error`、`diagnostics[stage=P1c]` 按 id 点名；lint 同源，`coverage:{pattern,enforced,clauses,covered,exempted,uncovered:[{id,locator,line,text}],problems}`、`issues[].stage="COVERAGE"`。
+- **豁免**（`--coverage-exempt <file>`：JSON 数组或 `{exempt:[…]}`）：每条是对象，恰好用 `id`、`locator`（`#S3`）或 `text`（整行原文）之一指明子句，并带**必填** `reason`；裸字符串条目 rc=2（没有隐式 reason）。**不认行号**（`#line=<n>` 豁免被拒——材料一改行号就静默改靶）。指向不存在的子句、缺 reason、或豁免一条已被覆盖的子句 → 覆盖问题。
+- **评审配对**：prepare 把评审文件里的 `source_clause` 交给构造面（`PrepareOptions.reviewedClauses`）；没有任何候选携带的评审是**孤儿评审**（判据在评审后被删或改名）→ `verdict:error`、`diagnostics[stage=P3]`。无评审的候选本来就在 P3 以「self-review incomplete」被拒。`lint-candidates --reviews` 同源（`stage:"REVIEW"`）。
+- **发布门禁**：`contract-audit` contract 15 对 `packages/verify/core/tests/fixtures/fleet/` 下冻结的 24 份真实舰队材料（审查席 7 份、webui 6 份含 view、fleet 2 份、design 9 份；均带标题/散文/纪律节）跑 `lint-candidates --text --reviews` 与 `submit → prepare --draft`，任何非 ok / 非 ready 即阻断。
+- **契约面**：spec 与报告形状不变（`contract_version` 1.2、`corpus_version` 1.2）；变化在构造面——`material.json` 增可选 `clause_pattern`、lint 输出增 `coverage_skipped` 与 `coverage.enforced/pattern`、prepare `--json` 增 `coverage`（均为加法）；豁免文件与 `#L<n>` 行号写法（0.114.1 引入）语义收紧。charter 不涉及。
 
 ## 1.7 file 检查的排除集（`ignore`，0.98.0）
 

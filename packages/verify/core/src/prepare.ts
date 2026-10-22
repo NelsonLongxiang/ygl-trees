@@ -105,9 +105,12 @@ export interface PrepareOptions {
    *  declared clauses that no VU should cover; every other clause must be
    *  claimed by a frozen VU. */
   coverageExempt?: CoverageExemption[];
-  /** #34: the declared clause pattern (first capture group = clause id);
-   *  default DEFAULT_CLAUSE_PATTERN, the fleet convention `^([A-Z][0-9]+) `. */
+  /** #34: the clause pattern (first capture group = clause id); default
+   *  DEFAULT_CLAUSE_PATTERN, the fleet convention `^([A-Z]+[0-9]+) `. */
   clausePattern?: RegExp;
+  /** #34: the pattern was declared for this material (material.json
+   *  `clause_pattern`) — then matching no line is an error, not a skip. */
+  clausePatternDeclared?: boolean;
   /** #34: the source_clauses the caller's review file carries; one that no
    *  candidate claims is an orphan review and blocks ready (P3). */
   reviewedClauses?: string[];
@@ -124,6 +127,8 @@ export interface PrepareResult {
   materials_sha256: string;
   /** 机器可读的诊断（CLI 的 --json 直接吐它） */
   diagnostics: Array<{ stage: string; message: string }>;
+  /** #34: clause coverage the run was judged with (absent when nothing survived to be judged) */
+  coverage?: CoverageResult;
 }
 
 const UNDECIDABLE = /(应尽量|尽量|建议|合理|酌情|视情况|适当)/;
@@ -168,13 +173,16 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex, in
 
 /** GitHub #34 (follow-up to 0.114.1): frozen-material clause scope **by rule**.
  *
- *  A clause is a material line that matches the declared clause pattern; the
- *  pattern's first capture group is the clause id. The default is the fleet
- *  convention `^([A-Z][0-9]+) ` (an id, then a space: `S1 …`, `P12 …`). Titles,
- *  `##` headings, blank lines and prose (`验收对象：…`) are out of scope by rule —
- *  never by exemption. A material with no matching line declares no clauses:
- *  coverage is reported as not enforced (`coverage.clauses:0`) instead of
- *  inventing clauses out of prose (the 0.114.1 regression).
+ *  A clause is a material line that matches the clause pattern; the pattern's
+ *  first capture group is the clause id. The default is the fleet convention
+ *  `^([A-Z]+[0-9]+) ` (an id, then a space: `S1 …`, `P12 …`); a material may
+ *  declare its own at submit time (`material.json` `clause_pattern`, frozen
+ *  with the material). Titles, `##` headings, blank lines and prose
+ *  (`验收对象：…`) are out of scope by rule — never by exemption.
+ *  No matching line is never a silent OK (SKIP ≠ OK): under a declared pattern
+ *  it is a coverage problem (misconfigured pattern); under the default it is a
+ *  named skip (`no clause lines matched pattern …`, `coverage.enforced:false`)
+ *  instead of inventing clauses out of prose (the 0.114.1 regression).
  *
  *  Locator grammar (the fragment after the last `#`, file prefix optional):
  *    `#<id>`      — a declared clause id; resolved first, so `#S1`/`#L2` are ids;
@@ -182,7 +190,7 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex, in
  *  When the material declares clauses, any other `#fragment` is a P1 rejection
  *  (a typo or a stale id must not pass as an unverified anchor). Locators
  *  without `#` (`bills!B7`, `p3`) stay governed by the material index. */
-export const DEFAULT_CLAUSE_PATTERN = /^([A-Z][0-9]+) /;
+export const DEFAULT_CLAUSE_PATTERN = /^([A-Z]+[0-9]+) /;
 
 export interface CoverageExemption {
   /** clause id (`S3`) */
@@ -224,7 +232,7 @@ export function compileClausePattern(p: string | RegExp | undefined): RegExp | s
   const flags = re.flags.replace(/[gy]/g, "");
   // an alternation with the empty string always matches; its length = groups + 1
   if (new RegExp(`(?:${re.source})|`, flags).exec("")!.length < 2) {
-    return `clause pattern ${JSON.stringify(re.source)} needs a capture group for the clause id, e.g. "^([A-Z][0-9]+) "`;
+    return `clause pattern ${JSON.stringify(re.source)} needs a capture group for the clause id, e.g. "^([A-Z]+[0-9]+) "`;
   }
   return new RegExp(re.source, flags);
 }
@@ -299,8 +307,10 @@ function checkLocator(locator: string, quote: string, inv: ClauseInventory): str
 }
 
 export interface CoverageResult {
-  /** declared clause pattern (source) */
+  /** clause pattern in force (source) */
   pattern: string;
+  /** false when no material line matched the pattern — a named skip, not an OK */
+  enforced: boolean;
   clauses: number;
   covered: number;
   exempted: number;
@@ -317,9 +327,14 @@ export function checkCoverage(
   candidates: PrepareCandidate[],
   exempt: CoverageExemption[] = [],
   pattern: RegExp = DEFAULT_CLAUSE_PATTERN,
+  /** the pattern was declared for this material (not the default) */
+  declared = false,
 ): CoverageResult {
   const inv = clauseInventory(materialText, pattern);
   const problems = [...inv.problems];
+  if (declared && inv.clauses.length === 0) {
+    problems.push(`no clause lines matched pattern ${inv.pattern} — the material declared this pattern, so an empty clause set is a misconfiguration, not a pass`);
+  }
   const covered = new Set<string>();
   for (const c of candidates) {
     const sc = String(c?.source_clause ?? "").trim();
@@ -363,7 +378,12 @@ export function checkCoverage(
   const uncovered = inv.clauses
     .filter((c) => !covered.has(c.id) && !exempted.has(c.id))
     .map((c) => ({ id: c.id, locator: c.locator, line: c.line, text: c.text }));
-  return { pattern: inv.pattern, clauses: inv.clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
+  return { pattern: inv.pattern, enforced: inv.clauses.length > 0, clauses: inv.clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
+}
+
+/** The named skip for a material whose lines match no clause pattern. */
+export function noClauseLinesMessage(pattern: string): string {
+  return `no clause lines matched pattern ${pattern} — clause coverage not enforced (a skip, not a pass): number criteria "<id> <text>" or declare the pattern with submit --clause-pattern`;
 }
 
 /** GitHub #34 negative fixture "orphan review": a review whose source_clause no
@@ -589,6 +609,9 @@ export interface LintResult {
   issues: LintIssue[];
   /** #34: frozen-material clause coverage (null when no material text was given) */
   coverage: CoverageResult | null;
+  /** #34: material given but no line matched the (default) clause pattern —
+   *  coverage was skipped, which is reported, not folded into `ok` silently */
+  coverage_skipped: boolean;
 }
 
 export function lintCandidates(
@@ -599,6 +622,7 @@ export function lintCandidates(
     schema?: SchemaProbe;
     coverageExempt?: CoverageExemption[];
     clausePattern?: RegExp;
+    clausePatternDeclared?: boolean;
     /** source_clauses of the review file, when given (`--reviews`) */
     reviewedClauses?: string[];
   } = {},
@@ -625,7 +649,7 @@ export function lintCandidates(
     // #34: a clause is "claimed" once some candidate passed P1 (is a verbatim
     // clause claim). P2/P3 rejection already blocks ready on its own; coverage is
     // the orthogonal guard against a clause nobody even tried to assert.
-    coverage = checkCoverage(opts.materialText, p1Passing, opts.coverageExempt ?? [], pattern);
+    coverage = checkCoverage(opts.materialText, p1Passing, opts.coverageExempt ?? [], pattern, opts.clausePatternDeclared === true);
     for (const u of coverage.uncovered) {
       issues.push({ index: -1, source_clause: u.text, stage: "COVERAGE", reason: `clause ${u.id} is not covered by any candidate — add a candidate or declare a named exemption` });
     }
@@ -649,6 +673,7 @@ export function lintCandidates(
     ok: issues.length === 0,
     issues,
     coverage,
+    coverage_skipped: coverage !== null && !coverage.enforced && !opts.clausePatternDeclared,
   };
 }
 
@@ -736,6 +761,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   const pattern = opts.clausePattern ?? DEFAULT_CLAUSE_PATTERN;
   const inventory = clauseInventory(materialText, pattern);
   const seenClauses = new Set<string>();
+  let coverageResult: CoverageResult | undefined;
   // Deterministic-rejection dedupe key (#21): a replayed P1/P2 verdict is the
   // same fact, not a new rejection — round only exists for P3 retries.
   const rejectedKeys = new Set<string>();
@@ -801,7 +827,8 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   if (kept.length > 0) {
     // #34: every declared clause must be claimed by a P1-passing candidate (or
     // exempted by id/text), and every review must pair with a candidate.
-    const coverage = checkCoverage(materialText, p1Passing, opts.coverageExempt ?? [], pattern);
+    const coverage = checkCoverage(materialText, p1Passing, opts.coverageExempt ?? [], pattern, opts.clausePatternDeclared === true);
+    coverageResult = coverage;
     const orphans = orphanReviews([...seenClauses].map((source_clause) => ({ source_clause })), opts.reviewedClauses ?? []);
     if (coverage.uncovered.length || coverage.problems.length || orphans.length) {
       const diagnostics: Array<{ stage: string; message: string }> = coverage.uncovered.map((u) => ({
@@ -819,6 +846,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
         rounds: round,
         materials_sha256: materialsSha,
         diagnostics,
+        coverage,
       };
     }
   }
@@ -882,9 +910,9 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   diagnostics.push({
     stage: "P1c",
     message: inventory.clauses.length
-      ? `clause coverage: ${inventory.clauses.length} clause(s) declared by ${inventory.pattern}, all covered or exempted`
-      : `clause coverage not enforced: no material line matches ${inventory.pattern} (number criteria "<id> <text>" to enable it)`,
+      ? `clause coverage: ${inventory.clauses.length} clause(s) match ${inventory.pattern}, all covered or exempted`
+      : noClauseLinesMessage(inventory.pattern),
   });
   diagnostics.push({ stage: "P5", message: `frozen with ${spec.vu.length} units after ${round} round(s)` });
-  return { verdict: "ready", spec, units: spec.vu, rejected, rounds: round, materials_sha256: materialsSha, diagnostics };
+  return { verdict: "ready", spec, units: spec.vu, rejected, rounds: round, materials_sha256: materialsSha, diagnostics, coverage: coverageResult };
 }
