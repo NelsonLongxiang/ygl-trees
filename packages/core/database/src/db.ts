@@ -540,11 +540,12 @@ export class DB {
     this.ownsLock = acquired;
     this.db = new Database(file);
     this.db.exec("PRAGMA journal_mode=WAL");
-    // 0.90.1 P1-2 (review direct-a35d58ae): readers wait (up to 2s) instead
-    // of failing instantly when another process holds the write lock — the
-    // serve panel must survive concurrent CLI writes (same family as the
-    // 0.83 DB.close flake).
-    this.db.exec("PRAGMA busy_timeout=2000");
+    // 0.90.1 P1-2 (review direct-a35d58ae): readers wait instead of failing
+    // instantly when another process holds the write lock — the serve panel
+    // must survive concurrent CLI writes (same family as the 0.83 DB.close
+    // flake). Batch-16: high-concurrency kb imports (hundreds/day, several
+    // workers) need a wider window than 2s; runTx also retries SQLITE_BUSY.
+    this.db.exec("PRAGMA busy_timeout=10000");
     // WAL + NORMAL (sqlite.org recommended pairing): commits skip the per-tx
     // fsync (~14ms on Windows) and sync at WAL checkpoints instead. A power
     // loss may roll back the last transactions; the database cannot corrupt.

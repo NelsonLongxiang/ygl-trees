@@ -135,8 +135,6 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     case "rm":
     case "remove": {
-      // ③ cold-user report: `skill rm` exists but `kb rm` doesn't — asymmetric
-      // command surface forces users to raw `db sql DELETE` for cleanup.
       const id = rest[0];
       if (!id) {
         bad(ctx, "usage: kb rm <id>");
@@ -147,38 +145,30 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `note not found: ${id}`);
         return 1;
       }
-      store.db.run("DELETE FROM kb_fts WHERE id=?", [id]);
-      store.db.run("DELETE FROM kb_notes WHERE id=?", [id]);
-      // 0.81: kb.rm event — doctor check 10 replays *.add events against base
-      // tables; a legit removal used to look like a phantom write. Logging the
-      // rm (mirroring source/evidence rm paths) lets doctor reconcile.
-      try {
-        const ev = {
-          id: `ev${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-          ts: new Date().toISOString(),
-          actor: process.env.YGL_SESSION || "cli",
-          kind: "kb.rm",
-          entity: "kb_note",
-          entity_id: id,
-          payload: JSON.stringify({ title: String((note as any).title || "") }),
-          level: "info",
-        };
-        store.db.run(
-          "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
-          [ev.id, ev.ts, ev.actor, ev.kind, ev.entity, ev.entity_id, ev.payload, ev.level]
-        );
-        emitEvent({
-          kind: "kb.rm",
-          entity: "kb_note",
-          entityId: id,
-          payload: JSON.stringify({ title: String((note as any).title || "") }),
-          ts: ev.ts,
+      // #49/批十六: base row + FTS shadow + links + kb.rm event commit together.
+      // The previous two autocommit DELETEs could leave kb_fts out of sync when
+      // a crash/busy error landed between them (the doctor-visible seam).
+      return getOrm(env.db.path)
+        .then((ds) => writes.kbRemove(ds, id))
+        .then((r): number => {
+          try {
+            emitEvent({
+              kind: "kb.rm",
+              entity: "kb_note",
+              entityId: id,
+              payload: JSON.stringify({ title: String(r.row.title || "") }),
+              ts: new Date().toISOString(),
+            });
+          } catch {
+            /* bus emission is best-effort; the transactional event is the record */
+          }
+          ok(ctx, `note removed: ${id}  ${String(r.row.title || "").slice(0, 40)}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
         });
-      } catch {
-        // event logging is best-effort — the delete itself already succeeded
-      }
-      ok(ctx, `note removed: ${id}  ${String((note as any).title || "").slice(0, 40)}`);
-      return 0;
     }
     case "show": {
       if (!rest[0]) {

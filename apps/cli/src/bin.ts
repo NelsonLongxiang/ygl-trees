@@ -468,16 +468,32 @@ export async function main(argv: string[]): Promise<number> {
   const VERSION = appVersion();
   let booted: BootedApp;
   try {
-    booted = await bootApp({
-      home,
-      dbFile: file,
-      baseBundle: loadBundle().map((id) => {
-        const entry = PLUGINS[id];
-        if (!entry) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
-        return { id, apply: entry.apply, config: entry.config };
-      }),
-      version: VERSION,
-    });
+    // Batch-16: concurrent CLI workers can collide while one opens the workspace
+    // ("cannot open database … database is locked" — the ORM/WAL switch). Retry
+    // the whole boot a few times with jitter; the foreign writer releases the
+    // lock in ms. Non-lock failures fall through immediately.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        booted = await bootApp({
+          home,
+          dbFile: file,
+          baseBundle: loadBundle().map((id) => {
+            const entry = PLUGINS[id];
+            if (!entry) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
+            return { id, apply: entry.apply, config: entry.config };
+          }),
+          version: VERSION,
+        });
+        break;
+      } catch (bootErr) {
+        const msg = String((bootErr as any)?.message || bootErr);
+        if (attempt < 5 && /database is locked|SQLITE_BUSY/i.test(msg)) {
+          await new Promise((r) => setTimeout(r, 60 * 2 ** attempt + Math.random() * 80));
+          continue;
+        }
+        throw bootErr;
+      }
+    }
   } catch (e: any) {
     if (e instanceof StartupError) {
       // P0 fix (a2a 7aa5c871): a bad plugin entry must not brick the home —

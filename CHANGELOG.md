@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.114.11
+
+批十六用户观察（验证席转发）：kb 池高并发导入场景出现 `kb_notes` ↔ `kb_fts` 漂移（doctor `fts_sync_kb` 可见）。
+
+- **根因（写入侧缝）**：`kb rm` 用两条 autocommit 语句分别删除 `kb_fts` 与 `kb_notes`（及事件），进程崩溃/忙错落在
+  两条之间即留下影子行漂移。改为 `writes.kbRemove`——基表 + FTS 影子 + `kb_links`（双向）+ `kb.rm` 事件在
+  **同一个事务**提交；失败整体回滚。
+- **高并发路径**：并发 CLI 工作进程在打开/写入时可能拿到 `database is locked` 而整命令失败。加固：
+  `busy_timeout` 2s→**10s**；`runTx` 对 `SQLITE_BUSY` 做 jittered 退避重试（事务回滚后重试安全，内容级
+  hash 去重保持幂等）；`getOrm` 初始化对打开期锁做有界重试；CLI boot 对打开期 `database is locked` 重试。
+- 测试：`kb-fts.spec` 2 例——`kb rm` 后 base/fts/事件一致且 doctor 绿；**12 并发 `kb add`** 全部 rc0 且
+  `kb_notes == kb_fts`（并发双写同一事务）。
+- unit 889 → **891**；contract 144 不变；ratchet held（cold start 471→459 tightened）。
+
 ## 0.114.10
 
 GitHub #49（验证席 P3 · #48 残余）：带必选 id/name 的动词缺参时泄漏驱动错误/静默 rc=0。按验证席建议

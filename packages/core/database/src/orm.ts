@@ -23,20 +23,37 @@ let pgCached: { url: string; ds: DataSource } | null = null;
 
 export async function getOrm(dbFile: string): Promise<DataSource> {
   if (cached && cached.file === dbFile) return cached.ds;
-  const ds = new DataSource({
-    type: "better-sqlite3",
-    database: dbFile,
-    synchronize: false, // NEVER — migrations live on the user_version track
-    entities: [...RESEARCH_ENTITIES, ...CORE_ENTITIES],
-  });
-  await ds.initialize();
-  // synchronous is per-connection (WAL is sticky in the file, this is not):
-  // keep the ORM's better-sqlite3 connection on the same WAL+NORMAL policy
-  // as the wasm DB — per-commit fsync otherwise dominates write latency.
-  await ds.query("PRAGMA synchronous=NORMAL");
-  cached = { file: dbFile, ds };
-  ormState.opened = true; // 0.87: lets plugin.ts stop() know without importing typeorm
-  return ds;
+  // Batch-16: a second connection opening while a concurrent writer holds the
+  // SQLite lock fails at initialize() ("database is locked") before any PRAGMA
+  // can help. Bounded retry with jitter — high-concurrency imports (several
+  // CLI workers) should queue, not fail; the lock is released in ms.
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const ds = new DataSource({
+      type: "better-sqlite3",
+      database: dbFile,
+      synchronize: false, // NEVER — migrations live on the user_version track
+      entities: [...RESEARCH_ENTITIES, ...CORE_ENTITIES],
+    });
+    try {
+      await ds.initialize();
+      // synchronous is per-connection (WAL is sticky in the file, this is not):
+      // keep the ORM's better-sqlite3 connection on the same WAL+NORMAL policy
+      // as the wasm DB — per-commit fsync otherwise dominates write latency.
+      await ds.query("PRAGMA synchronous=NORMAL");
+      await ds.query("PRAGMA busy_timeout=10000");
+      cached = { file: dbFile, ds };
+      ormState.opened = true; // 0.87: lets plugin.ts stop() know without importing typeorm
+      return ds;
+    } catch (e: any) {
+      lastErr = e;
+      const msg = String(e?.message || e);
+      if (attempt === 5 || !/database is locked|SQLITE_BUSY/i.test(msg)) throw e;
+      try { await ds.destroy(); } catch { /* connection never opened */ }
+      await new Promise((r) => setTimeout(r, 50 * 2 ** attempt + Math.random() * 80));
+    }
+  }
+  throw lastErr;
 }
 
 /** 0.89 (PG-A ①): dialect seam — the SAME entity registry over PostgreSQL.
