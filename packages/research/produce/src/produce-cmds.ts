@@ -356,7 +356,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const dest = rest[1] || `${a.kind}-${a.id}.md`;
       fs.writeFileSync(dest, a.content, "utf8");
       store.log("artifact.export", "artifact", a.id, dest);
-      ok(ctx, `written: ${dest} (${a.content.length} chars)`);
+      // #46: a write command's --json success path is ONE JSON object (frozen
+      // contract); the human ack was leaking into the machine channel.
+      if (ctx.json) {
+        console.log(JSON.stringify({ artifact_id: a.id, path: dest, chars: a.content.length, bytes: Buffer.byteLength(a.content, "utf8") }, null, 2));
+      } else {
+        ok(ctx, `written: ${dest} (${a.content.length} chars)`);
+      }
       return 0;
     }
 
