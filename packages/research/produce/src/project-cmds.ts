@@ -47,13 +47,31 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const priorHint = prior && prior !== name
         ? `  (prior project '${prior}' is no longer selected — project use ${prior} to switch back)`
         : "";
+      // #44 F1: a flag-less (sid-less) process shares the "default" bucket. In a
+      // multi-project workspace `project new` re-points every other sid-less
+      // agent — state it in the JSON face too, not just in human output.
+      const sid = sessionId();
       return getOrm(env.db.path)
         .then((ds) => writes.projectCreate(ds, name, question))
         .then((p): number => {
           logSelectionEvent("project.use", p.name);
+          // count AFTER creation: the workspace is now multi-project if it was
+          // not before, which is exactly when the shared bucket bites.
+          const sharedWarning = sid === "default" && projectCount(store.db) > 1
+            ? `selection written to the shared "default" bucket (prior: ${prior || "none"}); every session-less agent now resolves to '${p.name}' — pin with --project or YGL_SESSION`
+            : undefined;
+          if (sharedWarning && !ctx.json) {
+            out(ctx, paint(C.yellow, `  ! ${sharedWarning}`, ctx.color));
+          }
           ack(
             ctx,
-            p,
+            {
+              ...p,
+              selected: p.name,
+              prior: prior || null,
+              session: sid,
+              ...(sharedWarning ? { selection_warning: sharedWarning } : {}),
+            },
             p?.duplicate === true
               ? `project exists, selected: ${p.name}  (duplicate, not re-created)${priorHint}`
               : `project created and selected: ${p.name}${priorHint}`
@@ -99,12 +117,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // steal each other's selection); --global is the explicit opt-in that
       // writes the migration-fallback pointer.
       const scope = args.flags.global === true || args.flags.global === "true" ? "global" : "session";
-      store.db.metaSet(scope === "global" ? "current_project" : `current_project@${sessionId()}`, name);
+      const sid = sessionId();
+      const prior = store.db.metaGet(scope === "global" ? "current_project" : `current_project@${sid}`);
+      store.db.metaSet(scope === "global" ? "current_project" : `current_project@${sid}`, name);
       logSelectionEvent("project.use", name);
+      // #44 F1: the JSON face of `project use` must show what it replaced and
+      // whether the selection landed in the shared "default" bucket.
+      const sharedWarning = scope === "session" && sid === "default" && projectCount(store.db) > 1
+        ? `selection written to the shared "default" bucket; every session-less agent now resolves to '${name}' — pin with --project or YGL_SESSION`
+        : undefined;
+      if (sharedWarning && !ctx.json) {
+        out(ctx, paint(C.yellow, `  ! ${sharedWarning}`, ctx.color));
+      }
       ack(
         ctx,
-        { project: name, scope, session: sessionId() },
-        `now using: ${name}  (${scope} selection${scope === "session" ? ` — session ${sessionId().slice(0, 8)}` : ""})`
+        { project: name, scope, session: sid, selected: name, prior: prior || null, ...(sharedWarning ? { selection_warning: sharedWarning } : {}) },
+        `now using: ${name}  (${scope} selection${scope === "session" ? ` — session ${sid.slice(0, 8)}` : ""})`
       );
       // 0.87 (user ruling m07308): bare shells share the "default" session
       // key — parallel terminals on different projects would stomp each

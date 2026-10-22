@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.114.7
+
+GitHub #44（验证席 P2/P3）选择桶信号与 owner 点名；选择语义全面梳理见 `docs/reviews/project-selection-review.md`（#45，D1–D5 待属主）。
+
+- **F1/P2 `project new` 静默改写共享 default 桶**：`project new` / `project use --json` 结果增
+  `selected` / `prior` / `session` 字段；写入共享 `default` 桶且工作区已多项目时，增
+  `selection_warning`（JSON 字段 + 人类面 stderr 警示行）。选择本身仍按现行为（D2/D3 待属主），信号先补齐。
+- **F2/P3 `claim link` 忽略选择**：跨项目链接且**未显式 `-p`**、所选项目不拥有任何一端时，回执增
+  `selection_note` 说明「选择不拥有此链接两端」；链接行为不变（D1 待属主）。
+- **F3/P3 id 寻址动词作用域分歧**：`claim resolve`/`unresolve`/`unlink`、`evidence add <source>`、
+  `source show` 的拒绝统一**点名归属项目**（`it belongs to project 'p1' — use -p p1`）；
+  `source show` 按 R16.3 改为**作用域内读取**（此前跨项目可读，与 R16.3「读写都 fail-closed」相悖）。
+- 测试：`selection-signals.spec` 3 例（F1 字段/警告、F2 selection_note、F3 五个动词 owner 点名）；
+  unit 795 → **808**；contract 144 不变。
+
 ## 未发布
 
 GitHub #25 ③（0.113.1 后唯一未闭项）：**submit / prepare 的 meta 闸从子目录误拒**。`verify meta` 自 0.113.1 起从子目录上溯到
