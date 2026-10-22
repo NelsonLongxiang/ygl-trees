@@ -1,11 +1,11 @@
-# 递归验证器契约草案 · `verify tree run`（A1，v0.1 DRAFT）
+# 递归验证器契约草案 · `verify tree run`（A1，v0.2 DRAFT）
 
 > **状态：草案（DRAFT）——不构成已裁定契约。** 按现行治理，本文件需 **属主裁定 + 双评审席签署**
 > （默认发布席 `dsh/0672e341`、验证席 `dsh/ae07421e`，最终以属主指定为准）后方可进入施工。
 > 语义节（S-1…S-7）与验收场景（V1…V10）来自主队席 `dsh/e9a87677` 的《A1 共同作者材料 v0.1》；
 > 接口/CLI 形状由 ygl-trees 主开发线起草。开放点 §6 未裁定前，实现不得锁定行为。
 
-日期：2026-10-22 ｜ 关联：charter §4.7（原语表）、#16（验证器生产线 P2/P3）、#35（身份判据 Q4/Q6/Q7）
+日期：2026-10-22（v0.2 增补 V11–V15 / Q6–Q7） ｜ 关联：charter §4.7（原语表）、#16（验证器生产线 P2/P3）、#35（身份判据 Q4/Q6/Q7）
 
 ## 1. 范围与非目标
 
@@ -13,7 +13,8 @@
 树形验证：组节点（group）聚合子判定，叶节点（leaf）复用既有七型检查器；每层真实 run + archive。
 
 **非目标**：不引入任意表达式/脚本钩子（P4 闭包）；不改变现有 `verify submit/prepare/run/report/archive`
-语义；不做并行调度器（本轮顺序后序即可）；不碰 pi 依赖（WP-B 属 jf 仓）。
+语义；不做并行调度器（本轮顺序后序即可，但契约要求**调度无关**的 digest 稳定性——V11，并行器后置）；
+不碰 pi 依赖（WP-B 属 jf 仓）。
 
 ## 2. 递归语义（S-1…S-7，来自主队席材料）
 
@@ -110,6 +111,11 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 | V8 | 外部仓 archive 作为叶引入 | 与本地归档同验签路径 |
 | V9 | 规模基线 4 层 × 64 叶 | bench 门内完成（阈值 §6-Q4） |
 | V10 | 全程 events 留痕 | 只增；节点/轮次可追溯 |
+| V11 | 并行确定性 | 叶任意调度序执行，全树 report digest 逐字节相同（调度无关） |
+| V12 | 深度护栏 | 叶路径深度超上限（默认 16，见 §6-Q7）→ prepare rc=2 |
+| V13 | 树 spec 血统 | 已冻结 tree spec 的修改走取代记录（old/new digest+理由，同 meta 重登记纪律）；旧 digest 的历史 run 仍可验 |
+| V14 | 混合叶 | pinned 归档叶与现跑叶同树并存：pinned 走验签+stale 判据，现跑正常判定，聚合同路径 |
+| V15 | 四态聚合矩阵 | 表驱动：子含 ERROR/NEUTRALIZED → 父不得 PASS；全 PASS→PASS；策略性 FAIL→FAIL；空组节点见 §6-Q6 |
 
 ## 6. 开放点（定稿前必须裁定）
 
@@ -120,6 +126,8 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 | Q3 | 轮次 id 发行者 | CLI 在 run 发起时生成，写进所有层 archive | 与幂等键一致 |
 | Q4 | V9 bench 阈值（4 层 × 64 叶） | CI 安全线 ≤ **180s**（含 archive 写盘） | 需属主/验证席按机器定 |
 | Q5 | 树 spec 描述格式（文本 DSL vs JSON） | JSON（可机械校验、可 digest） | 与 material 冻结一致 |
+| Q6 | 空组节点处置 | prepare **拒绝**（rc=2） | 合法空跑会让「无子可聚合」变成隐藏 PASS；拒绝可裁定改 |
+| Q7 | 叶路径深度上限 | 初始 **16**，超限 prepare rc=2 | 深度护栏防递归爆炸；数值按实测可调 |
 
 ## 7. 评审与裁定
 
@@ -127,5 +135,8 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 2. 属主对 §6 五项与 charter §4.7 增补做裁定；
 3. 裁定后本文件改为「已裁定契约」并落实现（A1 施工；A2 self-check 缺陷注入紧随）；
 4. A3 发布门两段式（先 warn 后硬门）另立小契约，candidate 0.114.17。
+
+**v0.2 增补（2026-10-22）**：主队席补充包 V11–V15 已收录；新增开放点 Q6（空组节点）/ Q7（深度上限）。
+v0.1 → v0.2 仅为草案内容增补，裁定门不变。
 
 **未裁定前，不实现 `verify tree` 代码路径。**
