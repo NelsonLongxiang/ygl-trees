@@ -409,6 +409,11 @@ npm **latest=0.114.1**、shasum **`80c0270b…`**；官方字节 **1,530,979 B /
 npm **latest=0.114.2**、shasum **`5b164793…`**；官方字节 **1,531,869 B / sha256 `4b9f3633…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节；远端校验 ETIMEDOUT 按 `--no-network` 本地锚定 +
 ls-remote 双远端复证，非绕过）。
+**0.114.3 记录（2026-10-22，#36/#37 双派单）**：#36 predict-cli 墙钟 fixture 改相对 today 滚动
+（created=今天−11d、deadline=今天−4d、days_left 恒 −4），红门恢复稳定。**#37 重登记审计入仓**：审计记录
+从操作员本地 DB 迁到 `verify/meta.json` `reregistrations[]`（path/old/new/reason/at，append-only，
+随 commit 走；原子写、无 DB 依赖）；R2 校验形状；contract 12c 增链一致性（每条 last new_sha == 活 sha）；
+本仓三笔历史重登记迁入。unit 706→707；contract 141（12c 加强）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

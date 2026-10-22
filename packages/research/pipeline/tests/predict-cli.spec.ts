@@ -63,13 +63,19 @@ describe.skipIf(!HAS_BIN)("F6 predict settlement calendar (0.110.0)", () => {
     HOME = mkdtempSync(resolve(tmpdir(), "ygl-predict-f6-"));
     run(["db", "init"]);
     run(["project", "new", "alpha"]);
-    // due: created 2026-10-10 + 7d → deadline 2026-10-17 (past)
+    // #36: no wall-clock literals — the due fixture is pinned RELATIVE to today.
+    // created = today-11d, horizon 7 → deadline = today-4d → days_left -4 (stable
+    // in every clean checkout, every day; the old 2026-10-10/10-17 pair went red
+    // once today passed 2026-10-21).
+    const day = 86_400_000;
+    const nowDate = new Date();
+    const dueCreated = new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate()) - 11 * day).toISOString();
     addClaim("[预测·7天] 到期探测");
     // near boundary: created today, horizon 30 → deadline = today+30 (exactly 30 → near)
     addClaim("[预测·30天] 临近边界");
     // future boundary: created today, horizon 31 → deadline = today+31 (31 → future)
     addClaim("[预测·31天] 未来边界");
-    setCreatedLike("%到期探测%", "2026-10-10T00:00:00.000Z");
+    setCreatedLike("%到期探测%", dueCreated);
   });
 
   afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
@@ -79,7 +85,10 @@ describe.skipIf(!HAS_BIN)("F6 predict settlement calendar (0.110.0)", () => {
     expect(all.rc).toBe(0);
     expect(Array.isArray(all.j)).toBe(true);
     const dueRow = all.j.find((r: any) => r.text.includes("到期探测"));
-    expect(dueRow).toMatchObject({ deadline: "2026-10-17", due: true, days_left: -4 });
+    expect(dueRow).toMatchObject({ due: true, days_left: -4 });
+    // deadline is always created+7d (UTC-midnight math), i.e. today-4d
+    const expectedDeadline = new Date(Date.now() - 4 * 86_400_000).toISOString().slice(0, 10);
+    expect(dueRow.deadline).toBe(expectedDeadline);
 
     const dueOnly = jrun(["research", "predict", "list", "--all", "--due", "--json"]);
     expect(dueOnly.rc).toBe(0);

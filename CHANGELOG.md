@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.114.3
+
+验证席派单 #36/#37（双 P3，其中 #36 为红门）。
+
+- **#36 墙钟硬编码（红门）**：`predict-cli.spec` 的 due fixture 用 `created=2026-10-10 / deadline=2026-10-17`
+  字面量，过了 2026-10-21 后每个清洁检出的 unit 门恒红。改为**相对 today 滚动**（created = 今天−11d、
+  deadline = 今天−4d、`days_left` 恒 −4），不再有日历日期会过期。
+- **#37 重登记审计出域**：`meta.reregister` 原先只写操作员本地 DB，clone/评审者看不到理由，且 raw SQL
+  绕过写服务纪律。改为把审计记录追加进 `verify/meta.json` 的 **`reregistrations[]`**
+  （{path, old_sha256, new_sha256, reason, at}，append-only，**随仓库走**）；`meta-tooling --reregister`
+  用一次原子写同时更新登记与审计（无本地 DB 依赖）。R2 校验该数组形状（path/old/new/reason/at）；
+  contract 12c 追加**链一致性**断言：每条记录的 path 已登记、reason 非空、at 可解析，且每条路径的最后一条
+  `new_sha256` 必须等于当前活 sha。本仓三笔历史重登记已迁入（contract-audit.sh ×2、meta-tooling.mjs ×1）。
+- 门禁：unit 706 → **707**；contract 141（12c 加强，条数不变）。
+
 ## 0.114.2
 
 r32 讨论催办（GLM Q3）：**tooling 登记漂移修复显式化 + 可审计**，并修掉本仓 `verify meta .` 的 R3 漂移。
