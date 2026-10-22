@@ -464,7 +464,8 @@ origin/master `78d5830` 含 0.114.5 发布记录 docs commit）；npm **latest=0
 **#25 ③ 修正记录（2026-10-22，未发布；fork PR）**：证据链——0.113.1 修了 `verify meta` 的子目录上溯（#25c），但 `metaGate` 硬分支仍
 `const repo = explicitRepo ?? process.cwd()`，审查席在 0.113.2 / 0.114.0 两次复验仍复现（合规仓 `sub/` 里 meta PASS、submit rc=1
 meta_unverified）。裁定：闸与 `verify meta` 共用一个解析 `judgedRepoOf`（= `metaRepoRootOf` 真实路径上溯 ?? 起点真实路径），旁路 provenance /
-阶梯标记判定 / 硬分支三处同源；阶梯语义保持（显式 `--meta-repo` 优先、git 外跳过、无标记警告）。`meta-gate-subdir.spec` 7 例（旧代码 6/7 红）。
+阶梯标记判定 / 硬分支三处同源；阶梯语义保持（显式 `--meta-repo` 优先、git 外跳过、无标记警告）。审查席观察（继承自 0.113.1 的 `verify meta` 上溯）同 PR 收口：git 内上溯只停在 meta 索引（`verify/meta.json` / `verify/specs/`）或 git 根，
+嵌套 `AGENTS.md`（如本仓 `packages/AGENTS.md`）不再截断；git 外最近 AGENTS.md 仍算。`meta-gate-subdir.spec` 10 例（0.114.6 代码 8/10 红）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

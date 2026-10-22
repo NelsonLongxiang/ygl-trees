@@ -66,17 +66,27 @@ export function realPathOf(p: string): string {
 }
 
 /** #25c: the meta repo root is found by walking UP from the starting dir.
- *  A dir carrying a verifier marker (AGENTS.md / verify/) is the root; a git
- *  root with no marker also terminates the walk (ladder step 3). */
+ *  The walk stops at a dir carrying a verifier meta index (`verify/meta.json`
+ *  or `verify/specs/`) or at the git root (ladder step 3). A bare AGENTS.md
+ *  does NOT stop it inside git (#25 ③ follow-up): monorepos keep nested
+ *  AGENTS.md files (`packages/AGENTS.md`) that are guidance, not verifier
+ *  repos — `packages/x` must be judged as the repo, not as `packages`.
+ *  Outside git, the nearest AGENTS.md still marks a standalone verifier dir. */
 export function metaRepoRootOf(start: string): string | null {
   let cur = realPathOf(start);
+  let nearestAgents: string | null = null;
   for (;;) {
-    if (hasVerifierMarker(cur)) return cur;
+    if (hasMetaIndex(cur)) return cur;
     if (existsSync(join(cur, ".git"))) return cur;
+    if (nearestAgents === null && existsSync(join(cur, "AGENTS.md"))) nearestAgents = cur;
     const parent = dirname(cur);
-    if (parent === cur) return null;
+    if (parent === cur) return nearestAgents;
     cur = parent;
   }
+}
+
+function hasMetaIndex(dir: string): boolean {
+  return existsSync(join(dir, "verify", "meta.json")) || isDir(join(dir, "verify", "specs"));
 }
 
 /** #25 ③: the repo the gate judges — the same walk-up/realpath `verify meta`
@@ -98,7 +108,7 @@ export function gitRootOf(dir: string): string | null {
 export function hasVerifierMarker(repo: string): boolean {
   // `verify/` alone is ambiguous: a ygl workspace home keeps its data there.
   // A verifier repo is marked by AGENTS.md or a verifier meta index/specs dir.
-  return existsSync(join(repo, "AGENTS.md")) || existsSync(join(repo, "verify", "meta.json")) || isDir(join(repo, "verify", "specs"));
+  return existsSync(join(repo, "AGENTS.md")) || hasMetaIndex(repo);
 }
 
 /** Persist a meta.bypass event synchronously (node:sqlite, WAL-friendly). */

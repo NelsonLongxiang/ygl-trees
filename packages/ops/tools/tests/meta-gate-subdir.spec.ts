@@ -142,6 +142,38 @@ describe.skipIf(!HAS_BIN)("#25 ③ meta gate walks up like verify meta", () => {
     }
   });
 
+  it("monorepo: a nested packages/AGENTS.md (guidance, no meta index) does not stop the walk-up", () => {
+    const mono = gitRepo("mono", { agents: true, index: true });
+    mkdirSync(join(mono, "packages", "x"), { recursive: true });
+    writeFileSync(join(mono, "packages", "AGENTS.md"), "# package guidance\n", "utf8");
+    const x = join(mono, "packages", "x");
+    const meta = jrun(["verify", "meta"], x);
+    expect(meta.rc, meta.raw).toBe(0);
+    expect(meta.j.repo).toBe(realpathSync(mono));
+    expect(submit(x, "mono-x").rc).toBe(0);
+    expect(submit(join(mono, "packages"), "mono-packages").rc).toBe(0);
+  });
+
+  it("a nested verifier dir with its own meta index is judged as itself (inside git)", () => {
+    const outer = gitRepo("outer", { agents: false, index: false });
+    const inner = join(outer, "tools", "verifier");
+    mkdirSync(join(inner, "verify"), { recursive: true });
+    writeFileSync(join(inner, "AGENTS.md"), "# inner verifier\n", "utf8");
+    writeFileSync(join(inner, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs: [] }), "utf8");
+    mkdirSync(join(inner, "work"), { recursive: true });
+    expect(jrun(["verify", "meta"], join(inner, "work")).j.repo).toBe(realpathSync(inner));
+    const r = submit(join(inner, "work"), "inner-work");
+    expect(r.rc, r.raw).toBe(0);
+    expect(r.j.meta_warning).toBeUndefined();
+  });
+
+  it("outside git, the nearest AGENTS.md still marks a standalone verifier dir", () => {
+    const standalone = join(base, "standalone");
+    mkdirSync(join(standalone, "sub"), { recursive: true });
+    writeFileSync(join(standalone, "AGENTS.md"), "# standalone\n", "utf8");
+    expect(jrun(["verify", "meta"], join(standalone, "sub")).j.repo).toBe(realpathSync(standalone));
+  });
+
   it("outside any git repo the gate still skips by design (ladder 4)", () => {
     const plain = join(base, "plain", "sub");
     mkdirSync(plain, { recursive: true });
