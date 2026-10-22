@@ -482,6 +482,8 @@ export class DB {
    *  first native-driver open converts DELETE→WAL, which ≤0.114.11 cannot
    *  reopen. CLI surfaces one stderr line; YGL_LEGACY_JOURNAL=1 opts out. */
   journalMigration: { from: string; to: string } | null = null;
+  /** Requested mode could NOT be applied (another connection keeps WAL open). */
+  journalBlocked: { want: string; actual: string } | null = null;
 
   constructor(file: string, opts?: { lock?: boolean }) {
     const existed = fs.existsSync(file) && (() => { try { return fs.statSync(file).size > 0; } catch { return false; } })();
@@ -608,11 +610,18 @@ export class DB {
       const desired = journalModeDesired();
       const cur = String((this.db.prepare("PRAGMA journal_mode").get() as any)?.journal_mode || "").toLowerCase();
       if (cur && cur !== desired) {
-        const res = this.db.prepare(`PRAGMA journal_mode=${desired}`).get() as any;
-        const to = String(res?.journal_mode || desired).toLowerCase();
-        // Only an EXISTING workspace is a migration worth surfacing; fresh
-        // `db init` starts in whatever the desired mode is.
+        const apply = () => String((this.db.prepare(`PRAGMA journal_mode=${desired}`).get() as any)?.journal_mode || "").toLowerCase();
+        let to = apply();
+        // Leaving WAL needs an exclusive moment; a concurrently open connection
+        // (another CLI/serve/probe tool) makes SQLite return the old mode. Try a
+        // checkpoint first, then surface a BLOCKED warning instead of a silent
+        // no-op (user report: legacy switch looked dead with no stderr).
+        if (to !== desired && cur === "wal") {
+          try { this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* best effort */ }
+          to = apply();
+        }
         if (existed && to !== cur) this.journalMigration = { from: cur, to };
+        else if (existed && to !== desired) this.journalBlocked = { want: desired, actual: to || cur };
       }
     }
     // 0.90.1 P1-2 (review direct-a35d58ae): readers wait instead of failing

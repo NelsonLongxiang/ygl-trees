@@ -528,6 +528,12 @@ journal-mode.spec 3 例；unit 899→902。
 发布（2026-10-22）：commit **`ee18122`**；tag **`v0.114.13 = ae7f915f… → ^{commit}=ee18122…`**（双远端）；
 npm **latest=0.114.13**、shasum **`96e1a2a1…`**；官方字节 **1,584,959 B / sha256 `4cf79143…`**
 （publish `2026-10-22T12:40:52Z`，fileCount 177；deps 8 条，wasm 已移除）。
+**0.114.14 记录（2026-10-22，#53 探针口径跟进）**：WAL→legacy 回切在其它连接打开时 SQLite 原样返回 wal，
+0.114.13 无提示=看起来未回切。本版先 wal_checkpoint 再重试；仍失败打 `switch BLOCKED` stderr，不再静默。
+明确升级提示只在「发生转换的那次打开」出现（旧库已被转过则后续无提示）。journal-mode.spec 4 例；unit 902→903。
+同批 #54：better-sqlite3 依赖 ^13→**^12.11.1**（对齐 typeorm peer ^12，消除 npm 升级后 typeorm 无 driver 的
+「SQLite package has not been found」）；doctor 增 `sqlite_driver` 检查，getOrm 错误带 npm dedupe 修复指引；
+sqlite-driver.spec 2 例。unit 903→905。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

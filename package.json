@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.114.13",
+  "version": "0.114.14",
   "description": "Research workbench CLI for AI agents — evidence-first research pipeline, claims calibration and tech-tree skill modeling (SQLite; 猿光·科技树)",
   "type": "commonjs",
   "keywords": [
@@ -61,7 +61,7 @@
     "@deepseek-ai/cosmokit": "workspace:~",
     "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1",
     "@deepseek-ai/schemastery": "workspace:~",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^12.11.1",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^1.1.2"
   },

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.114.14
+
+#53 升级面跟进（验证席探针口径）。
+
+- **WAL→legacy 回切不再静默失败**：`PRAGMA journal_mode=delete` 需要独占时刻；存在其它打开连接时 SQLite 会
+  原样返回 `wal`。0.114.13 只在该请求「成功改变了模式」时提示，失败时无输出（探针看起来「没回切」）。
+  0.114.14 先 `wal_checkpoint(TRUNCATE)` 再重试；**仍失败**则 stderr 打 `journal_mode … switch BLOCKED`
+  并说明关闭其它连接后重试，不再假装成功。
+- 口径说明：升级提示只在**发生转换的那一次打开**出现；旧库一旦已被任一命令转过 WAL，后续打开不再提示
+  （无转换可报）。验证时请用「legacy 建库后的第一次普通打开」的 stderr。
+- **#54（P2 · npm 升级依赖面）**：`better-sqlite3` 从 `^13` 收窄到 **`^12.11.1`**（typeorm 1.1.2 的
+  optional peer 是 `^12`）——此前两个版本域不交，npm 升级可能把 12 收走/留下嵌套 13，typeorm 直接报
+  「SQLite package has not been found」，`db init` 与全部 ORM 写入失败。现单版本同时满足两边；
+  `doctor` 新增 **`sqlite_driver`** 检查（从 typeorm 视角 resolve 驱动，失败点名 `npm dedupe`/重装步骤），
+  `getOrm` 对同一错误给出修复指引。`sqlite-driver.spec` 2 例（版本域 ^12 + 单一物理副本、doctor pass）。
+- 测试：`journal-mode.spec` 增「另一连接空闲时回切仍成功」例（checkpoint 重试）；unit 902 → **905**
+  （+1 journal +2 driver）。
+
+### npm 升级注记（0.114.12–0.114.13 旧树）
+
+若升级后出现「SQLite package has not been found」：在项目目录执行 `npm dedupe`（或删 `node_modules` 重装），
+确认 `npm ls better-sqlite3` 只解析到一个 `12.x`。0.114.14 起依赖域已收窄，新装不会复现；`ygl-trees doctor`
+的 `sqlite_driver` 检查可直接判定当前树是否已坏。
+
 ## 0.114.13
 
 GitHub #53（P2 · 升级破坏面）+ #52（P3 · 测试污染）+ wasm 依赖清理。
