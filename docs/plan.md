@@ -534,6 +534,9 @@ npm **latest=0.114.13**、shasum **`96e1a2a1…`**；官方字节 **1,584,959 B 
 同批 #54：better-sqlite3 依赖 ^13→**^12.11.1**（对齐 typeorm peer ^12，消除 npm 升级后 typeorm 无 driver 的
 「SQLite package has not been found」）；doctor 增 `sqlite_driver` 检查，getOrm 错误带 npm dedupe 修复指引；
 sqlite-driver.spec 2 例。unit 903→905。
+发布（2026-10-22）：commit **`0591b4a`**；tag **`v0.114.14 = e67ef59a… → ^{commit}=0591b4a…`**（双远端同对象）；
+npm **latest=0.114.14**、shasum **`14060b47…`**；官方字节 **1,588,144 B / sha256 `085b35ff…`**
+（publish `2026-10-22T14:10:26Z`，fileCount 177）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
