@@ -471,6 +471,14 @@ selected/prior/session + 共享桶 `selection_warning`（人类面 stderr 同步
 且选项目不拥有两端时增 `selection_note`；F3 `claim resolve/unresolve/unlink`、`evidence add <source>`、
 `source show` 拒绝点名归属项目，`source show` 按 R16.3 改为作用域内读取。选择语义设计评审 #45 已入库
 （D1–D5 未裁定待属主）；本版只补信号与拒绝文案，未改选择授权语义（D2/D3 不动）。
+**0.114.7 记录（2026-10-22，#44 选择桶信号 + owner 点名）**：F1 `project new/use --json` 增
+selected/prior/session + 共享 default 桶 `selection_warning`（人类面 stderr 同步）；F2 跨项目 `claim link`
+未显式 `-p` 且选项目不拥有两端时增 `selection_note`；F3 `claim resolve/unresolve/unlink`、`evidence add <source>`、
+`source show` 拒绝点名归属项目，`source show` 按 R16.3 改为作用域内读取。设计评审 #45 已入库（D1–D5 未裁定待属主；
+本版只补信号与拒绝文案，未改选择授权语义）。门禁：unit 808（807 passed|1 skipped，108 files）、contract 144、
+demo/ratchet/readme/rust/pack 全绿。发布：commit **`07c9523`**；tag **`v0.114.7 = 39d64cd0… → ^{commit}=07c9523…`**；
+npm **latest=0.114.7**、shasum **`d16db80e…`**；字节 **1,573,610 B / sha256 `935da420…`**（publish `2026-10-22T06:55:32Z`，
+fileCount 177）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
