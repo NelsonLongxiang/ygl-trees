@@ -157,6 +157,40 @@ kind: 评审
 - `pack lint` 是包的一致性套件：清单校验、meta PASS、夹具「好的全绿、坏的只翻对应叶子」、规格在钉定引擎上能 prepare 到 ready。也就是评审席这一轮对 0.114.9 / 0.114.13 做的 15 份规格预检，固化成一条命令。
 - `pack install` 走现有插件通道，但只读数据，不执行任何 `apply`。
 
+### 4.4 安装与激活：项目根 `.ygl-trees/plugins` + 全局 CLI（用户 2026-10-22 定方向）
+
+用户方向：「目前 ygl-trees 还是 CLI 为主，通过项目根目录 `.ygl-trees/plugins` 进行安装与识别，全局 ygl-trees CLI 激活子命令」。
+
+**现状（`a66d3c0`）**，与这个方向有三处差距：
+- 插件装在 `$YGL_HOME/plugins`（`plugins.ts:49 profileDir(home)`），默认是 `~/.ygl-trees/plugins`，属于**用户级**目录，不是项目级；
+- 用户层声明在 `$YGL_HOME/ygl.user.bundle.json`；
+- 没有从 cwd 向上找项目根 `.ygl-trees/` 的发现逻辑。唯一和 cwd 有关的，是 `repoRoot()` 在 cwd 找 `ygl.bundle.json`（`bin.ts:55-61`）。
+
+**建议的模型**：
+1. **项目层**：`<项目根>/.ygl-trees/plugins/` 是一个 npm / pnpm profile，形状与今天的用户层 profile 相同。
+   - `package.json` 和锁文件入 git，`node_modules/` 不入 git。
+   - 加载顺序：base bundle → 用户层（`$YGL_HOME`）→ 项目层。后者叠在前者之上，与今天的 DSH user-layer 叠加同一语义。
+2. **发现规则**：从 cwd 向上找最近的 `.ygl-trees/plugins/`，走到 git 根为止。这与 #25 ③ `verify meta` 的仓库根判定同一规则：git 内只认索引或 git 根。
+3. **激活子命令**：全局 CLI 启动时，扫描项目层里 `ygl-v-*` 前缀的包，读清单里声明的命令，例如：
+   ```json
+   "commands": { "pr-gate": { "mode": "gate", "tree": "trees/pr-gate.json" } }
+   ```
+   然后注册成子命令，如 `ygl-trees pr-gate`，或统一挂在 `ygl-trees v <命令>` 下。
+   - **子命令的执行体是内建的模式运行器（`verify` 动词），不是包里的代码**，与 D1 纯数据一致；
+   - 包清单里不能出现 `apply` / `commands.run` 这类可执行入口，`pack lint` 拒绝。
+4. **版本委派**：全局 CLI 的版本不一定等于包钉定的引擎版本。
+   - 规则：项目层有 `node_modules/ygl-trees@<钉定版本>` 时，委派给它执行，与 jest / eslint 的全局命令优先用项目本地安装同一做法；
+   - 没有时拒绝（rc=1），并点名 `npx ygl-trees@<钉定版本>`。
+   - 舰队今天就是每仓 `node_modules` 精确钉版（M9），这条规则让「全局 CLI 激活」不破坏钉版。
+5. **信任**：全局 CLI 在 cd 进别人的仓库时自动激活项目层，等于新的供应链入口，与 git hooks 同类风险。
+   - 项目层首次激活前需要显式 `ygl-trees plugin trust`：信任记录存在 `$YGL_HOME`，键为项目路径 + 锁文件哈希，锁文件一变就要重新信任；
+   - 第三方包还要过签名（D5）。
+
+**工作区数据库放哪里**：项目根 `.ygl-trees/` 只放插件，还是同时做工作区（数据库）？
+- 本席建议**只放插件**，数据库仍在 `$YGL_HOME`；
+- 依据：`kb add` 的真实用户事故（「三次写入返回成功、读不回」）根因正是工作区分裂（`skills/src/cmds.ts:48-51` 注释），而 #44 / #51 也都出在多处共享与选择上；
+- 是否让项目根成为独立工作区，列为 D7 由属主裁定。
+
 ## 5. 预设工作流模式：每种都已在舰队里跑过
 
 | 模式 | 运行语义 | 舰队里的现成实例 | 可结合的业务（例） |
@@ -180,7 +214,7 @@ kind: 评审
 |---|---|---|---|
 | **VP-0 裁定与命名** | 属主裁定 D1–D6；发布 `ygl-verifier-pack/1` 清单 JSON Schema、模式词表、领域与业务的登记表；不写代码 | 文档 PR 合入；schema 进包内 `schemas/` | — |
 | **VP-1 `pack build / lint`** | 从一个验证器仓库产出确定性包（复用归档的确定性 zip）；`lint` = 一致性套件 | 对 `ygl-v-core-aggregate` 两次 build 字节相同；夹具「好全绿、坏只翻对应叶子」；坏清单 rc=2 | SDK-0（契约与 schema） |
-| **VP-2 `pack install / list / show`** | 经插件通道装数据包；核对钉版与签名；按标签检索 | 钉版或 sha 不符时拒装 rc=1；`list --tag mode=gate` 只列门禁包；装包不执行任何代码（grep 装包路径无 `require`） | VP-1、签名（已有） |
+| **VP-2 `pack install / list / show` + 项目层激活** | 装进项目根 `.ygl-trees/plugins`；从 cwd 向上发现；`plugin trust`；全局 CLI 按清单 `commands` 注册子命令（执行体为内建模式运行器）；版本委派；核对钉版与签名；按标签检索 | 钉版或 sha 不符时拒装 rc=1；未 trust 的项目层不激活；钉定版本不在时拒绝并点名 `npx`；`list --tag mode=gate` 只列门禁包；装包不执行任何代码（grep 装包路径无 `require`） | VP-1、签名（已有） |
 | **VP-3 模式即树模板** | 6 种模式各出一个树模板；工作流 = 模板 + 包节点 + 绑定 | 评审验证器改由「release 包 + core/aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
 | **VP-4 跨包与跨仓** | 组节点引用外部包的报告（payload_sha256 验签、验归档、时效） | 舰队聚合仓库改用包 + `import-report`，`ledger.mjs` 退场 | SDK-5 `import-report` |
 
@@ -207,10 +241,13 @@ kind: 评审
 |---|---|---|
 | D1 | 包的形态：纯数据包，还是可执行插件 | 纯数据。可执行插件与 charter P1/P2/P4 冲突 |
 | D2 | 命名与标记放在哪里：包清单，还是规格契约 | 包清单。不升 `contract_version`，规格保持冻结 |
-| D3 | 6 种预设模式是否作为首版受控词表；首批与哪些业务结合 | 6 种全收；首批试点 tree（`core/aggregate`）与 gate（PR 评审） |
-| D4 | 分发：复用 `plugin install` 通道（声明式 `yglVerifiers` 字段），还是独立的 `verify pack install` | 复用通道、独立加载语义：装在同一 profile，引擎只读数据；npm 包名即包名（`ygl-v-*` 前缀，用户 2026-10-22 已定），不另设映射 |
+| D3 | 6 种预设模式是否作为首版受控词表；首批与哪些业务结合 | 6 种全收；首批试点 tree（`ygl-v-core-aggregate`）与 gate（PR 评审） |
+| D4 | 分发与安装位置 | **用户已定方向（2026-10-22）**：装在项目根 `.ygl-trees/plugins`，由全局 CLI 识别并激活子命令（§4.4）；npm 包名即包名（`ygl-v-*`）。待定细节为 D7–D9 |
 | D5 | 第三方包是否强制签名 | 强制；无签名只允许 `--local` |
 | D6 | 与 SDK 路线的先后 | VP-0/1 可与 SDK-0 并行；VP-3 起排在 SDK-2 `tree run` 之后 |
+| D7 | 项目根 `.ygl-trees/` 只放插件，还是同时做工作区（数据库） | 只放插件；数据库仍在 `$YGL_HOME`（工作区分裂的事故先例，见 §4.4） |
+| D8 | 项目层自动激活的信任模型 | 首次激活前显式 `plugin trust`（键为路径 + 锁文件哈希）；第三方包另验签名 |
+| D9 | 全局 CLI 与包钉定引擎版本不一致时 | 委派给项目层 `node_modules/ygl-trees@钉定版本`；没有就拒绝并点名 `npx` |
 
 ## 9. 评审席的复核方式
 
