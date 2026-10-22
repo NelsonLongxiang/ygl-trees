@@ -4,7 +4,7 @@
 
 export interface Args {
   _: string[];
-  flags: Record<string, string | boolean>;
+  flags: Record<string, string | boolean | string[]>;
 }
 
 export interface Ctx {
@@ -30,9 +30,15 @@ export interface Env {
 
 const BOOLEAN_FLAGS = new Set(["json", "no-color", "no-colour", "quiet", "debug", "help", "version"]);
 
+/** Repeatable value flags: each occurrence APPENDS to an array instead of
+ * overwriting (`--attach a --attach b` → ["a","b"]) — multi-file checker
+ * specs need multiple staged attachments (0.114.12 engine gap: the last
+ * flag silently won). Every other flag keeps last-wins. */
+const MULTI_FLAGS = new Set(["attach"]);
+
 export function parse(argv: string[]): Args {
   const _: string[] = [];
-  const flags: Record<string, string | boolean> = {};
+  const flags: Record<string, string | boolean | string[]> = {};
   let rest = false;
   const takesValue = (name: string) => !BOOLEAN_FLAGS.has(name);
   /** A token is a flag boundary only if this parser could itself consume it as
@@ -43,6 +49,11 @@ export function parse(argv: string[]): Args {
    *  into positionals. */
   const looksLikeFlag = (s: string) => s === "--" || s.startsWith("--") || /^-[A-Za-z]$/.test(s);
   const isValue = (s: string) => !looksLikeFlag(s);
+  const assign = (k: string, v: string): void => {
+    if (!MULTI_FLAGS.has(k)) { flags[k] = v; return }
+    const prior = flags[k];
+    flags[k] = Array.isArray(prior) ? [...prior, v] : prior === undefined ? [v] : [String(prior), v]
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -51,13 +62,13 @@ export function parse(argv: string[]): Args {
     if (a.startsWith("--")) {
       const [k, inlineVal] = a.slice(2).split(/=(.*)/s);
       const next = argv[i + 1];
-      if (inlineVal !== undefined) { flags[k] = inlineVal; }
-      else if (takesValue(k) && next !== undefined && isValue(next)) { flags[k] = next; i++; }
+      if (inlineVal !== undefined) { assign(k, inlineVal); }
+      else if (takesValue(k) && next !== undefined && isValue(next)) { assign(k, next); i++; }
       else { flags[k] = true; }
     } else if (/^-[A-Za-z]$/.test(a)) {
       const k = a.slice(1);
       const next = argv[i + 1];
-      if (takesValue(k) && next !== undefined && isValue(next)) { flags[k] = next; i++; }
+      if (takesValue(k) && next !== undefined && isValue(next)) { assign(k, next); i++; }
       else flags[k] = true;
     } else _.push(a);
   }
