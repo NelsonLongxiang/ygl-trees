@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.114.4
+
+fdc757f6 评审（属主令 2026-10-22 09:25）：`job add` 静默误注册/用法教唆/无绊线，一处 P1 两处 P2。
+
+- **F1/P1 静默误注册**：尾拉回启发式要求 schedule 旗标在串尾，`--every 1440 --json` 这类后缀 token
+  会击穿它，`args.flags.every` 未定义 → `Number(undefined||0)=0` **零告警**落成 manual job。修复：拉回后
+  命令串仍匹配 `--every\b|--at\b` → **绊线警示**（不硬拒——任意命令可合法自带同名旗标）。
+- **JSON 面**：`job add --json` 结果新增 `diagnostics[]`：「schedule 形 token 残留命令串内，本 job 已按
+  manual(every=0) 注册；若意图是调度，请把 --every 移到 -- 之前」；**人类面**同文案走 stderr 警示行。
+- **F2/P2 用法行教唆陷阱**：usage 改为 `job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] -- <command>`
+  ——旗标在 `--` 前；尾拉回保留为兼容面不主推。
+- **P3 文档**：README 调度示例与 `llms.txt` job add 行同批改序（`--every` 在 `--` 前）。
+- 测试：`job-schedule-token.spec` 5 例（后缀击穿 JSON diagnostics / 人类 stderr / 前置 flag 正常 / 尾拉回
+  兼容 / usage 教序）；unit 707 → **712**。
+
 ## 0.114.3
 
 验证席派单 #36/#37（双 P3，其中 #36 为红门）。
