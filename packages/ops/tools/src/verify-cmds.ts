@@ -535,6 +535,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           bad(ctx, `attachment not found: ${a}`);
           return 1;
         }
+        // Directory attachments refuse with an actionable message (0.114.12
+        // gap: the raw EISDIR said nothing about the fix — attach each file).
+        const st = statSync(a);
+        if (st.isDirectory()) {
+          bad(ctx, `attachment is a directory: ${a} — attach files individually (--attach can repeat)`);
+          return 1;
+        }
         let ref;
         try {
           // 唯一写入面：CLI 与 HTTP 上传都走 blob-store（同哈希、同容量策略、同去重）。
