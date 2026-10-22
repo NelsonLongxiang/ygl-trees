@@ -40,6 +40,7 @@
 | `verifier-sdk-plan.md`（方案） | 验证器 SDK：边界、现状评审与日程 | charter 定形：SDK = CLI 原语 + 声明式格式 + 输出契约 + 脚手架 + 一致性套件，非可 import 判定库；SDK-0 契约与发布面 → SDK-1 init/snapshot → SDK-2 tree run → SDK-3 selfcheck → SDK-4 collect → SDK-5 package/notify/import-report，每期 A/B 迁移 |
 | `verifier-production-line-plan.md`（方案） | 验证器生产线缺口评审与行动计划（PR #16，fdc 条件合并） | 方案：判定面已生产级、定位冲突、`file`/P4 缺口（#18 已于 0.110.2 修复）、舰队五仓编排重复~2400行；计划 P0 舰队硬化→P1 引擎小步（provenance/violations/supersedes/gaps）→P2 生产线原语→P3 舰队迁移；§5 决策点**未裁定待属主**（业务交付面扩张），report/archive 证据层按 charter P5 不降级 |
 | `taste-extraction-plan.md`（方案） | 验证器的品味提取：#27 五席意见 + 属主侧讨论汇总与行动计划 | 验的是品味判断的证据结构，不是品味本身；品味须先成为人工认定的数据（案例→统计→认定→冻结→执行→推翻回流→复审）；五处订正（count 无 DISTINCT、VU 无 channel 字段等）；六项裁定 D1–D6；九个工作流 T1–T8，T1/T2/T7a 可即并行，实现由属主另行安排会话 |
+| `pg-write-backend-plan.md`（方案） | 单一 PG 写库：现状评审与日程（重新立项 pg-compat §5 L2） | 每个工作区恰好一个写库（SQLite 默认 / PG 可选），永不双写；写路径已异步 ORM、PG-A 接缝在但无生产调用方；主要成本是 ≈195 处同步裸 SQL 读；verify 仍只判 SQLite 快照（PG 工作区经 `db snapshot`）；分期 B0 裁定 → B1 读路径异步化（B2 schema 单一权威 / B3 检索可并行）→ B4 并发语义 → B5 运维面 → B6 双后端门禁矩阵；D1–D5 待属主裁定 |
 | `harness2-dual-validation-plan.md`（方案） | harness2 双线验证（两席共识） | 需求侧不可或缺；外强于内；P1a 方差探针 + evaluator 协议先行；红线=单一裁判权 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |
