@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.114.18
+
+A1 审阅订正批（验证席 #59 契约四缺口 + #60 第一刀两洞）。
+
+- **A1 契约 v1.1（审阅订正，不改 Q1–Q7 裁定）**：
+  - V7/digest：`verdict_digest` 只覆盖判定投影（子节点用子 verdict_digest），archive sha/时钟/主机进 audit，
+    解决「子 sha 含时间戳 → digest 不可满足」；
+  - ERROR 聚合矩阵显式化：NEUTRALIZED 优先 → FAIL → PASS → 全 ERROR=INFRA_BLOCKED；ERROR 不否决 PASS；
+  - 多快照：`tree run` 支持默认 `--db` + 重复 `--db <node>=<path>` 绑定舰队树，叶可冻结 `db`，缺绑定 rc=2；
+  - 同主体查重：同 canonical tree 重复 prepare 幂等（同 id），pinned/db 变化即新 id（V20）；新增 V21 舰队多快照。
+- **#60 第一刀两洞**：
+  - `--pinned` 冻结现在**验签**：按 archive_sha256 在工作区 registry 找到归档并跑
+    `verify archive verify` 同路径，未登记/验签失败 → prepare rc=2（此前只查 node 与 sha 形状）；
+  - 聚合解析器收紧：`quorum2` / `quorum(2` / `quorum()` / `all_pass()` 等畸形一律 rc=2（V16）。
+- 测试：`verify-tree.spec` 10 例（新增 V20 幂等 + 畸形枚举）；unit 916 → **918**；contract 144。
+
 ## 0.114.17
 
 A1 契约 v1.0（已裁定）落地第一刀：`verify tree prepare`。契约正文 `docs/reviews/verify-tree-run-contract.md`，

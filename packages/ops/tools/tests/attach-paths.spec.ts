@@ -17,6 +17,7 @@ let WORK = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
+    cwd: HOME, // outside the verifier repo: no meta-gate dependency
     encoding: "utf8",
     timeout: 60_000,
     env: { ...process.env, YGL_HOME: HOME, YGL_SESSION: "attach-paths" },
