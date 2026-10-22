@@ -1,6 +1,6 @@
 # Changelog
 
-## 未发布
+## 0.114.6
 
 - **#39 Rust 封包判定去启发式**：`looks_sealed()` 原先在「尾 4 字节回扫窗口含 `YGLVF1` 字面量」时也判封包，
   开构建的机器码里 `MAGIC` 字面量恰好落进窗口就误判「封包但篡改」（`test:rust` cli 4/8 路径依赖失败）。
@@ -8,6 +8,9 @@
   语法损坏时）花括号/方括号成对且含 JCS footer 首键 `"build_sha256"`；删除「含 MAGIC 字符串」兜底。
   回归测试：开构建尾窗仅含 MAGIC → 不判封包；括号成对 + build_sha256 窗 → 仍判封包（不静默降级）。
   本版不触契约/语料；unit 不受影响（rust 面 `cargo test` 全绿）。
+
+- 门禁（本版实测）：unit **795/795（106 files）**、contract **144/144**、demo、ratchet held、readme 54/54、pack:check PASS；
+  `cargo test`（rust 面）全绿，含 #39 新增回归。
 
 ## 0.114.5
 

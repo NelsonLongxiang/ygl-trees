@@ -22,6 +22,8 @@ export interface Env {
   group: string;
   /** Resolved workspace database file for this invocation (--db or default). */
   dbFile?: string;
+  /** CLI version (diagnostics surface; update-hint/doctor only) */
+  version?: string;
 }
 
 // ── Arg parsing (pure function, no CLI awareness) ──

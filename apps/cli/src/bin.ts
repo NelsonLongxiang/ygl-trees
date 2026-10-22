@@ -19,6 +19,7 @@ import { StartupError, reportStartupFailure } from "./startup-diagnostics";
 import { createProcessShutdown } from "./process-shutdown";
 import { runPluginCommand } from "./plugin";
 import { DOMAIN_MODULES } from "./domain-barrel";
+import { maybeNag, maybeRefresh } from "../../../packages/ops/tools/src/update-check";
 import Schema from "@deepseek-ai/schemastery";
 
 export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees");
@@ -555,6 +556,19 @@ export async function main(argv: string[]): Promise<number> {
     plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
     args, home, group,
     dbFile: file,   // resolved --db (or workspace default) for the brief payload
+    version: appVersion(), // diagnostics surface (doctor update_hint; never gates)
+  };
+
+  /** #40 (owner 2026-10-22): best-effort update nag + detached cache refresh.
+   *  Never touches stdout, never changes rc, never runs in scheduler context. */
+  const afterCommand = (code: number): number => {
+    try {
+      maybeNag(home, appVersion(), group, action || "", !!ctx.json, db);
+      maybeRefresh(home, appVersion(), group, action || "", db);
+    } catch {
+      /* informational only — a nag failure must never fail the command */
+    }
+    return code;
   };
 
   /** Async commands (e.g. source fetch) return a promise; main must keep the
@@ -570,7 +584,7 @@ export async function main(argv: string[]): Promise<number> {
     // dispatched BEFORE the domain routes, not a packages command.
     if (group === "plugin") {
       const rc = await runPluginCommand(env, action || "", args._.slice(2), args);
-      return typeof rc === "number" ? rc : 0;
+      return afterCommand(typeof rc === "number" ? rc : 0);
     }
     // R14 L3: plugin-contributed command groups win before "unknown group"
     const pluginCmd = pluginCommands[group];
@@ -590,7 +604,7 @@ export async function main(argv: string[]): Promise<number> {
            code === 0 ? "info" : code === 2 ? "warn" : "error"]
         );
       } catch { /* telemetry best-effort */ }
-      return code;
+      return afterCommand(code);
     }
     const mod = DOMAIN_MODULES[group];
     if (!mod) {
@@ -673,7 +687,7 @@ export async function main(argv: string[]): Promise<number> {
         ]
       );
     } catch { /* telemetry best-effort — never fail the command */ }
-    return code;
+    return afterCommand(code);
   };
 
   return dispatch()

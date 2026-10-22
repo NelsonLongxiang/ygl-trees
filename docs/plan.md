@@ -446,6 +446,11 @@ npm **latest=0.114.4**、shasum **`0d9c8d6c…`**；官方字节 **1,535,136 B /
 **#39 记录（2026-10-22，验证席派单；未发布）**：`looks_sealed()` 去「窗口含 YGLVF1 字符串」启发式，
 改为 footer 形态判定（对象四键 / 括号成对 + JCS 首键 `build_sha256`）；开构建尾窗仅含 MAGIC → 不判封包，
 括号成对 + `build_sha256` → 仍判封包（不静默降级）。`cargo test` 全绿（含新增回归）；契约/语料不变。
+**#40 记录（2026-10-22，属主令 10:01；未发布）**：CLI 版本漂移信息性 nag——缓存 `$YGL_HOME/update-check.json`
+（latest/checked_at/last_notified；24h TTL），stderr 单行、同 latest 一次、local≥latest 静默；detached 子进程
+查 `npm config get registry` + `/-/package/ygl-trees/dist-tags`（1.5s 硬顶，失败静默）；`--json` 零污染，
+doctor 增 `update_hint` 检查（warn 不失败）；`YGL_NO_UPDATE_CHECK`/config `update_check=false` 关；
+调度上下文（继承 YGL_RUN_ID / YGL_SERVE / job tick|run）跳过。与 R5b 分离（#29：nag≠审计时钟）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

@@ -17,6 +17,7 @@ import { resolveProject, projectSessionKey, projectCount, sessionId } from "../.
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
 import { orphanRelations } from "./rels";
+import { updateHintFromCache } from "./update-check";
 
 interface Check {
   name: string;
@@ -342,6 +343,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       detail: phantoms.length
         ? `${phantoms.length} unexplained write event(s) in last 48h: ${phantoms.slice(0, 3).join(", ")}${phantoms.length > 3 ? " …" : ""} — row missing without an rm event (deleted pre-0.81 or via db sql? otherwise: rollback / different workspace — check receipts' workspace line; doctor --fix marks known ones reconciled)`
         : "recent write events all match stored rows",
+    });
+  }
+
+  // ── Update hint (diagnostics surface; cached only, never a network call) ──
+  // 信息性 nag：不 gate 任何东西；R5b 审计时钟仍只认能力表（#29 裁定）。
+  if (env.home && env.version) {
+    const hint = updateHintFromCache(env.home, env.version);
+    checks.push({
+      name: "update_hint",
+      status: hint?.update_available ? "warn" : "pass",
+      detail: hint?.update_available
+        ? `CLI ${env.version} < npm latest ${hint.latest} — npm i -g ygl-trees@latest（提示不影响判定/rc）`
+        : hint
+          ? `CLI ${env.version} is current (cached latest ${hint.latest})`
+          : `no cached update check yet (best-effort, never on the critical path)`,
     });
   }
 
