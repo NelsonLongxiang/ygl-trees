@@ -96,6 +96,10 @@
 | 4 | 登记新 spec 后重跑 | FAIL | FAIL（第 1 行的新 spec 已被取代，索引查不到） | FAIL |
 | 5 | 推翻 L2 数据源口径（已登记 = 冻结谱系 ledger/specs），新 spec 未登记 | FAIL | FAIL | FAIL |
 | 6 | 登记后重跑 | FAIL | **PASS**（L1 / L2 / L3） | FAIL |
+| 7 | R-T7 入试点：留痕层加 L4–L7（业务核算挂钩），首行规则在试点 YGL_HOME 预测台账登记 `[预测·90天]` claim 9ce9f4dbdf（结算期 2027-01-20）；新 spec 未登记 | FAIL | FAIL（L2 抓到未完成回填；L4–L7 在首行上已 PASS） | FAIL |
+| 8 | 登记后重跑 | FAIL | **PASS**（L1–L7） | FAIL |
+
+R-T7 的落法：`settlement_ref` 指向试点仓自己预测台账的 claim，探针用 CLI `research predict list --all` 核对条目在场、取结算期与台账侧结算结果（1 / 0 / 未结算），派生 `settled`、`overturned_after_settlement`；L4 登记在场、L5 结算期 ≤ 复审期、L6 已结算须有与台账一致的结果、L7 结算为假须有结算后的推翻行。结算以台账为真值，认定记录与台账矛盾即违规。
 
 与预测对照：S1–S3 红、S4 / S5 / S6 绿、L1 绿如预期；L2 / L3 首轮零扫描 NEEDS-MATERIAL 如预期；预料之外的是**两条口径修正**（整数版本号不成立；已登记须查谱系），它们本身就是闭环的产出——三次推翻全部记在 `overturned.json`，冻结谱系保留四个 ledger spec 版本。根结论 FAIL 是对「单一决策者尚不构成认定品味」的如实陈述，不是故障。
 
