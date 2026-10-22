@@ -417,7 +417,7 @@ ls-remote 双远端复证，非绕过）。
 发布（2026-10-22）：commit **`e62241e`**；tag **`v0.114.3 = 32cfda1b… → ^{commit}=e62241e…`**（双远端）；
 npm **latest=0.114.3**、shasum **`f8efa8e1…`**；官方字节 **1,533,430 B / sha256 `ae03a6c1…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
-**#34 修正记录（2026-10-22，未发布；fork PR #38，对齐审查席 #34 设计提案 a–d）**：证据链——0.114.1 把材料每个非空行当子句
+**0.114.5 记录（2026-10-22，PR #38 合入；对齐审查席 #34 设计提案 a–d）**：证据链——0.114.1 把材料每个非空行当子句
 （标题/散文全挂 COVERAGE）且把 `#S<n>`/`#L<n>` 读成行号（与舰队的子句 id 锚点冲突），舰队 spec 全部无法重冻，舰队引擎上限钉在 0.114.0。
 裁定：**a** 子句按规则界定——默认舰队约定 `^([A-Z]+[0-9]+) `（捕获组=id），材料可 `submit --clause-pattern` 声明并冻进
 `material.json`（参与 material_id；prepare 只认冻结值，不收临时旗标）；**SKIP≠OK**——声明的模式一行不中=错误，默认模式一行不中=
@@ -431,6 +431,10 @@ npm **latest=0.114.3**、shasum **`f8efa8e1…`**；官方字节 **1,533,430 B /
 prepare 的投影；「必须有覆盖」的门禁判 `ok && !coverage_skipped`）；默认模式放宽为 `^([A-Z]+[0-9]+) `（已在 a5f655b）；prepare 记录增结构化
 `clause_scope`。棘轮：本 PR 自行抬升 bundle 基线（head 757,602 B，master 上限 754,413 B，超 3,189 B），已把新增顶层 JSDoc 改为行注释省约 2.3 KB，
 余量是真实逻辑与可操作诊断——需维护者显式认账。
+整合（2026-10-22）：PR #38 merge master 0.114.4 后，unit **787/789**（2 skipped）、contract **144/144**（舰队 24/24）、
+demo、ratchet held、readme 54/54；`verify meta .` PASS / `meta-tooling --check` 0 drift；维护者认账 bundle 基线
+739,621→757,018（仅 bundle）。#37 重登记审计随仓库走（本 PR 合并后 contract-audit.sh 重登记走 `reregistrations[]`，
+末条 dafc0240 = 活 sha）。
 
 **0.114.4 记录（2026-10-22，fdc 评审：job add 静默误注册）**：坏行 `0b88263172` 根因=尾拉回要求串尾
 `--every`，`--json` 后缀击穿 → every=0 静默 manual。修复：F1+F3 绊线（残留 `--every/--at` → 人类 stderr +

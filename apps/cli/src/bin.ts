@@ -825,7 +825,7 @@ export function generateLlmsManifest(): string {
       ["config list / get / set / reset", "registry-backed settings"],
     ]],
     ["job", "Batch scheduling", [
-      ["job add <title> -- \"<cmd>\" [--every <min>]", "create scheduled job"],
+      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"] -- \"<cmd>\"", "create scheduled job"],
       ["job tick", "run due jobs (drive with cron)"],
     ]],
     ["verify", "Spec validator (M13): material → spec → report", [
