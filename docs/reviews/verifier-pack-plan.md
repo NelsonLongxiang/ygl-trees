@@ -191,6 +191,58 @@ kind: 评审
 - 依据：`kb add` 的真实用户事故（「三次写入返回成功、读不回」）根因正是工作区分裂（`skills/src/cmds.ts:48-51` 注释），而 #44 / #51 也都出在多处共享与选择上；
 - 是否让项目根成为独立工作区，列为 D7 由属主裁定。
 
+### 4.5 项目根工作流文件：持久化节点、连线与接面（用户 2026-10-22：「就像 ComfyUI」）
+
+用户方向：项目根目录跟随一份文件，持久化工作流、连接与接面，像 ComfyUI 的工作流文件一样。
+
+**格式建议用 JSON，不用 YAML。** 依据（`a66d3c0` 实测）：
+- 仓库里所有组合与契约文件都是 JSON：`ygl.bundle.json`、`ygl.user.bundle.json`、`verify/meta.json`、规格 `.yglverify.json`、舰队 `tree.json`；
+- 仓库里没有一份 YAML 配置文件，也没有 YAML 解析依赖；
+- 这份文件要被哈希、被钉版、被 JSON Schema 校验，还要由 CLI 和 webui 机器写回。JSON 有确定的规范化写法，和 `canon()` 与 sha256 登记的现有做法一致；YAML 有锚点、隐式类型（`no` → false 这类）和注释，同一语义能写出多种字节。
+- ComfyUI 自己的工作流文件也是 JSON。
+- 想要可读性的话，人可以写 YAML 草稿，再由 `ygl-trees v import` 转成规范 JSON；入库和被执行的只认 JSON。
+
+**文件位置**：
+- 单文件：`<项目根>/.ygl-trees.json`，与 `.ygl-trees/plugins/` 并列；
+- 或者每个工作流一份：`<项目根>/.ygl-trees/workflows/<名字>.json`，像 ComfyUI 一张图一个文件。
+- 本席建议后者，多个工作流互不干扰。由 D11 裁定。
+
+**图模型**（对照 ComfyUI 的 nodes / links / widgets，建议 `ygl-workflow/1`）：
+
+```json
+{
+  "format": "ygl-workflow/1",
+  "name": "pr-gate",
+  "mode": "gate",
+  "engine": "0.114.14",
+  "packs": { "ygl-v-core-aggregate": "1.0.0", "ygl-v-release-audit": "1.0.0" },
+  "nodes": [
+    { "id": "rel",  "pack": "ygl-v-release-audit",  "spec": "releases" },
+    { "id": "root", "pack": "ygl-v-core-aggregate", "spec": "aggregate" }
+  ],
+  "sources": [
+    { "id": "rel-data", "kind": "snapshot", "path": "work/snap/releases.sqlite" }
+  ],
+  "links": [
+    { "from": "rel-data",   "to": "rel.in.releases" },
+    { "from": "rel.report", "to": "root.in.children" }
+  ],
+  "ui": { "rel": { "x": 120, "y": 80 }, "root": { "x": 420, "y": 80 } }
+}
+```
+
+- **接面（端口）**：
+  - 节点的输入端口就是包清单里规格的 `requires`（表 + 列），例如 `rel.in.releases`；
+  - 输出端口是报告：`overall` / `run_id` / `payload_sha256` / 归档；
+  - 组节点的 `children` 输入由子节点报告自动拼成。今天这一步由各仓编排手写，SDK-2 `tree run` 交付后由引擎内建。
+- **连线类型检查**：连线两端的表名和列必须对上，否则 rc=2，并点名缺哪张表、哪一列。这就是 ComfyUI「插槽类型不匹配不能连」的同一规则，在这里是静态可查的。
+- **语义与布局分离**：`ui` 块只存画布坐标，不参与哈希、不参与执行。工作流的 sha256 只算除 `ui` 外的规范化内容。对照 ComfyUI 的 UI 格式与 API 格式两分。
+- **与已有面衔接**：
+  - §4.4 的全局 CLI 子命令，从这里的 `name` 与 `mode` 注册，例如 `ygl-trees v run pr-gate`；
+  - webui 已经在用 `@xyflow/react`（`apps/web/package.json`，spec R13.5 树视图），可以直接长成 ComfyUI 式的图编辑器，编辑结果写回同一份 JSON；
+  - 文件纳入 D8 的信任键（路径 + 锁文件 + 工作流哈希）。
+- **边界不变**：文件里只有引用和连线，没有判据、没有代码、没有 shell。判定仍然唯一出自 `verify run`，满足 P1 / P2 / P4。
+
 ## 5. 预设工作流模式：每种都已在舰队里跑过
 
 | 模式 | 运行语义 | 舰队里的现成实例 | 可结合的业务（例） |
@@ -215,7 +267,7 @@ kind: 评审
 | **VP-0 裁定与命名** | 属主裁定 D1–D6；发布 `ygl-verifier-pack/1` 清单 JSON Schema、模式词表、领域与业务的登记表；不写代码 | 文档 PR 合入；schema 进包内 `schemas/` | — |
 | **VP-1 `pack build / lint`** | 从一个验证器仓库产出确定性包（复用归档的确定性 zip）；`lint` = 一致性套件 | 对 `ygl-v-core-aggregate` 两次 build 字节相同；夹具「好全绿、坏只翻对应叶子」；坏清单 rc=2 | SDK-0（契约与 schema） |
 | **VP-2 `pack install / list / show` + 项目层激活** | 装进项目根 `.ygl-trees/plugins`；从 cwd 向上发现；`plugin trust`；全局 CLI 按清单 `commands` 注册子命令（执行体为内建模式运行器）；版本委派；核对钉版与签名；按标签检索 | 钉版或 sha 不符时拒装 rc=1；未 trust 的项目层不激活；钉定版本不在时拒绝并点名 `npx`；`list --tag mode=gate` 只列门禁包；装包不执行任何代码（grep 装包路径无 `require`） | VP-1、签名（已有） |
-| **VP-3 模式即树模板** | 6 种模式各出一个树模板；工作流 = 模板 + 包节点 + 绑定 | 评审验证器改由「ygl-v-release-audit + ygl-v-core-aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
+| **VP-3 模式即树模板** | 6 种模式各出一个模板；工作流 = 项目根 `ygl-workflow/1` 文件（节点 + 接面 + 连线，§4.5）；连线类型检查；webui xyflow 图编辑器读写同一文件 | 评审验证器改由「ygl-v-release-audit + ygl-v-core-aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
 | **VP-4 跨包与跨仓** | 组节点引用外部包的报告（payload_sha256 验签、验归档、时效） | 舰队聚合仓库改用包 + `import-report`，`ledger.mjs` 退场 | SDK-5 `import-report` |
 
 首个试点建议用 `ygl-v-core-aggregate`：
@@ -248,6 +300,9 @@ kind: 评审
 | D7 | 项目根 `.ygl-trees/` 只放插件，还是同时做工作区（数据库） | 只放插件；数据库仍在 `$YGL_HOME`（工作区分裂的事故先例，见 §4.4） |
 | D8 | 项目层自动激活的信任模型 | 首次激活前显式 `plugin trust`（键为路径 + 锁文件哈希）；第三方包另验签名 |
 | D9 | 全局 CLI 与包钉定引擎版本不一致时 | 委派给项目层 `node_modules/ygl-trees@钉定版本`；没有就拒绝并点名 `npx` |
+| D10 | 项目根工作流文件的格式：JSON 还是 YAML | JSON（规范化、可哈希、可 schema 校验、机器写回；仓库零 YAML 先例）；YAML 只作人写草稿，经 `v import` 转换 |
+| D11 | 文件位置：单文件 `.ygl-trees.json`，还是 `.ygl-trees/workflows/<名字>.json` | 每个工作流一份（ComfyUI 一张图一个文件） |
+| D12 | 画布布局（`ui`）是否与语义同文件 | 同文件、单独一块，不参与哈希与执行 |
 
 ## 9. 评审席的复核方式
 
