@@ -11,39 +11,13 @@ kind: 规范
 
 ## 0. 契约 1.2 增量（2026-10-21）
 
-1.1 之上新增「右值可引用列」两类形态（1.1 spec 行为不变；声明 1.1 却用 1.2 形态 → 入口 `version_shape` 拒跑）：
+1.1 之上新增「右值可引用列」两类形态：同表列对列 `{col}`、`count.against` 单值标量（`agg` 必填）。
+1.1 spec 兼容运行；1.1 声明却携带 1.2 形态 → 入口 `version_shape` 拒跑。报告增
+`compared_rows`/`compared_total`/`compared` 观测面与 `evidence.spec_error` 封闭码表；语料 33→44 例
+（digest `ee1a0a1d…`→`683766f1…`）。逐条设计与迁移记录见
+[CHANGELOG 0.107.0](../CHANGELOG.md)；可发现性命令（`verify example` / `--checker` 等）属命令面，
+不改变三 JSON 形状。
 
-1. **同表列对列**：`PredicateCondition.value` 接受 `{ "col": "<column>" }`。只许引用 `predicate.from` 同一张表
-   （跨表要 join key，属 `sql-pair`）；列必须存在于快照 schema（`prepare` 构造期校验）。不做隐式类型转换：
-   比较按 SQL（含列亲和性）语义，`evidence.compared_rows`（≤5 采样 `{left,right}`，`ORDER BY rowid`）+
-   `compared_total`（无条件出现）记录两侧值。
-2. **`count.against`**：`{ from, col, agg }`，`agg` 必填（`max|min|sum|count`），右值为单值标量；
-   渲染 `(SELECT count(*) …) <op> (SELECT agg(col) FROM against.from)`。空表/全 NULL → NULL → `ERROR`；
-   `count` 是唯一不产 NULL 的 agg（空表 → 0）。`evidence.compared: {left,right}` 记录两值。
-3. **构造期错误码**：`evidence.spec_error` 封闭码表
-   （`cross_table_col` / `missing_column` / `missing_agg` / `null_rhs_for_null_op` / `version_shape`），
-   四值 verdict 不变。实现映射：缺键/跨表/is-null 右值属形状错；`missing_column` 只用于「键在但 schema 无此列」。
-
-## 0.1 可发现性命令（0.110.0）
-
-三面都是**只读投影或加法字段**，不改 spec/report 形状，也不升 `contract_version`：
-
-- **`verify example [--checker <type>] [--null-ops]`**：七型示例从冻结 corpus 派生（显式 checker→case
-  映射 + golden 测试），输出自 declare `_derived_from: corpus <version> (<n> files, digest …)`——即
-  **corpus digest 传递性地钉住示例输出**。`--null-ops` 是 syntax note（`is null`/`is not null` 写法 +
-  `count(col)` 跳 NULL / 空表 0 / max|min|sum 产 NULL 的不对称），不是语料案例。
-- **`verify lint-candidates <file> [--text <material>] [--db <snapshot>] [--reviews <file>] [--coverage-exempt <file>] [--clause-pattern <regex>]`**：与 prepare 共用同一
-  p1/p2 校验器与子句覆盖检查；rc 只表达过程（0 成功 / 2 用法），判定在输出
-  `{ok, checked, p1_skipped, schema_skipped, issues:[{index,source_clause,stage,reason}], coverage, coverage_skipped}`；`--reviews`
-  另查候选↔评审 1:1（孤儿评审 / 无评审候选 → `stage:"REVIEW"`）；不写 spec、
-  不耗 `spec_version`、不发事件。`checker.type` 为闭集（七型），未知类型在 P2 被点名拒绝。
-  **口径订正（#18.1）**：「lint 拒绝集 == prepare `rejected_detail` 集」仅在提供 `--db`（schema 探针）时
-  成立；无 `--db` 时 P2 的 schema 子检查跳过（`schema_skipped:true`），两集合只比形状。
-- **`research predict list|audit --due`**：`days_left = floor((deadline - as_of) / 86400s)`（deadline 与
-  as_of 均按 UTC 午夜解析）；`due = days_left ≤ 0`；audit 的 `near` 桶 = `1..30`（含 30），`future`
-  = `31+`；`--due` 在 JSON 与人类两面都过滤，空集 rc=0。未知旗标 → rc=2 单 `{"error":...}`。
-- **prepare `rejected_detail`**：加法字段 `[{source_clause,stage,reason}]`；旧 `rejected:<count>` 保留
-  一版，移除时按输出破坏性变更在 CHANGELOG 显式记账。
 
 ## 1. 规范文件（spec，`.yglverify.json`）
 
@@ -158,19 +132,14 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 > **prepare 的 rc 口径（r11 R6）**：`verify prepare` 只有在 `verdict="ready"`（产出可冻结 spec）时 rc=0；`needs-material`（材料不足/自审不通过）与 `error`（调用方配置缺件，如无评审器/红队未过）都返回 **rc=1** —— 它们都没产出冻结件，CI 应视为失败。判定原因在 `--json` 的 `verdict`/`rejected[]`/`diagnostics[]` 里，不要从 rc 反推三态。`run` 同理：rc 只表达过程（FAIL 报告仍 rc=0），判定看报告 `overall`。
 `verdict` 三态归因（fdc757f6 F2）：`needs-material` = **材料本身不足**；`error` = **调用方配置/环境问题**（缺 reviewer、缺红队、红队失败）；`ready` = 可冻结。CLI 按 verdict 分流，不靠 diagnostics 猜。
 
-**子句覆盖（#34；0.114.1 引入，修正版按规则界定子句——对齐审查席 #34 设计提案 a–d）**——判据不得静默消失（丢一条规则冻结出 ready 的 spec，会 PASS 本应 FAIL 的数据），但子句的范围由**规则**决定，不由豁免清单决定：
+**子句覆盖（#34）**：判据不得静默消失，但子句范围由规则决定（不是豁免清单）。子句 = 匹配
+`clause_pattern` 的行（第 1 捕获组为 id；默认 `^([A-Z]+[0-9]+) `）；模式随 `verify submit --clause-pattern`
+冻结并参与 material_id。声明模式却零命中、同 id 重复覆盖、孤儿评审、非法豁免/行号豁免 → 覆盖问题
+（prepare `error` / lint `ok:false`）；默认模式零命中 = 具名跳过（SKIP ≠ OK，`coverage_skipped:true`）。
+定位语法 `#<id>` 先按子句解析、`#line=<n>` 为物理行；`prepare.json` 带 `clause_scope`，`--json` 带
+`coverage`。**完整规则（豁免形状/覆盖算法/发布门禁/契约面等）见冻结附录
+[reviews/verify-clause-coverage.md](reviews/verify-clause-coverage.md)。**
 
-- **子句 = 匹配子句模式的行**；模式的第 1 个捕获组是子句 id。默认模式是舰队约定 `^([A-Z]+[0-9]+) `（大写字母 + 数字 + 一个空格：`S1 …`、`P12 …`、`AB3 …`）。材料可在冻结时声明自己的模式：`verify submit --clause-pattern <regex>` 把它写进 `material.json` 的 `clause_pattern`，**与材料一起冻结**（声明的模式参与 `material_id` 哈希——同一文本换模式即另一份材料，不会静默改靶；未声明时 id 与旧版一致）。prepare（CLI 与 WebUI 作业端点）只认材料里冻结的模式，不接受临时旗标；`lint-candidates` 面对的是裸文本文件，用 `--clause-pattern` 声明。模式缺捕获组或非法 → rc=2。标题（`#`/`##`）、空行、表格/结构行、散文（`验收对象：…`）、纪律列表**按规则不在范围内**。同一 id 声明两次 → 覆盖问题（点名两处行号）。
-- **没有一行匹配不是静默通过（SKIP ≠ OK）**：
-  - 材料**声明了**模式却一行不中 → 覆盖问题（`no clause lines matched pattern … misconfiguration`），lint `ok:false`，prepare `error`。
-  - 用**默认**模式一行不中（未编号的旧材料）→ 具名跳过：lint 输出 `coverage_skipped:true`、`coverage.enforced:false`，并在 `issues[]` 里放一条 `{stage:"COVERAGE", level:"warning", reason:"no clause lines matched pattern …"}`——只读 `issues` 的门禁也看得见跳过；`ok` 只计拒绝（`level` 缺省），因此仍是 prepare 的投影（prepare 对这类材料照常 ready）。门禁要「必须有覆盖」时判 `ok && !coverage_skipped`。prepare 的 ready 记录带 `diagnostics[stage=P1c]` = `no clause lines matched pattern … — clause coverage not enforced (a skip, not a pass)`，`--json` 带 `coverage`。
-  - prepare 记录（`prepare.json` 与 `attempts/*.json`，CLI 与 WebUI 作业端点同口径）带结构化 `clause_scope: {pattern, declared, enforced, clauses}`——冻结时按哪个模式、是否声明、是否真的执行了覆盖。不造子句（0.114.1/0.114.2 的「每行都是子句」回归），也不把跳过折成 OK。要开启覆盖：把判据编号成 `<id> <text>`，或 submit 时声明模式。
-- **定位语法**（`[文件名]#<片段>`，取最后一个 `#` 之后）：`#<片段>` **先**按子句 id 解析（所以 `#S1`、`#L2` 是子句 id，不是行号）；`#line=<n>` 是物理行（1 起）的独立写法。材料有子句时，其他任何 `#片段` 都是 P1 拒绝（点名「declares N clause(s): S1, S2, …」——诊断数子句就只说子句，说行就只说行，不混用）；无子句时 id 片段无从解析，只受 material_index 约束。不带 `#` 的 locator（`bills!B7`、`p3`）只受 material_index 约束。quote 必须落在 locator 所指的子句 / 行内。
-- **覆盖**：每条子句必须被一个**通过 P1** 的候选认领——其 `anchor.locator` 解析到该子句（或其所在行），或其 `source_clause` 包含整行子句原文；只引片段又无可解析 locator 的候选不认领任何子句（`S1` 不能顺带覆盖 `S10`）。prepare 在 P1–P3 之后、P4 之前校验，未覆盖 → `verdict:error`、`diagnostics[stage=P1c]` 按 id 点名；lint 同源，`coverage:{pattern,enforced,clauses,covered,exempted,uncovered:[{id,locator,line,text}],problems}`、`issues[].stage="COVERAGE"`。
-- **豁免**（`--coverage-exempt <file>`：JSON 数组或 `{exempt:[…]}`）：每条是对象，恰好用 `id`、`locator`（`#S3`）或 `text`（整行原文）之一指明子句，并带**必填** `reason`；裸字符串条目 rc=2（没有隐式 reason）。**不认行号**（`#line=<n>` 豁免被拒——材料一改行号就静默改靶）。指向不存在的子句、缺 reason、或豁免一条已被覆盖的子句 → 覆盖问题。
-- **评审配对**：prepare 把评审文件里的 `source_clause` 交给构造面（`PrepareOptions.reviewedClauses`）；没有任何候选携带的评审是**孤儿评审**（判据在评审后被删或改名）→ `verdict:error`、`diagnostics[stage=P3]`。无评审的候选本来就在 P3 以「self-review incomplete」被拒。`lint-candidates --reviews` 同源（`stage:"REVIEW"`）。
-- **发布门禁**：`contract-audit` contract 15 对 `packages/verify/core/tests/fixtures/fleet/` 下冻结的 24 份真实舰队材料（审查席 7 份、webui 6 份含 view、fleet 2 份、design 9 份；均带标题/散文/纪律节）跑 `lint-candidates --text --reviews` 与 `submit → prepare --draft`，任何非 ok / 非 ready 即阻断。
-- **契约面**：spec 与报告形状不变（`contract_version` 1.2、`corpus_version` 1.2）；变化在构造面——`material.json` 增可选 `clause_pattern`、lint 输出增 `coverage_skipped` 与 `coverage.enforced/pattern`、prepare `--json` 增 `coverage`（均为加法）；豁免文件与 `#L<n>` 行号写法（0.114.1 引入）语义收紧。charter 不涉及。
 
 ## 1.7 file 检查的排除集（`ignore`，0.98.0）
 
@@ -442,17 +411,7 @@ footer = { magic:"YGLVF1", format_version:1, spec_offset, spec_length,
 
 ## 6. 状态
 
-- **v1.5（2026-10-21）**：`contract_version` 升 **1.2**、`corpus_version` 升 **1.2**——新增「右值可引用列」两形态（同表 `{col}` 列对列 / `count.against` 单值标量，`agg` 必填）、`evidence.spec_error` 封闭码表、`compared_rows`/`compared_total`/`compared` 观测面；1.1 spec 兼容运行，1.1 声明携带 1.2 形态 → `version_shape` 入口拒跑；语料 33→44 例（digest `ee1a0a1d…`→`683766f1…`）。
-- **v1.4（2026-10-20）**：`contract_version` 升 **1.1**、`corpus_version` 升 **1.1**——报告 `verifier` 增 `signature` / `signing_scheme` / `public_key_fingerprint` 三个可选字段；封包 footer 增 `format_version` / `engine_sha256` / `sig_alg` / `key_id` / `sig`（语义布局与字节布局合一，§5）。TS 与 Rust 各自实现 ed25519，固定种子下签名逐字节一致（`seal-parity.spec.ts`）；五向篡改矩阵（spec 字节 / engine 字节 / 非规范 footer / 签名字节 / 未知或退役 key / format_version）全部点名拒绝。语料 digest 因 33 份 spec 的 `contract_version` 升版而变：`4cac21b4f5bc…`（差异仅版本字段，见 `packages/verify/core/CHANGELOG.md`）。
-- **v1.3（2026-10-20）**：双实现 parity 从「投影一致」升级为「整份报告逐字节」——`rust-parity.spec.ts` 33 例剥 `data_source` 后 `canonicalStringify` 全等，且把环境锚注入 TS 侧后两边重算的 `payload_sha256` 三方相等；Rust 侧补齐 `data_source`、`guard`、`artifacts`、`exceptions`、`evidence.rows`/`rendered`、`reason` 折叠文案与真实 `started/finished`（`--now` 可钉）。`contract_version` 仍 1.0（Rust 追平 TS，不是形状变更）。
-- **v1.2（2026-10-20）**：Rust `yglverify` 补封包形态（§5 实现形态：`seal` / 内嵌 spec / 拒绝 `--spec` / 双哈希篡改检测 / `self-check` 的 `sealed-spec` 行）；`contract_version` 仍 1.0（交付形态，不是 spec/report 形状变更）。
-- **v1.1（2026-10-20）**：新增 §7 归档包（命名语法 / 包内目录 / 确定性 zip / 校验链 / 侧车登记），`verify run` 默认归档；`contract_version` 仍 1.0（归档是命令面能力，不是 spec/report 形状变更）。
-- **v1.0（冻结，2026-10-19）**：v0.5 之后并入 r10 评审 F1–F6（prepare sql 分支 `$vu:` 收窄、window 的 `±hh` 偏移归一、M13-1 拒 agent 型 + `sealed.review=false`、as_of 必由调用方给、canonical 拒非纯对象、数字口径改 ES 形态并写明三条相对 RFC 8785 的有意偏离）；引擎入口加契约版本守卫（1.0 引擎只跑 1.0 spec）；报告增 `spec_id` / `data_source` 两个可选自描述字段。**冻结**：`contract_version = "1.0"`、`corpus_version = "1.0"`；此后形状变更走 1.0→1.1 升版，不得静默改 1.0 内文。
-- v0.5：r9 评审 E1–E5 落文与修复（sql-pair 谓词侧键名/同族守卫、空批聚合对 NEEDS-MATERIAL、sql/count/exists 禁 agg、±hh 偏移归一、prepare P2 白名单与 schema 全量校验、`$vu:` 收窄、附件 sha256 进 spec、P3/P4 配置错误归 `error`）+ JCS canonical 落地实现与跨实现向量 + §1.6 prepare 五阶段规则表。
-- v0.4：评审 R7–R13 落文（CompareSpec 单一形状 + ε 规则 / 零匹配按型 / task 副作用统一 / JCS canonical + 方言相关指纹 / as_of 时间函数构造期拒绝）+ 实现缺口 a–f 修复（source 失败级联 ERROR、`$vu:` 命名空间、schema 漂移 ERROR、glob 根目录、无 assert 拒绝、witness 口径重写）。
-- v0.3：评审 302cb119 R1/R2/R3/R4 契约面落文（witness 语义表 / count from-sql 互斥 / attachments 新表裁定 / VuResult witness 类型强制）。
-- v0.2：已并入 fdc757f6 D0 快检三条（sql-pair 互斥 / 命令名统一 / 七型形状齐为冻结前置）与 302cb119 B1/B2/B3/B5 契约面（overall+severity / witness / footer+登记 / CompareSpec+as_of）。**未冻结**。
-- 冻结动作：上述冻结条件三条满足后，`contract_version` 钉 `1.0` + CHANGELOG 记录 + 双评审收尾回执。
+版本历史移到冻结附录 [reviews/verify-contract-status-log.md](reviews/verify-contract-status-log.md)（0.2–1.5 逐版记录），正文只维护现行 1.2 语义。
 
 ## 7. 归档包（`verify archive`，默认动作）
 
