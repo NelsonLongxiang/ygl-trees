@@ -19,6 +19,19 @@ import { Claim, Evidence, Query, Source } from "./entities";
 /** Run a write through the TypeORM transactional write service and print
  *  with JSON discipline. Keeps every write command 6 lines. */
 /** 0.80: compact timestamp for session:// adjudication urls (yyyymmddhhmm). */
+/** #44 F3: ids are workspace-unique, so a refusal for a row that lives in
+ *  another project can always name the owner. */
+function ownerProjectOf(env: Env, table: "claims" | "evidence" | "sources", id: string): string | null {
+  if (!id) return null;
+  const r = env.db.get(`SELECT p.name AS name FROM ${table} t JOIN projects p ON p.id=t.project_id WHERE t.id=?`, [id]) as any;
+  return r?.name ?? null;
+}
+
+function notFoundRefusal(env: Env, table: "claims" | "evidence" | "sources", id: string, label: string): string {
+  const owner = ownerProjectOf(env, table, id);
+  return owner ? `${label} not found: ${id}  (it belongs to project '${owner}' — use -p ${owner})` : `${label} not found: ${id}`;
+}
+
 function nowCompact(): string {
   return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
 }
@@ -390,7 +403,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     if (subAction === "show") {
       const s = store.sourceGet(rest[1]);
       if (!s) {
-        bad(ctx, "source not found");
+        bad(ctx, notFoundRefusal(env, "sources", rest[1], "source"));
+        return 1;
+      }
+      // F3 (#44): R16.3 says reads fail closed; source show was the one
+      // id-addressed read that returned another project's row. The owning
+      // project is knowable, so the refusal names it.
+      if (s.project_id !== project.id) {
+        const owner = ownerProjectOf(env, "sources", rest[1]) ?? "another project";
+        bad(ctx, `source not found in project '${project.name}': ${rest[1]} (it belongs to project '${owner}' — use -p ${owner})`);
         return 1;
       }
       if (ctx.json) {
@@ -496,6 +517,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (!sourceId || !quote) {
         bad(ctx, "usage: research evidence add <sourceId> --quote \"...\" | --file <path> [--note ..] [--locator ..]");
         return 2;
+      }
+      {
+        const srcOwner = store.db.get("SELECT project_id FROM sources WHERE id=?", [sourceId]) as any;
+        if (srcOwner && srcOwner.project_id !== project.id) {
+          bad(ctx, notFoundRefusal(env, "sources", sourceId, "source"));
+          return 1;
+        }
       }
       const note = String(args.flags.note || "");
       const locator = String(args.flags.locator || "");
@@ -802,8 +830,12 @@ if (subAction === "show") {
           const modelScore = model.score;
           // 0.82.1: prediction claims never auto-promote on link — the receipt
           // says so explicitly instead of showing a silently-unchanged status.
+          const explicitSelection = args.flags.p !== undefined || args.flags.project !== undefined;
+          const selectionNote = crossProject && !explicitSelection && project.name !== crossProject.claim && project.name !== crossProject.evidence
+            ? `selection '${project.name}' owns neither end of this link; the link is cross-project because ids resolve workspace-wide — pin ownership explicitly with -p when both ends should be scoped`
+            : undefined;
           if (ctx.json) {
-            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(wasDup ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
+            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(wasDup ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
           } else if (r.auto_promote === false) {
             ok(ctx, `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`);
           } else {
@@ -848,7 +880,7 @@ if (subAction === "show") {
       }
       const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
       if (!c0) {
-        bad(ctx, `claim not found: ${id}`);
+        bad(ctx, notFoundRefusal(env, "claims", id, "claim"));
         return 1;
       }
       const note = String(args.flags.note || "");
@@ -875,7 +907,7 @@ if (subAction === "show") {
       }
       const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
       if (!c0) {
-        bad(ctx, `claim not found: ${id}`);
+        bad(ctx, notFoundRefusal(env, "claims", id, "claim"));
         return 1;
       }
       return getOrm(env.db.path)
@@ -903,12 +935,12 @@ if (subAction === "show") {
       }
       const c0 = store.db.get("SELECT id FROM claims WHERE id=? AND project_id=?", [cid, project.id]);
       if (!c0) {
-        bad(ctx, `claim not found: ${cid}  (in project ${project.name}; ids resolve inside one project — pass -p if it lives elsewhere)`);
+        bad(ctx, notFoundRefusal(env, "claims", cid, "claim"));
         return 1;
       }
       const e0 = store.db.get("SELECT id FROM evidence WHERE id=? AND project_id=?", [eid, project.id]);
       if (!e0) {
-        bad(ctx, `evidence not found: ${eid}  (in project ${project.name})`);
+        bad(ctx, notFoundRefusal(env, "evidence", eid, "evidence"));
         return 1;
       }
       return getOrm(env.db.path)

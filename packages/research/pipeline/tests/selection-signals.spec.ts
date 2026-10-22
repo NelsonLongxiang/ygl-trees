@@ -1,0 +1,113 @@
+/**
+ * #44: selection-bucket signals and owner-named refusals.
+ *  - F1: `project new` / `project use --json` expose selected/prior/session and
+ *    a `selection_warning` when the write lands in the shared `default` bucket.
+ *  - F2: an implicit selection that owns neither end of a cross-project claim
+ *    link gets a `selection_note` (behaviour unchanged; the ruling is #45 D1-D3).
+ *  - F3: id-addressed verbs refuse with the owning project's name.
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const REPO = resolve(__dirname, "../../../..");
+const BIN = resolve(REPO, "dist/bundle/bin.cjs");
+const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+
+let HOME = "";
+
+function run(args: string[]) {
+  const r = spawnSync(process.execPath, [BIN, ...args], {
+    encoding: "utf8",
+    timeout: 60_000,
+    env: { ...process.env, YGL_HOME: HOME, YGL_SESSION: "", DSH_SESSION_ID: "", YGL_PROJECT: "" },
+  });
+  let j: any = null;
+  try {
+    j = JSON.parse((r.stdout || "").trim());
+  } catch {
+    j = null;
+  }
+  return { rc: r.status ?? -1, j, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
+}
+
+describe.skipIf(!HAS_BIN)("#44 selection signals (0.114.7)", () => {
+  beforeAll(() => {
+    HOME = mkdtempSync(join(tmpdir(), "ygl-sel44-"));
+    expect(run(["db", "init"]).rc).toBe(0);
+  });
+  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("F1: project new --json names the selected bucket and warns when it is the shared default", () => {
+    const p1 = run(["project", "new", "p1", "--json"]);
+    expect(p1.rc).toBe(0);
+    expect(p1.j.selected).toBe("p1");
+    expect(p1.j.session).toBe("default");
+    expect(p1.j.prior).toBeNull();
+    expect(p1.j.selection_warning).toBeUndefined(); // single project: no other sid-less agent to disturb
+
+    const p2 = run(["project", "new", "p2", "--json"]);
+    expect(p2.rc).toBe(0);
+    expect(p2.j.selected).toBe("p2");
+    expect(p2.j.prior).toBe("p1");
+    expect(p2.j.session).toBe("default");
+    expect(String(p2.j.selection_warning)).toMatch(/shared "default" bucket/);
+    expect(String(p2.j.selection_warning)).toMatch(/p1/);
+
+    const use = run(["project", "use", "p1", "--json"]);
+    expect(use.rc).toBe(0);
+    expect(use.j.selected).toBe("p1");
+    expect(use.j.prior).toBe("p2");
+    expect(use.j.session).toBe("default");
+    expect(String(use.j.selection_warning)).toMatch(/shared "default" bucket/);
+  });
+
+  it("F3: id-addressed refusals name the owning project", () => {
+    const claim = run(["research", "claim", "add", "账目必须对平", "-p", "p1", "--json"]);
+    expect(claim.rc, claim.out + claim.err).toBe(0);
+    const claimId = claim.j.id as string;
+    const src = run(["research", "source", "add", "账单", "--url", "https://example.com/x", "-p", "p2", "--json"]);
+    expect(src.rc).toBe(0);
+    const srcId = src.j.id as string;
+    const ev = run(["research", "evidence", "add", srcId, "--quote", "账面余额 1 元", "-p", "p2", "--json"]);
+    expect(ev.rc).toBe(0);
+    const evId = ev.j.id as string;
+
+    // selection p3 owns neither end
+    expect(run(["project", "new", "p3", "--json"]).rc).toBe(0);
+    expect(run(["project", "use", "p3", "--json"]).rc).toBe(0);
+
+    const resolve = run(["research", "claim", "resolve", claimId, "--as", "refuted", "-p", "p3", "--json"]);
+    expect(resolve.rc).toBe(1);
+    expect(String(resolve.j?.error)).toMatch(/belongs to project 'p1'/);
+
+    const unresolve = run(["research", "claim", "unresolve", claimId, "-p", "p3", "--json"]);
+    expect(unresolve.rc).toBe(1);
+    expect(String(unresolve.j?.error)).toMatch(/belongs to project 'p1'/);
+
+    const show = run(["research", "source", "show", srcId, "-p", "p3", "--json"]);
+    expect(show.rc).toBe(1);
+    expect(String(show.j?.error)).toMatch(/belongs to project 'p2'/);
+
+    const addEv = run(["research", "evidence", "add", srcId, "--quote", "x", "-p", "p3", "--json"]);
+    expect(addEv.rc).toBe(1);
+    expect(String(addEv.j?.error)).toMatch(/belongs to project 'p2'/);
+
+    const unlink = run(["research", "claim", "unlink", claimId, evId, "-p", "p3", "--json"]);
+    expect(unlink.rc).toBe(1);
+    expect(String(unlink.j?.error)).toMatch(/belongs to project 'p1'/);
+  });
+
+  it("F2: a cross-project link made on an implicit selection reports that the selection owned neither end", () => {
+    const claim = run(["research", "claim", "add", "跨项目断言", "-p", "p1", "--json"]);
+    const src = run(["research", "source", "add", "跨项目来源", "--url", "https://example.com/y", "-p", "p2", "--json"]);
+    const ev = run(["research", "evidence", "add", src.j.id, "--quote", "跨项目证据", "-p", "p2", "--json"]);
+    const link = run(["research", "claim", "link", claim.j.id, ev.j.id, "--json"]);
+    expect(link.rc).toBe(0);
+    expect(link.j.cross_project).toMatchObject({ claim: "p1", evidence: "p2" });
+    expect(String(link.j.selection_note)).toMatch(/owns neither end/);
+    expect(link.j.selection_note).toMatch(/p3/);
+  });
+});
