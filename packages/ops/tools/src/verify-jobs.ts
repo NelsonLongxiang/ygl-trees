@@ -33,6 +33,7 @@ import {
   findMaterial,
   knownMaterialHashes,
   latestVersionOf,
+  clauseScopeOf,
   materialClausePattern,
   minimalRedTeam,
   normalizeAsOf,
@@ -160,6 +161,7 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
       rejected: res.rejected,
       diagnostics: res.diagnostics,
       materials_sha256: res.materials_sha256,
+      clause_scope: clauseScopeOf(pat, res.coverage),
     }, created);
     record = relative(dir, recordPath).split(sep).join("/");
     if (ready && res.spec) {

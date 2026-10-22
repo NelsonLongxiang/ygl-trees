@@ -12,9 +12,10 @@ GitHub #34 修正（0.114.1 / 0.114.2 的回归：舰队全部材料 lint `ok:fa
   `clause_pattern`（参与 `material_id` 哈希；未声明时 id 不变），prepare（CLI / WebUI 作业端点）只认冻结的模式；
   `lint-candidates --clause-pattern` 面向裸文本。缺捕获组或非法 → rc=2。同 id 重复声明 → 覆盖问题。
   **SKIP ≠ OK**：声明了模式却一行不中 → 覆盖问题（lint `ok:false` / prepare `error`）；默认模式一行不中 →
-  具名跳过（lint `coverage_skipped:true`、`coverage.enforced:false`；prepare ready 记录
+  具名跳过（lint `coverage_skipped:true`、`coverage.enforced:false`，`issues[]` 增一条 `level:"warning"` 的 COVERAGE
+  条目——`ok` 只计拒绝，保持 prepare 投影；prepare ready 记录
   `[P1c] no clause lines matched pattern … — clause coverage not enforced (a skip, not a pass)`，`--json` 带 `coverage`），
-  不再逐行造出子句。
+  不再逐行造出子句。prepare 记录（`prepare.json` / `attempts/*.json`）增结构化 `clause_scope: {pattern, declared, enforced, clauses}`。
 - **c. 定位语法**：`[文件]#<片段>` 先按子句 id 解析（`#S1`、`#L2` 是 id，不再被当成第 1/2 行）；物理行写
   `#line=<n>`。材料有子句时，无法解析的片段是 P1 拒绝，诊断只按子句计数（`declares 3 clause(s): S1, L2, S3`），
   行诊断只按行计数（`material has 12 line(s)` / `line 2, which is blank`）。旧的 `#L<n>`/`#S<n>` 行号写法删除，
@@ -40,8 +41,9 @@ GitHub #34 修正（0.114.1 / 0.114.2 的回归：舰队全部材料 lint `ok:fa
 - 门禁：contract 15 改写（id 子句 + 按 id 豁免 + 行号豁免拒绝 + 跳过可见 + 舰队夹具 lint/prepare 24/24），
   141 → **144**；`scripts/contract-audit.sh` 按 0.114.2 流程显式重登记（`meta.reregister` 事件，reason 见提交说明；
   审计落点问题另见 #37，不在本修正内）。
-- 棘轮：bundle 基线 739,621 → **757,018 B** 显式认账（0.114.2 已 +8,574，本修正 +8,823：子句清单/定位解析/评审配对与诊断文案，
-  合计超 2% 容差）；只认 bundle 一项，web dist 与冷启动保持原 win32 基线不动。
+- 棘轮：bundle 基线 739,621 → **757,018 B**（本 PR 自行抬升，**需维护者显式认账**；master 的上限是 754,413）。同源对比：
+  0.114.2 自身 748,195 B，本修正 head 757,602 B（+9,407：子句清单 / 定位解析 / 评审配对 / 豁免校验与其可操作诊断文案；
+  已把新增顶层 JSDoc 改为 `//` 注释省下约 2.3 KB——tsdown 保留顶层 JSDoc、剥离行注释）。只认 bundle 一项，web dist 与冷启动保持原 win32 基线不动。
 
 ## 0.114.2
 

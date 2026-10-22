@@ -315,9 +315,9 @@ export function normalizeAsOf(raw: unknown, fallback: string): string {
   return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMin * 60000).toISOString();
 }
 
-/** GitHub #34: load named clause exemptions (JSON array or { exempt: [...] }).
- *  Each entry names a declared clause by exactly one of `id`, `locator` (`#S3`)
- *  or exact `text` — never by line number — and carries a mandatory `reason`. */
+// GitHub #34: load named clause exemptions (JSON array or { exempt: [...] }).
+// Each entry names a declared clause by exactly one of `id`, `locator` (`#S3`)
+// or exact `text` — never by line number — and carries a mandatory `reason`.
 type ExemptEntry = { id?: string; locator?: string; text?: string; reason?: string };
 function loadCoverageExempt(args: any): { ok: true; exempt: ExemptEntry[] } | { ok: false; code: number; problem: string } {
   const file = args.flags["coverage-exempt"];
@@ -344,8 +344,8 @@ function loadCoverageExempt(args: any): { ok: true; exempt: ExemptEntry[] } | { 
   return { ok: true, exempt };
 }
 
-/** GitHub #34: `--clause-pattern <regex>` declares the material's clause lines
- *  (first capture group = id); default is the fleet convention `^([A-Z]+[0-9]+) `. */
+// GitHub #34: `--clause-pattern <regex>` declares the material's clause lines
+// (first capture group = id); default is the fleet convention `^([A-Z]+[0-9]+) `.
 function loadClausePattern(args: any): { ok: true; pattern: RegExp; declared: boolean } | { ok: false; problem: string } {
   const raw = args.flags["clause-pattern"];
   if (raw === true) return { ok: false, problem: "--clause-pattern needs a regular expression, e.g. --clause-pattern '^([A-Z]+[0-9]+) '" };
@@ -353,7 +353,12 @@ function loadClausePattern(args: any): { ok: true; pattern: RegExp; declared: bo
   return typeof p === "string" ? { ok: false, problem: p } : { ok: true, pattern: p, declared: raw !== undefined };
 }
 
-/** The clause pattern frozen with a material (absent = default convention). */
+// #34: structured clause scope for prepare.json / attempts (what coverage was judged by)
+export function clauseScopeOf(p: { pattern: RegExp; declared: boolean }, cov?: { enforced: boolean; clauses: number }) {
+  return { pattern: p.pattern.source, declared: p.declared, enforced: cov?.enforced ?? null, clauses: cov?.clauses ?? null };
+}
+
+// The clause pattern frozen with a material (absent = default convention).
 export function materialClausePattern(material: MaterialRecord): { ok: true; pattern: RegExp; declared: boolean } | { ok: false; problem: string } {
   if (material.clause_pattern === undefined) return { ok: true, pattern: compileClausePattern(undefined) as RegExp, declared: false };
   const p = compileClausePattern(String(material.clause_pattern));
@@ -704,6 +709,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           rejected: res.rejected,
           diagnostics: res.diagnostics,
           materials_sha256: res.materials_sha256,
+          clause_scope: clauseScopeOf(patOpt, res.coverage),
         }, created);
         if (ready && res.spec) {
           writeJson(join(dir, "spec.json"), res.spec);
@@ -1449,7 +1455,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         );
       }
       if (res.ok) {
-        out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${skippedTail}`);
+        const warnings = res.issues.length;
+        out(ctx, `  ✓ candidates lint ok: ${res.checked} checked${warnings ? `, ${warnings} warning(s)` : ""}${skippedTail}`);
         return 0;
       }
       out(ctx, paint(C.red, `  ✗ candidates lint: ${res.issues.length}/${res.checked} rejected${skippedTail}`, ctx.color));

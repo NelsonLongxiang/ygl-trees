@@ -444,8 +444,8 @@ fi
 printf '# 无编号材料\n\n验收对象：bills 表。账面必须平衡。\n' > "$WS/cov/prose.md"
 printf '{"candidates":[{"source_clause":"账面必须平衡。","anchor":{"quote":"账面必须平衡。","locator":"prose.md#line=3"},"checker":{"type":"count","predicate":{"from":"bills","select":[]},"op":">=","value":0}}]}' > "$WS/cov/prose-c.json"
 COVJ4=$($Y verify lint-candidates "$WS/cov/prose-c.json" --text "$WS/cov/prose.md" --json 2>/dev/null)
-if printf '%s' "$COVJ4" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.coverage_skipped===true&&j.coverage.enforced===false&&j.coverage.clauses===0?0:1)}catch(e){process.exit(1)}})"; then
-  pass "无编号材料 → coverage_skipped:true（跳过≠通过，机器可读）"
+if printf '%s' "$COVJ4" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===true&&j.coverage_skipped===true&&j.coverage.enforced===false&&j.coverage.clauses===0&&j.issues.length===1&&j.issues[0].stage==='COVERAGE'&&j.issues[0].level==='warning'?0:1)}catch(e){process.exit(1)}})"; then
+  pass "无编号材料 → coverage_skipped:true + COVERAGE warning issue（跳过≠通过，机器可读）"
 else
   fail "coverage skip visible" "$(printf '%s' "$COVJ4" | head -c 160)"
 fi

@@ -89,9 +89,12 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     expect(r.j.p1_skipped).toBe(false);
     expect(r.j.schema_skipped).toBe(false);
     expect(r.j.ok).toBe(false);
-    expect(r.j.issues).toHaveLength(1);
-    expect(r.j.issues[0]).toMatchObject({ index: 1, stage: "P2", source_clause: "未知列不得参与判据。" });
-    expect(String(r.j.issues[0].reason)).toMatch(/column|schema/i);
+    // #34: this material numbers no criteria → one COVERAGE warning (skip ≠ ok) besides the rejection
+    const rejections = (r.j.issues as any[]).filter((x) => x.level !== "warning");
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toMatchObject({ index: 1, stage: "P2", source_clause: "未知列不得参与判据。" });
+    expect(String(rejections[0].reason)).toMatch(/column|schema/i);
+    expect(r.j.coverage_skipped).toBe(true);
     const after = existsSync(join(HOME, "verify", "specs")) ? readdirSync(join(HOME, "verify", "specs")).length : 0;
     expect(after).toBe(before); // nothing frozen, nothing bumped
     expect(existsSync(join(HOME, "verify", "prepares"))).toBe(false);
@@ -246,7 +249,8 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     // #21: deterministic rejections are no longer replayed across rounds, so
     // the two lists must be EQUAL (same order, same content) — not just sets.
     const prepList = prepareRejected.map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
-    const lintList = (lint.j.issues as any[]).map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
+    // #34: warnings (e.g. a skipped clause coverage) are reported but are not rejections
+    const lintList = (lint.j.issues as any[]).filter((x) => x.level !== "warning").map((x) => `${x.stage}\\u0000${x.reason}\\u0000${x.source_clause}`);
     expect(lintList.length).toBeGreaterThan(0);
     expect(prepList).toEqual(lintList);
   });

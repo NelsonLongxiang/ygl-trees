@@ -171,25 +171,25 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex, in
   return null;
 }
 
-/** GitHub #34 (follow-up to 0.114.1): frozen-material clause scope **by rule**.
- *
- *  A clause is a material line that matches the clause pattern; the pattern's
- *  first capture group is the clause id. The default is the fleet convention
- *  `^([A-Z]+[0-9]+) ` (an id, then a space: `S1 …`, `P12 …`); a material may
- *  declare its own at submit time (`material.json` `clause_pattern`, frozen
- *  with the material). Titles, `##` headings, blank lines and prose
- *  (`验收对象：…`) are out of scope by rule — never by exemption.
- *  No matching line is never a silent OK (SKIP ≠ OK): under a declared pattern
- *  it is a coverage problem (misconfigured pattern); under the default it is a
- *  named skip (`no clause lines matched pattern …`, `coverage.enforced:false`)
- *  instead of inventing clauses out of prose (the 0.114.1 regression).
- *
- *  Locator grammar (the fragment after the last `#`, file prefix optional):
- *    `#<id>`      — a declared clause id; resolved first, so `#S1`/`#L2` are ids;
- *    `#line=<n>`  — physical line n (1-based) of the frozen material.
- *  When the material declares clauses, any other `#fragment` is a P1 rejection
- *  (a typo or a stale id must not pass as an unverified anchor). Locators
- *  without `#` (`bills!B7`, `p3`) stay governed by the material index. */
+// GitHub #34 (follow-up to 0.114.1): frozen-material clause scope **by rule**.
+//
+// A clause is a material line that matches the clause pattern; the pattern's
+// first capture group is the clause id. The default is the fleet convention
+// `^([A-Z]+[0-9]+) ` (an id, then a space: `S1 …`, `P12 …`); a material may
+// declare its own at submit time (`material.json` `clause_pattern`, frozen
+// with the material). Titles, `##` headings, blank lines and prose
+// (`验收对象：…`) are out of scope by rule — never by exemption.
+// No matching line is never a silent OK (SKIP ≠ OK): under a declared pattern
+// it is a coverage problem (misconfigured pattern); under the default it is a
+// named skip (`no clause lines matched pattern …`, `coverage.enforced:false`)
+// instead of inventing clauses out of prose (the 0.114.1 regression).
+//
+// Locator grammar (the fragment after the last `#`, file prefix optional):
+//    `#<id>`      — a declared clause id; resolved first, so `#S1`/`#L2` are ids;
+//    `#line=<n>`  — physical line n (1-based) of the frozen material.
+// When the material declares clauses, any other `#fragment` is a P1 rejection
+// (a typo or a stale id must not pass as an unverified anchor). Locators
+// without `#` (`bills!B7`, `p3`) stay governed by the material index.
 export const DEFAULT_CLAUSE_PATTERN = /^([A-Z]+[0-9]+) /;
 
 export interface CoverageExemption {
@@ -219,8 +219,8 @@ export interface ClauseInventory {
   problems: string[];
 }
 
-/** Validate a caller-supplied clause pattern (string or RegExp); it needs a
- *  capture group for the id. Returns the RegExp or a usage error message. */
+// Validate a caller-supplied clause pattern (string or RegExp); it needs a
+// capture group for the id. Returns the RegExp or a usage error message.
 export function compileClausePattern(p: string | RegExp | undefined): RegExp | string {
   if (p === undefined) return DEFAULT_CLAUSE_PATTERN;
   let re: RegExp;
@@ -258,14 +258,14 @@ export function clauseInventory(materialText: string, pattern: RegExp = DEFAULT_
   return { pattern: pattern.source, clauses, lines, problems };
 }
 
-/** Back-compat name (0.114.1): now the declared-clause list, not every line. */
+// Back-compat name (0.114.1): now the declared-clause list, not every line.
 export function materialClauses(materialText: string, pattern?: RegExp): MaterialClause[] {
   return clauseInventory(materialText, pattern).clauses;
 }
 
 export type LocatorRef = { kind: "clause"; clause: MaterialClause } | { kind: "line"; line: number } | { kind: "unresolved"; fragment: string } | null;
 
-/** Resolve a locator against the inventory; null = no `#` fragment (index-governed). */
+// Resolve a locator against the inventory; null = no `#` fragment (index-governed).
 export function resolveLocator(locator: string, inv: ClauseInventory): LocatorRef {
   if (typeof locator !== "string") return null;
   const at = locator.lastIndexOf("#");
@@ -318,10 +318,10 @@ export interface CoverageResult {
   problems: string[];
 }
 
-/** Every declared clause must be claimed by a P1-passing candidate — one whose
- *  anchor.locator resolves to that clause (or its line), or whose source_clause
- *  contains the whole clause line — or be named in an exemption. A fragment
- *  quote without a resolving locator claims nothing (`S1` must not cover `S10`). */
+// Every declared clause must be claimed by a P1-passing candidate — one whose
+// anchor.locator resolves to that clause (or its line), or whose source_clause
+// contains the whole clause line — or be named in an exemption. A fragment
+// quote without a resolving locator claims nothing (`S1` must not cover `S10`).
 export function checkCoverage(
   materialText: string,
   candidates: PrepareCandidate[],
@@ -381,14 +381,14 @@ export function checkCoverage(
   return { pattern: inv.pattern, enforced: inv.clauses.length > 0, clauses: inv.clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
 }
 
-/** The named skip for a material whose lines match no clause pattern. */
+// The named skip for a material whose lines match no clause pattern.
 export function noClauseLinesMessage(pattern: string): string {
   return `no clause lines matched pattern ${pattern} — clause coverage not enforced (a skip, not a pass): number criteria "<id> <text>" or declare the pattern with submit --clause-pattern`;
 }
 
-/** GitHub #34 negative fixture "orphan review": a review whose source_clause no
- *  candidate carries means a criterion was dropped or renamed after review — the
- *  1:1 candidate↔review pairing is part of the construction evidence. */
+// GitHub #34 negative fixture "orphan review": a review whose source_clause no
+// candidate carries means a criterion was dropped or renamed after review — the
+// 1:1 candidate↔review pairing is part of the construction evidence.
 export function orphanReviews(candidates: Array<{ source_clause?: unknown }>, reviewedClauses: string[]): string[] {
   const claimed = new Set(candidates.map((c) => String(c?.source_clause ?? "")));
   return reviewedClauses.filter((s) => !claimed.has(s));
@@ -597,6 +597,9 @@ export interface LintIssue {
   source_clause: string;
   stage: string;
   reason: string;
+  // #34: "warning" = reported but not a rejection (prepare would still freeze);
+  // `ok` counts rejections only, so lint stays the projection of prepare
+  level?: "warning";
 }
 
 export interface LintResult {
@@ -654,6 +657,9 @@ export function lintCandidates(
       issues.push({ index: -1, source_clause: u.text, stage: "COVERAGE", reason: `clause ${u.id} is not covered by any candidate — add a candidate or declare a named exemption` });
     }
     for (const p of coverage.problems) issues.push({ index: -1, source_clause: "", stage: "COVERAGE", reason: p });
+    if (!coverage.enforced && !opts.clausePatternDeclared) {
+      issues.push({ index: -1, source_clause: "", stage: "COVERAGE", reason: noClauseLinesMessage(coverage.pattern), level: "warning" });
+    }
   }
   if (opts.reviewedClauses) {
     for (const s of orphanReviews(candidates, opts.reviewedClauses)) {
@@ -670,7 +676,7 @@ export function lintCandidates(
     checked: candidates.length,
     p1_skipped: opts.materialText === undefined,
     schema_skipped: opts.schema === undefined,
-    ok: issues.length === 0,
+    ok: issues.every((i) => i.level === "warning"),
     issues,
     coverage,
     coverage_skipped: coverage !== null && !coverage.enforced && !opts.clausePatternDeclared,
