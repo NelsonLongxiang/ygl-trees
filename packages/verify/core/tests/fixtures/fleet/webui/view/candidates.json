@@ -1,0 +1,311 @@
+{
+  "candidates": [
+    {
+      "source_clause": "R1 视图必须在每个场景下都能打开：renders 中 nav_ok 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R1 视图必须在每个场景下都能打开：renders 中 nav_ok 为 0 的行必须为 0。",
+        "locator": "material.md#R1"
+      },
+      "title": "两套主题都能打开",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "renders",
+          "select": [
+            "route",
+            "theme"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "nav_ok",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R2 视图不得产生控制台错误：renders 中 console_errors 大于 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R2 视图不得产生控制台错误：renders 中 console_errors 大于 0 的行必须为 0。",
+        "locator": "material.md#R2"
+      },
+      "title": "无控制台错误",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "renders",
+          "select": [
+            "route",
+            "theme",
+            "console_errors"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "console_errors",
+                "op": ">",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R3 视图不得显示错误告警：renders 中 error_alerts 大于 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R3 视图不得显示错误告警：renders 中 error_alerts 大于 0 的行必须为 0。",
+        "locator": "material.md#R3"
+      },
+      "title": "无错误告警",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "renders",
+          "select": [
+            "route",
+            "theme",
+            "error_alerts"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "error_alerts",
+                "op": ">",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R4 视图必须渲染出内容：renders 中 main_chars 小于 20 的行必须为 0。",
+      "anchor": {
+        "quote": "R4 视图必须渲染出内容：renders 中 main_chars 小于 20 的行必须为 0。",
+        "locator": "material.md#R4"
+      },
+      "title": "渲染出内容",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "renders",
+          "select": [
+            "route",
+            "theme",
+            "main_chars"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "main_chars",
+                "op": "<",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R5 可见文字必须达到 WCAG AA 对比度：text_contrast 中 ratio 小于 4.5 且不属于大字（大字 = size_px 不小于 24，或 font_weight 不小于 700 且 size_px 不小于 18.66）的行，以及属于大字但 ratio 小于 3 的行，都必须为 0。",
+      "anchor": {
+        "quote": "R5 可见文字必须达到 WCAG AA 对比度：text_contrast 中 ratio 小于 4.5 且不属于大字（大字 = size_px 不小于 24，或 font_weight 不小于 700 且 size_px 不小于 18.66）的行，以及属于大字但 ratio 小于 3 的行，都必须为 0。",
+        "locator": "material.md#R5"
+      },
+      "title": "可见文字达 AA",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "text_contrast",
+          "select": [
+            "route",
+            "theme",
+            "text",
+            "ratio",
+            "size_px",
+            "font_weight"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "ratio",
+                    "op": "<",
+                    "value": 4.5
+                  },
+                  {
+                    "op": "not",
+                    "conditions": [
+                      {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "col": "size_px",
+                            "op": ">=",
+                            "value": 24
+                          },
+                          {
+                            "op": "and",
+                            "conditions": [
+                              {
+                                "col": "font_weight",
+                                "op": ">=",
+                                "value": 700
+                              },
+                              {
+                                "col": "size_px",
+                                "op": ">=",
+                                "value": 18.66
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "col": "ratio",
+                    "op": "<",
+                    "value": 3
+                  },
+                  {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "col": "size_px",
+                        "op": ">=",
+                        "value": 24
+                      },
+                      {
+                        "op": "and",
+                        "conditions": [
+                          {
+                            "col": "font_weight",
+                            "op": ">=",
+                            "value": 700
+                          },
+                          {
+                            "col": "size_px",
+                            "op": ">=",
+                            "value": 18.66
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R6 声明了标记的视图必须画出标记：renders 中 marker_found 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R6 声明了标记的视图必须画出标记：renders 中 marker_found 为 0 的行必须为 0。",
+        "locator": "material.md#R6"
+      },
+      "title": "声明的标记画出",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "renders",
+          "select": [
+            "route",
+            "theme",
+            "marker_found"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "marker_found",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R7 三个场景都必须实测：renders 的行数不得少于 3。",
+      "anchor": {
+        "quote": "R7 三个场景都必须实测：renders 的行数不得少于 3。",
+        "locator": "material.md#R7"
+      },
+      "title": "三个场景都实测",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "renders",
+          "select": []
+        },
+        "op": ">=",
+        "value": 3
+      }
+    },
+    {
+      "source_clause": "R8 声明的交互步骤必须能完成：renders 中 interact_ok 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R8 声明的交互步骤必须能完成：renders 中 interact_ok 为 0 的行必须为 0。",
+        "locator": "material.md#R8"
+      },
+      "title": "声明的交互能完成",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "renders",
+          "select": [
+            "route",
+            "theme",
+            "interact_ok"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "interact_ok",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    }
+  ]
+}

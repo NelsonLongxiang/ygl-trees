@@ -1,0 +1,99 @@
+{
+  "candidates": [
+    {
+      "source_clause": "L1 仍成立的发现必须有 issue 跟踪：findings 中 status 为 supported 且 linked_issues 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "L1 仍成立的发现必须有 issue 跟踪：findings 中 status 为 supported 且 linked_issues 为 0 的行必须为 0。",
+        "locator": "material.md#L1"
+      },
+      "title": "成立的发现都有 issue 跟踪",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "findings",
+          "select": [
+            "project",
+            "claim_id",
+            "text"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "status",
+                "op": "=",
+                "value": "supported"
+              },
+              {
+                "col": "linked_issues",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "L2 跟踪它的 issue 关闭后，发现必须给出结论：findings 中 status 为 supported、linked_issues 大于 0 且 linked_open 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "L2 跟踪它的 issue 关闭后，发现必须给出结论：findings 中 status 为 supported、linked_issues 大于 0 且 linked_open 为 0 的行必须为 0。",
+        "locator": "material.md#L2"
+      },
+      "title": "issue 关闭后发现要有结论",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "findings",
+          "select": [
+            "project",
+            "claim_id",
+            "text"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "status",
+                "op": "=",
+                "value": "supported"
+              },
+              {
+                "col": "linked_issues",
+                "op": ">",
+                "value": 0
+              },
+              {
+                "col": "linked_open",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "L3 台账必须可读：findings 的行数不得少于 1。",
+      "anchor": {
+        "quote": "L3 台账必须可读：findings 的行数不得少于 1。",
+        "locator": "material.md#L3"
+      },
+      "title": "台账可读",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "findings",
+          "select": []
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}

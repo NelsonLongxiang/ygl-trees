@@ -1,0 +1,119 @@
+{
+  "candidates": [
+    {
+      "source_clause": "O1 实心主按钮与危险按钮的六种状态在两套主题下文字对比度都必须不低于 4.5：solid_states 中 ratio 小于 4.5 或为空的行必须为 0。",
+      "anchor": {
+        "quote": "O1 实心主按钮与危险按钮的六种状态在两套主题下文字对比度都必须不低于 4.5：solid_states 中 ratio 小于 4.5 或为空的行必须为 0。",
+        "locator": "material.md#O1"
+      },
+      "title": "六态文字对比度 ≥ 4.5",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "solid_states",
+          "select": [
+            "theme",
+            "state",
+            "fill_hex",
+            "ink_hex",
+            "ratio"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "ratio",
+                "op": "<",
+                "value": 4.5
+              },
+              {
+                "col": "ratio",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "O2 实心按钮的文字墨色必须取 DESIGN.md 的 on-primary：solid_inks 中 ink_hex 为空、design_on_primary 为空或两者不相等的行必须为 0。",
+      "anchor": {
+        "quote": "O2 实心按钮的文字墨色必须取 DESIGN.md 的 on-primary：solid_inks 中 ink_hex 为空、design_on_primary 为空或两者不相等的行必须为 0。",
+        "locator": "material.md#O2"
+      },
+      "title": "墨色取 on-primary",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "solid_inks",
+          "select": [
+            "theme",
+            "ink_key",
+            "ink_hex",
+            "design_on_primary"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "ink_hex",
+                "op": "is null"
+              },
+              {
+                "col": "design_on_primary",
+                "op": "is null"
+              },
+              {
+                "col": "ink_hex",
+                "op": "!=",
+                "value": {
+                  "col": "design_on_primary"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "O3 两套主题的六种状态必须都测到：solid_states 的行数不得少于 12。",
+      "anchor": {
+        "quote": "O3 两套主题的六种状态必须都测到：solid_states 的行数不得少于 12。",
+        "locator": "material.md#O3"
+      },
+      "title": "六态两主题都测到",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "solid_states",
+          "select": []
+        },
+        "op": ">=",
+        "value": 12
+      }
+    },
+    {
+      "source_clause": "O4 三个墨色键在两套主题下必须都测到：solid_inks 的行数不得少于 6。",
+      "anchor": {
+        "quote": "O4 三个墨色键在两套主题下必须都测到：solid_inks 的行数不得少于 6。",
+        "locator": "material.md#O4"
+      },
+      "title": "三个墨色键两主题都测到",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "solid_inks",
+          "select": []
+        },
+        "op": ">=",
+        "value": 6
+      }
+    }
+  ]
+}

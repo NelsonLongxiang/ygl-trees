@@ -1,0 +1,82 @@
+{
+  "reviews": [
+    {
+      "source_clause": "L1 仍成立的发现必须有 issue 跟踪：findings 中 status 为 supported 且 linked_issues 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "status 为 supported 且 linked_issues 为 0，两个条件逐字映射",
+          "anchor": {
+            "quote": "L1 仍成立的发现必须有 issue 跟踪：findings 中 status 为 supported 且 linked_issues 为 0 的行必须为 0。",
+            "locator": "material.md#L1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "断言状态与证据来源都是台账里的确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "只记在台账、从未上报也没裁定的发现命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "L2 跟踪它的 issue 关闭后，发现必须给出结论：findings 中 status 为 supported、linked_issues 大于 0 且 linked_open 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "三个条件逐字映射（有挂 issue 且全部已关闭）",
+          "anchor": {
+            "quote": "L2 跟踪它的 issue 关闭后，发现必须给出结论：findings 中 status 为 supported、linked_issues 大于 0 且 linked_open 为 0 的行必须为 0。",
+            "locator": "material.md#L2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "issue 状态来自 gh，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "issue 已修已关、台账却没跟上时命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "L3 台账必须可读：findings 的行数不得少于 1。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "下限 1 逐字取自材料",
+          "anchor": {
+            "quote": "L3 台账必须可读：findings 的行数不得少于 1。",
+            "locator": "material.md#L3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "台账路径错误或库损坏时计数 0 即 FAIL，L1/L2 的空表不会冒充干净",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "reviews": [
+    {
+      "source_clause": "L1 消费面不得出现任何色值字面量：color_literals 中 zone 为 consumer 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "zone 为 consumer 的任何行即违规，逐字映射；扫描整张表，不设只含消费面的扫描域",
+          "anchor": {
+            "quote": "L1 消费面不得出现任何色值字面量：color_literals 中 zone 为 consumer 的行必须为 0。",
+            "locator": "material.md#L1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "字面量由正则逐行扫出，同一提交确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "扫描器失效时 L3 下限失败",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "L2 令牌面里的每个色值字面量都必须写进 DESIGN.md（色板取值、按钮状态色、阴影与描边都算）：color_literals 中 zone 为 token-face，且 design_occurrences 为空或小于 1 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "zone=token-face 且 design_occurrences 为空或 <1 逐字映射；空值显式列进 OR，不会被漏过",
+          "anchor": {
+            "quote": "L2 令牌面里的每个色值字面量都必须写进 DESIGN.md（色板取值、按钮状态色、阴影与描边都算）：color_literals 中 zone 为 token-face，且 design_occurrences 为空或小于 1 的行必须为 0。",
+            "locator": "material.md#L2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "出现次数由逐字计数得出，确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "令牌面整体解析为空时 L4 失败",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "L3 扫描不得空转：scanned_files 的行数不得少于 20（2026-10-21 上游 master f2f91de 实测 21 个文件）。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "下限 20 逐字取自材料（f2f91de 实测 21）",
+          "anchor": {
+            "quote": "L3 扫描不得空转：scanned_files 的行数不得少于 20（2026-10-21 上游 master f2f91de 实测 21 个文件）。",
+            "locator": "material.md#L3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "路径变动导致扫不到文件时计数不足即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "L4 三个令牌面都必须在扫描范围内：scanned_files 中 zone 为 token-face 的行数不得少于 3。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "zone 为 token-face 至少 3 行，逐字取自材料",
+          "anchor": {
+            "quote": "L4 三个令牌面都必须在扫描范围内：scanned_files 中 zone 为 token-face 的行数不得少于 3。",
+            "locator": "material.md#L4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "令牌面被改名或移走时计数不足即 FAIL，不会因扫不到而通过 L2",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

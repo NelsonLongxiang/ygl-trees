@@ -177,7 +177,7 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   example [--checker <type>]                         corpus-derived candidate examples (seven checker types)
   meta [<repo>]                                      verifier-repo admission rules R1-R3 (charter §4.1, rc=PASS/FAIL)
   probe --matrix [--target <sealed>] [--only <name>]  16-probe union (charter §4.3; offline RFC8032 seeds)
-  lint-candidates <file> [--text <material>]         shape-check candidates only (no spec_version consumed)${checkerHelpLines(color)}
+  lint-candidates <file> [--text <material>] [--reviews <file>]  shape + clause-coverage check (no spec_version consumed)${checkerHelpLines(color)}
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
@@ -844,7 +844,7 @@ export function generateLlmsManifest(): string {
       ["verify example [--checker <type>]", "corpus-derived candidates for the seven checker types (null ops included)"],
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],
       ["verify probe --matrix [--target <sealed>] [--only <probe>]", "16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)"],
-      ["verify lint-candidates <file> [--text <material>]", "shape-check candidates without consuming spec_version"],
+      ["verify lint-candidates <file> [--text <material>] [--reviews <file>]", "shape + clause-coverage + review-pairing check without consuming spec_version"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [
       ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],

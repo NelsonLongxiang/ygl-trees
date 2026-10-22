@@ -409,28 +409,47 @@ else
   pass "版本 $VERSION < 0.113.0：翻转门未到期（键控断言待 0.113.0）"
 fi
 
-# ── contract 15: #34 子句覆盖（判据不静默消失）
+# ── contract 15: #34 子句覆盖（判据不静默消失）——#34 修正后子句按规则界定：
+#    匹配 `^([A-Z][0-9]+) ` 的行才是子句（标题/散文不是）；#<id> 先按子句 id 解析，行引用写 #line=<n>；
+#    豁免只认 id / 原文，不认行号；舰队真实材料（tests/fixtures/fleet）必须 lint ok。
 echo "── contract 15: 子句覆盖（clause coverage）"
 mkdir -p "$WS/cov"
-printf '第一条规则：账面必须平衡。\n第二条规则：金额不得为负。\n第三条规则：日期必须完整。\n' > "$WS/cov/material.txt"
+printf '# 账单验收\n\n验收对象：bills 表。\n\n## 判据\nS1 账面必须平衡。\nL2 金额不得为负。\nS3 日期必须完整。\n' > "$WS/cov/material.txt"
 node -e '
 const fs = require("fs");
 const dir = process.argv[1];
-const mk = (quote, n) => ({ source_clause: quote, anchor: { quote, locator: `material.txt#L${n}` }, checker: { type: "count", predicate: { from: "bills", select: [] }, op: ">=", value: 0 } });
-fs.writeFileSync(`${dir}/candidates.json`, JSON.stringify({ candidates: [mk("第一条规则：账面必须平衡。", 1), mk("第二条规则：金额不得为负。", 2)] }));
-fs.writeFileSync(`${dir}/exempt.json`, JSON.stringify({ exempt: [{ locator: "#L3", reason: "heading, no rule" }] }));
+const mk = (quote, id) => ({ source_clause: quote, anchor: { quote, locator: `material.txt#${id}` }, checker: { type: "count", predicate: { from: "bills", select: [] }, op: ">=", value: 0 } });
+fs.writeFileSync(`${dir}/candidates.json`, JSON.stringify({ candidates: [mk("S1 账面必须平衡。", "S1"), mk("L2 金额不得为负。", "L2")] }));
+fs.writeFileSync(`${dir}/exempt.json`, JSON.stringify({ exempt: [{ id: "S3", reason: "enforced upstream" }] }));
+fs.writeFileSync(`${dir}/exempt-line.json`, JSON.stringify({ exempt: [{ locator: "#line=8", reason: "line anchor" }] }));
 ' "$WS/cov"
 COVJ=$($Y verify lint-candidates "$WS/cov/candidates.json" --text "$WS/cov/material.txt" --json 2>/dev/null); COVRC=$?
-if [ "$COVRC" = "0" ] && printf '%s' "$COVJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.coverage&&j.coverage.clauses===3&&j.coverage.uncovered&&j.coverage.uncovered[0].locator==='#L3'&&j.issues.some(i=>i.stage==='COVERAGE')?0:1)}catch(e){process.exit(1)}})"; then
-  pass "lint 子句未覆盖 → ok:false + COVERAGE #L3（不静默 ready）"
+if [ "$COVRC" = "0" ] && printf '%s' "$COVJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.coverage&&j.coverage.clauses===3&&j.coverage.covered===2&&j.coverage.uncovered.length===1&&j.coverage.uncovered[0].id==='S3'&&j.issues.every(i=>i.stage==='COVERAGE')?0:1)}catch(e){process.exit(1)}})"; then
+  pass "lint 子句未覆盖 → ok:false + COVERAGE S3（标题/散文不计子句；#S1/#L2 按 id 解析）"
 else
   fail "coverage lint" "rc=$COVRC $(printf '%s' "$COVJ" | head -c 160)"
 fi
 COVJ2=$($Y verify lint-candidates "$WS/cov/candidates.json" --text "$WS/cov/material.txt" --coverage-exempt "$WS/cov/exempt.json" --json 2>/dev/null); COVRC2=$?
 if [ "$COVRC2" = "0" ] && printf '%s' "$COVJ2" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===true&&j.coverage&&j.coverage.exempted===1?0:1)}catch(e){process.exit(1)}})"; then
-  pass "具名豁免 → ok:true（豁免计数可审计）"
+  pass "具名豁免（按子句 id）→ ok:true（豁免计数可审计）"
 else
   fail "coverage exempt" "rc=$COVRC2 $(printf '%s' "$COVJ2" | head -c 160)"
+fi
+COVJ3=$($Y verify lint-candidates "$WS/cov/candidates.json" --text "$WS/cov/material.txt" --coverage-exempt "$WS/cov/exempt-line.json" --json 2>/dev/null)
+if printf '%s' "$COVJ3" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ok===false&&j.coverage.exempted===0&&/line number/.test(j.coverage.problems[0]||'')?0:1)}catch(e){process.exit(1)}})"; then
+  pass "按行号豁免 → 拒（编辑会静默改靶）"
+else
+  fail "coverage exempt by line" "$(printf '%s' "$COVJ3" | head -c 160)"
+fi
+FLEETBAD=""
+for d in packages/verify/core/tests/fixtures/fleet/*/*/; do
+  FJ=$($Y verify lint-candidates "$d/candidates.json" --text "$d/material.md" --reviews "$d/reviews.json" --json 2>/dev/null)
+  printf '%s' "$FJ" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.exit(JSON.parse(s).ok===true?0:1)}catch(e){process.exit(1)}})" || FLEETBAD="$FLEETBAD $d"
+done
+if [ -z "$FLEETBAD" ]; then
+  pass "舰队真实材料（fixtures/fleet）lint --text --reviews 全部 ok"
+else
+  fail "fleet fixtures lint" "$FLEETBAD"
 fi
 
 rm -rf "$WS"

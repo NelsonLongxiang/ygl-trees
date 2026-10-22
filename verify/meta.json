@@ -55,7 +55,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "a555e64d45a6bcf007b516824b0df0d50887cb2c4aaecf9acab398abb7edeb1e",
+      "sha256": "7b367f411c405a715df07001f24c8d61b75cb4cbdfcecc980ca582146bb3b35e",
       "role": "gate"
     },
     {

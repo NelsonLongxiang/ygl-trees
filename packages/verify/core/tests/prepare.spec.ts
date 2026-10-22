@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { prepareSpec, type PrepareCandidate, type PrepareRunner } from "../src/prepare";
+import { checkCoverage, clauseInventory, compileClausePattern, lintCandidates, prepareSpec, type PrepareCandidate, type PrepareRunner } from "../src/prepare";
 import { CORPUS_VERSION, type ReviewFinding, type ReviewRunner } from "../src/contract";
 
 /** 条件④：as_of 必须由调用方给（快照口径），测试统一钉一个确定时刻 */
 const AS_OF = { kind: "snapshot" as const, value: "2026-07-01T00:00:00.000Z" };
 
-// #34: coverage treats every non-empty material line as a frozen clause, so the
-// fixture is one line — tests that need extra clauses append their own newline.
+// #34: this material numbers no criteria (`<id> <text>`), so it declares no
+// clauses and coverage is not enforced on it; the #34 tests use their own.
 const MATERIAL = `运费对账材料（2026-07） 账单合计 1,290.40 元，申报合计 1,290.40 元。 第七行：账单金额 1290.40 元。`;
 
 function runnerOf(candidates: PrepareCandidate[], seen: unknown[] = []): PrepareRunner {
@@ -332,62 +332,127 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     ]);
   });
 
-  it("#34: a frozen clause no candidate claims blocks ready (P1c), an exempted clause does not", async () => {
-    const TEXT3 = ["第一条规则：账面必须平衡。", "第二条规则：金额不得为负。", "第三条规则：日期必须完整。"].join(String.fromCharCode(10));
-    const two = [
-      goodCandidate({ source_clause: "第一条规则：账面必须平衡。", anchor: { quote: "第一条规则：账面必须平衡。", locator: "material.txt#L1" } }),
-      goodCandidate({ source_clause: "第二条规则：金额不得为负。", anchor: { quote: "第二条规则：金额不得为负。", locator: "material.txt#L2" } }),
-    ];
-    const reviewOf = (vuId: string): ReviewFinding[] => [
-      { vu_id: vuId, question: "faithful", verdict: "ok", reason: "逐字复读", anchor: { quote: "第一条规则：账面必须平衡。", locator: "material.txt#L1" } },
-      { vu_id: vuId, question: "decidable", verdict: "ok", reason: "可判" },
-      { vu_id: vuId, question: "not-vacuous", verdict: "ok", reason: "非空转" },
-    ];
-    const res = await prepareSpec(TEXT3, {
-      runner: runnerOf(two),
-      reviewer: reviewerOf(reviewOf),
-      redteam: () => [],
-      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
-    });
+  // #34 follow-up: clauses are lines matching the declared clause pattern
+  // (default `^([A-Z][0-9]+) `); titles, headings and prose are out of scope.
+  const NL = String.fromCharCode(10);
+  const ID_MATERIAL = [
+    "# 对账验收（bills）",
+    "",
+    "验收对象：运费账单与申报表。",
+    "",
+    "## 判据",
+    "",
+    "S1 账面必须平衡：bills 合计等于 declared 合计。",
+    "L2 金额不得为负。",
+    "S3 日期必须完整。",
+    "",
+    "## 纪律",
+    "- 本验证器只读。",
+  ].join(NL);
+  const clauseCand = (id: string, text: string, locator = `material.md#${id}`) =>
+    goodCandidate({ source_clause: `${id} ${text}`, anchor: { quote: `${id} ${text}`, locator } });
+  const ALL3 = [clauseCand("S1", "账面必须平衡：bills 合计等于 declared 合计。"), clauseCand("L2", "金额不得为负。"), clauseCand("S3", "日期必须完整。")];
+  const idReview = (vuId: string): ReviewFinding[] => [
+    { vu_id: vuId, question: "faithful", verdict: "ok", reason: "逐字复读", anchor: { quote: "L2 金额不得为负。", locator: "material.md#L2" } },
+    { vu_id: vuId, question: "decidable", verdict: "ok", reason: "可判" },
+    { vu_id: vuId, question: "not-vacuous", verdict: "ok", reason: "非空转" },
+  ];
+  const prep = (candidates: PrepareCandidate[], extra: Partial<Parameters<typeof prepareSpec>[1]> = {}) =>
+    prepareSpec(ID_MATERIAL, { runner: runnerOf(candidates), reviewer: reviewerOf(idReview), redteam: () => [], asOf: AS_OF, ...extra });
+
+  it("#34: headings, blank lines and prose are not clauses — a material with title + prose + ids is ready", async () => {
+    const inv = clauseInventory(ID_MATERIAL);
+    expect(inv.clauses.map((c) => c.id)).toEqual(["S1", "L2", "S3"]);
+    const res = await prep(ALL3);
+    expect(res.verdict).toBe("ready");
+    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/3 clause\(s\) declared/);
+  });
+
+  it("#34: #S<n>/#L<n> resolve as clause ids, not line numbers (fleet locators)", () => {
+    const lint = lintCandidates(ALL3, { materialText: ID_MATERIAL });
+    expect(lint.issues).toEqual([]);
+    expect(lint.ok).toBe(true);
+    expect(lint.coverage).toMatchObject({ clauses: 3, covered: 3, exempted: 0, uncovered: [] });
+  });
+
+  it("#34: a dropped clause blocks ready (P1c, named by id); an exemption by id or exact text does not", async () => {
+    const two = ALL3.slice(0, 2);
+    const res = await prep(two);
     expect(res.verdict).toBe("error");
     expect(res.spec).toBeUndefined();
     const diag = res.diagnostics.find((d) => d.stage === "P1c");
-    expect(diag?.message).toMatch(/#L3/);
-    expect(diag?.message).toMatch(/未覆盖|not covered/);
+    expect(diag?.message).toMatch(/clause S3 is not covered/);
 
-    const ok = await prepareSpec(TEXT3, {
-      runner: runnerOf(two),
-      reviewer: reviewerOf(reviewOf),
-      redteam: () => [],
-      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
-      coverageExempt: [{ locator: "#L3", reason: "heading only, no rule" }],
-    });
-    expect(ok.verdict).toBe("ready");
+    expect((await prep(two, { coverageExempt: [{ id: "S3", reason: "rule enforced upstream" }] })).verdict).toBe("ready");
+    expect((await prep(two, { coverageExempt: [{ text: "S3 日期必须完整。", reason: "rule enforced upstream" }] })).verdict).toBe("ready");
+    expect((await prep(two, { coverageExempt: [{ locator: "material.md#S3", reason: "rule enforced upstream" }] })).verdict).toBe("ready");
   });
 
-  it("#34: clause-style locators must name an existing clause and contain the quoted text", async () => {
-    const TEXT = ["第一条规则：账面必须平衡。", "第二条规则：金额不得为负。"].join(String.fromCharCode(10));
-    const reviewOf = (vuId: string): ReviewFinding[] => [
-      { vu_id: vuId, question: "faithful", verdict: "ok", reason: "逐字复读", anchor: { quote: "第一条规则：账面必须平衡。", locator: "#L1" } },
-      { vu_id: vuId, question: "decidable", verdict: "ok", reason: "可判" },
-      { vu_id: vuId, question: "not-vacuous", verdict: "ok", reason: "非空转" },
-    ];
-    const outOfRange = await prepareSpec(TEXT, {
-      runner: runnerOf([goodCandidate({ source_clause: "第一条规则：账面必须平衡。", anchor: { quote: "第一条规则：账面必须平衡。", locator: "#S9" } })]),
-      reviewer: reviewerOf(reviewOf),
-      redteam: () => [],
-      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
-    });
-    expect(outOfRange.rejected[0].stage).toBe("P1");
-    expect(outOfRange.rejected[0].reason).toMatch(/clause/);
+  it("#34: exemptions never anchor on line numbers, need a reason and must name a declared clause", () => {
+    const two = ALL3.slice(0, 2);
+    const byLine = checkCoverage(ID_MATERIAL, two, [{ locator: "#line=9", reason: "x" }]);
+    expect(byLine.problems[0]).toMatch(/line number/);
+    expect(byLine.uncovered.map((u) => u.id)).toEqual(["S3"]);
+    expect(checkCoverage(ID_MATERIAL, two, [{ id: "S3" }]).problems[0]).toMatch(/needs a reason/);
+    expect(checkCoverage(ID_MATERIAL, two, [{ id: "S9", reason: "x" }]).problems[0]).toMatch(/names no declared clause/);
+    expect(checkCoverage(ID_MATERIAL, ALL3, [{ id: "S3", reason: "x" }]).problems[0]).toMatch(/already covers/);
+  });
 
-    const wrongClause = await prepareSpec(TEXT, {
-      runner: runnerOf([goodCandidate({ source_clause: "第一条规则：账面必须平衡。", anchor: { quote: "第一条规则：账面必须平衡。", locator: "#L2" } })]),
-      reviewer: reviewerOf(reviewOf),
-      redteam: () => [],
-      asOf: { kind: "snapshot", value: "2026-07-01T00:00:00.000Z" },
-    });
-    expect(wrongClause.rejected[0].stage).toBe("P1");
-    expect(wrongClause.rejected[0].reason).toMatch(/not in that clause/);
+  it("#34: a locator naming an undeclared clause is a P1 rejection that counts clauses, not lines", async () => {
+    const res = await prep([...ALL3, clauseCand("S1", "账面必须平衡：bills 合计等于 declared 合计。", "material.md#S9")]);
+    const r = res.rejected.find((x) => x.stage === "P1");
+    expect(r?.reason).toMatch(/names clause "S9", which the frozen material does not declare \(3 clause\(s\): S1, L2, S3\)/);
+    const wrong = lintCandidates([clauseCand("S1", "账面必须平衡：bills 合计等于 declared 合计。", "material.md#L2")], { materialText: ID_MATERIAL });
+    expect(wrong.issues[0]).toMatchObject({ stage: "P1" });
+    expect(wrong.issues[0].reason).toMatch(/is clause L2 .* not in that clause/);
+  });
+
+  it("#34: #line=<n> is the distinct line syntax; its diagnostics speak in lines", () => {
+    const ok = lintCandidates([clauseCand("L2", "金额不得为负。", "material.md#line=8")], { materialText: ID_MATERIAL });
+    expect(ok.issues.filter((i) => i.stage === "P1")).toEqual([]);
+    expect(ok.coverage?.uncovered.map((u) => u.id)).toEqual(["S1", "S3"]);
+    const far = lintCandidates([clauseCand("L2", "金额不得为负。", "#line=99")], { materialText: ID_MATERIAL });
+    expect(far.issues[0].reason).toMatch(/names line 99 but the frozen material has 12 line\(s\)/);
+    const blank = lintCandidates([clauseCand("L2", "金额不得为负。", "#line=2")], { materialText: ID_MATERIAL });
+    expect(blank.issues[0].reason).toMatch(/line 2, which is blank/);
+  });
+
+  it("#34: a fragment quote without a resolving locator claims nothing (S1 must not cover S10)", () => {
+    const text = ["S1 第一条。", "S10 第十条。"].join(NL);
+    const frag = goodCandidate({ source_clause: "第一条。", anchor: { quote: "第一条。", locator: "bills!B7" } });
+    const cov = checkCoverage(text, [frag]);
+    expect(cov.covered).toBe(0);
+    expect(checkCoverage(text, [goodCandidate({ source_clause: "S1 第一条。", anchor: { quote: "S1 第一条。", locator: "bills!B7" } })]).uncovered.map((u) => u.id)).toEqual(["S10"]);
+  });
+
+  it("#34: duplicate clause ids are a coverage problem", () => {
+    const cov = checkCoverage(["S1 一。", "S1 二。"].join(NL), []);
+    expect(cov.problems[0]).toMatch(/S1 is declared more than once \(lines 1 and 2\)/);
+  });
+
+  it("#34: a material declaring no clauses is not invented into clauses — coverage is reported as not enforced", async () => {
+    const res = await prepareSpec(MATERIAL, { runner: runnerOf([goodCandidate()]), reviewer: reviewerOf(okReview), redteam: () => [], asOf: AS_OF });
+    expect(res.verdict).toBe("ready");
+    expect(res.diagnostics.find((d) => d.stage === "P1c")?.message).toMatch(/not enforced/);
+    expect(lintCandidates([goodCandidate({ anchor: { quote: "账单合计 1,290.40 元", locator: "material.md#Q7" } })], { materialText: MATERIAL }).ok).toBe(true);
+  });
+
+  it("#34: a declared clause pattern replaces the default convention; a pattern without a capture group is refused", () => {
+    const text = ["R-1：账面必须平衡。", "R-2：金额不得为负。"].join(NL);
+    const pattern = compileClausePattern("^(R-[0-9]+)：");
+    expect(pattern).toBeInstanceOf(RegExp);
+    const cand = goodCandidate({ source_clause: "R-1：账面必须平衡。", anchor: { quote: "R-1：账面必须平衡。", locator: "material.md#R-1" } });
+    const lint = lintCandidates([cand], { materialText: text, clausePattern: pattern as RegExp });
+    expect(lint.coverage).toMatchObject({ clauses: 2, covered: 1 });
+    expect(lint.coverage?.uncovered[0].id).toBe("R-2");
+    expect(compileClausePattern("^R-[0-9]+：")).toMatch(/capture group/);
+    expect(compileClausePattern("(")).toMatch(/not a valid regular expression/);
+  });
+
+  it("#34: an orphan review (no candidate carries its source_clause) blocks ready", async () => {
+    const res = await prep(ALL3, { reviewedClauses: [...ALL3.map((c) => c.source_clause), "S4 已删除的判据。"] });
+    expect(res.verdict).toBe("error");
+    expect(res.diagnostics.find((d) => d.stage === "P3")?.message).toMatch(/orphan review/);
+    expect((await prep(ALL3, { reviewedClauses: ALL3.map((c) => c.source_clause) })).verdict).toBe("ready");
   });
 });

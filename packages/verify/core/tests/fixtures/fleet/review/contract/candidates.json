@@ -1,0 +1,127 @@
+{
+  "candidates": [
+    {
+      "source_clause": "C1 契约体检必须正常结束：audit_runs 中 rc 不为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "C1 契约体检必须正常结束：audit_runs 中 rc 不为 0 的行必须为 0。",
+        "locator": "material.md#C1"
+      },
+      "title": "契约体检正常结束",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "audit_runs",
+          "select": [
+            "target_sha",
+            "rc"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "rc",
+                "op": "!=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "C2 每一项体检都必须通过：audit_runs 中 passed 为空、total 为空，或 passed 不等于 total 的行必须为 0。",
+      "anchor": {
+        "quote": "C2 每一项体检都必须通过：audit_runs 中 passed 为空、total 为空，或 passed 不等于 total 的行必须为 0。",
+        "locator": "material.md#C2"
+      },
+      "title": "每项体检都通过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "audit_runs",
+          "select": [
+            "target_sha",
+            "passed",
+            "total"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "passed",
+                "op": "is null"
+              },
+              {
+                "col": "total",
+                "op": "is null"
+              },
+              {
+                "col": "passed",
+                "op": "!=",
+                "value": {
+                  "col": "total"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "C3 体检覆盖面不缩水：audit_runs 中 total 小于 133 的行必须为 0。",
+      "anchor": {
+        "quote": "C3 体检覆盖面不缩水：audit_runs 中 total 小于 133 的行必须为 0。",
+        "locator": "material.md#C3"
+      },
+      "title": "体检覆盖面不缩水",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "audit_runs",
+          "select": [
+            "target_sha",
+            "total"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "total",
+                "op": "<",
+                "value": 133
+              },
+              {
+                "col": "total",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "C4 体检必须被执行：audit_runs 的行数不得少于 1。",
+      "anchor": {
+        "quote": "C4 体检必须被执行：audit_runs 的行数不得少于 1。",
+        "locator": "material.md#C4"
+      },
+      "title": "体检被执行",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "audit_runs",
+          "select": []
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "candidates": [
+    {
+      "source_clause": "D1 DESIGN.md 格式检查不得有 error 级发现：lint_findings 中 severity 为 error 的行必须为 0。",
+      "anchor": {
+        "quote": "D1 DESIGN.md 格式检查不得有 error 级发现：lint_findings 中 severity 为 error 的行必须为 0。",
+        "locator": "material.md#D1"
+      },
+      "title": "格式检查零 error",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "lint_findings",
+          "select": [
+            "rule",
+            "severity",
+            "path",
+            "message"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "severity",
+                "op": "=",
+                "value": "error"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "D2 格式检查必须真的跑完并给出可解析的结果：lint_run 中 parsed 为 1 的行数不得少于 1。",
+      "anchor": {
+        "quote": "D2 格式检查必须真的跑完并给出可解析的结果：lint_run 中 parsed 为 1 的行数不得少于 1。",
+        "locator": "material.md#D2"
+      },
+      "title": "格式检查真的跑完",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "lint_run",
+          "select": [],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "parsed",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}

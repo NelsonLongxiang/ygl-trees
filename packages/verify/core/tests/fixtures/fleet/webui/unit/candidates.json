@@ -1,0 +1,53 @@
+{
+  "candidates": [
+    {
+      "source_clause": "U1 apps/web 的单测必须全部通过：test_cases 中 status 不为 passed 的行必须为 0。",
+      "anchor": {
+        "quote": "U1 apps/web 的单测必须全部通过：test_cases 中 status 不为 passed 的行必须为 0。",
+        "locator": "material.md#U1"
+      },
+      "title": "前端单测全部通过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "test_cases",
+          "select": [
+            "file",
+            "name",
+            "status"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "status",
+                "op": "!=",
+                "value": "passed"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "U2 前端测试面不得萎缩：test_cases 的用例总数不得少于 81。",
+      "anchor": {
+        "quote": "U2 前端测试面不得萎缩：test_cases 的用例总数不得少于 81。",
+        "locator": "material.md#U2"
+      },
+      "title": "前端测试面不萎缩",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "test_cases",
+          "select": []
+        },
+        "op": ">=",
+        "value": 81
+      }
+    }
+  ]
+}

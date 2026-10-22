@@ -1,0 +1,212 @@
+{
+  "reviews": [
+    {
+      "source_clause": "R1 视图必须在每个场景下都能打开：renders 中 nav_ok 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "nav_ok 为 0 逐字映射，三个场景都在扫描面内",
+          "anchor": {
+            "quote": "R1 视图必须在每个场景下都能打开：renders 中 nav_ok 为 0 的行必须为 0。",
+            "locator": "material.md#R1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "导航成败确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "未实测时 R7 行数下限失败",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R2 视图不得产生控制台错误：renders 中 console_errors 大于 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "console_errors 大于 0 逐字映射",
+          "anchor": {
+            "quote": "R2 视图不得产生控制台错误：renders 中 console_errors 大于 0 的行必须为 0。",
+            "locator": "material.md#R2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "错误条数是一次加载的实测计数",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "原文另存 console_messages 供处置",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R3 视图不得显示错误告警：renders 中 error_alerts 大于 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "error_alerts 大于 0 逐字映射",
+          "anchor": {
+            "quote": "R3 视图不得显示错误告警：renders 中 error_alerts 大于 0 的行必须为 0。",
+            "locator": "material.md#R3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "DOM 计数确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "接口出错时视图会显示告警，被这条接住",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R4 视图必须渲染出内容：renders 中 main_chars 小于 20 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "main_chars 小于 20 逐字映射",
+          "anchor": {
+            "quote": "R4 视图必须渲染出内容：renders 中 main_chars 小于 20 的行必须为 0。",
+            "locator": "material.md#R4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "主区文字长度确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "白屏或只剩骨架时命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R5 可见文字必须达到 WCAG AA 对比度：text_contrast 中 ratio 小于 4.5 且不属于大字（大字 = size_px 不小于 24，或 font_weight 不小于 700 且 size_px 不小于 18.66）的行，以及属于大字但 ratio 小于 3 的行，都必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "4.5 / 3 与大字定义（24px，或字重 ≥700 且 ≥18.66px）逐字取自材料",
+          "anchor": {
+            "quote": "R5 可见文字必须达到 WCAG AA 对比度：text_contrast 中 ratio 小于 4.5 且不属于大字（大字 = size_px 不小于 24，或 font_weight 不小于 700 且 size_px 不小于 18.66）的行，以及属于大字但 ratio 小于 3 的行，都必须为 0。",
+            "locator": "material.md#R5"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "ratio、字号、字重都是同一构建同一数据下的实测值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "白屏时 text_contrast 为空、扫描 0 行降级 NEEDS-MATERIAL，同时 R4 判 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R6 声明了标记的视图必须画出标记：renders 中 marker_found 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "marker_found 为 0 逐字映射；未声明标记的视图为空值不命中",
+          "anchor": {
+            "quote": "R6 声明了标记的视图必须画出标记：renders 中 marker_found 为 0 的行必须为 0。",
+            "locator": "material.md#R6"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "DOM 存在性确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "画布空白、报告详情没画出时命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R7 三个场景都必须实测：renders 的行数不得少于 3。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "3 = 深色 + 浅色 + 存储被禁用，逐字取自材料",
+          "anchor": {
+            "quote": "R7 三个场景都必须实测：renders 的行数不得少于 3。",
+            "locator": "material.md#R7"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "浏览器不可用时快照为空，计数 0 即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "R8 声明的交互步骤必须能完成：renders 中 interact_ok 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "interact_ok 为 0 逐字映射；无交互步骤的视图为空值不命中",
+          "anchor": {
+            "quote": "R8 声明的交互步骤必须能完成：renders 中 interact_ok 为 0 的行必须为 0。",
+            "locator": "material.md#R8"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "点击成败确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "控件被删或改名导致点不开时命中，弹层就不会悄悄退出实测面",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

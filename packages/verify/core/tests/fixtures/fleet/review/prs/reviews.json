@@ -1,0 +1,186 @@
+{
+  "reviews": [
+    {
+      "source_clause": "P1 每个已合并 PR 必须登记过验证器放行提交：merged_prs 中 verified_tip 为空的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "verified_tip 为空逐字映射为 is null",
+          "anchor": {
+            "quote": "P1 每个已合并 PR 必须登记过验证器放行提交：merged_prs 中 verified_tip 为空的行必须为 0。",
+            "locator": "material.md#P1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "登记表是确定的文件内容",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "未登记的已合并 PR 由探针照样写行，不会因缺席而通过",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P2 合并时的 PR head 必须等于验证器放行的提交：merged_prs 中 head_sha 为空、verified_tip 为空，或 head_sha 不等于 verified_tip 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "三个条件逐字映射；比对由引擎做（列对列），探针只记两个哈希",
+          "anchor": {
+            "quote": "P2 合并时的 PR head 必须等于验证器放行的提交：merged_prs 中 head_sha 为空、verified_tip 为空，或 head_sha 不等于 verified_tip 的行必须为 0。",
+            "locator": "material.md#P2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "两个 40 位哈希相等与否是确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "PR 在放行后又被推了新提交时 head 变化，命中；任一侧缺失也命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P3 放行证据必须存在且结论为 PASS：merged_prs 中 evidence_overall 不为 PASS 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "不为 PASS 逐字映射，并把证据文件缺失（空值）一并视作不通过——比材料更严，不放松",
+          "anchor": {
+            "quote": "P3 放行证据必须存在且结论为 PASS：merged_prs 中 evidence_overall 不为 PASS 的行必须为 0。",
+            "locator": "material.md#P3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "结果文件里的 overall 是冻结值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "证据文件被删或 run_id 写错时为空值，命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P4 放行证据验的必须是同一个提交：merged_prs 中 evidence_sha 为空，或 evidence_sha 不等于 verified_tip 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "两个条件逐字映射；比对由引擎做（列对列）",
+          "anchor": {
+            "quote": "P4 放行证据验的必须是同一个提交：merged_prs 中 evidence_sha 为空，或 evidence_sha 不等于 verified_tip 的行必须为 0。",
+            "locator": "material.md#P4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "哈希比对确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "登记了别的提交的 PASS 来冒充时命中；证据里没有被验提交也命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P6 归档形态的放行证据必须通过归档自校验：merged_prs 中 evidence_kind 为 archive，且 evidence_archive_ok 为空或为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "两个条件逐字映射（空值也当未通过）",
+          "anchor": {
+            "quote": "P6 归档形态的放行证据必须通过归档自校验：merged_prs 中 evidence_kind 为 archive，且 evidence_archive_ok 为空或为 0 的行必须为 0。",
+            "locator": "material.md#P6"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "verify archive verify 的结论是确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "归档被改动、丢失或哈希链断裂时命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P7 放行证据形态只能是 archive，legacy-summary 只限 format v2 之前的登记：merged_prs 中 evidence_kind 为空、evidence_kind 既不是 archive 也不是 legacy-summary，或 evidence_kind 为 legacy-summary 而 pr 不在 4、5、13、15、16 之中的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "三种情形逐字映射；in 列表逐字取自材料",
+          "anchor": {
+            "quote": "P7 放行证据形态只能是 archive，legacy-summary 只限 format v2 之前的登记：merged_prs 中 evidence_kind 为空、evidence_kind 既不是 archive 也不是 legacy-summary，或 evidence_kind 为 legacy-summary 而 pr 不在 4、5、13、15、16 之中的行必须为 0。",
+            "locator": "material.md#P7"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "证据形态与 PR 号都是确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "新 PR 退回汇总文件证据、或登记缺失形态时命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "P5 交付面不缩水：merged_prs 的行数不得少于 3。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "下限 3 逐字取自材料（#4 #5 #13）",
+          "anchor": {
+            "quote": "P5 交付面不缩水：merged_prs 的行数不得少于 3。",
+            "locator": "material.md#P5"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "计数确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "gh 查询失败返回空表时计数 0 即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

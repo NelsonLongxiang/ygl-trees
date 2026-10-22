@@ -1,0 +1,108 @@
+{
+  "reviews": [
+    {
+      "source_clause": "G1 每个子验证器都必须通过：children 中 overall 不为 PASS 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "overall 不为 PASS 逐字映射",
+          "anchor": {
+            "quote": "G1 每个子验证器都必须通过：children 中 overall 不为 PASS 的行必须为 0。",
+            "locator": "material.md#G1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "子报告冻结结论确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "缺席子节点以 MISSING 入表",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "G2 每个子报告都必须归档且归档自校验通过：children 中 archive_ok 为 0 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "archive_ok 为 0 逐字映射",
+          "anchor": {
+            "quote": "G2 每个子报告都必须归档且归档自校验通过：children 中 archive_ok 为 0 的行必须为 0。",
+            "locator": "material.md#G2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "verify archive verify 结论确定",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "未归档记 0",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "G3 子验证器必须来自同一轮判定：children 中 target_sha 为空、round_sha 为空或 target_sha 不等于 round_sha 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "三个分支逐字对应材料（两个空值与不相等，契约 1.2 列对列）",
+          "anchor": {
+            "quote": "G3 子验证器必须来自同一轮判定：children 中 target_sha 为空、round_sha 为空或 target_sha 不等于 round_sha 的行必须为 0。",
+            "locator": "material.md#G3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "轮次编号是确定字符串",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "混入旧轮报告时命中",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "G4 组节点不得为空：children 的行数不得少于 1。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "下限 1 逐字取自材料",
+          "anchor": {
+            "quote": "G4 组节点不得为空：children 的行数不得少于 1。",
+            "locator": "material.md#G4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "空组计数 0 即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+{
+  "candidates": [
+    {
+      "source_clause": "C1 时间线上相邻两个系列在红色盲与绿色盲模拟下都必须可区分：chart_adjacent 中 vision 为 protan 或 deutan 且 delta_e 小于 8 的行必须为 0。",
+      "anchor": {
+        "quote": "C1 时间线上相邻两个系列在红色盲与绿色盲模拟下都必须可区分：chart_adjacent 中 vision 为 protan 或 deutan 且 delta_e 小于 8 的行必须为 0。",
+        "locator": "material.md#C1"
+      },
+      "title": "相邻系列红/绿色盲可分",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "chart_adjacent",
+          "select": [
+            "theme",
+            "a",
+            "b",
+            "vision",
+            "delta_e"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "vision",
+                "op": "in",
+                "value": [
+                  "protan",
+                  "deutan"
+                ]
+              },
+              {
+                "col": "delta_e",
+                "op": "<",
+                "value": 8
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "C2 相邻两个系列在正常视觉下必须明显可区分：chart_adjacent 中 vision 为 normal 且 delta_e 小于 15 的行必须为 0。",
+      "anchor": {
+        "quote": "C2 相邻两个系列在正常视觉下必须明显可区分：chart_adjacent 中 vision 为 normal 且 delta_e 小于 15 的行必须为 0。",
+        "locator": "material.md#C2"
+      },
+      "title": "相邻系列正常视觉明显可分",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "chart_adjacent",
+          "select": [
+            "theme",
+            "a",
+            "b",
+            "delta_e"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "vision",
+                "op": "=",
+                "value": "normal"
+              },
+              {
+                "col": "delta_e",
+                "op": "<",
+                "value": 15
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "C3 每个系列色对卡片底色都必须达到非文字对比度 3:1：chart_series 中 contrast_surface 小于 3 或为空的行必须为 0。",
+      "anchor": {
+        "quote": "C3 每个系列色对卡片底色都必须达到非文字对比度 3:1：chart_series 中 contrast_surface 小于 3 或为空的行必须为 0。",
+        "locator": "material.md#C3"
+      },
+      "title": "系列色对卡片底 3:1",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "chart_series",
+          "select": [
+            "theme",
+            "series",
+            "key",
+            "hex",
+            "contrast_surface"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "contrast_surface",
+                "op": "<",
+                "value": 3
+              },
+              {
+                "col": "contrast_surface",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "C4 两套主题的系列都必须解析出来：chart_series 的行数不得少于 8（4 个系列 × 2 套主题）。",
+      "anchor": {
+        "quote": "C4 两套主题的系列都必须解析出来：chart_series 的行数不得少于 8（4 个系列 × 2 套主题）。",
+        "locator": "material.md#C4"
+      },
+      "title": "两主题系列都解析出来",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "chart_series",
+          "select": []
+        },
+        "op": ">=",
+        "value": 8
+      }
+    },
+    {
+      "source_clause": "C5 相邻对必须全部测到：chart_adjacent 的行数不得少于 24（3 个相邻对 × 4 种视觉 × 2 套主题）。",
+      "anchor": {
+        "quote": "C5 相邻对必须全部测到：chart_adjacent 的行数不得少于 24（3 个相邻对 × 4 种视觉 × 2 套主题）。",
+        "locator": "material.md#C5"
+      },
+      "title": "相邻对全部测到",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "chart_adjacent",
+          "select": []
+        },
+        "op": ">=",
+        "value": 24
+      }
+    }
+  ]
+}

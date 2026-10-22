@@ -1,0 +1,132 @@
+{
+  "candidates": [
+    {
+      "source_clause": "I1 每个关闭的 issue 都必须有本方的复核评论：closed_issues 中 reverify_comments 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "I1 每个关闭的 issue 都必须有本方的复核评论：closed_issues 中 reverify_comments 为 0 的行必须为 0。",
+        "locator": "material.md#I1"
+      },
+      "title": "关闭的 issue 都有复核评论",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "closed_issues",
+          "select": [
+            "number",
+            "title",
+            "reverify_comments"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "reverify_comments",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "I2 复核必须基于已发布的版本：closed_issues 中 cited_version_released 为 0 且 cited_sha_released 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "I2 复核必须基于已发布的版本：closed_issues 中 cited_version_released 为 0 且 cited_sha_released 为 0 的行必须为 0。",
+        "locator": "material.md#I2"
+      },
+      "title": "复核基于已发布版本",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "closed_issues",
+          "select": [
+            "number",
+            "cited",
+            "cited_version_released",
+            "cited_sha_released"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "cited_version_released",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "cited_sha_released",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "I3 复核必须带复现证据：closed_issues 中 rc_mentions、arrow_mentions、repro_words 都为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "I3 复核必须带复现证据：closed_issues 中 rc_mentions、arrow_mentions、repro_words 都为 0 的行必须为 0。",
+        "locator": "material.md#I3"
+      },
+      "title": "复核带复现证据",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "closed_issues",
+          "select": [
+            "number",
+            "rc_mentions",
+            "arrow_mentions",
+            "repro_words"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "rc_mentions",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "arrow_mentions",
+                "op": "=",
+                "value": 0
+              },
+              {
+                "col": "repro_words",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "I4 复核面不缩水：closed_issues 的行数不得少于 9。",
+      "anchor": {
+        "quote": "I4 复核面不缩水：closed_issues 的行数不得少于 9。",
+        "locator": "material.md#I4"
+      },
+      "title": "复核面不缩水",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "closed_issues",
+          "select": []
+        },
+        "op": ">=",
+        "value": 9
+      }
+    }
+  ]
+}

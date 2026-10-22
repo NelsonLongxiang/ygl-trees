@@ -1,0 +1,104 @@
+{
+  "candidates": [
+    {
+      "source_clause": "T1 正文类文字令牌必须达到 WCAG AA：token_pairs 中 fg 为 text、secondary、primary、tertiary、success、danger、warning 且 ratio 小于 4.5 的行必须为 0。",
+      "anchor": {
+        "quote": "T1 正文类文字令牌必须达到 WCAG AA：token_pairs 中 fg 为 text、secondary、primary、tertiary、success、danger、warning 且 ratio 小于 4.5 的行必须为 0。",
+        "locator": "material.md#T1"
+      },
+      "title": "正文类文字令牌达 AA",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "token_pairs",
+          "select": [
+            "theme",
+            "fg",
+            "bg",
+            "ratio"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "fg",
+                "op": "in",
+                "value": [
+                  "text",
+                  "secondary",
+                  "primary",
+                  "tertiary",
+                  "success",
+                  "danger",
+                  "warning"
+                ]
+              },
+              {
+                "col": "ratio",
+                "op": "<",
+                "value": 4.5
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "T2 弱化令牌 text-dim 只作非文字装饰（小地图节点等），必须达到 WCAG 1.4.11 非文字对比度：token_pairs 中 fg 为 text-dim 且 ratio 小于 3 的行必须为 0。",
+      "anchor": {
+        "quote": "T2 弱化令牌 text-dim 只作非文字装饰（小地图节点等），必须达到 WCAG 1.4.11 非文字对比度：token_pairs 中 fg 为 text-dim 且 ratio 小于 3 的行必须为 0。",
+        "locator": "material.md#T2"
+      },
+      "title": "装饰令牌达非文字 3:1",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "token_pairs",
+          "select": [
+            "theme",
+            "fg",
+            "bg",
+            "ratio"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "fg",
+                "op": "=",
+                "value": "text-dim"
+              },
+              {
+                "col": "ratio",
+                "op": "<",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "T3 两套色板都必须完整可解析：token_pairs 的行数不得少于 32。",
+      "anchor": {
+        "quote": "T3 两套色板都必须完整可解析：token_pairs 的行数不得少于 32。",
+        "locator": "material.md#T3"
+      },
+      "title": "两套色板完整可解析",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "token_pairs",
+          "select": []
+        },
+        "op": ">=",
+        "value": 32
+      }
+    }
+  ]
+}

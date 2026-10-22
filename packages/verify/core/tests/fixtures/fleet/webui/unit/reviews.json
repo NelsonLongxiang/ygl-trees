@@ -1,0 +1,56 @@
+{
+  "reviews": [
+    {
+      "source_clause": "U1 apps/web 的单测必须全部通过：test_cases 中 status 不为 passed 的行必须为 0。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "status 不为 passed 逐字映射为 != 'passed'，skipped 也命中，与材料纪律一致",
+          "anchor": {
+            "quote": "U1 apps/web 的单测必须全部通过：test_cases 中 status 不为 passed 的行必须为 0。",
+            "locator": "material.md#U1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "逐例状态是 vitest 输出的确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "空快照扫描 0 行会被引擎降级为 NEEDS-MATERIAL，不会空转通过",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    },
+    {
+      "source_clause": "U2 前端测试面不得萎缩：test_cases 的用例总数不得少于 81。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "用例总数下限 81 逐字取自材料（#4 合并后按 master 3961867 实测 81）",
+          "anchor": {
+            "quote": "U2 前端测试面不得萎缩：test_cases 的用例总数不得少于 81。",
+            "locator": "material.md#U2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "计数是确定值",
+          "checkpoint": "count|rows"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "测试被删或导入失败时计数跌破下限即 FAIL",
+          "checkpoint": "empty-snapshot"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "candidates": [
+    {
+      "source_clause": "B1 web 产物体积不得超出棘轮基线容差：metrics 中 metric 为 web_dist_bytes 且 headroom 小于 0 的行必须为 0。",
+      "anchor": {
+        "quote": "B1 web 产物体积不得超出棘轮基线容差：metrics 中 metric 为 web_dist_bytes 且 headroom 小于 0 的行必须为 0。",
+        "locator": "material.md#B1"
+      },
+      "title": "web 产物不超棘轮容差",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "metrics",
+          "select": [
+            "metric",
+            "value",
+            "base",
+            "tolerance",
+            "headroom"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "headroom",
+                "op": "<",
+                "value": 0
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "metric",
+                "op": "=",
+                "value": "web_dist_bytes"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "B2 web 产物必须有基线约束：metrics 中 metric 为 web_dist_bytes 且 headroom 为空的行必须为 0。",
+      "anchor": {
+        "quote": "B2 web 产物必须有基线约束：metrics 中 metric 为 web_dist_bytes 且 headroom 为空的行必须为 0。",
+        "locator": "material.md#B2"
+      },
+      "title": "web 产物有基线约束",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "metrics",
+          "select": [
+            "metric",
+            "value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "headroom",
+                "op": "is null"
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "metric",
+                "op": "=",
+                "value": "web_dist_bytes"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    }
+  ]
+}

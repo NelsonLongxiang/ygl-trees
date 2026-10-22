@@ -1,0 +1,384 @@
+{
+  "candidates": [
+    {
+      "source_clause": "M1 成员必须按契约报到：member 中 present 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "M1 成员必须按契约报到：member 中 present 为 0 的行必须为 0。",
+        "locator": "material.md#M1"
+      },
+      "title": "按契约报到",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "present"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "present",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M2 成员的根结论必须通过：member 中 overall 不为 PASS 的行必须为 0。",
+      "anchor": {
+        "quote": "M2 成员的根结论必须通过：member 中 overall 不为 PASS 的行必须为 0。",
+        "locator": "material.md#M2"
+      },
+      "title": "根结论通过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "overall"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "overall",
+                "op": "!=",
+                "value": "PASS"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M3 成员的结论不得过期：member 中 age_minutes 大于 1440 的行必须为 0。",
+      "anchor": {
+        "quote": "M3 成员的结论不得过期：member 中 age_minutes 大于 1440 的行必须为 0。",
+        "locator": "material.md#M3"
+      },
+      "title": "结论不过期",
+      "severity": "S2",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "age_minutes"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "age_minutes",
+                "op": ">",
+                "value": 1440
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M4 成员的根报告归档必须自校验通过：member 中 archive_ok 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "M4 成员的根报告归档必须自校验通过：member 中 archive_ok 为 0 的行必须为 0。",
+        "locator": "material.md#M4"
+      },
+      "title": "归档自校验通过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "archive_ok"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "archive_ok",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M5 成员必须有自检且全部符合预期：member 中 present 为 1 且（selfcheck_cases 为空、selfcheck_cases 小于 1 或 selfcheck_pass 不等于 selfcheck_cases）的行必须为 0。",
+      "anchor": {
+        "quote": "M5 成员必须有自检且全部符合预期：member 中 present 为 1 且（selfcheck_cases 为空、selfcheck_cases 小于 1 或 selfcheck_pass 不等于 selfcheck_cases）的行必须为 0。",
+        "locator": "material.md#M5"
+      },
+      "title": "自检全过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "selfcheck_cases",
+            "selfcheck_pass"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "present",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "selfcheck_cases",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "selfcheck_cases",
+                    "op": "<",
+                    "value": 1
+                  },
+                  {
+                    "col": "selfcheck_pass",
+                    "op": "!=",
+                    "value": {
+                      "col": "selfcheck_cases"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M6 成员必须写明自己的目标：member 中 goal_chars 小于 8 的行必须为 0。",
+      "anchor": {
+        "quote": "M6 成员必须写明自己的目标：member 中 goal_chars 小于 8 的行必须为 0。",
+        "locator": "material.md#M6"
+      },
+      "title": "写明目标",
+      "severity": "S2",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "goal_chars"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "goal_chars",
+                "op": "<",
+                "value": 8
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M7 成员验的必须是被验分支的当前提交：member 中 target_is_git 为 1 且（target_now 为空或 target_now 不等于 target_sha）的行必须为 0。",
+      "anchor": {
+        "quote": "M7 成员验的必须是被验分支的当前提交：member 中 target_is_git 为 1 且（target_now 为空或 target_now 不等于 target_sha）的行必须为 0。",
+        "locator": "material.md#M7"
+      },
+      "title": "验的是当前提交",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "target_sha",
+            "target_now"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "target_is_git",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "target_now",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "target_now",
+                    "op": "!=",
+                    "value": {
+                      "col": "target_sha"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M9 成员钉的引擎不得高于舰队审计所用的 0.114.0：member 中 present 为 1 且（engine_major 为空、engine_minor 为空、engine_patch 为空、engine_minor 大于 114，或 engine_minor 等于 114 且 engine_patch 大于 0）的行必须为 0。",
+      "anchor": {
+        "quote": "M9 成员钉的引擎不得高于舰队审计所用的 0.114.0：member 中 present 为 1 且（engine_major 为空、engine_minor 为空、engine_patch 为空、engine_minor 大于 114，或 engine_minor 等于 114 且 engine_patch 大于 0）的行必须为 0。",
+        "locator": "material.md#M9"
+      },
+      "title": "引擎不越过 0.114.0",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "engine_major",
+            "engine_minor",
+            "engine_patch"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "present",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "engine_major",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "engine_minor",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "engine_patch",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "engine_minor",
+                    "op": ">",
+                    "value": 114
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "engine_minor",
+                        "op": "=",
+                        "value": 114
+                      },
+                      {
+                        "col": "engine_patch",
+                        "op": ">",
+                        "value": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M10 成员仓库必须通过元验证（章程 v1.1 声明式编排登记）：member 中 present 为 1 且（meta_failed 为空或 meta_failed 大于 0）的行必须为 0。",
+      "anchor": {
+        "quote": "M10 成员仓库必须通过元验证（章程 v1.1 声明式编排登记）：member 中 present 为 1 且（meta_failed 为空或 meta_failed 大于 0）的行必须为 0。",
+        "locator": "material.md#M10"
+      },
+      "title": "成员仓库过元验证",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "member",
+          "select": [
+            "member_id",
+            "meta_failed"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "present",
+                "op": "=",
+                "value": 1
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "meta_failed",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "meta_failed",
+                    "op": ">",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "M8 快照必须包含该成员：member 的行数不得少于 1。",
+      "anchor": {
+        "quote": "M8 快照必须包含该成员：member 的行数不得少于 1。",
+        "locator": "material.md#M8"
+      },
+      "title": "快照含该成员",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "member",
+          "select": []
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}

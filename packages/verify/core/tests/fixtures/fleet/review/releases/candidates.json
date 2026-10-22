@@ -1,0 +1,437 @@
+{
+  "candidates": [
+    {
+      "source_clause": "R1 范围内的每个版本都必须有标签：releases 中处于标签范围且 tag_present 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R1 范围内的每个版本都必须有标签：releases 中处于标签范围且 tag_present 为 0 的行必须为 0。",
+        "locator": "material.md#R1"
+      },
+      "title": "范围内版本都有标签",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "releases",
+          "select": [
+            "version",
+            "tag_present"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "tag_present",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "ver_pre",
+                "op": "is null"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "ver_major",
+                    "op": ">",
+                    "value": 0
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "ver_major",
+                        "op": "=",
+                        "value": 0
+                      },
+                      {
+                        "col": "ver_minor",
+                        "op": ">=",
+                        "value": 79
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R2 标签必须指向 master 上的源码：releases 中处于标签范围且 tag_on_master 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "R2 标签必须指向 master 上的源码：releases 中处于标签范围且 tag_on_master 为 0 的行必须为 0。",
+        "locator": "material.md#R2"
+      },
+      "title": "标签指向 master 上的源码",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "releases",
+          "select": [
+            "version",
+            "tag_on_master"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "tag_on_master",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "ver_pre",
+                "op": "is null"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "ver_major",
+                    "op": ">",
+                    "value": 0
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "ver_major",
+                        "op": "=",
+                        "value": 0
+                      },
+                      {
+                        "col": "ver_minor",
+                        "op": ">=",
+                        "value": 79
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R3 标签处 package.json 的版本号必须与发布版本一致：releases 中处于标签范围，且 tag_pkg_version 为空或不等于 version 的行必须为 0。",
+      "anchor": {
+        "quote": "R3 标签处 package.json 的版本号必须与发布版本一致：releases 中处于标签范围，且 tag_pkg_version 为空或不等于 version 的行必须为 0。",
+        "locator": "material.md#R3"
+      },
+      "title": "标签处版本号一致",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "releases",
+          "select": [
+            "version",
+            "tag_pkg_version"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "tag_pkg_version",
+                "op": "is null"
+              },
+              {
+                "col": "tag_pkg_version",
+                "op": "!=",
+                "value": {
+                  "col": "version"
+                }
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "ver_pre",
+                "op": "is null"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "ver_major",
+                    "op": ">",
+                    "value": 0
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "ver_major",
+                        "op": "=",
+                        "value": 0
+                      },
+                      {
+                        "col": "ver_minor",
+                        "op": ">=",
+                        "value": 79
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R4 源码必须先于 npm 到达 master：releases 中处于顺序范围，且 source_pushed_at 为空或不早于 npm_published_at 的行必须为 0。",
+      "anchor": {
+        "quote": "R4 源码必须先于 npm 到达 master：releases 中处于顺序范围，且 source_pushed_at 为空或不早于 npm_published_at 的行必须为 0。",
+        "locator": "material.md#R4"
+      },
+      "title": "源码先于 npm",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "releases",
+          "select": [
+            "version",
+            "npm_published_at",
+            "source_pushed_at"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "source_pushed_at",
+                "op": "is null"
+              },
+              {
+                "col": "source_pushed_at",
+                "op": ">=",
+                "value": {
+                  "col": "npm_published_at"
+                }
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "ver_pre",
+                "op": "is null"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "ver_major",
+                    "op": ">",
+                    "value": 0
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "ver_major",
+                        "op": "=",
+                        "value": 0
+                      },
+                      {
+                        "col": "ver_minor",
+                        "op": ">=",
+                        "value": 109
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R5 标签必须先于 npm 打好，除非该偏差已登记且获维护者认可：releases 中处于顺序范围、tagged_at 为空或不早于 npm_published_at，且 deviation_issue 为空、deviation_issue_state 为空、ack_issue 为空、ack_author 为空、ack_author 不是 NelsonLongxiang、ack_issue 不等于 deviation_issue 六者任一成立的行必须为 0。",
+      "anchor": {
+        "quote": "R5 标签必须先于 npm 打好，除非该偏差已登记且获维护者认可：releases 中处于顺序范围、tagged_at 为空或不早于 npm_published_at，且 deviation_issue 为空、deviation_issue_state 为空、ack_issue 为空、ack_author 为空、ack_author 不是 NelsonLongxiang、ack_issue 不等于 deviation_issue 六者任一成立的行必须为 0。",
+        "locator": "material.md#R5"
+      },
+      "title": "标签先于 npm（已认可偏差除外）",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "releases",
+          "select": [
+            "version",
+            "npm_published_at",
+            "tagged_at",
+            "deviation_issue",
+            "ack_author",
+            "ack_issue"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "tagged_at",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "tagged_at",
+                    "op": ">=",
+                    "value": {
+                      "col": "npm_published_at"
+                    }
+                  }
+                ]
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "deviation_issue",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "deviation_issue_state",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "ack_issue",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "ack_author",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "ack_author",
+                    "op": "!=",
+                    "value": "NelsonLongxiang"
+                  },
+                  {
+                    "col": "ack_issue",
+                    "op": "!=",
+                    "value": {
+                      "col": "deviation_issue"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "scan": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "ver_pre",
+                "op": "is null"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "ver_major",
+                    "op": ">",
+                    "value": 0
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "ver_major",
+                        "op": "=",
+                        "value": 0
+                      },
+                      {
+                        "col": "ver_minor",
+                        "op": ">=",
+                        "value": 109
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "R6 发布面必须被测量：releases 中处于标签范围的行数不得少于 49。",
+      "anchor": {
+        "quote": "R6 发布面必须被测量：releases 中处于标签范围的行数不得少于 49。",
+        "locator": "material.md#R6"
+      },
+      "title": "发布面被测量",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "releases",
+          "select": [],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "ver_pre",
+                "op": "is null"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "ver_major",
+                    "op": ">",
+                    "value": 0
+                  },
+                  {
+                    "op": "and",
+                    "conditions": [
+                      {
+                        "col": "ver_major",
+                        "op": "=",
+                        "value": 0
+                      },
+                      {
+                        "col": "ver_minor",
+                        "op": ">=",
+                        "value": 79
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "op": ">=",
+        "value": 49
+      }
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "candidates": [
+    {
+      "source_clause": "G1 每个子验证器都必须通过：children 中 overall 不为 PASS 的行必须为 0。",
+      "anchor": {
+        "quote": "G1 每个子验证器都必须通过：children 中 overall 不为 PASS 的行必须为 0。",
+        "locator": "material.md#G1"
+      },
+      "title": "子验证器全部通过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "children",
+          "select": [
+            "child_id",
+            "kind",
+            "overall",
+            "fail",
+            "needs_material",
+            "error"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "overall",
+                "op": "!=",
+                "value": "PASS"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "G2 每个子报告都必须归档且归档自校验通过：children 中 archive_ok 为 0 的行必须为 0。",
+      "anchor": {
+        "quote": "G2 每个子报告都必须归档且归档自校验通过：children 中 archive_ok 为 0 的行必须为 0。",
+        "locator": "material.md#G2"
+      },
+      "title": "子报告归档且自校验通过",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "children",
+          "select": [
+            "child_id",
+            "run_id",
+            "archive_ok"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "archive_ok",
+                "op": "=",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "G3 子验证器必须基于同一轮测量：children 中 target_sha 为空、round_sha 为空，或 target_sha 不等于 round_sha 的行必须为 0。",
+      "anchor": {
+        "quote": "G3 子验证器必须基于同一轮测量：children 中 target_sha 为空、round_sha 为空，或 target_sha 不等于 round_sha 的行必须为 0。",
+        "locator": "material.md#G3"
+      },
+      "title": "子验证器验同一轮测量",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "children",
+          "select": [
+            "child_id",
+            "run_id",
+            "target_sha",
+            "round_sha"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "target_sha",
+                "op": "is null"
+              },
+              {
+                "col": "round_sha",
+                "op": "is null"
+              },
+              {
+                "col": "target_sha",
+                "op": "!=",
+                "value": {
+                  "col": "round_sha"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "G4 组节点不得为空：children 的行数不得少于 1。",
+      "anchor": {
+        "quote": "G4 组节点不得为空：children 的行数不得少于 1。",
+        "locator": "material.md#G4"
+      },
+      "title": "组节点非空",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "children",
+          "select": []
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}

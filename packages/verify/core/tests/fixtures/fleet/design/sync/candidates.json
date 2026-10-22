@@ -1,0 +1,119 @@
+{
+  "candidates": [
+    {
+      "source_clause": "S1 令牌面的每个色值都必须与 DESIGN.md 同主题同键的取值一致：token_sync 中 face_value 与 design_value 都不为空且两者不相等的行必须为 0。",
+      "anchor": {
+        "quote": "S1 令牌面的每个色值都必须与 DESIGN.md 同主题同键的取值一致：token_sync 中 face_value 与 design_value 都不为空且两者不相等的行必须为 0。",
+        "locator": "material.md#S1"
+      },
+      "title": "令牌面取值与 DESIGN.md 一致",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "token_sync",
+          "select": [
+            "face",
+            "theme",
+            "key",
+            "design_value",
+            "face_value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "face_value",
+                "op": "!=",
+                "value": {
+                  "col": "design_value"
+                }
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "S2 DESIGN.md 的每个色键在令牌面的两套主题里都必须声明：token_sync 中 face_value 为空的行必须为 0。",
+      "anchor": {
+        "quote": "S2 DESIGN.md 的每个色键在令牌面的两套主题里都必须声明：token_sync 中 face_value 为空的行必须为 0。",
+        "locator": "material.md#S2"
+      },
+      "title": "DESIGN.md 每个色键令牌面都有",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "token_sync",
+          "select": [
+            "face",
+            "theme",
+            "key",
+            "design_value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "face_value",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "S3 令牌面不得声明 DESIGN.md 没有的色键：token_sync 中 design_value 为空的行必须为 0。",
+      "anchor": {
+        "quote": "S3 令牌面不得声明 DESIGN.md 没有的色键：token_sync 中 design_value 为空的行必须为 0。",
+        "locator": "material.md#S3"
+      },
+      "title": "令牌面没有 DESIGN.md 之外的色键",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "token_sync",
+          "select": [
+            "face",
+            "theme",
+            "key",
+            "face_value"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "design_value",
+                "op": "is null"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "S4 两套主题都必须完整可解析：token_sync 的行数不得少于 38（DESIGN.md 现有 19 个色键 × 两套主题）。",
+      "anchor": {
+        "quote": "S4 两套主题都必须完整可解析：token_sync 的行数不得少于 38（DESIGN.md 现有 19 个色键 × 两套主题）。",
+        "locator": "material.md#S4"
+      },
+      "title": "两套主题完整可解析",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "token_sync",
+          "select": []
+        },
+        "op": ">=",
+        "value": 38
+      }
+    }
+  ]
+}

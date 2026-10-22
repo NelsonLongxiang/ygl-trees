@@ -214,7 +214,7 @@ verify self-check                                            # recursive gate: c
 verify example [--checker <type>]                            # corpus-derived candidates for the seven checker types (null ops included)
 verify meta [<repo>]                                         # verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)
 verify probe --matrix [--target <sealed>] [--only <probe>]   # 16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)
-verify lint-candidates <file> [--text <material>]            # shape-check candidates without consuming spec_version
+verify lint-candidates <file> [--text <material>] [--reviews <file>] # shape + clause-coverage + review-pairing check without consuming spec_version
 ```
 
 ### patrol

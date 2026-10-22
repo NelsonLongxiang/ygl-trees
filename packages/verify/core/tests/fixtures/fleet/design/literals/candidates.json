@@ -1,0 +1,127 @@
+{
+  "candidates": [
+    {
+      "source_clause": "L1 消费面不得出现任何色值字面量：color_literals 中 zone 为 consumer 的行必须为 0。",
+      "anchor": {
+        "quote": "L1 消费面不得出现任何色值字面量：color_literals 中 zone 为 consumer 的行必须为 0。",
+        "locator": "material.md#L1"
+      },
+      "title": "消费面零色值字面量",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "color_literals",
+          "select": [
+            "file",
+            "line",
+            "literal"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "zone",
+                "op": "=",
+                "value": "consumer"
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "L2 令牌面里的每个色值字面量都必须写进 DESIGN.md（色板取值、按钮状态色、阴影与描边都算）：color_literals 中 zone 为 token-face，且 design_occurrences 为空或小于 1 的行必须为 0。",
+      "anchor": {
+        "quote": "L2 令牌面里的每个色值字面量都必须写进 DESIGN.md（色板取值、按钮状态色、阴影与描边都算）：color_literals 中 zone 为 token-face，且 design_occurrences 为空或小于 1 的行必须为 0。",
+        "locator": "material.md#L2"
+      },
+      "title": "令牌面字面量都写进 DESIGN.md",
+      "severity": "S1",
+      "checker": {
+        "type": "sql",
+        "predicate": {
+          "from": "color_literals",
+          "select": [
+            "file",
+            "line",
+            "literal",
+            "design_occurrences"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "zone",
+                "op": "=",
+                "value": "token-face"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "col": "design_occurrences",
+                    "op": "is null"
+                  },
+                  {
+                    "col": "design_occurrences",
+                    "op": "<",
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "fail_when": "rows>0"
+      }
+    },
+    {
+      "source_clause": "L3 扫描不得空转：scanned_files 的行数不得少于 20（2026-10-21 上游 master f2f91de 实测 21 个文件）。",
+      "anchor": {
+        "quote": "L3 扫描不得空转：scanned_files 的行数不得少于 20（2026-10-21 上游 master f2f91de 实测 21 个文件）。",
+        "locator": "material.md#L3"
+      },
+      "title": "扫描不空转",
+      "severity": "S2",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "scanned_files",
+          "select": []
+        },
+        "op": ">=",
+        "value": 20
+      }
+    },
+    {
+      "source_clause": "L4 三个令牌面都必须在扫描范围内：scanned_files 中 zone 为 token-face 的行数不得少于 3。",
+      "anchor": {
+        "quote": "L4 三个令牌面都必须在扫描范围内：scanned_files 中 zone 为 token-face 的行数不得少于 3。",
+        "locator": "material.md#L4"
+      },
+      "title": "三个令牌面都在扫描内",
+      "severity": "S1",
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "scanned_files",
+          "select": [],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "zone",
+                "op": "=",
+                "value": "token-face"
+              }
+            ]
+          }
+        },
+        "op": ">=",
+        "value": 3
+      }
+    }
+  ]
+}
