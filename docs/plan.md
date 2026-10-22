@@ -541,6 +541,9 @@ npm **latest=0.114.14**、shasum **`14060b47…`**；官方字节 **1,588,144 B 
 目录保留目录限定路径（绝对路径取末两段）、同文件重复只记一条、目录参数 rc=2 用法错；attach-paths.spec 3 例。
 #57——doctor `sqlite_driver` 改从 typeorm 解析路径取版本并比较两侧 realpath：单副本 pass、split warn（点名
 dedupe）、解析不到 fail；sqlite-driver.spec 细节断言。unit 905→908；contract 144。
+发布（2026-10-22）：commit **`9e89b0d`**；tag **`v0.114.15 = 3079d1a6… → ^{commit}=9e89b0d…`**（双远端）；
+npm **latest=0.114.15**、shasum **`f5b41ed7…`**；官方字节 **1,590,149 B / sha256 `c080ea8d…`**
+（publish `2026-10-22T15:09:02Z`，fileCount 177）。验证席四探针 PASS。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
