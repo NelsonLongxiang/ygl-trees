@@ -1,3 +1,9 @@
+---
+name: verify-contract
+description: verify 三 JSON 契约（material/spec/report）现行版本与冻结规则
+kind: 规范
+---
+
 # verify 三 JSON 契约（D0 · 草案 v0.2）
 
 > M13-1 的第一步：契约先行。三个 JSON 是唯一接口真相——TS 参考实现、Rust 二进制、黄金语料都只认这三个形状。
