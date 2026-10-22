@@ -31,6 +31,8 @@ GitHub #34 修正（0.114.1 / 0.114.2 的回归：舰队全部材料 lint `ok:fa
   prepare / lint，无改动。
 - 门禁：contract 15 改写为按 id 的子句 + 行号豁免拒绝 + 舰队夹具 lint 全 ok（141 → **143**）；
   `scripts/contract-audit.sh` 按 0.114.2 流程显式重登记（`meta.reregister` 事件，reason 同提交说明）。
+- 棘轮：bundle 基线 739,621 → **757,018 B** 显式认账（0.114.2 已 +8,574，本修正 +8,823：子句清单/定位解析/评审配对与诊断文案，
+  合计超 2% 容差）；只认 bundle 一项，web dist 与冷启动保持原 win32 基线不动。
 
 ## 0.114.2
 

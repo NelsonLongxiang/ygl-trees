@@ -5,9 +5,9 @@
   "measured_at": "2026-10-21T10:08:19.181Z",
   "metrics": {
     "bundle_bytes": {
-      "value": 739621,
+      "value": 757018,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-21T16:25:15.317Z",
+      "measured_at": "2026-10-22T00:31:03.242Z",
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {
