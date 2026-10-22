@@ -455,6 +455,12 @@ npm **latest=0.114.4**、shasum **`0d9c8d6c…`**；官方字节 **1,535,136 B /
 查 `npm config get registry` + `/-/package/ygl-trees/dist-tags`（1.5s 硬顶，失败静默）；`--json` 零污染，
 doctor 增 `update_hint` 检查（warn 不失败）；`YGL_NO_UPDATE_CHECK`/config `update_check=false` 关；
 调度上下文（继承 YGL_RUN_ID / YGL_SERVE / job tick|run）跳过。与 R5b 分离（#29：nag≠审计时钟）。
+**0.114.6 发布记录（2026-10-22）**：#39 Rust `looks_sealed` 去启发式 + #40 CLI 版本漂移信息性 nag。
+commit **`3b78822`**；tag **`v0.114.6 = 0a560a9c… → ^{commit}=3b78822…`**（双远端，tag 严格锚 3b78822；
+origin/master `78d5830` 含 0.114.5 发布记录 docs commit）；npm **latest=0.114.6**、shasum **`afd1a72d…`**；
+官方字节 **1,557,196 B / sha256 `297f432a…`**（publish `2026-10-22T03:38:59Z`，fileCount 175）。
+风控注：#40 与 R5b 分离（nag 不 gate 任何东西；R5b 审计时钟仍只认能力表，见 #29）；#39 回归见
+`rust/yglverify/src/sealed.rs` 单测。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
