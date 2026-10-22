@@ -1,11 +1,11 @@
-# 递归验证器契约草案 · `verify tree run`（A1，v0.3 DRAFT）
+# 递归验证器契约草案 · `verify tree run`（A1，v0.4 DRAFT）
 
 > **状态：草案（DRAFT）——不构成已裁定契约。** 按现行治理，本文件需 **属主裁定 + 双评审席签署**
 > （默认发布席 `dsh/0672e341`、验证席 `dsh/ae07421e`，最终以属主指定为准）后方可进入施工。
 > 语义节（S-1…S-7）与验收场景（V1…V10）来自主队席 `dsh/e9a87677` 的《A1 共同作者材料 v0.1》；
 > 接口/CLI 形状由 ygl-trees 主开发线起草。开放点 §6 未裁定前，实现不得锁定行为。
 
-日期：2026-10-22（v0.3 合入验证席四条评审意见） ｜ 关联：charter §4.7（原语表）、#16（验证器生产线 P2/P3）、#35（身份判据 Q4/Q6/Q7）
+日期：2026-10-22（v0.4 合入发版席 R-1/R-2 条件与 Q4 改法） ｜ 关联：charter §4.7（原语表）、#16（验证器生产线 P2/P3）、#35（身份判据 Q4/Q6/Q7）
 
 ## 1. 范围与非目标
 
@@ -63,6 +63,8 @@ ygl-trees verify tree archive <tree-run-id> [--json]
   "tree_spec_sha256": "…",
   "round_id": "…",
   "verdict": "PASS | FAIL | NEUTRALIZED | INFRA_BLOCKED",
+  "verdict_digest": "…",
+  "audit": { "generated_at": "…", "host": "…", "duration_ms": 0 },
   "nodes": [
     { "node_id": "n1", "kind": "leaf", "spec_id": "spec_…", "report_id": "…",
       "archive_sha256": "…", "verdict": "PASS", "stale": false },
@@ -75,6 +77,9 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 }
 ```
 
+- **R-1（发版席条件）**：`verdict_digest` 只覆盖判定相关字段（节点 verdict/聚合结果/子报告 sha），
+  **时钟/执行环境不进 digest**（同 0.113.1 provenance 先例）；`audit` 单列 `generated_at`/`host`/`duration_ms`。
+  report/archive payload **禁止本机绝对路径**（T1 白名单投影纪律，0.114.0 先例）；路径一律 workspace 相对。
 - 叶 ERROR → `verdict: "ERROR"`（单字段判据：**ERROR 即 infra-blocked**，不再另带布尔字段，避免双字段漂移），
   不参与父聚合；父若全为 infra → `INFRA_BLOCKED`。
 - `NEUTRALIZED` 为**独立 verdict**（推荐，见 §6-Q2），阻断根 PASS。
@@ -83,9 +88,9 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 
 | rc | 含义 |
 |---|---|
-| 0 | 执行完成（判定在 `--json` 对象/报告，不因 FAIL 变 rc） |
-| 1 | 运行错误（快照不可读、归档验签失败后的运行失败、内部错误） |
-| 2 | 用法/冻结错误（缺参、环、悬空引用、未知聚合算子、未知 pinned 目标） |
+| 0 | 执行完成（判定在 `--json` 对象/报告；**FAIL / NEUTRALIZED / INFRA_BLOCKED 均为 rc=0**，不可把中性化/基础设施阻塞当运行错误） |
+| 1 | 仅基础设施自身故障（快照不可读、进程内部错误；归档验签失败属判定面，走 NEUTRALIZED + rc=0） |
+| 2 | 用法/冻结错误（缺参、环、悬空引用、未知聚合算子、空组、超深度、未知 pinned 目标） |
 
 ### 3.4 事件与归档
 
@@ -110,7 +115,7 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 | V4 | pinned 旧子报告 | stale 标记生效 |
 | V5 | 树含环 | prepare rc=2 拒绝 |
 | V6 | 子归档改一字节 | 验签失败 → 子树 NEUTRALIZED；根不得 PASS |
-| V7 | 同输入双跑 | 全树 report digest 逐字节相等 |
+| V7 | 同输入双跑 | **verdict_digest 逐字节相等**；audit 时钟/主机允许不同（R-1） |
 | V8 | 外部仓 archive 作为叶引入 | 与本地归档同验签路径 |
 | V9 | 规模基线 4 层 × 64 叶 | bench 门内完成（阈值 §6-Q4） |
 | V10 | 全程 events 留痕 | 只增；节点/轮次可追溯 |
@@ -121,6 +126,8 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 | V15 | 四态聚合矩阵 | 表驱动：子含 ERROR/NEUTRALIZED → 父不得 PASS；全 PASS→PASS；策略性 FAIL→FAIL；空组节点见 §6-Q6 |
 | V16 | 未知聚合算子注入 | prepare rc=2（算子名单外，含大小写/参数形态变体） |
 | V17 | 同轮 pinned 自引用 | pinned 指向本轮产物 → prepare rc=2（S-4 轮次边界） |
+| V18 | 审计/判定分离 | 同判定、不同 audit 时钟 → verdict_digest 相同；改任一节点判定 → digest 必变 |
+| V19 | 路径投影 | report/archive payload 无本机绝对路径（workspace 相对/逻辑路径） |
 
 ## 6. 开放点（定稿前必须裁定）
 
@@ -129,7 +136,7 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 | Q1 | 聚合算子初始名单 | 先 `count_fail` / `all_pass` / `quorum(N)` 三个，`min/max/and/or` 后置 | 封闭集宁小勿大 |
 | Q2 | NEUTRALIZED 独立 verdict 还是 FAIL 子码 | **独立 verdict** | 阻断根 PASS 语义更清晰 |
 | Q3 | 轮次 id 发行者 | CLI 在 run 发起时生成，写进所有层 archive | 与幂等键一致 |
-| Q4 | V9 bench 阈值（4 层 × 64 叶） | CI 安全线 ≤ **180s**（含 archive 写盘） | 需属主/验证席按机器定 |
+| Q4 | V9 规模基线门（4 层 × 64 叶） | **进 ratchet 第四轴**（tree-run 耗时），显式 `--write` 认账 + 按机器实测；不设裸 180s | 发版席建议：沿用 cold start 棘轮纪律 |
 | Q5 | 树 spec 描述格式（文本 DSL vs JSON） | JSON（可机械校验、可 digest） | 与 material 冻结一致 |
 | Q6 | 空组节点处置 | prepare **拒绝**（rc=2） | 合法空跑会让「无子可聚合」变成隐藏 PASS；拒绝可裁定改 |
 | Q7 | 叶路径深度上限 | 初始 **16**，超限 prepare rc=2 | 深度护栏防递归爆炸；数值按实测可调 |
@@ -149,5 +156,13 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 ③ 新增 **V16**（未知聚合算子 prepare rc=2）与 **V17**（同轮 pinned 自引用 prepare rc=2）；
 ④ Q1 三算子起步、Q2 NEUTRALIZED 独立 verdict、Q3 CLI 发行轮次 id、Q5 JSON 均获验证席同意；Q4 待机器基准。
 裁定门不变：发布席评审 + 属主裁定 §6 后转已裁定契约。
+
+**v0.4 合入发版席评审（2026-10-22，发版席 0672e341：通过，附 R-1/R-2 条件）**：
+① R-1 确定性拆分——新增 `verdict_digest`（只覆盖判定字段）与 `audit`（时钟/主机单列），report/archive 禁本机
+绝对路径；V7 改为 verdict_digest 相等，新增 V18（审计/判定分离）与 V19（路径投影）；
+② R-2 rc 归属——**执行完成即 rc=0（含 FAIL/NEUTRALIZED/INFRA_BLOCKED）**，rc=1 仅基础设施自身故障；
+③ Q4 改为 **ratchet 第四轴**（耗时基线显式认账），不设裸 180s；
+④ Q1–Q3/Q5–Q7 发版席均同意。**两席签署状态：验证席已签；发版席签署条件 = R-1/R-2 入草案，本版已入，
+待发版席确认。**
 
 **未裁定前，不实现 `verify tree` 代码路径。**
