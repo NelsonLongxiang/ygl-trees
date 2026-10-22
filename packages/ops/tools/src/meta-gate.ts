@@ -3,8 +3,12 @@
  *
  * Detection ladder (fdc757f6 ruling, 2026-10-21):
  *   1. explicit --meta-repo       → hard (the caller named a verifier repo)
- *   2. cwd inside a git repo AND it carries a verifier marker
- *      (AGENTS.md / verify/ / verify/meta.json) → hard by default
+ *   2. cwd inside a git repo AND the repo it belongs to carries a verifier
+ *      marker (AGENTS.md / verify/ / verify/meta.json) → hard by default
+ *
+ * "The repo" is resolved exactly as `verify meta` resolves it (#25 ③): walk UP
+ * from the real path of cwd (or of --meta-repo) to the nearest marker dir or
+ * git root — so a subdirectory is judged as its repo, never as itself.
  *   3. cwd inside a git repo, no marker → warn, point at R1, skip the gate
  *      (a verifier repo missing AGENTS.md feels R1 pressure, the gate does not
  *      silently disappear)
@@ -62,17 +66,33 @@ export function realPathOf(p: string): string {
 }
 
 /** #25c: the meta repo root is found by walking UP from the starting dir.
- *  A dir carrying a verifier marker (AGENTS.md / verify/) is the root; a git
- *  root with no marker also terminates the walk (ladder step 3). */
+ *  The walk stops at a dir carrying a verifier meta index (`verify/meta.json`
+ *  or `verify/specs/`) or at the git root (ladder step 3). A bare AGENTS.md
+ *  does NOT stop it inside git (#25 ③ follow-up): monorepos keep nested
+ *  AGENTS.md files (`packages/AGENTS.md`) that are guidance, not verifier
+ *  repos — `packages/x` must be judged as the repo, not as `packages`.
+ *  Outside git, the nearest AGENTS.md still marks a standalone verifier dir. */
 export function metaRepoRootOf(start: string): string | null {
   let cur = realPathOf(start);
+  let nearestAgents: string | null = null;
   for (;;) {
-    if (hasVerifierMarker(cur)) return cur;
+    if (hasMetaIndex(cur)) return cur;
     if (existsSync(join(cur, ".git"))) return cur;
+    if (nearestAgents === null && existsSync(join(cur, "AGENTS.md"))) nearestAgents = cur;
     const parent = dirname(cur);
-    if (parent === cur) return null;
+    if (parent === cur) return nearestAgents;
     cur = parent;
   }
+}
+
+function hasMetaIndex(dir: string): boolean {
+  return existsSync(join(dir, "verify", "meta.json")) || isDir(join(dir, "verify", "specs"));
+}
+
+/** #25 ③: the repo the gate judges — the same walk-up/realpath `verify meta`
+ *  uses, so `verify meta` and submit/prepare never disagree about the repo. */
+export function judgedRepoOf(start: string): string {
+  return metaRepoRootOf(start) ?? realPathOf(start);
 }
 
 export function gitRootOf(dir: string): string | null {
@@ -88,7 +108,7 @@ export function gitRootOf(dir: string): string | null {
 export function hasVerifierMarker(repo: string): boolean {
   // `verify/` alone is ambiguous: a ygl workspace home keeps its data there.
   // A verifier repo is marked by AGENTS.md or a verifier meta index/specs dir.
-  return existsSync(join(repo, "AGENTS.md")) || existsSync(join(repo, "verify", "meta.json")) || isDir(join(repo, "verify", "specs"));
+  return existsSync(join(repo, "AGENTS.md")) || hasMetaIndex(repo);
 }
 
 /** Persist a meta.bypass event synchronously (node:sqlite, WAL-friendly). */
@@ -134,9 +154,10 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
   const explicitRepo = args.flags["meta-repo"] ? resolve(String(args.flags["meta-repo"])) : null;
   const requireMeta = explicitRepo !== null || args.flags["require-meta"] === true;
 
+  // Explicit --meta-repo wins over cwd; either way the start dir walks up.
+  const repo = judgedRepoOf(explicitRepo ?? process.cwd());
+
   if (bypass) {
-    const start = explicitRepo ?? process.cwd();
-    const repo = explicitRepo ?? gitRootOf(start) ?? realPathOf(start);
     const rec = recordMetaBypass(env, command, repo);
     if (!rec.ok) {
       return { pass: false, meta_error: "meta_bypass_unrecorded", message: `--no-meta refused: cannot record the bypass in the events ledger (${rec.problem})` };
@@ -154,16 +175,15 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
   if (!hard) {
     // Ladder 2/3/4 are scoped to git repos (fdc ruling): outside git is an
     // ordinary business directory, silently out of scope.
-    const root = gitRootOf(process.cwd());
+    const root = gitRootOf(realPathOf(process.cwd()));
     if (!root) return { pass: true, skipped: true };
-    if (hasVerifierMarker(root)) hard = true;
+    if (hasVerifierMarker(repo)) hard = true;
     else {
-      const warning = `no verifier markers under ${root} (AGENTS.md / verify/ / verify/meta.json); meta gate skipped — if this IS a verifier repo, add AGENTS.md first (R1), then re-run (or pass --meta-repo <dir> / --require-meta)`;
+      const warning = `no verifier markers under ${repo} (AGENTS.md / verify/ / verify/meta.json); meta gate skipped — if this IS a verifier repo, add AGENTS.md first (R1), then re-run (or pass --meta-repo <dir> / --require-meta)`;
       return { pass: true, skipped: true, warning };
     }
   }
 
-  const repo = explicitRepo ?? process.cwd();
   if (!existsSync(join(repo, "AGENTS.md"))) {
     return { pass: false, meta_error: "meta_unverified", message: `meta gate: no AGENTS.md under ${repo} (meta_unverified; pass --meta-repo <verifier repo> or --no-meta to record a bypass)` };
   }
