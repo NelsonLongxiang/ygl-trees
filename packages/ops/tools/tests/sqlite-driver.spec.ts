@@ -51,5 +51,9 @@ describe.skipIf(!HAS_BIN)("better-sqlite3 / typeorm peer alignment (#54)", () =>
     const driver = checks.find((c: any) => c.name === "sqlite_driver");
     expect(driver, JSON.stringify(checks.map((c: any) => c.name))).toBeTruthy();
     expect(driver.status).toBe("pass");
+    // #57: the check must judge from TYPEORM's resolution (its version), not
+    // a bare require from ygl-trees; and it names the single-copy outcome.
+    expect(String(driver.detail)).toMatch(/^better-sqlite3 12\./);
+    expect(String(driver.detail)).toMatch(/single copy/);
   });
 });
