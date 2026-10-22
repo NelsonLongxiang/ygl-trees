@@ -37,13 +37,35 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         command = command.slice(0, tailAt.index).trim();
       }
       if (!title || !command) {
-        bad(ctx, 'usage: job add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]');
+        bad(ctx, 'usage: job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] -- <command>');
         return 2;
+      }
+      // F1/F3 (0.114.4, fdc757f6 09:25): the tail pull is a compatibility
+      // heuristic — when the command string still carries a schedule-shaped
+      // token (e.g. `--every 1440 --json`; the suffix token breaks the
+      // end-of-string pull), the row must not land as a silent manual job.
+      // Warn, do not reject: any command may legitimately own a same-named flag.
+      const scheduleDiagnostics: string[] = [];
+      if (/--every\b|--at\b/.test(command)) {
+        const schedule = every ? `every ${every} min` : at ? `at ${at}` : "manual(every=0)";
+        const warning = `schedule 形 token 残留命令串内，本 job 已按 ${schedule} 注册；若意图是调度，请把 --every 移到 -- 之前`;
+        scheduleDiagnostics.push(warning);
+        if (!ctx.json) console.error(paint(C.yellow, `  ! ${warning}`, ctx.color));
       }
       const force = args.flags.force === true || args.flags.force === "true";
       return getOrm(env.db.path)
         .then((ds) => writes.jobAdd(ds, { title, command, every, at, force }))
         .then((r): number => {
+          if (ctx.json) {
+            console.log(
+              JSON.stringify({
+                ...r.row,
+                ...(r.dup ? { duplicate: true } : {}),
+                ...(scheduleDiagnostics.length ? { diagnostics: scheduleDiagnostics } : {}),
+              }, null, 2),
+            );
+            return 0;
+          }
           writeResult(ctx, r as any, (row) => `job registered: ${row.id}  ${row.title}`);
           if (!ctx.json) {
             out(ctx, paint(C.dim, `  command:  ${r.row.command}`, ctx.color));
