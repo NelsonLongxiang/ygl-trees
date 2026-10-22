@@ -417,6 +417,13 @@ ls-remote 双远端复证，非绕过）。
 发布（2026-10-22）：commit **`e62241e`**；tag **`v0.114.3 = 32cfda1b… → ^{commit}=e62241e…`**（双远端）；
 npm **latest=0.114.3**、shasum **`f8efa8e1…`**；官方字节 **1,533,430 B / sha256 `ae03a6c1…`**
 （发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
+**0.114.4 记录（2026-10-22，fdc 评审：job add 静默误注册）**：坏行 `0b88263172` 根因=尾拉回要求串尾
+`--every`，`--json` 后缀击穿 → every=0 静默 manual。修复：F1+F3 绊线（残留 `--every/--at` → 人类 stderr +
+JSON `diagnostics`，不硬拒）；F2 usage 改序（旗标在 `--` 前）；README/llms 示例同批改序。坏行已 disable、
+v2 标题重建已在库（fdc 处置核验通过）。测试 `job-schedule-token.spec` 5 例；unit 707→712。
+发布（2026-10-22）：commit **`5eef44c`**；tag **`v0.114.4 = 6614e489… → ^{commit}=5eef44c…`**（双远端）；
+npm **latest=0.114.4**、shasum **`0d9c8d6c…`**；官方字节 **1,535,136 B / sha256 `2cb8c977…`**
+（发版席 fresh worktree + pack:repro clean；npm 下载实测同字节）。
 **#34 修正记录（2026-10-22，未发布；fork PR #38，对齐审查席 #34 设计提案 a–d）**：证据链——0.114.1 把材料每个非空行当子句
 （标题/散文全挂 COVERAGE）且把 `#S<n>`/`#L<n>` 读成行号（与舰队的子句 id 锚点冲突），舰队 spec 全部无法重冻，舰队引擎上限钉在 0.114.0。
 裁定：**a** 子句按规则界定——默认舰队约定 `^([A-Z]+[0-9]+) `（捕获组=id），材料可 `submit --clause-pattern` 声明并冻进
