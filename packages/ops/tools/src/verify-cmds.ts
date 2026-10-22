@@ -123,17 +123,17 @@ function validateTreeSpec(
       }
       if (!n.children.length) return { error: "group " + n.id + ": empty group rejected (Q6)" };
       const agg = String(n.aggregate ?? "");
-      const m = /^(all_pass|count_fail|quorum)\(?([0-9]+)?\)?$/.exec(agg);
-      if (!m) return { error: "group " + n.id + ": unknown aggregate '" + agg + "' (want all_pass|count_fail|quorum(N))" };
-      if (m[1] === "quorum") {
-        const q = Number(m[2] ?? "");
+      if (agg === "all_pass" || agg === "count_fail") {
+        node.aggregate = agg;
+      } else {
+        const qm = /^quorum\(([0-9]+)\)$/.exec(agg);
+        if (!qm) return { error: "group " + n.id + ": unknown aggregate '" + agg + "' (want all_pass|count_fail|quorum(N))" };
+        const q = Number(qm[1]);
         if (!Number.isInteger(q) || q < 1 || q > n.children.length) {
           return { error: "group " + n.id + ": quorum(N) needs 1 <= N <= " + n.children.length };
         }
-      } else if (m[2] !== undefined) {
-        return { error: "group " + n.id + ": aggregate '" + m[1] + "' takes no argument" };
+        node.aggregate = "quorum(" + q + ")";
       }
-      node.aggregate = m[1] === "quorum" ? "quorum(" + Number(m[2]) + ")" : m[1];
       node.children = [...n.children];
     }
     nodes.push(node);
@@ -665,6 +665,30 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (res.error || !res.spec) {
         bad(ctx, "tree spec invalid: " + res.error);
         return 2;
+      }
+      // §3.1 pinned = node exists + archive signature checks (#60): resolve the
+      // archive through the workspace registry and run the same verifier as
+      // `verify archive verify`; unknown sha is a freeze-time rc=2.
+      for (const [nid, sha] of Object.entries(res.spec.pinned)) {
+        const arcDir = join(p.root, "archives");
+        let entryPath = "";
+        try {
+          for (const f of readdirSync(arcDir)) {
+            if (!f.endsWith(".json")) continue;
+            const reg = readJson<any>(join(arcDir, f));
+            const hit = (reg?.archives ?? []).find((a: any) => a?.archive_sha256 === sha);
+            if (hit?.path) { entryPath = String(hit.path); break; }
+          }
+        } catch { /* no registry dir */ }
+        if (!entryPath) {
+          bad(ctx, "tree spec invalid: pinned " + nid + ": archive not found for sha256 " + sha + " (archive it first)");
+          return 2;
+        }
+        const av = verifyArchiveFile(entryPath);
+        if (!av.ok) {
+          bad(ctx, "tree spec invalid: pinned " + nid + ": archive verification failed (" + (av.problems[0] ?? "unknown") + ")");
+          return 2;
+        }
       }
       const outFile = join(p.trees, res.spec.tree_spec_id + ".json");
       writeJson(outFile, res.spec);

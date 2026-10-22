@@ -430,6 +430,9 @@ verify-tree.spec 8 例；unit 908→916。run/report/trace/archive 与 V1–V19 
 发布（2026-10-22）：commit **`6f51d78`**；tag **`v0.114.17 = 93329345… → ^{commit}=6f51d78…`**（双远端）；
 npm **latest=0.114.17**、shasum **`bfb1dd17…`**；官方字节 **1,602,500 B / sha256 `a295dfb8…`**
 （publish `2026-10-22T17:24:57Z`，fileCount 179）。
+**0.114.18 记录（2026-10-23，A1 审阅订正）**：契约 v1.1（V7 digest 判定投影/ERROR 聚合矩阵/多快照绑定/
+同主体查重 V20，V21）不改 Q1–Q7 裁定；#60 第一刀两洞——pinned 冻结走 archive registry + `verify archive verify`
+验签，聚合解析器拒绝 quorum2/quorum(2/all_pass() 等畸形。verify-tree.spec 10 例；unit 916→918。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

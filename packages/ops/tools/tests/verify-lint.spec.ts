@@ -23,6 +23,7 @@ let snap = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
+    cwd: HOME, // outside the verifier repo: no meta-gate dependency
     encoding: "utf8",
     env: { ...process.env, YGL_HOME: HOME },
   });

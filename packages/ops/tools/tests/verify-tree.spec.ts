@@ -17,6 +17,7 @@ let WORK = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
+    cwd: HOME, // outside the verifier repo: no meta gate dependency
     encoding: "utf8",
     timeout: 60_000,
     env: { ...process.env, YGL_HOME: HOME, YGL_SESSION: "tree-prepare" },
@@ -109,13 +110,35 @@ describe.skipIf(!HAS_BIN)("verify tree prepare (A1)", () => {
     expect(String(r.j.error)).toMatch(/spec not found: spec_missing/);
   });
 
-  it("V17 pinned target unknown / bad sha → rc=2; valid --pinned frozen", () => {
+  it("V17 pinned target unknown / bad sha / archive absent → rc=2", () => {
     const base = { tree_spec_version: 1, root: "root", nodes: [group("root", ["a"]), leaf("a")] };
     expect(submitTree({ ...base, pinned: { nope: "a".repeat(64) } }).rc).toBe(2);
     expect(submitTree({ ...base, pinned: { a: "zz" } }).rc).toBe(2);
     const good = "b".repeat(64);
     const r = submitTree(base, ["--pinned", `a=${good}`]);
-    expect(r.rc).toBe(0);
-    expect(r.j.pinned).toBe(1);
+    expect(r.rc).toBe(2);
+    expect(String(r.j.error)).toMatch(/archive not found for sha256/);
+  });
+
+  it("V20 same canonical tree is idempotent (same tree_spec_id)", () => {
+    const tree = { tree_spec_version: 1, root: "root", nodes: [group("root", ["a"]), leaf("a")] };
+    const first = submitTree(tree);
+    expect(first.rc).toBe(0);
+    const second = submitTree(tree);
+    expect(second.rc).toBe(0);
+    expect(second.j.tree_spec_id).toBe(first.j.tree_spec_id);
+    expect(second.j.tree_spec_sha256).toBe(first.j.tree_spec_sha256);
+  });
+
+  it("V16 malformed aggregates rejected: quorum2 / quorum(2 / quorum() / all_pass()", () => {
+    for (const agg of ["quorum2", "quorum(2", "quorum()", "all_pass()", "count_fail(1)"]) {
+      const r = submitTree({
+        tree_spec_version: 1,
+        root: "root",
+        nodes: [group("root", ["a", "b"], agg), leaf("a"), leaf("b")],
+      });
+      expect(r.rc, agg).toBe(2);
+      expect(String(r.j.error), agg).toMatch(/unknown aggregate/);
+    }
   });
 });
