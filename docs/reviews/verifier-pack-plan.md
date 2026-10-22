@@ -1,0 +1,218 @@
+---
+name: verifier-pack-plan
+description: 把稳定钉住的验证器打包成可组合的「验证器包」——按领域 / 业务范围 / 工作流命名与标记，由预设工作流模式组合成新的工作流；现状评审、边界、命名模块、预设模式与分期日程
+kind: 评审
+---
+
+# 验证器包：命名、标记与工作流组合（方案）
+
+> 评审席 Claude-OPS-5.5 · 2026-10-22 · 基线：ygl-trees `a66d3c0`（0.114.14 源码；npm 0.114.13）＋ 舰队 9 个验证器仓库。
+> 依据：用户 2026-10-22 提出的架构方向——「把稳定钉住的验证器版本做成插件集合，根据领域、业务范围或者工作流进行打包封装为独立 ygl-trees 插件……验证器可以根据需要组合成全新的工作流……最基础的我们需要一个验证器集合模块负责命名与标记以及工作流运作方式，就是预设的几种模式可以跟什么业务结合」。
+> 承接：`verifier-sdk-plan.md`（SDK-0..5）、`verifier-production-line-plan.md`（§5 未裁定）、charter §4.7。
+> **本文只是方案：D1–D6 由属主裁定，什么都没有排期。**
+
+## 0. 结论
+
+1. **方向成立，舰队已经在手工做这件事。**
+   - 9 个验证器仓库各自用约 1.1–1.8 千行编排脚本，把「规格 + 数据绑定 + 树」拼成工作流，合计约 1.19 万行。
+   - 同一个概念被各仓重复书写：例如每个仓库都有 4 条判据的 `aggregate` 规格，却分化成 6 种文本（§2 F2）。
+   - 缺的正是用户说的那一层：可命名、可标记、可钉版、可组合的单元。
+2. **单元应该是「验证器包」（verifier pack），并且是纯数据，不能是代码插件。** R14 用户插件以进程全权限执行 `apply` / `commands`，与 charter P1（CLI 唯一执行面）、P2（禁止临时编码执行）、P4（判据语言封闭）直接冲突。所以：
+   - 包里只有冻结的规格、绑定接口、树模板、夹具和清单，执行永远由 `verify` 命令完成；
+   - 分发可以复用插件 / npm 通道，但加载方式是读数据，不是 `require`。
+3. **组合的公式是：规格（模板）× 绑定（数据从哪来）= 节点；节点 + 预设模式 = 工作流。** 舰队里已经有现成的例证：
+   - webui 验证器里，一份 `view` 规格挂在 6 个节点上；
+   - 舰队聚合仓库里，一份 `member` 规格挂在 7 个成员上。
+4. **「验证器集合模块」的职责是三件事：命名、标记、模式。** 详见 §4。
+   - 命名：`<scope>/<name>@<semver>`，并钉住其中每份规格的 `spec_id@spec_version` + sha256 和引擎版本。
+   - 标记：三条轴，领域 / 业务范围 / 工作流模式；只有模式轴是受控词表。
+   - 模式：6 种预设，见 §5，每种都已经在舰队里跑过。
+5. **最大的前置依赖是 `verify tree run`（SDK-2）。** 没有它，组合只能继续靠每仓的编排代码。本方案的分期（§6）因此排在 SDK 路线之上，而不是另起一条线。
+
+## 1. 输入与方法
+
+- 读了 R14 用户插件契约（`docs/plugin-authoring.md`）、charter §0 / §4.7、SDK 方案、生产线方案 §5，以及 `verify export`、`yglverify seal`、`verify register` / `signature`、`report import` 的现有行为。
+- 盘点了 9 个验证器仓库（引擎钉版、编排行数、树节点、规格清单、`aggregate` 判据文本），计数可复跑。
+- 实测：`verify export <spec>` 产出 `.yglverify.json`（键：`contract_version / spec_id / spec_version / title / domain / runtime_min / verifier / as_of / vu / attachments / sealed / materials_sha256`）。这就是「稳定钉住的验证器」现成的可移植形态。
+
+## 2. 现状评审
+
+### F1 已有的零件：冻结、可移植、可签名，但不能组合
+
+| 零件 | 现状 | 对验证器包的意义 |
+|---|---|---|
+| 冻结规格 | `prepare` → `spec_id` + 只增的 `spec_version`；`verify export` → `.yglverify.json` | 包内最小单元，天然钉版 |
+| 封包与签名 | `yglverify seal` → 单二进制 + ed25519 footer；`verify register` / `signature` 认表不认报文 | 第三方包的信任链已经具备 |
+| 外部报告导入 | `report import <report.json>`（payload / binary / version 校验） | 跨包结果引用的雏形 |
+| 准入 | `verify meta`（R1/R2/R3/R5a） | 每个包本身就该是一个过 meta 的验证器 |
+| 插件分发 | `plugin install` / `ygl.user.bundle.json`（npm 包、git 地址、本地目录） | 分发通道可复用，**加载语义不可复用**（见 F3） |
+
+缺的是组合层：树、绑定、聚合、命名。charter §4.7 的 `tree run` / `snapshot build` / `collect` / `import-report` 全部还是 `unshipped`。
+
+### F2 舰队证据：同一概念被各仓手工重写
+
+| 仓库 | 引擎 | 编排 + 工具（行） | 树节点 | 规格 |
+|---|---|---|---|---|
+| ygl-review-verifier | 0.114.13 | 1,232 | 9 | aggregate, contract, issues, ledger, prs, releases, sync |
+| ygl-webui-verifier | 0.114.13 | 1,458 | 15 | aggregate, api, bundle, tokens, unit, view（×6 节点） |
+| ygl-fleet-verifier | 0.114.13 | 722 | — | aggregate, member（×7 成员） |
+| ygl-design-verifier | 0.114.13 | 1,729 | 13 | aggregate, artifact, chart, lint, literals, pairs, refs, solid, sync |
+| a2a-net-verifier | 0.114.13 | 1,476 | 11 | aggregate, build, deps, mesh, nexus, release, runtime, unit, wire |
+| a2a-frontend-verifier | 0.114.13 | 1,101 | 9 | aggregate, board-theme, first-run, header, module-size, nexus, tokens |
+| workbench-market-review-verifier | 0.114.13 | 1,779 | 18 | aggregate + 11 个领域规格 |
+| ygl-issue27-verifier | 0.114.13 | 1,079 | 6 | aggregate, docs, gates, merge, plan |
+| ygl-taste-pilot-verifier | 0.114.9 | 1,282 | 4 | aggregate, ledger, service, statistics |
+
+- **`aggregate` 规格在 9 个仓库各写了一遍。**
+  - 4 条判据 G1–G4 的含义完全相同：子节点全 PASS、归档自校验通过、同一轮测量、非空。
+  - 文本却分成 6 个变体（material.md 的 sha256 前 12 位：`5980ca89ebc7`×3、`26dea283b79f`×2，另有 4 个各 1 份），差别集中在 G3 的措辞。
+  - 这正是命名模块要解决的问题：同一个验证器需要一个名字和一个版本，而不是 6 份抄本。
+- **规格复用已经存在，但只在仓内。** webui 的 `view` 规格挂 6 个节点，舰队的 `member` 规格挂 7 个成员。也就是说，「规格 × 绑定 = 节点」在实践中成立，只是没有跨仓、带版本的名字。
+- **钉版一致性靠人工维护。** 今天 9 仓中 8 仓在 0.114.13，taste-pilot 在 0.114.9，靠舰队 M9 规则人工对齐。包清单应该把引擎版本写进身份。
+
+### F3 为什么不能直接做成 R14 代码插件
+
+| R14 插件能力 | 与 charter 的关系 |
+|---|---|
+| `apply(ctx, config)` 以进程全权限执行 | 包内代码即「为完成验证现场写代码」→ 违反 P2 |
+| `commands` 贡献命令组 | 第二个执行入口 → 违反 P1 |
+| 可在 `apply` 里读写数据库、改判定 | 第二个判定层 → 违反 P4 |
+
+所以验证器包必须是**纯数据**：引擎读清单，执行用的都是已有的 `verify` 动词。代码只允许出现在 charter v1.1 的过渡例外里（登记、只经 CLI、带 `sunset`），而且不随包分发。
+
+### F4 命名与标记的现状
+
+- `spec_id` 是哈希式的不透明标识（如 `spec_ae877807ced2`），没有可读名，也没有版本语义。`spec_version` 只在同一 id 内单调递增。
+- 规格里的 `domain` 是自由字符串，各仓自定，例如 `review.releases`、`webui`。
+- 没有标签字段，也没有目录命令。`verify list` 只列本地工作区的规格。
+- 建议：**命名和标记放在包清单里，不进规格契约**。这样不必升 `contract_version`，P4 不受影响。规格本身保持冻结，清单只是引用它（`spec_id@spec_version` + sha256）。
+
+## 3. 边界
+
+**是**：
+- 一个可命名、可标记、可钉版、可签名的**数据包**；
+- 一组**预设工作流模式**（树模板 + 运行节奏 + 放行规则）；
+- 一个在本地工作区里登记包的**目录**。
+
+**不是**：
+- 可执行插件，也不是第二个执行面；
+- 新的判据语言，也不是第二个判定层；
+- 舰队专用的脚本库。
+
+**不变的**：
+- 判定唯一出自 `verify run`；
+- 证据仍是 report + archive + payload_sha256 + 签名链（P5）；
+- 每个包本身必须先过 `verify meta`（P3）。
+
+## 4. 验证器集合模块：命名、标记、模式
+
+### 4.1 包清单（建议形状，`ygl-verifier-pack/1`）
+
+```json
+{
+  "pack": "ygl/core-aggregate",
+  "version": "1.0.0",
+  "engine": "0.114.13",
+  "contract_version": "1.2",
+  "tags": {
+    "domain": ["verification-infra"],
+    "business": ["any"],
+    "mode": ["tree"]
+  },
+  "specs": [
+    { "name": "aggregate", "spec_id": "spec_…", "spec_version": 6, "sha256": "…",
+      "requires": { "tables": { "children": ["overall", "archive_ok", "target_sha", "round_sha"] } } }
+  ],
+  "nodes": [ { "id": "group", "spec": "aggregate", "binding": "children-of(<node>)" } ],
+  "fixtures": { "good": "fixtures/good.sqlite", "bad": ["fixtures/g1-red.sqlite"] },
+  "signature": { "key_id": "…", "footer": "…" }
+}
+```
+
+- **名字**：`<scope>/<name>@<semver>`。包版本的规则：
+  - 改判据材料 → 升 major；
+  - 加节点或规格 → 升 minor；
+  - 只换夹具或文档 → 升 patch。
+- **钉版**：清单写死引擎版本和每份规格的 `spec_id@spec_version` + sha256。装包时逐一核对，不符即拒。
+- **接口**：`requires` 声明每份规格需要哪些快照表和列。这就是「绑定」的契约：谁提供这些表，谁就能用这个包。在 `snapshot build` / `collect` 交付之前，数据由使用方自己准备。
+
+### 4.2 三条标记轴
+
+| 轴 | 词表 | 用途 |
+|---|---|---|
+| 领域 `domain` | 登记式开放词表（例：`release-eng`、`frontend`、`finance`、`content`） | 按专业领域查找 |
+| 业务范围 `business` | 登记式开放词表（例：`pr-review`、`monthly-close`、`vendor-onboarding`） | 按业务场景查找 |
+| 工作流模式 `mode` | **受控词表**，即 §5 的 6 种预设 | 决定这个包能被怎样运行和组合 |
+
+模式轴必须受控。它决定运行语义（门禁要 rc，巡检要节奏，聚合要子报告），可以由引擎检查；另外两条轴只用于检索，不影响执行。
+
+### 4.3 目录命令（建议）
+
+`verify pack build | lint | install | list [--tag k=v] | show | verify`：
+- `pack lint` 是包的一致性套件：清单校验、meta PASS、夹具「好的全绿、坏的只翻对应叶子」、规格在钉定引擎上能 prepare 到 ready。也就是评审席这一轮对 0.114.9 / 0.114.13 做的 15 份规格预检，固化成一条命令。
+- `pack install` 走现有插件通道，但只读数据，不执行任何 `apply`。
+
+## 5. 预设工作流模式：每种都已在舰队里跑过
+
+| 模式 | 运行语义 | 舰队里的现成实例 | 可结合的业务（例） |
+|---|---|---|---|
+| **gate 门禁** | 被验对象（提交、PR、产物）一次性跑；根 PASS 才放行 | webui 验证器：PR 的精确 tip 根 PASS 后才登记合并（`pr-verifications.json`） | PR 评审、上线审批、供应商准入 |
+| **patrol 巡检** | 按节奏重复跑同一快照源；违规进处置队列 | `verify graduate --schedule` + `patrol`（0.93 / 0.103 落地） | 月结对账（sql-pair）、数据质量、合规巡检 |
+| **tree 递归聚合** | 后序遍历，组节点聚合子报告 | 每仓的 `aggregate` 组节点；舰队仓库聚合 7 个成员 | 多部门联合验收、集团汇总 |
+| **release 发布审计** | 跨源核对发布序（源码 → 标签 → 制品） | 评审验证器的 `releases` 叶（R1–R6） | 软件发布、合同版本归档 |
+| **construct 构造自证** | 冻结前核对「材料条款 ↔ 候选判据 ↔ 盲审」一一对应 | `tools/check-construction.mjs` + #34 反例 | 任何新领域规范的首次落地 |
+| **loop 判断闭环** | 案例 → 统计 → 认定 → 冻结 → 执行 → 推翻回流 → 新规格 | #27 taste-pilot（六轮实证：推翻 → 新规格 → 登记） | 品味 / 专业判断的沉淀（`taste-extraction-plan.md`） |
+
+- 组合规则：一个工作流 = 一棵树，叶子来自一个或多个包的节点，组节点的语义由模式决定。
+- 例：「发布审批」= gate(根) ← { release 包的 R1–R6、frontend 包的 view 节点、core/aggregate }。
+- 「时空可组合性」：
+  - **空间**：同一个包可以在多棵树里绑定不同数据（规格 × 绑定）；每棵树有自己的工作区，与今天舰队成员各用自己的 `state/home` 一致。
+  - **时间**：包和引擎精确钉版，规格的 `as_of`、`supersedes` 与谱系（#27 的推翻回流），加上升级时的 A/B 并跑（SDK 方案的 K 轮一致）。
+
+## 6. 分期日程（建议，挂在 SDK 路线上）
+
+| 期 | 内容 | 验收 | 依赖 |
+|---|---|---|---|
+| **VP-0 裁定与命名** | 属主裁定 D1–D6；发布 `ygl-verifier-pack/1` 清单 JSON Schema、模式词表、领域与业务的登记表；不写代码 | 文档 PR 合入；schema 进包内 `schemas/` | — |
+| **VP-1 `pack build / lint`** | 从一个验证器仓库产出确定性包（复用归档的确定性 zip）；`lint` = 一致性套件 | 对 `ygl/core-aggregate` 两次 build 字节相同；夹具「好全绿、坏只翻对应叶子」；坏清单 rc=2 | SDK-0（契约与 schema） |
+| **VP-2 `pack install / list / show`** | 经插件通道装数据包；核对钉版与签名；按标签检索 | 钉版或 sha 不符时拒装 rc=1；`list --tag mode=gate` 只列门禁包；装包不执行任何代码（grep 装包路径无 `require`） | VP-1、签名（已有） |
+| **VP-3 模式即树模板** | 6 种模式各出一个树模板；工作流 = 模板 + 包节点 + 绑定 | 评审验证器改由「release 包 + core/aggregate + 本仓叶子」组成，A/B 连续 K 轮根结论、叶子结论一致 | **SDK-2 `tree run`** |
+| **VP-4 跨包与跨仓** | 组节点引用外部包的报告（payload_sha256 验签、验归档、时效） | 舰队聚合仓库改用包 + `import-report`，`ledger.mjs` 退场 | SDK-5 `import-report` |
+
+首个试点建议用 `ygl/core-aggregate`：
+- 9 个仓库都在用；
+- 判据只有 4 条；
+- 收敛 6 种抄本本身就是可量化的收益（6 → 1）。
+
+## 7. 风险
+
+| 风险 | 缓解 |
+|---|---|
+| 包被当成代码插件来写（P1/P2/P4） | VP-2 验收「装包不执行代码」；`pack lint` 拒绝包内出现 `*.js` / `*.mjs` |
+| 钉版漂移：包对 0.114.13 冻结，引擎升级后判定口径变化 | 清单写死引擎版本；升级走 A/B K 轮，与今天舰队 M9 和本席预检同一纪律 |
+| 绑定接口不稳：快照表结构变化让包静默变空 | `requires` 声明表和列；`prepare` 已有空转守卫，`pack lint` 再加「缺表即拒」 |
+| 第三方包的信任 | 复用 ed25519 签名与 key table（`verify signature`）；无签名包只能本地使用 |
+| 命名膨胀：每个仓库都发包 | 模式受控；领域和业务登记制；只有被两个以上工作流引用的规格才值得独立成包 |
+| 构造面缺口随包扩散（#34 类） | 包必须携带构造夹具；`pack lint` 跑 #34 四类反例 |
+| 依赖面（#54 类原生驱动问题） | 包不带依赖，只依赖引擎；引擎安装配方由舰队预检固化 |
+
+## 8. 需要裁定的事项（属主）
+
+| # | 事项 | 本席建议 |
+|---|---|---|
+| D1 | 包的形态：纯数据包，还是可执行插件 | 纯数据。可执行插件与 charter P1/P2/P4 冲突 |
+| D2 | 命名与标记放在哪里：包清单，还是规格契约 | 包清单。不升 `contract_version`，规格保持冻结 |
+| D3 | 6 种预设模式是否作为首版受控词表；首批与哪些业务结合 | 6 种全收；首批试点 tree（`core/aggregate`）与 gate（PR 评审） |
+| D4 | 分发：复用 `plugin install` 通道（声明式 `yglVerifiers` 字段），还是独立的 `verify pack install` | 复用通道、独立加载语义：装在同一 profile，引擎只读数据 |
+| D5 | 第三方包是否强制签名 | 强制；无签名只允许 `--local` |
+| D6 | 与 SDK 路线的先后 | VP-0/1 可与 SDK-0 并行；VP-3 起排在 SDK-2 `tree run` 之后 |
+
+## 9. 评审席的复核方式
+
+- 每期交付后，从 npm 发布版复跑该期验收，结果进对应 issue 与台账。
+- 重点盯四件事：
+  1. 装包不执行代码；
+  2. 钉版和 sha 不符必拒；
+  3. 同一包在两棵树里绑定不同数据，结论互不串扰；
+  4. A/B 迁移期间根结论、叶子结论、spec 哈希逐轮一致。
+- 本席的评审验证器作为 VP-3 的首个接入方。
