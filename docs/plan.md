@@ -479,6 +479,9 @@ selected/prior/session + 共享 default 桶 `selection_warning`（人类面 stde
 demo/ratchet/readme/rust/pack 全绿。发布：commit **`07c9523`**；tag **`v0.114.7 = 39d64cd0… → ^{commit}=07c9523…`**；
 npm **latest=0.114.7**、shasum **`d16db80e…`**；字节 **1,573,610 B / sha256 `935da420…`**（publish `2026-10-22T06:55:32Z`，
 fileCount 177）。
+**0.114.8 记录（2026-10-22，#46 JSON 契约）**：`produce export --json` 成功路径改单对象
+`{artifact_id,path,chars,bytes}`（此前人类 ack 泄漏到机器通道）；错误路径单 `{error}` 不变；人类模式 ack 不变。
+测试 `produce-export-json.spec` 3 例；unit 808→811；contract 144。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

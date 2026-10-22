@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.114.8
+
+GitHub #46（验证席 P3 · JSON 契约违例）：`produce export` 成功路径在 `--json` 下打印人类 ack（`written: …`），
+错误路径却是 JSON——违反冻结契约「`--json` 写 = 单 JSON 对象」。
+
+- 成功路径改为 **`{"artifact_id","path","chars","bytes"}` 单对象**（与写命令契约一致）；
+  人类模式 ack 不变；错误路径维持单 `{"error"}` 对象。
+- 测试：`produce-export-json.spec` 3 例（成功单对象 + 文件字节一致、错误单对象、人类模式 ack）；
+  unit 808 → **811**；contract 144 不变。
+
 ## 0.114.7
 
 GitHub #44（验证席 P2/P3）选择桶信号与 owner 点名；选择语义全面梳理见 `docs/reviews/project-selection-review.md`（#45，D1–D5 待属主）。
