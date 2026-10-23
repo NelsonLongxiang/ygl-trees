@@ -501,6 +501,11 @@ npm **latest=0.114.25**、shasum **`d56db082…`**；官方字节 **1,644,775 B 
 「扩现有 MCP 桥」。`ygl-trees mcp` 8→11 工具（research_write/tree_write/verify 写面移植自已废定制插件）；
 rc 保真（isError + 机器可读 {rc,error}）；DSH 集成=dsh-mcp-connector 配置（docs/mcp-dsh-connector.md），
 零新包零双发。独立仓 D:/workspace/dsh-ygl-trees 废弃。mcp-write.spec 4 例；unit 942→946；contract 144。
+**0.114.26 发布（2026-10-23）**：commit **`7e00fc7`**；tag **`v0.114.26 = c9f5490a… → ^{commit}=7e00fc7…`**（双远端）；
+npm **latest=0.114.26**、shasum **`5f37ed52…`**；官方字节 **1,650,876 B / sha256 `e0e51448…`**（fileCount 190）。
+**0.114.27 记录（2026-10-24，fdc P1 边界实证 + 回归钉）**：P1 失败面=0.103 家族旧 ref（无 eol 约束）；
+0.108 全仓 eol=lf 已修，HEAD autocrlf=true 克隆实测 PASS。`r3-eol-regression.spec` 钉住（克隆夹具双判据）；
+pack-check 5b stderr 落盘+失败回显（reregister 入链）。unit 946→947；contract 144。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
