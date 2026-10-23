@@ -436,6 +436,10 @@ npm **latest=0.114.17**、shasum **`bfb1dd17…`**；官方字节 **1,602,500 B 
 发布（2026-10-22）：commit **`843038c`**；tag **`v0.114.18 = f7e3f0fd… → ^{commit}=843038c…`**（双远端）；
 npm **latest=0.114.18**、shasum **`19a1e21c…`**；官方字节 **1,591,413 B / sha256 `2617ead8…`**
 （publish `2026-10-22T19:49:30Z`，fileCount 182）。两席补认 A1 契约 v1.1，契约冻结完整。
+**0.114.19 记录（2026-10-23，A1 运行时第一刀）**：`tree run/report/trace`——叶真实 run+默认 archive、
+pinned 验签回读、四态聚合矩阵、多快照绑定；树报告 `verdict_digest` 只覆盖判定投影（V7），events 只增。
+组独立 report+archive 列下一刀。verify-tree.spec 18 例；unit 918→926。棘轮：bundle 772,395→795,880
+（维护者认账；web/cold 基线未动）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

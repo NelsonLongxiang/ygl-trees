@@ -8,6 +8,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { aggregateTreeVerdict } from "../src/verify-cmds";
 
 const REPO = resolve(__dirname, "../../../..");
 const BIN = resolve(REPO, "dist/bundle/bin.cjs");
@@ -24,7 +26,7 @@ function run(args: string[]) {
   });
   let j: any = null;
   try { j = JSON.parse((r.stdout || "").trim()); } catch { j = null; }
-  return { rc: r.status ?? -1, j, out: (r.stdout || "").trim() };
+  return { rc: r.status ?? -1, j, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() + (r.error ? " SPAWNERR:" + r.error.message : "") };
 }
 
 let n = 0;
@@ -140,5 +142,83 @@ describe.skipIf(!HAS_BIN)("verify tree prepare (A1)", () => {
       expect(r.rc, agg).toBe(2);
       expect(String(r.j.error), agg).toMatch(/unknown aggregate/);
     }
+  });
+});
+
+
+describe("A1 tree run (runtime first cut)", () => {
+  beforeAll(() => {
+    HOME = mkdtempSync(join(tmpdir(), "ygl-tree-run-"));
+    WORK = mkdtempSync(join(tmpdir(), "ygl-tree-run-files-"));
+  });
+  afterAll(() => {
+    rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  const matrix: Array<[string, string[], string]> = [
+    ["all_pass", ["PASS", "PASS"], "PASS"],
+    ["all_pass", ["PASS", "FAIL"], "FAIL"],
+    ["all_pass", ["PASS", "ERROR"], "PASS"],
+    ["all_pass", ["ERROR", "ERROR"], "INFRA_BLOCKED"],
+    ["quorum(2)", ["PASS", "FAIL", "PASS"], "PASS"],
+    ["quorum(2)", ["PASS", "FAIL", "FAIL"], "FAIL"],
+    ["all_pass", ["NEUTRALIZED", "FAIL"], "NEUTRALIZED"],
+  ];
+  for (const [op, vs, want] of matrix) {
+    it(`aggregate ${op} ${vs.join("+")} => ${want}`, () => {
+      expect(aggregateTreeVerdict(op, vs)).toBe(want);
+    });
+  }
+
+  it("runs a two-leaf tree: verdict, per-leaf runs, deterministic digest, events", () => {
+    expect(run(["db", "init"]).rc).toBe(0);
+    expect(run(["project", "new", "p"]).rc).toBe(0);
+    // leaf specs: a passes, b fails (exists id=2 absent)
+    for (const [sid, sql] of [
+      ["spec_a", "select 1 from t where id=1"],
+      ["spec_b", "select 1 from t where id=2"],
+    ] as const) {
+      mkdirSync(join(HOME, "verify", "specs", sid), { recursive: true });
+      writeFileSync(
+        join(HOME, "verify", "specs", sid, "spec.json"),
+        JSON.stringify({
+          contract_version: "1.2", spec_id: sid, spec_version: 1, title: sid, domain: "general",
+          created: "2026-10-22T00:00:00.000Z", runtime_min: "",
+          verifier: { engine_version: "0.114.18", corpus_version: "1.2" },
+          as_of: { kind: "snapshot", value: "2026-10-19T00:00:00.000Z" },
+          attachments: [], sealed: { review: false },
+          vu: [{ id: "V1", role: "assert", title: sid, severity: "S3", source_clause: "x",
+            expected_from: { quote: "x", locator: "m:1" },
+            checker: { type: "exists", sql, expect: true } }],
+        })
+      );
+    }
+    const snap = join(HOME, "snap.db");
+    const db = new DatabaseSync(snap);
+    db.exec("CREATE TABLE t(id INTEGER); INSERT INTO t VALUES(1);");
+    db.close();
+    const tree = {
+      tree_spec_version: 1, root: "root",
+      nodes: [group("root", ["a", "b"]), leaf("a", "spec_a"), leaf("b", "spec_b")],
+    };
+    const prep = submitTree(tree);
+    expect(prep.rc).toBe(0);
+    const tid = prep.j.tree_spec_id as string;
+    const r1 = run(["verify", "tree", "run", tid, "--db", snap, "--no-archive"]);
+    expect(r1.rc, r1.out + r1.err).toBe(0);
+    expect(r1.j.verdict).toBe("FAIL");
+    expect(r1.j.nodes.find((n: any) => n.node_id === "root").verdict).toBe("FAIL");
+    expect(r1.j.nodes.filter((n: any) => n.kind === "leaf").every((n: any) => n.report_id)).toBe(true);
+    expect(existsSync(r1.j.report_path)).toBe(true);
+
+    const r2 = run(["verify", "tree", "run", tid, "--db", snap, "--no-archive"]);
+    expect(r2.rc).toBe(0);
+    expect(r2.j.verdict_digest).toBe(r1.j.verdict_digest); // audit/time excluded (V7)
+    // events appended (V10)
+    const ev = new DatabaseSync(join(HOME, "ygl-trees.db"));
+    const n = (ev.prepare("SELECT COUNT(*) c FROM events WHERE kind='verify.tree.run'").get() as any).c;
+    ev.close();
+    expect(Number(n)).toBe(2);
   });
 });

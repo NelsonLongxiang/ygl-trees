@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.114.19
+
+A1 运行时第一刀：`verify tree run / report / trace`（契约 v1.1 已裁定）。
+
+- **`tree run <tree-spec-id>`**：后序遍历；叶节点真实 `runVerify` + 默认 `archiveRun`（`--no-archive` 可关）；
+  pinned 叶子走 archive registry + 验签 + 回读冻结报告；组节点按四态矩阵聚合
+  （NEUTRALIZED→FAIL→PASS→全 ERROR=INFRA_BLOCKED；`quorum(N)` 按通过数）；支持默认 `--db` 与
+  `--db <node>=<path>` 多快照绑定。写 `verify/tree-reports/<tr_*>.json`，含 `verdict_digest`（只覆盖
+  判定投影：节点 verdict/聚合/pinned；run id/时钟/归档字节不进 digest）与 events `verify.tree.run`（只增）。
+- **`tree report` / `tree trace`**：读回树报告 / 按 tree spec 列 run。
+- 本切组节点写进树报告节点记录（组独立 report+archive 下一小刀）；叶 archive 为真实归档。
+- 测试：`verify-tree.spec` 18 例（新增聚合矩阵 7 例 + 双叶运行/确定性 digest/events 1 例）；unit 918 → **926**。
+- 棘轮：bundle 基线 **772,395 → 795,880 B**（维护者认账；A1 tree prepare/run 的真实实现；web dist 与
+  cold start 基线保持旧值）。
+
 ## 0.114.18
 
 A1 审阅订正批（验证席 #59 契约四缺口 + #60 第一刀两洞）。

@@ -33,14 +33,14 @@ import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../..
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
-import { appendRegistry, ARCHIVE_WITH, buildArchive, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
+import { appendRegistry, ARCHIVE_WITH, buildArchive, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
 import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 
-const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees"] as const;
+const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees", "tree-reports"] as const;
 
 function paths(env: Env) {
   const root = join(env.home, "verify");
@@ -53,6 +53,7 @@ function paths(env: Env) {
     registrations: join(root, "registrations"),
     binaries: join(root, "binaries"),
     trees: join(root, "trees"),
+    "tree-reports": join(root, "tree-reports"),
   };
 }
 
@@ -77,6 +78,8 @@ export interface TreeSpecNode {
   kind: "leaf" | "group";
   spec_id?: string;
   spec_version?: number;
+  /** optional frozen snapshot binding (contract v1.1 V21) */
+  db?: string;
   aggregate?: string;
   children?: string[];
 }
@@ -116,6 +119,10 @@ function validateTreeSpec(
       if (!specExists(n.spec_id)) return { error: "leaf " + n.id + ": spec not found: " + n.spec_id + " (prepare it first)" };
       node.spec_id = n.spec_id;
       if (Number.isInteger(n.spec_version)) node.spec_version = n.spec_version;
+      if (n.db !== undefined) {
+        if (typeof n.db !== "string" || !n.db) return { error: "leaf " + n.id + ": db must be a snapshot path" };
+        node.db = n.db;
+      }
       if (n.children !== undefined) return { error: "leaf " + n.id + ": children not allowed" };
     } else {
       if (!Array.isArray(n.children) || (n.children as any[]).some((c) => typeof c !== "string")) {
@@ -198,6 +205,144 @@ function validateTreeSpec(
       pinned,
     },
   };
+}
+
+/** A1 四态聚合（契约 v1.1 矩阵）：NEUTRALIZED > FAIL > PASS > 全 ERROR=INFRA_BLOCKED。
+ *  纯函数，导出以便单测直接钉矩阵。 */
+export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
+  const vs = verdicts.map((v) => String(v).toUpperCase());
+  if (vs.includes("NEUTRALIZED")) return "NEUTRALIZED";
+  if (op.startsWith("quorum(")) {
+    const n = Number(op.slice(7, -1));
+    const pass = vs.filter((v) => v === "PASS").length;
+    const hasFail = vs.includes("FAIL");
+    if (pass >= n) return "PASS";
+    if (hasFail || vs.some((v) => v === "PASS")) return "FAIL";
+    return "INFRA_BLOCKED";
+  }
+  if (vs.includes("FAIL")) return "FAIL";
+  if (vs.includes("PASS")) return "PASS";
+  return "INFRA_BLOCKED";
+}
+
+/** A1 tree run：叶真跑（runVerify+archive）或 pinned 归档回读，后序聚合，写树报告。
+ *  本切 group 层写进树报告的节点记录（group 独立 archive 待下一小刀）。 */
+async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<number> {
+  const p = paths(env);
+  const dbFlag = args.flags.db;
+  const dbArgs: string[] = Array.isArray(dbFlag) ? dbFlag.map(String) : dbFlag ? [String(dbFlag)] : [];
+  const byNode: Record<string, string> = {};
+  let defaultDb = "";
+  for (const d of dbArgs) {
+    const i = d.indexOf("=");
+    if (i > 0) byNode[d.slice(0, i)] = d.slice(i + 1);
+    else defaultDb = d;
+  }
+  const nodeById = new Map(spec.nodes.map((n) => [n.id, n]));
+  const snapshots = new Map<string, { path: string; sha256: string; source: string }>();
+  const getSnapshot = (file: string) => {
+    if (!snapshots.has(file)) {
+      const snap = snapshotCopy(file);
+      retainSnapshot(p.root, snap);
+      snapshots.set(file, snap);
+    }
+    return snapshots.get(file)!;
+  };
+  const nodes: any[] = [];
+  const pinnedShas: Record<string, string> = { ...spec.pinned };
+  const failed: string[] = [];
+  const evalNode = async (id: string): Promise<string> => {
+    const n = nodeById.get(id);
+    if (!n) throw new Error("tree node missing: " + id);
+    if (n.kind === "group") {
+      const childVerdicts: string[] = [];
+      for (const c of n.children ?? []) childVerdicts.push(await evalNode(c));
+      const verdict = aggregateTreeVerdict(String(n.aggregate), childVerdicts);
+      nodes.push({ node_id: n.id, kind: "group", aggregate: n.aggregate, children: n.children, verdict });
+      return verdict;
+    }
+    const pinnedSha = pinnedShas[n.id];
+    if (pinnedSha) {
+      const arcDir = join(p.root, "archives");
+      let entryPath = "";
+      try {
+        for (const f of readdirSync(arcDir)) {
+          if (!f.endsWith(".json")) continue;
+          const reg = readJson<any>(join(arcDir, f));
+          const hit = (reg?.archives ?? []).find((a: any) => a?.archive_sha256 === pinnedSha);
+          if (hit?.path) { entryPath = String(hit.path); break; }
+        }
+      } catch { /* no registry */ }
+      if (!entryPath) throw new Error("pinned " + n.id + ": archive not found for sha256 " + pinnedSha);
+      const av = verifyArchiveFile(entryPath);
+      if (!av.ok) throw new Error("pinned " + n.id + ": archive verification failed: " + (av.problems[0] ?? "unknown"));
+      const rep = readArchiveReport(entryPath);
+      nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha, report_id: rep.run_id, verdict: rep.overall, stale: false });
+      return rep.overall;
+    }
+    const specFile = join(p.specs, String(n.spec_id), "spec.json");
+    if (!existsSync(specFile)) throw new Error("leaf " + n.id + ": spec not found: " + n.spec_id);
+    const leafSpec = readJson<VerifySpec>(specFile);
+    const dbFile = byNode[n.id] || n.db || defaultDb;
+    if (!dbFile) throw new Error("leaf " + n.id + ": no --db binding (pass --db <path> or --db " + n.id + "=<path>)");
+    const snap = getSnapshot(dbFile);
+    const runner = new SqliteRunner(snap.path);
+    const report = await runVerify(leafSpec, { runner, mode: "open" });
+    const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
+    withSource.payload_sha256 = payloadHash(withSource);
+    writeJson(join(p.reports, report.run_id + ".json"), withSource);
+    let archived: { archive_sha256: string } | null = null;
+    if (args.flags["no-archive"] !== true) {
+      archived = archiveRun(p.root, report.run_id, { id: String(leafSpec.spec_id), version: report.verifier.spec_version }, args);
+    }
+    nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, report_id: report.run_id, archive_sha256: archived?.archive_sha256 ?? null, verdict: report.overall, stale: false });
+    return report.overall;
+  };
+  try {
+    const verdict = await evalNode(spec.root);
+    const roundId = "r" + Date.now().toString(36);
+    const verdictDigest = sha256(JSON.stringify({
+      tree_spec_sha256: spec.tree_spec_sha256,
+      root: spec.root,
+      // V7: verdict digest covers the JUDGEMENT projection only — run ids,
+      // timestamps and archive bytes stay in audit, so two runs over the same
+      // input produce the same digest.
+      nodes: nodes.slice().sort((a, b) => String(a.node_id).localeCompare(String(b.node_id))).map((n) => ({
+        id: n.node_id, verdict: n.verdict, aggregate: n.aggregate ?? null, pinned: n.pinned === true,
+      })),
+      pinned: pinnedShas,
+    }));
+    const treeRunId = "tr_" + short(verdictDigest);
+    const treeReport = {
+      tree_run_id: treeRunId,
+      tree_spec_id: spec.tree_spec_id,
+      tree_spec_sha256: spec.tree_spec_sha256,
+      round_id: roundId,
+      verdict,
+      verdict_digest: verdictDigest,
+      audit: { generated_at: new Date().toISOString(), host: process.platform, duration_ms: 0 },
+      nodes,
+      pinned: pinnedShas,
+    };
+    writeJson(join(p["tree-reports"], treeRunId + ".json"), treeReport);
+    try {
+      env.db.run(
+        "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
+        ["ev" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), new Date().toISOString(), process.env.YGL_SESSION || "cli", "verify.tree.run", "tree_spec", spec.tree_spec_id, JSON.stringify({ tree_run_id: treeRunId, verdict }), verdict === "PASS" ? "info" : "warn"]
+      );
+    } catch { /* events best effort */ }
+    if (ctx.json) {
+      console.log(JSON.stringify({ ...treeReport, report_path: join(p["tree-reports"], treeRunId + ".json") }));
+    } else {
+      out(ctx, paint(verdict === "PASS" ? C.green : verdict === "FAIL" ? C.red : C.yellow, "  " + verdict + "  " + treeRunId, ctx.color));
+      for (const n of nodes) out(ctx, paint(C.dim, "    " + n.node_id + " " + n.kind + " " + n.verdict, ctx.color));
+      out(ctx, paint(C.dim, "  tree report: " + join(p["tree-reports"], treeRunId + ".json"), ctx.color));
+    }
+    return 0;
+  } catch (e: any) {
+    bad(ctx, "tree run failed: " + (e?.message || e));
+    return 1;
+  }
 }
 
 export function readJson<T>(path: string): T {
@@ -545,7 +690,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
   run: ["db", "submission", "no-archive"],
-  tree: ["pinned"],
+  tree: ["pinned", "no-archive"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
@@ -621,8 +766,50 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   switch (action) {
     case "tree": {
       const sub = rest[0];
+      if (sub === "run") {
+        const treeSpecId = rest[1];
+        if (!treeSpecId) {
+          bad(ctx, "usage: verify tree run <tree-spec-id> [--db <path>] [--db <node>=<path> ...] [--json]");
+          return 2;
+        }
+        const specFile = join(paths(env).trees, treeSpecId + ".json");
+        if (!existsSync(specFile)) {
+          bad(ctx, "tree spec not found: " + treeSpecId + " (verify tree prepare first)");
+          return 1;
+        }
+        return treeRun(env, ctx, readJson<TreeSpec>(specFile), args);
+      }
+      if (sub === "report") {
+        const runId = rest[1];
+        if (!runId) {
+          bad(ctx, "usage: verify tree report <tree-run-id> [--json]");
+          return 2;
+        }
+        const f = join(paths(env)["tree-reports"], runId + ".json");
+        if (!existsSync(f)) {
+          bad(ctx, "tree run not found: " + runId);
+          return 1;
+        }
+        if (ctx.json) console.log(JSON.stringify(readJson<any>(f)));
+        else out(ctx, JSON.stringify(readJson<any>(f), null, 2));
+        return 0;
+      }
+      if (sub === "trace") {
+        const treeSpecId = rest[1];
+        if (!treeSpecId) {
+          bad(ctx, "usage: verify tree trace <tree-spec-id> [--json]");
+          return 2;
+        }
+        const dir = paths(env)["tree-reports"];
+        const rows = existsSync(dir)
+          ? readdirSync(dir).filter((x) => x.endsWith(".json")).map((x) => readJson<any>(join(dir, x))).filter((r) => r.tree_spec_id === treeSpecId)
+          : [];
+        if (ctx.json) console.log(JSON.stringify(rows));
+        else for (const r of rows) out(ctx, r.tree_run_id + "  " + r.verdict + "  " + r.round_id);
+        return 0;
+      }
       if (sub !== "prepare") {
-        bad(ctx, "usage: verify tree prepare <material-id> [--pinned <node>=<sha256> ...] [--json]  (run/report/trace/archive land with A1 runtime)");
+        bad(ctx, "usage: verify tree prepare|run|report|trace ...");
         return 2;
       }
       const materialId = rest[1];
