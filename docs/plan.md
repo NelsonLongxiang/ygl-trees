@@ -470,6 +470,14 @@ Q9=D 引用失配（基准=冻结 spec_version，缺字段 fail-closed，stale �
 INFRA_BLOCKED；Q11 删 run 幂等；Q12=B（V17 移 run 期）；Q13=A 限本 workspace；G8=JCS；G9=附件 A 推荐。
 新增树层第五 verdict STALE（叶 report 四值不变）、全序 NEUTRALIZED>STALE>FAIL>INFRA_BLOCKED>PASS、V15 5×5。
 v1.2 定稿 + 裁定单 v2 + 矩阵重生成已交；Phase 2 两席会签后解冻，Q10 返工+九缺口补齐→0.115.0。
+**0.114.23 记录（2026-10-23，发布门可靠性 + 元登记）**：#61 contract-audit `badref()` 改全 stderr 搜期望串
+（选择观测注记不再抢 head -1；连跑两次 144/144）；R3 登记 `tree-contract-matrix.mjs`、`contract-audit.sh`
+显式 --reregister（#37 lineage）；#47 `query attach` owner 点名。A1 v1.2 quorum 分母+V15 逐算子文档
+（fdc/验证席 delta 双签，SHA ff8b245f）；unit 932，contract 144，clean tree `verify meta .` 五规则 PASS。
+**Fast-follow 登记（2026-10-23，组合层 BirthRecord v1，裁定 dsh/74555a36）**：出生记录暂以 `kb add`
+（tags 域隔离）落点；当笔记量/搜索噪声触发时，评估 events 公开 writer 面（结构化 append + 双键索引查询）。
+BirthRecord 五字段：session_id/pack_id/member_name/manifest_sha256/declared_at。触发条件/优先级由开发线评估；
+A1 V1–V19 夹具共作窗口开启时预告主队席。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

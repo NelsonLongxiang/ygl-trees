@@ -47,14 +47,15 @@ dup_flag() { # dup_flag <desc> <jq-ish node expr> -- cmd...
 badref() { # badref <desc> <expected-substring> -- cmd...
   local desc="$1"; local want="$2"; shift 3
   local out; out=$("$@" 2>&1); local rc=$?
-  local msg; msg=$(echo "$out" | head -1)
-  case "$msg" in
-    *SqliteError*|*constraint*|*TypeError*)
-      fail "bad ref: $desc" "raw driver error leaked: $msg" ;;
-    *)
-      if [ "$rc" = "1" ] && echo "$msg" | grep -q "$want"; then pass "bad ref: $desc"
-      else fail "bad ref: $desc" "rc=$rc want=1 and msg~'$want', got: $msg"; fi ;;
-  esac
+  # 0.114.23 (#61): stderr may carry selection-observation notes before the
+  # error line; match the EXPECTED substring against the WHOLE output, not
+  # head -1 (timing-dependent release-gate flake). Raw driver errors are still
+  # rejected wherever they appear.
+  local first; first=$(echo "$out" | head -1)
+  if echo "$out" | grep -qE 'SqliteError|constraint failed|TypeError'; then
+    fail "bad ref: $desc" "raw driver error leaked: $first"
+  elif [ "$rc" = "1" ] && echo "$out" | grep -q "$want"; then pass "bad ref: $desc"
+  else fail "bad ref: $desc" "rc=$rc want=1 and output~'$want', got: $first"; fi
 }
 
 # ── usage errors must be rc=2

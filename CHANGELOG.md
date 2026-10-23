@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.114.23
+
+发布门可靠性 + 元登记收尾（#61 / R3 / #47 残面）。
+
+- **#61 发布门 flake（P2）**：contract-audit `badref()` 从 `head -1` 改为**全 stderr 搜期望串**
+  （选择观测注记可先于 error 行）；驱动错误仍在全输出拒。快机连续两次 144/144。
+- **R3 元登记**：`verify/meta.json` 登记 `scripts/tree-contract-matrix.mjs`（test）；`scripts/contract-audit.sh`
+  按 #37 lineage 显式 `--reregister`（reason 记入 `reregistrations[]`）。clean tree `verify meta .` 五规则 PASS。
+- **#47 残面**：`research query attach` 跨项目时点名 owner（最后一个通用提示动词）；selection-signals 5/5。
+- **A1 v1.2 文档**：quorum 分母（PASS+FAIL；ERROR/NEUTRALIZED/STALE 不进，Q10-B 优先）+ V15 逐算子 11 行；
+  v1.2 SHA `ff8b245f…`（fdc/验证席 delta 双签）。
+- unit **932** 不变；contract **144/144**；`verify meta .`（clean tree）R1-R6 PASS。
+
 ## 未发布（裁定 provenance 披露）
 
 - **更新（2026-10-23 14:01）**：属主经 fdc757f6 会话直令**落章**，裁定 Q1–Q13 + G8/G9；v1.2 定稿生效
