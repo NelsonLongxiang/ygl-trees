@@ -81,6 +81,88 @@ describe("MCP write faces + rc fidelity (0.114.26)", () => {
     c.kill();
   }, 60_000);
 
+  it("#68-① source-add passes --title flag (not positional) — title survives, not URL fallback", async () => {
+    const c = mcpCall();
+    await c.send("initialize");
+    const r = await c.send("tools/call", {
+      name: "research_write",
+      arguments: { action: "source-add", text: "我的来源标题", b: "https://example.com/mcp-src" },
+    });
+    expect(r.result.isError).toBeFalsy();
+    const j = JSON.parse(r.result.content[0].text);
+    expect(j.title).toBe("我的来源标题"); // 不是 URL 兜底
+    expect(j.url).toBe("https://example.com/mcp-src");
+    c.kill();
+  }, 60_000);
+
+  it("#68-② verify submit maps title and text-file separately (not path-as-title)", async () => {
+    // 写一个临时材料文件
+    const { writeFileSync } = await import("node:fs");
+    const matFile = join(home, "mat.txt");
+    writeFileSync(matFile, "S1 账单金额不得为负。\nS2 每期须附原件。\n", "utf8");
+    const c = mcpCall();
+    await c.send("initialize");
+    const r = await c.send("tools/call", {
+      name: "verify",
+      arguments: { action: "submit", a: "MCP 提交测试", b: matFile },
+    });
+    expect(r.result.isError, JSON.stringify(r.result)).toBeFalsy();
+    const j = JSON.parse(r.result.content[0].text);
+    expect(j.title).toBe("MCP 提交测试"); // title 是 a，不是文件路径截断
+    expect(j.material_id).toMatch(/^mat_/);
+    c.kill();
+  }, 60_000);
+
+  it("#68-③ verify prepare accepts db param (not silently missing → rc=2)", async () => {
+    // 准备一个最小快照库 + candidates + reviews
+    const { writeFileSync } = await import("node:fs");
+    const { DatabaseSync } = await import("node:sqlite");
+    const dbFile = join(home, "snap.db");
+    const db = new DatabaseSync(dbFile);
+    db.exec("CREATE TABLE bills (id TEXT PRIMARY KEY, amount_cents INTEGER)");
+    db.exec("INSERT INTO bills VALUES ('b1', -5)");
+    db.close();
+    const clause = "账单金额不得为负。";
+    const anchor = { quote: clause, locator: "material.txt#L1" };
+    const candFile = join(home, "cand.json");
+    writeFileSync(candFile, JSON.stringify({ candidates: [{
+      source_clause: clause, anchor,
+      checker: { type: "sql", fail_when: "rows>0", predicate: { from: "bills", select: ["id"], where: { op: "and", conditions: [{ col: "amount_cents", op: "<", value: 0 }] } } },
+    }] }));
+    const revFile = join(home, "rev.json");
+    writeFileSync(revFile, JSON.stringify({ reviews: [{
+      source_clause: clause,
+      findings: [
+        { question: "faithful", verdict: "ok", reason: "逐字", anchor },
+        { question: "decidable", verdict: "ok", reason: "可判", anchor },
+        { question: "not-vacuous", verdict: "ok", reason: "非空", anchor },
+      ],
+    }] }));
+    // 先 submit 拿 material-id
+    const matFile = join(home, "mat-prepare.txt");
+    writeFileSync(matFile, clause + "\n", "utf8");
+    const c = mcpCall();
+    await c.send("initialize");
+    const sub = await c.send("tools/call", { name: "verify", arguments: { action: "submit", a: "prepare 测试", b: matFile } });
+    const mid = JSON.parse(sub.result.content[0].text).material_id;
+    // prepare with db
+    const r = await c.send("tools/call", {
+      name: "verify",
+      arguments: { action: "prepare", a: mid, b: candFile, c: revFile, db: dbFile },
+    });
+    // prepare 可能 ready 也可能 needs-material（红队）——关键是 **不是 rc=2 usage**
+    // （--db 缺失时的失败模式）
+    const j = JSON.parse(r.result.content[0].text);
+    const isError = r.result.isError === true;
+    if (isError) {
+      expect(j.rc).not.toBe(2); // 不是用法错误（--db 已透传）
+      expect(String(j.error)).not.toMatch(/--db snapshot not found/);
+    } else {
+      expect(j.verdict).toBeTruthy(); // ready 或 needs-material
+    }
+    c.kill();
+  }, 60_000);
+
   it("rc fidelity: runtime error (rc=1) → isError:true + machine-readable {rc, error}", async () => {
     const c = mcpCall();
     await c.send("initialize");

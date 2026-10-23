@@ -501,7 +501,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
               return;
             }
             const row = env.db.get(
-              "SELECT id, project_id FROM artifacts WHERE id=? AND kind='task'",
+              "SELECT id, project_id, meta FROM artifacts WHERE id=? AND kind='task'",
               [String(id)]
             ) as any;
             const psel = resolveProject(env.db);
@@ -512,7 +512,26 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
               res.end(!row ? `task not found: ${id}` : `task not accessible under current selection: ${id}`);
               return;
             }
-            const next = ({ todo: "doing", doing: "done", done: "done" } as any)[String(status)];
+            // #66: re-read the STORED status — a stale page must not drag a
+            // done task back to doing. Forward-only (todo→doing→done) or
+            // idempotent same-status; backward → 409 with the current state.
+            let currentStatus = "todo";
+            try {
+              const meta = typeof row.meta === "string" ? JSON.parse(row.meta) : row.meta;
+              currentStatus = String(meta?.status ?? "todo");
+            } catch { /* keep todo fallback */ }
+            const FORWARD: Record<string, string> = { todo: "doing", doing: "done", done: "done" };
+            const requested = String(status);
+            const next = FORWARD[currentStatus];
+            if (requested !== next && requested !== currentStatus) {
+              res.writeHead(409, { "content-type": "application/json" });
+              res.end(JSON.stringify({
+                error: `task ${id} is '${currentStatus}'; only '${next}' (or idempotent '${currentStatus}') is allowed`,
+                current_status: currentStatus,
+                expected_next: next,
+              }));
+              return;
+            }
             const ds = await getOrm(env.db.path);
             const { taskSetStatus } = await import("../../../research/pipeline/src/writes");
             const r = await taskSetStatus(ds, String(id), next);

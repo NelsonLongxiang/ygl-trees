@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.114.28
+
+MCP 写面 mis-map 修复（#68 三处）+ webui 任务状态机服务端权威（#66）。
+
+- **#68（P2，验证席发现——写面假成功比缺工具更危险）**：
+  - `source-add` 改传 `--title` 旗标（此前位置参数静默丢 title 回退 URL）；
+  - `verify submit` title 与 text-file 分离（a=title b=文件路径；此前路径截断当 title + 字面文本当文件）；
+  - `verify prepare` 增 `--db` 透传参数（此前缺失恒 rc=2 不可用）。
+  - 每处补 mcp-write.spec 断言（title 存库行 / material_id 真实 / prepare 不再 usage rc2）。
+- **#66（P2）**：`POST /api/task` 重读存储态 + 只允许前进（todo→doing→done）或幂等同状态；
+  stale 页面 `done→doing` 拖回 → **409** + `{current_status, expected_next}`。`task-status-machine.spec` 3 例
+  （前进/409 拒回/幂等）。
+- 测试：+6 例（#68 三 + #66 三）；unit 947 → **953**；contract 144。
+
 ## 0.114.27
 
 fdc P1 处置（R3 平台漂移）+ 门禁自检修复。
