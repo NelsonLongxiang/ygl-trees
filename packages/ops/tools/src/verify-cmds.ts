@@ -445,12 +445,50 @@ export function fileRunner(candidates: PrepareCandidate[]): PrepareRunner {
 }
 
 /** 以文件形态注入盲审结论：每候选一组三问，按 source_clause 对齐（不认 VU id —— 那由 prepare 生成）。 */
+/** #reviews shape (release-seat report): `--reviews` entries used to reach
+ *  `hit.findings.map` unvalidated and crash with TypeError on a missing field.
+ *  CLI validates before prepare; the runner keeps a defensive fallback for
+ *  library callers. */
+export function reviewsShapeProblem(reviews: unknown): string | null {
+  if (!Array.isArray(reviews)) return 'reviews must be an array of {source_clause, findings[]} (got ' + typeof reviews + ')';
+  const Q = new Set(["faithful", "decidable", "not-vacuous"]);
+  const V = new Set(["ok", "reject", "unclear"]);
+  const checkFinding = (f: any, where: string): string | null => {
+    if (!f || typeof f !== "object") return `${where} must be an object`;
+    if (typeof f.question !== "string" || !Q.has(f.question)) return `${where}.question must be faithful|decidable|not-vacuous`;
+    if (typeof f.verdict !== "string" || !V.has(f.verdict)) return `${where}.verdict must be ok|reject|unclear`;
+    if (typeof f.reason !== "string") return `${where}.reason must be a string`;
+    return null;
+  };
+  for (let i = 0; i < reviews.length; i++) {
+    const r = reviews[i] as { source_clause?: unknown; findings?: unknown } | unknown[];
+    // Legacy positional form: reviews[i] is the finding array itself (kept for
+    // the existing CLI callers/tests). Object form carries source_clause.
+    if (Array.isArray(r)) {
+      for (let j = 0; j < r.length; j++) {
+        const bad = checkFinding(r[j], `reviews[${i}][${j}]`);
+        if (bad) return bad;
+      }
+      continue;
+    }
+    if (!r || typeof r !== "object") return `reviews[${i}] must be an object or finding array`;
+    if (typeof r.source_clause !== "string" || !r.source_clause.trim()) return `reviews[${i}].source_clause must be a non-empty string`;
+    if (!Array.isArray(r.findings)) return `reviews[${i}].findings must be an array (schema: [{question: faithful|decidable|not-vacuous, verdict: ok|reject|unclear, reason}])`;
+    for (let j = 0; j < r.findings.length; j++) {
+      const bad = checkFinding(r.findings[j], `reviews[${i}].findings[${j}]`);
+      if (bad) return bad;
+    }
+  }
+  return null;
+}
+
 export function fileReviewer(reviews: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>): ReviewRunner {
   return {
     async review(req) {
       const hit = reviews.find((r) => r.source_clause === req.vu.source_clause);
       if (!hit) return []; // 没有该候选的盲审结论 → prepare 的 fail-closed 会判"自审不完整"
-      return hit.findings.map((f) => ({ ...f, vu_id: req.vu.id }));
+      const findings = Array.isArray(hit.findings) ? hit.findings : [];
+      return findings.map((f) => ({ ...f, vu_id: req.vu.id }));
     },
   };
 }
@@ -1143,6 +1181,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const reviewsRaw = readJson<unknown>(reviewsPath);
       const candidatesFile = { candidates: Array.isArray(candidatesRaw) ? (candidatesRaw as PrepareCandidate[]) : ((candidatesRaw as { candidates?: PrepareCandidate[] }).candidates ?? []) };
       const reviewsFile = { reviews: Array.isArray(reviewsRaw) ? (reviewsRaw as Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>) : ((reviewsRaw as { reviews?: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }> }).reviews ?? []) };
+      const reviewsProblem = reviewsShapeProblem(reviewsFile.reviews);
+      if (reviewsProblem) {
+        bad(ctx, `invalid --reviews: ${reviewsProblem}`);
+        return 2;
+      }
       const schema = existsSync(dbPath) ? schemaOf(dbPath) : null;
       if (!schema) {
         bad(ctx, `--db snapshot not found: ${dbPath} (prepare needs the probed schema for column checks)`);
@@ -1836,7 +1879,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `unknown checker '${want}' — the seven types are: ${types.join(", ")}`);
         return 2;
       }
-      const examples = want ? CHECKER_EXAMPLES.filter((e) => e.checker === want) : CHECKER_EXAMPLES;
+      const examples = (want ? CHECKER_EXAMPLES.filter((e) => e.checker === want) : CHECKER_EXAMPLES).map((e) => ({
+        ...e,
+        // #63: prepare's candidate face uses `anchor` (p1 accepts expected_from
+        // as an alias); emitting the candidate shape keeps "copy → prepare"
+        // one-step instead of forcing a spec→candidate translation.
+        candidates: e.vu.map((v: any) => ({
+          id: v.id,
+          source_clause: v.source_clause,
+          anchor: v.expected_from ? { quote: v.expected_from.quote, locator: v.expected_from.locator } : undefined,
+          checker: v.checker,
+        })),
+      }));
       const payload: Record<string, unknown> = { _derived_from: EXAMPLES_DERIVED_FROM, examples };
       if (args.flags["null-ops"]) payload.null_ops = NULL_OPS_NOTE;
       if (ctx.json) {

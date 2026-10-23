@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -111,5 +111,26 @@ describe("file checker: ignore globs", () => {
       expect(res.rejected[0].stage).toBe("P2");
       expect(res.rejected[0].reason).toMatch(/ignore/);
     }
+  });
+
+  it("悬空 symlink 被跳过并留痕，不让整目录 file checker 变 ERROR", async () => {
+    const dir = join(root, "case-dangling");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "invoice.pdf"), "pdf");
+    try {
+      symlinkSync(join(dir, "does-not-exist.pdf"), join(dir, "broken.pdf"));
+    } catch {
+      return; // Windows without symlink privilege: skip (CI variants)
+    }
+    const report = await runVerify(specWith({ type: "file", glob: "*.pdf" }), {
+      runner,
+      submissionDir: dir,
+      nowIso: () => "2026-10-19T00:00:00.000Z",
+      runId: "run_dangling",
+    });
+    const v = report.vu[0];
+    expect(v.verdict).toBe("PASS");
+    expect((v.evidence as any).files).toBe(1);
+    expect((v.evidence as any).skipped_symlinks).toContain("broken.pdf");
   });
 });

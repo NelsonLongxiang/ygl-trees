@@ -140,8 +140,8 @@
     },
     {
       "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
-      "sha256": "608c3280bfd2d1e6853d8793360674ee11e200cc76ca11c3f673d2c5171d7560",
-      "role": "test"
+      "sha256": "ccf12d91abd6c9687cd2cb9076ae82ee399face0b18461b33de16abc4631d7c8",
+      "role": "gate"
     },
     {
       "path": "vitest.config.ts",
@@ -203,6 +203,13 @@
       "new_sha256": "ff5ba2a226e4da97b19a281d2804618206303cb6c8681b3f37c4d61cc19afcbf",
       "reason": "#61 release-gate flake: badref matches full stderr (selection note can precede error)",
       "at": "2026-10-23T08:34:35.097Z"
+    },
+    {
+      "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
+      "old_sha256": "608c3280bfd2d1e6853d8793360674ee11e200cc76ca11c3f673d2c5171d7560",
+      "new_sha256": "ccf12d91abd6c9687cd2cb9076ae82ee399face0b18461b33de16abc4631d7c8",
+      "reason": "#65 真只读化 v1.2.0（快照隔离 + --no-snapshot 显式披露）；role 改 gate（工作区纪律检查器，非仓内测试）",
+      "at": "2026-10-23T11:03:18.915Z"
     }
   ],
   "kind": "engine"

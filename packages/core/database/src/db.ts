@@ -527,9 +527,20 @@ export class DB {
           return e.code === "EPERM"; // EPERM = alive (Windows), ESRCH = dead
         }
       };
-      if (!holderAlive(holder)) {
-        // Orphaned lock (holder crashed / exit cleanup failed) — steal now.
-        try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
+      // Empty dir = no pid file at all (holder stays "unknown"). That is the
+      // Windows residual this branch must take over, not a live holder.
+      const emptyHolder = !holder || holder === "unknown";
+      if (emptyHolder || !holderAlive(holder)) {
+        // Orphaned/empty lock (holder crashed / exit cleanup failed) — clear
+        // with retries. If Windows still refuses, fail closed: writing our pid
+        // into the surviving dir would create a self-referencing live lock.
+        if (!clearLockDir(lockDir)) {
+          throw new Error(
+            `database lock directory cannot be removed: ${lockDir}\n` +
+            `  it is orphaned/empty (no readable pid), but the OS still holds a handle.\n` +
+            `  retry in a moment, or remove it manually: rmdir "${lockDir}"`,
+          );
+        }
       } else {
         // 0.94 lock-family hardening (task 68d051ae71, incident family:
         // 0.83 DB.close flake · 0.85 终审 65s · 0.90.1 P1-2 · 评审线 02:40
@@ -568,15 +579,24 @@ export class DB {
             `  last resort:         rmdir "${lockDir}"`
           );
         }
-        // holder exited (or its exit cleanup removed the dir) — steal any
-        // residual dir and take the lock below.
-        if (fs.existsSync(lockDir)) {
-          try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch { /* */ }
+        // holder exited (or its exit cleanup removed the dir) — clear any
+        // residual dir; fail closed if it survives (same self-lock hazard).
+        if (fs.existsSync(lockDir) && !takeoverLockDir(lockDir)) {
+          throw new Error(
+            `database lock directory cannot be removed after holder exit: ${lockDir}\n` +
+            `  retry in a moment, or remove it manually: rmdir "${lockDir}"`,
+          );
         }
       }
     }
     // acquire the lock (best-effort; crash cleanup via stale detection above)
     let acquired = false;
+    if (useLock && fs.existsSync(lockDir)) {
+      // Defensive: a dir that survived the clears above must not be reused.
+      if (!takeoverLockDir(lockDir)) {
+        throw new Error(`database lock directory cannot be acquired (still present): ${lockDir}`);
+      }
+    }
     if (useLock) try {
       fs.mkdirSync(lockDir, { recursive: true });
       fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
@@ -934,6 +954,35 @@ export function pidAlive(pidStr: string | number): boolean {
     return true;
   } catch (e: any) {
     return e.code === "EPERM"; // EPERM = alive (Windows), ESRCH = dead
+  }
+}
+
+/** Remove an orphaned `.ygllock` directory with a small Windows-friendly retry.
+ *  0.114.24 (Windows report): a killed process / delayed delete can leave an
+ *  EMPTY lock dir (no pid/cmd). The old single `rmSync(..., force)` could fail
+ *  EBUSY and was swallowed, after which acquisition wrote OUR pid into the
+ *  surviving dir — every later process then saw a live holder pointing at
+ *  itself. Clear retries; a dir that still exists is NOT silently taken over. */
+export function clearLockDir(dir: string, attempts = 8, waitMs = 25): boolean {
+  for (let i = 0; i < attempts; i++) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* retry */ }
+    if (!fs.existsSync(dir)) return true;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+  }
+  return !fs.existsSync(dir);
+}
+
+/** Deliver an orphaned lock dir out of the way even when Windows refuses to
+ *  rmdir it (a just-exited process can leave an EMPTY dir with a lingering
+ *  handle). Atomic rename is the fallback: the name is unique, no live holder
+ *  owns it, and a subsequent mkdir gets a clean lock. False = still stuck. */
+export function takeoverLockDir(dir: string): boolean {
+  if (clearLockDir(dir)) return true;
+  try {
+    fs.renameSync(dir, `${dir}.stale-${process.pid}-${Date.now().toString(36)}`);
+    return !fs.existsSync(dir);
+  } catch {
+    return !fs.existsSync(dir);
   }
 }
 

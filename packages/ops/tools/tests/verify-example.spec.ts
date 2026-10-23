@@ -49,6 +49,15 @@ describe.skipIf(!HAS_BIN)("verify example (corpus-derived, 0.110.0)", () => {
       expect(String(ex.spec_id)).toMatch(/^spec_/);
       expect(Array.isArray(ex.vu)).toBe(true);
       expect(ex.vu.length).toBeGreaterThan(0);
+      // #63: each example also projects the CANDIDATE shape (anchor+id) so
+      // "copy → prepare" does not require translating expected_from.
+      expect(Array.isArray(ex.candidates)).toBe(true);
+      for (const c of ex.candidates) {
+        expect(c.source_clause).toBeTruthy();
+        expect(c.checker?.type).toBeTruthy();
+        expect(c.anchor?.quote).toBeTruthy();
+        expect(c.anchor?.locator).toBeTruthy();
+      }
     }
     // 显式映射（非 readdir 顺序）：锁住每型代表案例
     expect(r.j.examples.map((e: any) => e.case_id)).toEqual([
