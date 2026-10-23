@@ -239,7 +239,7 @@ export function buildTools(): McpTool[] {
           action: {
             type: "string",
             enum: ["submit", "prepare", "run", "report", "archive", "meta"],
-            description: "Pipeline verb",
+            description: "Pipeline verb（archive=验签既有归档；封存在 run 时自动发生）",
           },
           a: { type: "string", description: "operand: material file|text | material-id | spec-id | run-id | repo path" },
           b: { type: "string", description: "candidates file (prepare) | snapshot db (run)" },
@@ -254,7 +254,7 @@ export function buildTools(): McpTool[] {
           case "prepare": return cliJson(["verify", "prepare", op, ...opt("--candidates", a.b), ...opt("--reviews", a.c)]);
           case "run": return cliJson(["verify", "run", op, ...opt("--db", a.b)]);
           case "report": return cliJson(["verify", "report", op]);
-          case "archive": return cliJson(["verify", "archive", "verify", op]);
+          case "archive": return cliJson(["verify", "archive", "verify", op]); // 验签既有归档；封存已在 run 时自动发生
           case "meta": return cliJson(["verify", "meta", op]);
           default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
         }
