@@ -461,6 +461,9 @@ npm **latest=0.114.21**、shasum **`f28e222c…`**；官方字节 **1,606,884 B 
 `query add`/`node add` 写时刻告警（shared=global 或 session/default；同维 90s 内 project.use/tree.use；
 不做 actor 对比；90s 外静默）；doctor 增 `selection_hygiene_trees` warn。判定唯一实现
 `selectionChangeWarning`；selection-signals +1 例；unit 931→932。
+发布（2026-10-23）：commit **`23fbe87`**；tag **`v0.114.22 = 9de185b6… → ^{commit}=23fbe87…`**（双远端）；
+npm **latest=0.114.22**、shasum **`7e3de252…`**；官方字节 **1,609,963 B / sha256 `8f6a123b…`**
+（publish `2026-10-23T04:36:47Z`，fileCount 182）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
