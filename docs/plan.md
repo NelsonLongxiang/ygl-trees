@@ -494,6 +494,9 @@ npm **latest=0.114.24**、shasum **`9702491d…`**；官方字节 **1,642,730 B 
 **0.114.25 记录（2026-10-23，编码 fail-closed + command 边界）**：#62 `submit` 材料编码归一——UTF-8 BOM
 剥除+记 text_encoding，UTF-16（BOM/NUL）与非法 UTF-8 → rc2 点名转码；#64 command 仅执行面文案 + 契约
 「构造面边界」段（七型闭集 ≠ 构造面子集）。verify-encoding 3 例；unit 939→942；contract 144。
+**0.114.25 发布（2026-10-23）**：commit **`61446db`**；tag **`v0.114.25 = e407f34d… → ^{commit}=61446db…`**（双远端）；
+npm **latest=0.114.25**、shasum **`d56db082…`**；官方字节 **1,644,775 B / sha256 `e077d743…`**
+（publish `2026-10-23T12:43:15Z`，fileCount 189）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
