@@ -506,6 +506,9 @@ npm **latest=0.114.26**、shasum **`5f37ed52…`**；官方字节 **1,650,876 B 
 **0.114.27 记录（2026-10-24，fdc P1 边界实证 + 回归钉）**：P1 失败面=0.103 家族旧 ref（无 eol 约束）；
 0.108 全仓 eol=lf 已修，HEAD autocrlf=true 克隆实测 PASS。`r3-eol-regression.spec` 钉住（克隆夹具双判据）；
 pack-check 5b stderr 落盘+失败回显（reregister 入链）。unit 946→947；contract 144。
+发布（2026-10-24）：commit **`aa4b0e9`**；tag **`v0.114.27 = f00288e0… → ^{commit}=aa4b0e9…`**（双远端）；
+npm **latest=0.114.27**、shasum **`28dbd349…`**；官方字节 **1,651,602 B / sha256 `1737cc4a…`**
+（publish `2026-10-23T17:19:42Z`，fileCount 190）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
