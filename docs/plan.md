@@ -488,6 +488,12 @@ npm **latest=0.114.23**、shasum **`249e269f…`**；官方字节 **1,628,230 B 
 `walk()` lstat 跳过悬空 symlink（evidence skipped_symlinks，不再整目录 ERROR）。同批 #63：p1/翻译层
 `expected_from ?? anchor` 别名 + example 候选形状；#65 validator 1.2.0 快照隔离读检 + role gate + 重登记。
 unit 932→939；contract 144；ratchet bundle 基线 813,623（认账）。
+**0.114.24 发布（2026-10-23）**：commit **`6f7ecb3`**；tag **`v0.114.24 = ba47414b… → ^{commit}=6f7ecb3…`**（双远端）；
+npm **latest=0.114.24**、shasum **`9702491d…`**；官方字节 **1,642,730 B / sha256 `c6c77ee8…`**
+（publish `2026-10-23T12:03:37Z`，fileCount 189）。
+**0.114.25 记录（2026-10-23，编码 fail-closed + command 边界）**：#62 `submit` 材料编码归一——UTF-8 BOM
+剥除+记 text_encoding，UTF-16（BOM/NUL）与非法 UTF-8 → rc2 点名转码；#64 command 仅执行面文案 + 契约
+「构造面边界」段（七型闭集 ≠ 构造面子集）。verify-encoding 3 例；unit 939→942；contract 144。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

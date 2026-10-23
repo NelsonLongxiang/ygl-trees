@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.114.25
+
+编码 fail-closed + command 构造面边界（#62/#64）。
+
+- **#62 材料编码**：`submit` 读字节后归一——UTF-8 BOM **剥除并记** `material.text_encoding`（首条子句不再丢）；
+  UTF-16（BOM 或 NUL 字节模式）→ **rc=2 点名**「材料编码非 UTF-8（检出 UTF-16）——请转码为 UTF-8 后重交」；
+  非法 UTF-8 字节同样 rc=2。冻乱码再报「判据捏造」的误导链被切断。`verify-encoding.spec` 3 例。
+- **#64 command 边界**：`verify example` help 的陷阱文案改为「command 仅执行面：serve --enable-verify-jobs
+  注入 YGL_VERIFY_ALLOW_CMD 或 authored 封包；prepare 不收 command（--allow-command 不是 CLI 旗标）」；
+  `docs/spec-validator.md` 增「构造面边界」段（七型检查器闭集 ≠ 构造面子集）。
+- unit 939 → **942**；contract 144；`verify meta .` 全绿。
+
 ## 0.114.24
 
 Windows 空 `.ygllock` 残留修复（品味席报告 direct-1af18e77 / 监督席转达）。

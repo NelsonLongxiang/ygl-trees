@@ -70,6 +70,37 @@ export interface MaterialRecord {
   /** #34: clause pattern declared at submit (`--clause-pattern`), frozen with the
    *  material; absent = the default fleet convention `^([A-Z]+[0-9]+) `. */
   clause_pattern?: string;
+  /** #62: set when submit normalized a UTF-8 BOM (id still hashes the text). */
+  text_encoding?: string;
+}
+
+/** #62: material text must be UTF-8. A UTF-8 BOM is stripped (and recorded);
+ *  UTF-16 (BOM or NUL pattern) is refused by name so a mojibake material never
+ *  freezes and later produces a misleading P1 "fabricated criterion". */
+export function decodeMaterialText(buf: Buffer): { ok: true; text: string; encoding?: string } | { ok: false; reason: string } {
+  if (buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))) {
+    return { ok: false, reason: "材料编码非 UTF-8（检出 UTF-16 BOM）——请转码为 UTF-8 后重交" };
+  }
+  // UTF-16 without BOM: ASCII-ish material shows a NUL every other byte.
+  if (buf.length >= 8) {
+    let nul = 0;
+    for (let i = 0; i < buf.length; i++) if (buf[i] === 0) nul++;
+    if (buf.length % 2 === 0 && nul / buf.length > 0.05) {
+      return { ok: false, reason: "材料编码非 UTF-8（检出 UTF-16/NUL 字节）——请转码为 UTF-8 后重交" };
+    }
+  }
+  let body = buf;
+  let encoding: string | undefined;
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    body = buf.subarray(3);
+    encoding = "utf-8-bom-stripped";
+  }
+  const text = body.toString("utf8");
+  // Node replaces invalid UTF-8 with U+FFFD; round-trip catches it.
+  if (!Buffer.from(text, "utf8").equals(body)) {
+    return { ok: false, reason: "材料字节不是合法 UTF-8——请转码为 UTF-8 后重交" };
+  }
+  return { ok: true, text, encoding };
 }
 
 /** A1 契约 v1.0（docs/reviews/verify-tree-run-contract.md）：树 spec 冻结面。 */
@@ -1035,8 +1066,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const clausePattern = patOpt.declared ? patOpt.pattern.source : undefined;
       let text: string;
+      let textEncoding: string | undefined;
       try {
-        text = textArg === "-" ? readFileSync(0, "utf8") : readFileSync(textArg, "utf8");
+        const raw = textArg === "-" ? readFileSync(0) : readFileSync(textArg);
+        const decoded = decodeMaterialText(raw);
+        if (!decoded.ok) {
+          bad(ctx, decoded.reason);
+          return 2;
+        }
+        text = decoded.text;
+        textEncoding = decoded.encoding;
       } catch (e: any) {
         bad(ctx, `cannot read --text ${textArg}: ${e?.message || e}`);
         return 1;
@@ -1130,6 +1169,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         text_path: "material.txt",
         files,
         ...(clausePattern !== undefined ? { clause_pattern: clausePattern } : {}),
+        ...(textEncoding ? { text_encoding: textEncoding } : {}),
       };
       writeJson(join(dir, "material.json"), record);
       // #25a: a --no-meta bypass must survive into the evidence chain, not just
