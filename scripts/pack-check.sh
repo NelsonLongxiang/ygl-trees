@@ -69,8 +69,8 @@ JSONOK=$(Y --json db stats 2>/dev/null | node -e "let s='';process.stdin.on('dat
 [ "$JSONOK" = "OK" ] && pass "--json stdout is parseable as a whole" || fail "--json output polluted"
 
 echo "── 5b. reproducible tarball (same bytes twice, same entries as npm pack)"
-node scripts/pack-repro.mjs --out "$WORK/repro1.tgz" >/dev/null 2>&1 || fail "pack:repro failed to build tarball"
-node scripts/pack-repro.mjs --out "$WORK/repro2.tgz" >/dev/null 2>&1 || fail "pack:repro failed on second run"
+node scripts/pack-repro.mjs --out "$WORK/repro1.tgz" 2>"$WORK/repro1.err" || { cat "$WORK/repro1.err" >&2; fail "pack:repro failed to build tarball"; }
+node scripts/pack-repro.mjs --out "$WORK/repro2.tgz" 2>"$WORK/repro2.err" || { cat "$WORK/repro2.err" >&2; fail "pack:repro failed on second run"; }
 if [ -f "$WORK/repro1.tgz" ] && [ -f "$WORK/repro2.tgz" ]; then
   SHA1=$(node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" "$WORK/repro1.tgz")
   SHA2=$(node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" "$WORK/repro2.tgz")
