@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
-import { dbPath, pidAlive } from "../../../core/database/src/db";
+import { clearLockDir, dbPath, pidAlive, takeoverLockDir } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
 
 
@@ -183,7 +183,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       try {
-        fs.rmSync(lockDir, { recursive: true, force: true });
+        if (!takeoverLockDir(lockDir)) throw new Error("directory still exists after retries (Windows handle?)");
         const why = !holder || !pidAlive(holder) ? `stale (pid ${holder || "?"} dead)` : "forced";
         if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder: holder || null, cleared: true, reason: why }, null, 2));
         else ok(ctx, `lock cleared: ${lockDir}  (${why})`);

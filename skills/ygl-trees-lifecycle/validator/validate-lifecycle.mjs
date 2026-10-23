@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // ygl-trees lifecycle 验证器（ygl-trees-lifecycle 技能的机检面）
 // 把技能 §1/§2 触发表、§3 节奏纪律、§5 反模式编码为可执行检查。
-// 只读：全部数据经官方 CLI --json 读取，不直接开 SQLite，不改任何状态。
-// 会话隔离：子进程固定 YGL_SESSION=lcv-validator，绝不 tree use / project use。
+// 快照隔离读检（#65，1.2.0）：默认先把 YGL_HOME 整体复制到抛弃式临时目录，所有 CLI 调用
+// （含 node validate 的闭包索引重建与 cmd.run 事件）只写副本——被检工作区零写入。
+// --no-snapshot 显式退回直检模式（会向被检工作区写 cmd.run 事件，仅诊断用）。
+// 数据全部经官方 CLI --json 读取，不直接开 SQLite。会话隔离：子进程固定 YGL_SESSION=lcv-validator。
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const TOOL = "ygl-trees-lifecycle-validator";
 
 // ---------- 规则表（findings 的语义全部指向技能章节） ----------
@@ -39,7 +41,7 @@ const RULES = {
 // ---------- 参数 ----------
 const argv = process.argv.slice(2);
 let opt = { home: process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees"),
-            cli: process.env.YGL_CLI || "ygl-trees", json: false, strict: false, quiet: false, rules: null };
+            cli: process.env.YGL_CLI || "ygl-trees", json: false, strict: false, quiet: false, rules: null, noSnapshot: false };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--home") opt.home = argv[++i];
@@ -47,6 +49,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--json") opt.json = true;
   else if (a === "--strict") opt.strict = true;
   else if (a === "--quiet") opt.quiet = true;
+  else if (a === "--no-snapshot") opt.noSnapshot = true;
   else if (a === "--rule") {
     const parts = (argv[++i] || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
     opt.rules = new Set([...(opt.rules || []), ...parts]);
@@ -54,8 +57,8 @@ for (let i = 0; i < argv.length; i++) {
   else { console.error("usage error: unknown arg " + a); process.exit(2); }
 }
 function usage() {
-  console.log(TOOL + " " + VERSION + " — ygl-trees lifecycle 纪律巡检（只读）");
-  console.log("用法: node validate-lifecycle.mjs [--home <dir>] [--cli <cmd>] [--json] [--strict] [--rule L1,L2,...] [--quiet]");
+  console.log(TOOL + " " + VERSION + " — ygl-trees lifecycle 纪律巡检（快照隔离读检）");
+  console.log("用法: node validate-lifecycle.mjs [--home <dir>] [--cli <cmd>] [--json] [--strict] [--rule L1,L2,...] [--quiet] [--no-snapshot]");
   console.log("退出码: 0 干净（--strict 时允许 info）· 1 有 error/warn 发现（--strict 时含 info）· 2 无法执行检查");
   console.log("规则: " + Object.keys(RULES).map(k => k + "=" + RULES[k].title).join(" · "));
 }
@@ -85,6 +88,20 @@ function add(rule, target, detail, extra) {
 if (!fs.existsSync(opt.home)) {
   console.error("instrument error: YGL_HOME 不存在: " + opt.home + "（先 ygl-trees db init）");
   process.exit(2);
+}
+
+// #65 快照隔离：复制整个 home（db/-wal/-shm/config），后续全部读写指向副本；退出时清理。
+if (!opt.noSnapshot) {
+  const snap = fs.mkdtempSync(path.join(os.tmpdir(), "lcv-snap-"));
+  try {
+    fs.cpSync(opt.home, snap, { recursive: true, force: true });
+  } catch (e) {
+    console.error("instrument error: 快照复制失败（可用 --no-snapshot 直检，但会写 cmd.run 事件）: " + e.message);
+    process.exit(2);
+  }
+  opt.home = snap;
+  const cleanup = () => { try { fs.rmSync(snap, { recursive: true, force: true }); } catch {} };
+  process.on("exit", cleanup); process.on("SIGINT", () => { cleanup(); process.exit(130); }); process.on("SIGTERM", () => { cleanup(); process.exit(143); });
 }
 
 let trees;

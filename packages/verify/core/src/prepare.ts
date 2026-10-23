@@ -153,17 +153,21 @@ function p1(c: PrepareCandidate, materialText: string, index?: MaterialIndex, in
   if (!c.source_clause || !containsVerbatim(materialText, c.source_clause)) {
     return "source_clause is not a verbatim excerpt of the frozen materials (fabricated criterion)";
   }
-  if (!c.anchor?.quote || !containsVerbatim(materialText, c.anchor.quote)) {
+  // #63: candidates may carry the SPEC name `expected_from` or the CANDIDATE
+  // name `anchor`; p1 and the translation layer must read both (alias first —
+  // existing callers keep working). The example face emits `anchor`.
+  const anchor = c.anchor ?? c.expected_from;
+  if (!anchor?.quote || !containsVerbatim(materialText, anchor.quote)) {
     return "anchor.quote is not a verbatim excerpt of the frozen materials (mis-transcription)";
   }
-  if (!c.anchor.locator) return "anchor.locator is required";
+  if (!anchor.locator) return "anchor.locator is required";
   if (index?.files.length) {
     const locators = new Set(index.files.flatMap((f) => f.locators ?? []));
-    if (locators.size > 0 && !locators.has(c.anchor.locator)) {
-      return `anchor.locator ${JSON.stringify(c.anchor.locator)} is not declared by the material index (wrong cell/page?)`;
+    if (locators.size > 0 && !locators.has(anchor.locator)) {
+      return `anchor.locator ${JSON.stringify(anchor.locator)} is not declared by the material index (wrong cell/page?)`;
     }
   }
-  const locErr = checkLocator(c.anchor.locator, c.anchor.quote, inventory ?? clauseInventory(materialText));
+  const locErr = checkLocator(anchor.locator, anchor.quote, inventory ?? clauseInventory(materialText));
   if (locErr) return locErr;
   if (UNDECIDABLE.test(c.source_clause)) {
     return "criterion contains undecidable wording (应尽量/建议/合理/酌情) — machine cannot judge it";

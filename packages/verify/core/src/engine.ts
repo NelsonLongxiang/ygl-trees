@@ -9,7 +9,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 import { canonicalStringify } from "./canonical";
@@ -565,7 +565,8 @@ async function runFactChecker(
       if (c.glob === "*" || c.glob === "**" || c.glob === "**/*") {
         return { verdict: "ERROR", evidence: { reason: 'glob "*" matches everything and proves nothing — construct rejected' } };
       }
-      const all = walk(dir);
+      const skipped: string[] = [];
+      const all = walk(dir, skipped);
       const relOf = (p: string) => relative(dir, p).split("\\").join("/");
       const ignoreRes = (c.ignore ?? []).map(globToRegExp);
       const visible = all.filter((p) => !ignoreRes.some((r) => r.test(relOf(p))));
@@ -611,7 +612,7 @@ async function runFactChecker(
       return {
         verdict: problems.length ? "FAIL" : "PASS",
         witness: w,
-        evidence: { files: visible.length, matched: matched.length, ignored: all.length - visible.length, problems: problems.slice(0, 5) },
+        evidence: { files: visible.length, matched: matched.length, ignored: all.length - visible.length, problems: problems.slice(0, 5), ...(skipped.length ? { skipped_symlinks: skipped.slice(0, 10).map((p) => relative(dir, p).split("\\").join("/")) } : {}) },
       };
     }
     case "command": {
@@ -738,13 +739,35 @@ export function containsVerbatim(haystack: string, needle: string): boolean {
   return norm(haystack).includes(norm(needle));
 }
 
-function walk(dir: string): string[] {
+function walk(dir: string, skipped: string[] = []): string[] {
   const out: string[] = [];
   const visit = (d: string) => {
     for (const name of readdirSync(d)) {
       const p = join(d, name);
-      const st = statSync(p);
-      if (st.isDirectory()) visit(p);
+      // GitHub #22 follow-up / release-seat report: a git checkout can contain
+      // DANGLING symlinks (.claude/skills/*, teams/_shared/skills/...); statSync
+      // throws ENOENT and used to turn the whole file checker into ERROR.
+      // lstat first; only follow links, and skip unreadable ones with a trace.
+      let lst;
+      try {
+        lst = lstatSync(p);
+      } catch {
+        skipped.push(p);
+        continue;
+      }
+      if (lst.isSymbolicLink()) {
+        let resolved;
+        try {
+          resolved = statSync(p);
+        } catch {
+          skipped.push(p);
+          continue;
+        }
+        if (resolved.isDirectory()) visit(p);
+        else out.push(p);
+        continue;
+      }
+      if (lst.isDirectory()) visit(p);
       else out.push(p);
     }
   };

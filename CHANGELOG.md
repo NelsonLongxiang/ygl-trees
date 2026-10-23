@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.114.24
+
+Windows 空 `.ygllock` 残留修复（品味席报告 direct-1af18e77 / 监督席转达）。
+
+- **现象**：快速连发 spawn + 被杀进程/删除延迟留下**空锁目录**（无 pid/cmd）时，旧实现单次
+  `rmSync` 可能 EBUSY 被吞，随后把本进程 pid 写进残留目录 → 后续进程看到「持有者=自己」的活锁，
+  `db unlock --force`/`doctor --fix` 同环解不开。
+- **修复**：`clearLockDir()` 重试清除；新增 `takeoverLockDir()`——Windows 拒绝 rmdir 时用**原子 rename**
+  把空/孤儿目录挪走（唯一名，无活持有者），再取新锁；两者都失败则 **fail-closed 报错**，绝不把 pid 写进
+  残留目录造成自引用锁。`db unlock` 同路径。
+- **回归**：`lock-empty.spec` 2 例（空目录写入可取锁、下一写继续成功；`db unlock` 清空目录）。
+- **#reviews 形状校验（P2，发版席报告）**：`--reviews` 条目缺 `findings` 时不再在 `fileReviewer` 里
+  TypeError；CLI 预校验（source_clause/findings/question/verdict/reason）→ rc=2 + schema 提示；runner 防御性兜底。
+- **悬空 symlink（P2，发版席报告）**：`walk()` 改 lstat，断链 symlink 跳过并在 evidence 记
+  `skipped_symlinks`，不再让整目录 file checker 变 ERROR。
+- **#63 示例/引擎别名（P2，发版席报告）**：`p1()` 与翻译层同一别名 `c.expected_from ?? c.anchor`（存量候选不破）；
+  `verify example` 每例增候选形状 `candidates[{id,source_clause,anchor,checker}]`（spec VU 仍保留 `expected_from`，
+  文档区分两名）。
+- **#65 lifecycle validator 1.2.0**：默认整 home 快照隔离读检（`fs.cpSync`→mkdtemp，所有 CLI 写只落副本；
+  `--no-snapshot` 显式退回直检并披露 cmd.run 写入）；tooling role test→**gate**；显式 `--reregister`（#65 reason）。
+- 测试：lock-empty 2 + reviews-shape 4 + 悬空 symlink 1 + example 候选形状；unit 932 → **939**；contract 144。
+- 报告方侧 1919cfb 的清锁重试可作为上层缓解，本版在锁层根治；其 selfcheck 43 例可复跑。
+
 ## 0.114.23
 
 发布门可靠性 + 元登记收尾（#61 / R3 / #47 残面）。
