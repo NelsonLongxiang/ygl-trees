@@ -306,3 +306,23 @@ export async function submitVerifyMaterial(input: {
   if (!r.ok) throw new Error(String((body as any)?.error || `api/verify/material ${r.status}`));
   return body as { material_id: string; text_sha256: string; files?: Array<{ path: string; sha256: string; size: number }> };
 }
+
+export type TaskStatus = "todo" | "doing" | "done";
+
+/**
+ * R12.2 勾销：move one task a step along todo → doing → done. The server takes
+ * the status the client last saw and writes the next one (it does not re-read
+ * the row), so callers must send the status currently on screen and never
+ * resend while a request is in flight. Errors are plain text (404 = task not in
+ * the authorized project, 400 = malformed) and surface verbatim.
+ */
+export async function advanceTask(id: string, status: TaskStatus): Promise<{ id: string; title: string; from: TaskStatus; to: TaskStatus }> {
+  const r = await fetch("api/task", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, status }),
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error(text.trim() || `api/task ${r.status}`);
+  return JSON.parse(text);
+}
