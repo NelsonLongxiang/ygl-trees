@@ -139,6 +139,11 @@
       "role": "test"
     },
     {
+      "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
+      "sha256": "608c3280bfd2d1e6853d8793360674ee11e200cc76ca11c3f673d2c5171d7560",
+      "role": "test"
+    },
+    {
       "path": "vitest.config.ts",
       "sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
       "role": "test"
