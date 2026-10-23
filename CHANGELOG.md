@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.114.29
+
+lint 编码归一 + webui 幂等修复（#69/#70，总工席经 Claude-OPS-5.5 所报）。
+
+- **#69（P2）**：`verify lint-candidates --text` 走与 submit 同源 `decodeMaterialText`——BOM 剥除 +
+  UTF-16 rc2 点名。此前 lint 路径直接 `readFileSync(…, "utf8")`，BOM 前缀材料的 S1 首条子句
+  静默蒸发且 P1 报错误导（'not a verbatim excerpt'）。补回归（BOM 材料 lint S1 保留）。
+- **#70（P2）**：webui `/api/task` **幂等同状态分支不再调写服务**——此前 `todo→todo` 幂等请求经
+  FORWARD 映射推进到 `doing`（假幂等真推进）。现在同状态返回 `{idempotent:true, from, to}` 零写零事件。
+  补回归（todo→todo 不推进 + done→done 零推进）。
+- 测试：+3 例（#69 BOM lint + #70 两例）；unit 953 → **955**；contract 144。
+
 ## 0.114.28
 
 MCP 写面 mis-map 修复（#68 三处）+ webui 任务状态机服务端权威（#66）。

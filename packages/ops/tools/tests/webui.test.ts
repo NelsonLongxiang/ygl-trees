@@ -269,12 +269,13 @@ describe("webui 0.90.1 P1/P2（review direct-a35d58ae）", () => {
     }
   });
 
-  it("P1-1：授权选择内合法推进 → 200 todo→doing", async () => {
+  it("P1-1：授权选择内合法推进 → 200 todo→doing（#70 后：发送目标状态 doing）", async () => {
     const prevSession = process.env.YGL_SESSION;
     process.env.YGL_SESSION = SID;
     try {
       db.metaSet(`current_project@${SID}`, "webui-unit");
-      const r = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: ownTaskId, status: "todo" }) });
+      // #70 语义修正：客户端发送**目标**状态（doing），不再是当前状态（todo）
+      const r = await fetch(base + "/api/task", { method: "POST", body: JSON.stringify({ id: ownTaskId, status: "doing" }) });
       expect(r.status).toBe(200);
       const j = await r.json();
       expect(j).toMatchObject({ from: "todo", to: "doing" });
