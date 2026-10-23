@@ -512,6 +512,9 @@ npm **latest=0.114.27**、shasum **`28dbd349…`**；官方字节 **1,651,602 B 
 **0.114.28 记录（2026-10-24，MCP 写面修复 + webui 状态机）**：#68 三处 mis-map（source-add --title 旗标/
 verify submit title-text 分离/verify prepare --db 透传）；#66 服务端权威状态机（重读存储态+前进/幂等，
 stale 拖回 409）。mcp-write 7 例 + task-status-machine 3 例；unit 947→953；contract 144。
+发布（2026-10-24）：commit **`0d1a236`**；tag **`v0.114.28 = f6962fbf… → ^{commit}=0d1a236…`**（双远端）；
+npm **latest=0.114.28**、shasum **`3864c331…`**；官方字节 **1,652,995 B / sha256 `40041d42…`**
+（publish `2026-10-23T18:30:11Z`，fileCount 190）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
