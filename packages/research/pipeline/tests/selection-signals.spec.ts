@@ -154,6 +154,8 @@ describe.skipIf(!HAS_BIN)("#44 selection signals (0.114.7)", () => {
 
     const cases: Array<[string[], RegExp]> = [
       [["task", "done", taskId, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["task", "doing", taskId, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["task", "todo", taskId, "-p", "p3", "--json"], /belongs to project 'p2'/],
       [["produce", "show", artifactId, "-p", "p3", "--json"], /belongs to project 'p2'/],
       [["produce", "export", artifactId, join(HOME, "x.md"), "-p", "p3", "--json"], /belongs to project 'p2'/],
       [["research", "claim", "evaluate", "dummy", "-p", "p3", "--json"], /claim not found: dummy/],
