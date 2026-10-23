@@ -20,6 +20,17 @@ const flag = (n) => {
 };
 const resultsFile = flag("results") || "tmp/vitest-tree.json";
 const outFile = flag("out") || "docs/reviews/tree-contract-matrix.md";
+const force = args.includes("--force");
+// Probe/audit runs must not rewrite the tracked matrix by accident (fdc 会签
+// incident: stdout redirection looked read-only but --out defaults in-repo).
+// Any docs/ output requires an explicit --force; use --out tmp/... for probes.
+if (outFile.split(String.fromCharCode(92)).join("/").startsWith("docs/") && !force) {
+  console.error(
+    `tree-contract-matrix: refusing to overwrite ${outFile} without --force ` +
+      `(audit/probe runs should use --out tmp/tree-contract-matrix.md)`,
+  );
+  process.exit(2);
+}
 const manifestFile = "docs/reviews/tree-contract-matrix.json";
 
 const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
