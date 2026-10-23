@@ -383,6 +383,13 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     expect(badVer.verdict).toBe("FAIL");
     expect(String(badVer.evidence.reason)).toMatch(/unknown meta_index_version 4 \(supported: 1, 2, 3\)/);
 
+    // K3 复审微项：unknown index version 99 is rejected by name (never silently
+    // mis-read) and names the whole supported set.
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 99, specs: [] }), "utf8");
+    const v99 = jrun(["verify", "meta", dir, "--json"]).j.rules.find((x: any) => x.id === "R2");
+    expect(v99.verdict).toBe("FAIL");
+    expect(String(v99.evidence.reason)).toMatch(/unknown meta_index_version 99 \(supported: 1, 2, 3\)/);
+
     const noIndex = repoFixture("specs-no-index");
     mkdirSync(join(noIndex, "verify", "specs"), { recursive: true });
     writeFileSync(join(noIndex, "verify", "specs", "s1.json"), "{}\n", "utf8");
