@@ -59,4 +59,16 @@ describe.skipIf(!HAS_BIN)("verify submit material encoding (#62)", () => {
     expect(r.rc).toBe(2);
     expect(String(r.j?.error)).toMatch(/UTF-16\/NUL/);
   });
+
+  it("#69: lint --text with BOM material does not silently lose first clause", () => {
+    // 与 submit 同源：BOM 剥除后首条子句 S1 保留（#69 前直接 utf8 读入 → S1 蒸发）
+    const mat = join(HOME, "bom-lint.md");
+    writeFileSync(mat, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("S1 首条判据。\n", "utf8")]));
+    const cand = join(HOME, "cand-lint.json");
+    writeFileSync(cand, JSON.stringify([{ source_clause: "S1 首条判据。", anchor: { quote: "S1 首条判据。", locator: "m:1" } }]));
+    const r = jrun(["verify", "lint-candidates", cand, "--text", mat]);
+    expect(r.rc).toBe(0);
+    // S1 应被 P1 命中（verbatim 匹配成功——BOM 已剥）
+    expect(JSON.stringify(r.j)).not.toMatch(/not a verbatim excerpt/);
+  });
 });
