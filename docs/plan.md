@@ -515,6 +515,12 @@ stale 拖回 409）。mcp-write 7 例 + task-status-machine 3 例；unit 947→9
 发布（2026-10-24）：commit **`0d1a236`**；tag **`v0.114.28 = f6962fbf… → ^{commit}=0d1a236…`**（双远端）；
 npm **latest=0.114.28**、shasum **`3864c331…`**；官方字节 **1,652,995 B / sha256 `40041d42…`**
 （publish `2026-10-23T18:30:11Z`，fileCount 190）。
+**0.114.29 记录（2026-10-24，lint 编码 + webui 幂等）**：#69 lint --text 走 decodeMaterialText（BOM 剥除
++UTF-16 拒收，S1 不再蒸发）；#70 幂等同状态零写零事件（todo→todo 不再推进 doing）。
+verify-encoding +1 / task-status-machine +2；unit 953→956；contract 144。
+发布（2026-10-24）：commit **`7ad42bc`**（rebase 含 PR#67）；tag **`v0.114.29 = 4d83e1fa… → ^{commit}=7ad42bc…`**（双远端）；
+npm **latest=0.114.29**、shasum **`2df985bc…`**；官方字节 **1,658,047 B / sha256 `4e3a8bdb…`**
+（publish `2026-10-23T21:24:09Z`，fileCount 190；谱系 5014144=PR#67 合并在链）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
