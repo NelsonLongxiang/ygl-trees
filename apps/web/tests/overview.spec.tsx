@@ -9,6 +9,7 @@ import { ThemeProvider } from "../src/theme";
 import type { DashboardData } from "../src/api";
 import { copyText } from "../src/clipboard";
 import { SERIES_NOTE } from "../src/timeline";
+import { TaskList, groupTasks, shownStatus } from "../src/Tasks";
 
 /**
  * Overview = the expert ↔ agent cockpit (user direction 2026-10-20: UI
@@ -119,6 +120,44 @@ describe("OverviewPage", () => {
     );
     expect(u).toContain("未选择项目");
     expect(u).not.toContain("活动时间线");
+  });
+});
+
+describe("TaskList (R12.2 勾销)", () => {
+  const tasks = [
+    { id: "a", title: "旧的已完成", status: "done" },
+    { id: "b", title: "写报告", status: "todo" },
+    { id: "c", title: "核对证据", status: "doing" },
+    { id: "d", title: "整理来源", status: "todo" },
+  ];
+  const html = renderToStaticMarkup(h(ThemeProvider, null, h(TaskList, { tasks })));
+  const text = html.replace(/<[^>]+>/g, " ");
+
+  it("open work first: doing, then todo, then done, newest-first inside each group", () => {
+    expect(groupTasks(tasks).map((t) => t.id)).toEqual(["c", "b", "d", "a"]);
+    const at = (s: string) => text.indexOf(s);
+    expect(at("核对证据")).toBeLessThan(at("写报告"));
+    expect(at("写报告")).toBeLessThan(at("整理来源"));
+    expect(at("整理来源")).toBeLessThan(at("旧的已完成"));
+  });
+
+  it("each open task has exactly one forward step; done has none", () => {
+    expect(html).toContain('aria-label="开始：写报告"');
+    expect(html).toContain('aria-label="开始：整理来源"');
+    expect(html).toContain('aria-label="完成：核对证据"');
+    expect(html).not.toMatch(/aria-label="[^"]*：旧的已完成"/);
+    expect(html).not.toMatch(/退回|撤销|重新打开/);
+  });
+
+  it("counts every status above the table", () => {
+    expect(text).toContain("待办 2 · 进行中 1 · 已完成 1");
+  });
+
+  it("a step this page wrote holds until the push reaches it, and never moves a task backwards", () => {
+    expect(shownStatus("todo", "doing")).toBe("doing");
+    expect(shownStatus("doing", "doing")).toBe("doing");
+    expect(shownStatus("done", "doing")).toBe("done");
+    expect(shownStatus("weird")).toBe("todo");
   });
 });
 

@@ -5,14 +5,14 @@
  */
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Alert, Button, Card, Empty, Space, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Empty, Space, Statistic, Tag, Typography } from "antd";
 import {
   ApartmentOutlined, BookOutlined, CheckCircleOutlined, ClockCircleOutlined, CopyOutlined, DatabaseOutlined,
   ExperimentOutlined, FileTextOutlined, LineChartOutlined, NodeIndexOutlined, PartitionOutlined, SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { useDashboard } from "./data";
 import { C, statColors } from "./tokens";
-import { ToneTag } from "./ToneTag";
+import { TaskList } from "./Tasks";
 import ActivityTimeline from "./ActivityTimeline";
 import { copyText } from "./clipboard";
 
@@ -86,17 +86,12 @@ function UnselectedNotice({ flush = false }: { flush?: boolean }) {
   );
 }
 
-const TASK_STATUS: Record<string, { color: string; label: string }> = {
-  todo: { color: C.secondary, label: "待办" },
-  doing: { color: C.primary, label: "进行中" },
-  done: { color: C.success, label: "已完成" },
-};
-
 /**
  * One agent-proposed command: shown in the executable voice (mono tertiary) and
- * copyable with one click. The page never runs it — writes stay in the CLI. The
- * label only says 已复制 when the clipboard really took it; on failure the
- * command text is selected so a manual Ctrl/Cmd+C still works.
+ * copyable with one click. The page never runs it — commands stay in the CLI
+ * (the overview's one write is the task step, Tasks.tsx). The label only says
+ * 已复制 when the clipboard really took it; on failure the command text is
+ * selected so a manual Ctrl/Cmd+C still works.
  */
 function ActionRow({ cmd }: { cmd: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
@@ -210,34 +205,7 @@ export function OverviewPage() {
 
       {data.tasks.length > 0 && (
         <Card className="yt-ov-tasks" size="small" title={<><ExperimentOutlined /> 任务清单</>} extra={<Text type="secondary">{data.tasks.length} 项</Text>}>
-          <Table
-            dataSource={data.tasks}
-            rowKey="id"
-            size="small"
-            pagination={{ pageSize: 10, hideOnSinglePage: true }}
-            columns={[
-              {
-                title: "状态",
-                dataIndex: "status",
-                width: 100,
-                filters: Object.entries(TASK_STATUS).map(([value, c]) => ({ text: c.label, value })),
-                onFilter: (value, record) => record.status === value,
-                render: (s: string) => {
-                  const c = TASK_STATUS[s] || TASK_STATUS.todo;
-                  return <ToneTag color={c.color}>{c.label}</ToneTag>;
-                },
-              },
-              {
-                title: "任务",
-                dataIndex: "title",
-                render: (t: string, record) => (
-                  <Text delete={record.status === "done"} type={record.status === "done" ? "secondary" : undefined}>
-                    {t}
-                  </Text>
-                ),
-              },
-            ]}
-          />
+          <TaskList tasks={data.tasks} />
         </Card>
       )}
     </div>
