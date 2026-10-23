@@ -1,13 +1,15 @@
 /**
  * MCP (Model Context Protocol) Server — stdio transport.
  *
- * Eight-tool surface designed by the unified three-pillar theory (R8 research):
+ * Eleven-tool surface (0.114.26: +3 write faces, owner ruling "方案 D"):
  *   agent_brief · agent_match · kb_search · claim_evaluate
  *   tree_state  · produce_report · doctor · task_advance
+ *   research_write · tree_write · verify        ← write/pipeline faces
  *
  * Each tool routes to the CLI --json backend, inheriting its frozen contracts
- * (idempotent writes, pure JSON errors, snake_case fields). Agents call tools
- * directly — no command-line parsing layer.
+ * (idempotent writes, pure JSON errors, snake_case fields). rc fidelity:
+ * rc≠0 outcomes surface as MCP isError:true with a machine-readable
+ * {rc, error} payload — the exit-code contract is never flattened to text.
  *
  * Protocol: JSON-RPC 2.0 over stdio (one message per line).
  *   → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}
@@ -25,11 +27,19 @@ export interface McpTool {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
-/** Build a CLI invocation and capture JSON stdout.
+/** CLI outcome with the exit code kept first-class (rc fidelity, 0.114.26). */
+export interface CliOutcome {
+  rc: number;
+  /** parsed --json stdout; null when stdout was not parseable JSON */
+  json: unknown;
+  stderr: string;
+}
+
+/** Build a CLI invocation and capture rc + JSON stdout + stderr.
  *  Uses process.argv[1] (the running script — bundle or source) to re-invoke
  *  the CLI as a child process. This works in both dev (dist/apps/...) and
  *  bundle (dist/bundle/bin.cjs) contexts. */
-function cliJson(parts: string[]): Promise<unknown> {
+function cliExec(parts: string[]): Promise<CliOutcome> {
   const { spawn } = require("node:child_process") as typeof import("node:child_process");
   const self = process.argv[1]; // the bin.cjs or bin.js that's running this MCP server
   return new Promise((resolve, reject) => {
@@ -42,14 +52,30 @@ function cliJson(parts: string[]): Promise<unknown> {
     child.stdout.on("data", (d: Buffer) => (out += d));
     child.stderr.on("data", (d: Buffer) => (err += d));
     child.on("close", (code: number) => {
+      let json: unknown = null;
       if (out.trim()) {
-        try { resolve(JSON.parse(out)); return; } catch { /* fall through */ }
+        try { json = JSON.parse(out); } catch { /* keep null */ }
       }
-      reject(new Error(`CLI rc=${code}: ${err.slice(0, 200) || out.slice(0, 200)}`));
+      resolve({ rc: code ?? -1, json, stderr: err });
     });
     child.on("error", (e) => reject(e));
   });
 }
+
+/** Compat wrapper: rc=0 → parsed JSON; rc≠0 → throw an Error carrying
+ *  `.rc` + `.json` so tools/call can surface {rc, error} machine-readably. */
+function cliJson(parts: string[]): Promise<unknown> {
+  return cliExec(parts).then((o) => {
+    if (o.rc === 0) return o.json;
+    const e = new Error(`CLI rc=${o.rc}: ${o.stderr.slice(0, 200)}`) as Error & { rc: number; json: unknown };
+    e.rc = o.rc;
+    e.json = o.json && typeof o.json === "object" ? o.json : { error: o.stderr.slice(0, 300) || `CLI rc=${o.rc}` };
+    throw e;
+  });
+}
+
+/** arg helper: optional string flag pair */
+const opt = (flag: string, v: unknown): string[] => (v === undefined || v === null || v === "" ? [] : [flag, String(v)]);
 
 export function buildTools(): McpTool[] {
   return [
@@ -133,6 +159,107 @@ export function buildTools(): McpTool[] {
       },
       execute: (a) => cliJson(["task", String(a.action), String(a.task_id)]),
     },
+    {
+      name: "research_write",
+      description:
+        "Idempotent research-pipeline writes: register queries, add sources/evidence, create/link/resolve claims. " +
+        "Same-content reruns return the existing row (duplicate:true).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["query-add", "source-add", "evidence-add", "claim-add", "claim-link", "claim-resolve"],
+            description: "Write verb",
+          },
+          text: { type: "string", description: "query/claim text, source title, or claim id (per action)" },
+          b: { type: "string", description: "second operand: url | source-id | evidence-id (per action)" },
+          quote: { type: "string", description: "evidence-add: verbatim excerpt" },
+          stance: { type: "string", enum: ["supports", "refutes"], description: "claim-link stance" },
+          as: { type: "string", enum: ["supported", "refuted", "contested"], description: "claim-resolve verdict" },
+          project: { type: "string", description: "explicit project name (defaults to session selection)" },
+        },
+        required: ["action", "text"],
+      },
+      execute: (a) => {
+        const p = opt("-p", a.project);
+        switch (String(a.action)) {
+          case "query-add": return cliJson(["research", "query", "add", String(a.text), ...p]);
+          case "source-add": return cliJson(["research", "source", "add", String(a.text), "--url", String(a.b), ...p]);
+          case "evidence-add": return cliJson(["research", "evidence", "add", String(a.text), "--quote", String(a.quote ?? ""), ...p]);
+          case "claim-add": return cliJson(["research", "claim", "add", String(a.text), ...p]);
+          case "claim-link": return cliJson(["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...p]);
+          case "claim-resolve": return cliJson(["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...p]);
+          default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
+        }
+      },
+    },
+    {
+      name: "tree_write",
+      description:
+        "Tech-tree structural writes: create/select trees, add/link/unlock nodes, rebuild the closure index. " +
+        "Discipline: after structural changes always run action=node-index (index+validate); unlock requires evidence via rel.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["tree-new", "tree-use", "node-add", "node-link", "node-unlock", "node-index"],
+            description: "Write verb",
+          },
+          tree: { type: "string", description: "tree name (tree-*: required; node-*: defaults to selection)" },
+          key: { type: "string", description: "node key (node-*)" },
+          child: { type: "string", description: "child key (node-link)" },
+          name: { type: "string", description: "display name (node-add)" },
+          project: { type: "string", description: "explicit project (tree-new)" },
+        },
+        required: ["action"],
+      },
+      execute: (a) => {
+        const t = opt("-t", a.tree);
+        switch (String(a.action)) {
+          case "tree-new": return cliJson(["tree", "new", String(a.tree), ...opt("-p", a.project)]);
+          case "tree-use": return cliJson(["tree", "use", String(a.tree)]);
+          case "node-add": return cliJson(["node", "add", String(a.key), ...opt("--name", a.name), ...t]);
+          case "node-link": return cliJson(["node", "link", String(a.key), String(a.child), ...t]);
+          case "node-unlock": return cliJson(["node", "unlock", String(a.key), ...t]);
+          case "node-index": return cliJson(["node", "index", ...t]);
+          default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
+        }
+      },
+    },
+    {
+      name: "verify",
+      description:
+        "spec-validator pipeline: submit freezes business material (encoding fail-closed), prepare builds criteria " +
+        "(P0-P5), run executes 7 checker types on a snapshot, archive seals+signs, tree runs the recursive verifier (A1).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["submit", "prepare", "run", "report", "archive", "meta"],
+            description: "Pipeline verb",
+          },
+          a: { type: "string", description: "operand: material file|text | material-id | spec-id | run-id | repo path" },
+          b: { type: "string", description: "candidates file (prepare) | snapshot db (run)" },
+          c: { type: "string", description: "reviews file (prepare)" },
+        },
+        required: ["action", "a"],
+      },
+      execute: (a) => {
+        const op = String(a.a ?? "");
+        switch (String(a.action)) {
+          case "submit": return cliJson(["verify", "submit", "--title", op.slice(0, 40), "--text", op]);
+          case "prepare": return cliJson(["verify", "prepare", op, ...opt("--candidates", a.b), ...opt("--reviews", a.c)]);
+          case "run": return cliJson(["verify", "run", op, ...opt("--db", a.b)]);
+          case "report": return cliJson(["verify", "report", op]);
+          case "archive": return cliJson(["verify", "archive", "verify", op]);
+          case "meta": return cliJson(["verify", "meta", op]);
+          default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
+        }
+      },
+    },
   ];
 }
 
@@ -182,12 +309,17 @@ export function serveMcp(version: string): void {
           .then((data) =>
             respond(id, { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] })
           )
-          .catch((e) =>
+          .catch((e) => {
+            // rc fidelity (0.114.26): a non-zero CLI exit surfaces as isError
+            // with a MACHINE-READABLE {rc, ...json} payload — the exit-code
+            // contract (0 ok / 1 runtime / 2 usage) is never flattened to text.
+            const rc = typeof e?.rc === "number" ? e.rc : undefined;
+            const payload = e?.json && typeof e.json === "object" ? (e.json as Record<string, unknown>) : { error: String(e?.message || e) };
             respond(id, {
-              content: [{ type: "text", text: `Error: ${e?.message || e}` }],
+              content: [{ type: "text", text: JSON.stringify(rc !== undefined ? { rc, ...payload } : payload) }],
               isError: true,
-            })
-          );
+            });
+          });
         break;
       }
       case "ping":
@@ -198,5 +330,5 @@ export function serveMcp(version: string): void {
     }
   });
 
-  process.stderr.write("[ygl-trees MCP] stdio server ready — 8 tools\n");
+  process.stderr.write(`[ygl-trees MCP] stdio server ready — ${tools.length} tools\n`);
 }
