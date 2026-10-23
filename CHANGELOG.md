@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.114.26
+
+MCP 写面扩展（属主裁定方案 D：「MCP 也是要的」——扩现有桥，不建第二座）。
+
+- **`ygl-trees mcp` 8→11 工具**：新增 `research_write`（query/source/evidence/claim 六动词，幂等）、
+  `tree_write`（tree-new/use · node-add/link/unlock/index，含 index 纪律提示）、`verify`（submit/prepare/
+  run/report/archive/meta 全管线）。argv 桥自定制插件方案移植（该方案按属主两度纠偏废弃）。
+- **rc 保真**：`cliExec` 保留退出码；CLI rc≠0 → MCP `isError:true` + **机器可读 `{rc, error}` 载荷**
+  （0 ok/1 runtime/2 usage 契约不再被压成纯文本）。
+- **DSH 集成 = 配置而非代码**（docs/mcp-dsh-connector.md）：`dsh-mcp-connector`（npm 0.2.78+）直连
+  `ygl-trees mcp` stdio——工具随本包版本走，永无 pin 漂移、无双包双发；YGL_HOME/YGL_SESSION 经
+  connector spawn env 透传。
+- 测试：`mcp-write.spec` 4 例（11 工具清单 / 幂等 / rc 保真 / 未知 action 兜底）；unit 942 → **946**；
+  contract 144。
+
 ## 0.114.25
 
 编码 fail-closed + command 构造面边界（#62/#64）。

@@ -12,7 +12,7 @@ vendor/           DSH fork 框架全家桶（用户裁定框架级一致性，pn
   cosmokit/         @deepseek-ai/cosmokit 1.8.6-α
   schemastery/      @deepseek-ai/schemastery 3.18.5-α
   timer/            @deepseek-ai/cordis-plugin-timer 1.1.7-α **已启用**（base bundle 第 4 插件；ctx.timer 生命周期托管定时器，webui serve 心跳在用）
-  loader/ include/ group/ hmr/ logger-console/（六件可用弹药，等需求接入）
+  loader/ include/ group/ hmr/ logger-console/（五件可用弹药，等需求接入）
 
 packages/         领域模块（库代码，可被 apps 组合；pnpm workspace 成员，各带 package.json 依赖图）
   core/             基础层（db/orm/text/fmt/types/entities/container）
