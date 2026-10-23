@@ -55,7 +55,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "dafc024058f19a983e6e65f2987255e0289a0fd89025d1b53986ae66371c489d",
+      "sha256": "ff5ba2a226e4da97b19a281d2804618206303cb6c8681b3f37c4d61cc19afcbf",
       "role": "gate"
     },
     {
@@ -124,6 +124,16 @@
       "role": "build"
     },
     {
+      "path": "scripts/tree-contract-matrix.mjs",
+      "sha256": "9c02f25fb926fc91dadc772f0c63134989ecd9f58f33c1627aaced61a46e8dab",
+      "role": "test"
+    },
+    {
+      "path": "scripts/tree-fixture.mjs",
+      "sha256": "91e57acfd4461b0ba577578b3211aca484104cca3a6ad4acc17d0283407ee8b1",
+      "role": "test"
+    },
+    {
       "path": "scripts/verify-run.mjs",
       "sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
       "role": "test"
@@ -131,11 +141,6 @@
     {
       "path": "vitest.config.ts",
       "sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
-      "role": "test"
-    },
-    {
-      "path": "scripts/tree-fixture.mjs",
-      "sha256": "91e57acfd4461b0ba577578b3211aca484104cca3a6ad4acc17d0283407ee8b1",
       "role": "test"
     }
   ],
@@ -186,6 +191,13 @@
       "new_sha256": "7bc62c3c8f6c339d10ec4bd7ebc6025218010a19905b5bc1bbce513e52e07b19",
       "reason": "R6/META_VERSION 1.3: accept meta_index_version 3 tooling registrations",
       "at": "2026-10-23T03:16:55.525Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "dafc024058f19a983e6e65f2987255e0289a0fd89025d1b53986ae66371c489d",
+      "new_sha256": "ff5ba2a226e4da97b19a281d2804618206303cb6c8681b3f37c4d61cc19afcbf",
+      "reason": "#61 release-gate flake: badref matches full stderr (selection note can precede error)",
+      "at": "2026-10-23T08:34:35.097Z"
     }
   ],
   "kind": "engine"
