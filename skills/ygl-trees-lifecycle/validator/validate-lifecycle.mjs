@@ -92,6 +92,17 @@ if (!fs.existsSync(opt.home)) {
 
 // #65 快照隔离：复制整个 home（db/-wal/-shm/config），后续全部读写指向副本；退出时清理。
 if (!opt.noSnapshot) {
+  // #65 residual: Windows may hold the just-closed DB files for a moment;
+  // rmSync needs the same bounded retries the repo uses elsewhere. Also sweep
+  // stale lcv-snap-* dirs older than 24h from crashed runs.
+  try {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const name of fs.readdirSync(os.tmpdir())) {
+      if (!name.startsWith("lcv-snap-")) continue;
+      const p = path.join(os.tmpdir(), name);
+      if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+    }
+  } catch { /* best effort */ }
   const snap = fs.mkdtempSync(path.join(os.tmpdir(), "lcv-snap-"));
   try {
     fs.cpSync(opt.home, snap, { recursive: true, force: true });
@@ -100,7 +111,7 @@ if (!opt.noSnapshot) {
     process.exit(2);
   }
   opt.home = snap;
-  const cleanup = () => { try { fs.rmSync(snap, { recursive: true, force: true }); } catch {} };
+  const cleanup = () => { try { fs.rmSync(snap, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 }); } catch {} };
   process.on("exit", cleanup); process.on("SIGINT", () => { cleanup(); process.exit(130); }); process.on("SIGTERM", () => { cleanup(); process.exit(143); });
 }
 

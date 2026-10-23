@@ -140,7 +140,7 @@
     },
     {
       "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
-      "sha256": "ccf12d91abd6c9687cd2cb9076ae82ee399face0b18461b33de16abc4631d7c8",
+      "sha256": "4649d19df3c286bfb30d14be17b67c286ffe2ba2fc9a2175fd7932d7d8d760a7",
       "role": "gate"
     },
     {
@@ -210,6 +210,13 @@
       "new_sha256": "ccf12d91abd6c9687cd2cb9076ae82ee399face0b18461b33de16abc4631d7c8",
       "reason": "#65 真只读化 v1.2.0（快照隔离 + --no-snapshot 显式披露）；role 改 gate（工作区纪律检查器，非仓内测试）",
       "at": "2026-10-23T11:03:18.915Z"
+    },
+    {
+      "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
+      "old_sha256": "ccf12d91abd6c9687cd2cb9076ae82ee399face0b18461b33de16abc4631d7c8",
+      "new_sha256": "4649d19df3c286bfb30d14be17b67c286ffe2ba2fc9a2175fd7932d7d8d760a7",
+      "reason": "#65 residual: snapshot rmSync maxRetries/retryDelay + stale lcv-snap sweep",
+      "at": "2026-10-23T11:42:45.644Z"
     }
   ],
   "kind": "engine"
