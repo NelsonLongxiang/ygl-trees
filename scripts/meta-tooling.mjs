@@ -36,8 +36,8 @@ for (const a of args) {
 
 const sha256 = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
 const index = JSON.parse(readFileSync(INDEX, "utf8"));
-if (index.meta_index_version !== 2) {
-  console.error(`meta-tooling: verify/meta.json is meta_index_version ${index.meta_index_version}; tooling[] belongs to version 2`);
+if (index.meta_index_version !== 2 && index.meta_index_version !== 3) {
+  console.error(`meta-tooling: verify/meta.json is meta_index_version ${index.meta_index_version}; tooling[] belongs to version 2+`);
   process.exit(2);
 }
 index.tooling ??= [];

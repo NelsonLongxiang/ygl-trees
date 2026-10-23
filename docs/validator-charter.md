@@ -13,6 +13,9 @@ kind: 规范
 > **v1.1 修订（2026-10-21）**：P2 增「声明式编排」过渡例外；§4.4 修订 R2/R3、增 R5；增 §4.7 迁往 CLI 原语的路线。
 > 依据：属主裁定「同意方案一：起草章程修订提案（编排白名单 + 迁往 CLI 原语的路线），由评审会话提给上游。」
 > 提案：监督席（YGL Trees 生命周期监督）；提交：评审席 Claude-OPS-5.5。属主令原文不变。
+> **v1.3 修订（2026-10-23，R6）**：§4.4 增 R6（Cordis 应用框架符合性），meta 索引 v3 增 `kind`；
+> 规则集 `META_VERSION` 1.2→1.3；v1/v2 仓判定不变。
+
 > **v1.2 修订（2026-10-21，#29）**：R5 拆 **R5a 静态合规 / R5b 时间执法**（时钟=审计方发行物内嵌能力表，
 > 默认不执行）；§4.7 增 `capability_version` 列（`unshipped` 无界）；verbatim 提取规则入表注。
 > 依据：评审席 fdc757f6 对 #29 的裁定（两 fault 属实、拆法与接口精化批准）。
@@ -167,9 +170,20 @@ clone/评审者能看到「为什么重登记」；把 red 改绿的动作本身
     界规则：对已交付能力，`sunset` ≤ `capability_version` 的下一个 minor；`capability_version: unshipped`
     视为无界（R5b 跳过该条）。延期只能修订本规范（属主裁定），不得改登记。
 
-**索引版本（开发席合并澄清，PR #23 评审）**：`orchestration[]` / `tooling[]` 属 **`meta_index_version: 2`**；
-v1 索引（`meta_index_version: 1`）按 v1 规则只读兼容、不读登记；未知版本按名拒绝。现行实现对 `≠1` 已
-fail-closed（0.113.x），升 2 时须同版更新 R2 与 meta 闸的版本映射（`meta_index_unknown` 语义随之收窄为「未知」）。
+- **R6（S1，v1.3）Cordis 应用框架符合性**：v3 索引必须显式声明 `kind: "engine" | "consumer"`
+  （R2 校验；缺失/未知按名拒，禁目录启发式）。**engine 档**（本仓）：①`vendor/*` 家族包声明的
+  `@deepseek-ai/*` 依赖全为 `workspace:~`；②`ygl.bundle.json` 的 `plugins` 恰为
+  `["database","ops","research","timer"]`（timer 第 4）；③Cordis 服务锚 `core/database/src/plugin.ts` +
+  `ops/tools/src/plugin.ts` 在场；④vendor 每包版本形态 = `vendor/upstream.json` 声明的上游基线 + fork 后缀
+  （`startswith(base + "-")`，基线表随同步维护，不把版本号钉进规则）。**consumer 档**（舰队仓）：
+  ⑤`ygl-trees` 引擎钉版 ≥ `ENGINE_FLOOR[CONTRACT_VERSION]`（1.2 → 0.107.0；表随契约升版维护，缺表即点名）；
+  ⑥`orchestration[]` 文件不得已驱动 `verify run|prepare|submit|archive`（复用 R3 的 DRIVES_VERIFY 正则族）；
+  ⑦仓内不得再 vendor/fork 引擎（`vendor/**` 出现 `ygl-trees`/`@ygl/*`/cordis 包或 `packages/verify/core`
+  即拒）。v1/v2 索引不执行 R6（与 R5a 同样的版本门先例），报告形状保持被准入时原样。
+
+**索引版本（开发席合并澄清，PR #23 评审；v1.3 增 v3）**：`orchestration[]` / `tooling[]` 属
+**`meta_index_version: 2`**；v3 在 v2 基础上增 `kind`（R6 的显式档位）。v1 索引按 v1 规则只读兼容、
+不读登记；v2 不执行 R6；未知版本按名拒绝。`META_VERSION` 1.2→**1.3**（R6），契约面不动。
 
 元规格规则以 `spec_meta_*` 版本化，冻结走 digest 血统纪律。
 

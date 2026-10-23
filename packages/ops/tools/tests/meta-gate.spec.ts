@@ -79,7 +79,7 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
     const dir = repo("bad-index", true, (d) => {
       mkdirSync(join(d, "verify", "specs"), { recursive: true });
       writeFileSync(join(d, "verify", "specs", "s.json"), "{}\n", "utf8");
-      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, specs: [] }), "utf8");
+      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 4, specs: [] }), "utf8");
     });
     const r = jrun(["verify", "submit", "--title", "g3", "--text", matFile, "--require-meta", "--meta-repo", dir, "--json"]);
     expect(r.rc).toBe(1);

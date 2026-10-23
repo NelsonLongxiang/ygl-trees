@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.114.21
+
+元验证层 R6：Cordis 应用框架符合性（K3 评审席施工令，属主「每一个验证器都必须符合 Cordis 应用框架规范」）。
+
+- **META_VERSION 1.2→1.3**；meta 索引 **v3** 增 `kind: "engine" | "consumer"`（R2 校验，缺失/未知按名拒；
+  严禁目录启发式）。v1/v2 索引判定与报告形状不变，R6 只在 v3 生效（R5a 版本门先例）。
+- **R6 engine 档**：vendor 家族 `@deepseek-ai/*` 依赖全 `workspace:~`；`ygl.bundle.json` plugins 恰为
+  database/ops/research/timer（timer 第 4）；Cordis 服务锚（database/ops plugin.ts）在场；vendor 版本 =
+  `vendor/upstream.json` 基线 + fork 后缀（基线表随同步维护，不钉进规则）。
+- **R6 consumer 档**：`ygl-trees` 引擎钉版 ≥ `ENGINE_FLOOR[CONTRACT_VERSION]`（1.2→0.107.0，PR#16 实证
+  五仓钉 0.106.0 读不了 1.2）；orchestration 不得已驱动 `verify run|prepare|submit|archive`；仓内禁
+  vendor/fork 引擎。地板表随契约升版维护，缺表点名。
+- 本仓 `verify/meta.json` 升 v3 `kind: engine`，新增 `vendor/upstream.json`；`scripts/tree-fixture.mjs`
+  按 R3 登记 tooling（sha 绑定）。
+- 测试：`verify-meta.spec` 23 例（R6 engine 正例 + 5 负例、consumer 正例 + 钉版/编排/vendor 负例、
+  v3 无 kind / v2 不执行 R6 回归）；unit 926 → **931**；contract 144。`verify meta .` 五规则全绿。
+- 与 PR#16 P0.1 同批口径：舰队五仓升钉 0.110.0+ 与 R6 落地同批走（红→绿一次完成）；spec_bef7a3fe4644
+  深度评估面保留、不退化。
+
 ## 0.114.20
 
 A1 树层收口：组节点独立 report+archive + V 系夹具脚本。

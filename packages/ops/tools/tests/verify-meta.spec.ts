@@ -60,7 +60,7 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     const r = jrun(["verify", "meta", dir, "--json"]);
     expect(r.rc).toBe(0);
     expect(r.j.verdict).toBe("PASS");
-    expect(r.j.meta_version).toBe("1.2");
+    expect(r.j.meta_version).toBe("1.3");
     // a v1 index keeps the v1 report shape: R1–R3 only, registrations not read
     expect(r.j.meta_index_version).toBe(1);
     expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3"]);
@@ -377,15 +377,126 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs: [] }), "utf8");
     expect(jrun(["verify", "meta", dir, "--json"]).j.rules.find((x: any) => x.id === "R2").evidence.problems.join(" ")).toMatch(/unlisted spec file/);
 
-    // 2 is known since the v2 registrations landed; 3 is the unknown-by-name case
-    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, specs: [] }), "utf8");
+    // 3 is known since R6 landed; 4 is the unknown-by-name case
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 4, specs: [] }), "utf8");
     const badVer = jrun(["verify", "meta", dir, "--json"]).j.rules.find((x: any) => x.id === "R2");
     expect(badVer.verdict).toBe("FAIL");
-    expect(String(badVer.evidence.reason)).toMatch(/unknown meta_index_version 3 \(supported: 1, 2\)/);
+    expect(String(badVer.evidence.reason)).toMatch(/unknown meta_index_version 4 \(supported: 1, 2, 3\)/);
 
     const noIndex = repoFixture("specs-no-index");
     mkdirSync(join(noIndex, "verify", "specs"), { recursive: true });
     writeFileSync(join(noIndex, "verify", "specs", "s1.json"), "{}\n", "utf8");
     expect(jrun(["verify", "meta", noIndex, "--json"]).j.rules.find((x: any) => x.id === "R2").verdict).toBe("FAIL");
+  });
+});
+
+// ── R6 (META_VERSION 1.3; v3 index + explicit kind) ─────────────────────────
+describe.skipIf(!HAS_BIN)("verify meta R6 Cordis framework compliance", () => {
+  let H = "";
+  let B = "";
+  beforeAll(() => {
+    H = mkdtempSync(join(tmpdir(), "ygl-meta-r6-home-"));
+    const r = spawnSync(process.execPath, [BIN, "db", "init"], { encoding: "utf8", env: { ...process.env, YGL_HOME: H } });
+    expect(r.status).toBe(0);
+    B = mkdtempSync(join(tmpdir(), "ygl-meta-r6-repos-"));
+  });
+  afterAll(() => {
+    rmSync(H, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    rmSync(B, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  function metaRun(dir: string) {
+    const r = spawnSync(process.execPath, [BIN, "verify", "meta", dir, "--json"], { encoding: "utf8", env: { ...process.env, YGL_HOME: H } });
+    return { rc: r.status ?? -1, j: JSON.parse((r.stdout || "").trim()) };
+  }
+  const rule = (r: any, id: string) => r.j.rules.find((x: any) => x.id === id);
+  function engineRepo(name: string, mutate?: (dir: string) => void): string {
+    const dir = join(B, name);
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    mkdirSync(join(dir, "vendor", "p"), { recursive: true });
+    mkdirSync(join(dir, "packages", "core", "database", "src"), { recursive: true });
+    mkdirSync(join(dir, "packages", "ops", "tools", "src"), { recursive: true });
+    writeFileSync(join(dir, "AGENTS.md"), "# e\n", "utf8");
+    writeFileSync(join(dir, "packages", "core", "database", "src", "plugin.ts"), "export {}\n", "utf8");
+    writeFileSync(join(dir, "packages", "ops", "tools", "src", "plugin.ts"), "export {}\n", "utf8");
+    writeFileSync(join(dir, "vendor", "upstream.json"), JSON.stringify({ "@deepseek-ai/cordis": "4.0.5" }), "utf8");
+    writeFileSync(join(dir, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5-alpha.2", dependencies: { "@deepseek-ai/cosmokit": "workspace:~" } }), "utf8");
+    writeFileSync(join(dir, "ygl.bundle.json"), JSON.stringify({ plugins: ["database", "ops", "research", "timer"] }), "utf8");
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, kind: "engine", specs: [], orchestration: [], tooling: [], source_roots: ["packages"] }), "utf8");
+    mutate?.(dir);
+    return dir;
+  }
+  function consumerRepo(name: string, pin = "0.110.0", mutate?: (dir: string) => void): string {
+    const dir = join(B, name);
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    writeFileSync(join(dir, "AGENTS.md"), "# c\n", "utf8");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "fleet", dependencies: { "ygl-trees": pin } }), "utf8");
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, kind: "consumer", specs: [], orchestration: [], tooling: [] }), "utf8");
+    mutate?.(dir);
+    return dir;
+  }
+
+  it("R6 engine: vendor workspace deps + bundle order + anchors + upstream/fork version => PASS", () => {
+    const r = metaRun(engineRepo("r6-engine-ok"));
+    expect(r.j.meta_version).toBe("1.3");
+    expect(rule(r, "R6")).toMatchObject({ id: "R6", verdict: "PASS", evidence: { kind: "engine" } });
+    expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3", "R5a", "R6"]);
+  });
+
+  it("R6 engine negatives: bundle order, non-workspace dep, version suffix, missing anchor, missing upstream", () => {
+    let dir = engineRepo("r6-engine-bundle", (d) => writeFileSync(join(d, "ygl.bundle.json"), JSON.stringify({ plugins: ["database", "ops", "timer", "research"] }), "utf8"));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/plugins must be exactly/);
+    dir = engineRepo("r6-engine-dep", (d) => writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5-alpha.2", dependencies: { "@deepseek-ai/cosmokit": "^1.8.0" } }), "utf8"));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/must be workspace:~/);
+    dir = engineRepo("r6-engine-version", (d) => writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5" }), "utf8"));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/upstream 4\.0\.5 \+ fork suffix/);
+    dir = engineRepo("r6-engine-anchor", (d) => rmSync(join(d, "packages", "ops", "tools", "src", "plugin.ts")));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/Cordis service anchor missing/);
+    dir = engineRepo("r6-engine-upstream", (d) => rmSync(join(d, "vendor", "upstream.json")));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/vendor\/upstream\.json missing/);
+  });
+
+  it("R6 consumer: pin >= contract floor => PASS; below floor => FAIL with named floor", () => {
+    const ok = metaRun(consumerRepo("r6-consumer-ok", "0.110.0"));
+    expect(rule(ok, "R6")).toMatchObject({ verdict: "PASS", evidence: { kind: "consumer", engine_pin: "0.110.0", engine_floor: "0.107.0" } });
+    const low = metaRun(consumerRepo("r6-consumer-low", "0.106.0"));
+    expect(rule(low, "R6").verdict).toBe("FAIL");
+    expect(JSON.stringify(rule(low, "R6").evidence)).toMatch(/below contract 1\.2 floor 0\.107\.0/);
+  });
+
+  it("R6 consumer negatives: vendored engine and orchestration driving verify verbs", () => {
+    const vendored = metaRun(consumerRepo("r6-consumer-vendor", "0.110.0", (d) => {
+      mkdirSync(join(d, "vendor", "cordis"), { recursive: true });
+      writeFileSync(join(d, "vendor", "cordis", "package.json"), JSON.stringify({ name: "ygl-trees", version: "0.1.0" }), "utf8");
+    }));
+    expect(JSON.stringify(rule(vendored, "R6").evidence)).toMatch(/must not vendor\/fork the engine/);
+    const orch = metaRun(consumerRepo("r6-consumer-orch", "0.110.0", (d) => {
+      mkdirSync(join(d, "verify", "orchestration"), { recursive: true });
+      const rel = "verify/orchestration/run.mjs";
+      const body = "// ygl-trees verify run spec\n";
+      writeFileSync(join(d, rel), body, "utf8");
+      writeFileSync(join(d, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, kind: "consumer", specs: [], orchestration: [{ path: rel, sha256: sha(body), role: "invoke", replaced_by: "verify tree run", sunset: "2027.1.1" }], tooling: [] }), "utf8");
+    }));
+    expect(JSON.stringify(rule(orch, "R6").evidence)).toMatch(/must not drive verification/);
+    expect(rule(orch, "R5a").verdict).toBe("PASS");
+  });
+
+  it("v3 without kind: R2 FAIL by name (no directory heuristic); v2 keeps R1-R3+R5a shape", () => {
+    const dir = join(B, "r6-nokind");
+    mkdirSync(join(dir, "verify"), { recursive: true });
+    writeFileSync(join(dir, "AGENTS.md"), "# x\n", "utf8");
+    writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 3, specs: [] }), "utf8");
+    const r = metaRun(dir);
+    expect(rule(r, "R2").verdict).toBe("FAIL");
+    expect(String((rule(r, "R2").evidence.problems ?? [])[0] ?? rule(r, "R2").evidence.reason)).toMatch(/requires kind/);
+    expect(rule(r, "R6")).toBeUndefined();
+
+    const v2dir = join(B, "r6-v2");
+    mkdirSync(join(v2dir, "verify"), { recursive: true });
+    writeFileSync(join(v2dir, "AGENTS.md"), "# v2\n", "utf8");
+    writeFileSync(join(v2dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, specs: [], orchestration: [], tooling: [] }), "utf8");
+    const v2r = metaRun(v2dir);
+    expect(v2r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3", "R5a"]);
+    expect(v2r.j.meta_version).toBe("1.3");
   });
 });

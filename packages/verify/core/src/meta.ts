@@ -13,7 +13,12 @@
  *       is also admissible when registered in `orchestration[]` (validity is
  *       R5a's job) or in `tooling[]` (sha256 must match; in a repo that lists
  *       specs, tooling must not drive `verify run|prepare|submit|archive`).
- *   R5a (v2 only) declared orchestration is statically compliant: path under
+ *   R6 (v3 only) Cordis application-framework compliance: an engine repo must
+ *       declare its kind (engine|consumer) and satisfy the framework shape for
+ *       that kind (vendor workspace deps + bundle order + service anchors +
+ *       upstream/fork version form; consumer: engine pin >= contract floor,
+ *       orchestration drives CLI verbs only, no vendored engine).
+ *   R5a (v2+) declared orchestration is statically compliant: path under
  *       verify/orchestration/, sha256 matches, `replaced_by` from the §4.7
  *       closed set, `sunset` a full MAJOR.MINOR.PATCH. No clock comparison —
  *       time enforcement (R5b) is audit-side and explicit (charter v1.2), not
@@ -29,6 +34,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { CONTRACT_VERSION } from "./contract";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
@@ -37,12 +43,12 @@ import { join, relative, sep } from "node:path";
  *  (fdc757f6 2026-10-22: gitignored paths out of scope, `.ts/.mts/.cts` in the
  *  closed set, `source_roots[]` exempts declared product source dirs) — v1 repos
  *  judge the same throughout. */
-export const META_VERSION = "1.2";
+export const META_VERSION = "1.3";
 /** On-disk index schema versions this rule set reads. A future format must be
  *  added here and be rejected by name when unknown — never silently mis-read. */
-export const META_INDEX_VERSIONS: readonly number[] = [1, 2];
+export const META_INDEX_VERSIONS: readonly number[] = [1, 2, 3];
 /** Latest index schema version (what a new verifier repo should declare). */
-export const META_INDEX_VERSION = 2;
+export const META_INDEX_VERSION = 3;
 
 /** charter §4.7 table note: `replaced_by` closed set = the union of the command
  *  tokens in the 「取代它的 CLI 原语」 column (backticks stripped, parentheticals
@@ -68,7 +74,7 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 const DRIVES_VERIFY = /\bverify\b[\s"'`,[\]]*\b(run|prepare|submit|archive)\b/;
 
 export type MetaVerdict = "PASS" | "FAIL" | "NEEDS-MATERIAL";
-export type MetaRuleId = "R1" | "R2" | "R3" | "R5a";
+export type MetaRuleId = "R1" | "R2" | "R3" | "R5a" | "R6";
 
 export interface MetaRule {
   id: MetaRuleId;
@@ -113,6 +119,9 @@ interface IndexState {
   /** v2: declared product source roots (named subdirs exempt from the R3
    *  executable-artifact scan); absent = strict (nothing exempt). */
   sourceRoots: string[];
+  /** v3: explicit framework tier — engine (this repo) or consumer (fleet repo).
+   *  Never inferred from directory names (construction spec #R6). */
+  kind: "engine" | "consumer" | null;
 }
 
 const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
@@ -206,7 +215,7 @@ function registrationShapeProblems(index: { orchestration?: unknown; tooling?: u
 function r2(repo: string): { rule: MetaRule; index: IndexState } {
   const indexFile = join(repo, "verify", "meta.json");
   const specsDir = join(repo, "verify", "specs");
-  const unreadable = (version: number | null): IndexState => ({ version, readable: false, specsListed: 0, orchestration: [], tooling: [], sourceRoots: [] });
+  const unreadable = (version: number | null): IndexState => ({ version, readable: false, specsListed: 0, orchestration: [], tooling: [], sourceRoots: [], kind: null });
   if (!existsSync(indexFile)) {
     // Nothing to reconcile: a repo without verifier artifacts has no index to
     // desync. (A present verify/specs dir without an index fails below.)
@@ -221,7 +230,7 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     }
     return { rule: r2fail({ reason: "verify/specs exists but verify/meta.json is missing" }), index: unreadable(null) };
   }
-  let index: { meta_index_version?: unknown; specs?: Array<{ file?: string; sha256?: string }>; orchestration?: unknown; tooling?: unknown; source_roots?: unknown; reregistrations?: unknown };
+  let index: { meta_index_version?: unknown; kind?: unknown; specs?: Array<{ file?: string; sha256?: string }>; orchestration?: unknown; tooling?: unknown; source_roots?: unknown; reregistrations?: unknown };
   try {
     index = JSON.parse(readFileSync(indexFile, "utf8"));
   } catch (e: any) {
@@ -259,10 +268,20 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
       if (!listed.has(rel)) problems.push(`unlisted spec file: ${rel}`);
     }
   }
+  let kind: "engine" | "consumer" | null = null;
+  if (version >= 3) {
+    // v3 makes the framework tier explicit; a missing/unknown kind is an index
+    // problem (R2), never a silent fallback to a directory heuristic.
+    if (index.kind !== "engine" && index.kind !== "consumer") {
+      problems.push(`v3 index requires kind "engine" | "consumer" (got ${JSON.stringify(index.kind)})`);
+    } else {
+      kind = index.kind;
+    }
+  }
   // v1 index: registrations are not part of the format — not read (charter:
-  // "v1 索引按 v1 规则只读兼容、不读登记"). v2: the arrays must be well-formed.
-  const state: IndexState = { version, readable: true, specsListed: listed.size, orchestration: [], tooling: [], sourceRoots: [] };
-  if (version === 2) {
+  // "v1 索引按 v1 规则只读兼容、不读登记"). v2+: the arrays must be well-formed.
+  const state: IndexState = { version, readable: true, specsListed: listed.size, orchestration: [], tooling: [], sourceRoots: [], kind };
+  if (version >= 2) {
     const shape = registrationShapeProblems(index);
     problems.push(...shape);
     if (shape.length === 0) {
@@ -272,7 +291,8 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     }
   }
   const evidence: Record<string, unknown> = problems.length ? { problems: problems.slice(0, 10), listed: listed.size } : { listed: listed.size };
-  if (version === 2) Object.assign(evidence, { orchestration: state.orchestration.length, tooling: state.tooling.length, source_roots: state.sourceRoots.length });
+  if (version >= 2) Object.assign(evidence, { orchestration: state.orchestration.length, tooling: state.tooling.length, source_roots: state.sourceRoots.length });
+  if (version >= 3) Object.assign(evidence, { kind: kind ?? "missing" });
   return {
     rule: { id: "R2", severity: "S1", title: R2_TITLE, verdict: problems.length ? "FAIL" : "PASS", evidence },
     index: state,
@@ -369,7 +389,7 @@ function fileSha(repo: string, rel: string): string | null {
 
 function r3(repo: string, index: IndexState): MetaRule {
   const problems: string[] = [];
-  const v2 = index.version === 2 && index.readable;
+  const v2 = (index.version ?? 0) >= 2 && index.readable;
   const exts = v2 ? EXEC_EXTS_V2 : EXEC_EXTS_V1;
   const sourceRoots = index.sourceRoots.map((r) => r.replace(/\/+$/, ""));
   const inSourceRoot = (rel: string): boolean => sourceRoots.some((root) => rel === root || rel.startsWith(`${root}/`));
@@ -460,13 +480,160 @@ function r5a(repo: string, index: IndexState): MetaRule {
   };
 }
 
+/** Contract -> minimum engine version a consumer repo may pin. The table is
+ *  maintained with the contract, not with this rule set: contract 1.2 shapes
+ *  require >=0.107.0 (PR#16: five fleet repos sat on 0.106.0 and could not read
+ *  1.2 specs). A missing entry is a named problem, never a pass. */
+const ENGINE_FLOOR: Record<string, string> = { "1.2": "0.107.0" };
+const SEMVER_LOOSE = /(\d+)\.(\d+)\.(\d+)/;
+
+function cmpSemver(a: string, b: string): number {
+  const pa = a.split(".").map((x) => Number(x));
+  const pb = b.split(".").map((x) => Number(x));
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  }
+  return 0;
+}
+
+function r6(repo: string, index: IndexState): MetaRule {
+  const problems: string[] = [];
+  const kind = index.kind;
+  const checks: Record<string, unknown> = { kind };
+  if (kind === "engine") {
+    // 1) vendor family dependency declarations all workspace:~
+    const vendorDir = join(repo, "vendor");
+    const upstreamFile = join(vendorDir, "upstream.json");
+    let upstream: Record<string, string> = {};
+    if (!existsSync(vendorDir)) problems.push("engine repo must have vendor/ (framework family is vendored)");
+    if (!existsSync(upstreamFile)) problems.push("vendor/upstream.json missing: upstream baselines are declared, not inferred");
+    else {
+      try {
+        upstream = JSON.parse(readFileSync(upstreamFile, "utf8")) as Record<string, string>;
+      } catch (e: any) {
+        problems.push(`vendor/upstream.json is not valid JSON: ${e?.message || e}`);
+      }
+    }
+    const pkgs = existsSync(vendorDir)
+      ? readdirSync(vendorDir).filter((d) => existsSync(join(vendorDir, d, "package.json")))
+      : [];
+    if (pkgs.length === 0) problems.push("vendor/ has no family packages");
+    for (const d of pkgs) {
+      let pkg: { name?: string; version?: string; dependencies?: Record<string, string>; peerDependencies?: Record<string, string>; optionalDependencies?: Record<string, string> };
+      try {
+        pkg = JSON.parse(readFileSync(join(vendorDir, d, "package.json"), "utf8"));
+      } catch (e: any) {
+        problems.push(`vendor/${d}/package.json unreadable: ${e?.message || e}`);
+        continue;
+      }
+      const deps = { ...(pkg.dependencies ?? {}), ...(pkg.peerDependencies ?? {}), ...(pkg.optionalDependencies ?? {}) };
+      for (const [name, spec] of Object.entries(deps)) {
+        if (name.startsWith("@deepseek-ai/") && spec !== "workspace:~") {
+          problems.push(`vendor ${d}: ${name} must be workspace:~ (got ${JSON.stringify(spec)})`);
+        }
+      }
+      // 2) version shape = declared upstream baseline + fork suffix
+      const name = String(pkg.name ?? "");
+      const base = upstream[name];
+      if (!base) problems.push(`vendor ${d}: ${name || "(no name)"} has no upstream baseline in vendor/upstream.json`);
+      else if (!String(pkg.version ?? "").startsWith(base + "-") || pkg.version === base) {
+        problems.push(`vendor ${d}: version ${JSON.stringify(pkg.version)} must be upstream ${base} + fork suffix (${base}-…)`);
+      }
+      checks.vendor_packages = pkgs.length;
+    }
+    // 3) bundle composition: exactly database/ops/research/timer, timer 4th
+    const bundleFile = join(repo, "ygl.bundle.json");
+    if (!existsSync(bundleFile)) problems.push("ygl.bundle.json missing");
+    else {
+      try {
+        const bundle = JSON.parse(readFileSync(bundleFile, "utf8")) as { plugins?: unknown };
+        const plugins = Array.isArray(bundle.plugins) ? bundle.plugins.map(String) : [];
+        const want = ["database", "ops", "research", "timer"];
+        if (plugins.length !== want.length || plugins.some((p, i) => p !== want[i])) {
+          problems.push(`ygl.bundle.json plugins must be exactly ${JSON.stringify(want)} in load order (got ${JSON.stringify(plugins)})`);
+        }
+      } catch (e: any) {
+        problems.push(`ygl.bundle.json unreadable: ${e?.message || e}`);
+      }
+    }
+    // 4) Cordis service anchor files
+    for (const rel of ["packages/core/database/src/plugin.ts", "packages/ops/tools/src/plugin.ts"]) {
+      if (!existsSync(join(repo, rel))) problems.push(`Cordis service anchor missing: ${rel}`);
+    }
+  } else if (kind === "consumer") {
+    // 5) engine pin >= the floor for the contract this repo verifies
+    const pkgFile = join(repo, "package.json");
+    let pinned = "";
+    if (!existsSync(pkgFile)) problems.push("package.json missing: consumer engine pin cannot be checked");
+    else {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgFile, "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+        const specs = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+        pinned = String(specs["ygl-trees"] ?? "");
+      } catch (e: any) {
+        problems.push(`package.json unreadable: ${e?.message || e}`);
+      }
+    }
+    const floor = ENGINE_FLOOR[CONTRACT_VERSION];
+    if (!pinned) problems.push("consumer repo must declare a ygl-trees engine pin in dependencies");
+    else if (!floor) problems.push(`no ENGINE_FLOOR entry for contract ${CONTRACT_VERSION} — maintain the table with the contract`);
+    else {
+      const m = SEMVER_LOOSE.exec(pinned);
+      if (!m) problems.push(`cannot parse engine pin ${JSON.stringify(pinned)} (want a semver like ${floor})`);
+      else {
+        const got = `${m[1]}.${m[2]}.${m[3]}`;
+        checks.engine_pin = got;
+        checks.engine_floor = floor;
+        if (cmpSemver(got, floor) < 0) problems.push(`engine pin ${got} is below contract ${CONTRACT_VERSION} floor ${floor}`);
+      }
+    }
+    // 6) orchestration drives CLI verbs only
+    for (const e of index.orchestration) {
+      const full = join(repo, e.path);
+      if (!existsSync(full)) continue; // R5a names the missing file
+      if (DRIVES_VERIFY.test(readFileSync(full, "utf8"))) {
+        problems.push(`consumer orchestration must not drive verification (verify run|prepare|submit|archive): ${e.path}`);
+      }
+    }
+    // 7) no vendored/forked engine inside a consumer repo
+    const vendorDir = join(repo, "vendor");
+    if (existsSync(vendorDir)) {
+      for (const d of readdirSync(vendorDir)) {
+        const f = join(vendorDir, d, "package.json");
+        if (!existsSync(f)) continue;
+        try {
+          const pkg = JSON.parse(readFileSync(f, "utf8")) as { name?: string };
+          const name = String(pkg.name ?? "");
+          if (name === "ygl-trees" || name.startsWith("@ygl/") || name.includes("cordis")) {
+            problems.push(`consumer repo must not vendor/fork the engine: vendor/${d} (${name || "unnamed"})`);
+          }
+        } catch { /* shape is R3/R5a's business */ }
+      }
+    }
+    if (existsSync(join(repo, "packages", "verify", "core", "package.json"))) {
+      problems.push("consumer repo must not carry engine source: packages/verify/core");
+    }
+  } else {
+    problems.push(`R6 needs kind "engine" | "consumer" (got ${JSON.stringify(kind)})`);
+  }
+  return {
+    id: "R6",
+    severity: "S1",
+    title: "Cordis application-framework compliance",
+    verdict: problems.length ? "FAIL" : "PASS",
+    evidence: problems.length ? { ...checks, problems: problems.slice(0, 10) } : checks,
+  };
+}
+
 /** Run the frozen meta rules against a repository tree. */
 export function runMeta(repo: string, now = new Date().toISOString()): MetaReport {
   const { rule: ruleR2, index } = r2(repo);
   const rules: MetaRule[] = [r1(repo), ruleR2, r3(repo, index)];
   // R5a exists only for a readable v2 index: a v1 repo keeps its R1–R3 report
   // shape, and an unreadable/unknown index already failed R2 by name.
-  if (index.version === 2 && index.readable) rules.push(r5a(repo, index));
+  if ((index.version ?? 0) >= 2 && index.readable) rules.push(r5a(repo, index));
+  // R6 is v3-only: a v1/v2 repo keeps the report shape it was admitted under.
+  if (index.version === 3 && index.readable && index.kind) rules.push(r6(repo, index));
   // Four-value skeleton applied to admission: FAIL beats NEEDS-MATERIAL beats
   // PASS; a zero-scan rule (R2 skipped) makes the whole report NEEDS-MATERIAL.
   const verdict: MetaVerdict = rules.some((r) => r.verdict === "FAIL")
