@@ -446,6 +446,9 @@ npm **latest=0.114.19**、shasum **`53f5bdb6…`**；官方字节 **1,597,649 B 
 **0.114.20 记录（2026-10-23，A1 树层收口）**：组节点独立 report+archive（标准 VerifyReport + 合成 spec +
 buildArchive skipMaterials + registry；tree 信封带树 verdict）；pinned 归档验签失败→叶 NEUTRALIZED。
 `scripts/tree-fixture.mjs` 生成隔离夹具（两叶+snapshot+真实归档+pinned 树）供 V6。unit 926。
+发布（2026-10-23）：commit **`5def585`**；tag **`v0.114.20 = 8cb0a259… → ^{commit}=5def585…`**（双远端）；
+npm **latest=0.114.20**、shasum **`1e87c43a…`**；官方字节 **1,601,242 B / sha256 `13307a69…`**
+（publish `2026-10-23T02:18:04Z`，fileCount 182）。验证席 V6 三态对照复验 PASS。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
