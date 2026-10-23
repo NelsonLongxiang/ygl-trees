@@ -257,7 +257,8 @@ export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
 }
 
 /** A1 tree run：叶真跑（runVerify+archive）或 pinned 归档回读，后序聚合，写树报告。
- *  本切 group 层写进树报告的节点记录（group 独立 archive 待下一小刀）。 */
+ *  组层自 0.114.20 起生成真实 report+archive（合成 spec + buildArchive
+ *  skipMaterials + registry 登记）；v1.2 五态（STALE）与 JCS digest 待 Q10 返工。 */
 async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<number> {
   const p = paths(env);
   const dbFlag = args.flags.db;
