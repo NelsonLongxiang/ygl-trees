@@ -173,7 +173,7 @@ export function buildTools(): McpTool[] {
             description: "Write verb",
           },
           text: { type: "string", description: "query/claim text, source title, or claim id (per action)" },
-          b: { type: "string", description: "second operand: url | source-id | evidence-id (per action)" },
+          b: { type: "string", description: "source-add: url | evidence-add: source-id | claim-link: evidence-id" },
           quote: { type: "string", description: "evidence-add: verbatim excerpt" },
           stance: { type: "string", enum: ["supports", "refutes"], description: "claim-link stance" },
           as: { type: "string", enum: ["supported", "refuted", "contested"], description: "claim-resolve verdict" },
@@ -185,7 +185,7 @@ export function buildTools(): McpTool[] {
         const p = opt("-p", a.project);
         switch (String(a.action)) {
           case "query-add": return cliJson(["research", "query", "add", String(a.text), ...p]);
-          case "source-add": return cliJson(["research", "source", "add", String(a.text), "--url", String(a.b), ...p]);
+          case "source-add": return cliJson(["research", "source", "add", "--title", String(a.text), "--url", String(a.b), ...p]);
           case "evidence-add": return cliJson(["research", "evidence", "add", String(a.text), "--quote", String(a.quote ?? ""), ...p]);
           case "claim-add": return cliJson(["research", "claim", "add", String(a.text), ...p]);
           case "claim-link": return cliJson(["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...p]);
@@ -239,23 +239,23 @@ export function buildTools(): McpTool[] {
           action: {
             type: "string",
             enum: ["submit", "prepare", "run", "report", "archive", "meta"],
-            description: "Pipeline verb（archive=验签既有归档；封存在 run 时自动发生）",
+            description: "Pipeline verb (archive=verify existing archive; sealing happens automatically during run)",
           },
-          a: { type: "string", description: "operand: material file|text | material-id | spec-id | run-id | repo path" },
-          b: { type: "string", description: "candidates file (prepare) | snapshot db (run)" },
-          c: { type: "string", description: "reviews file (prepare)" },
+          a: { type: "string", description: "submit: title | prepare: material-id + b/c/db | run: spec-id + b=db | report/archive/meta: run-id/spec-id/repo-path" },
+          b: { type: "string", description: "submit: material text file path | prepare: candidates file | run: snapshot db path" },
+          c: { type: "string", description: "prepare: reviews file" },
+          db: { type: "string", description: "prepare: snapshot db path (required)" },
         },
         required: ["action", "a"],
       },
       execute: (a) => {
-        const op = String(a.a ?? "");
         switch (String(a.action)) {
-          case "submit": return cliJson(["verify", "submit", "--title", op.slice(0, 40), "--text", op]);
-          case "prepare": return cliJson(["verify", "prepare", op, ...opt("--candidates", a.b), ...opt("--reviews", a.c)]);
-          case "run": return cliJson(["verify", "run", op, ...opt("--db", a.b)]);
-          case "report": return cliJson(["verify", "report", op]);
-          case "archive": return cliJson(["verify", "archive", "verify", op]); // 验签既有归档；封存已在 run 时自动发生
-          case "meta": return cliJson(["verify", "meta", op]);
+          case "submit": return cliJson(["verify", "submit", "--title", String(a.a), "--text", String(a.b ?? a.a)]);
+          case "prepare": return cliJson(["verify", "prepare", String(a.a), ...opt("--candidates", a.b), ...opt("--reviews", a.c), ...opt("--db", a.db)]);
+          case "run": return cliJson(["verify", "run", String(a.a), ...opt("--db", a.b)]);
+          case "report": return cliJson(["verify", "report", String(a.a)]);
+          case "archive": return cliJson(["verify", "archive", "verify", String(a.a)]); // 验签既有归档；封存已在 run 时自动发生
+          case "meta": return cliJson(["verify", "meta", String(a.a)]);
           default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
         }
       },
