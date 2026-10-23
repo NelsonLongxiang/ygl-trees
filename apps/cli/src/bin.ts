@@ -166,6 +166,8 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
   prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
   tree prepare <material-id> [--pinned <node>=<sha256>]  freeze recursive tree spec (A1: cycles/empty/depth/operator checks)
+  tree run <tree-spec-id> [--db <path>|--db <node>=<path>]  post-order run; leaves real run+archive (--no-archive skips)
+  tree report <tree-run-id> | tree trace <tree-spec-id>
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
   graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]
                                       freeze eligibility, then make the check recurring (--db retargets the job only)
@@ -896,6 +898,8 @@ export function generateLlmsManifest(): string {
       ["verify submit --title <t> --text <file|-> [--attach <f>] [--clause-pattern <regex>] [--no-meta]", "freeze material (+ its clause pattern, default ^([A-Z]+[0-9]+) ); verifier repos must pass verify meta (default hard since 0.113.0); --no-meta bypasses, recorded as meta.bypass"],
       ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--draft] [--no-meta]", "extract → translate → blind self-review → freeze spec (--draft = dry run); meta gate default hard for verifier repos (0.113.0), --no-meta bypasses with a ledger event"],
       ["verify tree prepare <material-id> [--pinned <node>=<sha256>]", "freeze recursive tree spec (A1; cycles/empty/depth/operator checks)"],
+      ["verify tree run <tree-spec-id> [--db <path>|--db <node>=<path>]", "post-order recursive run; leaves real run+archive (--no-archive skips)"],
+      ["verify tree report <tree-run-id> | trace <tree-spec-id>", "read frozen tree run report / list tree runs"],
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
       ["verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]", "freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check (--db retargets the job only); --patrol only when the verified db IS the workspace db"],
       ["verify register <sealed-binary> [--keys <file>]", "register a sealed yglverify build (footer chain + signature → registrations/ + binaries/)"],

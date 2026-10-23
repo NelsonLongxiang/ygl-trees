@@ -530,6 +530,15 @@ export function verifyArchiveBytes(buf: Buffer): ArchiveVerifyResult {
   return { ok: problems.length === 0, problems, warnings, manifest };
 }
 
+/** A1 tree run: pinned leaf reads the frozen report back out of its archive.
+ *  Callers MUST verify the archive first (same verifier as `archive verify`). */
+export function readArchiveReport(path: string): VerifyReport {
+  const entries = readZipStore(readFileSync(path));
+  const entry = entries.find((e) => e.path === "report.json");
+  if (!entry) throw new Error(`archive has no report.json: ${path}`);
+  return JSON.parse(entry.data.toString("utf8")) as VerifyReport;
+}
+
 export function verifyArchiveFile(path: string): ArchiveVerifyResult {
   if (!existsSync(path)) return { ok: false, problems: [`archive not found: ${path}`], warnings: [] };
   return verifyArchiveBytes(readFileSync(path));
