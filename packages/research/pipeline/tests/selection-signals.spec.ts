@@ -163,6 +163,7 @@ describe.skipIf(!HAS_BIN)("#44 selection signals (0.114.7)", () => {
       [["research", "evidence", "rm", ev.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
       [["research", "source", "rm", src.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
       [["research", "query", "done", q.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
+      [["research", "query", "attach", q.j.id, src.j.id, "-p", "p3", "--json"], /belongs to project 'p2'/],
     ];
     for (const [args, needle] of cases) {
       const r = run(args);

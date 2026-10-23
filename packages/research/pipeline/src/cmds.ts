@@ -126,7 +126,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          // #47 residual: query attach answers with the owning project, not a
+          // generic "query not found" (scoped+owner naming is the current rule).
+          const msg = e?.message || String(e);
+          const qOwner = ownerProjectName(env.db, "queries", rest[1]);
+          const sOwner = ownerProjectName(env.db, "sources", rest[2]);
+          if (msg.startsWith("query not found") && qOwner) {
+            bad(ctx, `query not found: ${rest[1]}  (it belongs to project '${qOwner}' — use -p ${qOwner})`);
+            return 1;
+          }
+          if (msg.includes("source not found") && sOwner) {
+            bad(ctx, `source not found: ${rest[2]}  (it belongs to project '${sOwner}' — use -p ${sOwner})`);
+            return 1;
+          }
+          bad(ctx, msg);
           return 1;
         });
     }
