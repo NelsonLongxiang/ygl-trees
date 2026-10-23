@@ -522,8 +522,15 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             } catch { /* keep todo fallback */ }
             const FORWARD: Record<string, string> = { todo: "doing", doing: "done", done: "done" };
             const requested = String(status);
+            if (requested === currentStatus) {
+              // #70: TRUE idempotent — same status means no state change, no
+              // write, no event. Return the current row as-is.
+              res.writeHead(200, { "content-type": "application/json" });
+              res.end(JSON.stringify({ id: String(id), from: currentStatus, to: currentStatus, idempotent: true }));
+              return;
+            }
             const next = FORWARD[currentStatus];
-            if (requested !== next && requested !== currentStatus) {
+            if (requested !== next) {
               res.writeHead(409, { "content-type": "application/json" });
               res.end(JSON.stringify({
                 error: `task ${id} is '${currentStatus}'; only '${next}' (or idempotent '${currentStatus}') is allowed`,

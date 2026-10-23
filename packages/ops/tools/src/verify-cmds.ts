@@ -2014,7 +2014,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (args.flags.text !== undefined) {
         const t = String(args.flags.text);
         try {
-          materialText = t === "-" ? readFileSync(0, "utf8") : readFileSync(t, "utf8");
+          // #69: same encoding normalization as submit — BOM stripped,
+          // UTF-16 refused by name (lint must not silently lose the first
+          // clause of a BOM-prefixed material).
+          const rawBuf = t === "-" ? readFileSync(0) : readFileSync(t);
+          const decoded = decodeMaterialText(rawBuf);
+          if (!decoded.ok) {
+            bad(ctx, decoded.reason);
+            return 2;
+          }
+          materialText = decoded.text;
         } catch (e: any) {
           bad(ctx, `cannot read --text ${t}: ${e?.message || e}`);
           return 1;

@@ -100,8 +100,25 @@ describe.skipIf(!HAS_BIN)("#66 webui task status machine (server-authoritative)"
     expect(r.json.expected_next).toBe("done");
   });
 
-  it("idempotent: done → done accepted (same status)", async () => {
+  it("idempotent: done → done accepted (same status, NO state advance)", async () => {
     const r = await post("/api/task", { id: taskId, status: "done" });
     expect(r.status).toBe(200);
+    expect(r.json.idempotent).toBe(true);
+    expect(r.json.from).toBe("done");
+    expect(r.json.to).toBe("done"); // true idempotent — not advanced
+  });
+
+  it("#70: todo → todo is true idempotent (NOT advanced to doing)", async () => {
+    // 新建一个 todo 任务
+    const r0 = spawnSync(process.execPath, [BIN, "task", "add", "幂等不推进测试", "-p", "p1", "--json"], {
+      env: { ...process.env, YGL_HOME: home, YGL_SESSION: "task-sm-spec" }, encoding: "utf8",
+    });
+    const tid = (JSON.parse(r0.stdout) as any).id;
+    // 发送 status=todo（与当前同）——不应推进到 doing
+    const r = await post("/api/task", { id: tid, status: "todo" });
+    expect(r.status).toBe(200);
+    expect(r.json.idempotent).toBe(true);
+    expect(r.json.from).toBe("todo");
+    expect(r.json.to).toBe("todo"); // #70 修复前：错误推进到 doing
   });
 }, 60_000);
