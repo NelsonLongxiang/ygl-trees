@@ -71,6 +71,25 @@ kind: 规范
 - **Q10-B**：任一子 `ERROR` → 父至多 `INFRA_BLOCKED`；不可能是 PASS/FAIL。
 - **全序**：`NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS`；被 STALE 遮蔽的 FAIL 记 `nodes[]`/审计可见。
 - **V15 5×5**：五种父状态 × 子组合表驱动；禁止把 STALE/FAIL 稀释成 PASS。
+- **quorum 分母（验证席 2026-10-23 补，随 Q10-B 配套）**：`quorum(N)` 的分母只计 **PASS + FAIL**；
+  `ERROR`/`NEUTRALIZED`/`STALE` 不进分母。但 **any ERROR → 父至多 `INFRA_BLOCKED`** 仍优先于 quorum 结果
+  （Q10-B），因此 `quorum(2)` + 2 PASS + 1 ERROR 的父=INFRA_BLOCKED，而不是 quorum PASS。
+- **V15 逐算子补行**：
+
+| 组算子 | 子组合 | 父 |
+|---|---|---|
+| all_pass | PASS/PASS | PASS |
+| all_pass | PASS/ERROR | INFRA_BLOCKED（Q10-B） |
+| all_pass | ERROR/ERROR | INFRA_BLOCKED |
+| count_fail | PASS/FAIL | FAIL |
+| count_fail | PASS/ERROR | INFRA_BLOCKED |
+| quorum(2) | PASS/PASS/FAIL | PASS（分母 3） |
+| quorum(2) | PASS/PASS/ERROR | INFRA_BLOCKED（分母 2，但 ERROR 优先） |
+| quorum(2) | PASS/FAIL/ERROR | INFRA_BLOCKED |
+| quorum(2) | FAIL/FAIL/ERROR | INFRA_BLOCKED（分母 2，quorum 未达也落到 infra） |
+| 任意 | 含 STALE | STALE（遮蔽 FAIL，审计可见） |
+| 任意 | 含 NEUTRALIZED | NEUTRALIZED（最高优先） |
+
 - **V22（新增）**：活叶 target 失配 → STALE 传播；固定断言（不是 INFRA_BLOCKED）。
 - **配额/规模**：Q4 ratchet 第四轴；V9 4 层×64 叶；深度 16（Q7）；空组 rc2（Q6）。
 
