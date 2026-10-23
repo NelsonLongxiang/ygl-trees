@@ -318,7 +318,17 @@ export type TaskStatus = "todo" | "doing" | "done";
  * bodies by their `error`, 404 (task not in the authorized project) and 400
  * (malformed) as plain text.
  */
-export async function advanceTask(id: string, to: TaskStatus): Promise<{ id: string; title: string; from: TaskStatus; to: TaskStatus }> {
+export interface TaskStepReceipt {
+  id: string;
+  /** absent on the idempotent receipt (0.114.29 #70) */
+  title?: string;
+  from: TaskStatus;
+  to: TaskStatus;
+  /** the task already had the requested status: nothing was written */
+  idempotent?: boolean;
+}
+
+export async function advanceTask(id: string, to: TaskStatus): Promise<TaskStepReceipt> {
   const r = await fetch("api/task", {
     method: "POST",
     headers: { "content-type": "application/json" },
