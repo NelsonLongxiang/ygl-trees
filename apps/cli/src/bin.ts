@@ -89,7 +89,7 @@ export const CHECKER_SELECTION: ReadonlyArray<{ type: string; use: string; pitfa
   { type: "sql-pair", use: "两表 join 键的两侧标量对比（sum/count per key）", pitfall: "没有可对齐的 join key 时不可用；列对列只许同表（{col}）" },
   { type: "exists", use: "存在性：expect true 要求至少一行，expect false 要求零行", pitfall: "只判有无、不计数；要数量阈值用 count" },
   { type: "file", use: "附件文件：glob + size/sha256 + require 清单", pitfall: "附件未提交时 min 缺省不等于 0；--submission 未给会直接 ERROR" },
-  { type: "command", use: "argv 直执行：exit code / stdout 契约", pitfall: "命令来自报告数据时会被拒（shell 注入面）；需 --allow-command 语义见契约" },
+  { type: "command", use: "argv 直执行：exit code / stdout 契约", pitfall: "command 仅执行面：serve --enable-verify-jobs 注入 YGL_VERIFY_ALLOW_CMD 或 authored 封包；prepare 不收 command（--allow-command 不是 CLI 旗标）" },
   { type: "agent", use: "rubric 自审：checkpoint 覆盖 + 引用原文", pitfall: "fact 模式（M13-1）拒 agent 型；sealed.review=false 时 agent 不参与" },
 ];
 
