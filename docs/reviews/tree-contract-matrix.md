@@ -6,7 +6,7 @@ kind: 评审
 
 # A1 tree run 契约对照表（机器生成）
 
-> 生成：`node scripts/tree-contract-matrix.mjs --results <vitest.json>`；commit **dadf3e0**，tag **v0.114.22-2-gdadf3e0**。
+> 生成：`node scripts/tree-contract-matrix.mjs --results <vitest.json>`；commit **4316721**，tag **v0.114.22-5-g4316721**。
 > 状态口径：green=对应测试通过；partial=有测试但断言面未全覆盖；planned=尚未落码；missing=清单有、测试未找到；red=测试失败。
 > **不得手改本表**——改清单 `docs/reviews/tree-contract-matrix.json` 后重跑。
 
@@ -27,13 +27,13 @@ kind: 评审
 | V7 | 同输入双跑 verdict_digest 逐字节相等 | V7 | **green** | A1 tree run (runtime first cut) runs a two-leaf tree: verdict, per-leaf runs, deterministic digest, events | tree run 两次 diff digest | verify-tree.spec |
 | V3 | 叶 ERROR → 组/根 infra-blocked，非 FAIL | V3 | **partial** | A1 tree run (runtime first cut) aggregate all_pass ERROR+ERROR => INFRA_BLOCKED | 全 ERROR 叶 | aggregate 矩阵（CLI ERROR 叶待补） |
 | G8 | tree spec pin engine/corpus/contract + JCS verdict_digest | v1.2 G8 | **planned** | — | 待裁定后落码 | v1.2 draft §8 |
-| Q10 | ERROR 单一规则（A 不否决 PASS / B 至多 INFRA_BLOCKED） | v1.2 G3 | **planned** | — | 待裁定后落码 | v1.2 draft §3 |
-| Q11 | 幂等键：删 run 幂等，只保留 prepare | v1.2 G5 | **planned** | — | 待裁定后落码 | v1.2 draft §5 |
-| Q12 | V17 同轮自引用：pinned 必须来自已完成 run | v1.2 G6 | **planned** | — | 待裁定后落码 | v1.2 draft §6 |
-| Q13 | V8 跨 workspace 信任根（本 workspace / 外钥登记） | v1.2 G7 | **planned** | — | 待裁定后落码 | v1.2 draft §7 |
+| Q10 | ERROR=B：any ERROR→父至多 INFRA_BLOCKED | v1.2 Q10 | **planned** | — | 待裁定后落码 | v1.2 draft §3 |
+| Q11 | 删 run 幂等，只保留 prepare | v1.2 Q11 | **planned** | — | 待裁定后落码 | v1.2 draft §5 |
+| Q12 | V17 移 run 期：pinned 必须来自已完成 run | v1.2 Q12 | **planned** | — | 待裁定后落码 | v1.2 draft §6 |
+| Q13 | V8 限本 workspace；跨 workspace 留 v1.3 | v1.2 Q13 | **planned** | — | 待裁定后落码 | v1.2 draft §7 |
 | Q4 | V9 规模基线进 ratchet 第四轴 | v0.4 Q4 | **planned** | — | pnpm ratchet（待第四轴） | 附件 A |
-| Q8 | subject 定义（target / target+tree / target+spec 集） | v1.2 G1 | **planned** | — | 待裁定后落码 | v1.2 draft §1 |
-| Q9 | stale 谓词（round/clock/N 轮） | v1.2 G2 | **planned** | — | 待裁定后落码 | v1.2 draft §2 |
+| Q8 | target 声明 + 全叶 data_source/target 一致 + 失配 V 行；subject=repo+commit | v1.2 Q8 | **planned** | — | 待裁定后落码 | v1.2 draft §1 |
+| Q9 | stale=D 引用失配（target 失配 + 冻结 spec_version 漂移；缺字段 fail-closed；沿父链阻 PASS） | v1.2 Q9 | **planned** | — | 待裁定后落码 | v1.2 draft §2 |
 | V21 | 舰队多快照 --db node=path 绑定 | V21 | **planned** | — | 待实现/测试 | v1.2 附件 A |
 
 ## 汇总
