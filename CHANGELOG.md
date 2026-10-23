@@ -10,7 +10,7 @@ lint 编码归一 + webui 幂等修复（#69/#70，总工席经 Claude-OPS-5.5 �
 - **#70（P2）**：webui `/api/task` **幂等同状态分支不再调写服务**——此前 `todo→todo` 幂等请求经
   FORWARD 映射推进到 `doing`（假幂等真推进）。现在同状态返回 `{idempotent:true, from, to}` 零写零事件。
   补回归（todo→todo 不推进 + done→done 零推进）。
-- 测试：+3 例（#69 BOM lint + #70 两例）；unit 953 → **955**；contract 144。
+- 测试：+3 例（#69 BOM lint + #70 两例）；unit 953 → **963**（含 PR#67 +6）；contract 144。
 
 ## 0.114.28
 
