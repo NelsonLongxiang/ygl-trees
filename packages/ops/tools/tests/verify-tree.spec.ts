@@ -180,6 +180,19 @@ describe("A1 tree run (runtime first cut)", () => {
       ["spec_b", "select 1 from t where id=2"],
     ] as const) {
       mkdirSync(join(HOME, "verify", "specs", sid), { recursive: true });
+      mkdirSync(join(HOME, "verify", "materials", "mat_" + sid), { recursive: true });
+      writeFileSync(join(HOME, "verify", "materials", "mat_" + sid, "material.txt"), "fixture " + sid);
+      writeFileSync(
+        join(HOME, "verify", "materials", "mat_" + sid, "material.json"),
+        JSON.stringify({ material_id: "mat_" + sid, title: sid, created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] })
+      );
+      writeFileSync(
+        join(HOME, "verify", "materials", "mat_" + sid, "material.txt"), "fixture " + sid
+      );
+      writeFileSync(
+        join(HOME, "verify", "specs", sid, "prepare.json"),
+        JSON.stringify({ material_id: "mat_" + sid })
+      );
       writeFileSync(
         join(HOME, "verify", "specs", sid, "spec.json"),
         JSON.stringify({
@@ -205,14 +218,18 @@ describe("A1 tree run (runtime first cut)", () => {
     const prep = submitTree(tree);
     expect(prep.rc).toBe(0);
     const tid = prep.j.tree_spec_id as string;
-    const r1 = run(["verify", "tree", "run", tid, "--db", snap, "--no-archive"]);
+    const r1 = run(["verify", "tree", "run", tid, "--db", snap]);
     expect(r1.rc, r1.out + r1.err).toBe(0);
     expect(r1.j.verdict).toBe("FAIL");
     expect(r1.j.nodes.find((n: any) => n.node_id === "root").verdict).toBe("FAIL");
     expect(r1.j.nodes.filter((n: any) => n.kind === "leaf").every((n: any) => n.report_id)).toBe(true);
     expect(existsSync(r1.j.report_path)).toBe(true);
+    const rootNode = r1.j.nodes.find((n: any) => n.node_id === "root");
+    expect(rootNode.archive_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const av = run(["verify", "archive", "verify", rootNode.archive_path]);
+    expect(av.rc, av.out).toBe(0);
 
-    const r2 = run(["verify", "tree", "run", tid, "--db", snap, "--no-archive"]);
+    const r2 = run(["verify", "tree", "run", tid, "--db", snap]);
     expect(r2.rc).toBe(0);
     expect(r2.j.verdict_digest).toBe(r1.j.verdict_digest); // audit/time excluded (V7)
     // events appended (V10)
