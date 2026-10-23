@@ -1,10 +1,11 @@
 /**
  * 任务清单 (R12.2：status 分组 + 勾销)。The one place the overview writes: a
- * task moves a single step along todo → doing → done, the same state machine
- * as `ygl-trees task doing|done` (forward only, every step logged as a
- * task.status event). Open work sorts first so the expert sees what is live.
+ * task moves a single step along todo → doing → done through the same writes
+ * as `ygl-trees task doing|done` (every step logged as a task.status event).
+ * The page only moves forward; stepping back is the CLI's `task todo|doing`.
+ * Open work sorts first so the expert sees what is live.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, message as antdMessage, Popconfirm, Table, Typography } from "antd";
 import { CheckOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { advanceTask, type TaskStatus } from "./api";
@@ -30,6 +31,9 @@ const STEP: Partial<Record<TaskStatus, { to: TaskStatus; label: string; icon: Re
 
 type Task = { id: string; title: string; status: string };
 
+/** 完成 asks first: the page has no step back; the CLI does (`task todo|doing`). */
+export const DONE_CONFIRM = { title: "标记为已完成？", description: "总览里不能退回；需要时在 CLI 用 task todo 退回。" };
+
 /** doing, then todo, then done; the server's newest-first order holds inside each group. */
 export function groupTasks<T extends { status: string }>(tasks: T[]): T[] {
   return tasks
@@ -38,30 +42,26 @@ export function groupTasks<T extends { status: string }>(tasks: T[]): T[] {
     .map(([t]) => t);
 }
 
+/** A step this page wrote, tied to the payload that was on screen when it landed. */
+export type Written = { to: TaskStatus; seen: readonly Task[] };
+
 /**
- * Status shown for a task: a step this page just wrote wins until the live push
- * reaches it, so the row never flips back while the server catches up.
+ * Status shown for a task: a step this page just wrote shows only over the
+ * payload it was written against. Any newer payload — push or poll — is the
+ * server's word and wins, even when it moved the task back (CLI `task todo`)
+ * or names the very status we sent: the next click must send what the server
+ * holds now (#66).
  */
-export function shownStatus(server: string, moved?: TaskStatus): TaskStatus {
-  const s = asStatus(server);
-  return moved && ORDER.indexOf(moved) > ORDER.indexOf(s) ? moved : s;
+export function shownStatus(server: string, tasks: readonly Task[], written?: Written): TaskStatus {
+  return written && written.seen === tasks ? written.to : asStatus(server);
 }
 
 export function TaskList({ tasks }: { tasks: Task[] }) {
   const [message, messageHolder] = antdMessage.useMessage();
   const [busy, setBusy] = useState<Record<string, true>>({});
-  const [moved, setMoved] = useState<Record<string, TaskStatus>>({});
+  const [written, setWritten] = useState<Record<string, Written>>({});
 
-  // forget a written step once the pushed data shows it (or something later)
-  useEffect(() => {
-    setMoved((m) => {
-      const next = { ...m };
-      for (const t of tasks) if (next[t.id] && shownStatus(t.status, next[t.id]) === asStatus(t.status)) delete next[t.id];
-      return Object.keys(next).length === Object.keys(m).length ? m : next;
-    });
-  }, [tasks]);
-
-  const rows = groupTasks(tasks.map((t) => ({ ...t, status: shownStatus(t.status, moved[t.id]) })));
+  const rows = groupTasks(tasks.map((t) => ({ ...t, status: shownStatus(t.status, tasks, written[t.id]) })));
   const counts = ORDER.map((s) => `${TASK_STATUS[s].label} ${rows.filter((t) => t.status === s).length}`).join(" · ");
 
   const step = async (t: Task) => {
@@ -69,7 +69,7 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
     setBusy((b) => ({ ...b, [t.id]: true }));
     try {
       const r = await advanceTask(t.id, from);
-      setMoved((m) => ({ ...m, [t.id]: r.to }));
+      setWritten((w) => ({ ...w, [t.id]: { to: r.to, seen: tasks } }));
       message.success(`「${t.title}」${TASK_STATUS[from].label} → ${TASK_STATUS[r.to].label}`);
     } catch (e: any) {
       message.error(`没能更新「${t.title}」：${String(e?.message || e)}`);
@@ -123,11 +123,10 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
                   {s.label}
                 </Button>
               );
-              // done is final (no way back, here or in the CLI), so it asks first
               return s.to === "done" ? (
                 <Popconfirm
-                  title="标记为已完成？"
-                  description="完成后不能退回待办或进行中。"
+                  title={DONE_CONFIRM.title}
+                  description={DONE_CONFIRM.description}
                   okText="完成"
                   cancelText="取消"
                   okButtonProps={{ autoInsertSpace: false }}
