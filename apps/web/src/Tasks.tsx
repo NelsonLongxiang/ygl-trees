@@ -65,12 +65,13 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
   const counts = ORDER.map((s) => `${TASK_STATUS[s].label} ${rows.filter((t) => t.status === s).length}`).join(" · ");
 
   const step = async (t: Task) => {
-    const from = asStatus(t.status);
+    const next = STEP[asStatus(t.status)];
+    if (!next) return;
     setBusy((b) => ({ ...b, [t.id]: true }));
     try {
-      const r = await advanceTask(t.id, from);
+      const r = await advanceTask(t.id, next.to);
       setWritten((w) => ({ ...w, [t.id]: { to: r.to, seen: tasks } }));
-      message.success(`「${t.title}」${TASK_STATUS[from].label} → ${TASK_STATUS[r.to].label}`);
+      message.success(`「${t.title}」${TASK_STATUS[r.from].label} → ${TASK_STATUS[r.to].label}`);
     } catch (e: any) {
       message.error(`没能更新「${t.title}」：${String(e?.message || e)}`);
     } finally {
