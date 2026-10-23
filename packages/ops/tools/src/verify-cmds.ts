@@ -180,10 +180,10 @@ function validateTreeSpec(
       const node = byId.get(nid);
       if (!node) return { error: "pinned target not found: " + nid };
       if (node.kind !== "leaf") return { error: "pinned target must be a leaf: " + nid };
-      if (typeof sha !== "string" || !/^[0-9a-f]{64}$/.test(sha)) {
-        return { error: "pinned " + nid + ": sha256 must be 64 lowercase hex chars" };
+      if (typeof sha !== "string" || !/^(?:sha256:)?[0-9a-f]{64}$/.test(sha)) {
+        return { error: "pinned " + nid + ": sha256 must be 64 lowercase hex chars (optionally sha256: prefix)" };
       }
-      pinned[nid] = sha;
+      pinned[nid] = sha.startsWith("sha256:") ? sha : "sha256:" + sha;
     }
   }
   const canonical = JSON.stringify({
@@ -330,15 +330,21 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     if (pinnedSha) {
       const arcDir = join(p.root, "archives");
       let entryPath = "";
+      let entryZip = "";
       try {
         for (const f of readdirSync(arcDir)) {
           if (!f.endsWith(".json")) continue;
           const reg = readJson<any>(join(arcDir, f));
           const hit = (reg?.archives ?? []).find((a: any) => a?.archive_sha256 === pinnedSha);
-          if (hit?.path) { entryPath = String(hit.path); break; }
+          if (hit?.path) { entryPath = String(hit.path); entryZip = String(hit.zip_sha256 ?? ""); break; }
         }
       } catch { /* no registry */ }
       if (!entryPath) throw new Error("pinned " + n.id + ": archive not found for sha256 " + pinnedSha);
+      const zipMutated = !!(entryZip && sha256(readFileSync(entryPath)) !== entryZip);
+      if (zipMutated) {
+        nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha, verdict: "NEUTRALIZED", stale: false, neutralized_reason: "archive zip_sha256 mismatch (mutated after archiving)" });
+        return "NEUTRALIZED";
+      }
       const av = verifyArchiveFile(entryPath);
       if (!av.ok) {
         // S-6: a tampered child archive neutralizes its subtree — never a silent
@@ -930,16 +936,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const sha = rawSha.startsWith("sha256:") ? rawSha : "sha256:" + rawSha;
         const arcDir = join(p.root, "archives");
         let entryPath = "";
+        let entryZip = "";
         try {
           for (const f of readdirSync(arcDir)) {
             if (!f.endsWith(".json")) continue;
             const reg = readJson<any>(join(arcDir, f));
             const hit = (reg?.archives ?? []).find((a: any) => a?.archive_sha256 === sha);
-            if (hit?.path) { entryPath = String(hit.path); break; }
+            if (hit?.path) { entryPath = String(hit.path); entryZip = String(hit.zip_sha256 ?? ""); break; }
           }
         } catch { /* no registry dir */ }
         if (!entryPath) {
           bad(ctx, "tree spec invalid: pinned " + nid + ": archive not found for sha256 " + sha + " (archive it first)");
+          return 2;
+        }
+        // Any byte change (even an appended trailer) changes the zip hash; the
+        // in-zip manifest alone cannot see trailing bytes, so compare the file
+        // against the registry's zip_sha256 (V6 injection is exactly this).
+        if (entryZip && sha256(readFileSync(entryPath)) !== entryZip) {
+          bad(ctx, "tree spec invalid: pinned " + nid + ": archive zip_sha256 mismatch (file mutated after archiving)");
           return 2;
         }
         const av = verifyArchiveFile(entryPath);

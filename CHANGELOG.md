@@ -7,7 +7,9 @@ A1 树层收口：组节点独立 report+archive + V 系夹具脚本。
 - **组层真实 report+archive**：每个 group 生成标准形状 `VerifyReport`（子节点为 asserts）+ 合成 spec，
   走 `buildArchive`（`skipMaterials`，组无材料）并登记 registry；树 verdict 走 additive `tree` 信封，
   标准 `overall` 保持 fold 一致（PASS/FAIL/ERROR）；`tree run` 节点记录 `report_id`/`archive_sha256`/`archive_path`。
-- **V6 语义**：pinned 叶归档验签失败 → 该叶子 `NEUTRALIZED`（不静默丢、不 PASS），聚合按矩阵阻断根 PASS。
+- **V6 语义**：pinned 叶归档验签失败 → 该叶子 `NEUTRALIZED`（不静默丢、不 PASS），聚合按矩阵阻断根 PASS；
+  额外校验 registry 记录的 **zip_sha256**（追加尾字节等 in-zip manifest 看不到的篡改也会被识别——验证席探针
+  实测的 V6 缺口，本版修复）。
 - **夹具**：`scripts/tree-fixture.mjs` 一键生成隔离 HOME（两叶 spec+material+prepare、snapshot、树 spec、
   真实叶归档、pinned 树 spec），输出 `leaf_archive_path` 供验证席做篡改→NEUTRALIZED 验收。
 - 测试：`verify-tree.spec` 组归档断言（root archive 存在 + `verify archive verify` 通过 + 双跑 digest 相等）；

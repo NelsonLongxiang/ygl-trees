@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -237,5 +237,20 @@ describe("A1 tree run (runtime first cut)", () => {
     const n = (ev.prepare("SELECT COUNT(*) c FROM events WHERE kind='verify.tree.run'").get() as any).c;
     ev.close();
     expect(Number(n)).toBe(2);
+
+    // V6: a byte appended AFTER archiving changes the zip hash (the in-zip
+    // manifest alone cannot see a trailer) -> pinned subtree NEUTRALIZED.
+    const leafA = r1.j.nodes.find((x: any) => x.node_id === "a");
+    const pinnedTree = submitTree({
+      tree_spec_version: 1, root: "root",
+      nodes: [group("root", ["a"]), leaf("a", "spec_a")],
+      pinned: { a: leafA.archive_sha256 },
+    });
+    expect(pinnedTree.rc, JSON.stringify(pinnedTree.j) + pinnedTree.out + pinnedTree.err).toBe(0);
+    appendFileSync(leafA.archive_path, Buffer.from("X"));
+    const rv = run(["verify", "tree", "run", pinnedTree.j.tree_spec_id, "--db", snap]);
+    expect(rv.rc, rv.out + rv.err).toBe(0);
+    expect(rv.j.verdict).toBe("NEUTRALIZED");
+    expect(rv.j.nodes.find((x: any) => x.node_id === "root").verdict).toBe("NEUTRALIZED");
   });
 });
