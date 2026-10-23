@@ -423,8 +423,8 @@ npm **latest=0.114.15**、shasum **`f5b41ed7…`**；官方字节 **1,590,149 B 
 发布（2026-10-22）：commit **`35f286a`**；tag **`v0.114.16 = 1c63ed5f… → ^{commit}=35f286a…`**（双远端）；
 npm **latest=0.114.16**、shasum **`edd92449…`**；官方字节 **1,591,031 B / sha256 `dd99c8ee…`**
 （publish `2026-10-22T16:17:56Z`，fileCount 177）。
-**0.114.17 记录（2026-10-23，A1 第一刀）**：属主经主队席转发裁定 A1 契约 v1.0（Q1–Q7 按两席建议通过、
-charter §4.7 增补草案定稿）。本版落 `verify tree prepare`：material JSON → 冻结期校验（leaf spec 存在/
+**0.114.17 记录（2026-10-23，A1 第一刀）**：**relayed-order**——属主口头「开始」由主队席转发（无正式落章/签章；
+按 fdc 处置 0.1 如实披露，实现不替裁定背书）。Q1–Q7 按两席建议通过、charter §4.7 增补草案定稿为**转达内容**。本版落 `verify tree prepare`：material JSON → 冻结期校验（leaf spec 存在/
 组非空/算子封闭集/环/悬空/不可达/深度 16/pinned 形状）→ `verify/trees/ts_*.json`；错误单对象 rc=2。
 verify-tree.spec 8 例；unit 908→916。run/report/trace/archive 与 V1–V19 运行时验收列下一刀。
 发布（2026-10-22）：commit **`6f51d78`**；tag **`v0.114.17 = 93329345… → ^{commit}=6f51d78…`**（双远端）；
@@ -435,8 +435,9 @@ npm **latest=0.114.17**、shasum **`bfb1dd17…`**；官方字节 **1,602,500 B 
 验签，聚合解析器拒绝 quorum2/quorum(2/all_pass() 等畸形。verify-tree.spec 10 例；unit 916→918。
 发布（2026-10-22）：commit **`843038c`**；tag **`v0.114.18 = f7e3f0fd… → ^{commit}=843038c…`**（双远端）；
 npm **latest=0.114.18**、shasum **`19a1e21c…`**；官方字节 **1,591,413 B / sha256 `2617ead8…`**
-（publish `2026-10-22T19:49:30Z`，fileCount 182）。两席补认 A1 契约 v1.1，契约冻结完整。
-**0.114.19 记录（2026-10-23，A1 运行时第一刀）**：`tree run/report/trace`——叶真实 run+默认 archive、
+（publish `2026-10-22T19:49:30Z`，fileCount 182）。两席按 relayed-order 复核 v1.1——**非属主正式落章**；
+契约按 fdc 0.1 标注待裁定，冻结线见 0.2。
+**0.114.19 记录（2026-10-23，A1 运行时第一刀）**（实现=relayed-order，未落章；见 0.1/0.2）：`tree run/report/trace`——叶真实 run+默认 archive、
 pinned 验签回读、四态聚合矩阵、多快照绑定；树报告 `verdict_digest` 只覆盖判定投影（V7），events 只增。
 组独立 report+archive 列下一刀。verify-tree.spec 18 例；unit 918→926。棘轮：bundle 772,395→795,880
 （维护者认账；web/cold 基线未动）。
