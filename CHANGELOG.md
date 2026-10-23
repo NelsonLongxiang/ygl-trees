@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.114.27
+
+fdc P1 处置（R3 平台漂移）+ 门禁自检修复。
+
+- **P1 边界实证**：fdc 干净 Windows 克隆（core.autocrlf=true）R3 FAIL 的失败面对的是 **0.103 家族
+  旧 ref**（彼时 .gitattributes 无 eol 约束，存量 blob 检出 CRLF）；0.108.0（`884f3e2` 全仓
+  `* text=auto eol=lf`）已修——HEAD autocrlf=true 克隆实测 **R3 PASS / 29 entries 0 drift**。renormalize
+  无可改（blob 已全 LF；`git ls-files --eol` 零 crlf）。
+- **回归夹具**（fdc ③）：`r3-eol-regression.spec`——`git -c core.autocrlf=true clone` 干净克隆 →
+  meta-tooling 0 drift + `verify meta` R3 PASS（双判据），钉住不复发。
+- **pack-check 5b 自检修**：pack-repro 两行 stderr 落 `$WORK/*.err` 并失败时回显——不再吞真实报错
+  （本会话三次 5b 调排的根因之一）；`pack-check.sh` 显式 `--reregister`（#37 lineage）。
+- 测试：+1 例；unit 946 → **947**；contract 144。
+
 ## 0.114.26
 
 MCP 写面扩展（属主裁定方案 D：「MCP 也是要的」——扩现有桥，不建第二座）。
