@@ -9,7 +9,7 @@ import { ThemeProvider } from "../src/theme";
 import type { DashboardData } from "../src/api";
 import { copyText } from "../src/clipboard";
 import { SERIES_NOTE } from "../src/timeline";
-import { TaskList, groupTasks, shownStatus } from "../src/Tasks";
+import { DONE_CONFIRM, TaskList, groupTasks, shownStatus } from "../src/Tasks";
 
 /**
  * Overview = the expert ↔ agent cockpit (user direction 2026-10-20: UI
@@ -153,11 +153,25 @@ describe("TaskList (R12.2 勾销)", () => {
     expect(text).toContain("待办 2 · 进行中 1 · 已完成 1");
   });
 
-  it("a step this page wrote holds until the push reaches it, and never moves a task backwards", () => {
-    expect(shownStatus("todo", "doing")).toBe("doing");
-    expect(shownStatus("doing", "doing")).toBe("doing");
-    expect(shownStatus("done", "doing")).toBe("done");
-    expect(shownStatus("weird")).toBe("todo");
+  it("a step this page wrote shows only over the payload it was written against", () => {
+    const seen = [{ id: "b", title: "写报告", status: "todo" }];
+    expect(shownStatus("todo", seen, { to: "doing", seen })).toBe("doing");
+    expect(shownStatus("weird", seen)).toBe("todo");
+  });
+
+  it("any newer payload is the server's word — a CLI step back wins over the page's step (review of ee1af12, #66)", () => {
+    const seen = [{ id: "b", title: "写报告", status: "todo" }];
+    const written = { to: "doing" as const, seen };
+    // page wrote todo → doing, then the CLI ran `task todo`: the next push says todo and must show todo,
+    // so the row offers 开始 again instead of 完成 (which would send "doing" and overwrite the reset)
+    expect(shownStatus("todo", [{ ...seen[0] }], written)).toBe("todo");
+    expect(shownStatus("doing", [{ ...seen[0], status: "doing" }], written)).toBe("doing");
+    expect(shownStatus("done", [{ ...seen[0], status: "done" }], written)).toBe("done");
+  });
+
+  it("the confirm tells the truth: no step back on the page, the CLI can (review of ee1af12)", () => {
+    expect(DONE_CONFIRM.description).toContain("总览里不能退回");
+    expect(DONE_CONFIRM.description).toContain("task todo");
   });
 });
 
