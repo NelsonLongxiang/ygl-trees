@@ -478,6 +478,9 @@ v1.2 定稿 + 裁定单 v2 + 矩阵重生成已交；Phase 2 两席会签后解�
 （tags 域隔离）落点；当笔记量/搜索噪声触发时，评估 events 公开 writer 面（结构化 append + 双键索引查询）。
 BirthRecord 五字段：session_id/pack_id/member_name/manifest_sha256/declared_at。触发条件/优先级由开发线评估；
 A1 V1–V19 夹具共作窗口开启时预告主队席。
+发布（2026-10-23）：commit **`07f9ee0`**；tag **`v0.114.23 = e92c9dfc… → ^{commit}=07f9ee0…`**（双远端）；
+npm **latest=0.114.23**、shasum **`249e269f…`**；官方字节 **1,628,230 B / sha256 `8b623e4a…`**
+（publish `2026-10-23T09:36:39Z`，fileCount 187）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
