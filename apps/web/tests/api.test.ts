@@ -7,7 +7,7 @@
  * tests of the transport logic, not of a real browser.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { subscribeDashboard, fetchDashboard, type DashboardData } from "../src/api";
+import { subscribeDashboard, fetchDashboard, advanceTask, type DashboardData } from "../src/api";
 
 const PAYLOAD = (tag: string): DashboardData =>
   ({ brief: { current_project: null, counts: {}, next_actions: [], marker: tag } }) as any;
@@ -202,5 +202,25 @@ describe("subscribeDashboard 断线上报（66d10ab 复评：断线不得静默�
     await vi.advanceTimersByTimeAsync(10000);
     await vi.waitFor(() => expect(errors).toEqual(["Failed to fetch"]));
     dispose();
+  });
+});
+
+describe("advanceTask (R12.2)", () => {
+  it("posts the status on screen and returns the step the server wrote", async () => {
+    const calls: any[] = [];
+    vi.stubGlobal("fetch", (async (url: string, init: any) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, text: async () => JSON.stringify({ id: "t1", title: "x", from: "todo", to: "doing" }) };
+    }) as any);
+    const r = await advanceTask("t1", "todo");
+    expect(r.to).toBe("doing");
+    expect(calls[0].url).toBe("api/task");
+    expect(calls[0].init.method).toBe("POST");
+    expect(JSON.parse(calls[0].init.body)).toEqual({ id: "t1", status: "todo" });
+  });
+
+  it("surfaces the server's plain-text refusal verbatim", async () => {
+    vi.stubGlobal("fetch", (async () => ({ ok: false, status: 404, text: async () => "task not accessible under current selection: t1" })) as any);
+    await expect(advanceTask("t1", "doing")).rejects.toThrow("task not accessible under current selection: t1");
   });
 });
