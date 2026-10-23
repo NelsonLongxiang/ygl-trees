@@ -26,6 +26,7 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 - 数据源：`agent brief --json` 输出
 - 显示：当前项目、counts（sources/evidence/claims/artifacts/kb/skills）、next_actions、健康度提示
 - 布局：卡片网格
+- **任务清单勾销（R12.2）**：apps/web/src/Tasks.tsx——进行中 / 待办 / 已完成分组（组内保留服务端新→旧），每行只有一个前进按钮：待办「开始」、进行中「完成」（完成先确认，状态机只进不退，与 `task doing|done` 同一路径 `POST /api/task`，每步落 task.status 事件）。写回后本行先显示新状态，等实时推送追上再交还服务端数据；失败原文提示。这是概览唯一的写入面——「下一步操作」仍只复制命令、不执行。
 
 ### 2. 科技树可视化
 - 数据源：`node export --json` 输出
