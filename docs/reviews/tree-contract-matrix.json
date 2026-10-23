@@ -1,28 +1,204 @@
 {
   "generated_from": "docs/reviews/tree-contract-matrix.json",
   "rows": [
-    { "id": "Q1", "assertion": "聚合算子封闭集 count_fail/all_pass/quorum(N)，min/max/and/or 后置", "source": "v0.4 Q1", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "aggregate all_pass", "probe": "verify tree prepare 未知算子 → rc2", "evidence": "verify-tree.spec / V16" },
-    { "id": "Q2", "assertion": "NEUTRALIZED 独立 verdict，阻断根 PASS", "source": "v0.4 Q2", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "NEUTRALIZED", "probe": "verify tree run pinned 篡改 → NEUTRALIZED", "evidence": "verify-tree.spec / V6" },
-    { "id": "Q3", "assertion": "run 发起时 CLI 生成 round_id", "source": "v0.4 Q3", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "runs a two-leaf tree", "probe": "verify tree run --json | jq .round_id", "evidence": "tree report round_id" },
-    { "id": "Q4", "assertion": "V9 规模基线进 ratchet 第四轴", "source": "v0.4 Q4", "planned": true, "probe": "pnpm ratchet（待第四轴）", "evidence": "附件 A" },
-    { "id": "Q5", "assertion": "tree spec 用 JSON（可机械校验/digest）", "source": "v0.4 Q5", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "valid tree freezes", "probe": "verify tree prepare --json", "evidence": "verify-tree.spec" },
-    { "id": "Q6", "assertion": "空组 prepare 拒绝 rc2", "source": "v0.4 Q6", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "empty group", "probe": "verify tree prepare 空组 → rc2", "evidence": "verify-tree.spec" },
-    { "id": "Q7", "assertion": "叶路径深度默认 16，超限 rc2", "source": "v0.4 Q7", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "depth", "probe": "verify tree prepare 深度 17 → rc2", "evidence": "verify-tree.spec" },
-    { "id": "Q8", "assertion": "subject 定义（target / target+tree / target+spec 集）", "source": "v1.2 G1", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §1" },
-    { "id": "Q9", "assertion": "stale 谓词（round/clock/N 轮）", "source": "v1.2 G2", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §2" },
-    { "id": "Q10", "assertion": "ERROR 单一规则（A 不否决 PASS / B 至多 INFRA_BLOCKED）", "source": "v1.2 G3", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §3" },
-    { "id": "Q11", "assertion": "幂等键：删 run 幂等，只保留 prepare", "source": "v1.2 G5", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §5" },
-    { "id": "Q12", "assertion": "V17 同轮自引用：pinned 必须来自已完成 run", "source": "v1.2 G6", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §6" },
-    { "id": "Q13", "assertion": "V8 跨 workspace 信任根（本 workspace / 外钥登记）", "source": "v1.2 G7", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §7" },
-    { "id": "G8", "assertion": "tree spec pin engine/corpus/contract + JCS verdict_digest", "source": "v1.2 G8", "planned": true, "probe": "待裁定后落码", "evidence": "v1.2 draft §8" },
-    { "id": "V1", "assertion": "三层嵌套一叶 FAIL → 根 FAIL，逐层 report", "source": "V1", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "runs a two-leaf tree", "probe": "tree run FAIL 叶传播", "evidence": "verify-tree.spec（两层）" },
-    { "id": "V3", "assertion": "叶 ERROR → 组/根 infra-blocked，非 FAIL", "source": "V3", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "aggregate all_pass ERROR+ERROR", "probe": "全 ERROR 叶", "evidence": "aggregate 矩阵（CLI ERROR 叶待补）", "partial": true },
-    { "id": "V5", "assertion": "树含环 prepare rc2", "source": "V5", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "cycle", "probe": "tree prepare 环 → rc2", "evidence": "verify-tree.spec" },
-    { "id": "V6", "assertion": "归档篡改 → 子树 NEUTRALIZED，根不得 PASS", "source": "V6", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "runs a two-leaf tree", "probe": "pinned 归档追加字节 → run NEUTRALIZED", "evidence": "verify-tree.spec V6 段" },
-    { "id": "V7", "assertion": "同输入双跑 verdict_digest 逐字节相等", "source": "V7", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "runs a two-leaf tree", "probe": "tree run 两次 diff digest", "evidence": "verify-tree.spec" },
-    { "id": "V15", "assertion": "四态聚合矩阵", "source": "V15", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "aggregate ", "probe": "纯函数矩阵", "evidence": "verify-tree.spec 7 例" },
-    { "id": "V16", "assertion": "未知聚合算子（含畸形形态）prepare rc2", "source": "V16", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "malformed aggregates", "probe": "quorum2 / all_pass() → rc2", "evidence": "verify-tree.spec" },
-    { "id": "V20", "assertion": "同 canonical tree 重复 prepare 幂等同 id", "source": "V20", "test": "packages/ops/tools/tests/verify-tree.spec.ts", "test_title": "same canonical tree is idempotent", "probe": "tree prepare 两次同 id", "evidence": "verify-tree.spec" },
-    { "id": "V21", "assertion": "舰队多快照 --db node=path 绑定", "source": "V21", "planned": true, "probe": "待实现/测试", "evidence": "v1.2 附件 A" }
+    {
+      "id": "Q1",
+      "assertion": "聚合算子封闭集 count_fail/all_pass/quorum(N)，min/max/and/or 后置",
+      "source": "v0.4 Q1",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "aggregate all_pass",
+      "probe": "verify tree prepare 未知算子 → rc2",
+      "evidence": "verify-tree.spec / V16"
+    },
+    {
+      "id": "Q2",
+      "assertion": "NEUTRALIZED 独立 verdict，阻断根 PASS",
+      "source": "v0.4 Q2",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "NEUTRALIZED",
+      "probe": "verify tree run pinned 篡改 → NEUTRALIZED",
+      "evidence": "verify-tree.spec / V6"
+    },
+    {
+      "id": "Q3",
+      "assertion": "run 发起时 CLI 生成 round_id",
+      "source": "v0.4 Q3",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "runs a two-leaf tree",
+      "probe": "verify tree run --json | jq .round_id",
+      "evidence": "tree report round_id"
+    },
+    {
+      "id": "Q4",
+      "assertion": "V9 规模基线进 ratchet 第四轴",
+      "source": "v0.4 Q4",
+      "planned": true,
+      "probe": "pnpm ratchet（待第四轴）",
+      "evidence": "附件 A"
+    },
+    {
+      "id": "Q5",
+      "assertion": "tree spec 用 JSON（可机械校验/digest）",
+      "source": "v0.4 Q5",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "valid tree freezes",
+      "probe": "verify tree prepare --json",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "Q6",
+      "assertion": "空组 prepare 拒绝 rc2",
+      "source": "v0.4 Q6",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "empty group",
+      "probe": "verify tree prepare 空组 → rc2",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "Q7",
+      "assertion": "叶路径深度默认 16，超限 rc2",
+      "source": "v0.4 Q7",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "depth",
+      "probe": "verify tree prepare 深度 17 → rc2",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "Q8",
+      "assertion": "target 声明 + 全叶 data_source/target 一致 + 失配 V 行；subject=repo+commit",
+      "source": "v1.2 Q8",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §1"
+    },
+    {
+      "id": "Q9",
+      "assertion": "stale=D 引用失配（target 失配 + 冻结 spec_version 漂移；缺字段 fail-closed；沿父链阻 PASS）",
+      "source": "v1.2 Q9",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §2"
+    },
+    {
+      "id": "Q10",
+      "assertion": "ERROR=B：any ERROR→父至多 INFRA_BLOCKED",
+      "source": "v1.2 Q10",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §3"
+    },
+    {
+      "id": "Q11",
+      "assertion": "删 run 幂等，只保留 prepare",
+      "source": "v1.2 Q11",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §5"
+    },
+    {
+      "id": "Q12",
+      "assertion": "V17 移 run 期：pinned 必须来自已完成 run",
+      "source": "v1.2 Q12",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §6"
+    },
+    {
+      "id": "Q13",
+      "assertion": "V8 限本 workspace；跨 workspace 留 v1.3",
+      "source": "v1.2 Q13",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §7"
+    },
+    {
+      "id": "G8",
+      "assertion": "tree spec pin engine/corpus/contract + JCS verdict_digest",
+      "source": "v1.2 G8",
+      "planned": true,
+      "probe": "待裁定后落码",
+      "evidence": "v1.2 draft §8"
+    },
+    {
+      "id": "V1",
+      "assertion": "三层嵌套一叶 FAIL → 根 FAIL，逐层 report",
+      "source": "V1",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "runs a two-leaf tree",
+      "probe": "tree run FAIL 叶传播",
+      "evidence": "verify-tree.spec（两层）"
+    },
+    {
+      "id": "V3",
+      "assertion": "叶 ERROR → 组/根 infra-blocked，非 FAIL",
+      "source": "V3",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "aggregate all_pass ERROR+ERROR",
+      "probe": "全 ERROR 叶",
+      "evidence": "aggregate 矩阵（CLI ERROR 叶待补）",
+      "partial": true
+    },
+    {
+      "id": "V5",
+      "assertion": "树含环 prepare rc2",
+      "source": "V5",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "cycle",
+      "probe": "tree prepare 环 → rc2",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "V6",
+      "assertion": "归档篡改 → 子树 NEUTRALIZED，根不得 PASS",
+      "source": "V6",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "runs a two-leaf tree",
+      "probe": "pinned 归档追加字节 → run NEUTRALIZED",
+      "evidence": "verify-tree.spec V6 段"
+    },
+    {
+      "id": "V7",
+      "assertion": "同输入双跑 verdict_digest 逐字节相等",
+      "source": "V7",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "runs a two-leaf tree",
+      "probe": "tree run 两次 diff digest",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "V15",
+      "assertion": "四态聚合矩阵",
+      "source": "V15",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "aggregate ",
+      "probe": "纯函数矩阵",
+      "evidence": "verify-tree.spec 7 例"
+    },
+    {
+      "id": "V16",
+      "assertion": "未知聚合算子（含畸形形态）prepare rc2",
+      "source": "V16",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "malformed aggregates",
+      "probe": "quorum2 / all_pass() → rc2",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "V20",
+      "assertion": "同 canonical tree 重复 prepare 幂等同 id",
+      "source": "V20",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "same canonical tree is idempotent",
+      "probe": "tree prepare 两次同 id",
+      "evidence": "verify-tree.spec"
+    },
+    {
+      "id": "V21",
+      "assertion": "舰队多快照 --db node=path 绑定",
+      "source": "V21",
+      "planned": true,
+      "probe": "待实现/测试",
+      "evidence": "v1.2 附件 A"
+    }
   ]
 }

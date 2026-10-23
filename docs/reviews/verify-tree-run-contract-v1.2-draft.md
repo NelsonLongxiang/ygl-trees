@@ -4,10 +4,10 @@ description: A1 tree run 契约 v1.2 草案（吸收 fdc/K3 九缺口，待属�
 kind: 草案
 ---
 
-# 递归验证器契约 v1.2 · 草案（待属主裁定）
+# 递归验证器契约 v1.2 · 草案（**已被 v1.2 定稿取代**）
 
 > 来源：fdc757f6 × 302cb119 两席《tree run 契约裁定处置行动方案》Phase 1（2026-10-23）。
-> 状态：**草案**。v1.1 为 relayed-order 实现（无属主落章，见 `verify-tree-run-contract.md` §0.1/0.2）；
+> 状态：**历史草案**。现行定稿见 `verify-tree-run-contract-v1.2.md`；属主 2026-10-23 14:01 已落章。v1.1 为 relayed-order 实现（无属主落章，见 `verify-tree-run-contract.md` §0.1/0.2）；
 > 本草案把九缺口逐项做成**可勾选裁定项**，交属主单次过手裁 Q1–Q7（含本草案新增 Q8–Q14）。
 > 裁定前冻结线生效：不实现本草案任何未勾选语义。
 

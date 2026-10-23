@@ -465,6 +465,11 @@ npm **latest=0.114.21**、shasum **`f28e222c…`**；官方字节 **1,606,884 B 
 发布（2026-10-23）：commit **`23fbe87`**；tag **`v0.114.22 = 9de185b6… → ^{commit}=23fbe87…`**（双远端）；
 npm **latest=0.114.22**、shasum **`7e3de252…`**；官方字节 **1,609,963 B / sha256 `8f6a123b…`**
 （publish `2026-10-23T04:36:47Z`，fileCount 182）。
+**A1 契约落章（2026-10-23 14:01，属主直令经 fdc757f6）**：Q8=target 声明+全叶一致+失配 V 行（subject=repo+commit）；
+Q9=D 引用失配（基准=冻结 spec_version，缺字段 fail-closed，stale 沿父链阻 PASS，进 digest）；Q10=B any ERROR→父至多
+INFRA_BLOCKED；Q11 删 run 幂等；Q12=B（V17 移 run 期）；Q13=A 限本 workspace；G8=JCS；G9=附件 A 推荐。
+新增树层第五 verdict STALE（叶 report 四值不变）、全序 NEUTRALIZED>STALE>FAIL>INFRA_BLOCKED>PASS、V15 5×5。
+v1.2 定稿 + 裁定单 v2 + 矩阵重生成已交；Phase 2 两席会签后解冻，Q10 返工+九缺口补齐→0.115.0。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

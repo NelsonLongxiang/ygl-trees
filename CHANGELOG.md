@@ -2,6 +2,9 @@
 
 ## 未发布（裁定 provenance 披露）
 
+- **更新（2026-10-23 14:01）**：属主经 fdc757f6 会话直令**落章**，裁定 Q1–Q13 + G8/G9；v1.2 定稿生效
+  （`docs/reviews/verify-tree-run-contract-v1.2.md` + 裁定单 v2）。下列 relayed-order 披露保留为历史记录。
+
 - **A1 `verify tree run` 契约（v1.1）provenance 补正（2026-10-23，fdc 处置 0.1）**：Q1–Q7 仅有主队席
   `dsh/e9a87677` 转发的属主口头「开始」（~01:05），**无属主直接签章/裁定制品**。0.114.17–0.114.22 的 tree
   实现按 **relayed-order** 如实披露；契约文件已降级为「待裁定草案」，冻结线（fdc 0.2）生效——停止实现
