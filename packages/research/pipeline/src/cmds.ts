@@ -8,7 +8,7 @@ import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../..
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
-import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
+import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
@@ -30,6 +30,10 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human:
   // gets a one-line stderr hint (JSON stdout stays a single object).
   const projectName = process.env.YGL_SELECTION_PROJECT || "";
   const via = currentSelectionVia();
+  // 0.114.22 (K3 #K3-2): shared-bucket + recent same-dimension selection change
+  // => the target may move under this write; warn (not refuse). No actor compare.
+  const selectionWarning = selectionChangeWarning(env.db, "project", (via || "none") as any);
+  if (!ctx.json && selectionWarning) process.stderr.write(`  note: ${selectionWarning}\n`);
   if (!ctx.json && projectName && via && via !== "flag" && via !== "env") {
     const n = Number((env.db.get("SELECT COUNT(*) AS n FROM projects") as any)?.n ?? 0);
     if (n > 1) {
@@ -39,7 +43,10 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human:
   return getOrm(env.db.path)
     .then(fn)
     .then((r) => {
-      writeResult(ctx, r as any, human, projectName ? { project: projectName, project_source: via || undefined } : undefined);
+      writeResult(ctx, r as any, human, {
+        ...(projectName ? { project: projectName, project_source: via || undefined } : {}),
+        ...(selectionWarning ? { selection_warning: selectionWarning } : {}),
+      });
       return 0;
     })
     .catch((e: any) => {

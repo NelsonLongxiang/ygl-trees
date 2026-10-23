@@ -42,6 +42,35 @@ export function treeSessionKey(): string {
   return `current_tree@${sessionId()}`;
 }
 
+/** K3 选择观测（0.114.22）：write-time warning for a selection that can be
+ *  flipped by another session-less process.
+ *
+ *  Criteria (K3 ruling, no actor comparison):
+ *   - shared bucket := source "global" OR (source "session" AND sid "default");
+ *   - the SAME dimension's `project.use` / `tree.use` event is within 90 s.
+ *  A warning means "your target may move under you", not a refusal. */
+export function selectionChangeWarning(
+  db: DB,
+  dimension: "project" | "tree",
+  source: SelectionSource,
+  windowMs = 90_000,
+): string | undefined {
+  const shared = source === "global" || (source === "session" && sessionId() === "default");
+  if (!shared) return undefined;
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const row = db.get(
+    "SELECT ts FROM events WHERE kind=? AND ts>=? ORDER BY ts DESC LIMIT 1",
+    [`${dimension}.use`, since],
+  ) as { ts?: string } | undefined;
+  if (!row?.ts) return undefined;
+  const secs = Math.max(0, Math.round((Date.now() - Date.parse(String(row.ts))) / 1000));
+  const flag = dimension === "project" ? "-p/--project" : "-t/--tree";
+  return (
+    `selection is the shared "${sessionId()}" bucket and ${dimension}.use changed ${secs}s ago ` +
+    `(within 90s) — parallel session-less agents share this pointer; pass ${flag} explicitly or set YGL_SESSION`
+  );
+}
+
 export function projectCount(db: DB): number {
   const r = db.get("SELECT COUNT(*) AS n FROM projects");
   return Number(r?.n ?? 0);
