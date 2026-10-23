@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.114.20
+
+A1 树层收口：组节点独立 report+archive + V 系夹具脚本。
+
+- **组层真实 report+archive**：每个 group 生成标准形状 `VerifyReport`（子节点为 asserts）+ 合成 spec，
+  走 `buildArchive`（`skipMaterials`，组无材料）并登记 registry；树 verdict 走 additive `tree` 信封，
+  标准 `overall` 保持 fold 一致（PASS/FAIL/ERROR）；`tree run` 节点记录 `report_id`/`archive_sha256`/`archive_path`。
+- **V6 语义**：pinned 叶归档验签失败 → 该叶子 `NEUTRALIZED`（不静默丢、不 PASS），聚合按矩阵阻断根 PASS。
+- **夹具**：`scripts/tree-fixture.mjs` 一键生成隔离 HOME（两叶 spec+material+prepare、snapshot、树 spec、
+  真实叶归档、pinned 树 spec），输出 `leaf_archive_path` 供验证席做篡改→NEUTRALIZED 验收。
+- 测试：`verify-tree.spec` 组归档断言（root archive 存在 + `verify archive verify` 通过 + 双跑 digest 相等）；
+  unit 926 不变（用例结构增强）；contract 144。
+- 棘轮：bundle 799,943 B **held**（基线 795,880，容差内；组归档实现未触发认账）。
+
 ## 0.114.19
 
 A1 运行时第一刀：`verify tree run / report / trace`（契约 v1.1 已裁定）。

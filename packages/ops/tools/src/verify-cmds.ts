@@ -258,10 +258,75 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       const childVerdicts: string[] = [];
       for (const c of n.children ?? []) childVerdicts.push(await evalNode(c));
       const verdict = aggregateTreeVerdict(String(n.aggregate), childVerdicts);
-      nodes.push({ node_id: n.id, kind: "group", aggregate: n.aggregate, children: n.children, verdict });
+      // §3.1/S-3: every level is a real report + archive. A group report is a
+      // standard-shaped VerifyReport whose asserts are the children; the tree
+      // verdict rides in the additive `tree` envelope (archive verifier checks
+      // the standard fold, which stays consistent for PASS/FAIL/ERROR).
+      let groupReportId: string | null = null;
+      let groupArchive: any = null;
+      try {
+        const gSpecId = "treeg_" + short(spec.tree_spec_id) + "_" + String(n.id).replace(/[^A-Za-z0-9_.-]/g, "_");
+        const now = new Date().toISOString();
+        const gSpec = {
+          contract_version: "1.2", spec_id: gSpecId, spec_version: 1, title: "tree group " + n.id,
+          domain: "tree", created: now, runtime_min: "",
+          verifier: { engine_version: String((env as any).version || "0.114.19"), corpus_version: "1.2" },
+          as_of: { kind: "snapshot", value: "1970-01-01T00:00:00.000Z" },
+          vu: [], attachments: [], sealed: { review: false },
+        };
+        mkdirSync(join(p.specs, gSpecId), { recursive: true });
+        writeJson(join(p.specs, gSpecId, "spec.json"), gSpec);
+        const childNodes = nodes.filter((x) => (n.children ?? []).includes(x.node_id));
+        const vu = childNodes.map((c) => ({
+          id: c.node_id, role: "assert" as const,
+          // NEUTRALIZED is tree-only; fold sees ERROR so it can never look PASS.
+          verdict: c.verdict === "NEUTRALIZED" ? "ERROR" : c.verdict,
+          severity: "S3" as const, source_clause: "tree child " + c.node_id,
+          checker_type: "command" as const,
+        }));
+        const hasFail = vu.some((v) => v.verdict === "FAIL");
+        const hasErr = vu.some((v) => v.verdict === "ERROR");
+        const hasPass = vu.some((v) => v.verdict === "PASS");
+        const overall = hasFail ? "FAIL" : hasErr ? "ERROR" : hasPass ? "PASS" : "NEEDS-MATERIAL";
+        const summary = {
+          pass: vu.filter((v) => v.verdict === "PASS").length,
+          fail: vu.filter((v) => v.verdict === "FAIL").length,
+          needs_material: vu.filter((v) => v.verdict === "NEEDS-MATERIAL").length,
+          error: vu.filter((v) => v.verdict === "ERROR").length,
+        };
+        const gRunId = "run_" + short(sha256(spec.tree_spec_id + "|" + n.id + "|" + Date.now().toString(36) + Math.random().toString(36)));
+        const gReport: any = {
+          contract_version: "1.2", run_id: gRunId, spec_id: gSpecId, started: now, finished: now,
+          verifier: { mode: "open", engine_version: gSpec.verifier.engine_version, spec_version: 1, corpus_version: "1.2", sealed_review: false },
+          as_of: gSpec.as_of, summary, overall, reason: "tree group aggregation (" + n.aggregate + ")",
+          vu, exceptions: [],
+          tree: { tree_spec_id: spec.tree_spec_id, node_id: n.id, verdict, aggregate: n.aggregate },
+        };
+        gReport.payload_sha256 = payloadHash(gReport);
+        writeJson(join(p.reports, gRunId + ".json"), gReport);
+        groupReportId = gRunId;
+        if (args.flags["no-archive"] !== true) {
+          const built = buildArchive({ verifyRoot: p.root, runId: gRunId, with: [], skipMaterials: true });
+          appendRegistry(p.root, gRunId, { id: gSpecId, version: 1 }, {
+            archive_id: built.manifest.archive_id, archive_sha256: built.manifest.archive_sha256,
+            zip_sha256: built.zip_sha256, filename: built.filename, path: built.path,
+            created: built.manifest.created, with: built.manifest.with,
+          });
+          groupArchive = { archive_sha256: built.manifest.archive_sha256, path: built.path };
+        }
+      } catch (e: any) {
+        groupArchive = { error: e?.message || String(e) };
+      }
+      nodes.push({
+        node_id: n.id, kind: "group", aggregate: n.aggregate, children: n.children, verdict,
+        report_id: groupReportId, archive_sha256: groupArchive?.archive_sha256 ?? null,
+        ...(groupArchive?.path ? { archive_path: groupArchive.path } : {}),
+        ...(groupArchive?.error ? { archive_error: groupArchive.error } : {}),
+      });
       return verdict;
     }
-    const pinnedSha = pinnedShas[n.id];
+    const pinnedShaRaw = pinnedShas[n.id];
+    const pinnedSha = pinnedShaRaw ? (pinnedShaRaw.startsWith("sha256:") ? pinnedShaRaw : "sha256:" + pinnedShaRaw) : "";
     if (pinnedSha) {
       const arcDir = join(p.root, "archives");
       let entryPath = "";
@@ -275,7 +340,12 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       } catch { /* no registry */ }
       if (!entryPath) throw new Error("pinned " + n.id + ": archive not found for sha256 " + pinnedSha);
       const av = verifyArchiveFile(entryPath);
-      if (!av.ok) throw new Error("pinned " + n.id + ": archive verification failed: " + (av.problems[0] ?? "unknown"));
+      if (!av.ok) {
+        // S-6: a tampered child archive neutralizes its subtree — never a silent
+        // drop and never a PASS.
+        nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha, verdict: "NEUTRALIZED", stale: false, neutralized_reason: av.problems[0] ?? "archive verify failed" });
+        return "NEUTRALIZED";
+      }
       const rep = readArchiveReport(entryPath);
       nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha, report_id: rep.run_id, verdict: rep.overall, stale: false });
       return rep.overall;
@@ -291,11 +361,11 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
     withSource.payload_sha256 = payloadHash(withSource);
     writeJson(join(p.reports, report.run_id + ".json"), withSource);
-    let archived: { archive_sha256: string } | null = null;
+    let archived: { archive_sha256: string; path: string } | null = null;
     if (args.flags["no-archive"] !== true) {
       archived = archiveRun(p.root, report.run_id, { id: String(leafSpec.spec_id), version: report.verifier.spec_version }, args);
     }
-    nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, report_id: report.run_id, archive_sha256: archived?.archive_sha256 ?? null, verdict: report.overall, stale: false });
+    nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, report_id: report.run_id, archive_sha256: archived?.archive_sha256 ?? null, ...(archived?.path ? { archive_path: archived.path } : {}), verdict: report.overall, stale: false });
     return report.overall;
   };
   try {
@@ -856,7 +926,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // §3.1 pinned = node exists + archive signature checks (#60): resolve the
       // archive through the workspace registry and run the same verifier as
       // `verify archive verify`; unknown sha is a freeze-time rc=2.
-      for (const [nid, sha] of Object.entries(res.spec.pinned)) {
+      for (const [nid, rawSha] of Object.entries(res.spec.pinned)) {
+        const sha = rawSha.startsWith("sha256:") ? rawSha : "sha256:" + rawSha;
         const arcDir = join(p.root, "archives");
         let entryPath = "";
         try {

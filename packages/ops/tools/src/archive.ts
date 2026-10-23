@@ -187,6 +187,9 @@ export interface BuildArchiveOptions {
    * 由调用方交同一份 --db 字节；入包前按报告 data_source.sha256 校验，不符即拒绝。
    */
   snapshotSource?: string;
+  /** A1 group archives: a group report has no material/prepare.json; skip the
+   *  materials section instead of failing on a spec that never had one. */
+  skipMaterials?: boolean;
 }
 
 export interface BuildArchiveResult {
@@ -209,7 +212,8 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
   const specPath = join(specDir, "spec.json");
   if (!existsSync(specPath)) throw new Error(`spec not found: ${specId}`);
   const spec = readJsonFile<VerifySpec>(specPath);
-  const withKinds = opts.with && opts.with.length ? [...new Set(opts.with)] : (["materials"] as ArchiveWith[]);
+  let withKinds = opts.with && opts.with.length ? [...new Set(opts.with)] : (["materials"] as ArchiveWith[]);
+  if (opts.skipMaterials) withKinds = withKinds.filter((k) => k !== "materials");
   for (const k of withKinds) {
     if (!ARCHIVE_WITH.includes(k)) throw new Error(`unknown --with kind: ${k} (allowed: ${ARCHIVE_WITH.join("|")})`);
   }
