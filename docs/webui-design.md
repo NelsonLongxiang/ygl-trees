@@ -26,7 +26,7 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 - 数据源：`agent brief --json` 输出
 - 显示：当前项目、counts（sources/evidence/claims/artifacts/kb/skills）、next_actions、健康度提示
 - 布局：卡片网格
-- **任务清单勾销（R12.2）**：apps/web/src/Tasks.tsx——进行中 / 待办 / 已完成分组（组内保留服务端新→旧），每行只有一个前进按钮：待办「开始」、进行中「完成」（完成先确认：总览只前进，退回走 CLI `task todo|doing`；写入与 `task doing|done` 同一路径 `POST /api/task`，请求体 `status` 是目标状态，服务端重读当前状态只放行下一步，过期页面得 409 并原文提示（#66 / #70）；每步落 task.status 事件）。写回后本行先显示新状态，直到下一帧推送或轮询数据到达——之后一律以服务端为准，含 CLI 退回（#66）；失败原文提示。这是概览唯一的写入面——「下一步操作」仍只复制命令、不执行。
+- **任务清单勾销（R12.2）**：apps/web/src/Tasks.tsx——进行中 / 待办 / 已完成分组（组内保留服务端新→旧），每行只有一个前进按钮：待办「开始」、进行中「完成」（完成先确认：总览只前进，退回走 CLI `task todo|doing`；写入与 `task doing|done` 同一路径 `POST /api/task`，请求体 `status` 是目标状态，服务端重读当前状态只放行下一步，过期页面得 409 并原文提示（#66 / #70）；回执 `idempotent:true` 或 from = to 时提示「没有改动」而不是成功，按服务端状态显示；`apps/web/tests/task-bundle.spec.ts` 用页面自己的请求体打真实 bundle 的 `webui serve`；每步落 task.status 事件）。写回后本行先显示新状态，直到下一帧推送或轮询数据到达——之后一律以服务端为准，含 CLI 退回（#66）；失败原文提示。这是概览唯一的写入面——「下一步操作」仍只复制命令、不执行。
 
 ### 2. 科技树可视化
 - 数据源：`node export --json` 输出
