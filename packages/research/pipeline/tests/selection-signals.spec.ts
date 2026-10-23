@@ -64,6 +64,42 @@ describe.skipIf(!HAS_BIN)("#44 selection signals (0.114.7)", () => {
     expect(String(use.j.selection_warning)).toMatch(/shared "default" bucket/);
   });
 
+  it("K3 0.114.22: shared-bucket signals on tree use / query add / node add + doctor", () => {
+    // p1/p2 already exist from F1; re-establish a bare-shell selection.
+    expect(run(["project", "use", "p1", "--json"]).rc).toBe(0);
+    expect(run(["tree", "new", "t1", "-p", "p1", "--json"]).rc).toBe(0);
+    expect(run(["tree", "new", "t2", "-p", "p1", "--json"]).rc).toBe(0);
+
+    // tree use into the shared default bucket (multi-tree workspace)
+    const tu = run(["tree", "use", "t1", "--json"]);
+    expect(tu.rc, tu.out + tu.err).toBe(0);
+    expect(String(tu.j.selection_warning)).toMatch(/shared "default" bucket/);
+
+    // write-time: project.use within 90 s -> query add warns (no actor compare)
+    const q = run(["research", "query", "add", "k3 signal", "--json"]);
+    expect(q.rc, q.out + q.err).toBe(0);
+    expect(String(q.j.selection_warning)).toMatch(/shared "default" bucket/);
+    expect(String(q.j.selection_warning)).toMatch(/project\.use changed \d+s ago/);
+
+    // write-time: tree.use within 90 s -> node add warns
+    const n = run(["node", "add", "k3-node", "--json"]);
+    expect(n.rc, n.out + n.err).toBe(0);
+    expect(String(n.j.selection_warning)).toMatch(/tree\.use changed \d+s ago/);
+
+    // doctor surfaces the tree-side default bucket
+    const doc = run(["doctor", "--json"]);
+    const checks = Array.isArray(doc.j) ? doc.j : [];
+    const treeCheck = checks.find((c: any) => c.name === "selection_hygiene_trees");
+    expect(treeCheck?.status).toBe("warn");
+    expect(String(treeCheck?.detail)).toMatch(/default.*tree selection bucket/);
+
+    // 90 s window: an old selection event no longer warns
+    expect(run(["db", "sql", "UPDATE events SET ts='2000-01-01T00:00:00.000Z' WHERE kind='project.use'"]).rc).toBe(0);
+    const q2 = run(["research", "query", "add", "k3 stale", "--json"]);
+    expect(q2.rc, q2.out + q2.err).toBe(0);
+    expect(q2.j.selection_warning).toBeUndefined();
+  });
+
   it("F3: id-addressed refusals name the owning project", () => {
     const claim = run(["research", "claim", "add", "账目必须对平", "-p", "p1", "--json"]);
     expect(claim.rc, claim.out + claim.err).toBe(0);

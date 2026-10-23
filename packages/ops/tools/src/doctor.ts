@@ -101,6 +101,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           "run 'ygl-trees tree use <name>' per session or pass -t/--tree",
       });
     }
+    // 0.114.22 (K3 #K3-3): doctor must also flag the tree-side default bucket —
+    // the same isolation hole the project check names, on the other dimension.
+    if (treeCount > 1 && sid === "default") {
+      checks.push({
+        name: "selection_hygiene_trees",
+        status: "warn",
+        detail:
+          "YGL_SESSION/DSH_SESSION_ID unset — every process shares the 'default' tree selection bucket; " +
+          "parallel agents can flip each other's current tree. Set YGL_SESSION per worker or pin with -t/--tree",
+      });
+    }
   }
 
   // ── 2c. Patrol queue (v12, 0.93-T2) — the zero-undispositioned iron rule

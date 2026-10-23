@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.114.22
+
+K3 选择观测三条（0.114.18 残余）：共享桶信号补齐到树侧与写时刻。
+
+- **`tree use` 共享桶告警**：session 作用域 + `sessionId()="default"` + 多树工作区 → JSON
+  `selection_warning` + 人类黄字提示（与 `project use` 同构；`--global` 不触发该条）。
+- **写时刻告警**（`query add` / `node add` 首接）：共享桶 = `source=global` 或
+  (`source=session` 且 `sessionId()="default"`)；同一维度最近 **90s** 内有 `project.use` / `tree.use`
+  事件 → JSON 增 `selection_warning` + stderr note；**不做 actor 对比**（跨进程/无会话进程正是风险面）。
+  90s 窗口外不告警；显式 `-p/-t`/env 选择不告警。核心判定唯一实现
+  `selectionChangeWarning(db, dimension, source)`（`core/database/src/selection.ts`）。
+- **doctor `selection_hygiene_trees`**：多树 + default 会话身份 → warn 点名树侧共享桶（与 project 侧
+  `session_identity`/`selection_hygiene` 对称；保留既有 `tree_selection_hygiene` 全局指针检查）。
+- 测试：`selection-signals.spec` 增 1 例（tree use / query add / node add / doctor / 90s 过期五面）；
+  unit 931 → **932**；contract 144。
+
 ## 0.114.21
 
 元验证层 R6：Cordis 应用框架符合性（K3 评审席施工令，属主「每一个验证器都必须符合 Cordis 应用框架规范」）。

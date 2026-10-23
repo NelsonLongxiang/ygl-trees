@@ -122,10 +122,10 @@ export function writeResult(
   human: (row: any) => string,
   /** F1 (0.110.x): write-target amplification. Callers pass the resolved
    *  project + the selection layer that authorized it; JSON keeps one object. */
-  extra?: { project?: string; project_source?: string },
+  extra?: { project?: string; project_source?: string; selection_warning?: string },
 ): void {
   if (ctx.json) {
-    const payload = { ...o.row, ...(extra?.project ? { project: extra.project } : {}), ...(extra?.project_source ? { project_source: extra.project_source } : {}), ...(o.dup ? { duplicate: true } : {}) };
+    const payload = { ...o.row, ...(extra?.project ? { project: extra.project } : {}), ...(extra?.project_source ? { project_source: extra.project_source } : {}), ...(extra?.selection_warning ? { selection_warning: extra.selection_warning } : {}), ...(o.dup ? { duplicate: true } : {}) };
     console.log(JSON.stringify(payload, null, 2));
     return;
   }

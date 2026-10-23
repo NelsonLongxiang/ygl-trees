@@ -19,7 +19,7 @@ import { TreeStore } from "./reads";
 import { ok, bad, out, head, table, show, paint, C, ack, warn } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { getOrm } from "../../../core/database/src/orm";
-import { resolveProject, sessionId } from "../../../core/database/src/selection";
+import { currentSelectionVia, resolveProject, selectionChangeWarning, sessionId } from "../../../core/database/src/selection";
 import * as treeWrites from "./writes";
 import {
   DEFAULT_ENDPOINT, evalBoolean, evalChoice, evalMixed, evalScore, evalToken,
@@ -210,12 +210,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // R16.2: session key by default; --global opts into the migration fallback.
       const scope = args.flags.global === true || args.flags.global === "true" ? "global" : "session";
-      db.metaSet(scope === "global" ? "current_tree" : `current_tree@${sessionId()}`, name);
+      const sid = sessionId();
+      const treeCount = Number((db.get("SELECT COUNT(*) AS n FROM trees") as any)?.n ?? 0);
+      db.metaSet(scope === "global" ? "current_tree" : `current_tree@${sid}`, name);
       logSelectionEvent(db, "tree.use", name);
+      // 0.114.22 (K3 #K3-3): the tree side gets the same shared-bucket signal as
+      // `project use` — a bare shell writes `current_tree@default`, which every
+      // other session-less agent then follows.
+      const sharedWarning =
+        scope === "session" && sid === "default" && treeCount > 1
+          ? `selection written to the shared "default" bucket; every session-less agent now resolves to tree '${name}' — pin with --tree or YGL_SESSION`
+          : undefined;
+      if (sharedWarning && !ctx.json) out(ctx, paint(C.yellow, `  ! ${sharedWarning}`, ctx.color));
       ack(
         ctx,
-        { tree: name, scope, session: sessionId() },
-        `now using tree: ${name}  (${scope} selection)`
+        { tree: name, scope, session: sid, ...(sharedWarning ? { selection_warning: sharedWarning } : {}) },
+        `now using tree: ${name}  (${scope} selection${scope === "session" ? ` — session ${sid.slice(0, 8)}` : ""})`
       );
       return 0;
     }
@@ -410,6 +420,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         tags: flagStr("tags"),
       };
       return runTreeWrite((ds) => treeWrites.nodeAdd(ds, tid, spec), (r): number => {
+        const warning = selectionChangeWarning(env.db, "tree", (currentSelectionVia() || "none") as any);
+        if (warning) {
+          process.stderr.write(`  note: ${warning}\n`);
+          if (ctx.json) {
+            console.log(JSON.stringify({ ...(r.created ? r.row : { ...r.row, duplicate: true }), selection_warning: warning }, null, 2));
+            return 0;
+          }
+        }
         if (ctx.json) console.log(JSON.stringify(r.created ? r.row : { ...r.row, duplicate: true }, null, 2));
         else if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
         else ok(ctx, `node added: ${key}${r.row.name !== key ? `  (${r.row.name})` : ""}`);
