@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,7 +16,21 @@ import { stepOutcome, stepTarget } from "../src/Tasks";
 
 const REPO = resolve(__dirname, "../../..");
 const BIN = join(REPO, "dist/bundle/bin.cjs");
-const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+// Never a silent skip (review of f92bfa3): no bundle → skip, said out loud, and red under
+// YGL_REQUIRE_BUNDLE=1 (same switch as YGL_REQUIRE_RUST); a bundle that exists but cannot even
+// print its version is always red — `pnpm test` builds first, so that is the case it can hit.
+const BIN_PRESENT = existsSync(BIN);
+const version = BIN_PRESENT ? spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }) : null;
+if (version && version.status !== 0) {
+  throw new Error(`${BIN} exists but \`--version\` exited ${version.status}: ${version.stderr || version.stdout}`);
+}
+const HAS_BIN = BIN_PRESENT;
+const SKIP_WHY = HAS_BIN ? "" : `${BIN} is missing — run: pnpm build`;
+if (!HAS_BIN) {
+  if (process.env.YGL_REQUIRE_BUNDLE === "1") throw new Error(`YGL_REQUIRE_BUNDLE=1 but ${SKIP_WHY}`);
+  // raw stderr: vitest drops console output from a file whose suites all skip
+  process.stderr.write(`\n[task-bundle.spec] SKIPPED — the task buttons were NOT checked against a real server: ${SKIP_WHY}\n\n`);
+}
 
 let home = "";
 let server: ChildProcess | null = null;
@@ -49,7 +63,7 @@ const freePort = () =>
     });
   });
 
-describe.skipIf(!HAS_BIN)("task buttons ↔ real webui serve (bundle)", () => {
+describe.skipIf(!HAS_BIN)(`task buttons ↔ real webui serve (bundle)${SKIP_WHY && ` — SKIPPED: ${SKIP_WHY}`}`, () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "ygl-web-task-"));
     cli("db", "init");
@@ -92,6 +106,16 @@ describe.skipIf(!HAS_BIN)("task buttons ↔ real webui serve (bundle)", () => {
     const r = await click(id, "todo");
     expect(stepOutcome("t", r).changed).toBe(false);
     expect(stored(id)).toBe("doing");
+  });
+
+  it("a page ahead of the server (CLI stepped the task back) gets 409 on 完成, and the reset stands", async () => {
+    const id = addTask("真实服务端：CLI 退回后点完成");
+    cli("task", "doing", id, "-p", "p1"); // the page shows 进行中
+    cli("task", "todo", id, "-p", "p1"); // agent steps it back; the page has not caught up
+    const err = await click(id, "doing").catch((e: Error) => e); // 完成 asks for done
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("is 'todo'");
+    expect(stored(id)).toBe("todo");
   });
 
   it("a page two steps behind is refused with the server's words, and the task stays done", async () => {
