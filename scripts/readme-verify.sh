@@ -91,5 +91,19 @@ chk "db export"           0 -- $Y db export "$YGL_HOME/dump.sql"
 N=$((N+1))
 PV=$(node -p "require('./package.json').version")
 if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV"; else echo "  ✗ llms.txt 版本头 ≠ v$PV（run: ygl-trees llms 刷新后提交）"; F=$((F+1)); fi
+# #75: unit 计数门锚——README 里 "vitest N 例" 必须与 vitest 实测总数一致（防「加了测试忘改 README」，
+# 与 #71 冲突标记同族=门禁盲区；第三轮同类后根除）。跑 vitest 计数耗时 ~15min，仅当
+# README_NUM_COUNT_GATE=1 时执行（发布/门禁流程设 1；日常 readme:verify 跳过避免双跑）。
+if [ "${README_UNIT_COUNT_GATE:-0}" = "1" ]; then
+  N=$((N+1))
+  README_NUM=$(grep -oP 'vitest \K[0-9]+' README.md | head -1)
+  ACTUAL=$(npx vitest run --maxWorkers=1 2>/dev/null | grep -oP 'Tests\s+\K[0-9]+' | tail -1)
+  if [ -n "$README_NUM" ] && [ "$README_NUM" = "$ACTUAL" ]; then
+    echo "  ✓ unit 计数门锚: README $README_NUM == vitest $ACTUAL"
+  else
+    echo "  ✗ unit 计数漂移: README=$README_NUM vitest=$ACTUAL（改 README 或修测试后重跑）"
+    F=$((F+1))
+  fi
+fi
 echo "readme-verify: $((N-F))/$N 通过"
 [ "$F" = "0" ] || exit 1

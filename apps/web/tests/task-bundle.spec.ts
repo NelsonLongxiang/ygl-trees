@@ -84,10 +84,14 @@ describe.skipIf(!HAS_BIN)(`task buttons ↔ real webui serve (bundle)${SKIP_WHY 
     vi.stubGlobal("fetch", (url: string, init?: RequestInit) => realFetch(`${base}/${url}`, init));
   }, 30_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     vi.unstubAllGlobals();
     server?.kill();
-    if (home) rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    // Windows: server process needs a moment to release file handles before rmSync
+    await new Promise((r) => setTimeout(r, 500));
+    for (let i = 0; i < 5; i++) {
+      try { if (home) rmSync(home, { recursive: true, force: true }); return; } catch { await new Promise((r) => setTimeout(r, 200)); }
+    }
   });
 
   it("开始 then 完成 really move the stored task, and the toast says so", async () => {

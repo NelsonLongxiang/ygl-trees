@@ -115,7 +115,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "df68024262b31b0f621b9d20bc48ab07c2bab2eb3de0a432ea29a9e938be6fd7",
+      "sha256": "d4b98d992f6af3cfdd91a200c97e686266dfa7b9e449c39b1c15e3d396c024dc",
       "role": "gate"
     },
     {
@@ -252,6 +252,13 @@
       "new_sha256": "b6648cee8573b5465b4078f12d32fb6539de855d4b827e4466d9d1fb1073a518",
       "reason": "#37 执法半：--audit 读面（全链打印+链完整性校验，断链 rc=1 检测手改）",
       "at": "2026-10-24T10:06:35.512Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "df68024262b31b0f621b9d20bc48ab07c2bab2eb3de0a432ea29a9e938be6fd7",
+      "new_sha256": "d4b98d992f6af3cfdd91a200c97e686266dfa7b9e449c39b1c15e3d396c024dc",
+      "reason": "#75: 增 unit 计数门锚（README_UNIT_COUNT_GATE=1 时跑 vitest 计数 vs README 提取比对）",
+      "at": "2026-10-24T11:08:00.307Z"
     }
   ],
   "kind": "engine"
