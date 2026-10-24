@@ -334,3 +334,14 @@ kind: 评审
 - **D9**：受第 2 条约束。
 
 另记：frontmatter 的 `kind: 评审` 与索引里的「方案」标注不一致，属 `docs/reviews/` 既有枚举粒度问题，不在本 PR 处理。
+
+## 附录：fdc 评审六条补充（P3，合入后 follow-up 吸收）
+
+> fdc757f6 APPROVE 附六条（GitHub PR#56 review 转贴）；作者 24h 窗未响应，按约定合入后由开发线 follow-up 落文。
+
+1. **sources[].path 内容锚**：每 source 增 `sha256` 内容锚（path 说本地在哪、sha 说数据是什么）——可携性与防「同路径不同数据」两收。
+2. **多包引擎 pin 冲突**：lint 规则 = `workflow.engine` 必须等于全部引用包的 pin；冲突 → 拒（D9 委派同样需要唯一目标）。
+3. **非 git 项目层**：无 git 根即不激活项目层（防误拾上级目录 `.ygl-trees/plugins`）。
+4. **pack lint 可执行闭集与 R3 同源**：两处闭集必须单一真相（charter §4.4 R3 已扩 `.ts/.mts/.cts`），否则出现「R3 放行、lint 拒绝」或反向漂移。
+5. **manifest 携带包 meta 状态**：lint 有「meta PASS」但清单/目录面可携带（微改进）。
+6. **fixtures digest 血统**：fixtures 是 mini-corpus——「好全绿、坏只翻对应叶子」沿用语料纪律；冻结沿用 digest 血统（同版本内变更带取代记录，同 corpus freeze / tree-contract-matrix 机制）。
