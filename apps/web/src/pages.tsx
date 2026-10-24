@@ -244,11 +244,17 @@ export function VerifyPage() {
   );
 }
 
+/** The header line: which tree, how far along. Unlocked count is computed here so the lazy canvas chunk stays lazy. */
+export function treeExtra(tree: { name: string; nodes: Array<{ unlocked_at?: string | null }> }): string {
+  const unlocked = tree.nodes.filter((n) => !!n.unlocked_at).length;
+  return `${tree.name} · 已解锁 ${unlocked} / ${tree.nodes.length} 节点`;
+}
+
 export function TreePage() {
   const { data } = useDashboard();
   if (!data) return null;
   return (
-    <Section icon={<ApartmentOutlined />} title="科技树" extra={data.tree ? `${data.tree.name} · ${data.tree.nodes.length} 节点` : "xyflow · 拖拽缩放 · 小地图"}>
+    <Section icon={<ApartmentOutlined />} title="科技树" extra={data.tree ? treeExtra(data.tree) : "xyflow · 拖拽缩放 · 小地图"}>
       <Suspense fallback={CANVAS_FALLBACK}>
         <TreeFlow tree={data.tree} />
       </Suspense>

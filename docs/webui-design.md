@@ -33,6 +33,7 @@ npm 包自带 `dist/apps/web/dist`（build 尾自动拷贝，`scripts/stage-web-
 - 渲染：SVG DAG（节点=矩形 tier 分层，边=箭头 rel 着色：prereq 黑/unlock 蓝/excludes 红/enables 绿，虚线=可选）
 - 交互：点击节点展开 can/conditions 面板 ✅（0.24.0：`/api/node` 端点 + 右侧详情面板，确定性 can 判定）
 - 布局：Kahn 拓扑序已存 node_index，直接映射 Y 轴
+- **可读性（React 版，apps/web/src/TreeFlow.tsx）**：节点卡先写节点名（业务专家的叫法），键名等宽小字在下，名称过长截断、悬停看全名；状态用图标 + 文字（✓ 已解锁 / 🔒 未解锁，aria-label 同步），不只靠颜色。标题栏写「树名 · 已解锁 n / m 节点」，画布下方图例说明两种状态和两种边（实线必检、虚线可选）。小地图缩到 128×84，按状态着色，可拖可缩。详情面板标题用节点名，键名在下。画布与详情面板可换行：窄屏（手机）上画布占满一行、面板落到下方（原先固定 300px 面板把画布挤成零宽）。
 
 ### 3. 研究管线视图
 - 数据源：`research claim list --json` + `research evidence list --json`（载荷已按 R16 授权域收集）
