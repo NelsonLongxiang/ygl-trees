@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReactFlowProvider } from "@xyflow/react";
-import { TreeLegend, TreeNode } from "../src/TreeFlow";
+import { TreeLegend, TreeNode, treeGraph } from "../src/TreeFlow";
+import type { TreeData } from "../src/api";
 import { treeExtra } from "../src/pages";
 
 /**
@@ -22,14 +23,38 @@ describe("TreeNode", () => {
     expect(html.indexOf("路由外壳")).toBeLessThan(html.indexOf(">router-shell<"));
   });
 
-  it("says its state in words and an icon, not color alone", () => {
+  it("shows its state as an icon, with the words on hover — not color alone", () => {
     const open = node({ name: "设计系统", nodeKey: "design-system", unlocked: true });
     const shut = node({ name: "产出工件 PDF", nodeKey: "artifacts-pdf", unlocked: false });
-    expect(open).toContain('aria-label="设计系统，已解锁"');
     expect(open).toContain("anticon-check-circle");
-    expect(shut).toContain('aria-label="产出工件 PDF，未解锁"');
     expect(shut).toContain("anticon-lock");
     expect(shut).toContain("（artifacts-pdf）· 未解锁"); // full name + key on hover when the name is cut
+  });
+
+  it("puts no name on the inner card: a generic div may not carry one (ARIA 1.2)", () => {
+    const html = node({ name: "设计系统", nodeKey: "design-system", unlocked: true });
+    expect(html).not.toMatch(/<div[^>]*aria-label/); // icons keep their own role="img" labels
+    expect(html).not.toMatch(/aria-label="[^"]*设计系统/);
+  });
+});
+
+describe("treeGraph (review of b6d8a74)", () => {
+  const tree = {
+    name: "webui",
+    nodes: [
+      { key: "design-system", name: "设计系统", kind: "tech", tier: 0, cost: 0, tags: "", created: "", unlocked_at: "2026-10-20" },
+      { key: "artifacts-pdf", name: "", kind: "tech", tier: 1, cost: 0, tags: "", created: "", unlocked_at: null },
+    ],
+    edges: [{ parent: "design-system", child: "artifacts-pdf", rel: "prereq", mode: "AND", required: 0 }],
+  } as TreeData;
+
+  it("names every node for screen readers by its name and state — xyflow reads node.ariaLabel on focus", () => {
+    const { layout } = treeGraph(tree);
+    expect(layout.map((n) => n.ariaLabel)).toEqual(["设计系统 · 已解锁", "artifacts-pdf · 未解锁"]); // no name → key
+  });
+
+  it("an optional prerequisite is drawn dashed", () => {
+    expect(treeGraph(tree).edges[0].style?.strokeDasharray).toBe("5 4");
   });
 });
 

@@ -25,13 +25,18 @@ type TreeNodeData = {
 
 const NODE_W = 176;
 
+const stateWord = (unlocked: boolean) => (unlocked ? "已解锁" : "未解锁");
+
+/**
+ * The card inside a node. Its accessible name lives on the node itself
+ * (`ariaLabel` in treeGraph → xyflow's focusable role="group" wrapper), not
+ * here: a name on this generic div is not allowed (ARIA 1.2) and is never read.
+ */
 export function TreeNode({ data }: NodeProps<Node<TreeNodeData>>) {
   const d = data as TreeNodeData;
-  const state = d.unlocked ? "已解锁" : "未解锁";
   return (
     <div
-      title={`${d.name}（${d.nodeKey}）· ${state}`}
-      aria-label={`${d.name}，${state}`}
+      title={`${d.name}（${d.nodeKey}）· ${stateWord(d.unlocked)}`}
       style={{
         width: NODE_W,
         padding: "6px 10px",
@@ -81,6 +86,51 @@ export function TreeLegend() {
 
 const nodeTypes = { treeNode: TreeNode };
 
+/** Nodes and edges from the payload: tier advances left→right, siblings fan vertically. */
+export function treeGraph(tree: TreeData | null): { layout: Node<TreeNodeData>[]; edges: Edge[] } {
+  if (!tree) return { layout: [], edges: [] };
+  const tiers = new Map<number, typeof tree.nodes>();
+  for (const n of tree.nodes) {
+    const t = n.tier || 0;
+    if (!tiers.has(t)) tiers.set(t, []);
+    tiers.get(t)!.push(n);
+  }
+  const tierKeys = [...tiers.keys()].sort((a, b) => a - b);
+  const ROW = 72, COL = NODE_W + 64;
+  const layout: Node<TreeNodeData>[] = tree.nodes.map((n) => {
+    const t = n.tier || 0;
+    const row = tierKeys.indexOf(t);
+    const siblings = tiers.get(t)!;
+    const col = siblings.indexOf(n);
+    const name = n.name || n.key;
+    // horizontal layout: tier advances left→right (COL), siblings fan vertically (ROW)
+    return {
+      id: n.key,
+      type: "treeNode",
+      position: { x: row * COL, y: (col - (siblings.length - 1) / 2) * ROW },
+      // first-fit estimate only: fitView runs before xyflow has measured the
+      // nodes; the measured size (kept by useLayoutNodes) replaces it
+      initialWidth: NODE_W,
+      initialHeight: 46,
+      // what a screen reader says when the node takes focus (review of b6d8a74)
+      ariaLabel: `${name} · ${stateWord(!!n.unlocked_at)}`,
+      data: { name, nodeKey: n.key, unlocked: !!n.unlocked_at },
+    };
+  });
+  const edges: Edge[] = tree.edges.map((e, i) => ({
+    id: `e${i}`,
+    source: e.parent,
+    target: e.child,
+    animated: false,
+    style: {
+      stroke: e.required ? "var(--color-border)" : "var(--color-secondary)",
+      strokeWidth: 1.5,
+      strokeDasharray: e.required ? undefined : "5 4",
+    },
+  }));
+  return { layout, edges };
+}
+
 export default function TreeFlow({ tree }: { tree: TreeData | null }) {
   const colorMode = useThemeName();
   const [selected, setSelected] = useState<string | null>(null);
@@ -88,46 +138,7 @@ export default function TreeFlow({ tree }: { tree: TreeData | null }) {
 
   // layout from the payload only; selection is applied on top so a click never
   // rebuilds (and never resets) the canvas
-  const { layout, edges } = useMemo(() => {
-    if (!tree) return { layout: [] as Node<TreeNodeData>[], edges: [] as Edge[] };
-    const tiers = new Map<number, typeof tree.nodes>();
-    for (const n of tree.nodes) {
-      const t = n.tier || 0;
-      if (!tiers.has(t)) tiers.set(t, []);
-      tiers.get(t)!.push(n);
-    }
-    const tierKeys = [...tiers.keys()].sort((a, b) => a - b);
-    const ROW = 72, COL = NODE_W + 64;
-    const layout: Node<TreeNodeData>[] = tree.nodes.map((n) => {
-      const t = n.tier || 0;
-      const row = tierKeys.indexOf(t);
-      const siblings = tiers.get(t)!;
-      const col = siblings.indexOf(n);
-      // horizontal layout: tier advances left→right (COL), siblings fan vertically (ROW)
-      return {
-        id: n.key,
-        type: "treeNode",
-        position: { x: row * COL, y: (col - (siblings.length - 1) / 2) * ROW },
-        // first-fit estimate only: fitView runs before xyflow has measured the
-        // nodes; the measured size (kept by useLayoutNodes) replaces it
-        initialWidth: NODE_W,
-        initialHeight: 46,
-        data: { name: n.name || n.key, nodeKey: n.key, unlocked: !!n.unlocked_at },
-      };
-    });
-    const edges: Edge[] = tree.edges.map((e, i) => ({
-      id: `e${i}`,
-      source: e.parent,
-      target: e.child,
-      animated: false,
-      style: {
-        stroke: e.required ? "var(--color-border)" : "var(--color-secondary)",
-        strokeWidth: 1.5,
-        strokeDasharray: e.required ? undefined : "5 4",
-      },
-    }));
-    return { layout, edges };
-  }, [tree]);
+  const { layout, edges } = useMemo(() => treeGraph(tree), [tree]);
 
   const [liveNodes, onNodesChange] = useLayoutNodes(layout, `tree:${tree?.name ?? ""}`);
   const nodes = useMemo(
