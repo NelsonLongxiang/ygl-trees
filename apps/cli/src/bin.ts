@@ -424,14 +424,28 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // MCP: Model Context Protocol server (stdio) — 8-tool surface.
+  // MCP: Model Context Protocol server — 11-tool surface (0.114.26 write faces).
   // Designed by the unified three-pillar theory (R8 research); each tool
   // routes to CLI --json, inheriting frozen contracts.
+  // 0.114.31: --http --port <N> adds StreamableHTTP transport (taste-mcp
+  // market precedent: stateless POST /mcp, GET → 405) for workbench-market
+  // gateway hosting; stdio remains the default for local agents.
   if (group === "mcp") {
+    if (args.flags.http !== undefined) {
+      const port = Number(args.flags.port || 9800);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        bad(ctx, "--http needs --port <1-65535>");
+        return 2;
+      }
+      const token = args.flags.token !== undefined ? String(args.flags.token) : undefined;
+      const { serveMcpHttp } = await import("../../../packages/ops/tools/src/mcp");
+      serveMcpHttp(appVersion(), port, { token });
+      return new Promise<number>(() => { /* server runs until killed */ });
+    }
     // 0.91.0 (cold-run friction log): mcp is a single-purpose group — guard
     // the usage contract instead of silently starting a server for typos.
     if (action) {
-      bad(ctx, `mcp takes no subcommands (got '${action}') — it starts the stdio server`);
+      bad(ctx, `mcp takes no subcommands (got '${action}') — use --http --port <N> or bare for stdio`);
       return 2;
     }
     const { serveMcp } = await import("../../../packages/ops/tools/src/mcp");

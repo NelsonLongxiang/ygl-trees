@@ -1,19 +1,25 @@
 /**
- * MCP (Model Context Protocol) Server — stdio transport.
+ * MCP (Model Context Protocol) Server — stdio + HTTP transports.
  *
- * Eleven-tool surface (0.114.26: +3 write faces, owner ruling "方案 D"):
- *   agent_brief · agent_match · kb_search · claim_evaluate
- *   tree_state  · produce_report · doctor · task_advance
- *   research_write · tree_write · verify        ← write/pipeline faces
+ * Four-tool surface (0.115.0 consolidation, owner ruling "一步到位"):
+ *   ygl_read   — all read faces (agent/kb/tree/task/rel/research/verify/project)
+ *   ygl_write  — all write faces (research/kb/tree/task/rel/project/produce)
+ *   ygl_verify — spec-validator pipeline (submit→prepare→run→report→archive→meta)
+ *   ygl_doctor — 9-item health check
+ *
+ * Design: 少工具、富参数 — domain×action router replaces 11 scattered tools.
+ * Each tool's schema is a "router": domain picks the CLI group, action picks
+ * the subcommand, params flow through. Write safety unchanged: action enums
+ * are closed sets; dangerous CLI faces (db reset/sql, plugin, config, job,
+ * patrol) are physically excluded.
  *
  * Each tool routes to the CLI --json backend, inheriting its frozen contracts
  * (idempotent writes, pure JSON errors, snake_case fields). rc fidelity:
  * rc≠0 outcomes surface as MCP isError:true with a machine-readable
  * {rc, error} payload — the exit-code contract is never flattened to text.
  *
- * Protocol: JSON-RPC 2.0 over stdio (one message per line).
- *   → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}
- *   ← {"jsonrpc":"2.0","id":1,"result":{...}}
+ * Transports: stdio (default) + HTTP (0.114.31, --http --port, StreamableHTTP
+ * stateless — taste-mcp market precedent: POST /mcp, GET → 405).
  *
  * @module @ygl/ops-tools/mcp
  */
@@ -76,163 +82,207 @@ function cliJson(parts: string[]): Promise<unknown> {
 
 /** arg helper: optional string flag pair */
 const opt = (flag: string, v: unknown): string[] => (v === undefined || v === null || v === "" ? [] : [flag, String(v)]);
+/** arg helper: positional string if present */
+const pos = (v: unknown): string[] => (v === undefined || v === null || v === "" ? [] : [String(v)]);
+
+// ============================================================
+// Route tables: domain → action → CLI argv builder
+// ============================================================
+
+type ArgvBuilder = (a: Record<string, any>) => string[];
+
+/** Read routes — every CLI read face, white-listed. */
+const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
+  agent: {
+    brief: () => ["agent", "brief"],
+    match: (a) => ["agent", "match", String(a.query)],
+    log: () => ["agent", "log"],
+  },
+  kb: {
+    search: (a) => { const p = ["kb", "search", String(a.query ?? "")]; if (a.eval) p.push("--eval"); return p; },
+    show: (a) => ["kb", "show", String(a.id)],
+  },
+  research: {
+    "query-list": (a) => [...opt("-p", a.project), "research", "query", "list"],
+    "source-list": (a) => [...opt("-p", a.project), "research", "source", "list"],
+    "source-search": (a) => [...opt("-p", a.project), "research", "source", "search", String(a.query)],
+    "source-show": (a) => ["research", "source", "show", String(a.id)],
+    "evidence-list": (a) => [...opt("-p", a.project), "research", "evidence", "list"],
+    "evidence-show": (a) => ["research", "evidence", "show", String(a.id)],
+    "claim-list": (a) => [...opt("-p", a.project), "research", "claim", "list"],
+    "claim-show": (a) => ["research", "claim", "show", String(a.id)],
+    "claim-evaluate": (a) => ["research", "claim", "evaluate", String(a.id)],
+    "claim-calibration": () => ["research", "claim", "calibration", "--all"],
+    "predict-list": (a) => { const p = ["research", "predict", "list"]; if (a.all) p.push("--all"); if (a.project) p.push("-p", String(a.project)); return p; },
+  },
+  tree: {
+    state: (a) => { const p = ["node", "list"]; if (a.tree) p.push("-t", String(a.tree)); return p; },
+    list: () => ["tree", "list"],
+    show: () => ["tree", "show"],
+  },
+  node: {
+    can: (a) => { const p = ["node", "can", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return p; },
+    ready: (a) => { const p = ["node", "ready"]; if (a.all) p.push("--all"); if (a.tree) p.push("-t", String(a.tree)); return p; },
+  },
+  task: {
+    list: (a) => [...opt("-p", a.project), "task", "list"],
+  },
+  rel: {
+    list: (a) => { const p = ["rel", "list"]; if (a.node) p.push("--node", String(a.node)); return p; },
+  },
+  produce: {
+    "report-show": (a) => ["produce", "show", String(a.id)],
+    "report-list": (a) => [...opt("-p", a.project), "produce", "list"],
+  },
+  project: {
+    list: () => ["project", "list"],
+    show: () => ["project", "show"],
+  },
+  db: {
+    stats: () => ["db", "stats"],
+    timeline: (a) => { const p = ["db", "timeline"]; if (a.actor) p.push("--actor", String(a.actor)); return p; },
+  },
+  skill: {
+    list: () => ["skill", "list"],
+    match: (a) => ["skill", "match", String(a.query)],
+    show: (a) => ["skill", "show", String(a.name)],
+  },
+};
+
+/** Write routes — closed action enums, physically excludes admin faces. */
+const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
+  research: {
+    "query-add": (a) => ["research", "query", "add", String(a.text), ...opt("-p", a.project)],
+    "query-attach": (a) => ["research", "query", "attach", String(a.query_id), String(a.source_id)],
+    "source-add": (a) => ["research", "source", "add", "--title", String(a.text), "--url", String(a.b ?? ""), ...opt("-p", a.project)],
+    "evidence-add": (a) => ["research", "evidence", "add", String(a.text), "--quote", String(a.quote ?? ""), ...opt("-p", a.project)],
+    "claim-add": (a) => ["research", "claim", "add", String(a.text), ...opt("-p", a.project)],
+    "claim-link": (a) => ["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...opt("-p", a.project)],
+    "claim-resolve": (a) => ["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...opt("-p", a.project)],
+  },
+  kb: {
+    add: (a) => ["kb", "add", "--name", String(a.name), "--description", String(a.description ?? ""), "-f", String(a.file)],
+    link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
+  },
+  tree: {
+    "tree-new": (a) => ["tree", "new", String(a.tree), ...opt("-p", a.project)],
+    "tree-use": (a) => ["tree", "use", String(a.tree)],
+    "node-add": (a) => ["node", "add", String(a.key), ...opt("--name", a.name), ...opt("-t", a.tree)],
+    "node-link": (a) => ["node", "link", String(a.key), String(a.child), ...opt("-t", a.tree)],
+    "node-unlock": (a) => ["node", "unlock", String(a.key), ...opt("-t", a.tree)],
+    "node-index": (a) => ["node", "index", ...opt("-t", a.tree)],
+    "node-cond": (a) => { const p = ["node", "cond", String(a.key), "--name", String(a.name)]; if (a.optional) p.push("--optional"); return [...p, ...opt("-t", a.tree)]; },
+  },
+  task: {
+    add: (a) => ["task", "add", String(a.text), ...opt("-p", a.project)],
+    advance: (a) => ["task", String(a.to ?? "doing"), String(a.id)],
+  },
+  rel: {
+    attach: (a) => ["rel", "attach", String(a.node), String(a.type), String(a.target)],
+  },
+  project: {
+    new: (a) => ["project", "new", String(a.name), ...opt("-q", a.question)],
+    use: (a) => ["project", "use", String(a.name)],
+  },
+  produce: {
+    report: (a) => ["produce", "report", ...opt("-p", a.project)],
+  },
+};
+
+/** Flatten route table keys for schema enums. */
+const routeActions = (routes: Record<string, Record<string, ArgvBuilder>>): Record<string, string[]> => {
+  const out: Record<string, string[]> = {};
+  for (const [domain, actions] of Object.entries(routes)) out[domain] = Object.keys(actions);
+  return out;
+};
 
 export function buildTools(): McpTool[] {
+  const readActions = routeActions(READ_ROUTES);
+  const writeActions = routeActions(WRITE_ROUTES);
+  const allReadActions = [...new Set(Object.values(readActions).flat())];
+  const allWriteActions = [...new Set(Object.values(writeActions).flat())];
+
   return [
     {
-      name: "agent_brief",
-      description: "Current workspace state: project, progress, counts, next actions, available skills. Always start here.",
-      inputSchema: { type: "object", properties: {} },
-      execute: () => cliJson(["agent", "brief"]),
-    },
-    {
-      name: "agent_match",
-      description: "Discover which skill handles a task. Returns matched skills with relevance scores.",
-      inputSchema: {
-        type: "object",
-        properties: { query: { type: "string", description: "Task description to match" } },
-        required: ["query"],
-      },
-      execute: (a) => cliJson(["agent", "match", String(a.query)]),
-    },
-    {
-      name: "kb_search",
-      description: "Search knowledge notes (CJK full-text). Returns notes with title, body, tags, confidence.",
+      name: "read",
+      description:
+        "Read from ygl-trees: workspace state, knowledge search, research pipeline lists, tree/node status, tasks, relations, projects, skills. " +
+        "Route via domain + action; extra params flow through to the CLI.",
       inputSchema: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query (Chinese supported)" },
-          eval: { type: "boolean", description: "Enable decision-model semantic re-ranking" },
+          domain: { type: "string", enum: Object.keys(readActions), description: "CLI domain" },
+          action: { type: "string", enum: allReadActions, description: "Read action within domain" },
+          query: { type: "string", description: "search/match query" },
+          id: { type: "string", description: "entity id (show)" },
+          name: { type: "string", description: "entity name (skill show)" },
+          tree: { type: "string", description: "tree name filter" },
+          node: { type: "string", description: "node key (rel list)" },
+          key: { type: "string", description: "node key (can)" },
+          project: { type: "string", description: "project filter" },
+          all: { type: "boolean", description: "include all (ready/predict)" },
+          eval: { type: "boolean", description: "enable semantic re-ranking (kb search)" },
+          actor: { type: "string", description: "actor filter (db timeline)" },
         },
-        required: ["query"],
+        required: ["domain", "action"],
       },
       execute: (a) => {
-        const parts = ["kb", "search", String(a.query)];
-        if (a.eval) parts.push("--eval");
-        return cliJson(parts);
+        const domain = READ_ROUTES[String(a.domain)];
+        if (!domain) return Promise.reject(new Error(`unknown domain: ${String(a.domain)}`));
+        const builder = domain[String(a.action)];
+        if (!builder) return Promise.reject(new Error(`unknown action '${String(a.action)}' for domain '${String(a.domain)}'`));
+        return cliJson(builder(a));
       },
     },
     {
-      name: "claim_evaluate",
-      description: "Decision model evaluates a claim's confidence (score 0-5 → grade A/B/C/D).",
-      inputSchema: {
-        type: "object",
-        properties: { claim_id: { type: "string", description: "Claim ID to evaluate" } },
-        required: ["claim_id"],
-      },
-      execute: (a) => cliJson(["research", "claim", "evaluate", String(a.claim_id)]),
-    },
-    {
-      name: "tree_state",
-      description: "All trees with node states (locked/unlocked). Visualize the dependency graph.",
-      inputSchema: {
-        type: "object",
-        properties: { tree: { type: "string", description: "Optional tree name (omit for all)" } },
-      },
-      execute: (a) => cliJson(["node", "list", ...(a.tree ? [String(a.tree)] : [])]),
-    },
-    {
-      name: "produce_report",
-      description: "Assemble claims + evidence into a markdown report. Returns report ID and content.",
-      inputSchema: { type: "object", properties: {} },
-      execute: () => cliJson(["produce", "report"]),
-    },
-    {
-      name: "doctor",
-      description: "9-item workspace health check. Pass fix=true to auto-fix safe issues.",
-      inputSchema: {
-        type: "object",
-        properties: { fix: { type: "boolean", description: "Auto-fix dirty index + stale locks" } },
-      },
-      execute: (a) => cliJson(["doctor", ...(a.fix ? ["--fix"] : [])]),
-    },
-    {
-      name: "task_advance",
-      description: "Advance a task through the state machine: todo → doing → done (or roll back).",
-      inputSchema: {
-        type: "object",
-        properties: {
-          task_id: { type: "string", description: "Task artifact ID" },
-          action: { type: "string", enum: ["doing", "done", "todo"], description: "Target status" },
-        },
-        required: ["task_id", "action"],
-      },
-      execute: (a) => cliJson(["task", String(a.action), String(a.task_id)]),
-    },
-    {
-      name: "research_write",
+      name: "write",
       description:
-        "Idempotent research-pipeline writes: register queries, add sources/evidence, create/link/resolve claims. " +
-        "Same-content reruns return the existing row (duplicate:true).",
+        "Write to ygl-trees: research pipeline (queries/sources/evidence/claims), knowledge notes, tech-tree structure, tasks, relations, projects. " +
+        "Idempotent: same-content reruns return the existing row. Route via domain + action.",
       inputSchema: {
         type: "object",
         properties: {
-          action: {
-            type: "string",
-            enum: ["query-add", "source-add", "evidence-add", "claim-add", "claim-link", "claim-resolve"],
-            description: "Write verb",
-          },
-          text: { type: "string", description: "query/claim text, source title, or claim id (per action)" },
-          b: { type: "string", description: "source-add: url | evidence-add: source-id | claim-link: evidence-id" },
-          quote: { type: "string", description: "evidence-add: verbatim excerpt" },
+          domain: { type: "string", enum: Object.keys(writeActions), description: "CLI domain" },
+          action: { type: "string", enum: allWriteActions, description: "Write action within domain" },
+          text: { type: "string", description: "query/claim/evidence text, or task title" },
+          b: { type: "string", description: "second operand (url/source-id/evidence-id per action)" },
+          quote: { type: "string", description: "evidence verbatim excerpt" },
           stance: { type: "string", enum: ["supports", "refutes"], description: "claim-link stance" },
           as: { type: "string", enum: ["supported", "refuted", "contested"], description: "claim-resolve verdict" },
-          project: { type: "string", description: "explicit project name (defaults to session selection)" },
+          query_id: { type: "string", description: "query-attach: query id" },
+          source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
+          name: { type: "string", description: "kb name / node name / project name" },
+          description: { type: "string", description: "kb description" },
+          file: { type: "string", description: "kb add: markdown file path" },
+          note: { type: "string", description: "kb link: note id" },
+          evidence_id: { type: "string", description: "kb link: evidence id" },
+          tree: { type: "string", description: "tree name" },
+          key: { type: "string", description: "node key" },
+          child: { type: "string", description: "node-link: child key" },
+          optional: { type: "boolean", description: "node-cond: optional" },
+          id: { type: "string", description: "task advance: task id" },
+          to: { type: "string", enum: ["doing", "done", "todo"], description: "task advance target" },
+          node: { type: "string", description: "rel attach: node key" },
+          type: { type: "string", description: "rel attach: relation type" },
+          target: { type: "string", description: "rel attach: target id" },
+          project: { type: "string", description: "explicit project" },
+          question: { type: "string", description: "project new: research question" },
         },
-        required: ["action", "text"],
+        required: ["domain", "action"],
       },
       execute: (a) => {
-        const p = opt("-p", a.project);
-        switch (String(a.action)) {
-          case "query-add": return cliJson(["research", "query", "add", String(a.text), ...p]);
-          case "source-add": return cliJson(["research", "source", "add", "--title", String(a.text), "--url", String(a.b), ...p]);
-          case "evidence-add": return cliJson(["research", "evidence", "add", String(a.text), "--quote", String(a.quote ?? ""), ...p]);
-          case "claim-add": return cliJson(["research", "claim", "add", String(a.text), ...p]);
-          case "claim-link": return cliJson(["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...p]);
-          case "claim-resolve": return cliJson(["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...p]);
-          default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
-        }
-      },
-    },
-    {
-      name: "tree_write",
-      description:
-        "Tech-tree structural writes: create/select trees, add/link/unlock nodes, rebuild the closure index. " +
-        "Discipline: after structural changes always run action=node-index (index+validate); unlock requires evidence via rel.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          action: {
-            type: "string",
-            enum: ["tree-new", "tree-use", "node-add", "node-link", "node-unlock", "node-index"],
-            description: "Write verb",
-          },
-          tree: { type: "string", description: "tree name (tree-*: required; node-*: defaults to selection)" },
-          key: { type: "string", description: "node key (node-*)" },
-          child: { type: "string", description: "child key (node-link)" },
-          name: { type: "string", description: "display name (node-add)" },
-          project: { type: "string", description: "explicit project (tree-new)" },
-        },
-        required: ["action"],
-      },
-      execute: (a) => {
-        const t = opt("-t", a.tree);
-        switch (String(a.action)) {
-          case "tree-new": return cliJson(["tree", "new", String(a.tree), ...opt("-p", a.project)]);
-          case "tree-use": return cliJson(["tree", "use", String(a.tree)]);
-          case "node-add": return cliJson(["node", "add", String(a.key), ...opt("--name", a.name), ...t]);
-          case "node-link": return cliJson(["node", "link", String(a.key), String(a.child), ...t]);
-          case "node-unlock": return cliJson(["node", "unlock", String(a.key), ...t]);
-          case "node-index": return cliJson(["node", "index", ...t]);
-          default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
-        }
+        const domain = WRITE_ROUTES[String(a.domain)];
+        if (!domain) return Promise.reject(new Error(`unknown domain: ${String(a.domain)}`));
+        const builder = domain[String(a.action)];
+        if (!builder) return Promise.reject(new Error(`unknown action '${String(a.action)}' for domain '${String(a.domain)}'`));
+        return cliJson(builder(a));
       },
     },
     {
       name: "verify",
       description:
         "spec-validator pipeline: submit freezes business material (encoding fail-closed), prepare builds criteria " +
-        "(P0-P5), run executes 7 checker types on a snapshot, archive seals+signs, tree runs the recursive verifier (A1).",
+        "(P0-P5), run executes 7 checker types on a snapshot, archive seals+signs, meta checks repo admission rules.",
       inputSchema: {
         type: "object",
         properties: {
@@ -254,13 +304,82 @@ export function buildTools(): McpTool[] {
           case "prepare": return cliJson(["verify", "prepare", String(a.a), ...opt("--candidates", a.b), ...opt("--reviews", a.c), ...opt("--db", a.db)]);
           case "run": return cliJson(["verify", "run", String(a.a), ...opt("--db", a.b)]);
           case "report": return cliJson(["verify", "report", String(a.a)]);
-          case "archive": return cliJson(["verify", "archive", "verify", String(a.a)]); // 验签既有归档；封存已在 run 时自动发生
+          case "archive": return cliJson(["verify", "archive", "verify", String(a.a)]);
           case "meta": return cliJson(["verify", "meta", String(a.a)]);
           default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
         }
       },
     },
+    {
+      name: "doctor",
+      description: "9-item workspace health check. Pass fix=true to auto-fix safe issues (dirty index + stale locks).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          fix: { type: "boolean", description: "Auto-fix dirty index + stale locks" },
+        },
+      },
+      execute: (a) => cliJson(["doctor", ...(a.fix ? ["--fix"] : [])]),
+    },
   ];
+}
+
+// ============================================================
+// Transports: shared handler + stdio + HTTP
+// ============================================================
+
+/** Shared JSON-RPC message handler — used by both stdio and HTTP transports.
+ *  @internal (exported for tests) */
+export function handleMcpMessage(
+  msg: any,
+  tools: McpTool[],
+  version: string,
+  respond: (id: unknown, result: unknown) => void,
+  respondErr: (id: unknown, code: number, message: string) => void,
+): void {
+  const { id, method, params } = msg;
+  switch (method) {
+    case "initialize":
+      respond(id, {
+        protocolVersion: "2024-11-05",
+        capabilities: { tools: {} },
+        serverInfo: { name: "ygl-trees", version },
+      });
+      break;
+    case "tools/list":
+      respond(id, {
+        tools: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        })),
+      });
+      break;
+    case "tools/call": {
+      const name = params?.name;
+      const tool = tools.find((t) => t.name === name);
+      if (!tool) { respondErr(id, -32602, `Unknown tool: ${name}`); break; }
+      tool
+        .execute(params?.arguments || {})
+        .then((data) =>
+          respond(id, { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] })
+        )
+        .catch((e) => {
+          const rc = typeof e?.rc === "number" ? e.rc : undefined;
+          const payload = e?.json && typeof e.json === "object" ? (e.json as Record<string, unknown>) : { error: String(e?.message || e) };
+          respond(id, {
+            content: [{ type: "text", text: JSON.stringify(rc !== undefined ? { rc, ...payload } : payload) }],
+            isError: true,
+          });
+        });
+      break;
+    }
+    case "ping":
+      respond(id, {});
+      break;
+    default:
+      if (id !== undefined) respondErr(id, -32601, `Method not found: ${method}`);
+  }
 }
 
 /** Run the MCP server on stdio. `version` is the host CLI's package version
@@ -281,54 +400,73 @@ export function serveMcp(version: string): void {
     if (!line.trim()) return;
     let msg: any;
     try { msg = JSON.parse(line); } catch { return; }
-    const { id, method, params } = msg;
-
-    switch (method) {
-      case "initialize":
-        respond(id, {
-          protocolVersion: "2024-11-05",
-          capabilities: { tools: {} },
-          serverInfo: { name: "ygl-trees", version },
-        });
-        break;
-      case "tools/list":
-        respond(id, {
-          tools: tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            inputSchema: t.inputSchema,
-          })),
-        });
-        break;
-      case "tools/call": {
-        const name = params?.name;
-        const tool = tools.find((t) => t.name === name);
-        if (!tool) { respondErr(id, -32602, `Unknown tool: ${name}`); break; }
-        tool
-          .execute(params?.arguments || {})
-          .then((data) =>
-            respond(id, { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] })
-          )
-          .catch((e) => {
-            // rc fidelity (0.114.26): a non-zero CLI exit surfaces as isError
-            // with a MACHINE-READABLE {rc, ...json} payload — the exit-code
-            // contract (0 ok / 1 runtime / 2 usage) is never flattened to text.
-            const rc = typeof e?.rc === "number" ? e.rc : undefined;
-            const payload = e?.json && typeof e.json === "object" ? (e.json as Record<string, unknown>) : { error: String(e?.message || e) };
-            respond(id, {
-              content: [{ type: "text", text: JSON.stringify(rc !== undefined ? { rc, ...payload } : payload) }],
-              isError: true,
-            });
-          });
-        break;
-      }
-      case "ping":
-        respond(id, {});
-        break;
-      default:
-        if (id !== undefined) respondErr(id, -32601, `Method not found: ${method}`);
-    }
+    handleMcpMessage(msg, tools, version, respond, respondErr);
   });
 
   process.stderr.write(`[ygl-trees MCP] stdio server ready — ${tools.length} tools\n`);
+}
+
+/** Run the MCP server over HTTP (StreamableHTTP stateless, taste-mcp 市场先例契约).
+ *
+ * - POST /mcp — JSON-RPC 2.0 request body → JSON response (single object, no SSE)
+ * - GET /mcp — 405 (stateless contract: no session streams)
+ * - Optional `--token <T>` → require `Authorization: Bearer <T>` or `X-Market-Client` header
+ *   (market gateway injects X-Market-Client: mcp/<session> on upstream forwarding)
+ *
+ * YGL_SESSION isolation: per-request header `X-YGL-Session` overrides env (market proxy
+ * passes the caller's session identity through).
+ */
+export function serveMcpHttp(version: string, port: number, opts: { token?: string } = {}): void {
+  const { createServer } = require("node:http") as typeof import("node:http");
+  const tools = buildTools();
+  const server = createServer((req, res) => {
+    const url = (req.url || "").split("?")[0];
+    if (url !== "/mcp") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not found — MCP endpoint is POST /mcp" }));
+      return;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { "content-type": "application/json", allow: "POST" });
+      res.end(JSON.stringify({ error: "method not allowed — stateless POST only" }));
+      return;
+    }
+    if (opts.token) {
+      const auth = req.headers["authorization"] || "";
+      const market = String(req.headers["x-market-client"] || "");
+      if (auth !== `Bearer ${opts.token}` && !market.startsWith("mcp/")) {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized — Bearer token or X-Market-Client required" }));
+        return;
+      }
+    }
+    const yglSession = String(req.headers["x-ygl-session"] || "");
+    if (yglSession) process.env.YGL_SESSION = yglSession;
+
+    let body = "";
+    req.on("data", (d: Buffer) => {
+      body += d;
+      if (body.length > 1024 * 1024) { req.destroy(); }
+    });
+    req.on("end", () => {
+      const respond = (id: unknown, result: unknown): void => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, result }));
+      };
+      const respondErr = (id: unknown, code: number, message: string): void => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }));
+      };
+      let msg: any;
+      try { msg = JSON.parse(body); } catch {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "invalid JSON body" }));
+        return;
+      }
+      handleMcpMessage(msg, tools, version, respond, respondErr);
+    });
+  });
+  server.listen(port, "127.0.0.1", () => {
+    process.stderr.write(`[ygl-trees MCP] HTTP server ready — POST http://127.0.0.1:${port}/mcp — ${tools.length} tools\n`);
+  });
 }

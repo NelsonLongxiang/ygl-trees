@@ -8,14 +8,90 @@ description: >-
   bundle 构建（build:bundle）、临时文件 tmp/ 规范。
   触发词：ygl-trees 入门、初始化、quickstart、工作区、退出码、exit code、备份、export、
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
-  关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle。
-version: 0.79.0
+  关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle、
+  MCP、mcp、read、write、verify、doctor、domain、action、工具、tool。
+version: 0.115.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
 # ygl-trees 快速上手与全局契约
 
 单一 SQLite 文件是唯一事实源；PostgreSQL 只做单向导出。所有命令支持 `--json`。
+
+## 0. 三种接入方式（选一）
+
+| 方式 | 适合 | 入口 |
+|---|---|---|
+| **CLI 直调** | 本地开发/脚本/运维 | `ygl-trees <group> <action> [args] --json` |
+| **MCP 工具** | AI agent（Claude/DSH/市场网关） | `ygl-trees mcp`（stdio）或 `ygl-trees mcp --http --port 9820`（HTTP） |
+| **技能面** | agent 自学 | 你正在读的这个 |
+
+**MCP 4 工具**（0.115.0 收敛，domain×action 路由——少工具、富参数）：
+
+```
+read   → 一切读面：{domain: "agent|kb|tree|node|task|rel|research|produce|project|db|skill", action: "brief|search|state|list|can|...", ...}
+write  → 一切写面：{domain: "research|kb|tree|task|rel|project|produce", action: "query-add|source-add|node-add|attach|...", ...}
+verify → 验证管线：{action: "submit|prepare|run|report|archive|meta", a: ..., b: ..., c: ..., db: ...}
+doctor → 健康检查：{fix: true|false}
+```
+
+**MCP 与 CLI 的映射规则**：`domain` = CLI 命令组，`action` = CLI 子命令（`-` 连接），其余参数透传。
+例：`read {domain:"research", action:"source-search", query:"供应商"}` ≈ `research source search "供应商" --json`。
+
+**安全边界**：MCP 写面是枚举闭集（action 只能取 schema 中列出的值）；管理面（db reset/sql、plugin、config、job、patrol）物理排除在 MCP 之外——agent 只能通过本地 CLI 执行管理操作。
+
+## 0b. MCP 覆盖边界（哪些 CLI 动作不在 MCP 里，为什么）
+
+MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排除**，不是遗漏：
+
+### A 类：物理排除——安全边界（不可协商，永不进 MCP）
+
+| CLI 面 | 排除原因 |
+|---|---|
+| `db reset` | 删库——提示注入可诱导 agent 自毁工作区 |
+| `db sql "..."` | 任意 SQL——绕过写服务的事务化/幂等/坏引用保护 |
+| `db init / export / sync / migrate` | 工作区生命周期管理——部署者操作，非 agent 面 |
+| `plugin install / enable / disable` | 代码执行面——插件可跑任意 JS |
+| `config set / reset` | 系统配置变更——影响引擎行为 |
+| `job add / rm / tick` | 调度器管理——可触发任意已注册 job |
+| `patrol add / rm` | 巡检管理——同上 |
+| `webui serve` | 长驻进程——MCP 工具调用是短生命周期 |
+
+**原则**：agent 能做研究工作但物理不能动基础设施。这些操作只能通过本地 CLI 由人执行。
+
+### B 类：破坏性写面——agent 可建不可毁（永不进 MCP）
+
+| CLI 面 | 排除原因 |
+|---|---|
+| `research evidence rm --force` | 级联删除+重算——不可逆 |
+| `research source rm` | 删来源——级联影响下游 |
+| `research claim unlink / unresolve` | 撤销操作——幂等设计里撤销是人的决定 |
+| `skill rm / enable / disable` | 技能生命周期——管理面 |
+
+**原则**：MCP 写面全部幂等（同内容重跑=已存在，安全重试）；删除不幂等——被注入的 agent 删了就没了。创建走 agent，销毁走人。
+
+### C 类：路由缺口（可加但未加，逐步补）
+
+| CLI 面 | 状态 | 何时加 |
+|---|---|---|
+| `research source fetch <url>` | 网络副作用读 | 可加 |
+| `research predict audit` | 读面但复杂 | 可加 |
+| `produce outline / section / export` | 报告子命令 | 可加 |
+| `verify tree prepare/run/report` | A1 递归验证 | 随 0.115.0 契约落定 |
+| `verify self-check / probe / example` | 专用工具面 | 低优先 |
+| `verify lint-candidates` | lint 无仪式版 | 可加 |
+| `skill add / import / refs` | 技能创建 | 可加 |
+| `node export / import` | 树导入导出 | 可加 |
+
+### 汇总
+
+| 类别 | 数量 | 原因 | 处置 |
+|---|---|---|---|
+| A 物理排除 | ~18 个动作 | 安全边界（不可协商） | 永不进 MCP |
+| B 破坏性写 | ~6 个动作 | agent 可建不可毁 | 永不进 MCP |
+| C 路由缺口 | ~12 个动作 | 还没来得及 | 逐步补入 |
+
+**判断口诀**：看到一条 CLI 命令想通过 MCP 调——先问「删东西吗？动基础设施吗？」都是→不在 MCP，走本地 CLI；否→应该在 MCP 里，若不在查上面 C 类表。
 
 ## 1. 冷启动三步
 
@@ -24,6 +100,8 @@ node dist/apps/cli/src/bin.js db init           # 建工作区（$YGL_HOME，默
 node dist/apps/cli/src/bin.js project new <name> -q "<研究问题>"
 node dist/apps/cli/src/bin.js agent brief       # 我在哪、有什么、下一步做什么（从这里开始）
 ```
+
+MCP 等价：`write {domain:"project", action:"new", name:"...", question:"..."}` → `read {domain:"agent", action:"brief"}`
 
 ## 2. Agent API 契约（冻结，勿靠猜）
 

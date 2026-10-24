@@ -18,6 +18,19 @@ tags: ygl-trees,research,evidence,claim,report
 
 > **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
 
+## MCP 等价面（AI agent 用 write / read 代替 CLI）
+
+| CLI 命令 | MCP 调用 |
+|---|---|
+| `research query add "..."` | `write {domain:"research", action:"query-add", text:"..."}` |
+| `research source add --title t --url u` | `write {domain:"research", action:"source-add", text:"t", b:"u"}` |
+| `research evidence add <id> --quote q` | `write {domain:"research", action:"evidence-add", text:"<id>", quote:"q"}` |
+| `research claim add "..."` | `write {domain:"research", action:"claim-add", text:"..."}` |
+| `research claim link <c> <e>` | `write {domain:"research", action:"claim-link", text:"<c>", b:"<e>"}` |
+| `research claim resolve <c> --as s` | `write {domain:"research", action:"claim-resolve", text:"<c>", as:"supported"}` |
+| `research source search "..."` | `read {domain:"research", action:"source-search", query:"..."}` |
+| `research claim evaluate <id>` | `read {domain:"research", action:"claim-evaluate", id:"<id>"}` |
+
 ## 1. 采集
 
 ```bash

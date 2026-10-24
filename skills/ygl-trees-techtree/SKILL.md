@@ -18,6 +18,19 @@ tags: ygl-trees,techtree,dag,unlock,gate
 
 > **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
 
+## MCP 等价面（AI agent 用 write / read 代替 CLI）
+
+| CLI 命令 | MCP 调用 |
+|---|---|
+| `tree new <name>` | `write {domain:"tree", action:"tree-new", tree:"..."}` |
+| `node add <key>` | `write {domain:"tree", action:"node-add", key:"..."}` |
+| `node link <a> <b>` | `write {domain:"tree", action:"node-link", key:"<a>", child:"<b>"}` |
+| `node unlock <key>` | `write {domain:"tree", action:"node-unlock", key:"..."}` |
+| `node index` | `write {domain:"tree", action:"node-index"}` |
+| `node list` | `read {domain:"tree", action:"state"}` |
+| `node can <key>` | `read {domain:"node", action:"can", key:"..."}` |
+| `node ready --all` | `read {domain:"node", action:"ready", all:true}` |
+
 ## 1. 建树
 
 ```bash

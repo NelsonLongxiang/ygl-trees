@@ -14,6 +14,17 @@ tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 
 # ygl-trees spec-validator（验证器）
 
+## MCP 等价面（AI agent 用 verify 代替 CLI verify 命令组）
+
+| CLI 命令 | MCP 调用 |
+|---|---|
+| `verify submit --title t --text f` | `verify {action:"submit", a:"t", b:"<file>"}` |
+| `verify prepare <mat-id> --candidates c --reviews r --db d` | `verify {action:"prepare", a:"<mat-id>", b:"<cand>", c:"<rev>", db:"<db>"}` |
+| `verify run <spec-id> --db d` | `verify {action:"run", a:"<spec-id>", b:"<db>"}` |
+| `verify report <run-id>` | `verify {action:"report", a:"<run-id>"}` |
+| `verify archive verify <file>` | `verify {action:"archive", a:"<file>"}` |
+| `verify meta <repo>` | `verify {action:"meta", a:"<repo>"}` |
+
 ## 1. 何时用
 
 - 要把一条**业务规范**（"报销单必须……"、"上线前必须……"）变成**可机器执行、可复核**的验证器；
