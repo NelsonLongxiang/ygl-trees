@@ -125,18 +125,23 @@ try {
 }
 
 // Spawn pnpm's JS entrypoint through this node binary (no shell, no .cmd shim).
+// 0.114.32: pnpm ≥10 installs may use pnpm.mjs instead of pnpm.cjs — probe both.
+const pnpmBinCandidates = (base) => [
+  join(base, "pnpm", "bin", "pnpm.cjs"),
+  join(base, "pnpm", "bin", "pnpm.mjs"), // pnpm ≥10 layout change (release-seat report 0.114.31)
+];
 const pnpmCandidates = [
-  /(^|[/\\])pnpm\.cjs$/i.test(process.env.npm_execpath ?? "") ? process.env.npm_execpath : "",
-  join(dirname(process.execPath), "node_modules", "pnpm", "bin", "pnpm.cjs"),
-  join(dirname(process.execPath), "..", "lib", "node_modules", "pnpm", "bin", "pnpm.cjs"),
+  /(^|[/\\])pnpm\.(c|m)js$/i.test(process.env.npm_execpath ?? "") ? process.env.npm_execpath : "",
+  ...pnpmBinCandidates(join(dirname(process.execPath), "node_modules")),
+  ...pnpmBinCandidates(join(dirname(process.execPath), "..", "lib", "node_modules")),
   // GitHub #10: standalone / Homebrew / npm-global installs are not reachable
   // through the two node-relative guesses above. Probe the known global layouts
   // and each PATH entry's sibling node_modules (the Windows npm shim lives next
   // to its package). Never spawn the .cmd shim: on Windows that needs a shell
   // and re-introduces quoting.
-  ...(process.env.APPDATA ? [join(process.env.APPDATA, "npm", "node_modules", "pnpm", "bin", "pnpm.cjs")] : []),
-  "/opt/homebrew/lib/node_modules/pnpm/bin/pnpm.cjs",
-  "/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs",
+  ...(process.env.APPDATA ? pnpmBinCandidates(join(process.env.APPDATA, "npm", "node_modules")) : []),
+  ...pnpmBinCandidates("/opt/homebrew/lib/node_modules"),
+  ...pnpmBinCandidates("/usr/local/lib/node_modules"),
   ...(process.env.PATH ?? "")
     .split(process.platform === "win32" ? ";" : ":")
     .filter(Boolean)

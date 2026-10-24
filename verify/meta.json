@@ -100,7 +100,7 @@
     },
     {
       "path": "scripts/pack-repro.mjs",
-      "sha256": "4d52f27a191be13c609c7c51448f46d3a7b65df6eb23c5412a54baa907ac7d1e",
+      "sha256": "4f37db48bccdbad3068e6f47244d9c5140ede24e14e359b869b78ba107f6b131",
       "role": "build"
     },
     {
@@ -266,6 +266,13 @@
       "new_sha256": "b6e6004d21f3eadbc0bc2b138caa6850cb0bbb8bc240032d3ac54db413398de7",
       "reason": "0.114.31 #75 四修：POSIX sed/total 口径/pack:check 默认开/readme:count 自动写",
       "at": "2026-10-24T14:06:11.554Z"
+    },
+    {
+      "path": "scripts/pack-repro.mjs",
+      "old_sha256": "4d52f27a191be13c609c7c51448f46d3a7b65df6eb23c5412a54baa907ac7d1e",
+      "new_sha256": "4f37db48bccdbad3068e6f47244d9c5140ede24e14e359b869b78ba107f6b131",
+      "reason": "0.114.32: pnpm 定位器候补加 .mjs（pnpm≥10 layout 变更，发版席 0.114.31 实证）",
+      "at": "2026-10-24T14:36:05.587Z"
     }
   ],
   "kind": "engine"
