@@ -8,7 +8,7 @@
 import { useState, type ReactNode } from "react";
 import { Button, message as antdMessage, Popconfirm, Table, Typography } from "antd";
 import { CheckOutlined, PlayCircleOutlined } from "@ant-design/icons";
-import { advanceTask, type TaskStatus } from "./api";
+import { advanceTask, type TaskStatus, type TaskStepReceipt } from "./api";
 import { C } from "./tokens";
 import { ToneTag } from "./ToneTag";
 
@@ -30,6 +30,24 @@ const STEP: Partial<Record<TaskStatus, { to: TaskStatus; label: string; icon: Re
 };
 
 type Task = { id: string; title: string; status: string };
+
+/** The status a row's button asks the server for (the request body's `status`, #70); null when there is no step. */
+export function stepTarget(status: string): TaskStatus | null {
+  return STEP[asStatus(status)]?.to ?? null;
+}
+
+/**
+ * What the toast says about a receipt. A receipt that moved nothing — the
+ * server's `idempotent: true`, or from === to — is not a success: the page was
+ * behind the server, and saying 「待办 → 待办」 would hide it (0.114.29 #70).
+ */
+export function stepOutcome(title: string, r: TaskStepReceipt): { changed: boolean; text: string } {
+  const from = TASK_STATUS[asStatus(r.from)].label;
+  const to = TASK_STATUS[asStatus(r.to)].label;
+  return r.idempotent || r.from === r.to
+    ? { changed: false, text: `「${title}」已经是${to}，没有改动——页面落后于服务端，已按服务端状态显示` }
+    : { changed: true, text: `「${title}」${from} → ${to}` };
+}
 
 /** 完成 asks first: the page has no step back; the CLI does (`task todo|doing`). */
 export const DONE_CONFIRM = { title: "标记为已完成？", description: "总览里不能退回；需要时在 CLI 用 task todo 退回。" };
@@ -65,12 +83,16 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
   const counts = ORDER.map((s) => `${TASK_STATUS[s].label} ${rows.filter((t) => t.status === s).length}`).join(" · ");
 
   const step = async (t: Task) => {
-    const from = asStatus(t.status);
+    const to = stepTarget(t.status);
+    if (!to) return;
     setBusy((b) => ({ ...b, [t.id]: true }));
     try {
-      const r = await advanceTask(t.id, from);
-      setWritten((w) => ({ ...w, [t.id]: { to: r.to, seen: tasks } }));
-      message.success(`「${t.title}」${TASK_STATUS[from].label} → ${TASK_STATUS[r.to].label}`);
+      const r = await advanceTask(t.id, to);
+      // either way r.to is what the server holds now
+      setWritten((w) => ({ ...w, [t.id]: { to: asStatus(r.to), seen: tasks } }));
+      const o = stepOutcome(t.title, r);
+      if (o.changed) message.success(o.text);
+      else message.info(o.text);
     } catch (e: any) {
       message.error(`没能更新「${t.title}」：${String(e?.message || e)}`);
     } finally {

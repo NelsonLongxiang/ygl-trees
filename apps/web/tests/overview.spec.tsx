@@ -9,7 +9,7 @@ import { ThemeProvider } from "../src/theme";
 import type { DashboardData } from "../src/api";
 import { copyText } from "../src/clipboard";
 import { SERIES_NOTE } from "../src/timeline";
-import { DONE_CONFIRM, TaskList, groupTasks, shownStatus } from "../src/Tasks";
+import { DONE_CONFIRM, TaskList, groupTasks, shownStatus, stepOutcome, stepTarget } from "../src/Tasks";
 
 /**
  * Overview = the expert ↔ agent cockpit (user direction 2026-10-20: UI
@@ -167,6 +167,21 @@ describe("TaskList (R12.2 勾销)", () => {
     expect(shownStatus("todo", [{ ...seen[0] }], written)).toBe("todo");
     expect(shownStatus("doing", [{ ...seen[0], status: "doing" }], written)).toBe("doing");
     expect(shownStatus("done", [{ ...seen[0], status: "done" }], written)).toBe("done");
+  });
+
+  it("each button asks for the next status — the request body's status is the target (#70)", () => {
+    expect(stepTarget("todo")).toBe("doing");
+    expect(stepTarget("doing")).toBe("done");
+    expect(stepTarget("done")).toBeNull();
+  });
+
+  it("a receipt that moved nothing is not reported as a success (0.114.29 idempotent, review of e879e43)", () => {
+    const same = stepOutcome("写报告", { id: "b", from: "doing", to: "doing", idempotent: true });
+    expect(same.changed).toBe(false);
+    expect(same.text).toContain("没有改动");
+    expect(same.text).not.toContain("→");
+    expect(stepOutcome("写报告", { id: "b", from: "todo", to: "todo" }).changed).toBe(false);
+    expect(stepOutcome("写报告", { id: "b", from: "todo", to: "doing" })).toEqual({ changed: true, text: "「写报告」待办 → 进行中" });
   });
 
   it("the confirm tells the truth: no step back on the page, the CLI can (review of ee1af12)", () => {
