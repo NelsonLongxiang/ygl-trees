@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "c86678d5953994954840637d5fb066ff404901b05db7e65a1a20892944cbf573",
+      "sha256": "358062102be7f547b2e8985aa0b0c7aa1901873fda422ab78d1c8fc09dabdee8",
       "role": "test"
     },
     {
@@ -285,6 +285,13 @@
       "new_sha256": "d6a275206001c4dd58a88f2cea89dd353301654f886e5821cb47eeb3962810eb",
       "reason": "#76: pack:check 增 R3 tooling 完整性检查（防未登记脚本随版出闸）",
       "at": "2026-10-24T14:42:19.781Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "c86678d5953994954840637d5fb066ff404901b05db7e65a1a20892944cbf573",
+      "new_sha256": "358062102be7f547b2e8985aa0b0c7aa1901873fda422ab78d1c8fc09dabdee8",
+      "reason": "#72 根修：预测声明日期参数化（date -d +30d 运行时算，GNU/BSD 跨平台）——demo 不再随日历红",
+      "at": "2026-10-24T17:00:48.372Z"
     }
   ],
   "kind": "engine"
