@@ -68,6 +68,11 @@ echo "── 5. --json purity (parse the whole stdout, node invocation)"
 JSONOK=$(Y --json db stats 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{JSON.parse(s);console.log('OK')}catch(e){console.log('BAD')}})")
 [ "$JSONOK" = "OK" ] && pass "--json stdout is parseable as a whole" || fail "--json output polluted"
 
+# 0.114.30: 冲突标记防复发（发版席建议——0.114.29 README 残留 <<<<<<< 随 tarball 出厂）
+if grep -r "<<<<<<< " README.md CHANGELOG.md docs/*.md 2>/dev/null; then
+  fail "conflict markers present in shipped docs (grep '<<<<<<< ')"
+fi
+
 echo "── 5b. reproducible tarball (same bytes twice, same entries as npm pack)"
 node scripts/pack-repro.mjs --out "$WORK/repro1.tgz" 2>"$WORK/repro1.err" || { cat "$WORK/repro1.err" >&2; fail "pack:repro failed to build tarball"; }
 node scripts/pack-repro.mjs --out "$WORK/repro2.tgz" 2>"$WORK/repro2.err" || { cat "$WORK/repro2.err" >&2; fail "pack:repro failed on second run"; }
