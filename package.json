@@ -1,6 +1,6 @@
 {
   "name": "ygl-trees",
-  "version": "0.114.30",
+  "version": "0.114.31",
   "description": "Research workbench CLI for AI agents — evidence-first research pipeline, claims calibration and tech-tree skill modeling (SQLite; 猿光·科技树)",
   "type": "commonjs",
   "keywords": [
@@ -41,7 +41,8 @@
     "contract:audit": "bash scripts/contract-audit.sh",
     "ratchet": "node scripts/ratchet.mjs",
     "verify:run": "node scripts/verify-run.mjs",
-    "test:rust": "cargo test --manifest-path rust/yglverify/Cargo.toml"
+    "test:rust": "cargo test --manifest-path rust/yglverify/Cargo.toml",
+    "readme:count": "node scripts/readme-count.mjs"
   },
   "files": [
     "dist",

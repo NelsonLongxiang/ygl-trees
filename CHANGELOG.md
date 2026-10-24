@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.114.31
+
+收口版：全部在途修复 + MCP 4 工具收敛 + HTTP 传输 + #75 计数根除（reopen 单 npm 复检版）。
+
+- **含 0.114.28–30 全部修复**：#69 lint 编码 / #70 webui 幂等 / #71 README 冲突标记 / #72 demo 日期 / #75 计数漂移
+- **MCP 11→4 收敛**（属主裁定「少工具、富参数」一步到位）：`read/write/verify/doctor` domain×action 路由——
+  覆盖面 ~35%→~80%；工具名去 `ygl_` 前缀（市场网关自动加 `ygl__`）
+- **MCP HTTP 传输**：`--http --port <N>` StreamableHTTP stateless（taste-mcp 市场契约：POST /mcp，GET 405）；
+  `--token` 可选鉴权（Bearer 或 X-Market-Client）；`X-YGL-Session` per-request 会话覆盖
+- **技能面 MCP 对照**：quickstart/research/techtree/verify 四技能加 CLI↔MCP 映射表 + 覆盖边界三分类
+  （A 物理排除/B 破坏性写/C 路由缺口）
+- **#75 根除**：`readme:count` 脚本自动写 README 计数（单一事实源=vitest 测量值）；readme:verify 门禁
+  POSIX sed 兼容 + total 口径 + pack:check 路径默认开
+- **已知问题**：demo 5j2 预测 audit 断言有日历漂移 flake（与 #72 同族，demo 内预测 deadline 过期后
+  audit 显示已结算而非 pending）——非本轮回归，排下版修
+- 测试：mcp-write 7 + mcp-http 5 = 12/12 新增；unit 984；contract 144
+
 ## 0.114.29
 
 lint 编码归一 + webui 幂等修复（#69/#70，总工席经 Claude-OPS-5.5 所报）。

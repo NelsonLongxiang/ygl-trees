@@ -115,7 +115,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "d4b98d992f6af3cfdd91a200c97e686266dfa7b9e449c39b1c15e3d396c024dc",
+      "sha256": "b6e6004d21f3eadbc0bc2b138caa6850cb0bbb8bc240032d3ac54db413398de7",
       "role": "gate"
     },
     {
@@ -259,6 +259,13 @@
       "new_sha256": "d4b98d992f6af3cfdd91a200c97e686266dfa7b9e449c39b1c15e3d396c024dc",
       "reason": "#75: 增 unit 计数门锚（README_UNIT_COUNT_GATE=1 时跑 vitest 计数 vs README 提取比对）",
       "at": "2026-10-24T11:08:00.307Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "d4b98d992f6af3cfdd91a200c97e686266dfa7b9e449c39b1c15e3d396c024dc",
+      "new_sha256": "b6e6004d21f3eadbc0bc2b138caa6850cb0bbb8bc240032d3ac54db413398de7",
+      "reason": "0.114.31 #75 四修：POSIX sed/total 口径/pack:check 默认开/readme:count 自动写",
+      "at": "2026-10-24T14:06:11.554Z"
     }
   ],
   "kind": "engine"
