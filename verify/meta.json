@@ -95,7 +95,7 @@
     },
     {
       "path": "scripts/pack-check.sh",
-      "sha256": "3d96f3a8caada69c6283ccf588e64da9cba9f622520777cd61255dfacddcb028",
+      "sha256": "c1e1ee1a800a38a5f33b52d370895255b3a1b943b5fac77d29b801abd06800ea",
       "role": "release"
     },
     {
@@ -224,6 +224,13 @@
       "new_sha256": "3d96f3a8caada69c6283ccf588e64da9cba9f622520777cd61255dfacddcb028",
       "reason": "0.114.27 P1 批：pack-check 5b 两行 stderr 落 WORK/*.err 并在失败时回显——不再吞 pack-repro 真实报错（本会话三次 5b 调排因）",
       "at": "2026-10-23T16:38:28.512Z"
+    },
+    {
+      "path": "scripts/pack-check.sh",
+      "old_sha256": "3d96f3a8caada69c6283ccf588e64da9cba9f622520777cd61255dfacddcb028",
+      "new_sha256": "c1e1ee1a800a38a5f33b52d370895255b3a1b943b5fac77d29b801abd06800ea",
+      "reason": "0.114.30: 增冲突标记 grep 防复发（发版席建议）",
+      "at": "2026-10-23T21:53:10.666Z"
     }
   ],
   "kind": "engine"

@@ -521,6 +521,8 @@ verify-encoding +1 / task-status-machine +2；unit 953→956；contract 144。
 发布（2026-10-24）：commit **`7ad42bc`**（rebase 含 PR#67）；tag **`v0.114.29 = 4d83e1fa… → ^{commit}=7ad42bc…`**（双远端）；
 npm **latest=0.114.29**、shasum **`2df985bc…`**；官方字节 **1,658,047 B / sha256 `4e3a8bdb…`**
 （publish `2026-10-23T21:24:09Z`，fileCount 190；谱系 5014144=PR#67 合并在链）。
+**0.114.30（发版席 P2 线首例，README 冲突标记收口）**：commit **`7d02b6f`**；tag **`845fccc6…`**（rebase 重锚）；
+npm **latest=0.114.30**、shasum **`4af677c4…`**；**1,658,082 B / sha256 `fc4691a5…`**（fileCount 190）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
