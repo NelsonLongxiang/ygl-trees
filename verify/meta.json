@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "d7f30d3b82599518b5eaabab35f726f54348ef93a7ed6b977217721313905104",
+      "sha256": "c86678d5953994954840637d5fb066ff404901b05db7e65a1a20892944cbf573",
       "role": "test"
     },
     {
@@ -231,6 +231,20 @@
       "new_sha256": "c1e1ee1a800a38a5f33b52d370895255b3a1b943b5fac77d29b801abd06800ea",
       "reason": "0.114.30: 增冲突标记 grep 防复发（发版席建议）",
       "at": "2026-10-23T21:53:10.666Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "d7f30d3b82599518b5eaabab35f726f54348ef93a7ed6b977217721313905104",
+      "new_sha256": "f42764a91da1184fc2410bfb7d099a38ac9ded9fcb53f72c7351b2d8b9200c7a",
+      "reason": "#72: 硬编码 2026-10-19 改 2099-12-31（demo 断言不随日历腐烂）",
+      "at": "2026-10-24T05:46:54.131Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "f42764a91da1184fc2410bfb7d099a38ac9ded9fcb53f72c7351b2d8b9200c7a",
+      "new_sha256": "c86678d5953994954840637d5fb066ff404901b05db7e65a1a20892944cbf573",
+      "reason": "#72 改 2000-01-31（永远已过期，--due 始终命中）",
+      "at": "2026-10-24T05:49:23.782Z"
     }
   ],
   "kind": "engine"

@@ -241,9 +241,9 @@ $Y node add pb2 -t probe-batch >/dev/null 2>&1
 RA=$($Y node ready --all 2>&1)
 case "$RA" in *"Ready across"*"probe-batch"*"pb2"*) echo "  ✓ node ready --all 跨树扫描（无需 tree use）";; *) echo "  ✗ ready --all: $RA"; exit 1;; esac
 # ③ node cond --due lists eval conds whose question carries a deadline
-$Y node cond add pb1 --name due_probe --op eval --value "2026-10-19 前验证：demo 临期探针条件" -t probe-batch >/dev/null 2>&1
+$Y node cond add pb1 --name due_probe --op eval --value "2000-01-31 前验证：demo 临期探针条件（永远已过期，#72 防日历腐烂）" -t probe-batch >/dev/null 2>&1
 CD1=$($Y node cond --due --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);const r=a.find(x=>x.name==='due_probe');console.log(r?r.deadline:'missing')})")
-if [ "$CD1" = "2026-10-19" ]; then echo "  ✓ cond --due 提取问题文本中的期限（deadline=2026-10-19）"; else echo "  ✗ cond --due: $CD1"; exit 1; fi
+if [ "$CD1" = "2000-01-31" ]; then echo "  ✓ cond --due 提取问题文本中的期限（deadline=2000-01-31）"; else echo "  ✗ cond --due: $CD1"; exit 1; fi
 # --days 窗口：2027 远期条件不进 7 天窗
 CD2=$($Y node cond --due --days 7 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);console.log(a.every(x=>x.days_left<=7))})")
 if [ "$CD2" = "true" ]; then echo "  ✓ cond --due 尊重 --days 窗口"; else echo "  ✗ --days window: $CD2"; exit 1; fi
