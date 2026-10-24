@@ -310,19 +310,35 @@ export async function submitVerifyMaterial(input: {
 export type TaskStatus = "todo" | "doing" | "done";
 
 /**
- * R12.2 勾销：move one task a step along todo → doing → done. The server takes
- * the status the client last saw and writes the next one (it does not re-read
- * the row), so callers must send the status currently on screen and never
- * resend while a request is in flight. Errors are plain text (404 = task not in
- * the authorized project, 400 = malformed) and surface verbatim.
+ * R12.2 勾销：ask the server to move one task to `to`, the next step after the
+ * status on screen. `status` in the body is the TARGET; the server re-reads the
+ * stored status and only allows the one forward step (#66 / #70), so a stale
+ * page gets a 409 instead of dragging the task somewhere else. Never resend
+ * while a request is in flight. Refusals surface verbatim: 409 and other JSON
+ * bodies by their `error`, 404 (task not in the authorized project) and 400
+ * (malformed) as plain text.
  */
-export async function advanceTask(id: string, status: TaskStatus): Promise<{ id: string; title: string; from: TaskStatus; to: TaskStatus }> {
+export interface TaskStepReceipt {
+  id: string;
+  /** absent on the idempotent receipt (0.114.29 #70) */
+  title?: string;
+  from: TaskStatus;
+  to: TaskStatus;
+  /** the task already had the requested status: nothing was written */
+  idempotent?: boolean;
+}
+
+export async function advanceTask(id: string, to: TaskStatus): Promise<TaskStepReceipt> {
   const r = await fetch("api/task", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id, status }),
+    body: JSON.stringify({ id, status: to }),
   });
   const text = await r.text();
-  if (!r.ok) throw new Error(text.trim() || `api/task ${r.status}`);
+  if (!r.ok) {
+    let error = text.trim();
+    try { error = String(JSON.parse(text)?.error || error); } catch { /* plain text */ }
+    throw new Error(error || `api/task ${r.status}`);
+  }
   return JSON.parse(text);
 }

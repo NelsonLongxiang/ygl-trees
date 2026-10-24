@@ -206,21 +206,28 @@ describe("subscribeDashboard 断线上报（66d10ab 复评：断线不得静默�
 });
 
 describe("advanceTask (R12.2)", () => {
-  it("posts the status on screen and returns the step the server wrote", async () => {
+  it("posts the TARGET status (the step after the one on screen) and returns the step the server wrote (#70)", async () => {
     const calls: any[] = [];
     vi.stubGlobal("fetch", (async (url: string, init: any) => {
       calls.push({ url, init });
       return { ok: true, status: 200, text: async () => JSON.stringify({ id: "t1", title: "x", from: "todo", to: "doing" }) };
     }) as any);
-    const r = await advanceTask("t1", "todo");
+    const r = await advanceTask("t1", "doing");
     expect(r.to).toBe("doing");
     expect(calls[0].url).toBe("api/task");
     expect(calls[0].init.method).toBe("POST");
-    expect(JSON.parse(calls[0].init.body)).toEqual({ id: "t1", status: "todo" });
+    expect(JSON.parse(calls[0].init.body)).toEqual({ id: "t1", status: "doing" });
   });
 
   it("surfaces the server's plain-text refusal verbatim", async () => {
     vi.stubGlobal("fetch", (async () => ({ ok: false, status: 404, text: async () => "task not accessible under current selection: t1" })) as any);
-    await expect(advanceTask("t1", "doing")).rejects.toThrow("task not accessible under current selection: t1");
+    await expect(advanceTask("t1", "done")).rejects.toThrow("task not accessible under current selection: t1");
+  });
+
+  it("a 409 from a stale page shows the server's error, not the raw JSON body (#66)", async () => {
+    const body = { error: "task t1 is 'done'; only 'done' (or idempotent 'done') is allowed", current_status: "done", expected_next: "done" };
+    vi.stubGlobal("fetch", (async () => ({ ok: false, status: 409, text: async () => JSON.stringify(body) })) as any);
+    const err = await advanceTask("t1", "doing").catch((e) => e as Error);
+    expect(err.message).toBe(body.error);
   });
 });

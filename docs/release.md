@@ -181,3 +181,8 @@ externals  better-sqlite3 · typeorm · reflect-metadata · pg
 **关键纪律**：根 `package.json` 的 `dependencies` 是**发布面**（消费者安装什么），
 `packages/*/*/package.json` 是**依赖图真相**（workspace 内部谁依赖谁）。两者并存，
 改依赖时两处都要看——只改一处会分别导致「本地跑不起来」或「装完跑不起来」。
+
+## Worktree 纪律（2026-10-24，总工席 obs-2026-10-24 批）
+
+**单一 release-wt 复用**：发布流程使用固定 worktree（`tmp/release-wt`），每版 `git checkout <anchor> --detach`
+覆写——不新建、不累积。此前 0105-0114 每版建新 worktree 未回收（本机 50 个），根因防复发即此条。
