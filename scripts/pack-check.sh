@@ -68,6 +68,9 @@ echo "── 5. --json purity (parse the whole stdout, node invocation)"
 JSONOK=$(Y --json db stats 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{JSON.parse(s);console.log('OK')}catch(e){console.log('BAD')}})")
 [ "$JSONOK" = "OK" ] && pass "--json stdout is parseable as a whole" || fail "--json output polluted"
 
+# #76: R3 tooling 完整性入发布门禁（此前 pack:check 不跑 verify meta → 未登记脚本可随版出闸）
+node scripts/meta-tooling.mjs --check > /dev/null 2>&1 || fail "R3 tooling drift — run: node scripts/meta-tooling.mjs --check"
+
 # 0.114.30: 冲突标记防复发（发版席建议——0.114.29 README 残留 <<<<<<< 随 tarball 出厂）
 if grep -r "<<<<<<< " README.md CHANGELOG.md docs/*.md 2>/dev/null; then
   fail "conflict markers present in shipped docs (grep '<<<<<<< ')"

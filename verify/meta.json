@@ -95,7 +95,7 @@
     },
     {
       "path": "scripts/pack-check.sh",
-      "sha256": "c1e1ee1a800a38a5f33b52d370895255b3a1b943b5fac77d29b801abd06800ea",
+      "sha256": "d6a275206001c4dd58a88f2cea89dd353301654f886e5821cb47eeb3962810eb",
       "role": "release"
     },
     {
@@ -278,6 +278,13 @@
       "new_sha256": "4f37db48bccdbad3068e6f47244d9c5140ede24e14e359b869b78ba107f6b131",
       "reason": "0.114.32: pnpm 定位器候补加 .mjs（pnpm≥10 layout 变更，发版席 0.114.31 实证）",
       "at": "2026-10-24T14:36:05.587Z"
+    },
+    {
+      "path": "scripts/pack-check.sh",
+      "old_sha256": "c1e1ee1a800a38a5f33b52d370895255b3a1b943b5fac77d29b801abd06800ea",
+      "new_sha256": "d6a275206001c4dd58a88f2cea89dd353301654f886e5821cb47eeb3962810eb",
+      "reason": "#76: pack:check 增 R3 tooling 完整性检查（防未登记脚本随版出闸）",
+      "at": "2026-10-24T14:42:19.781Z"
     }
   ],
   "kind": "engine"
