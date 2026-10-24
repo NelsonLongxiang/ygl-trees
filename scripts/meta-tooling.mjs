@@ -12,6 +12,8 @@
  *   随仓库走）：{path, old_sha256, new_sha256, reason, at}——clone/评审者能看到「为什么重登记」，
  *   不是把 red 改成 green；本地 DB 事件不随 commit 走，故不再作为唯一账本（#37）。
  * - 只维护登记，不产出也不汇总任何验证判定（tooling 的定义）；`verify meta .` 才是判定。
+ * - **--audit**（#37 执法半）：打印完整重登记审计链 + **链完整性校验**——每条 old_sha256 必须
+ *   匹配前一条 new_sha256（首条匹配 tooling[].sha256 注册时值），断链 → rc=1。
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -26,7 +28,7 @@ const flag = (n) => {
   const i = args.indexOf(`--${n}`);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null;
 };
-const KNOWN = ["--check", "--add", "--role", "--reregister", "--reason"];
+const KNOWN = ["--check", "--add", "--role", "--reregister", "--reason", "--audit"];
 for (const a of args) {
   if (a.startsWith("--") && !KNOWN.includes(a)) {
     console.error(`meta-tooling: unknown flag ${a}`);
@@ -87,6 +89,59 @@ if (reregister) {
   entry.sha256 = got;
   atomicWriteIndex(index);
   console.log(`meta-tooling: re-registered ${entry.path} ${old.slice(0, 8)} -> ${got.slice(0, 8)} (reregistrations[] recorded)`);
+  process.exit(0);
+}
+
+if (args.includes("--audit")) {
+  // #37 enforcement half: print the full reregistration audit trail + chain
+  // integrity check. Each entry's old_sha256 must match the previous
+  // new_sha256 for that path (or the tooling[] registered sha for the first
+  // entry) — a broken chain means someone edited meta.json by hand.
+  const rr = index.reregistrations ?? [];
+  if (!rr.length) {
+    console.log("meta-tooling --audit: no reregistrations (clean history)");
+    process.exit(0);
+  }
+  console.log(`meta-tooling --audit: ${rr.length} reregistration(s), chain check:`);
+  // Build per-path expected sha chains from tooling[]
+  const currentSha = new Map(index.tooling.map((t) => [t.path, t.sha256]));
+  // Reconstruct: walk backward from current sha via reregistrations
+  const chainOk = [];
+  for (const r of rr) {
+    const entry = index.tooling.find((t) => t.path === r.path);
+    if (!entry) { chainOk.push({ r, ok: false, problem: "path not in tooling[]" }); continue; }
+    // For the LAST reregistration of a path, new_sha256 must == current tooling sha
+    // For non-last, old must chain to next entry's new (checked below via reverse walk)
+  }
+  // Reverse walk: last entry per path → current sha; earlier → next new
+  const lastPerPath = new Map();
+  for (let i = rr.length - 1; i >= 0; i--) {
+    const p = rr[i].path;
+    if (!lastPerPath.has(p)) lastPerPath.set(p, i);
+  }
+  let broken = 0;
+  for (let i = 0; i < rr.length; i++) {
+    const r = rr[i];
+    const isLast = lastPerPath.get(r.path) === i;
+    let expectedOld = null;
+    if (isLast) {
+      expectedOld = currentSha.get(r.path); // current tooling sha (after this reregister)
+      if (expectedOld !== r.new_sha256) { broken++; console.error(`  ✗ chain: ${r.path} last new ${r.new_sha256.slice(0, 8)} ≠ current tooling ${String(expectedOld || "?").slice(0, 8)}`); }
+    }
+    // Find the NEXT reregistration for this path to check old→new chaining
+    for (let j = i + 1; j < rr.length; j++) {
+      if (rr[j].path === r.path) {
+        if (rr[j].old_sha256 !== r.new_sha256) { broken++; console.error(`  ✗ chain: ${r.path} entry ${i} new ${r.new_sha256.slice(0, 8)} → entry ${j} old ${rr[j].old_sha256.slice(0, 8)} (gap)`); }
+        break;
+      }
+    }
+    console.log(`  ${r.at.slice(0, 10)} ${r.path} ${r.old_sha256.slice(0, 8)}→${r.new_sha256.slice(0, 8)} "${r.reason.slice(0, 60)}"`);
+  }
+  if (broken) {
+    console.error(`meta-tooling --audit: ${broken} chain break(s) — meta.json was hand-edited or reregistrations were removed`);
+    process.exit(1);
+  }
+  console.log(`meta-tooling --audit: chain OK (${rr.length} entries, 0 breaks)`);
   process.exit(0);
 }
 

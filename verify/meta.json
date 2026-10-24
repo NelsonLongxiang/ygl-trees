@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "7bc62c3c8f6c339d10ec4bd7ebc6025218010a19905b5bc1bbce513e52e07b19",
+      "sha256": "b6648cee8573b5465b4078f12d32fb6539de855d4b827e4466d9d1fb1073a518",
       "role": "gate"
     },
     {
@@ -245,6 +245,13 @@
       "new_sha256": "c86678d5953994954840637d5fb066ff404901b05db7e65a1a20892944cbf573",
       "reason": "#72 改 2000-01-31（永远已过期，--due 始终命中）",
       "at": "2026-10-24T05:49:23.782Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "7bc62c3c8f6c339d10ec4bd7ebc6025218010a19905b5bc1bbce513e52e07b19",
+      "new_sha256": "b6648cee8573b5465b4078f12d32fb6539de855d4b827e4466d9d1fb1073a518",
+      "reason": "#37 执法半：--audit 读面（全链打印+链完整性校验，断链 rc=1 检测手改）",
+      "at": "2026-10-24T10:06:35.512Z"
     }
   ],
   "kind": "engine"
