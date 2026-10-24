@@ -526,10 +526,14 @@ npm **latest=0.114.30**、shasum **`4af677c4…`**；**1,658,082 B / sha256 `fc4
 **0.114.31 记录（2026-10-24，收口版）**：MCP 11→4 收敛（read/write/verify/doctor domain×action）+ HTTP 传输
 （StreamableHTTP stateless）+ 技能 MCP 对照 + #75 计数根除（readme:count 自动写）。reopen 8 单的 npm 复检版。
 unit 984；contract 144；demo 5j2 预测 audit 有日历漂移已知问题（非回归）。
-发布（2026-10-24）：commit **`bb0fc44`**；tag **`v0.114.31 = 6f713ff3… → ^{commit}=bb0fc44…`**（双远端）；
+发布（2026-10-24）：commit **`2eec801`**（B' 改写后，原 bb0fc44）；tag **`v0.114.31 = 0330a066… → ^{commit}=2eec801…`**（B' 改写后）（双远端）；
 npm **latest=0.114.31**、shasum **`e0eafa41…`**；官方字节 **1,684,353 B / sha256 `493a3887…`**（fileCount 192）。
 附带发现：pack-repro pnpm 定位器在 pnpm≥10（.mjs 而非 .cjs）环境下失败——发版席已解（npm_execpath 直指），
 0.114.32 定位器候补加 .mjs 后缀。
+**B' 历史改写记录（2026-10-24，#76 隐私事件）**：snapshot.json（内网 IP/会话 ID/知识图谱）随 v0.114.31 入公共仓历史。
+属主裁定 B'：git filter-repo 改写+强推双远端。v0.114.31 `bb0fc44→2eec801`、master `4ff4c70→eab5dae`。
+npm tarball 0 命中不受影响。验证席⑥验收 PASS（双远端 fresh clone 历史 0 命中+泄密串不可达+旧 SHA 不可达）。
+四条缓解排下一版（gitignore 模式/卫生闸/生成路径根修/导出脱敏）。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
