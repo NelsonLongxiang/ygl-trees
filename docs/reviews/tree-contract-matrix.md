@@ -6,7 +6,7 @@ kind: 评审
 
 # A1 tree run 契约对照表（机器生成）
 
-> 生成：`node scripts/tree-contract-matrix.mjs --results <vitest.json>`；commit **1897006**，tag **v0.114.31-23-g1897006**。
+> 生成：`node scripts/tree-contract-matrix.mjs --results <vitest.json>`；commit **5fa6a1a**，tag **v0.114.31-24-g5fa6a1a**。
 > 状态口径：green=对应测试通过；partial=有测试但断言面未全覆盖；planned=尚未落码；missing=清单有、测试未找到；red=测试失败。
 > **不得手改本表**——改清单 `docs/reviews/tree-contract-matrix.json` 后重跑。
 
