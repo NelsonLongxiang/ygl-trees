@@ -95,7 +95,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "7c77630e16fe7a2c79d77a00e44bfbc40e70d4c8118e5addf31c9fb463d7e25d",
+      "sha256": "33175f5c6d0605d64295a58247234e4d4425c845d60041b6daa90626ccd52b2f",
       "role": "gate"
     },
     {
@@ -175,14 +175,14 @@
       "old_sha256": "6d575bf62d250fcaecec795a17a81bad188a5e2903279b619d14af397e8f0ce4",
       "new_sha256": "a555e64d45a6bcf007b516824b0df0d50887cb2c4aaecf9acab398abb7edeb1e",
       "reason": "0.114.1 contract 15 (#34 coverage) + 0.114.2 contract 12c (drift gate): bytes changed, registration refreshed explicitly",
-      "at": "2026-10-22T03:00:00.000Z"
+      "at": "2026-10-22T00:40:00.000Z"
     },
     {
       "path": "scripts/meta-tooling.mjs",
       "old_sha256": "24efaab26716c6865cb7ca03f05274b7c80625951b360aed56771608bdd8cc3a",
       "new_sha256": "fb944aa3b95f587e24b412761a7491b16317f247da5fceef2ffc2079293e61d5",
       "reason": "0.114.2: explicit --reregister + audited drift repair (no auto-rehash)",
-      "at": "2026-10-22T03:05:00.000Z"
+      "at": "2026-10-22T00:40:01.000Z"
     },
     {
       "path": "scripts/meta-tooling.mjs",
@@ -342,6 +342,14 @@
       "reason": "#75 计数门禁修：字面 0x01→\\1、GNU \\s→POSIX、常开",
       "actor": "ec4ce7f8",
       "at": "2026-10-25T07:54:16.764Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "7c77630e16fe7a2c79d77a00e44bfbc40e70d4c8118e5addf31c9fb463d7e25d",
+      "new_sha256": "33175f5c6d0605d64295a58247234e4d4425c845d60041b6daa90626ccd52b2f",
+      "reason": "ffc790d pnpm 定位器 .cjs+.mjs 双探测修复波及 tooling sha——显式重登记（#37 lineage）",
+      "actor": "longxiang",
+      "at": "2026-10-25T08:47:28.805Z"
     }
   ],
   "kind": "engine",
@@ -349,6 +357,24 @@
     "7b367f41*->c241e42c*",
     "c241e42c*->e6bf02b0*",
     "e6bf02b0*->dafc0240*",
-    "465266b1*->9c02f25f*"
+    "465266b1*->9c02f25f*",
+    "591755c2*->7b367f41*",
+    "d7f30d3b*->c86678d5*"
+  ],
+  "reregistration_genesis": {
+    "scripts/contract-audit.sh": "6d575bf62d250fcaecec795a17a81bad188a5e2903279b619d14af397e8f0ce4",
+    "scripts/meta-tooling.mjs": "24efaab26716c6865cb7ca03f05274b7c80625951b360aed56771608bdd8cc3a",
+    "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs": "608c3280bfd2d1e6853d8793360674ee11e200cc76ca11c3f673d2c5171d7560",
+    "scripts/pack-check.sh": "9157e820bd69f662d9deae4a244ca83701daf41264b1da35be3354e4da817206",
+    "examples/demo.sh": "d7f30d3b82599518b5eaabab35f726f54348ef93a7ed6b977217721313905104",
+    "scripts/readme-verify.sh": "df68024262b31b0f621b9d20bc48ab07c2bab2eb3de0a432ea29a9e938be6fd7",
+    "scripts/pack-repro.mjs": "4d52f27a191be13c609c7c51448f46d3a7b65df6eb23c5412a54baa907ac7d1e"
+  },
+  "ledger_normalizations": [
+    {
+      "what": "seeded entries carried hand-set timestamps (03:00/03:05) later than real entries added before them",
+      "fix": "rewrote at to 2026-10-22T00:40:0x (before the real 00:41 entries) so per-path at is monotonic; shas/reasons untouched",
+      "at": "2026-10-25T08:38:14.373Z"
+    }
   ]
 }
