@@ -522,6 +522,13 @@ else
   fail "fleet fixtures lint+prepare" "$(printf '%s' "$FLEETOUT" | head -c 400)"
 fi
 
+# B2：SCHEMA_SQL 与 MIGRATE_DDL 列集逐表对账（schema 单一权威方向的门禁面）
+if node scripts/schema-parity.mjs >/dev/null 2>&1; then
+  pass "schema parity (SCHEMA_SQL == MIGRATE_DDL column sets)"
+else
+  fail "schema parity" "$(node scripts/schema-parity.mjs 2>&1 | head -5)"
+fi
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1

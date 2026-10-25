@@ -55,7 +55,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "ff5ba2a226e4da97b19a281d2804618206303cb6c8681b3f37c4d61cc19afcbf",
+      "sha256": "0e8364083b819a4d279f10e49897eedce447c307761b93a30bef2a6070bac568",
       "role": "gate"
     },
     {
@@ -121,6 +121,11 @@
     {
       "path": "scripts/readme-verify.sh",
       "sha256": "b6e6004d21f3eadbc0bc2b138caa6850cb0bbb8bc240032d3ac54db413398de7",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/schema-parity.mjs",
+      "sha256": "5c3fe5e42c654ccdf694c7083364bd7d85c8238df90e10947fee6f1651f5116e",
       "role": "gate"
     },
     {
@@ -300,6 +305,14 @@
       "reason": "#37 执法四件：against-git 基线对账/actor 必需/at 方向校验/链首锚定 + 四复现测试",
       "actor": "ec4ce7f8",
       "at": "2026-10-25T04:46:10.782Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "ff5ba2a226e4da97b19a281d2804618206303cb6c8681b3f37c4d61cc19afcbf",
+      "new_sha256": "0e8364083b819a4d279f10e49897eedce447c307761b93a30bef2a6070bac568",
+      "reason": "B2: 增 schema parity 门禁（SCHEMA_SQL vs MIGRATE_DDL 列集对账）",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T06:13:42.696Z"
     }
   ],
   "kind": "engine"
