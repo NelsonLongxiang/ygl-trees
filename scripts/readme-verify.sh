@@ -95,10 +95,10 @@ if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV
 # 修三件：a) grep -P → POSIX sed（macOS 兼容）b) 取 total 非 passed（含 skipped）
 # c) 发布路径（pack:check）默认开；日常 readme:verify 跳过避免双跑 vitest。
 # 发布脚本另有 readme:count 自动写（单一事实源=测量值）。
-if [ "${README_UNIT_COUNT_GATE:-0}" = "1" ] || [ -n "${YGL_RELEASE:-}" ]; then
+if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   N=$((N+1))
-  README_NUM=$(sed -n 's/.*vitest \([0-9]*\) 例.*//p' README.md | head -1)
-  ACTUAL=$(npx vitest run --maxWorkers=1 2>/dev/null | sed -n 's/.*Tests\s\+[0-9]* passed.*(\([0-9]*\)).*//p' | tail -1)
+  README_NUM=$(sed -n 's/.*vitest \([0-9][0-9]*\) 例.*/\1/p' README.md | head -1)
+  ACTUAL=$(node node_modules/vitest/vitest.mjs run --maxWorkers=1 2>/dev/null | sed -n 's/.*Tests[[:space:]]*[0-9][0-9]* passed.*(\([0-9][0-9]*\)).*/\1/p' | tail -1)
   if [ -n "$README_NUM" ] && [ -n "$ACTUAL" ] && [ "$README_NUM" = "$ACTUAL" ]; then
     echo "  ✓ unit 计数门锚: README $README_NUM == vitest $ACTUAL"
   else

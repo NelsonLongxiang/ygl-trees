@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { AsyncOpsReads } from "../src/async-reads";
 import { AsyncDbCmds } from "../src/async-db-cmds";
+import { AsyncTreeStore } from "../../../techtree/model/src/async-store";
 import { AsyncResearchStore } from "../../../research/pipeline/src/async-store";
 
 const REPO = resolve(__dirname, "../../../..");
@@ -117,6 +118,30 @@ describe("#77 async facade column parity + #78 rc contracts", () => {
     expect(adb.dialect).toBe("sqlite");
     const fakePg: any = { dialect: "pg", get: async () => null, all: async () => [] };
     expect(() => assertSyncDelegationAllowed(fakePg, "probe")).toThrow(/sync delegation/);
+    db.close();
+  }, 30_000);
+
+  it("#77-2: AsyncTreeStore facade — every declared read method resolves", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const ts = new AsyncTreeStore(db);
+    await expect(ts.treeList()).resolves.toBeInstanceOf(Array);
+    await expect(ts.treeByName("nope")).resolves.toBeNull();
+    await expect(ts.trees()).resolves.toBeInstanceOf(Array);
+    // 无树时 treeResolve 抛「no tree selected」——断言拒绝而不是静默空
+    await expect(ts.treeResolve()).rejects.toThrow(/no tree selected|tree not found/);
+    await expect(ts.query("SELECT 1 AS one")).resolves.toBeInstanceOf(Array);
+    db.close();
+  }, 30_000);
+
+  it("#77-2: AsyncResearchStore facade — every declared read method resolves", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const rs = new AsyncResearchStore(db);
+    await expect(rs.projectList()).resolves.toBeInstanceOf(Array);
+    await expect(rs.projectByName("nope")).resolves.toBeNull();
+    await expect(rs.tail(5)).resolves.toBeInstanceOf(Array);
+    await expect(rs.skillList()).resolves.toBeInstanceOf(Array);
+    await expect(rs.stats()).resolves.toBeTruthy();
+    await expect(rs.query("SELECT 1 AS one")).resolves.toBeInstanceOf(Array);
     db.close();
   }, 30_000);
 });

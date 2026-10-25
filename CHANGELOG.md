@@ -43,8 +43,9 @@ A1 递归验证器 v1.2 Phase 2 收口（两席签注）+ B1 读路径异步化 
   （A 物理排除/B 破坏性写/C 路由缺口）
 - **#75 根除**：`readme:count` 脚本自动写 README 计数（单一事实源=vitest 测量值）；readme:verify 门禁
   POSIX sed 兼容 + total 口径 + pack:check 路径默认开
-- **已知问题**：demo 5j2 预测 audit 断言有日历漂移 flake（与 #72 同族，demo 内预测 deadline 过期后
-  audit 显示已结算而非 pending）——非本轮回归，排下版修
+- **#72 收口说明**：demo 5j2 曾因预测声明硬编码过期日期（`2026-10-24`）导致 audit 显示已结算而非
+  pending；本版已改为运行时 `date -d +30d` 参数化（demo rc0 验证），**非 flake**（旧措辞订正：
+  日历硬编码缺陷，已随本版修复）
 - 测试：mcp-write 7 + mcp-http 5 = 12/12 新增；unit 984；contract 144
 
 ## 0.114.29

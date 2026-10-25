@@ -95,12 +95,12 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "29c18d4ed79304f559af74ddd80485451de51451112622ec6eff93d53899dd62",
+      "sha256": "7c77630e16fe7a2c79d77a00e44bfbc40e70d4c8118e5addf31c9fb463d7e25d",
       "role": "gate"
     },
     {
       "path": "scripts/pack-check.sh",
-      "sha256": "d6a275206001c4dd58a88f2cea89dd353301654f886e5821cb47eeb3962810eb",
+      "sha256": "1c76fe867862abb2e3c1ed53331d57fecc10ec0b14635c67f6d8eeb37a678bb2",
       "role": "release"
     },
     {
@@ -125,7 +125,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "b6e6004d21f3eadbc0bc2b138caa6850cb0bbb8bc240032d3ac54db413398de7",
+      "sha256": "1d7ef6f1a3a6689be040aef7713242b7248de37699722c83f6c983a3aa4f91e1",
       "role": "gate"
     },
     {
@@ -318,7 +318,37 @@
       "reason": "B2: 增 schema parity 门禁（SCHEMA_SQL vs MIGRATE_DDL 列集对账）",
       "actor": "ec4ce7f8",
       "at": "2026-10-25T06:13:42.696Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "29c18d4ed79304f559af74ddd80485451de51451112622ec6eff93d53899dd62",
+      "new_sha256": "7c77630e16fe7a2c79d77a00e44bfbc40e70d4c8118e5addf31c9fb463d7e25d",
+      "reason": "#37 真缺陷修复：ESM require→import（against-git 原本死代码）+ genesis 基线 + --all/range 冲突修复",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T07:52:07.110Z"
+    },
+    {
+      "path": "scripts/pack-check.sh",
+      "old_sha256": "d6a275206001c4dd58a88f2cea89dd353301654f886e5821cb47eeb3962810eb",
+      "new_sha256": "1c76fe867862abb2e3c1ed53331d57fecc10ec0b14635c67f6d8eeb37a678bb2",
+      "reason": "#76: R3 双层检查（已登记漂移+未登记可执行，verify meta 兜底）",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T07:54:16.685Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "b6e6004d21f3eadbc0bc2b138caa6850cb0bbb8bc240032d3ac54db413398de7",
+      "new_sha256": "1d7ef6f1a3a6689be040aef7713242b7248de37699722c83f6c983a3aa4f91e1",
+      "reason": "#75 计数门禁修：字面 0x01→\\1、GNU \\s→POSIX、常开",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T07:54:16.764Z"
     }
   ],
-  "kind": "engine"
+  "kind": "engine",
+  "reregistration_baseline": [
+    "7b367f41*->c241e42c*",
+    "c241e42c*->e6bf02b0*",
+    "e6bf02b0*->dafc0240*",
+    "465266b1*->9c02f25f*"
+  ]
 }

@@ -18,6 +18,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = process.env.YGL_META_ROOT ? resolve(process.env.YGL_META_ROOT) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -69,7 +70,6 @@ if (reregister) {
   let actor = flag("actor");
   if (!actor) {
     try {
-      const { execFileSync } = require("node:child_process");
       actor = String(execFileSync("git", ["config", "user.name"], { encoding: "utf8" })).trim();
     } catch { /* no git */ }
   }
@@ -178,6 +178,14 @@ if (args.includes("--audit")) {
   // （该文件的某个历史 blob sha），否则是孤儿值（首条删除隐形/凭空构造）。
   // 需要 --against-git 显式开启（git 历史对账较重，且要 clone 完整历史）。
   if (args.includes("--against-git")) {
+    // #37 genesis：reregistrations 账本从 bf54281（0.114.2/3）起才有——引入之前的
+    // 字节变迁是历史欠账，不追溯（否则 100+ 条噪音掩盖新缺陷）。取 git 里第一个
+    // 引入 '"reregistrations"' 的提交作为基线。
+    let genesisCommit = "";
+    try {
+      const out = execFileSync("git", ["log", "--reverse", "--format=%H", "-S", '"reregistrations"', "--", "verify/meta.json"], { cwd: ROOT, encoding: "utf8" });
+      genesisCommit = out.split(String.fromCharCode(10)).filter(Boolean)[0] || "";
+    } catch { genesisCommit = ""; }
     let gitBad = 0;
     const paths = [...new Set(rr.map((r) => r.path))];
     for (const path of paths) {
@@ -185,7 +193,7 @@ if (args.includes("--audit")) {
       const first = rr[firstIdx];
       const shas = new Set();
       try {
-        const { execFileSync } = require("node:child_process");
+          // 链首锚定查全史（首条 old 可合法指向 genesis 之前的 blob）
         const out = execFileSync("git", ["log", "--all", "--format=%H", "--", path], { cwd: ROOT, encoding: "utf8" });
         for (const commit of out.split(String.fromCharCode(10)).filter(Boolean)) {
           const blob = execFileSync("git", ["show", `${commit}:${path}`], { cwd: ROOT, encoding: "buffer" });
@@ -209,15 +217,17 @@ if (args.includes("--audit")) {
     for (const t of index.tooling) {
       let commits;
       try {
-        const { execFileSync } = require("node:child_process");
-        commits = execFileSync("git", ["log", "--all", "--reverse", "--format=%H", "--", t.path], { cwd: ROOT, encoding: "utf8" })
+        // 有 genesis 时用 range（不能带 --all——它会把全 refs 历史并进来使 range 失效）
+        const logArgs = genesisCommit
+          ? ["log", "--reverse", "--format=%H", `${genesisCommit}..HEAD`, "--", t.path]
+          : ["log", "--all", "--reverse", "--format=%H", "--", t.path];
+        commits = execFileSync("git", logArgs, { cwd: ROOT, encoding: "utf8" })
           .split(String.fromCharCode(10)).filter(Boolean);
       } catch { continue; }
       const chain = [];
       for (const commit of commits) {
         try {
-          const { execFileSync } = require("node:child_process");
-          const blob = execFileSync("git", ["show", `${commit}:${t.path}`], { cwd: ROOT, encoding: "buffer" });
+              const blob = execFileSync("git", ["show", `${commit}:${t.path}`], { cwd: ROOT, encoding: "buffer" });
           chain.push(createHash("sha256").update(blob).digest("hex"));
         } catch { /* file absent at this commit */ }
       }
@@ -225,8 +235,16 @@ if (args.includes("--audit")) {
       const transitions = [];
       for (let i = 1; i < chain.length; i++) if (chain[i] !== chain[i - 1]) transitions.push([chain[i - 1], chain[i]]);
       const recorded = new Set(rr.filter((r) => r.path === t.path).map((r) => r.old_sha256 + "->" + r.new_sha256));
+      // 历史欠账基线（meta.reregistration_baseline）：enforcement 之前的真实变迁，
+      // 已被核对过并永久豁免——不追溯。
+      const baseline = (index.reregistration_baseline ?? []).map(String);
+      const inBaseline = (from, to) => baseline.some((b) => {
+        const [pair, at] = b.split("@");
+        const [o, n] = pair.split("->");
+        return (!o || from.startsWith(o.replace("\*", ""))) && (!n || to.startsWith(n.replace("\*", "")));
+      });
       for (const [from, to] of transitions) {
-        if (!recorded.has(from + "->" + to)) {
+        if (!recorded.has(from + "->" + to) && !inBaseline(from, to)) {
           silentBad++;
           console.error(`  ✗ silent rehash: ${t.path} ${from.slice(0, 8)}→${to.slice(0, 8)} appears in git history but has no reregistrations[] entry (#37 item 1)`);
         }

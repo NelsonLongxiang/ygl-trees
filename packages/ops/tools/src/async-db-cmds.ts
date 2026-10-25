@@ -67,12 +67,19 @@ export class AsyncDbCmds {
 
   // ================================================================ timeline
   /** #77②：方言中立——cutoff 在 JS 算（不用 datetime('now',…)），
-   *  日粒度用 substr(ts,1,10)（SQLite 与 PG 都支持；ISO-8601 前缀即日期）。 */
+   *  日粒度用 substr(ts,1,10)（SQLite 与 PG 都支持；ISO-8601 前缀即日期）。
+   *  #77③：输出形状与 `db timeline` 对齐（day/events/projects/sources/claims/kb/nodes），
+   *  不再是 (day,kind,n) 的原始分组——两处口径必须一致。 */
   async timeline(days: number): Promise<Row[]> {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     return this.adb.all(
-      `SELECT substr(ts,1,10) AS day, kind, COUNT(*) AS n FROM events
-       WHERE ts >= ? GROUP BY substr(ts,1,10), kind ORDER BY day`,
+      `SELECT substr(ts,1,10) AS day, COUNT(*) AS events,
+         SUM(CASE WHEN kind LIKE 'project%' THEN 1 ELSE 0 END) AS projects,
+         SUM(CASE WHEN kind LIKE 'source%' THEN 1 ELSE 0 END) AS sources,
+         SUM(CASE WHEN kind LIKE 'claim%' THEN 1 ELSE 0 END) AS claims,
+         SUM(CASE WHEN kind LIKE 'kb%' THEN 1 ELSE 0 END) AS kb,
+         SUM(CASE WHEN kind LIKE 'node%' THEN 1 ELSE 0 END) AS nodes
+         FROM events WHERE ts >= ? GROUP BY substr(ts,1,10) ORDER BY day`,
       [cutoff],
     );
   }

@@ -68,8 +68,23 @@ echo "── 5. --json purity (parse the whole stdout, node invocation)"
 JSONOK=$(Y --json db stats 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{JSON.parse(s);console.log('OK')}catch(e){console.log('BAD')}})")
 [ "$JSONOK" = "OK" ] && pass "--json stdout is parseable as a whole" || fail "--json output polluted"
 
-# #76: R3 tooling 完整性入发布门禁（此前 pack:check 不跑 verify meta → 未登记脚本可随版出闸）
+# #76: R3 完整入发布门禁——分两层：
+#  ①已登记项漂移（meta-tooling --check）
+#  ②**未登记可执行**（verify meta R3）——meta-tooling --check 抓不到后者（监督席复现：
+#    dual-backend-matrix.mjs 未登记时 --check rc0 而 verify meta rc1）
 node scripts/meta-tooling.mjs --check > /dev/null 2>&1 || fail "R3 tooling drift — run: node scripts/meta-tooling.mjs --check"
+R3TMP=$(mktemp -d)
+if ! YGL_HOME="$R3TMP" node dist/bundle/bin.cjs db init >/dev/null 2>&1; then
+  rm -rf "$R3TMP"; fail "R3 gate: cannot init scratch workspace"
+else
+  if YGL_HOME="$R3TMP" node dist/bundle/bin.cjs verify meta . --json > "$R3TMP/meta.json" 2>/dev/null; then
+    rm -rf "$R3TMP"
+  else
+    echo "$(cat "$R3TMP/meta.json" | head -3)" >&2
+    rm -rf "$R3TMP"
+    fail "R3 meta gate red — unregistered executable or rule failure (verify meta . --json)"
+  fi
+fi
 
 # 0.114.30: 冲突标记防复发（发版席建议——0.114.29 README 残留 <<<<<<< 随 tarball 出厂）
 if grep -r "<<<<<<< " README.md CHANGELOG.md docs/*.md 2>/dev/null; then

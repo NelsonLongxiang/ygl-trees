@@ -17,8 +17,27 @@ export interface Env {
   ctx: Ctx;
   db: any; // DB instance (import from core/db for the real type)
   store: any; // Store instance (legacy sync face — db-cmds/webui until B4)
-  /** B1 async read facade (PG plan): research cmds switch here first. */
-  asyncStore: any;
+  /** B1 async read facade (PG plan): research cmds switch here first.
+   *  #77-7: typed as the async research store surface (structural subset of
+   *  AsyncResearchStore) — no `any` escape hatch. */
+  asyncStore: {
+    projectByName(name: string): Promise<any>;
+    projectResolve(name?: string): Promise<any>;
+    projectList(): Promise<any[]>;
+    sourceList(projectId: string, minRelevance?: number): Promise<any[]>;
+    sourceSearch(projectId: string, q: string): Promise<any[]>;
+    sourceGet(id: string): Promise<any | null>;
+    evidenceList(projectId: string): Promise<any[]>;
+    claimList(projectId: string): Promise<any[]>;
+    artifactList(projectId: string): Promise<any[]>;
+    artifactGet(id: string): Promise<any | null>;
+    skillList(): Promise<any[]>;
+    skillGet(name: string): Promise<any | null>;
+    skillMatch(q: string, limit?: number): Promise<any[]>;
+    tail(limit?: number): Promise<any[]>;
+    queryDone(id: string): Promise<void>;
+    stats(): Promise<Record<string, number>>;
+  };
   args: Args;
   home: string;
   group: string;

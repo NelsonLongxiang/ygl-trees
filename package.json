@@ -30,7 +30,7 @@
     "build:bundle": "pnpm build",
     "start": "node dist/bundle/bin.cjs",
     "demo": "bash examples/demo.sh",
-    "test": "pnpm build && pnpm test:unit && bash examples/demo.sh && bash scripts/contract-audit.sh && pnpm ratchet",
+    "test": "pnpm build && pnpm test:unit && bash examples/demo.sh && bash scripts/contract-audit.sh && pnpm readme:verify && pnpm ratchet",
     "prepublishOnly": "node scripts/prepublish-guard.mjs && pnpm test && pnpm pack:check",
     "test:unit": "vitest run --maxWorkers=2",
     "smoke:bun": "bash scripts/bun-smoke.sh",
