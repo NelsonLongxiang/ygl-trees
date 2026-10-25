@@ -384,7 +384,8 @@ printf '#!/bin/sh\necho build\n' > "$WS/meta-v2/build.sh"
 V2_ORCH_SHA=$(SHA256_OF "$WS/meta-v2/verify/orchestration/run.mjs")
 V2_TOOL_SHA=$(SHA256_OF "$WS/meta-v2/build.sh")
 write_meta_v2() { # write_meta_v2 <replaced_by>
-  printf '{"meta_index_version":2,"specs":[],"orchestration":[{"path":"verify/orchestration/run.mjs","sha256":"%s","role":"invoke","replaced_by":"%s","sunset":"0.120.0"}],"tooling":[{"path":"build.sh","sha256":"%s","role":"build"}]}\n' "$V2_ORCH_SHA" "$1" "$V2_TOOL_SHA" > "$WS/meta-v2/verify/meta.json"
+  # #37 item-1: tooling without a reregistration anchor is rejected by R2 lineage — fixture carries one
+  printf '{"meta_index_version":2,"specs":[],"orchestration":[{"path":"verify/orchestration/run.mjs","sha256":"%s","role":"invoke","replaced_by":"%s","sunset":"0.120.0"}],"tooling":[{"path":"build.sh","sha256":"%s","role":"build"}],"reregistrations":[{"path":"build.sh","old_sha256":"0000000000000000000000000000000000000000000000000000000000000000","new_sha256":"%s","reason":"initial registration","actor":"contract-audit","at":"2026-10-22T00:00:00.000Z"}]}\n' "$V2_ORCH_SHA" "$1" "$V2_TOOL_SHA" "$V2_TOOL_SHA" > "$WS/meta-v2/verify/meta.json"
 }
 write_meta_v2 "verify tree run"
 METAV2J=$($Y verify meta "$WS/meta-v2" --json 2>/dev/null); METAV2RC=$?

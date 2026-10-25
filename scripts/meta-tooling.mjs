@@ -364,6 +364,20 @@ if (add) {
     process.exit(2);
   }
   index.tooling.push({ path: rel, sha256: sha256(join(ROOT, rel)), role });
+  // #37 条目1（初始锚点）：--add 顺手记一条初始 reregistration（Z→当前 sha）——
+  // 新路径从登记起就有 lineage 锚，未提交手工对齐立刻可查。
+  if (add) {
+    const rel2 = add.split("\\").join("/");
+    const added = (index.tooling ?? []).find((t) => t.path === rel2);
+    if (added) {
+      index.reregistrations = index.reregistrations ?? [];
+      index.reregistrations.push({
+        path: rel2, old_sha256: "0".repeat(64), new_sha256: added.sha256,
+        reason: "initial registration (--add; #37 item 1 anchor)", actor: flag("actor") ?? "unknown",
+        at: new Date().toISOString(),
+      });
+    }
+  }
   index.tooling.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   atomicWriteIndex(index);
   console.log(`meta-tooling: added ${rel} (${role})`);

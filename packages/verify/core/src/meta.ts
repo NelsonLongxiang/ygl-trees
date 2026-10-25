@@ -272,7 +272,7 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
   // 的 new_sha256**——未提交的手工对齐（改文件+改 tooling sha 不记录）在这里就红，
   // 不需要 --against-git 或已提交历史。
   {
-    const rr = Array.isArray(index.reregistrations) ? (index.reregistrations as Array<{ path?: unknown; new_sha256?: unknown }>) : [];
+    const rr = Array.isArray(index.reregistrations) ? (index.reregistrations as Array<{ path?: unknown; new_sha256?: unknown; at?: unknown; actor?: unknown }>) : [];
     const lastNew = new Map<string, string>();
     for (const r of rr) {
       if (typeof r?.path === "string" && typeof r?.new_sha256 === "string") lastNew.set(posix(r.path), r.new_sha256);
@@ -280,8 +280,24 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     for (const t of (index.tooling ?? []) as Array<{ path?: unknown; sha256?: unknown }>) {
       if (typeof t?.path !== "string" || typeof t?.sha256 !== "string") continue;
       const expect = lastNew.get(posix(t.path));
-      if (expect !== undefined && expect !== t.sha256) {
+      if (expect === undefined) {
+        // #37 条目1：无任何登记记录的路径没有 lineage 锚——不可证明，按漂移处理
+        //（--add 自动记初始锚后不应再出现）。
+        problems.push(`tooling lineage: ${posix(t.path)} has no reregistration anchor (run meta-tooling --add or backfill an initial entry) (#37 item 1)`);
+      } else if (expect !== t.sha256) {
         problems.push(`tooling lineage: ${posix(t.path)} sha256 ${t.sha256.slice(0, 8)} ≠ last recorded new_sha256 ${expect.slice(0, 8)} — hand-aligned rehash without a reregistration (#37 item 1)`);
+      }
+    }
+    // #37 条目5：actor 切换点在引擎面同样执行（不只 meta-tooling --audit）。
+    const cutoffRaw = (index as { actor_required_from?: unknown }).actor_required_from;
+    const cutoff = Date.parse(String(cutoffRaw ?? ""));
+    if (Number.isFinite(cutoff)) {
+      for (const r of rr) {
+        const t = Date.parse(String(r?.at ?? ""));
+        if (!Number.isFinite(t) || t < cutoff) continue;
+        if (!r?.actor || !String(r.actor).trim()) {
+          problems.push(`reregistration actor missing after cutoff: ${String(r?.path)} at=${String(r?.at)} (cutoff ${String(cutoffRaw)}) (#37 item 5)`);
+        }
       }
     }
   }

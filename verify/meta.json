@@ -55,7 +55,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "0e8364083b819a4d279f10e49897eedce447c307761b93a30bef2a6070bac568",
+      "sha256": "0078235cb0c7da08ed6cd8b8863e346e5109b3fc2a0c058f283e1468983f3ed3",
       "role": "gate"
     },
     {
@@ -95,7 +95,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "ab5cbfb682c385b55e1998ef89d7f75575c39fb4eb5650d92cadf4bdc1b0de95",
+      "sha256": "89b44f2f043e846e0e50dbe03566b484d8d73779cceacea27c10a6028500406d",
       "role": "gate"
     },
     {
@@ -358,6 +358,222 @@
       "reason": "三轮：lineage 检查入 --check+R2/actor_required_from 切换点（监督席 #37 条目1/5）",
       "actor": "ec4ce7f8",
       "at": "2026-10-25T09:31:44.693Z"
+    },
+    {
+      "path": "benchmarks/bench.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "ab21178fe450e0da894be53e75565f0e473e3d5d3dd08c3bded6dfd3c8278b66",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "benchmarks/knowledge-search/knowledge-search.bench.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "06731d7f3d051130e7ebaa56c9bb78ae137d11a4e6f0a9d61ae56dd6224f7857",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "benchmarks/research-write/research-write.bench.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "4a1f6e9f53d5885add878a52f291f9a7adf23e11832692ac1e11f8fb890206a3",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "benchmarks/startup/startup.bench.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "6b73db6b6e15e962d1522a586bcf4668c507265f75049a226445512b4a6cb11e",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "benchmarks/support/helpers.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "8f607a2b10661d21fc2b70b9f63593e47dbdb9c02cffb1c6759784096206fdb3",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "benchmarks/techtree-index/techtree-index.bench.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "6c7eb714a78c0d3f078a4f253ece4c26dddbbc93b96baee6456063b1b5abf7aa",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "examples/plugin-demo/index.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "147aa99e53672f8c6c442797e8c2b96ca8303c5ee6099041aa79687e05186a11",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "packages/verify/core/corpus/freeze.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "057fc10809e4b2f8300f609af24c730fd5b818244304151f67ac9a3639d7c79e",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/bun-smoke.sh",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "777a5065b4634a58c40ffb014054a3905e846a63c643cfe30d23ba1a29d80710",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/cordis-drift.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "bbfd4fa152c6b7c9e84c1a2baea6f0fb7f91ed2d51c3aee62632f103ba56816b",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/cordis-scan.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "ae1f7bb27cf98cdc9818e3c84be6e6519d1f601475520d89d92bfd7d611aa693",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "d2cc2ea116f1572d19399e5aec20a0286a36f95ea45bf20c290b849e64ff0e00",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/gate.js",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "2799c7a6263a8ea13022fd1ed72e0e26dc49f1f470030603220027a0e722fb27",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/gen-examples.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "8239520b0dace19c3ebd6387fb13c6a4be23d35f4a87dd348814b6d8377dba08",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/json-check.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "064ffbbd3c8649d1fbf150a73f1e989fa41daf7b56de780f1cd4571ea80e094a",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/lib/pack-guard.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "b9d52f8c0d5210e5fb73ce68f1e281432326586d4fe94f93b3c7a44b7270e7d7",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/prepublish-guard.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "3e70e0f0fe27041652d7007226d5c2529de167592473e3a1adf3f71165de6588",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "d322e1211cfa953f5f8b9ebb5c7b15a6cd1f0640542e808d589a504ec256577f",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/readme-count.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "6889a20bb956557125d48bba30b9c32cec335ad96e28f5dc1731929ee3190671",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/schema-parity.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "5c3fe5e42c654ccdf694c7083364bd7d85c8238df90e10947fee6f1651f5116e",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/stage-web-dist.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "64a5e1067bc27612fd0aae2c7c9e9e6e8b1aadaf7a53aaa1c36ca1e73623d380",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/tree-contract-matrix.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "9c02f25fb926fc91dadc772f0c63134989ecd9f58f33c1627aaced61a46e8dab",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/tree-fixture.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "91e57acfd4461b0ba577578b3211aca484104cca3a6ad4acc17d0283407ee8b1",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/verify-run.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "vitest.config.ts",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
+      "reason": "initial registration backfill (#37 item 1: anchor for never-reregistered path)",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:13:20.407Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "ab5cbfb682c385b55e1998ef89d7f75575c39fb4eb5650d92cadf4bdc1b0de95",
+      "new_sha256": "89b44f2f043e846e0e50dbe03566b484d8d73779cceacea27c10a6028500406d",
+      "reason": "#37 四轮：--add 自动初始锚 + 25 路径回填 + R2 anchor/actor 切换点",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:15:11.568Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "0e8364083b819a4d279f10e49897eedce447c307761b93a30bef2a6070bac568",
+      "new_sha256": "0078235cb0c7da08ed6cd8b8863e346e5109b3fc2a0c058f283e1468983f3ed3",
+      "reason": "#37 四轮：v2 夹具带初始锚（R2 lineage 新规要求）",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T10:32:19.860Z"
     }
   ],
   "kind": "engine",
@@ -376,7 +592,32 @@
     "scripts/pack-check.sh": "9157e820bd69f662d9deae4a244ca83701daf41264b1da35be3354e4da817206",
     "examples/demo.sh": "d7f30d3b82599518b5eaabab35f726f54348ef93a7ed6b977217721313905104",
     "scripts/readme-verify.sh": "df68024262b31b0f621b9d20bc48ab07c2bab2eb3de0a432ea29a9e938be6fd7",
-    "scripts/pack-repro.mjs": "4d52f27a191be13c609c7c51448f46d3a7b65df6eb23c5412a54baa907ac7d1e"
+    "scripts/pack-repro.mjs": "4d52f27a191be13c609c7c51448f46d3a7b65df6eb23c5412a54baa907ac7d1e",
+    "benchmarks/bench.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "benchmarks/knowledge-search/knowledge-search.bench.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "benchmarks/research-write/research-write.bench.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "benchmarks/startup/startup.bench.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "benchmarks/support/helpers.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "benchmarks/techtree-index/techtree-index.bench.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "examples/plugin-demo/index.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "packages/verify/core/corpus/freeze.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/bun-smoke.sh": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/cordis-drift.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/cordis-scan.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/dual-backend-matrix.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/gate.js": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/gen-examples.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/json-check.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/lib/pack-guard.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/prepublish-guard.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/ratchet.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/readme-count.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/schema-parity.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/stage-web-dist.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/tree-contract-matrix.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/tree-fixture.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "scripts/verify-run.mjs": "0000000000000000000000000000000000000000000000000000000000000000",
+    "vitest.config.ts": "0000000000000000000000000000000000000000000000000000000000000000"
   },
   "ledger_normalizations": [
     {
