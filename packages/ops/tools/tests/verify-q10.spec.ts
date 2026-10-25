@@ -100,6 +100,13 @@ describe.skipIf(!HAS_BIN)("A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS)", ()
     expect(String(leaf?.stale_reason)).toMatch(/target mismatch/);
   }, 120_000);
 
+  it("Q13-A: pinned sha unknown to this workspace registry → prepare rc2 (cross-workspace rejected)", () => {
+    // Q13-A：pinned 只解析本 workspace registry；外来/未知归档 → prepare rc2。
+    const r = run(["verify", "tree", "prepare", "mat_tree_q10", "--pinned", "leaf=sha256:" + "0".repeat(64)], home);
+    expect(r.rc).toBe(2);
+    expect(String(r.j?.error)).toMatch(/pinned leaf: archive verification failed|archive not found/);
+  }, 120_000);
+
   it("G8: jcsCanonical sorts keys and emits no whitespace", () => {
     expect(jcsCanonical({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
     expect(jcsCanonical({ z: [3, 1], a: "x" })).toBe('{"a":"x","z":[3,1]}');

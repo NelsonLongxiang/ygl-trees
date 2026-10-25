@@ -274,6 +274,8 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
   const p = paths(env);
   // G1/G2（Q8/Q9）：target 投影 = {kind, id, sha256?}；kind+id 恒比，声明 sha 时才比。
   // 缺被比字段 → fail-closed stale。声明 target 的叶失配 → 该叶 STALE 沿父链传播。
+  // Q12-B：本轮开始时间——pinned 归档 created 必须早于此值（同轮自引用拒绝）。
+  const roundStartedAt = new Date().toISOString();
   const targetRaw = args.flags.target !== undefined ? String(args.flags.target) : String((spec as any).target ?? "");
   let target: { kind: string; id: string; sha256?: string } | null = null;
   if (targetRaw) {
@@ -391,10 +393,31 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
           if (!f.endsWith(".json")) continue;
           const reg = readJson<any>(join(arcDir, f));
           const hit = (reg?.archives ?? []).find((a: any) => a?.archive_sha256 === pinnedSha);
-          if (hit?.path) { entryPath = String(hit.path); entryZip = String(hit.zip_sha256 ?? ""); break; }
+          if (hit?.path) {
+            // Q12-B：同轮自引用拒绝——pinned 归档必须在本轮 started 之前创建。
+            const created = String(hit.created ?? "");
+            if (created && created >= roundStartedAt) {
+              throw new Error(
+                "pinned " + n.id + ": archive " + pinnedSha + " was created at " + created +
+                " >= this round's start (" + roundStartedAt + ") — same-round self-reference is rejected (Q12-B). " +
+                "Run the child in an earlier round, then pin its archive.",
+              );
+            }
+            entryPath = String(hit.path);
+            entryZip = String(hit.zip_sha256 ?? "");
+            break;
+          }
         }
       } catch { /* no registry */ }
-      if (!entryPath) throw new Error("pinned " + n.id + ": archive not found for sha256 " + pinnedSha);
+      if (!entryPath) {
+        // Q12-B/Q13-A：pinned 必须来自**本 workspace 已完成的 run**。找不到时
+        // 不区分「没跑过」和「跨 workspace」，错误文本给两条出处指引。
+        throw new Error(
+          "pinned " + n.id + ": archive not found for " + pinnedSha +
+          " (Q12-B: pinned must come from a COMPLETED run in this workspace; " +
+          "Q13-A: cross-workspace archives are rejected — run the child here first, archive verify it, then pin)",
+        );
+      }
       const zipMutated = !!(entryZip && sha256(readFileSync(entryPath)) !== entryZip);
       if (zipMutated) {
         nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha, verdict: "NEUTRALIZED", stale: false, neutralized_reason: "archive zip_sha256 mismatch (mutated after archiving)" });

@@ -67,33 +67,37 @@
       "id": "Q8",
       "assertion": "target 声明 + 全叶 data_source/target 一致 + 失配 V 行；subject=repo+commit",
       "source": "v1.2 Q8",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §1"
+      "evidence": "v1.2 draft §1",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "V22: leaf target mismatch"
     },
     {
       "id": "Q9",
       "assertion": "stale=D 引用失配（target 失配 + 冻结 spec_version 漂移；缺字段 fail-closed；沿父链阻 PASS）",
       "source": "v1.2 Q9",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §2"
+      "evidence": "v1.2 draft §2",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "V22: leaf target mismatch"
     },
     {
       "id": "Q10",
       "assertion": "ERROR=B：any ERROR→父至多 INFRA_BLOCKED",
       "source": "v1.2 Q10",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §3"
+      "evidence": "v1.2 draft §3",
+      "test": "packages/ops/tools/tests/verify-tree.spec.ts",
+      "test_title": "aggregate all_pass PASS+ERROR"
     },
     {
       "id": "Q11",
       "assertion": "删 run 幂等，只保留 prepare",
       "source": "v1.2 Q11",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §5"
+      "evidence": "v1.2 draft §5",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "Q11: tree_run_id is unique"
     },
     {
       "id": "Q12",
@@ -107,17 +111,19 @@
       "id": "Q13",
       "assertion": "V8 限本 workspace；跨 workspace 留 v1.3",
       "source": "v1.2 Q13",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §7"
+      "evidence": "v1.2 draft §7",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "Q13-A: pinned sha unknown"
     },
     {
       "id": "G8",
       "assertion": "tree spec pin engine/corpus/contract + JCS verdict_digest",
       "source": "v1.2 G8",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §8"
+      "evidence": "v1.2 draft §8",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "G8: jcsCanonical"
     },
     {
       "id": "V1",
@@ -199,6 +205,13 @@
       "planned": true,
       "probe": "待实现/测试",
       "evidence": "v1.2 附件 A"
+    },
+    {
+      "id": "V22",
+      "desc": "活叶 target 失配 → STALE 传播（固定断言，不是 INFRA_BLOCKED）",
+      "source": "v1.2 §3 V22",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "V22: leaf target mismatch"
     }
   ]
 }
