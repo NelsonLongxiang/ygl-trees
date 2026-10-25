@@ -483,8 +483,9 @@ export async function main(argv: string[]): Promise<number> {
     // the db instead of the environment.
     const wsHint = `  run: ygl-trees db init\n  workspace: ${home}${process.env.YGL_HOME ? "  (from YGL_HOME)" : "  (default ~/.ygl-trees — set YGL_HOME to switch)"}`;
     if (ctx.json) console.error(wsHint); else out(ctx, wsHint);
-    // #18.3: 缺工作区是运行条件（库未初始化），不是用法错误——rc=1。
-    return 1;
+    // #18.3（监督席裁定 a）：缺工作区在 **verify 构造面**是运行条件（rc=1）；
+    // 其余命令保持 rc=2——契约 contract-audit 'usage: db missing' 钉死 rc2，不改冻结面。
+    return group === "verify" ? 1 : 2;
   }
 
   // ── Cordis composition via bootApp (DSH profile-boot exemplar) ──
