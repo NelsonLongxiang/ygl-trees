@@ -194,6 +194,43 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 1;
       }
     }
+    case "snapshot": {
+      // B5（PG §5 / 护栏④）：快照产物 = 文件 + sha256 + **脱敏来源**。
+      // 来源字段只含 kind/host_db_basename/captured_at —— 绝不带 YGL_SESSION
+      // （会话 id 是隐私面；快照会在归档/报告间流转）。
+      const { createHash } = require("node:crypto");
+      const bytes = fs.readFileSync(file);
+      const sha = "sha256:" + createHash("sha256").update(bytes).digest("hex");
+      const snapDir = path.join(path.dirname(file), "verify", "snapshots");
+      fs.mkdirSync(snapDir, { recursive: true });
+      const target = path.join(snapDir, sha.replace(/^sha256:/, "") + ".sqlite");
+      if (!fs.existsSync(target)) fs.copyFileSync(file, target);
+      const outPath = args.flags.out !== undefined ? String(args.flags.out) : target;
+      if (args.flags.out !== undefined) {
+        // 显式 --out：落调用方指定路径（内容寻址副本身仍留在 snapshots/）
+        fs.copyFileSync(file, outPath);
+      }
+      const payload = {
+        path: outPath,
+        sha256: sha,
+        bytes: bytes.length,
+        source: {
+          kind: "sqlite-workspace",
+          db_basename: path.basename(file), // 去目录、去会话
+          captured_at: new Date().toISOString(),
+        },
+      };
+      // 护栏④自检：payload 里不得出现会话 id / 凭证样式
+      const blob = JSON.stringify(payload);
+      if (/session-[0-9a-f]{8,}/.test(blob) || /(?:password|passwd|secret|token)\s*[:=]/i.test(blob)) {
+        if (ctx.json) console.log(JSON.stringify({ error: "snapshot payload tripped the desensitization guard (session id or credential-shaped field)" }));
+        else bad(ctx, "snapshot payload tripped the desensitization guard");
+        return 2;
+      }
+      if (ctx.json) console.log(JSON.stringify(payload, null, 2));
+      else ack(ctx, payload, `snapshot ${payload.sha256.slice(0, 19)}… (${(bytes.length / 1024).toFixed(1)} KB) at ${outPath}`);
+      return 0;
+    }
     case "stats": {
       const s = await env.asyncStore.stats();
       if (ctx.json) {
