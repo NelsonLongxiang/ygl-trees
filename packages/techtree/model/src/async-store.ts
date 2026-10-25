@@ -53,9 +53,13 @@ export class AsyncTreeStore {
 
   async conditionsOf(treeId: string, nodeKey?: string): Promise<Row[]> {
     if (nodeKey) {
-      return this.adb.all("SELECT * FROM node_conditions WHERE tree_id=? AND node_key=? ORDER BY created", [treeId, nodeKey]);
+      return this.adb.all(
+        "SELECT c.* FROM node_conditions c JOIN nodes n ON n.id=c.node_id WHERE n.tree_id=? AND n.key=? ORDER BY c.created",
+        [treeId, nodeKey]);
     }
-    return this.adb.all("SELECT * FROM node_conditions WHERE tree_id=? ORDER BY created", [treeId]);
+    return this.adb.all(
+      "SELECT c.* FROM node_conditions c JOIN nodes n ON n.id=c.node_id WHERE n.tree_id=? ORDER BY c.created",
+      [treeId]);
   }
 
   // ================================================================ reads (delegate)

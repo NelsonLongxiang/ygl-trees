@@ -35,7 +35,7 @@ export class AsyncOpsReads {
 
   // ================================================================ rels
   async relsOf(nodeKey: string): Promise<Row[]> {
-    return this.adb.all("SELECT * FROM relations WHERE src=? ORDER BY created DESC", [nodeKey]);
+    return this.adb.all("SELECT * FROM relations WHERE src_id=? ORDER BY created DESC", [nodeKey]);
   }
 
   async relsAll(limit = 50): Promise<Row[]> {
@@ -48,7 +48,7 @@ export class AsyncOpsReads {
   }
 
   async jobByName(name: string): Promise<Row | null> {
-    return this.adb.get("SELECT * FROM jobs WHERE name=?", [name]);
+    return this.adb.get("SELECT * FROM jobs WHERE title=?", [name]);
   }
 
   // ================================================================ patrol
@@ -57,7 +57,7 @@ export class AsyncOpsReads {
   }
 
   async patrolFindings(limit = 50): Promise<Row[]> {
-    return this.adb.all("SELECT * FROM patrol_findings ORDER BY ts DESC LIMIT ?", [limit]);
+    return this.adb.all("SELECT * FROM patrol_findings ORDER BY last_seen DESC LIMIT ?", [limit]);
   }
 
   // ================================================================ events / runs

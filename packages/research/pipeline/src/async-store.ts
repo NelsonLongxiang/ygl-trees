@@ -55,6 +55,31 @@ export class AsyncResearchStore {
   // ================================================================ events
   async tail(limit?: number): Promise<Row[]> { return this.sync.tail(limit); }
 
+  // ================================================================ stats
+  async stats(): Promise<Record<string, number>> {
+    const t = async (name: string) => ((await this.adb.get(`SELECT COUNT(*) AS c FROM ${name}`))?.c ?? 0) as number;
+    return {
+      skills: await t("skills"),
+      skill_refs: await t("skill_refs"),
+      projects: await t("projects"),
+      queries: await t("queries"),
+      sources: await t("sources"),
+      query_sources: await t("query_sources"),
+      evidence: await t("evidence"),
+      claims: await t("claims"),
+      claim_evidence: await t("claim_evidence"),
+      kb_notes: await t("kb_notes"),
+      kb_links: await t("kb_links"),
+      relations: await t("relations"),
+      artifacts: await t("artifacts"),
+      jobs: await t("jobs"),
+      runs: await t("runs"),
+      events: await t("events"),
+      node_edges: await t("node_edges"),
+      node_conditions: await t("node_conditions"),
+    };
+  }
+
   // ================================================================ raw async
   async query(sql: string, params: unknown[] = []): Promise<Row[]> { return this.adb.all(sql, params); }
   async queryOne(sql: string, params: unknown[] = []): Promise<Row | null> { return this.adb.get(sql, params); }

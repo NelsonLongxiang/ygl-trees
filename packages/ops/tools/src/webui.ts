@@ -46,7 +46,7 @@ interface DashboardData {
   artifacts: any[];
 }
 
-export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
+export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
   if (action === "serve") return serve(env, args);
   if (action !== "" && action !== "export") {
     bad(env.ctx, "usage: webui [export [--out <file>] | serve [--port N]]");
@@ -57,7 +57,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // serves, persisted to disk as JSON. The single-file HTML dashboard is
   // retired (user ruling: React is the only front end); visualization lives
   // in `webui serve`, data lives here.
-  const data = gatherData(env);
+  const data = await gatherData(env);
   const snapshot = JSON.stringify({ meta: { generated: new Date().toISOString() }, ...data });
   const dest = String(args.flags.out || "snapshot.json");
   return (async (): Promise<number> => {
@@ -71,8 +71,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 }
 
 /** Collect dashboard data from the current workspace state. */
-export function gatherData(env: Env): DashboardData {
-  const { db, store } = env;
+export async function gatherData(env: Env): Promise<DashboardData> {
+  const { db } = env;
 
   const data: DashboardData = { brief: {}, tree: null, claims: [], sources: [], evidence: [], claim_evidence: [], timeline: [], tasks: [], artifacts: [] };
 
@@ -96,10 +96,10 @@ export function gatherData(env: Env): DashboardData {
     if ((data.brief as any)?.project) delete (data.brief as any).project;
   }
   if (cur && projAuthorized) {
-    const project = store.projectByName(cur);
+    const project = await env.asyncStore.projectByName(cur);
     if (project) {
-      data.claims = store.claimList(project.id);
-      data.sources = store.sourceList(project.id).slice(0, 20);
+      data.claims = await env.asyncStore.claimList(project.id);
+      data.sources = (await env.asyncStore.sourceList(project.id)).slice(0, 20);
       if (data.claims.length) {
         const ids = data.claims.map((c: any) => c.id);
         const ph = ids.map(() => "?").join(",");
@@ -170,7 +170,7 @@ export function gatherData(env: Env): DashboardData {
   // R12: task checklist (kind=task artifacts, status in the meta envelope)
   // R16.4: same authorization rule as the claims pane — no global fallback.
   if (cur && projAuthorized) {
-    const project2 = store.projectByName(cur);
+    const project2 = await env.asyncStore.projectByName(cur);
     if (project2) {
       data.tasks = db
         .all(
@@ -332,7 +332,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
       try { c.write(frame); } catch { sseClients.delete(c); }
     }
   };
-  const tick = () => {
+  const tick = async () => {
     if (!sseClients.size) return;
     // 0.90.1 P1-2 (review direct-a35d58ae): concurrent CLI writes can raise
     // SQLITE_BUSY on this read connection mid-gather — a failed frame is
@@ -342,7 +342,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
       const fp = fingerprint();
       if (fp !== lastFp) {
         lastFp = fp;
-        push("data", gatherData(env));
+        push("data", await gatherData(env));
       }
     } catch { /* skip this frame */ }
   };
@@ -362,12 +362,12 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
   // tick below stays as the degradation path.
   let unsubBus: (() => void) | null = null;
   const cordisCtx: any = (env as any).cordis;
-  const onYglEvent = (evt: any) => {
+  const onYglEvent = async (evt: any) => {
     if (!sseClients.size) return;
     // 0.90.1 P1-2: same isolation as tick — one bad gather must not kill serve
     try {
       // Event received — push immediately (no polling delay)
-      push("data", gatherData(env));
+      push("data", await gatherData(env));
       // Also push the event itself as a named SSE event for fine-grained consumers
       push(String(evt.kind || "ygl").replace(/\//g, "-"), evt);
     } catch { /* skip this frame */ }
@@ -382,7 +382,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
     } catch { /* eventbus optional — fingerprint tick still covers */ }
   }
 
-  const server = http.createServer((req: any, res: any) => {
+  const server = http.createServer(async (req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");
     const url = u.pathname;
     if (url === "/api/events") {
@@ -393,7 +393,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
       });
       res.write("retry: 3000\n\n");
       // initial snapshot: the client needs no separate fetch
-      res.write(`event: data\ndata: ${JSON.stringify(gatherData(env))}\n\n`);
+      res.write(`event: data\ndata: ${JSON.stringify(await gatherData(env))}\n\n`);
       sseClients.add(res);
       const drop = () => { sseClients.delete(res); };
       req.on("close", drop);
@@ -430,7 +430,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
     }
     if (url === "/api/data") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(gatherData(env)));
+      res.end(JSON.stringify(await gatherData(env)));
     } else if (url === "/api/node") {
       // R16.4: tree param falls back to the RESOLVED selection (session-aware)
       const tree = u.searchParams.get("tree") || resolveTree(env.db).name || "";
@@ -742,13 +742,15 @@ function serve(env: Env, args: any): Promise<number> {
       const cordisCtx = (env as any).cordis;
       if (cordisCtx?.timer) {
         cordisCtx.timer.setInterval(() => {
+          void (async () => {
           try {
-            const stats = env.store.stats();
+            const stats = await env.asyncStore.stats();
             const total = Object.values(stats).reduce((a: number, b: any) => a + Number(b), 0);
             if (ctx.quiet !== true) {
               out(ctx, paint(C.dim, `  [heartbeat] ${new Date().toISOString().slice(11, 19)} · ${total} rows`, ctx.color));
             }
           } catch { /* heartbeat best-effort */ }
+          })();
         }, 60_000);
       }
     });

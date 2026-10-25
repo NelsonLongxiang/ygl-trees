@@ -106,7 +106,7 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<{ impo
   return { imported: count, failed, ms: Date.now() - started };
 }
 
-export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
+export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
   const { ctx, db, home } = env;
   const file = args.flags.db ? String(args.flags.db) : dbPath(home);
 
@@ -195,7 +195,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
     }
     case "stats": {
-      const s = env.store.stats();
+      const s = await env.asyncStore.stats();
       if (ctx.json) {
         console.log(JSON.stringify(s, null, 2));
         return 0;

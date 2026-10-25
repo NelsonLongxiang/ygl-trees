@@ -403,7 +403,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         bad(ctx, "missing search text");
         return 2;
       }
-      const rows = await env.asyncStore.sourceSearch(project.id, q).map((r: any) => ({
+      const rows = (await env.asyncStore.sourceSearch(project.id, q)).map((r: any) => ({
         id: r.id,
         title: clip(r.title, 50),
         rel: r.relevance,

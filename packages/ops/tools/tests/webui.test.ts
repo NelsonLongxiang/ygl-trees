@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
+import { AsyncResearchStore } from "../../../research/pipeline/src/async-store";
 import { getOrm, closeOrm } from "../../../core/database/src/orm";
 import { gatherData, createDashboardServer, run } from "../src/webui";
 
@@ -42,12 +43,13 @@ afterAll(async () => {
 });
 
 function env() {
-  return { ctx: { json: true, color: false, quiet: true }, db, store } as any;
+  // 顶层 import（vitest ESM 解析）— require 相对路径在测试包布局下不可靠
+  return { ctx: { json: true, color: false, quiet: true }, db, store, asyncStore: new AsyncResearchStore(db) } as any;
 }
 
 describe("webui gatherData", () => {
-  it("brief 为 buildBrief 富载荷：next_actions/top_skills/进度齐备", () => {
-    const d = gatherData(env());
+  it("brief 为 buildBrief 富载荷：next_actions/top_skills/进度齐备", async () => {
+    const d = await gatherData(env());
     expect(d.brief.current_project).toBe("webui-unit");
     expect(Array.isArray(d.brief.next_actions)).toBe(true);
     expect(d.brief.next_actions.length).toBeGreaterThan(0);
@@ -55,16 +57,16 @@ describe("webui gatherData", () => {
     expect(Array.isArray(d.brief.top_skills)).toBe(true);
     expect(d.tree).toBeTruthy();
   });
-  it("claim-evidence 关联与证据索引已填充", () => {
-    const d = gatherData(env());
+  it("claim-evidence 关联与证据索引已填充", async () => {
+    const d = await gatherData(env());
     expect(d.claims.length).toBe(1);
     expect(d.claim_evidence.length).toBe(1);
     expect(d.claim_evidence[0]).toMatchObject({ stance: "supports" });
     expect(d.evidence.length).toBe(1);
     expect(d.evidence[0].quote).toContain("关键摘录原文");
   });
-  it("R11：树节点带 created/unlocked_at/state，timeline 日聚合成形", () => {
-    const d = gatherData(env());
+  it("R11：树节点带 created/unlocked_at/state，timeline 日聚合成形", async () => {
+    const d = await gatherData(env());
     const n = d.tree.nodes[0];
     expect(n.created).toBeTruthy();
     expect("state" in n && "unlocked_at" in n).toBe(true);
@@ -148,7 +150,7 @@ describe("webui live server（0.88 单3：React 唯一前端）", () => {
     expect(res.status).toBe(404);
   });
   it("0.35：artifacts 清单（非 task 工件）+ /api/artifact 全文", async () => {
-    const d = gatherData(env());
+    const d = await gatherData(env());
     expect(d.artifacts.length).toBe(1);
     expect(d.artifacts[0].kind).toBe("outline");
     const res = await fetch(`${base}/api/artifact?id=${d.artifacts[0].id}`);
@@ -286,11 +288,11 @@ describe("webui 0.90.1 P1/P2（review direct-a35d58ae）", () => {
     }
   });
 
-  it("P2-1/P2-2：未选择态 brief.project 剥除 + knowledge_graph 空 + unselected 载荷", () => {
+  it("P2-1/P2-2：未选择态 brief.project 剥除 + knowledge_graph 空 + unselected 载荷", async () => {
     const prevSession = process.env.YGL_SESSION;
     process.env.YGL_SESSION = SID;
     try {
-      const d = gatherData(env());
+      const d = await gatherData(env());
       expect(d.unselected).toBeTruthy();
       expect(d.unselected!.projects.length).toBe(2);
       expect((d.brief as any).project).toBeUndefined();
