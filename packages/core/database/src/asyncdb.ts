@@ -38,9 +38,58 @@ export class SqliteAsyncDb implements AsyncDb {
   }
 }
 
+/** PG 实现（B6）：`pg` 客户端直连；`?` 占位符在发送前转 `$n`（facade 层统一用 ?）。 */
+export class PgAsyncDb implements AsyncDb {
+  readonly dialect = "pg" as const;
+  private client: any = null;
+  private connecting: Promise<void> | null = null;
+
+  /** clientFactory 可注入（测试）；默认 require("pg")。 */
+  constructor(private readonly url: string, private readonly clientFactory?: (url: string) => any) {}
+
+  private async ready(): Promise<void> {
+    if (this.connecting) return this.connecting;
+    this.connecting = (async () => {
+      if (this.clientFactory) {
+        this.client = this.clientFactory(this.url);
+      } else {
+        const pgMod = require("pg") as any;
+        this.client = new pgMod.Client({ connectionString: this.url });
+      }
+      await this.client.connect();
+    })();
+    return this.connecting;
+  }
+
+  /** `?` → `$1..$n`（facade 查询不含字符串字面量里的 ?）。 */
+  private pgSql(sql: string): string {
+    let i = 0;
+    return sql.replace(/\?/g, () => "$" + ++i);
+  }
+
+  async get(sql: string, params: unknown[] = []): Promise<Record<string, any> | null> {
+    await this.ready();
+    const r = await this.client.query(this.pgSql(sql), params);
+    return r.rows[0] ?? null;
+  }
+
+  async all(sql: string, params: unknown[] = []): Promise<Record<string, any>[]> {
+    await this.ready();
+    const r = await this.client.query(this.pgSql(sql), params);
+    return r.rows;
+  }
+
+  async close(): Promise<void> {
+    if (this.client) { try { await this.client.end(); } catch { /* */ } this.client = null; this.connecting = null; }
+  }
+}
+
 /** Factory: create the async adapter for the current workspace DB.
- *  PG mode (B2+) will return a PgAsyncDb here instead — same interface. */
-export function getAsyncDb(db: DB): AsyncDb {
+ *  B6：YGL_DB_URL 为 postgres:// 时返回 PgAsyncDb（PG 直连面），否则 SQLite。 */
+export function getAsyncDb(db: DB | null, url?: string): AsyncDb {
+  const target = url ?? process.env.YGL_DB_URL ?? "";
+  if (/^postgres(ql)?:\/\//i.test(target)) return new PgAsyncDb(target);
+  if (!db) throw new Error("getAsyncDb: sqlite backend requires a DB instance (or pass YGL_DB_URL for PG)");
   return new SqliteAsyncDb(db);
 }
 
