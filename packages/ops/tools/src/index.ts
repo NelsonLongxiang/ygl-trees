@@ -8,3 +8,4 @@ export type { SyncResult, MigrateResult } from "./pgsync";
 export { OpsService, apply } from "./plugin";
 export { serveMcp, buildTools } from "./mcp";
 export { AsyncOpsReads } from "./async-reads";
+export { AsyncDbCmds } from "./async-db-cmds";
