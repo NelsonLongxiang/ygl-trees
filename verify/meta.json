@@ -69,6 +69,11 @@
       "role": "gate"
     },
     {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "sha256": "d2cc2ea116f1572d19399e5aec20a0286a36f95ea45bf20c290b849e64ff0e00",
+      "role": "gate"
+    },
+    {
       "path": "scripts/gate.js",
       "sha256": "2799c7a6263a8ea13022fd1ed72e0e26dc49f1f470030603220027a0e722fb27",
       "role": "gate"
