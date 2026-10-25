@@ -8,7 +8,7 @@ description: >-
   漂移反模式。机制细节见各专职技能，本技能只回答「什么时候」。
   触发词：更新时机、什么时候更新、何时解锁、何时该动、何时挂、维护、节奏、cadence、
   keep in sync、同步、漂移、stale、脏索引、收口、会话结束、下次做什么、lifecycle。
-version: 0.42.0
+version: 0.114.31
 tags: ygl-trees,lifecycle,cadence,maintenance,timing
 ---
 
@@ -35,7 +35,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | 一个里程碑/能力**真正达成**（有可指认的证据） | `node unlock <key>` + `rel add node:<key> evidence:<id>` | 只在心里认为"算做到了"，不 unlock |
 | 发现领域里还有**未建模的子能力** | `node add <child>` + `node link <parent> <child>`（先判定必检 or `--optional`） | 用 payload/备注描述层级关系（关系必须进 `node_edges`） |
 | 发现两条路线**互斥** | `node link a b --rel excludes --mode NOT`（或同父 XOR） | 靠文档写"这两个不能同时选" |
-| 出现**语义门槛**（"做到 X 才算过"，无客观阈值） | `node cond <key> --op eval --value "<判定问题>"`（判据题型见 eval-gates 技能） | 把主观判断硬凑成 `kind=level --value 3` |
+| 出现**语义门槛**（"做到 X 才算过"，无客观阈值） | `node cond add <key> --name <cond> --op eval --value "<判定问题>"`（判据题型见 eval-gates 技能） | 把主观判断硬凑成 `kind=level --value 3` |
 | 依赖**方向变了** | 先加新边 → `node index` → `node validate` → 再 `node unlink <parent> <child>`；**两次索引之间不要跨会话** | 直接删旧边（中间态可能成环，validate 会拦但状态已脏） |
 | 同一能力被**重新拆解** | 新节点先建、挂到父、`node index` 通过后再 `node unlink` 下线旧边 | 先删后建（树上出现空洞，后续会话看到断裂） |
 | 重复 `node link` 同一 (父,子,rel) | 幂等：原地更新并回执 `duplicate: true`（rc=0），**改 `--mode/--optional` 重连即改属性** | 以为重复 link 会新建边而反复确认（不会） |

@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.104.0
+version: 0.114.31
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
@@ -71,6 +71,47 @@ ygl-trees verify:run   # 组合入口：submit → prepare → run 串接（rc �
 | `agent` | 需网关的语义判定（无凭证 → `ERROR`，不当 PASS） | 判定原文 |
 
 SQL 三种写法统一：单语句 SELECT/WITH 走 `SqliteRunner.query`；`sql-pair` 拆两查；`agent` 只经网关。
+
+## 2b. 构造输入 schema（prepare 的 candidates / reviews）
+
+`prepare` 只吃**谓词 AST 候选**，不是 `verify example` 打印的 spec VU。最小候选：
+
+```json
+[
+  {
+    "source_clause": "S1 订单金额不得为负。",
+    "anchor": { "quote": "S1 订单金额不得为负。", "locator": "material.md#S1" },
+    "checker": { "type": "count", "predicate": { "from": "claims", "select": ["id"] }, "op": ">=", "value": 1 }
+  }
+]
+```
+
+- 候选字段是 `anchor: {quote, locator}`，**不是** `expected_from`；`expected_from` 是冻结 spec / `verify example` 的 VU 形状，prepare 不认（照抄会被 P1 报「mis-transcription」）。`id`/`vu_id` 不要自己写，prepare 生成 `C1..`。
+- 检查器只收 predicate AST：`count`/`exists` 用 `predicate`，`sql` 用 `predicate` + `fail_when`（`rows>0` 找违规）；**不收手写 SQL**（`sql` 字符串、`sql` 字段、`authored` 都会被拒）。
+- 零违规断言不要写 `count == 0`（空库 0==0 会被 P4 红队判 vacuous pass）：用 `sql` + `fail_when:"rows>0"` 扫违规行（空库得 NEEDS-MATERIAL）；正整数用 `count` + `op:">="`。
+- 先探：`verify lint-candidates <candidates.json> --text <material> --reviews <reviews.json> [--db snapshot.sqlite] --json`；失败看 `issues[].reason`（P1 逐字/定位、P2 schema、P4 红队方向）。
+
+reviews 最小形状：
+
+```json
+{
+  "reviews": [
+    {
+      "source_clause": "S1 订单金额不得为负。",
+      "findings": [
+        { "question": "faithful", "verdict": "ok", "reason": "逐字复读", "anchor": { "quote": "S1 订单金额不得为负。", "locator": "material.md#S1" } },
+        { "question": "decidable", "verdict": "ok", "reason": "predicate AST 可判定" },
+        { "question": "not-vacuous", "verdict": "ok", "reason": "空库 0<1 → FAIL" }
+      ]
+    }
+  ]
+}
+```
+
+- `question` 闭集：`faithful` / `decidable` / `not-vacuous`（缺一即 P3 fail）。
+- `verdict` 闭集：`ok` / `reject` / `unclear`——没有 pass/approve/clear；写别的报「unknown verdict」。
+- 每条 finding 必须有 `reason`；`faithful` 必须带 `anchor`（quote 与材料逐字一致）；`vu_id` 由 prepare 注入，不要写。
+- `source_clause` 与候选**逐字节相同**（fileReviewer 用 `===` 查找；差一个空格就「self-review incomplete」）。
 
 ## 4. 归档与封包（可复核性的载体）
 
@@ -170,6 +211,7 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 | `[P1c] no clause lines matched pattern …` / lint `coverage_skipped:true` | 材料没有 `<id> <text>` 编号行，覆盖被**跳过**（不是通过）；编号判据，或 `verify submit --clause-pattern '<含一个捕获组的正则>'` 声明 |
 | `[P1] … names clause "S9", which the frozen material does not declare` | `#<片段>` 先按子句 id 解析（`#S1`/`#L2` 是 id 不是行号）；引用物理行写 `#line=<n>`；编号约定不同在 `verify submit --clause-pattern` 声明（随材料冻结） |
 | prepare `error` + `[P3] orphan review` | 评审文件里有条 `source_clause` 没有任何候选携带（判据被删或改名）——候选与评审要 1:1 |
+| `verify meta` R3 把当前目录 git 仓库的脚本判 stray | meta 门默认扫 **cwd 所属仓库**（含 `AGENTS.md`/`verify/` 标记即 hard）；submit/prepare 加 `--meta-repo <verifier-root>` 指定准入根，或在中性目录运行；`verify meta <repo>` 可先单独看该仓的 R1–R3 |
 | 想知道这次尝试落哪个文件 | CLI `prepare --json` 的 `record`（相对 verify 根）；`GET /api/verify/spec` 载荷带 `attempts:[{file,created,verdict}]` 投影 |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
 | command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |

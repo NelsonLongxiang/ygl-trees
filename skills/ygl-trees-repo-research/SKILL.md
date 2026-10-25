@@ -1,7 +1,7 @@
 ---
 name: ygl-trees-repo-research
 description: 用 ygl-trees 研究一个开源项目（主推场景②）：从仓库/发布史/社区证据建「作者意图树」——作者要解决什么问题、走到哪一步、下一步大概率是什么。给到一个开源项目要做系统性研究、写项目分析报告、或建项目科技树时使用。触发词：开源项目研究、作者意图、项目分析、repo research、项目科技树、竞品研究。
-version: 1.0.0
+version: 0.114.31
 ---
 
 # 开源项目研究树（repo-research 标准形）
@@ -20,7 +20,7 @@ version: 1.0.0
    - **意图层**：作者要解决的问题是什么（判据=作者自己的话，不是你的推断）；
    - **现状层**：解决到哪一步（判据=发布史/代码事实）；
    - **机制层**：为什么这条路走得通/走不通（判据=架构决策链）。
-4. **建树**：`tree new <repo>-intent`。标准节点骨架：t1 问题定义 → t2 路线选择（各候选路线一节点，走通的 unlock、否决的挂 excludes）→ t3 已交付能力 → t4 当前边界 → t5 下一步（**未来节点用真实条件锁定**：`node cond add --op eval` 挂「作者会做 X 吗」，或 `--op telemetry` 挂发布节奏）。挂树用 rel：`rel add node:<tree>/<key> claim:<id> --rel decided-by`。
+4. **建树**：`tree new <repo>-intent`。标准节点骨架：t1 问题定义 → t2 路线选择（各候选路线一节点，走通的 unlock、否决的挂 excludes）→ t3 已交付能力 → t4 当前边界 → t5 下一步（**未来节点用真实条件锁定**：`node cond add <key> --name <cond> --op eval --value "<判定问题>"` 挂「作者会做 X 吗」，或 `--op telemetry` 挂发布节奏）。挂树用 rel：`rel add node:<tree>/<key> claim:<id> --rel decided-by`。
 5. **预测落账**：对 t5 出 `[预测·N天]` 断言（`claim add` 带文本格式）+ 标记节点（time-capsule 树）。到期 `predict audit` 回测——研究质量由命中率度量。
 
 ## 反模式

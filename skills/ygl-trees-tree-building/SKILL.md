@@ -6,7 +6,7 @@ description: >-
   语义门槛挂 eval 三题型、未来节点用真实条件锁定而非空缺。防止"三节点演示链"反模式。
   触发词：树构建、领域分解、节点设计、tier 规划、衍生、子节点、反模式、演示链、
   tree building、decomposition、node design、derivation。
-version: 0.33.0
+version: 0.114.31
 tags: ygl-trees,methodology,tree,decomposition
 ---
 
@@ -36,7 +36,7 @@ tags: ygl-trees,methodology,tree,decomposition
 ygl-trees tree new <name>
 ygl-trees node add <key> --tier <t> --name "<全称>"     # 批量加完再连边
 ygl-trees node link <parent> <child> [--optional|--rel excludes]
-ygl-trees node cond <future-key> --op eval-choice ...    # 未来门
+ygl-trees node cond add <future-key> --name <cond> --op eval-choice --options k=... --answer k   # 未来门
 ygl-trees node unlock <done-key>                         # 已完成里程碑
 ygl-trees node index && ygl-trees node validate
 ygl-trees tree use <name> && ygl-trees webui serve       # React 客户端 pan/zoom 检阅
