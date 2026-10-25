@@ -333,15 +333,22 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
   // 缺被比字段 → fail-closed stale。声明 target 的叶失配 → 该叶 STALE 沿父链传播。
   // Q12-B：本轮开始时间——pinned 归档 created 必须早于此值（同轮自引用拒绝）。
   const roundStartedAt = new Date().toISOString();
-  const targetRaw = args.flags.target !== undefined ? String(args.flags.target) : String((spec as any).target ?? "");
+  // Q8：两条来源——① --target 字符串（run 期覆盖）② spec.target 冻结对象（prepare 期声明）。
+  // 冻结对象若被 String() 会变 "[object Object]"，故必须分开处理。
   let target: { kind: string; id: string; sha256?: string } | null = null;
-  if (targetRaw) {
+  if (args.flags.target !== undefined) {
+    const targetRaw = String(args.flags.target);
     const hashIdx = targetRaw.indexOf("#");
     const base = hashIdx >= 0 ? targetRaw.slice(0, hashIdx) : targetRaw;
     const sha = hashIdx >= 0 ? targetRaw.slice(hashIdx + 1) : undefined;
     const colon = base.indexOf(":");
     if (colon <= 0) { bad(ctx, "usage: --target <kind>:<id>[#sha256]"); return 2; }
     target = { kind: base.slice(0, colon), id: base.slice(colon + 1), ...(sha ? { sha256: sha } : {}) };
+  } else {
+    const frozen = (spec as any).target;
+    if (frozen && typeof frozen === "object" && typeof frozen.kind === "string" && typeof frozen.id === "string") {
+      target = { kind: frozen.kind, id: frozen.id, ...(frozen.sha256 ? { sha256: frozen.sha256 } : {}) };
+    }
   }
   const dbFlag = args.flags.db;
   const dbArgs: string[] = Array.isArray(dbFlag) ? dbFlag.map(String) : dbFlag ? [String(dbFlag)] : [];

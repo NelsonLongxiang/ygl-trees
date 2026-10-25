@@ -187,7 +187,12 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         }
       }
       await env.asyncStore.queryDone(rest[1]);
-      ok(ctx, `query marked done: ${rest[1]}`);
+      // #78：--json 只输出一个 JSON 对象（Agent API 契约：写=单对象）
+      if (ctx.json) {
+        console.log(JSON.stringify({ id: rest[1], status: "done" }));
+      } else {
+        ok(ctx, `query marked done: ${rest[1]}`);
+      }
       return 0;
     }
   }

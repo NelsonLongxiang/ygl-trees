@@ -1,0 +1,83 @@
+/**
+ * #77/#78 回归：B1 面门禁 + research 命令 rc 契约。
+ *
+ * #77：AsyncOpsReads.runs() 列名错（runs 表无 created）+ stats/timeline 一致性。
+ * #78：research source search / query done 的 rc 契约（await 链修复后不再 rc1）。
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { DB } from "../../../core/database/src/db";
+import { AsyncOpsReads } from "../src/async-reads";
+import { AsyncResearchStore } from "../../../research/pipeline/src/async-store";
+
+const REPO = resolve(__dirname, "../../../..");
+const BIN = join(REPO, "dist/bundle/bin.cjs");
+const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+
+describe("#77 async facade column parity + #78 rc contracts", () => {
+  let home = "";
+
+  function run(args: string[]) {
+    const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
+      cwd: REPO, encoding: "utf8", env: { ...process.env, YGL_HOME: home, YGL_SESSION: "b1-face" } as any,
+    });
+    let j: any = null;
+    try { j = JSON.parse(r.stdout); } catch { /* not json */ }
+    return { rc: r.status ?? -1, j, out: r.stdout + r.stderr };
+  }
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), "ygl-b1-face-"));
+    run(["db", "init"]);
+    run(["project", "new", "p1"]);
+  });
+  afterAll(() => rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("#77: AsyncOpsReads.runs() does not throw on the real schema (started, not created)", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const ops = new AsyncOpsReads(db);
+    await expect(ops.runs()).resolves.toBeInstanceOf(Array);
+    await expect(ops.counts()).resolves.toBeTruthy();
+    db.close();
+  }, 30_000);
+
+  it("#77: AsyncOpsReads.stats counts match db stats surface (same tables)", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const ops = new AsyncOpsReads(db);
+    const counts = await ops.counts();
+    const dbStats = run(["db", "stats"]);
+    expect(dbStats.rc, dbStats.out).toBe(0);
+    // db stats 的 projects 计数应与 facade counts 一致
+    expect(counts.projects).toBe(dbStats.j.projects);
+    db.close();
+  }, 30_000);
+
+  it("#78: research source search returns rc0 with JSON array (await chain intact)", () => {
+    // 先建一个 source
+    run(["research", "source", "add", "--title", "B1面源", "--url", "https://example.com/b1", "-p", "p1"]);
+    const r = run(["research", "source", "search", "B1面源", "-p", "p1"]);
+    expect(r.rc, r.out).toBe(0);
+    expect(Array.isArray(r.j)).toBe(true);
+  }, 30_000);
+
+  it("#78: research query done returns rc0 and a single JSON object", () => {
+    const added = run(["research", "query", "add", "B1 面检索式", "-p", "p1"]);
+    expect(added.rc, added.out).toBe(0);
+    const qid = added.j.id ?? added.j.row?.id;
+    expect(qid).toBeTruthy();
+    const done = run(["research", "query", "done", qid]);
+    expect(done.rc, done.out).toBe(0);
+    // --json 只输出一个 JSON 对象（不是数组、不是多行）
+    expect(done.j && typeof done.j === "object" && !Array.isArray(done.j)).toBe(true);
+  }, 30_000);
+
+  it("#78: AsyncResearchStore.queryDone exists (async facade parity)", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const s = new AsyncResearchStore(db);
+    expect(typeof s.queryDone).toBe("function");
+    db.close();
+  }, 30_000);
+});

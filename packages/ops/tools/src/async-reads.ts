@@ -66,7 +66,8 @@ export class AsyncOpsReads {
   }
 
   async runs(): Promise<Row[]> {
-    return this.adb.all("SELECT * FROM runs ORDER BY created");
+    // #77: runs 表没有 created 列——按 started 排序（schema: started/finished/rc）
+    return this.adb.all("SELECT * FROM runs ORDER BY started DESC");
   }
 
   // ================================================================ raw async

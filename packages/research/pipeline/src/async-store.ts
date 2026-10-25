@@ -55,6 +55,13 @@ export class AsyncResearchStore {
   // ================================================================ events
   async tail(limit?: number): Promise<Row[]> { return this.sync.tail(limit); }
 
+  // ================================================================ writes used by command handlers
+  /** #78: command handlers call this on the async facade. It stays a delegate to the
+   *  sync Store write (transactional writes live in writes.ts; this is the query status flip). */
+  async queryDone(id: string): Promise<void> {
+    return this.sync.queryDone(id);
+  }
+
   // ================================================================ stats
   async stats(): Promise<Record<string, number>> {
     const t = async (name: string) => ((await this.adb.get(`SELECT COUNT(*) AS c FROM ${name}`))?.c ?? 0) as number;

@@ -261,6 +261,11 @@ unit 984；contract 144；demo 5j2 预测 audit 有日历漂移已知问题（�
 属主裁定 B'：git filter-repo 改写+强推双远端。v0.114.31 `bb0fc44→2eec801`、master `4ff4c70→eab5dae`。
 npm tarball 0 命中不受影响。验证席⑥验收 PASS（双远端 fresh clone 历史 0 命中+泄密串不可达+旧 SHA 不可达）。
 四条缓解排下一版（gitignore 模式/卫生闸/生成路径根修/导出脱敏）。
+**B1 读路径异步化记录（2026-10-25，PG 线 B1 批）**：四域 AsyncStore 委托层落位（AsyncTreeStore/AsyncResearchStore/
+AsyncOpsReads/AsyncDbCmds，共 ~319 行 + AsyncDb 统一接口）+ 调用面全净（techtree 34/research 46/webui+db-cmds 5 处 await 切换，
+`env.store` 同步消费 0）。#77 修复：5 处列名对照 schema v12（relations.src_id/jobs.title/patrol_findings.last_seen/
+node_conditions JOIN nodes/runs 按 started）。#78 修复：sourceSearch await 链错位 + queryDone facade 补齐 + query done --json
+单对象。行为漂移登记册 `docs/pg-compat-drift.md` 建册（B0 护栏②）。B1 面回归 `b1-facade.spec` 5 例。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。

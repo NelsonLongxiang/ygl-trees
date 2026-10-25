@@ -136,6 +136,61 @@ describe.skipIf(!HAS_BIN)("A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS)", ()
     expect(prep2.j.tree_spec_id).not.toBe(prep.j.tree_spec_id);
   }, 120_000);
 
+  it("Q8 run: spec.target (frozen) + live leaf mismatch → STALE (run-level reachable)", () => {
+    // spec 冻结 target{kind,id=other-node}；活叶 data_source.id = leaf → 失配 → STALE
+    const d = join(home, "verify", "materials", "mat_tree_frozen");
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "material.txt"), JSON.stringify({
+      tree_spec_id: "ts_frozen", tree_spec_version: 1, title: "f", root: "leaf",
+      target: { kind: "sqlite-snapshot", id: "other-node" },
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
+    }));
+    writeFileSync(join(d, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_frozen", title: "f", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep = run(["verify", "tree", "prepare", "mat_tree_frozen"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    // run 不传 --target——用 spec 冻结的 target（原 bug：String(object) → usage rc2）
+    const r = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", snap, "--no-archive"], home);
+    expect(r.rc, r.out).toBe(0);
+    expect(r.j.verdict).toBe("STALE");
+    const leaf = (r.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leaf?.stale).toBe(true);
+    expect(String(leaf?.stale_reason)).toMatch(/target mismatch/);
+  }, 120_000);
+
+  it("Q8 run: spec.target (frozen) + pinned leaf mismatch → STALE (pinned covered)", () => {
+    // pinned 叶也必须参与 target 比较（Q8 全叶）——这里 pin 已完成归档，但 target 声明的是别的 id
+    // 先确保本 home 有归档（测试顺序无关）
+    run(["verify", "run", "spec_q10", "--db", snap], home);
+    const arcDir = join(home, "verify", "archives");
+    let pinnedSha = "";
+    for (const f of readdirSync(arcDir)) {
+      if (!f.endsWith(".json")) continue;
+      const reg = JSON.parse(readFileSync(join(arcDir, f), "utf8"));
+      const hit = (reg.archives ?? []).find((a: any) => a?.archive_sha256);
+      if (hit) { pinnedSha = String(hit.archive_sha256); break; }
+    }
+    expect(pinnedSha).toBeTruthy();
+    const d = join(home, "verify", "materials", "mat_tree_pinfrozen");
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "material.txt"), JSON.stringify({
+      tree_spec_id: "ts_pinfrozen", tree_spec_version: 1, title: "pf", root: "leaf",
+      target: { kind: "sqlite-snapshot", id: "other-node" },
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
+    }));
+    writeFileSync(join(d, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_pinfrozen", title: "pf", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep = run(["verify", "tree", "prepare", "mat_tree_pinfrozen", "--pinned", "leaf=" + pinnedSha], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const r = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", snap, "--no-archive"], home);
+    expect(r.rc, r.out).toBe(0);
+    const leaf = (r.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leaf?.pinned).toBe(true);
+    expect(leaf?.verdict).toBe("STALE");
+    // 两条合法路径：① pinned 报告带 data_source 且失配 ② pinned 报告缺 data_source → fail-closed
+    expect(String(leaf?.stale_reason)).toMatch(/pinned (target mismatch|report missing data_source)/);
+  }, 120_000);
+
   it("Q9: leaf spec_version drift vs frozen tree version → STALE (not FAIL)", () => {
     // tree 冻结 leaf spec_version=2，实际 spec v1 → STALE
     const matDir = join(home, "verify", "materials", "mat_tree_ver");
