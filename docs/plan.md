@@ -266,6 +266,11 @@ AsyncOpsReads/AsyncDbCmds，共 ~319 行 + AsyncDb 统一接口）+ 调用面全
 `env.store` 同步消费 0）。#77 修复：5 处列名对照 schema v12（relations.src_id/jobs.title/patrol_findings.last_seen/
 node_conditions JOIN nodes/runs 按 started）。#78 修复：sourceSearch await 链错位 + queryDone facade 补齐 + query done --json
 单对象。行为漂移登记册 `docs/pg-compat-drift.md` 建册（B0 护栏②）。B1 面回归 `b1-facade.spec` 5 例。
+**0.115.0 记录（2026-10-25，A1 v1.2 收口）**：依据=裁定单 v2 + fdc 2026-10-25 cap-on-PASS 补正 + r38 两席签注。
+Q8 target/subject 冻结+canonical、Q9 引用失配（活叶/pinned/缺字段）、G8 版本 pin+prepare 校验、五值映射、
+V15 5×5、Q11 删 run 幂等、Q12-B/Q13-A。矩阵 green 21/partial 1/planned 2（Q4/V21 后置）。B1 四域异步面 +
+#77/#78 修复 + #37 执法四件。unit 1019 / contract 144 / demo rc0 / ratchet 绿 / readme 54 / rust 绿。
+残余后置：G8 run 期可选加道、Q8 subject 声明不校验实况、#77 facade 覆盖面/方言函数登记。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
