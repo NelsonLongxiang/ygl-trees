@@ -70,7 +70,7 @@
       "probe": "待裁定后落码",
       "evidence": "v1.2 draft §1",
       "test": "packages/ops/tools/tests/verify-q10.spec.ts",
-      "test_title": "Q8: target frozen in tree spec enters canonical"
+      "test_title": "Q8 run: spec.target (frozen) + live leaf mismatch"
     },
     {
       "id": "Q9",
@@ -216,3 +216,4 @@
     }
   ]
 }
+

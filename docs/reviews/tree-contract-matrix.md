@@ -6,7 +6,7 @@ kind: 评审
 
 # A1 tree run 契约对照表（机器生成）
 
-> 生成：`node scripts/tree-contract-matrix.mjs --results <vitest.json>`；commit **86093fb**，tag **v0.114.31-27-g86093fb**。
+> 生成：`node scripts/tree-contract-matrix.mjs --results <vitest.json>`；commit **25f0354**，tag **v0.114.31-30-g25f0354**。
 > 状态口径：green=对应测试通过；partial=有测试但断言面未全覆盖；planned=尚未落码；missing=清单有、测试未找到；red=测试失败。
 > **不得手改本表**——改清单 `docs/reviews/tree-contract-matrix.json` 后重跑。
 
@@ -23,7 +23,7 @@ kind: 评审
 | Q5 | tree spec 用 JSON（可机械校验/digest） | v0.4 Q5 | **green** | verify tree prepare (A1) valid tree freezes: id/sha/nodes + file written | verify tree prepare --json | verify-tree.spec |
 | Q6 | 空组 prepare 拒绝 rc2 | v0.4 Q6 | **green** | verify tree prepare (A1) Q6 empty group → rc=2 | verify tree prepare 空组 → rc2 | verify-tree.spec |
 | Q7 | 叶路径深度默认 16，超限 rc2 | v0.4 Q7 | **green** | verify tree prepare (A1) V12 depth > 16 → rc=2 | verify tree prepare 深度 17 → rc2 | verify-tree.spec |
-| Q8 | target 声明 + 全叶 data_source/target 一致 + 失配 V 行；subject=repo+commit | v1.2 Q8 | **green** | A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS) Q8: target frozen in tree spec enters canonical (prepare-time freeze, not run flag) | 待裁定后落码 | v1.2 draft §1 |
+| Q8 | target 声明 + 全叶 data_source/target 一致 + 失配 V 行；subject=repo+commit | v1.2 Q8 | **green** | A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS) Q8 run: spec.target (frozen) + live leaf mismatch → STALE (run-level reachable) | 待裁定后落码 | v1.2 draft §1 |
 | Q9 | stale=D 引用失配（target 失配 + 冻结 spec_version 漂移；缺字段 fail-closed；沿父链阻 PASS） | v1.2 Q9 | **green** | A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS) Q9: leaf spec_version drift vs frozen tree version → STALE (not FAIL) | 待裁定后落码 | v1.2 draft §2 |
 | V1 | 三层嵌套一叶 FAIL → 根 FAIL，逐层 report | V1 | **green** | A1 tree run (runtime first cut) runs a two-leaf tree: verdict, per-leaf runs, deterministic digest, events | tree run FAIL 叶传播 | verify-tree.spec（两层） |
 | V15 | 五值 5×5 聚合矩阵（全序 + cap-on-PASS） | V15 | **green** | verify tree prepare (A1) V16 unknown aggregate → rc=2 | 纯函数矩阵 | verify-tree.spec 7 例 |
