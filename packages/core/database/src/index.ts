@@ -3,6 +3,7 @@
  * DB, schema, migration, ORM, entities, types, container, and Cordis DatabaseService.
  */
 export { DB, SCHEMA_SQL, SCHEMA_VERSION, dbPath, EDGE_RELS, EDGE_MODES, COND_KINDS } from "./db";
+export { AsyncDb, SqliteAsyncDb, getAsyncDb } from "./asyncdb";
 export { getOrm } from "./orm";
 export { Event, CORE_ENTITIES } from "./entities";
 export { Args, Ctx, Env, parse, str, num, bool } from "./types";
