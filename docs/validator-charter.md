@@ -238,3 +238,8 @@ R5b 不对该条设界；`—` 表示该职责无需退场界（不产生编排�
 - 元规格规则 → 随元验证器版本化（`spec_meta_*`，digest 血统同语料纪律）。
 - 契约细节仍在 [verify-contract.md](verify-contract.md)（charter 引用不重复）。
 - 仓库发布/隐私纪律见 [release.md](release.md) 与 [doc-governance.md](doc-governance.md)。
+
+### B0 增补（2026-10-25，属主立项·PG 单写后端）
+
+> 工作区单一写库——SQLite 默认 / 可选单一 PG（永不双写）；
+> verify 判定永远在 SQLite 快照（P5）。

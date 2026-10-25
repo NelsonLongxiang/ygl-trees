@@ -120,3 +120,41 @@ B0 之后，B2、B3 可以和 B1 并行，改动面基本不重叠：B2 在 db.t
 - 每期交付后，从已发布的 npm 包复跑该期验收，在 docker `postgres:16` 与 SQLite 上各一遍，结果进对应 issue 与台账。
 - 重点盯：①后端行为漂移（同一输入两个后端输出逐字节比对）；②并发幂等；③凭证零泄漏；④verify 只认快照、快照来源可审计。
 - 评审验证器在 B1 期内把台账探针从直读 SQLite 改为 CLI 读，与后端无关，属自身编排的改动，不改判据。
+
+## B0 落文（2026-10-25，属主令「帮我推进这一块的构建」启动）
+
+### D1–D5 裁定（fdc757f6 裁定卡 + 属主授权令）
+
+| # | 裁定 | 内容 |
+|---|---|---|
+| D1 | **是** | PG 可作为唯一写库（取代「SQLite 唯一事实源」；保留「永不双写」） |
+| D2 | **兼有，库内权威** | `YGL_DB_URL` env + 库内绑定记录并存；不一致 → fail-closed 拒绝启动 |
+| D3 | **方言中立异步助手 + ORM 实体读** | 复杂 SQL 走 pg 助手函数（不硬塞 ORM）；简单读走 ORM |
+| D4 | **PG 模式要求会话 id** | `YGL_SESSION` 必填（对齐全局选择隔离语义） |
+| D5 | **开发席（ec4ce7f8）承担** | B1–B6 按方案 §5 分域推进 |
+
+### 绑定记录格式
+
+```json
+// $YGL_HOME/pg-binding.json（库内绑定记录——权威）
+{
+  "mode": "pg",
+  "url_hash": "sha256:<url 去凭证后哈希>",
+  "bound_at": "2026-10-25T09:00:00Z",
+  "engine_version": "0.115.0"
+}
+```
+
+### `YGL_DB_URL` 语义
+
+- 格式：`postgresql://<user>:<pass>@<host>:<port>/<db>`（标准 PG URI）
+- 优先级：库内绑定记录（权威）> `YGL_DB_URL` env — **不一致 fail-closed**（D2）
+- 凭证安全：绑定记录只存 `url_hash`（去凭证后 sha256），不存明文密码
+- `synchronize` 永久 `false`（schema 走显式迁移，同 SQLite `PRAGMA user_version` 纪律）
+
+### 四条护栏（进 B0 契约面）
+
+1. **B6 双后端矩阵含 verify self-check 全链**（不只 demo/contract——七型检查器 + 递归 self-check 双跑）
+2. **行为漂移登记制**：发现 → 登记（`docs/pg-compat-drift.md`）→ 统一口径；禁静默改（digest 血统同族纪律）
+3. **B4 ON CONFLICT RETURNING 同时服务 SQLite 幂等路径**（一次投入双端收益）
+4. **快照来源记录不含会话 id**（隐私面——data_source 只记 url_host/db_name/engine_version）

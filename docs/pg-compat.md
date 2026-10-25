@@ -1,6 +1,6 @@
 # ygl-trees PostgreSQL 兼容方案
 
-日期：2026-10-15 ｜ 状态：**L1 同步 + L1.5 迁移已交付（0.6.0/0.7.0）；L2 双后端已取消（架构决策：不做双后端同写）** ｜ 关联：[research.md](research.md) · [spec.md](spec.md) · [plan.md](plan.md)
+日期：2026-10-15 ｜ 状态：**L1 同步 + L1.5 迁移已交付（0.6.0/0.7.0）；L2 双后端 2026-10-15 取消；2026-10-25 属主重新立项单写后端（D1=是，SQLite 默认/PG 可选，永不双写）** ｜ 关联：[research.md](research.md) · [spec.md](spec.md) · [plan.md](plan.md)
 
 ## 0. 决策上下文
 

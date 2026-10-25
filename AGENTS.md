@@ -87,7 +87,7 @@ export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 
 
 ## 数据模型
 
-- SQLite 唯一事实源；PG 单向导出（sync 镜像 / migrate 迁移）
+- SQLite 默认 / 可选单一 PG（永不双写）；PG 单向导出（sync 镜像 / migrate 迁移）；`synchronize` 永久 false
 - Schema 走 `PRAGMA user_version`（**当前 v12**：patrol_checks/findings、claims.channel、events.seq/level、content_hash；以 `PRAGMA user_version` 实测为准，`SCHEMA_VERSION` 单一来源）；`synchronize` 永久 false
 - 加表九触点 → [docs/conventions.md](docs/conventions.md) §一
 - TypeORM 边界（读走 ORM，写走事务化服务）→ [docs/conventions.md](docs/conventions.md) §五
