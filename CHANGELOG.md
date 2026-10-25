@@ -1,3 +1,7 @@
+## 0.115.1
+
+- #87 修复：R2 锚点改 opt-in（`lineage_anchors_required` 显式声明才强制）——存量 v2 索引无锚条目 warn 不红；新登记仍强制。最小 v2 仓与舰队四验证器 `verify meta` rc0 实证。
+
 # Changelog
 
 ## 0.115.0
