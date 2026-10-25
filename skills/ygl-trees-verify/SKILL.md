@@ -24,6 +24,7 @@ tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 | `verify report <run-id>` | `verify {action:"report", a:"<run-id>"}` |
 | `verify archive verify <file>` | `verify {action:"archive", a:"<file>"}` |
 | `verify meta <repo>` | `verify {action:"meta", a:"<repo>"}` |
+| `verify tree prepare/run/report/trace` | **无 MCP 路由**（CLI-only；C 类路由缺口） |
 
 ## 1. 何时用
 
@@ -57,6 +58,45 @@ ygl-trees verify list                           # 工作区全部 spec/run 概�
 ```bash
 ygl-trees verify:run   # 组合入口：submit → prepare → run 串接（rc 只表达过程错误）
 ```
+
+## 2c. 递归验证器（verify tree，0.115.0 / A1 v1.2）
+
+一条树 = 多个叶 spec 的**后序递归执行**（叶真跑+归档，父按算子聚合）。材料正文是 tree JSON：
+
+```json
+{
+  "tree_spec_id": "ts_x", "tree_spec_version": 1, "title": "口径树", "root": "agg",
+  "target": { "kind": "sqlite-snapshot", "id": "ledger-a" },          // Q8：冻结进 canonical
+  "subject": { "repo": "r1", "commit": "c1" },                        // Q8：同上（不校验实况）
+  "engine_version": "0.115.0",                                        // G8：版本 pin（prepare 期与实况不符 → rc2）
+  "nodes": [
+    { "id": "leaf1", "kind": "leaf", "spec_id": "spec_a" },
+    { "id": "agg", "kind": "agg", "op": "all_pass", "children": ["leaf1"] }
+  ]
+}
+```
+
+```bash
+ygl-trees verify tree prepare <material-id> [--pinned leaf1=sha256:…]   # 环/空/深度/算子检查后冻结
+ygl-trees verify tree run <tree-spec-id> --db snap.sqlite [--db node2=…] [--no-archive]
+ygl-trees verify tree report <tree-run-id>     # 五值报告（nodes[] 带 per-node verdict）
+ygl-trees verify tree trace <tree-spec-id>     # 构造追溯
+ygl-trees db snapshot                          # 快照产物（sha256+脱敏来源；B5）
+```
+
+**五值全序**（`report.overall` 叶仍是四值 + `report_verdict`；树面是五值）：
+`NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS`
+- **cap-on-PASS**：任一子 ERROR/INFRA_BLOCKED 只**封顶 PASS**（不降级 FAIL）——`FAIL+ERROR=FAIL`
+- quorum 分母只计 PASS+FAIL；STALE 沿父链传播并阻断 PASS
+- ERROR/NEEDS-MATERIAL 的叶映射为 `INFRA_BLOCKED`（不泄漏进 nodes[].verdict 的 FAIL 语义）
+
+**pinned 叶**（引用已完成 run 的归档，不重跑）：
+- 必须来自**本 workspace 已完成的 run**：`Q13-A` 跨 workspace 拒绝、找不到时点名两条指引 → rc2
+- `Q12-B` 同轮自引用拒绝：归档 created ≥ 本轮 start → rc2（防自证）
+- pinned 报告参与 target/spec_version 比对（Q8/Q9）；缺字段 fail-closed STALE
+
+**常见 tree 报错**：`same-round self-reference`（Q12-B）/ `cross-workspace`（Q13-A）→ rc2；
+`G8: tree spec pins …`（版本不符）→ rc2；`pinned target mismatch` / `spec_version drift` → 该叶 STALE。
 
 ## 3. 检查器七型与 witnesses
 
@@ -225,6 +265,7 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 
 ## 9. 契约速查
 
+- `tree_contract_version`：递归树契约（与 `contract_version` 分开钉）；五值全序+cap-on-PASS 是 v1.2 语义。
 - `contract_version 1.2`：spec/report 形状（1.2 新增「右值可引用列」两形态：同表 `{col}` 列对列 / `count.against` 单值标量；1.1 spec 兼容运行）；`corpus_version 1.2`：黄金语料摘要（44 例）。
 - 报告字段 snake_case；witness 必带 `rows_scanned`/`rows_matched`（或 `compared`）——**没有 witness 的 PASS 不算证据**。
 - 一切写路径事务化；读端点只读；`--json` 失败也是单对象 `{"error": "..."}` + rc 承载类别。
