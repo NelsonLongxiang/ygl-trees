@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -172,12 +172,27 @@ describe.skipIf(!HAS_BIN)("A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS)", ()
     expect(leaf?.verdict).toBe("INFRA_BLOCKED"); // 五值映射
   }, 120_000);
 
+  it("G8: engine_version mismatch → prepare rc2 (runtime validation)", () => {
+    const matDir = join(home, "verify", "materials", "mat_tree_badpin");
+    mkdirSync(matDir, { recursive: true });
+    writeFileSync(join(matDir, "material.txt"), JSON.stringify({
+      tree_spec_id: "ts_badpin", tree_spec_version: 1, title: "bp", root: "leaf",
+      engine_version: "0.999.0",
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
+    }));
+    writeFileSync(join(matDir, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_badpin", title: "bp", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const r = run(["verify", "tree", "prepare", "mat_tree_badpin"], home);
+    expect(r.rc).toBe(2);
+    expect(String(r.j?.error)).toMatch(/G8: tree spec pins engine_version/);
+  }, 120_000);
+
   it("G8: tree spec pins engine/corpus/contract into canonical", () => {
     const matDir = join(home, "verify", "materials", "mat_tree_pin");
     mkdirSync(matDir, { recursive: true });
     writeFileSync(join(matDir, "material.txt"), JSON.stringify({
       tree_spec_id: "ts_pin", tree_spec_version: 1, title: "p", root: "leaf",
-      engine_version: "0.115.0", corpus_version: "1.2", contract_version: "1.2",
+      corpus_version: "1.2", contract_version: "1.2",
       nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
     }));
     writeFileSync(join(matDir, "material.json"),
@@ -185,10 +200,102 @@ describe.skipIf(!HAS_BIN)("A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS)", ()
     const prep = run(["verify", "tree", "prepare", "mat_tree_pin"], home);
     expect(prep.rc, prep.out).toBe(0);
     const spec = JSON.parse(readFileSync(prep.j.path, "utf8"));
-    expect(spec.engine_version).toBe("0.115.0");
     expect(spec.corpus_version).toBe("1.2");
     expect(spec.contract_version).toBe("1.2");
   }, 120_000);
+
+  it("Q12: pinned from a COMPLETED run works; same-round created → rc2", () => {
+    // ① 先跑一次叶 spec（真实 run+archive）→ 拿 archive_sha256
+    const leafRun = run(["verify", "run", "spec_q10", "--db", snap], home);
+    expect(leafRun.rc, leafRun.out).toBe(0);
+    const arcDir = join(home, "verify", "archives");
+    let pinnedSha = "";
+    let regFile = "";
+    for (const f of readdirSync(arcDir)) {
+      if (!f.endsWith(".json")) continue;
+      const reg = JSON.parse(readFileSync(join(arcDir, f), "utf8"));
+      const hit = (reg.archives ?? []).find((a: any) => a?.archive_sha256);
+      if (hit) { pinnedSha = String(hit.archive_sha256); regFile = join(arcDir, f); break; }
+    }
+    expect(pinnedSha, "no archive registry entry after leaf run").toBeTruthy();
+
+    // ② 正常路径：pinned 来自已完成 run → prepare rc0 + run rc0（叶 PASS）
+    const prep = run(["verify", "tree", "prepare", "mat_tree_q10", "--pinned", "leaf=" + pinnedSha], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const okRun = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", snap, "--no-archive"], home);
+    expect(okRun.rc, okRun.out).toBe(0);
+    const leafOk = (okRun.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leafOk?.pinned).toBe(true);
+    expect(leafOk?.verdict).toBe("PASS");
+    expect(leafOk?.report_verdict).toBe("PASS");
+
+    // ③ Q12-B：把归档 created 伪造到未来 → 同轮自引用拒绝（rc2）。
+    //    重新 prepare（canonical 不变）后 run 即命中 created >= roundStarted 检查。
+    const reg = JSON.parse(readFileSync(regFile, "utf8"));
+    for (const a of reg.archives ?? []) a.created = "2099-01-01T00:00:00.000Z";
+    writeFileSync(regFile, JSON.stringify(reg, null, 2));
+    const badRun = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", snap, "--no-archive"], home);
+    expect(badRun.rc, badRun.out).toBe(2);
+    expect(String(badRun.j?.error)).toMatch(/same-round self-reference/);
+  }, 180_000);
+
+  it("Q8: subject enters canonical (repo+commit changes the tree_spec_id)", () => {
+    const mkSubjectTree = (mid: string, subject: any) => {
+      const d = join(home, "verify", "materials", mid);
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, "material.txt"), JSON.stringify({
+        tree_spec_id: "ts_sub", tree_spec_version: 1, title: "s", root: "leaf", subject,
+        nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
+      }));
+      writeFileSync(join(d, "material.json"),
+        JSON.stringify({ material_id: mid, title: "s", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+      return run(["verify", "tree", "prepare", mid], home);
+    };
+    const a = mkSubjectTree("mat_sub_a", { repo: "r1", commit: "c1" });
+    const b = mkSubjectTree("mat_sub_b", { repo: "r1", commit: "c2" });
+    const c = mkSubjectTree("mat_sub_c", { repo: "r1", commit: "c1" });
+    expect(a.rc, a.out).toBe(0);
+    expect(b.rc, b.out).toBe(0);
+    expect(c.rc, c.out).toBe(0);
+    expect(a.j.tree_spec_id).not.toBe(b.j.tree_spec_id); // commit 变 → id 变
+    expect(a.j.tree_spec_id).toBe(c.j.tree_spec_id);     // 同 subject → 幂等
+  }, 180_000);
+
+  it("Q9 pinned: spec_version drift on the archived report → STALE", () => {
+    // 复用 Q12 的归档：pin 一个已完成归档，但 tree 冻结 spec_version=2（归档是 v1）→ STALE
+    // 注意 Q12 测试把 created 伪造到 2099——这里先还原，避免 Q12-B 误拦。
+    const arcDir = join(home, "verify", "archives");
+    let pinnedSha = "";
+    for (const f of readdirSync(arcDir)) {
+      if (!f.endsWith(".json")) continue;
+      const rf = join(arcDir, f);
+      const reg = JSON.parse(readFileSync(rf, "utf8"));
+      for (const a of reg.archives ?? []) {
+        if (String(a.created ?? "") > "2090") a.created = "2026-10-25T00:00:00.000Z";
+      }
+      writeFileSync(rf, JSON.stringify(reg, null, 2));
+      const hit = (reg.archives ?? []).find((a: any) => a?.archive_sha256);
+      if (hit) { pinnedSha = String(hit.archive_sha256); break; }
+    }
+    expect(pinnedSha).toBeTruthy();
+    const d = join(home, "verify", "materials", "mat_tree_pinver");
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "material.txt"), JSON.stringify({
+      tree_spec_id: "ts_pinver", tree_spec_version: 1, title: "pv", root: "leaf",
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10", spec_version: 2 }],
+    }));
+    writeFileSync(join(d, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_pinver", title: "pv", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep = run(["verify", "tree", "prepare", "mat_tree_pinver", "--pinned", "leaf=" + pinnedSha], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const r = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", snap, "--no-archive"], home);
+    expect(r.rc, r.out).toBe(0);
+    const leaf = (r.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leaf?.pinned).toBe(true);
+    expect(leaf?.verdict).toBe("STALE");
+    expect(String(leaf?.stale_reason)).toMatch(/pinned spec_version drift/);
+    expect(leaf?.report_verdict).toBeTruthy(); // 原四值保留
+  }, 180_000);
 
   it("G8: jcsCanonical sorts keys and emits no whitespace", () => {
     expect(jcsCanonical({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');

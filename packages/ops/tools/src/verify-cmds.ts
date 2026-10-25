@@ -287,10 +287,9 @@ export function toTreeVerdict(reportOverall: string): string {
 
 /** A1 五值聚合（契约 v1.2 Q10-B）：全序 NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS。
  *
- *  Q10-B：任一子 ERROR → 父至多 INFRA_BLOCKED（不可能是 PASS/FAIL）。
+ *  算法 = 基础结果（算子+遮蔽序）→ Q10-B cap（只封顶 PASS，不降级 FAIL）。
  *  STALE：沿父链传播、阻断 PASS（不稀释 FAIL——被遮蔽的 FAIL 在 nodes[]/审计可见）。
- *  quorum 分母只计 PASS+FAIL（ERROR/NEUTRALIZED/STALE 不进分母）；
- *  但 Q10-B 的 any-ERROR 规则优先于 quorum 结果。
+ *  quorum 分母只计 PASS+FAIL（ERROR/NEUTRALIZED/STALE 不进分母）。
  *  纯函数，导出以便单测直接钉 5×5 矩阵。 */
 export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
   const vs = verdicts.map((v) => String(v).toUpperCase());
@@ -446,27 +445,29 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       const arcDir = join(p.root, "archives");
       let entryPath = "";
       let entryZip = "";
+      let entryCreated = "";
       try {
         for (const f of readdirSync(arcDir)) {
           if (!f.endsWith(".json")) continue;
           const reg = readJson<any>(join(arcDir, f));
           const hit = (reg?.archives ?? []).find((a: any) => a?.archive_sha256 === pinnedSha);
           if (hit?.path) {
-            // Q12-B：同轮自引用拒绝——pinned 归档必须在本轮 started 之前创建。
-            const created = String(hit.created ?? "");
-            if (created && created >= roundStartedAt) {
-              throw new Error(
-                "pinned " + n.id + ": archive " + pinnedSha + " was created at " + created +
-                " >= this round's start (" + roundStartedAt + ") — same-round self-reference is rejected (Q12-B). " +
-                "Run the child in an earlier round, then pin its archive.",
-              );
-            }
             entryPath = String(hit.path);
             entryZip = String(hit.zip_sha256 ?? "");
+            entryCreated = String(hit.created ?? "");
             break;
           }
         }
       } catch { /* no registry */ }
+      // Q12-B：同轮自引用拒绝——pinned 归档必须在本轮 started 之前创建。
+      // （检查放在 registry 扫描的 try 之外：这里是判定，不是读盘容错。）
+      if (entryPath && entryCreated && entryCreated >= roundStartedAt) {
+        throw new Error(
+          "pinned " + n.id + ": archive " + pinnedSha + " was created at " + entryCreated +
+          " >= this round's start (" + roundStartedAt + ") — same-round self-reference is rejected (Q12-B). " +
+          "Run the child in an earlier round, then pin its archive.",
+        );
+      }
       if (!entryPath) {
         // Q12-B/Q13-A：pinned 必须来自**本 workspace 已完成的 run**。找不到时
         // 不区分「没跑过」和「跨 workspace」，错误文本给两条出处指引。
@@ -626,7 +627,14 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     }
     return 0;
   } catch (e: any) {
-    bad(ctx, "tree run failed: " + (e?.message || e));
+    const msg = String(e?.message || e);
+    // Q12-B/Q13-A 是冻结面用法错误（同轮自引用 / 跨 workspace）→ rc2；
+    // 其余是运行时故障 → rc1。
+    if (/same-round self-reference|Q13-A: cross-workspace/.test(msg)) {
+      bad(ctx, msg);
+      return 2;
+    }
+    bad(ctx, "tree run failed: " + msg);
     return 1;
   }
 }
@@ -1176,6 +1184,26 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (res.error || !res.spec) {
         bad(ctx, "tree spec invalid: " + res.error);
         return 2;
+      }
+      // G8（v1.2 §0）：tree spec 冻结的引擎面必须与实况一致——不一致拒跑（rc2，
+      // 点名字段）。冻结的是「哪套引擎产出的判定」，引擎换了判定不可比。
+      {
+        const actual = {
+          engine_version: String((env as any).version || ""),
+          corpus_version: "1.2",
+          contract_version: "1.2",
+        };
+        const claimed = {
+          engine_version: res.spec.engine_version,
+          corpus_version: res.spec.corpus_version,
+          contract_version: res.spec.contract_version,
+        };
+        for (const k of Object.keys(actual) as Array<keyof typeof actual>) {
+          if (claimed[k] !== undefined && String(claimed[k]) !== actual[k]) {
+            bad(ctx, `G8: tree spec pins ${k}=${claimed[k]} but this engine is ${actual[k]} — engine/pin mismatch, refusing (re-prepare with matching versions or drop the pin)`);
+            return 2;
+          }
+        }
       }
       // §3.1 pinned = node exists + archive signature checks (#60): resolve the
       // archive through the workspace registry and run the same verifier as

@@ -70,7 +70,7 @@
       "probe": "待裁定后落码",
       "evidence": "v1.2 draft §1",
       "test": "packages/ops/tools/tests/verify-q10.spec.ts",
-      "test_title": "V22: leaf target mismatch"
+      "test_title": "Q8: target frozen in tree spec enters canonical"
     },
     {
       "id": "Q9",
@@ -79,7 +79,7 @@
       "probe": "待裁定后落码",
       "evidence": "v1.2 draft §2",
       "test": "packages/ops/tools/tests/verify-q10.spec.ts",
-      "test_title": "V22: leaf target mismatch"
+      "test_title": "Q9: leaf spec_version drift vs frozen tree version"
     },
     {
       "id": "Q10",
@@ -103,9 +103,10 @@
       "id": "Q12",
       "assertion": "V17 移 run 期：pinned 必须来自已完成 run",
       "source": "v1.2 Q12",
-      "planned": true,
       "probe": "待裁定后落码",
-      "evidence": "v1.2 draft §6"
+      "evidence": "v1.2 draft §6",
+      "test": "packages/ops/tools/tests/verify-q10.spec.ts",
+      "test_title": "Q12: pinned from a COMPLETED run"
     },
     {
       "id": "Q13",
@@ -123,7 +124,7 @@
       "probe": "待裁定后落码",
       "evidence": "v1.2 draft §8",
       "test": "packages/ops/tools/tests/verify-q10.spec.ts",
-      "test_title": "G8: jcsCanonical"
+      "test_title": "G8: engine_version mismatch"
     },
     {
       "id": "V1",
@@ -173,7 +174,7 @@
     },
     {
       "id": "V15",
-      "assertion": "四态聚合矩阵",
+      "assertion": "五值 5×5 聚合矩阵（全序 + cap-on-PASS）",
       "source": "V15",
       "test": "packages/ops/tools/tests/verify-tree.spec.ts",
       "test_title": "aggregate ",
