@@ -15,7 +15,7 @@
  */
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
-import { TreeStore } from "./reads";
+import { AsyncTreeStore } from "./async-store";
 import { ok, bad, out, head, table, show, paint, C, ack, warn } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { getOrm } from "../../../core/database/src/orm";
@@ -31,9 +31,9 @@ import { clip, nowIso, shortId } from "../../../core/text/src/text";
 // direct-032bf3b4 (require-in-catch silently dies under ESM hosts).
 import { emitEvent } from "../../../core/text/src/eventbus";
 
-export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
+export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
   const { ctx, db } = env;
-  const trees = new TreeStore(db);
+  const trees = new AsyncTreeStore(db);
 
   // 0.83 (user report ①): --tree long alias alongside -t — pointer-hijack
   // pinning needs an ergonomic, self-documenting form. EXCEPTION: `node
@@ -55,8 +55,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return getOrm(env.db.path)
       .then(fn)
       .then(print)
-      .catch((e: any): number => {
-        bad(ctx, enrichNodeNotFound(e?.message || String(e)));
+      .catch(async (e: any): Promise<number> => {
+        bad(ctx, await enrichNodeNotFound(e?.message || String(e)));
         return 1;
       });
   }
@@ -91,14 +91,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   /** Report ③ enrichment: "node not found: X" earned a cross-tree lookup —
    *  if a parallel session flipped current_tree, the key usually exists in
    *  another tree; name it instead of making the user blind-list. */
-  function enrichNodeNotFound(msg: string): string {
+  async function enrichNodeNotFound(msg: string): Promise<string> {
     // 0.104.0 (batch nine P1): link failures name the missing endpoint as
     // parent/child, not node — same blind alley, same enrichment. Edges stay
     // single-tree, so for those the hint must not suggest pinning the other
     // tree: it says how to fix the write instead.
     const m = /^(node|parent|child) not found: (.+)$/.exec(msg);
     if (!m) return msg;
-    const others = trees.nodeInOtherTrees(m[2], tid);
+    const others = await trees.nodeInOtherTrees(m[2], tid);
     if (others.length) {
       const names = others.map((o: any) => `'${o.tree}'`).join(", ");
       if (m[1] === "node") {
@@ -148,7 +148,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       });
     }
     if (sub === "list") {
-      table(ctx, trees.treeList(), ["tree", "note", "nodes", "edges", "dirty", "created"], [
+      table(ctx, await trees.treeList(), ["tree", "note", "nodes", "edges", "dirty", "created"], [
         "name",
         "note",
         "nodes",
@@ -160,9 +160,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     if (sub === "show") {
       // R16.1: selection annotation on the read path (additive JSON field).
-      const selT = trees.treeSelection(flagStr("tree") || flagStr("t") || name);
-      let t: any = selT.name ? trees.treeByName(selT.name) : null;
-      if (!t && name) t = trees.treeByName(name);
+      const selT = await trees.treeSelection(flagStr("tree") || flagStr("t") || name);
+      let t: any = selT.name ? await trees.treeByName(selT.name) : null;
+      if (!t && name) t = await trees.treeByName(name);
       if (!t) {
         bad(ctx, `tree not found: ${selT.name || name || "(none selected)"}`);
         return 1;
@@ -190,7 +190,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     if (sub === "use") {
-      const t = trees.treeByName(name);
+      const t = await trees.treeByName(name);
       if (!t) {
         bad(ctx, `tree not found: ${name}`);
         return 1;
@@ -238,7 +238,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // earns an explicit "ignored" notice instead of silent misdirection.
   let positionalTree: any;
   if (env.group === "node" && (action === "list" || action === undefined) && !sel && rest[0]) {
-    positionalTree = trees.treeByName(rest[0]);
+    positionalTree = await trees.treeByName(rest[0]);
     if (positionalTree) rest = rest.slice(1);
     else if (!ctx.json) {
       out(ctx, paint(C.yellow, `  ! "${rest[0]}" is not a tree — showing current tree (use -t <tree> to switch)`, ctx.color));
@@ -297,7 +297,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return (async (): Promise<number> => {
       const rows: any[] = [];
       for (const d of due) {
-        const ctxPkg = trees.evalContext(d.tree_id, d.node, {}, ctxName);
+        const ctxPkg = await trees.evalContext(d.tree_id, d.node, {}, ctxName);
         const q =
           d.op === "eval-choice" ? { type: "choice" as const, question: d.question, options: d.envelope.options || {}, answer: d.envelope.answer || "" }
           : d.op === "eval-score" ? { type: "score" as const, question: d.question, levels: d.envelope.levels || [], min: d.envelope.min ?? 0 }
@@ -336,7 +336,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     const all = db.all("SELECT id, name FROM trees ORDER BY created") as any[];
     const per: any[] = [];
     for (const t of all) {
-      const rows = trees.ready(t.id, ctxName, state);
+      const rows = await trees.ready(t.id, ctxName, state);
       if (rows.length) per.push({ tree: t.name, ready: rows });
     }
     if (ctx.json) {
@@ -353,7 +353,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
   let tree: any;
   try {
-    tree = positionalTree || trees.treeResolve(sel);
+    tree = positionalTree || await trees.treeResolve(sel);
   } catch (e: any) {
     bad(ctx, e.message);
     return 1;
@@ -518,7 +518,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       if (!name) {
-        table(ctx, trees.condList(tid, k), ["id", "name", "kind", "op", "value", "必检", "effect"], [
+        table(ctx, await trees.condList(tid, k), ["id", "name", "kind", "op", "value", "必检", "effect"], [
           "id",
           "name",
           "kind",
@@ -643,18 +643,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const judgeOne = async (k: string): Promise<any> => {
         let r: any;
         try {
-          r = trees.canUnlock(tid, k, ctxName, stateFor(k));
+          r = await trees.canUnlock(tid, k, ctxName, stateFor(k));
         } catch (e: any) {
-          return { key: k, error: enrichNodeNotFound(e?.message || String(e)) };
+          return { key: k, error: await enrichNodeNotFound(e?.message || String(e)) };
         }
         const state = stateFor(k);
         const evalConds = flagBool("eval")
-          ? trees.condList(tid, k).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
+          ? (await trees.condList(tid, k)).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
           : [];
         if (!evalConds.length) return r;
         // R8: decision-model evaluation for op=eval conditions.
         // Offline-safe: no token / network failure → pending (rc=0).
-        const contextPkg = trees.evalContext(tid, k, state, ctxName);
+        const contextPkg = await trees.evalContext(tid, k, state, ctxName);
         const evaluated: any[] = [];
         let usageIn = 0, usageOut = 0; // R10.4: token spend per run
         for (const c of evalConds) {
@@ -821,7 +821,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const ctxName = flagStr("context", "default");
       if (!flagBool("eval")) {
-        const rows = trees.ready(tid, ctxName, state);
+        const rows = await trees.ready(tid, ctxName, state);
         if (ctx.json) {
           console.log(JSON.stringify(rows, null, 2));
           return 0;
@@ -833,8 +833,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // --eval: nodes blocked ONLY by eval gates get one multi-question
       // decision-model request each (protocol-native batching). Offline or
       // gray answers land in eval_pending — never a failure.
-      const rows = trees.ready(tid, ctxName, state);
-      const candidates = trees.evalCandidates(tid, ctxName, state);
+      const rows = await trees.ready(tid, ctxName, state);
+      const candidates = await trees.evalCandidates(tid, ctxName, state);
       if (!candidates.length) {
         if (ctx.json) console.log(JSON.stringify({ ready: rows, eval_pending: [] }, null, 2));
         else {
@@ -855,7 +855,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const evalPending: any[] = [];
         let usageIn = 0, usageOut = 0; // R10.4
         for (const cand of candidates) {
-          const ctxPkg = trees.evalContext(tid, cand.key, state, ctxName);
+          const ctxPkg = await trees.evalContext(tid, cand.key, state, ctxName);
           // 0.27: mixed question types ride ONE request per node (protocol native)
           const res = await evalMixed(
             ctxPkg,
@@ -933,9 +933,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       let p: any;
       try {
-        p = trees.pathTo(tid, key, flagStr("context", "default"));
+        p = await trees.pathTo(tid, key, flagStr("context", "default"));
       } catch (e: any) {
-        bad(ctx, enrichNodeNotFound(e?.message || String(e)));
+        bad(ctx, await enrichNodeNotFound(e?.message || String(e)));
         return 1;
       }
       if (ctx.json) {
@@ -949,7 +949,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "parents") {
-      table(ctx, trees.parents(tid, key), ["parent", "name", "rel", "mode", "必检", "level"], [
+      table(ctx, await trees.parents(tid, key), ["parent", "name", "rel", "mode", "必检", "level"], [
         "key",
         "name",
         "rel",
@@ -961,7 +961,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "children") {
-      table(ctx, trees.children(tid, key), ["child", "name", "rel", "mode", "必检", "level"], [
+      table(ctx, await trees.children(tid, key), ["child", "name", "rel", "mode", "必检", "level"], [
         "key",
         "name",
         "rel",
@@ -973,12 +973,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "ancestors") {
-      table(ctx, trees.ancestors(tid, key), ["ancestor", "name", "depth"], ["key", "name", "depth"]);
+      table(ctx, await trees.ancestors(tid, key), ["ancestor", "name", "depth"], ["key", "name", "depth"]);
       return 0;
     }
 
     if (sub === "descendants") {
-      table(ctx, trees.descendants(tid, key), ["descendant", "name", "depth"], ["key", "name", "depth"]);
+      table(ctx, await trees.descendants(tid, key), ["descendant", "name", "depth"], ["key", "name", "depth"]);
       return 0;
     }
 
@@ -993,7 +993,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 2;
         }
       }
-      table(ctx, trees.nodeList(tid), ["key", "name", "kind", "tier", "cost", "状态", "必检父", "子节点"], [
+      table(ctx, await trees.nodeList(tid), ["key", "name", "kind", "tier", "cost", "状态", "必检父", "子节点"], [
         "key",
         "name",
         "kind",
@@ -1008,22 +1008,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     if (sub === "search") {
       const q = rest.join(" ");
-      table(ctx, trees.nodeSearch(tid, q), ["key", "name", "tier", "matched"], ["key", "name", "tier", "matched"]);
+      table(ctx, await trees.nodeSearch(tid, q), ["key", "name", "tier", "matched"], ["key", "name", "tier", "matched"]);
       return 0;
     }
 
     if (sub === "show") {
-      const n = trees.nodeGet(tid, key);
+      const n = await trees.nodeGet(tid, key);
       if (!n) {
-        bad(ctx, enrichNodeNotFound(`node not found: ${key}`));
+        bad(ctx, await enrichNodeNotFound(`node not found: ${key}`));
         return 1;
       }
-      const st = trees.nodeStateOf(tid, key);
+      const st = await trees.nodeStateOf(tid, key);
       if (ctx.json) {
         console.log(JSON.stringify({
           node: { ...n, state: st.state, unlocked_at: st.unlocked_at },
-          parents: trees.parents(tid, key),
-          conditions: trees.condList(tid, key),
+          parents: await trees.parents(tid, key),
+          conditions: await trees.condList(tid, key),
         }, null, 2));
         return 0;
       }
@@ -1034,16 +1034,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         tags: n.tags || "-",
         状态: st.state === "unlocked" ? `已解锁${st.unlocked_at ? " @ " + st.unlocked_at : ""}` : st.state,
       });
-      const ps = trees.parents(tid, key);
+      const ps = await trees.parents(tid, key);
       out(ctx, paint(C.bold, "\n  父节点 / 关联", ctx.color));
       if (!ps.length) out(ctx, paint(C.dim, "    (root)", ctx.color));
       for (const p of ps)
         out(ctx, `    ${p.key}  ${paint(C.dim, `${p.rel}/${p.mode} ${p.required ? "必检" : "可选"}`, ctx.color)}`);
-      const cs = trees.children(tid, key);
+      const cs = await trees.children(tid, key);
       out(ctx, paint(C.bold, "  子节点", ctx.color));
       if (!cs.length) out(ctx, paint(C.dim, "    (leaf)", ctx.color));
       for (const c of cs) out(ctx, `    ${c.key}  ${paint(C.dim, `${c.rel}/${c.mode} ${c.required ? "必检" : "可选"}`, ctx.color)}`);
-      const cd = trees.condList(tid, key);
+      const cd = await trees.condList(tid, key);
       if (cd.length) {
         out(ctx, paint(C.bold, "  条件", ctx.color));
         for (const c of cd) out(ctx, `    ${c.name} ${c.op} ${c.value}  ${paint(C.dim, `${c.required ? "必检" : "可选"}/${c.effect}`, ctx.color)}`);
@@ -1065,7 +1065,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "validate") {
-      const issues = trees.validate(tid);
+      const issues = await trees.validate(tid);
       if (ctx.json) {
         console.log(JSON.stringify({ issues }, null, 2));
         return issues.length ? 1 : 0;
@@ -1080,7 +1080,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     if (sub === "export") {
-      const data = trees.exportTree(tid);
+      const data = (await trees.exportTree(tid)) as any;
       const dest = flagStr("out");
       if (dest) {
         fs.writeFileSync(dest, JSON.stringify(data, null, 2), "utf8");

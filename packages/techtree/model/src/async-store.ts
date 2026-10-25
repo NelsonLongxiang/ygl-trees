@@ -60,6 +60,22 @@ export class AsyncTreeStore {
 
   // ================================================================ reads (delegate)
 
+  async treeList(): Promise<Row[]> { return this.sync.treeList(); }
+  async treeSelection(name?: string): Promise<{ name: string | null; source: string }> { return this.sync.treeSelection(name); }
+  async nodeGet(treeId: string, keyOrId: string): Promise<Row | null> { return this.sync.nodeGet(treeId, keyOrId); }
+  async nodeInOtherTrees(keyOrId: string, excludeTreeId: string): Promise<{ tree: string; key: string }[]> { return this.sync.nodeInOtherTrees(keyOrId, excludeTreeId); }
+  async nodeStateOf(treeId: string, keyOrId: string, context?: string): Promise<{ state: string; unlocked_at: string | null }> { return this.sync.nodeStateOf(treeId, keyOrId, context); }
+  async parents(treeId: string, keyOrId: string): Promise<Row[]> { return this.sync.parents(treeId, keyOrId); }
+  async children(treeId: string, keyOrId: string): Promise<Row[]> { return this.sync.children(treeId, keyOrId); }
+  async ancestors(treeId: string, keyOrId: string, depth?: number): Promise<Row[]> { return this.sync.ancestors(treeId, keyOrId, depth); }
+  async descendants(treeId: string, keyOrId: string): Promise<Row[]> { return this.sync.descendants(treeId, keyOrId); }
+  async condList(treeId: string, keyOrId: string): Promise<Row[]> { return this.sync.condList(treeId, keyOrId); }
+  async evalContext(treeId: string, keyOrId: string, stateBag: Record<string, any>, context?: string): Promise<Row> { return this.sync.evalContext(treeId, keyOrId, stateBag, context); }
+  async evalCandidates(treeId: string, context?: string, state?: Record<string, any>): Promise<Row[]> { return this.sync.evalCandidates(treeId, context, state); }
+  async nodeSearch(treeId: string, q: string, limit?: number): Promise<Row[]> { return this.sync.nodeSearch(treeId, q, limit); }
+  async pathTo(treeId: string, targetKey: string, context?: string): Promise<{ order: string[]; total_cost: number }> { return this.sync.pathTo(treeId, targetKey, context); }
+  async validate(treeId: string): Promise<string[]> { return this.sync.validate(treeId); }
+
   async nodeList(treeId: string, context?: string): Promise<Row[]> {
     return this.sync.nodeList(treeId, context);
   }
