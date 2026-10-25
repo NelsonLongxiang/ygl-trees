@@ -22,6 +22,10 @@ A1 递归验证器 v1.2 Phase 2 收口（两席签注）+ B1 读路径异步化 
 - 调用面全净（`env.store` 同步消费 0）；#77 五处列名对照 schema v12；#78 queryDone/query done JSON
 - `docs/pg-compat-drift.md` 行为漂移登记册建册
 
+### #72 根修（0.115.0 随版）
+- demo 5j2 预测声明改**运行时** `date -d +30d`（GNU/BSD 跨平台）——不再硬编码可过期日期；
+  demo rc=0 且预测恒为 pending（`5760fed`）
+
 ### MCP 面（0.114.31 起的延续）
 - 4 工具（read/write/verify/doctor）domain×action 路由 + HTTP 传输 + 技能 MCP 对照
 
@@ -34,7 +38,7 @@ A1 递归验证器 v1.2 Phase 2 收口（两席签注）+ B1 读路径异步化 
 
 收口版：全部在途修复 + MCP 4 工具收敛 + HTTP 传输 + #75 计数根除（reopen 单 npm 复检版）。
 
-- **含 0.114.28–30 全部修复**：#69 lint 编码 / #70 webui 幂等 / #71 README 冲突标记 / #72 demo 日期 / #75 计数漂移
+- **含 0.114.28–30 全部修复**：#69 lint 编码 / #70 webui 幂等 / #71 README 冲突标记 / #72 cond --due 日期（5j2 根修随 0.115.0）/ #75 计数漂移
 - **MCP 11→4 收敛**（属主裁定「少工具、富参数」一步到位）：`read/write/verify/doctor` domain×action 路由——
   覆盖面 ~35%→~80%；工具名去 `ygl_` 前缀（市场网关自动加 `ygl__`）
 - **MCP HTTP 传输**：`--http --port <N>` StreamableHTTP stateless（taste-mcp 市场契约：POST /mcp，GET 405）；
@@ -43,9 +47,9 @@ A1 递归验证器 v1.2 Phase 2 收口（两席签注）+ B1 读路径异步化 
   （A 物理排除/B 破坏性写/C 路由缺口）
 - **#75 根除**：`readme:count` 脚本自动写 README 计数（单一事实源=vitest 测量值）；readme:verify 门禁
   POSIX sed 兼容 + total 口径 + pack:check 路径默认开
-- **#72 收口说明**：demo 5j2 曾因预测声明硬编码过期日期（`2026-10-24`）导致 audit 显示已结算而非
-  pending；本版已改为运行时 `date -d +30d` 参数化（demo rc0 验证），**非 flake**（旧措辞订正：
-  日历硬编码缺陷，已随本版修复）
+- **#72 说明**：demo 5j2 曾因预测声明硬编码过期日期（`2026-10-24`）导致 audit 显示已结算而非
+  pending；5j2 的根修（运行时 `date -d +30d` 参数化）在 **v0.115.0**（commit `5760fed`），
+  不在本版——本版只含 `cond --due` 的日期修正。**非 flake**（旧措辞订正：日历硬编码缺陷）
 - 测试：mcp-write 7 + mcp-http 5 = 12/12 新增；unit 984；contract 144
 
 ## 0.114.29

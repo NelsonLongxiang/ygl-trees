@@ -111,6 +111,27 @@ describe("#77 async facade column parity + #78 rc contracts", () => {
     db.close();
   }, 60_000);
 
+  it("#77-3: timeline parity — AsyncDbCmds vs db timeline CLI (shape + filters)", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const dbc = new AsyncDbCmds(db);
+    const facade = await dbc.timeline(7);
+    const cliRaw = run(["db", "timeline"]);
+    expect(cliRaw.rc, cliRaw.out).toBe(0);
+    const cliRows = cliRaw.j?.timeline ?? [];
+    if (facade.length || cliRows.length) {
+      const fCols = Object.keys(facade[0] ?? {}).sort().join(",");
+      const cCols = Object.keys(cliRows[0] ?? {}).sort().join(",");
+      expect(fCols).toBe(cCols);
+      const fDays = new Set(facade.map((r: any) => r.day));
+      for (const r of cliRows) if (fDays.size) expect(fDays.has(r.day)).toBe(true);
+    }
+    const none = await dbc.timeline(7, { actor: "no-such-actor" });
+    expect(none).toEqual([]);
+    const sess = await dbc.timeline(7, { session: "b1-face" });
+    expect(Array.isArray(sess)).toBe(true);
+    db.close();
+  }, 60_000);
+
   it("#77③: sync delegation fails closed on a non-sqlite dialect", async () => {
     const { SqliteAsyncDb, assertSyncDelegationAllowed } = await import("../../../core/database/src/asyncdb");
     const db = new DB(join(home, "ygl-trees.db"));
@@ -121,27 +142,73 @@ describe("#77 async facade column parity + #78 rc contracts", () => {
     db.close();
   }, 30_000);
 
-  it("#77-2: AsyncTreeStore facade — every declared read method resolves", async () => {
+  it("#77-2: AsyncTreeStore facade — ALL 28 declared methods resolve (full surface)", async () => {
     const db = new DB(join(home, "ygl-trees.db"));
     const ts = new AsyncTreeStore(db);
-    await expect(ts.treeList()).resolves.toBeInstanceOf(Array);
-    await expect(ts.treeByName("nope")).resolves.toBeNull();
-    await expect(ts.trees()).resolves.toBeInstanceOf(Array);
-    // 无树时 treeResolve 抛「no tree selected」——断言拒绝而不是静默空
-    await expect(ts.treeResolve()).rejects.toThrow(/no tree selected|tree not found/);
-    await expect(ts.query("SELECT 1 AS one")).resolves.toBeInstanceOf(Array);
+    // 先建一棵最小树：t1 → n1(parent) → n2(child, prereq 边) + 一条条件
+    const now = new Date().toISOString();
+    db.run("INSERT INTO trees(id,name,note,created) VALUES('t1','t1','',?)", [now]);
+    db.run("INSERT INTO nodes(id,tree_id,key,name,tier,created) VALUES('n1','t1','k1','节点一',1,?)", [now]);
+    db.run("INSERT INTO nodes(id,tree_id,key,name,tier,created) VALUES('n2','t1','k2','节点二',2,?)", [now]);
+    db.run("INSERT INTO node_edges(id,tree_id,parent_id,child_id,rel,mode) VALUES('e1','t1','n1','n2','unlock','AND')");
+    db.run("INSERT INTO node_conditions(id,node_id,name,kind,expr,op,value) VALUES('c1','n2','条件一','expr','1=1','>=','1')");
+    const rid = (rows) => Array.isArray(rows);
+    // 全 28 个方法逐一调用（无树参数的用 t1/known-id；error 路径用 rejects）
+    expect(rid(await ts.treeList())).toBe(true);                       // 1
+    expect(rid(await ts.trees())).toBe(true);                          // 2
+    expect(rid(await ts.nodesOfTree("t1"))).toBe(true);                // 3
+    expect(rid(await ts.edgesOf("t1"))).toBe(true);                    // 4
+    expect(rid(await ts.conditionsOf("t1", "k2"))).toBe(true);          // 5 监督席点名
+    expect(await ts.treeByName("t1")).toBeTruthy();                    // 6
+    expect(await ts.treeByName("nope")).toBeNull();                    // 7
+    expect(await ts.treeSelection()).toBeTruthy();                      // 8
+    expect(await ts.nodeGet("t1", "k1")).toBeTruthy();                  // 9
+    expect(await ts.nodeByKey("t1", "k1")).toBeTruthy();               // 10
+    expect(rid(await ts.nodeInOtherTrees("k1", "t1"))).toBe(true);     // 11
+    expect(await ts.nodeStateOf("t1", "k1")).toBeTruthy();             // 12
+    expect(rid(await ts.parents("t1", "k2"))).toBe(true);              // 13
+    expect(rid(await ts.children("t1", "k1"))).toBe(true);             // 14
+    expect(rid(await ts.ancestors("t1", "k2"))).toBe(true);            // 15
+    expect(rid(await ts.descendants("t1", "k1"))).toBe(true);          // 16
+    expect(rid(await ts.condList("t1", "k2"))).toBe(true);             // 17
+    expect(await ts.evalContext("t1", "k2", {})).toBeTruthy();         // 18
+    expect(rid(await ts.evalCandidates("t1"))).toBe(true);             // 19
+    expect(await ts.pathTo("t1", "k2")).toBeTruthy();                  // 20
+    expect(rid(await ts.validate("t1"))).toBe(true);                   // 21
+    expect(rid(await ts.nodeList("t1"))).toBe(true);                   // 22
+    expect(await ts.canUnlock("t1", "k2")).toBeTruthy();               // 23
+    expect(await ts.ready("t1", "k2")).toBeTruthy();                   // 24
+    expect(typeof (await ts.exportTree("t1"))).toBeTruthy();           // 25
+    expect(rid(await ts.query("SELECT 1 AS one"))).toBe(true);         // 26
+    expect(await ts.queryOne("SELECT 1 AS one")).toBeTruthy();         // 27
+    expect(await ts.treeResolve()).toBeTruthy();                     // 28（有 t1 时解析为它）
     db.close();
-  }, 30_000);
+  }, 60_000);
 
-  it("#77-2: AsyncResearchStore facade — every declared read method resolves", async () => {
+  it("#77-2: AsyncResearchStore facade — ALL 19 declared methods resolve (full surface)", async () => {
     const db = new DB(join(home, "ygl-trees.db"));
     const rs = new AsyncResearchStore(db);
-    await expect(rs.projectList()).resolves.toBeInstanceOf(Array);
-    await expect(rs.projectByName("nope")).resolves.toBeNull();
-    await expect(rs.tail(5)).resolves.toBeInstanceOf(Array);
-    await expect(rs.skillList()).resolves.toBeInstanceOf(Array);
-    await expect(rs.stats()).resolves.toBeTruthy();
-    await expect(rs.query("SELECT 1 AS one")).resolves.toBeInstanceOf(Array);
+    const rid = (rows) => Array.isArray(rows);
+    expect(rid(await rs.projectList())).toBe(true);                    // 1
+    expect(await rs.projectByName("p1")).toBeTruthy();                 // 2
+    expect(await rs.projectByName("nope")).toBeNull();                 // 3
+    expect(await rs.projectResolve("p1")).toBeTruthy();                // 4
+    expect(rid(await rs.queryList("p1"))).toBe(true);                  // 5
+    expect(rid(await rs.sourceList("p1"))).toBe(true);                 // 6
+    expect(rid(await rs.sourceSearch("p1", "B1面源"))).toBe(true);     // 7
+    expect(await rs.sourceGet("nope")).toBeNull();                     // 8
+    expect(rid(await rs.evidenceList("p1"))).toBe(true);               // 9
+    expect(rid(await rs.claimList("p1"))).toBe(true);                  // 10
+    expect(rid(await rs.artifactList("p1"))).toBe(true);               // 11
+    expect(await rs.artifactGet("nope")).toBeNull();                   // 12
+    expect(rid(await rs.skillList())).toBe(true);                      // 13
+    expect(await rs.skillGet("nope")).toBeNull();                      // 14
+    expect(rid(await rs.skillMatch("任意"))).toBe(true);                // 15
+    expect(rid(await rs.tail(5))).toBe(true);                          // 16
+    expect(await rs.stats()).toBeTruthy();                             // 17
+    expect(rid(await rs.query("SELECT 1 AS one"))).toBe(true);         // 18
+    expect(await rs.queryOne("SELECT 1 AS one")).toBeTruthy();         // 19
+    // queryDone 是写方法（第 19 面之外的 20 号）——b1-facade 首例已覆盖
     db.close();
-  }, 30_000);
+  }, 60_000);
 });

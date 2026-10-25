@@ -147,4 +147,80 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
     expect((r.stdout || "") + (r.stderr || "")).toMatch(/silent rehash|chain break/);
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }, 180_000);
+
+  // ── 监督席 r37 五复现：修复前这些全部漏检 ──
+  const mkRepo = (files: Record<string, string>) => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    const root = mkdtempSync(join(tmpdir(), "ygl-repro-"));
+    const git = (cmd: string) => execSync(`git ${cmd}`, { cwd: root, encoding: "utf8" });
+    git("init -q"); git("config user.email t@t"); git("config user.name t");
+    for (const [rel, content] of Object.entries(files)) {
+      const full = join(root, rel);
+      mkdirSync(require("node:path").dirname(full), { recursive: true });
+      writeFileSync(full, content);
+    }
+    return { root, git };
+  };
+  const shaOf = (root: string, rel: string) =>
+    require("node:crypto").createHash("sha256").update(readFileSync(join(root, rel))).digest("hex");
+  const audit = (root: string) =>
+    spawnSync(process.execPath, [SCRIPT, "--audit", ...(process.env.REPRO_AGAINST ? ["--against-git"] : [])], {
+      encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 120_000,
+    });
+
+  it("#37 repro 1: silent single post-genesis change (file+sha aligned, no record) → rc1", () => {
+    const { root, git } = mkRepo({ "scripts/p.mjs": "v1" + String.fromCharCode(10) });
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "verify"), { recursive: true });
+    const s1 = shaOf(root, "scripts/p.mjs");
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [], tooling: [{ path: "scripts/p.mjs", role: "gate", sha256: s1 }],
+      reregistrations: [{ path: "scripts/p.mjs", old_sha256: "0".repeat(64), new_sha256: s1, reason: "genesis", actor: "t", at: "2026-10-24T00:00:00.000Z" }],
+    }, null, 2));
+    git("add -A"); git("commit -q -m genesis");
+    writeFileSync(join(root, "scripts", "p.mjs"), "v2" + String.fromCharCode(10));
+    const s2 = shaOf(root, "scripts/p.mjs");
+    const idx = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+    idx.tooling[0].sha256 = s2;
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+    git("add -A"); git("commit -q -m silent");
+    process.env.REPRO_AGAINST = "1";
+    const r = audit(root);
+    delete process.env.REPRO_AGAINST;
+    expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
+    expect((r.stdout || "") + (r.stderr || "")).toMatch(/silent rehash|chain break/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 180_000);
+
+  it("#37 repro 3: cleared reregistrations (tooling non-empty) → rc1", () => {
+    const root = mkdtempSync(join(tmpdir(), "ygl-repro3-"));
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "verify"), { recursive: true });
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [], tooling: [{ path: "x", role: "gate", sha256: "a".repeat(64) }],
+      reregistrations: [],
+    }, null, 2));
+    const r = audit(root);
+    expect(r.status).toBe(1);
+    expect((r.stdout || "") + (r.stderr || "")).toMatch(/ledger cleared|unverifiable/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 60_000);
+
+  it("#37 repro 4: time reversal within a path → rc1", () => {
+    const root = mkdtempSync(join(tmpdir(), "ygl-repro4-"));
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "verify"), { recursive: true });
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [], tooling: [{ path: "x", role: "gate", sha256: "b".repeat(64) }],
+      reregistrations: [
+        { path: "x", old_sha256: "0".repeat(64), new_sha256: "1".repeat(64), reason: "a", actor: "t", at: "2026-10-24T05:00:00.000Z" },
+        { path: "x", old_sha256: "1".repeat(64), new_sha256: "b".repeat(64), reason: "b", actor: "t", at: "2026-10-24T01:00:00.000Z" },
+      ],
+    }, null, 2));
+    const r = audit(root);
+    expect(r.status).toBe(1);
+    expect((r.stdout || "") + (r.stderr || "")).toMatch(/time reversal|chain break/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 60_000);
 });

@@ -70,8 +70,12 @@ export class AsyncDbCmds {
    *  日粒度用 substr(ts,1,10)（SQLite 与 PG 都支持；ISO-8601 前缀即日期）。
    *  #77③：输出形状与 `db timeline` 对齐（day/events/projects/sources/claims/kb/nodes），
    *  不再是 (day,kind,n) 的原始分组——两处口径必须一致。 */
-  async timeline(days: number): Promise<Row[]> {
+  async timeline(days: number, filters: { actor?: string; session?: string } = {}): Promise<Row[]> {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const conds = ["ts >= ?"];
+    const params: unknown[] = [cutoff];
+    if (filters.actor) { conds.push("actor = ?"); params.push(filters.actor); }
+    if (filters.session) { conds.push("payload LIKE ?"); params.push(`%"session":"${filters.session}"%`); }
     return this.adb.all(
       `SELECT substr(ts,1,10) AS day, COUNT(*) AS events,
          SUM(CASE WHEN kind LIKE 'project%' THEN 1 ELSE 0 END) AS projects,
@@ -79,8 +83,8 @@ export class AsyncDbCmds {
          SUM(CASE WHEN kind LIKE 'claim%' THEN 1 ELSE 0 END) AS claims,
          SUM(CASE WHEN kind LIKE 'kb%' THEN 1 ELSE 0 END) AS kb,
          SUM(CASE WHEN kind LIKE 'node%' THEN 1 ELSE 0 END) AS nodes
-         FROM events WHERE ts >= ? GROUP BY substr(ts,1,10) ORDER BY day`,
-      [cutoff],
+         FROM events WHERE ${conds.join(" AND ")} GROUP BY substr(ts,1,10) ORDER BY day`,
+      params,
     );
   }
 
