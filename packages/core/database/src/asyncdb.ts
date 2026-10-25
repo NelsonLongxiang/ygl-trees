@@ -15,6 +15,8 @@
 import type { DB } from "./db";
 
 export interface AsyncDb {
+  /** #77③: dialect marker — sync delegation is only valid on "sqlite". */
+  readonly dialect: "sqlite" | "pg";
   /** Single-row read; null when no match (same contract as DB.get). */
   get(sql: string, params?: unknown[]): Promise<Record<string, any> | null>;
   /** Multi-row read; empty array when no match (same contract as DB.all). */
@@ -24,6 +26,7 @@ export interface AsyncDb {
 /** SQLite adapter: wraps the sync DB in Promises (zero overhead — the
  *  underlying call is still synchronous, microtask hop only). */
 export class SqliteAsyncDb implements AsyncDb {
+  readonly dialect = "sqlite" as const;
   constructor(private readonly db: DB) {}
 
   async get(sql: string, params: unknown[] = []): Promise<Record<string, any> | null> {
@@ -39,4 +42,17 @@ export class SqliteAsyncDb implements AsyncDb {
  *  PG mode (B2+) will return a PgAsyncDb here instead — same interface. */
 export function getAsyncDb(db: DB): AsyncDb {
   return new SqliteAsyncDb(db);
+}
+
+/** #77③: sync delegation is only sound on a synchronous backend (SQLite).
+ *  A PG-backed facade has no sync face — calling the legacy sync Store against
+ *  it would either lie (fail late, deep in a query) or block the event loop
+ *  waiting on a socket. Fail closed at the boundary with a named error. */
+export function assertSyncDelegationAllowed(adb: AsyncDb, where: string): void {
+  if (adb.dialect !== "sqlite") {
+    throw new Error(
+      `${where}: sync delegation requires the sqlite dialect; this facade is ${adb.dialect}. ` +
+      `Call the async method instead — the sync Store path cannot reach a PG backend (B4).`,
+    );
+  }
 }

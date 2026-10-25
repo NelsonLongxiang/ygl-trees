@@ -21,8 +21,13 @@ export class AsyncDbCmds {
   }
 
   // ================================================================ stats
-  async stats(): Promise<{ counts: Record<string, number>; file: string }> {
-    const tables = ["projects", "sources", "evidence", "claims", "kb_notes", "skills", "trees", "nodes", "artifacts", "events"];
+  /** #77②：表全集与 Store.stats / db stats 一致（20 表），file 由调用方传入。 */
+  async stats(file = ""): Promise<{ counts: Record<string, number>; file: string }> {
+    const tables = [
+      "skills", "skill_refs", "projects", "queries", "sources", "query_sources",
+      "evidence", "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
+      "relations", "jobs", "runs", "events", "trees", "nodes", "node_edges", "node_conditions",
+    ];
     const counts: Record<string, number> = {};
     for (const t of tables) {
       try {
@@ -32,7 +37,7 @@ export class AsyncDbCmds {
         counts[t] = 0;
       }
     }
-    return { counts, file: "" };
+    return { counts, file };
   }
 
   // ================================================================ report faces
@@ -61,16 +66,20 @@ export class AsyncDbCmds {
   }
 
   // ================================================================ timeline
+  /** #77②：方言中立——cutoff 在 JS 算（不用 datetime('now',…)），
+   *  日粒度用 substr(ts,1,10)（SQLite 与 PG 都支持；ISO-8601 前缀即日期）。 */
   async timeline(days: number): Promise<Row[]> {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     return this.adb.all(
-      `SELECT date(ts) AS day, kind, COUNT(*) AS n FROM events
-       WHERE ts >= datetime('now', ?) GROUP BY day, kind ORDER BY day`,
-      [`-${days} days`],
+      `SELECT substr(ts,1,10) AS day, kind, COUNT(*) AS n FROM events
+       WHERE ts >= ? GROUP BY substr(ts,1,10), kind ORDER BY day`,
+      [cutoff],
     );
   }
 
+  /** #77②：去 rowid（SQLite 专有）——events.ts 有索引，按 ts 倒序等价。 */
   async recentEvents(limit = 20): Promise<Row[]> {
-    return this.adb.all("SELECT ts, actor, kind, entity_id FROM events ORDER BY rowid DESC LIMIT ?", [limit]);
+    return this.adb.all("SELECT ts, actor, kind, entity_id FROM events ORDER BY ts DESC LIMIT ?", [limit]);
   }
 
   // ================================================================ dups

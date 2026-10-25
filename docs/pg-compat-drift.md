@@ -24,6 +24,10 @@ kind: 参考
 | 3 | 2026-10-25 | `jobs` 名称列 | 列名为 `title/command`（**无 `name`**） | 同 schema | facade 一律用 `title` | 已修（#77） |
 | 4 | 2026-10-25 | `patrol_findings` 时间列 | `first_seen/last_seen`（**无 `ts`**） | 同 schema | facade 一律用 `last_seen` | 已修（#77） |
 | 5 | 2026-10-25 | `node_conditions` 归属列 | `node_id`（**无 tree_id/node_key**） | 同 schema | facade JOIN `nodes` 取 tree/key | 已修（#77） |
+| 6 | 2026-10-25 | `date(ts)` 日粒度 | SQLite `date()` 函数 | PG **无** `date()`（有 `date_trunc`/`::date`） | facade 改用 `substr(ts,1,10)`（双端支持；ISO-8601 前缀即日期） | 已修（#77②） |
+| 7 | 2026-10-25 | `datetime('now', '-N days')` | SQLite 相对时间函数 | PG 无此写法（`now() - interval`） | cutoff 在 JS 计算后作参数传入（`WHERE ts >= ?`） | 已修（#77②） |
+| 8 | 2026-10-25 | `rowid` 排序 | SQLite 隐式 rowid | PG 无 rowid（需显式序列列） | `events` 用 `ts DESC`（有索引，等价排序） | 已修（#77②） |
+| 9 | 2026-10-25 | 同步委托面 | 委托层直接调同步 `Store`/`TreeStore`（SQLite 同步 API） | PG 驱动全异步——同步调用无法到达 | `AsyncDb.dialect` 标记；非 sqlite 方言调用同步委托 **fail-closed 抛错**（`assertSyncDelegationAllowed`） | 已修（#77③） |
 
 ## 纪律
 

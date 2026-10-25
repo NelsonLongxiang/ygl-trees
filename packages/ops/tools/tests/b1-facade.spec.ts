@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { AsyncOpsReads } from "../src/async-reads";
+import { AsyncDbCmds } from "../src/async-db-cmds";
 import { AsyncResearchStore } from "../../../research/pipeline/src/async-store";
 
 const REPO = resolve(__dirname, "../../../..");
@@ -78,6 +79,44 @@ describe("#77 async facade column parity + #78 rc contracts", () => {
     const db = new DB(join(home, "ygl-trees.db"));
     const s = new AsyncResearchStore(db);
     expect(typeof s.queryDone).toBe("function");
+    db.close();
+  }, 30_000);
+
+  it("#77①: facade surface parity — every declared method resolves on real schema", async () => {
+    const db = new DB(join(home, "ygl-trees.db"));
+    const ops = new AsyncOpsReads(db);
+    const dbc = new AsyncDbCmds(db);
+    await expect(ops.counts()).resolves.toBeTruthy();
+    await expect(ops.relsAll(5)).resolves.toBeInstanceOf(Array);
+    await expect(ops.relsOf("nope")).resolves.toBeInstanceOf(Array);
+    await expect(ops.jobs()).resolves.toBeInstanceOf(Array);
+    await expect(ops.jobByName("nope")).resolves.toBeNull();
+    await expect(ops.patrolChecks()).resolves.toBeInstanceOf(Array);
+    await expect(ops.patrolFindings(5)).resolves.toBeInstanceOf(Array);
+    await expect(ops.recentEvents(5)).resolves.toBeInstanceOf(Array);
+    await expect(ops.runs()).resolves.toBeInstanceOf(Array);
+    const st = await dbc.stats(join(home, "ygl-trees.db"));
+    expect(Object.keys(st.counts).length).toBe(20);
+    expect(st.file).toContain("ygl-trees.db");
+    await expect(dbc.reportProjects()).resolves.toBeInstanceOf(Array);
+    await expect(dbc.reportClaims()).resolves.toBeInstanceOf(Array);
+    await expect(dbc.reportKb()).resolves.toBeInstanceOf(Array);
+    await expect(dbc.reportTrees()).resolves.toBeInstanceOf(Array);
+    await expect(dbc.treeNodeCount("nope")).resolves.toBe(0);
+    await expect(dbc.timeline(7)).resolves.toBeInstanceOf(Array);
+    await expect(dbc.recentEvents(5)).resolves.toBeInstanceOf(Array);
+    await expect(dbc.projects()).resolves.toBeInstanceOf(Array);
+    await expect(dbc.kbNotes()).resolves.toBeInstanceOf(Array);
+    db.close();
+  }, 60_000);
+
+  it("#77③: sync delegation fails closed on a non-sqlite dialect", async () => {
+    const { SqliteAsyncDb, assertSyncDelegationAllowed } = await import("../../../core/database/src/asyncdb");
+    const db = new DB(join(home, "ygl-trees.db"));
+    const adb = new SqliteAsyncDb(db);
+    expect(adb.dialect).toBe("sqlite");
+    const fakePg: any = { dialect: "pg", get: async () => null, all: async () => [] };
+    expect(() => assertSyncDelegationAllowed(fakePg, "probe")).toThrow(/sync delegation/);
     db.close();
   }, 30_000);
 });
