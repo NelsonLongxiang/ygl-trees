@@ -487,8 +487,17 @@ export class DB {
 
   constructor(file: string, opts?: { lock?: boolean }) {
     const existed = fs.existsSync(file) && (() => { try { return fs.statSync(file).size > 0; } catch { return false; } })();
-    this.path = file;
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // #18: DB-free surfaces (verify example / lint-candidates / probe) must not
+    // silently CREATE a workspace db. YGL_DB_NO_CREATE=1 → missing file opens
+    // :memory: instead (schema-less is fine; those surfaces never query it).
+    if (process.env.YGL_DB_NO_CREATE === "1" && !existed) {
+      // in-memory: no directory to create, no lock file, nothing on disk
+      file = ":memory:";
+      this.path = ":memory:";
+    } else {
+      this.path = file;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+    }
     const useLock = opts?.lock === true; // opt-in: only the CLI entry point locks
     // P0-2 (real-user incident): single-writer mutex. node-sqlite3-wasm has no
     // concurrent-write protection; two CLI processes writing simultaneously

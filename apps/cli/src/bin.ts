@@ -469,8 +469,11 @@ export async function main(argv: string[]): Promise<number> {
   // helpers that never touch the workspace db; refusing them on an empty YGL_HOME
   // sends authors the wrong way (they need examples, not a database).
   const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe");
+  if (VERIFY_DB_FREE) process.env.YGL_DB_NO_CREATE = "1"; // #18: 不静默建库（缺库→:memory:）
   const needInit = !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE;
   if (needInit && !require("node:fs").existsSync(file)) {
+    // #18.3: a missing workspace is a RUNTIME condition (db not initialized),
+    // not a usage error — rc=1 on the verify construction surface too.
     bad(ctx, `no database at ${file}`);
     // P1-4 (REVIEW-0.84.0): with --json, stdout is the machine channel — bad()
     // already emits the single {"error":…} object; these hints must not pollute
@@ -480,7 +483,8 @@ export async function main(argv: string[]): Promise<number> {
     // the db instead of the environment.
     const wsHint = `  run: ygl-trees db init\n  workspace: ${home}${process.env.YGL_HOME ? "  (from YGL_HOME)" : "  (default ~/.ygl-trees — set YGL_HOME to switch)"}`;
     if (ctx.json) console.error(wsHint); else out(ctx, wsHint);
-    return 2;
+    // #18.3: 缺工作区是运行条件（库未初始化），不是用法错误——rc=1。
+    return 1;
   }
 
   // ── Cordis composition via bootApp (DSH profile-boot exemplar) ──
