@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "b6648cee8573b5465b4078f12d32fb6539de855d4b827e4466d9d1fb1073a518",
+      "sha256": "29c18d4ed79304f559af74ddd80485451de51451112622ec6eff93d53899dd62",
       "role": "gate"
     },
     {
@@ -292,6 +292,14 @@
       "new_sha256": "358062102be7f547b2e8985aa0b0c7aa1901873fda422ab78d1c8fc09dabdee8",
       "reason": "#72 根修：预测声明日期参数化（date -d +30d 运行时算，GNU/BSD 跨平台）——demo 不再随日历红",
       "at": "2026-10-24T17:00:48.372Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "b6648cee8573b5465b4078f12d32fb6539de855d4b827e4466d9d1fb1073a518",
+      "new_sha256": "29c18d4ed79304f559af74ddd80485451de51451112622ec6eff93d53899dd62",
+      "reason": "#37 执法四件：against-git 基线对账/actor 必需/at 方向校验/链首锚定 + 四复现测试",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T04:46:10.782Z"
     }
   ],
   "kind": "engine"

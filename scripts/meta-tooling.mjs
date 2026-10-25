@@ -28,7 +28,7 @@ const flag = (n) => {
   const i = args.indexOf(`--${n}`);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null;
 };
-const KNOWN = ["--check", "--add", "--role", "--reregister", "--reason", "--audit"];
+const KNOWN = ["--check", "--add", "--role", "--reregister", "--reason", "--audit", "--actor", "--against-git"];
 for (const a of args) {
   if (a.startsWith("--") && !KNOWN.includes(a)) {
     console.error(`meta-tooling: unknown flag ${a}`);
@@ -65,6 +65,18 @@ if (reregister) {
     console.error("meta-tooling: --reregister needs --reason \"<why did the bytes change>\" (GLM Q3: no silent rehash)");
     process.exit(2);
   }
+  // #37 执法项④：actor 必需——显式 --actor 或从 git config 取（留痕谁做的重登记）。
+  let actor = flag("actor");
+  if (!actor) {
+    try {
+      const { execFileSync } = require("node:child_process");
+      actor = String(execFileSync("git", ["config", "user.name"], { encoding: "utf8" })).trim();
+    } catch { /* no git */ }
+  }
+  if (!actor) {
+    console.error("meta-tooling: --reregister needs --actor \"<who>\" (or a git user.name) — #37 enforcement item 4");
+    process.exit(2);
+  }
   const full = join(ROOT, entry.path);
   if (!existsSync(full)) {
     console.error(`meta-tooling: registered file is missing: ${entry.path}`);
@@ -84,6 +96,7 @@ if (reregister) {
     old_sha256: old,
     new_sha256: got,
     reason: reason.trim(),
+    actor,
     at: new Date().toISOString(),
   });
   entry.sha256 = got;
@@ -141,7 +154,91 @@ if (args.includes("--audit")) {
     console.error(`meta-tooling --audit: ${broken} chain break(s) — meta.json was hand-edited or reregistrations were removed`);
     process.exit(1);
   }
-  console.log(`meta-tooling --audit: chain OK (${rr.length} entries, 0 breaks)`);
+
+  // #37 执法项③：at 方向校验——未来时间戳（> 现在 + 1h）拒绝。
+  let tsBad = 0;
+  const now = Date.now();
+  for (const r of rr) {
+    const t = Date.parse(String(r.at ?? ""));
+    if (!Number.isFinite(t)) { tsBad++; console.error(`  ✗ at unparseable: ${r.path} at=${r.at}`); continue; }
+    if (t > now + 60 * 60 * 1000) { tsBad++; console.error(`  ✗ future timestamp: ${r.path} at=${r.at} (now=${new Date(now).toISOString()})`); }
+  }
+  if (tsBad) {
+    console.error(`meta-tooling --audit: ${tsBad} timestamp violation(s) — future/at values are not evidence (#37 item 3)`);
+    process.exit(1);
+  }
+
+  // #37 执法项④：actor 缺失（历史遗留项允许旧记录，但新记录必须带 —— 报告可见）。
+  const noActor = rr.filter((r) => !r.actor || !String(r.actor).trim());
+  if (noActor.length) {
+    console.log(`  · actor missing on ${noActor.length}/${rr.length} legacy entr(ies) — new reregistrations must carry actor (#37 item 4)`);
+  }
+
+  // #37 执法项⑤：链首锚定——每个 path 的第一条 old_sha256 必须能在 git 历史中找到
+  // （该文件的某个历史 blob sha），否则是孤儿值（首条删除隐形/凭空构造）。
+  // 需要 --against-git 显式开启（git 历史对账较重，且要 clone 完整历史）。
+  if (args.includes("--against-git")) {
+    let gitBad = 0;
+    const paths = [...new Set(rr.map((r) => r.path))];
+    for (const path of paths) {
+      const firstIdx = rr.findIndex((r) => r.path === path);
+      const first = rr[firstIdx];
+      const shas = new Set();
+      try {
+        const { execFileSync } = require("node:child_process");
+        const out = execFileSync("git", ["log", "--all", "--format=%H", "--", path], { cwd: ROOT, encoding: "utf8" });
+        for (const commit of out.split(String.fromCharCode(10)).filter(Boolean)) {
+          const blob = execFileSync("git", ["show", `${commit}:${path}`], { cwd: ROOT, encoding: "buffer" });
+          shas.add(createHash("sha256").update(blob).digest("hex"));
+        }
+      } catch { /* not a git repo / path never tracked */ }
+      if (shas.size && !shas.has(first.old_sha256)) {
+        gitBad++;
+        console.error(`  ✗ chain first anchor: ${path} first old_sha256 ${first.old_sha256.slice(0, 8)} not in git history (orphan value — first entry may have been deleted, #37 item 5)`);
+      }
+    }
+    if (gitBad) {
+      console.error(`meta-tooling --audit --against-git: ${gitBad} orphan chain first item(s)`);
+      process.exit(1);
+    }
+
+    // #37 执法项①②：静默重哈希 / 仅追加——git 侧对账。
+    // 对每个已登记 tooling 文件，取 git 历史中每个提交的 blob sha 序列；
+    // 若相邻两次变更不在 reregistrations[] 的 old→new 对里，说明有改文件+对齐 sha 而没登记。
+    let silentBad = 0;
+    for (const t of index.tooling) {
+      let commits;
+      try {
+        const { execFileSync } = require("node:child_process");
+        commits = execFileSync("git", ["log", "--all", "--reverse", "--format=%H", "--", t.path], { cwd: ROOT, encoding: "utf8" })
+          .split(String.fromCharCode(10)).filter(Boolean);
+      } catch { continue; }
+      const chain = [];
+      for (const commit of commits) {
+        try {
+          const { execFileSync } = require("node:child_process");
+          const blob = execFileSync("git", ["show", `${commit}:${t.path}`], { cwd: ROOT, encoding: "buffer" });
+          chain.push(createHash("sha256").update(blob).digest("hex"));
+        } catch { /* file absent at this commit */ }
+      }
+      // 同一 sha 连续出现合并为一次变更
+      const transitions = [];
+      for (let i = 1; i < chain.length; i++) if (chain[i] !== chain[i - 1]) transitions.push([chain[i - 1], chain[i]]);
+      const recorded = new Set(rr.filter((r) => r.path === t.path).map((r) => r.old_sha256 + "->" + r.new_sha256));
+      for (const [from, to] of transitions) {
+        if (!recorded.has(from + "->" + to)) {
+          silentBad++;
+          console.error(`  ✗ silent rehash: ${t.path} ${from.slice(0, 8)}→${to.slice(0, 8)} appears in git history but has no reregistrations[] entry (#37 item 1)`);
+        }
+      }
+    }
+    if (silentBad) {
+      console.error(`meta-tooling --audit --against-git: ${silentBad} unrecorded byte transition(s)`);
+      process.exit(1);
+    }
+  }
+
+  console.log(`meta-tooling --audit: chain OK (${rr.length} entries, 0 breaks, 0 future timestamps${args.includes("--against-git") ? ", git-consistent" : ""})`);
   process.exit(0);
 }
 
