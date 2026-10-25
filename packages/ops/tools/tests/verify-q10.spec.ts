@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -105,6 +105,89 @@ describe.skipIf(!HAS_BIN)("A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS)", ()
     const r = run(["verify", "tree", "prepare", "mat_tree_q10", "--pinned", "leaf=sha256:" + "0".repeat(64)], home);
     expect(r.rc).toBe(2);
     expect(String(r.j?.error)).toMatch(/pinned leaf: archive verification failed|archive not found/);
+  }, 120_000);
+
+  it("Q8: target frozen in tree spec enters canonical (prepare-time freeze, not run flag)", () => {
+    // 同一 tree material + 不同冻结 target → 不同 tree_spec_id（target 进 canonical）
+    const matDir = join(home, "verify", "materials", "mat_tree_target");
+    mkdirSync(matDir, { recursive: true });
+    const treeMat = {
+      tree_spec_id: "ts_target", tree_spec_version: 1, title: "t", root: "leaf",
+      target: { kind: "sqlite-snapshot", id: "bound-node" },
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
+    };
+    writeFileSync(join(matDir, "material.txt"), JSON.stringify(treeMat));
+    writeFileSync(join(matDir, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_target", title: "t", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep = run(["verify", "tree", "prepare", "mat_tree_target"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const spec = JSON.parse(readFileSync(prep.j.path, "utf8"));
+    expect(spec.target).toEqual({ kind: "sqlite-snapshot", id: "bound-node" });
+
+    // 无 target 的同结构 tree → 不同 digest
+    const matDir2 = join(home, "verify", "materials", "mat_tree_noget");
+    mkdirSync(matDir2, { recursive: true });
+    const treeMat2 = { ...treeMat, target: undefined };
+    writeFileSync(join(matDir2, "material.txt"), JSON.stringify(treeMat2));
+    writeFileSync(join(matDir2, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_noget", title: "t", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep2 = run(["verify", "tree", "prepare", "mat_tree_noget"], home);
+    expect(prep2.rc, prep2.out).toBe(0);
+    expect(prep2.j.tree_spec_id).not.toBe(prep.j.tree_spec_id);
+  }, 120_000);
+
+  it("Q9: leaf spec_version drift vs frozen tree version → STALE (not FAIL)", () => {
+    // tree 冻结 leaf spec_version=2，实际 spec v1 → STALE
+    const matDir = join(home, "verify", "materials", "mat_tree_ver");
+    mkdirSync(matDir, { recursive: true });
+    writeFileSync(join(matDir, "material.txt"), JSON.stringify({
+      tree_spec_id: "ts_ver", tree_spec_version: 1, title: "v", root: "leaf",
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10", spec_version: 2 }],
+    }));
+    writeFileSync(join(matDir, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_ver", title: "v", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep = run(["verify", "tree", "prepare", "mat_tree_ver"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const r = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", snap, "--no-archive"], home);
+    expect(r.rc, r.out).toBe(0);
+    expect(r.j.verdict).toBe("STALE");
+    const leaf = (r.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leaf?.verdict).toBe("STALE");
+    expect(String(leaf?.stale_reason)).toMatch(/spec_version drift/);
+  }, 120_000);
+
+  it("五值: leaf ERROR/NEEDS-MATERIAL do not leak into nodes[].verdict (mapped to INFRA_BLOCKED)", () => {
+    // 空库 → count 查询报错 → 叶 report ERROR → 树 verdict 必须是五值内的 INFRA_BLOCKED
+    const emptyDb = join(home, "empty.db");
+    const db = new DatabaseSync(emptyDb);
+    db.close();
+    const prep = run(["verify", "tree", "prepare", "mat_tree_q10"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const r = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", emptyDb, "--no-archive"], home);
+    expect(r.rc, r.out).toBe(0);
+    const FIVE = new Set(["PASS", "FAIL", "NEUTRALIZED", "INFRA_BLOCKED", "STALE"]);
+    for (const n of r.j.nodes ?? []) expect(FIVE.has(n.verdict), `node ${n.node_id} verdict ${n.verdict}`).toBe(true);
+    const leaf = (r.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leaf?.report_verdict).toBe("ERROR"); // 原四值保留
+    expect(leaf?.verdict).toBe("INFRA_BLOCKED"); // 五值映射
+  }, 120_000);
+
+  it("G8: tree spec pins engine/corpus/contract into canonical", () => {
+    const matDir = join(home, "verify", "materials", "mat_tree_pin");
+    mkdirSync(matDir, { recursive: true });
+    writeFileSync(join(matDir, "material.txt"), JSON.stringify({
+      tree_spec_id: "ts_pin", tree_spec_version: 1, title: "p", root: "leaf",
+      engine_version: "0.115.0", corpus_version: "1.2", contract_version: "1.2",
+      nodes: [{ id: "leaf", kind: "leaf", spec_id: "spec_q10" }],
+    }));
+    writeFileSync(join(matDir, "material.json"),
+      JSON.stringify({ material_id: "mat_tree_pin", title: "p", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    const prep = run(["verify", "tree", "prepare", "mat_tree_pin"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const spec = JSON.parse(readFileSync(prep.j.path, "utf8"));
+    expect(spec.engine_version).toBe("0.115.0");
+    expect(spec.corpus_version).toBe("1.2");
+    expect(spec.contract_version).toBe("1.2");
   }, 120_000);
 
   it("G8: jcsCanonical sorts keys and emits no whitespace", () => {

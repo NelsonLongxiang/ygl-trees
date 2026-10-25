@@ -125,6 +125,15 @@ export interface TreeSpec {
   root: string;
   nodes: TreeSpecNode[];
   pinned: Record<string, string>;
+  /** Q8（v1.2 §2.1）：冻结的 target 投影 {kind,id,sha256?}——prepare 期钉死，
+   *  进 canonical digest；run 期以此为基准比对全叶 data_source。 */
+  target?: { kind: string; id: string; sha256?: string };
+  /** Q8：subject = repo + commit（跨 repo/commit 不声称可比）。 */
+  subject?: { repo: string; commit: string };
+  /** G8（v1.2 §0）：tree spec 冻结引擎/语料/契约版本——prepare 期校验实况。 */
+  engine_version?: string;
+  corpus_version?: string;
+  contract_version?: string;
 }
 
 /** Freeze-time validation (A1 §3.1): everything invalid → rc=2. */
@@ -137,6 +146,17 @@ function validateTreeSpec(
   if (!raw || typeof raw !== "object") return { error: "tree spec must be a JSON object" };
   if (raw.tree_spec_version !== 1) return { error: "tree_spec_version must be 1" };
   if (typeof raw.root !== "string" || !raw.root) return { error: "root must be a node id" };
+  // Q8：target 投影（kind+id 恒定，sha256 可选）
+  let target: { kind: string; id: string; sha256?: string } | undefined;
+  if (raw.target !== undefined) {
+    if (!raw.target || typeof raw.target !== "object") return { error: "target must be {kind,id[,sha256]}" };
+    if (typeof raw.target.kind !== "string" || !raw.target.kind) return { error: "target.kind required" };
+    if (typeof raw.target.id !== "string" || !raw.target.id) return { error: "target.id required" };
+    if (raw.target.sha256 !== undefined && (typeof raw.target.sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.target.sha256))) {
+      return { error: "target.sha256 must be sha256:<64hex>" };
+    }
+    target = { kind: raw.target.kind, id: raw.target.id, ...(raw.target.sha256 ? { sha256: raw.target.sha256 } : {}) };
+  }
   if (!Array.isArray(raw.nodes) || !raw.nodes.length) return { error: "nodes must be a non-empty array" };
   const nodes: TreeSpecNode[] = [];
   const byId = new Map<string, TreeSpecNode>();
@@ -218,10 +238,20 @@ function validateTreeSpec(
       pinned[nid] = sha.startsWith("sha256:") ? sha : "sha256:" + sha;
     }
   }
-  const canonical = JSON.stringify({
+  // Q8/G8：canonical 覆盖 root/nodes/pinned/target/subject/engine pin——
+  // 冻结主体与引擎面，任何一项变化都换新 tree_spec_id。
+  const subject = raw.subject && typeof raw.subject === "object"
+    ? { repo: String(raw.subject.repo ?? ""), commit: String(raw.subject.commit ?? "") }
+    : undefined;
+  const canonical = jcsCanonical({
     root: raw.root,
     nodes: nodes.slice().sort((a, b) => a.id.localeCompare(b.id)),
     pinned,
+    target: target ?? null,
+    subject: subject ?? null,
+    engine_version: raw.engine_version !== undefined ? String(raw.engine_version) : null,
+    corpus_version: raw.corpus_version !== undefined ? String(raw.corpus_version) : null,
+    contract_version: raw.contract_version !== undefined ? String(raw.contract_version) : null,
   });
   const digest = sha256(canonical);
   return {
@@ -235,8 +265,24 @@ function validateTreeSpec(
       root: raw.root,
       nodes,
       pinned,
+      ...(target ? { target } : {}),
+      ...(subject ? { subject } : {}),
+      ...(raw.engine_version !== undefined ? { engine_version: String(raw.engine_version) } : {}),
+      ...(raw.corpus_version !== undefined ? { corpus_version: String(raw.corpus_version) } : {}),
+      ...(raw.contract_version !== undefined ? { contract_version: String(raw.contract_version) } : {}),
     },
   };
+}
+
+
+/** 树节点五值映射（v1.2 §2.4）：叶 report 的 ERROR/NEEDS-MATERIAL 不进 nodes[].verdict
+ *  的五值枚举——映射到 INFRA_BLOCKED（保守：既非通过也非业务失败），原四值留在
+ *  report_verdict 供审计。 */
+export function toTreeVerdict(reportOverall: string): string {
+  const v = String(reportOverall).toUpperCase();
+  if (v === "PASS" || v === "FAIL") return v;
+  // ERROR / NEEDS-MATERIAL / 其他 → INFRA_BLOCKED（树五值内最保守）
+  return "INFRA_BLOCKED";
 }
 
 /** A1 五值聚合（契约 v1.2 Q10-B）：全序 NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS。
@@ -248,23 +294,35 @@ function validateTreeSpec(
  *  纯函数，导出以便单测直接钉 5×5 矩阵。 */
 export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
   const vs = verdicts.map((v) => String(v).toUpperCase());
-  // 全序最高优先：NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS
+  // ── 第 1 步：基础结果（不看 ERROR cap；按算子 + 全序遮蔽）──
+  // NEUTRALIZED > STALE 恒最高（阻断 PASS，不稀释 FAIL——被遮蔽 FAIL 在 nodes[] 可见）
   if (vs.includes("NEUTRALIZED")) return "NEUTRALIZED";
   if (vs.includes("STALE")) return "STALE";
-  // Q10-B：any ERROR（含 INFRA_BLOCKED 自身）→ 父至多 INFRA_BLOCKED
-  if (vs.includes("ERROR") || vs.includes("INFRA_BLOCKED")) return "INFRA_BLOCKED";
+  let base: string;
   if (op.startsWith("quorum(")) {
     const n = Number(op.slice(7, -1));
     const pass = vs.filter((v) => v === "PASS").length;
     const fail = vs.filter((v) => v === "FAIL").length;
-    if (pass >= n) return "PASS";
-    if (fail > 0 || pass > 0) return "FAIL";
+    // 分母只计 PASS+FAIL；ERROR/NEUTRALIZED/STALE 不进分母
+    if (pass >= n) base = "PASS";
+    else if (fail > 0 || pass > 0) base = "FAIL";
+    else base = "INFRA_BLOCKED";
+  } else if (vs.includes("FAIL")) {
+    base = "FAIL"; // any FAIL → FAIL（非 quorum 算子）
+  } else if (vs.includes("ERROR")) {
+    base = "INFRA_BLOCKED"; // 无 FAIL 但有 ERROR → 不可判定（Q10-B 前身）
+  } else if (vs.length > 0 && vs.every((v) => v === "PASS")) {
+    base = "PASS";
+  } else {
+    base = "INFRA_BLOCKED"; // NEEDS-MATERIAL / 空子集 → 保守 INFRA_BLOCKED
+  }
+  // ── 第 2 步：Q10-B cap——只封顶 PASS，不降级 FAIL/INFRA_BLOCKED ──
+  // 裁定补正（fdc 2026-10-25）：cap 只作用于 PASS。FAIL+ERROR=FAIL、FAIL+INFRA_BLOCKED=FAIL、
+  // PASS+ERROR=INFRA_BLOCKED。quorum 基础 PASS 被 cap；基础 FAIL 保持 FAIL。
+  if (base === "PASS" && (vs.includes("ERROR") || vs.includes("INFRA_BLOCKED"))) {
     return "INFRA_BLOCKED";
   }
-  if (vs.includes("FAIL")) return "FAIL";
-  if (vs.length > 0 && vs.every((v) => v === "PASS")) return "PASS";
-  if (vs.includes("PASS")) return "FAIL"; // 混合 PASS+非 PASS 非 FAIL/ERROR → 保守 FAIL
-  return "INFRA_BLOCKED";
+  return base;
 }
 
 /** A1 tree run：叶真跑（runVerify+archive）或 pinned 归档回读，后序聚合，写树报告。
@@ -431,8 +489,40 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
         return "NEUTRALIZED";
       }
       const rep = readArchiveReport(entryPath);
-      nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha, report_id: rep.run_id, verdict: rep.overall, stale: false });
-      return rep.overall;
+      // Q9（语义主体在 pinned）：pinned report 的 target/spec_version 也要与冻结面比对；
+      // 缺被比字段 fail-closed 判 stale。
+      let pinnedStale = false;
+      const pinnedReasons: string[] = [];
+      if (target) {
+        const pds: any = (rep as any).data_source ?? {};
+        if (!pds.kind || !pds.id) {
+          pinnedStale = true; // fail-closed：缺 data_source 字段
+          pinnedReasons.push("pinned report missing data_source (fail-closed)");
+        } else {
+          const kindOk = String(pds.kind) === target.kind;
+          const idOk = String(pds.id) === target.id;
+          const shaOk = target.sha256 === undefined ? true : String(pds.sha256 ?? "") === target.sha256;
+          if (!kindOk || !idOk || !shaOk) {
+            pinnedStale = true;
+            pinnedReasons.push(`pinned target mismatch (${pds.kind}:${pds.id} vs ${target.kind}:${target.id})`);
+          }
+        }
+      }
+      const frozenVer = (n as any).spec_version;
+      if (frozenVer !== undefined) {
+        const actualVer = Number((rep as any).verifier?.spec_version);
+        if (Number.isFinite(actualVer) ? actualVer !== Number(frozenVer) : true) {
+          pinnedStale = true;
+          pinnedReasons.push(`pinned spec_version drift (frozen v${frozenVer} vs archived v${String((rep as any).verifier?.spec_version ?? "?")})`);
+        }
+      }
+      const pinnedVerdict = pinnedStale ? "STALE" : toTreeVerdict(rep.overall);
+      nodes.push({
+        node_id: n.id, kind: "leaf", spec_id: n.spec_id, pinned: true, archive_sha256: pinnedSha,
+        report_id: rep.run_id, verdict: pinnedVerdict, report_verdict: rep.overall, stale: pinnedStale,
+        ...(pinnedReasons.length ? { stale_reason: pinnedReasons.join("; ") } : {}),
+      });
+      return pinnedVerdict;
     }
     const specFile = join(p.specs, String(n.spec_id), "spec.json");
     if (!existsSync(specFile)) throw new Error("leaf " + n.id + ": spec not found: " + n.spec_id);
@@ -455,28 +545,40 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     if (args.flags["no-archive"] !== true) {
       archived = archiveRun(p.root, report.run_id, { id: String(leafSpec.spec_id), version: report.verifier.spec_version }, args);
     }
-    // G1/G2：声明 target 的叶失配 → STALE（沿父链传播，阻 PASS）。
+    // G1/G2 + Q9：引用失配判定（沿父链传播，阻 PASS）——
+    // ① target 投影失配（Q8）；② 子 spec_version 相对 tree 冻结版本漂移（Q9 选项 D）。
     // 无 data_source 的叶（file/command）不参与 target 比较（Q8 (b) 仍适用）。
     let stale = false;
-    let staleReason = "";
+    const staleReasons: string[] = [];
     if (target) {
       const kindOk = dsProjection.kind === target.kind;
       const idOk = dsProjection.id === target.id;
       const shaOk = target.sha256 === undefined ? true : dsProjection.sha256 === target.sha256;
       if (!kindOk || !idOk || !shaOk) {
         stale = true;
-        staleReason = `target mismatch (leaf ${dsProjection.kind}:${dsProjection.id}${dsProjection.sha256 ? "#" + dsProjection.sha256.slice(0, 12) : ""} vs target ${target.kind}:${target.id}${target.sha256 ? "#" + target.sha256.slice(0, 12) : ""})`;
+        staleReasons.push(`target mismatch (leaf ${dsProjection.kind}:${dsProjection.id}${dsProjection.sha256 ? "#" + dsProjection.sha256.slice(0, 12) : ""} vs target ${target.kind}:${target.id}${target.sha256 ? "#" + target.sha256.slice(0, 12) : ""})`);
       }
     }
+    // Q9：冻结版本漂移——tree spec 节点声明的 spec_version 与实际 spec/report 版本比对。
+    // 缺被比字段 → fail-closed（fanout: 声明了但 spec 无版本也判 stale）。
+    const frozenVer = (n as any).spec_version;
+    if (frozenVer !== undefined) {
+      const actualVer = Number(report.verifier?.spec_version);
+      if (Number.isFinite(actualVer) ? actualVer !== Number(frozenVer) : true) {
+        stale = true;
+        staleReasons.push(`spec_version drift (frozen v${frozenVer} vs run v${String(report.verifier?.spec_version ?? "?")})`);
+      }
+    }
+    const treeVerdict = stale ? "STALE" : toTreeVerdict(report.overall);
     nodes.push({
       node_id: n.id, kind: "leaf", spec_id: n.spec_id, report_id: report.run_id,
       archive_sha256: archived?.archive_sha256 ?? null, ...(archived?.path ? { archive_path: archived.path } : {}),
-      verdict: stale ? "STALE" : report.overall,
+      verdict: treeVerdict,
       report_verdict: report.overall, // 叶原四值保留（v1.2 §2.4）
-      stale, ...(staleReason ? { stale_reason: staleReason } : {}),
+      stale, ...(staleReasons.length ? { stale_reason: staleReasons.join("; ") } : {}),
       data_source: dsProjection,
     });
-    return stale ? "STALE" : report.overall;
+    return treeVerdict;
   };
   try {
     const verdict = await evalNode(spec.root);

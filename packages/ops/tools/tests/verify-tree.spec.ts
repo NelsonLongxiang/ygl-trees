@@ -166,18 +166,20 @@ describe("A1 tree run (runtime first cut)", () => {
     // count_fail
     ["count_fail", ["PASS", "FAIL"], "FAIL"],
     ["count_fail", ["PASS", "ERROR"], "INFRA_BLOCKED"],
-    // quorum：分母只计 PASS+FAIL；any-ERROR 优先
+    // quorum：分母只计 PASS+FAIL；cap 只封顶 PASS（fdc 补正：不降级 FAIL）
     ["quorum(2)", ["PASS", "FAIL", "PASS"], "PASS"],
     ["quorum(2)", ["PASS", "FAIL", "FAIL"], "FAIL"],
-    ["quorum(2)", ["PASS", "PASS", "ERROR"], "INFRA_BLOCKED"],
-    ["quorum(2)", ["PASS", "FAIL", "ERROR"], "INFRA_BLOCKED"],
-    ["quorum(2)", ["FAIL", "FAIL", "ERROR"], "INFRA_BLOCKED"],
-    // 遮蔽序
+    ["quorum(2)", ["PASS", "PASS", "ERROR"], "INFRA_BLOCKED"],   // 基础 PASS 被 cap
+    ["quorum(2)", ["PASS", "FAIL", "ERROR"], "FAIL"],            // 基础 FAIL 不被 cap
+    ["quorum(2)", ["FAIL", "FAIL", "ERROR"], "FAIL"],            // 基础 FAIL
+    ["quorum(2)", ["PASS", "PASS", "FAIL", "ERROR"], "INFRA_BLOCKED"], // quorum 满足+ERROR cap
+    // 遮蔽序（NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS）
     ["all_pass", ["NEUTRALIZED", "FAIL"], "NEUTRALIZED"],
     ["all_pass", ["NEUTRALIZED", "STALE"], "NEUTRALIZED"],
     ["all_pass", ["STALE", "FAIL"], "STALE"],
     ["all_pass", ["STALE", "PASS"], "STALE"],
-    ["all_pass", ["FAIL", "INFRA_BLOCKED"], "INFRA_BLOCKED"],
+    ["all_pass", ["FAIL", "INFRA_BLOCKED"], "FAIL"],             // FAIL 不被 cap 降级
+    ["all_pass", ["FAIL", "ERROR"], "FAIL"],                     // FAIL+ERROR=FAIL
   ];
   for (const [op, vs, want] of matrix) {
     it(`aggregate ${op} ${vs.join("+")} => ${want}`, () => {
