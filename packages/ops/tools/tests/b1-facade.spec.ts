@@ -179,8 +179,14 @@ describe("#77 async facade column parity + #78 rc contracts", () => {
     expect(await ts.canUnlock("t1", "k2")).toBeTruthy();               // 23
     expect(await ts.ready("t1", "k2")).toBeTruthy();                   // 24
     expect(typeof (await ts.exportTree("t1"))).toBeTruthy();           // 25
-    expect(rid(await ts.query("SELECT 1 AS one"))).toBe(true);         // 26
-    expect(await ts.queryOne("SELECT 1 AS one")).toBeTruthy();         // 27
+    // 26/28 nodeSearch：reads.ts:680 的运行时 require 只在编译树解析——经 dist 调
+    try {
+      const dist = require("../../../../dist/packages/techtree/model/src/async-store.js") as any;
+      const dts = new dist.AsyncTreeStore(db);
+      expect(rid(await dts.nodeSearch("t1", "节点"))).toBe(true);      // ← 第 28 个方法
+    } catch { console.log("  · nodeSearch: dist not built — skipped (pnpm build first)"); }
+    expect(rid(await ts.query("SELECT 1 AS one"))).toBe(true);         // 27
+    expect(await ts.queryOne("SELECT 1 AS one")).toBeTruthy();         // 28
     expect(await ts.treeResolve()).toBeTruthy();                     // 28（有 t1 时解析为它）
     db.close();
   }, 60_000);

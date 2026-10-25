@@ -268,6 +268,23 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
       if (!listed.has(rel)) problems.push(`unlisted spec file: ${rel}`);
     }
   }
+  // #37 条目1（lineage）：tooling[].sha256 必须等于该 path **最后一个 reregistration
+  // 的 new_sha256**——未提交的手工对齐（改文件+改 tooling sha 不记录）在这里就红，
+  // 不需要 --against-git 或已提交历史。
+  {
+    const rr = Array.isArray(index.reregistrations) ? (index.reregistrations as Array<{ path?: unknown; new_sha256?: unknown }>) : [];
+    const lastNew = new Map<string, string>();
+    for (const r of rr) {
+      if (typeof r?.path === "string" && typeof r?.new_sha256 === "string") lastNew.set(posix(r.path), r.new_sha256);
+    }
+    for (const t of (index.tooling ?? []) as Array<{ path?: unknown; sha256?: unknown }>) {
+      if (typeof t?.path !== "string" || typeof t?.sha256 !== "string") continue;
+      const expect = lastNew.get(posix(t.path));
+      if (expect !== undefined && expect !== t.sha256) {
+        problems.push(`tooling lineage: ${posix(t.path)} sha256 ${t.sha256.slice(0, 8)} ≠ last recorded new_sha256 ${expect.slice(0, 8)} — hand-aligned rehash without a reregistration (#37 item 1)`);
+      }
+    }
+  }
   let kind: "engine" | "consumer" | null = null;
   if (version >= 3) {
     // v3 makes the framework tier explicit; a missing/unknown kind is an index

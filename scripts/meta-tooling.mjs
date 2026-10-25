@@ -196,10 +196,27 @@ if (args.includes("--audit")) {
     }
   }
 
-  // #37 执法项④：actor 缺失（历史遗留项允许旧记录，但新记录必须带 —— 报告可见）。
+  // #37 条目5：actor 切换点——meta.actor_required_from 起，新记录无 actor 即红（不再全员 legacy 豁免）。
+  const cutoff = Date.parse(String(index.actor_required_from ?? ""));
+  if (Number.isFinite(cutoff)) {
+    let actorBad = 0;
+    for (const r of rr) {
+      const t = Date.parse(String(r.at ?? ""));
+      if (!Number.isFinite(t) || t < cutoff) continue; // 切换点前 = legacy
+      if (!r.actor || !String(r.actor).trim()) {
+        actorBad++;
+        console.error(`  ✗ actor missing after cutoff: ${r.path} at=${r.at} (cutoff ${index.actor_required_from}) (#37 item 5)`);
+      }
+    }
+    if (actorBad) {
+      console.error(`meta-tooling --audit: ${actorBad} post-cutoff entr(ies) without actor`);
+      process.exit(1);
+    }
+  }
+  // 执法项④（报告面）：legacy 缺 actor 计数仍然可见。
   const noActor = rr.filter((r) => !r.actor || !String(r.actor).trim());
   if (noActor.length) {
-    console.log(`  · actor missing on ${noActor.length}/${rr.length} legacy entr(ies) — new reregistrations must carry actor (#37 item 4)`);
+    console.log(`  · actor missing on ${noActor.length}/${rr.length} legacy entr(ies) — post-cutoff entries are enforced above`);
   }
 
   // #37 执法项⑤：链首锚定——每个 path 的第一条 old_sha256 必须能在 git 历史中找到
@@ -353,5 +370,21 @@ if (add) {
   process.exit(0);
 }
 
+// #37 条目1（lineage）：tooling sha == 该 path 最后 new_sha256——未提交的手工对齐
+// （改文件+对齐 tooling sha、不写 reregistration）drift 为 0 但 lineage 必红。
+{
+  const rr = index.reregistrations ?? [];
+  const lastNew = new Map();
+  for (const r of rr) if (r?.path && r?.new_sha256) lastNew.set(r.path, r.new_sha256);
+  let lineage = 0;
+  for (const t of index.tooling ?? []) {
+    const expect = lastNew.get(t.path);
+    if (expect !== undefined && expect !== t.sha256) {
+      lineage++;
+      console.error(`  ✗ lineage: ${t.path} tooling sha ${t.sha256.slice(0, 8)} ≠ last new_sha256 ${expect.slice(0, 8)} (hand-aligned rehash? #37 item 1)`);
+    }
+  }
+  drift += lineage;
+}
 console.log(`meta-tooling: ${index.tooling.length} entries, ${drift} drift`);
 process.exit(drift ? 1 : 0);

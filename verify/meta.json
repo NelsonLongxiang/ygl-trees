@@ -95,7 +95,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "33175f5c6d0605d64295a58247234e4d4425c845d60041b6daa90626ccd52b2f",
+      "sha256": "ab5cbfb682c385b55e1998ef89d7f75575c39fb4eb5650d92cadf4bdc1b0de95",
       "role": "gate"
     },
     {
@@ -350,6 +350,14 @@
       "reason": "ffc790d pnpm 定位器 .cjs+.mjs 双探测修复波及 tooling sha——显式重登记（#37 lineage）",
       "actor": "longxiang",
       "at": "2026-10-25T08:47:28.805Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "33175f5c6d0605d64295a58247234e4d4425c845d60041b6daa90626ccd52b2f",
+      "new_sha256": "ab5cbfb682c385b55e1998ef89d7f75575c39fb4eb5650d92cadf4bdc1b0de95",
+      "reason": "三轮：lineage 检查入 --check+R2/actor_required_from 切换点（监督席 #37 条目1/5）",
+      "actor": "ec4ce7f8",
+      "at": "2026-10-25T09:31:44.693Z"
     }
   ],
   "kind": "engine",
@@ -376,5 +384,6 @@
       "fix": "rewrote at to 2026-10-22T00:40:0x (before the real 00:41 entries) so per-path at is monotonic; shas/reasons untouched",
       "at": "2026-10-25T08:38:14.373Z"
     }
-  ]
+  ],
+  "actor_required_from": "2026-10-25T00:00:00.000Z"
 }
