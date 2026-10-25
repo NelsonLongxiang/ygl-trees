@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.115.0
+
+A1 递归验证器 v1.2 Phase 2 收口（两席签注）+ B1 读路径异步化 + MCP 面收敛。
+
+### A1 verify tree v1.2（裁定单 v2 + cap-on-PASS 补正，r38 两席签注）
+- **G3/Q10-B**：五值全序 `NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS`；**cap-on-PASS**
+  （任一 ERROR/INFRA_BLOCKED 只封顶 PASS，不降级 FAIL）；quorum 分母只计 PASS+FAIL
+- **V15 5×5**：17 行表驱动矩阵（all_pass/count_fail/quorum × 五态组合）
+- **Q8**：tree spec 冻结 `target{kind,id,sha256?}` + `subject{repo,commit}`，进 JCS canonical；
+  活叶与 pinned 叶均参与 target 比较，失配 → STALE（V22）
+- **Q9**：引用失配（选项 D）——活叶比对冻结 `spec_version`、pinned 报告同样比对且缺字段 fail-closed；
+  STALE 沿父链传播、阻 PASS、进 digest
+- **G8**：tree spec 冻结 engine/corpus/contract 版本，prepare 期与实况不一致 → rc2 点名（JCS digest）
+- **Q11**：删 run 幂等（tree_run_id 每次新生成；同输入 digest 仍相等）
+- **Q12-B/Q13-A**：pinned 必须来自本 workspace 已完成 run；同轮自引用 → rc2
+- 矩阵：**green 21 / partial 1 / planned 2**（Q4 ratchet 第四轴、V21 舰队多快照后置）
+
+### B1 读路径异步化（PG 线）+#77/#78 面修复
+- 四域 AsyncStore 委托层（AsyncTreeStore/AsyncResearchStore/AsyncOpsReads/AsyncDbCmds）+ AsyncDb 统一接口
+- 调用面全净（`env.store` 同步消费 0）；#77 五处列名对照 schema v12；#78 queryDone/query done JSON
+- `docs/pg-compat-drift.md` 行为漂移登记册建册
+
+### MCP 面（0.114.31 起的延续）
+- 4 工具（read/write/verify/doctor）domain×action 路由 + HTTP 传输 + 技能 MCP 对照
+
+### 已知后置（不阻塞）
+- G8 校验在 prepare（可选 run 期再补）；Q8 subject 声明不校验实况
+- #77 剩余：facade 测试覆盖面、AsyncDbCmds.stats/timeline 迁移、PG fail-closed、方言函数登记
+- #37 执法四件已落（against-git/actor/at/链首），待监督席复核
+
 ## 0.114.31
 
 收口版：全部在途修复 + MCP 4 工具收敛 + HTTP 传输 + #75 计数根除（reopen 单 npm 复检版）。

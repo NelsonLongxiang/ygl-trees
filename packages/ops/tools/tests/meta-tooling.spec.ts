@@ -55,7 +55,7 @@ describe.skipIf(!HAS_BIN)("meta-tooling drift repair (0.114.2/0.114.3)", () => {
     expect(noReason.err).toMatch(/--reason/);
 
     // #37: no workspace DB is required — the audit record lives in verify/meta.json
-    const ok = run(["--reregister", SCRIPT, "--reason", "fixture byte change"]);
+    const ok = run(["--reregister", SCRIPT, "--reason", "fixture byte change", "--actor", "test-suite"]);
     expect(ok.rc).toBe(0);
     expect(ok.out).toMatch(/reregistrations\[\] recorded/);
 
@@ -68,11 +68,11 @@ describe.skipIf(!HAS_BIN)("meta-tooling drift repair (0.114.2/0.114.3)", () => {
     expect(run(["--check"]).rc).toBe(0);
 
     // no drift now → explicit re-register is refused (not a silent no-op)
-    const again = run(["--reregister", SCRIPT, "--reason", "nothing changed"]);
+    const again = run(["--reregister", SCRIPT, "--reason", "nothing changed", "--actor", "test-suite"]);
     expect(again.rc).toBe(2);
     expect(again.err).toMatch(/no drift/);
 
-    const unregistered = run(["--reregister", "scripts/absent.mjs", "--reason", "x"]);
+    const unregistered = run(["--reregister", "scripts/absent.mjs", "--reason", "x", "--actor", "test-suite"]);
     expect(unregistered.rc).toBe(2);
   });
 
