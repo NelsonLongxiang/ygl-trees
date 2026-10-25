@@ -1,3 +1,7 @@
+## 0.115.2
+
+- #18 监督席裁定(a)收口：无工作区 rc 收敛——verify 构造面（submit/prepare/run）rc1，其余命令保持 rc2（冻结契约不动）；verify example 不静默建库；P4 诊断分流；#22 v1 索引 R3→NEEDS-MATERIAL；#58 pg-plan 残留清理。
+
 ## 0.115.1
 
 - #87 修复：R2 锚点改 opt-in（`lineage_anchors_required` 显式声明才强制）——存量 v2 索引无锚条目 warn 不红；新登记仍强制。最小 v2 仓与舰队四验证器 `verify meta` rc0 实证。
