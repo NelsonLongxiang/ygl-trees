@@ -118,8 +118,26 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
     expect(r.rc).toBe(0);
     expect(r.j.material_id).toBeTruthy();
     expect(String(r.j.meta_warning)).toMatch(/no verifier markers/);
-    expect(String(r.j.meta_warning)).toMatch(/R1/);
+    expect(String(r.j.meta_warning)).toMatch(/verify\/meta\.json/);
+    expect(String(r.j.meta_warning)).toMatch(/Judged repo:/);
     expect(r.j.meta_bypassed).toBeUndefined();
+  });
+
+  it("#81: business repo WITH AGENTS.md but no verifier index → warn+skip (not hard gate)", () => {
+    // layerfs regression: 60+ benchmark scripts + AGENTS.md, zero verify/ dir.
+    // Treating AGENTS.md alone as a verifier marker made every submit R3-fail
+    // on the benchmarks. A bare AGENTS.md must stay a warning.
+    const dir = join(base, "business-with-agents");
+    mkdirSync(join(dir, "benchmarks"), { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    writeFileSync(join(dir, "AGENTS.md"), "# business repo\n", "utf8");
+    writeFileSync(join(dir, "benchmarks", "bench.js"), "console.log(1)\n", "utf8");
+    const r = jrun(["verify", "submit", "--title", "g81", "--text", matFile, "--json"], dir);
+    expect(r.rc).toBe(0);
+    expect(r.j.material_id).toBeTruthy();
+    expect(String(r.j.meta_warning)).toMatch(/no verifier markers/);
+    expect(String(r.j.meta_warning)).toMatch(/Judged repo:/);
+    expect(r.j.meta_failed).toBeUndefined();
   });
 
   it("ladder 4: outside git is silent (no warning, no bypass)", () => {

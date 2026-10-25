@@ -1056,7 +1056,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const title = String(args.flags.title || "").trim();
       const textArg = args.flags.text ? String(args.flags.text) : "";
       if (!title || !textArg) {
-        bad(ctx, 'usage: verify submit --title "<what>" --text <file|-> [--attach <file> ...] [--clause-pattern <regex>]');
+        bad(ctx, 'usage: verify submit --title "<what>" --text <file|-> [--attach <file> ...] [--clause-pattern <regex>] [--meta-repo <verifier-root> | --require-meta | --no-meta]');
         return 2;
       }
       // #34: the clause pattern is part of the frozen material (validated before any I/O)

@@ -106,9 +106,12 @@ export function gitRootOf(dir: string): string | null {
 }
 
 export function hasVerifierMarker(repo: string): boolean {
-  // `verify/` alone is ambiguous: a ygl workspace home keeps its data there.
-  // A verifier repo is marked by AGENTS.md or a verifier meta index/specs dir.
-  return existsSync(join(repo, "AGENTS.md")) || hasMetaIndex(repo);
+  // #81: a bare AGENTS.md is NOT a verifier marker — ordinary business repos
+  // carry one too (layerfs has 60+ benchmark scripts and an AGENTS.md; treating
+  // it as a hard gate rejected every submit with R3 "stray executable"). The
+  // charter's verifier marker is the meta index/specs dir; AGENTS.md alone
+  // means "this could be a verifier repo missing its index" → warn, not fail.
+  return hasMetaIndex(repo);
 }
 
 /** Persist a meta.bypass event synchronously (node:sqlite, WAL-friendly). */
@@ -179,13 +182,13 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
     if (!root) return { pass: true, skipped: true };
     if (hasVerifierMarker(repo)) hard = true;
     else {
-      const warning = `no verifier markers under ${repo} (AGENTS.md / verify/ / verify/meta.json); meta gate skipped — if this IS a verifier repo, add AGENTS.md first (R1), then re-run (or pass --meta-repo <dir> / --require-meta)`;
+      const warning = `no verifier markers under ${repo} (verify/meta.json or verify/specs/); meta gate skipped — if this IS a verifier repo, add verify/meta.json first, then re-run (or pass --meta-repo <dir> / --require-meta). Judged repo: ${repo}`;
       return { pass: true, skipped: true, warning };
     }
   }
 
   if (!existsSync(join(repo, "AGENTS.md"))) {
-    return { pass: false, meta_error: "meta_unverified", message: `meta gate: no AGENTS.md under ${repo} (meta_unverified; pass --meta-repo <verifier repo> or --no-meta to record a bypass)` };
+    return { pass: false, meta_error: "meta_unverified", message: `meta gate: no AGENTS.md under ${repo} — judged repo: ${repo}; pass --meta-repo <verifier-root> or run in a neutral dir (--no-meta records a bypass)` };
   }
   const report = runMeta(repo);
   if (report.verdict === "PASS") return { pass: true, report };
@@ -197,7 +200,7 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
       ? "meta_unverified"
       : "meta_failed";
   const failed = report.rules.filter((r) => r.verdict === "FAIL").map((r) => r.id).join(",");
-  const message = `meta gate failed (${failed || report.verdict}): ${report.rules.filter((r) => r.verdict !== "PASS").map((r) => `${r.id} ${JSON.stringify(r.evidence)}`).join("; ")}`;
+  const message = `meta gate failed (${failed || report.verdict}) — judged repo: ${repo}; escape hatches: --meta-repo <verifier-root> or run in a neutral dir (--no-meta records a bypass): ${report.rules.filter((r) => r.verdict !== "PASS").map((r) => `${r.id} ${JSON.stringify(r.evidence)}`).join("; ")}`;
   return { pass: false, report, meta_error, message };
 }
 
