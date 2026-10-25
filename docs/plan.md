@@ -271,6 +271,12 @@ Q8 target/subject 冻结+canonical、Q9 引用失配（活叶/pinned/缺字段�
 V15 5×5、Q11 删 run 幂等、Q12-B/Q13-A。矩阵 green 21/partial 1/planned 2（Q4/V21 后置）。B1 四域异步面 +
 #77/#78 修复 + #37 执法四件。unit 1019 / contract 144 / demo rc0 / ratchet 绿 / readme 54 / rust 绿。
 残余后置：G8 run 期可选加道、Q8 subject 声明不校验实况、#77 facade 覆盖面/方言函数登记。
+**PG 单写后端 B0–B6 全链闭环（2026-10-25）**：属主令「帮我推进这一块的构建」→ B0 立项文档（charter/pg-compat/AGENTS/
+方案 §B0 六件）→ B1 读路径异步化（四域 AsyncStore + 调用面全净）→ B2 schema parity 门禁（28v28 列集对账+自腐化防护）
+→ B3 检索方言抽象（FTS5/tsvector 双后端+黄金查询集）→ B4 并发语义（upsert ON CONFLICT RETURNING+advisory lock+
+READ COMMITTED 成文）→ B5 运维面（db snapshot 脱敏+全链验收）→ B6 双后端门禁矩阵（strict fail-closed 判定+PG 直连面原语）。
+**真库终验（docker postgres:16.15）**：26 表/核心读面/upsert 幂等/advisory lock/tsvector 列/events.seq 全过；四条护栏全验。
+已知边界：CLI boot PG 分支（booted.db 置空走 asyncStore）未动——doctor/stats 走 PG 为后续项，不阻塞 B6 判定。
 **0.110.0 候选（待用户裁定范围，2026-10-21 分诊）**：
 - **最小面（可发现性主题版）**：①`verify example --checker`（corpus/examples SSOT，含 null ops 展示）②`verify lint-candidates`（不耗 spec_version 的逐条 shape 报错）③prepare `rejected_detail: [{source_clause,stage,reason}]`（旧字段保留一版）④help 七型选型表（count=存在断言 / sql=违例扫描的 PASS 反向坑，`--help`/llms 双面同源）⑤F6 `predict audit [--due]` + `research predict list` 严格旗标（未知 rc=2）与 `--due` 真过滤。
 - **0.110.x**：F1 `--project` 写输出放大目标 + cwd 绑定警告；F2 `evidence/claim show`（三 show 全字段）；F4 跨项目 link 一行提示。
