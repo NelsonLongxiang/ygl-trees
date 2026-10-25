@@ -158,3 +158,23 @@ describe("doctor session_identity 检查（K3 0.106.0）", () => {
     }
   });
 });
+
+describe("doctor skill_versions 审计 (#85)", () => {
+  it("major/minor 落后 CLI 的技能被点名；新版本不误报；无 semver 单列", async () => {
+    const mod = await import("../src/doctor");
+    const root = path.join(dir, "skill-root");
+    fs.mkdirSync(path.join(root, "skills", "old-skill"), { recursive: true });
+    fs.mkdirSync(path.join(root, "skills", "new-skill"), { recursive: true });
+    fs.mkdirSync(path.join(root, "skills", "bad-skill"), { recursive: true });
+    fs.writeFileSync(path.join(root, "package.json"), "{}", "utf8");
+    fs.writeFileSync(path.join(root, "skills", "old-skill", "SKILL.md"), "---\nname: old-skill\nversion: 0.26.0\n---\n", "utf8");
+    fs.writeFileSync(path.join(root, "skills", "new-skill", "SKILL.md"), "---\nname: new-skill\nversion: 1.0.0\n---\n", "utf8");
+    fs.writeFileSync(path.join(root, "skills", "bad-skill", "SKILL.md"), "---\nname: bad-skill\n---\n", "utf8");
+    const audit = mod.auditSkillVersions("0.114.31", root)!;
+    expect(audit.total).toBe(3);
+    expect(audit.lagging.map((s) => s.name)).toEqual(["old-skill"]);
+    expect(audit.lagging[0].version).toBe("0.26.0");
+    expect(audit.malformed).toEqual(["bad-skill"]);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});

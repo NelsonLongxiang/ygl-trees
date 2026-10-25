@@ -1932,16 +1932,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           checker: v.checker,
         })),
       }));
-      const payload: Record<string, unknown> = { _derived_from: EXAMPLES_DERIVED_FROM, examples };
+      const payload: Record<string, unknown> = {
+        _derived_from: EXAMPLES_DERIVED_FROM,
+        _shape_note: "`vu` is the SPEC face (expected_from + raw sql, used by run/corpus); `candidates` mirrors the PREPARE shape (anchor + id). SQL-family candidates still need predicate AST — see skills/ygl-trees-verify §2b.",
+        examples,
+      };
       if (args.flags["null-ops"]) payload.null_ops = NULL_OPS_NOTE;
       if (ctx.json) {
         console.log(JSON.stringify(payload));
         return 0;
       }
-      out(ctx, paint(C.dim, `  ${EXAMPLES_DERIVED_FROM} — paste a vu under candidates[], then: verify lint-candidates <file>`, ctx.color));
+      out(ctx, paint(C.dim, `  ${EXAMPLES_DERIVED_FROM} — spec VU shape (expected_from; used by run/corpus)`, ctx.color));
+      out(ctx, paint(C.dim, `  prepare candidates are projected below as candidates[] (anchor); SQL-family candidates still need predicate AST — see skills/ygl-trees-verify §2b`, ctx.color));
       for (const ex of examples) {
         out(ctx, `\n  ## ${ex.checker} — case ${ex.case_id}${ex.expects ? `  (${ex.expects})` : ""}`);
         out(ctx, paint(C.dim, JSON.stringify(ex.vu, null, 2).split("\n").map((l) => `  ${l}`).join("\n"), ctx.color));
+        if (ex.candidates?.length) {
+          out(ctx, paint(C.dim, "  candidates[] (prepare shape):", ctx.color));
+          out(ctx, paint(C.dim, JSON.stringify(ex.candidates, null, 2).split("\n").map((l) => `  ${l}`).join("\n"), ctx.color));
+        }
       }
       if (args.flags["null-ops"]) {
         out(ctx, `\n  ## null ops\n  ${NULL_OPS_NOTE.note}`);
@@ -2068,8 +2077,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         reviewedClauses = list.map((r: any) => String(r?.source_clause ?? ""));
       }
       const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, clausePatternDeclared: patOpt.declared, reviewedClauses });
+      // #79 discoverability: a rejected lint ships a pasteable candidate
+      // skeleton. The schema otherwise has to be archaeology'd out of
+      // examples.generated.ts, whose `vu` shape is the SPEC face
+      // (expected_from + raw sql), not the prepare-candidate face.
+      const lintHint = [
+        "minimal candidate skeleton (replace <…>; see skills/ygl-trees-verify §2b):",
+        '[{"source_clause":"<material clause line>","anchor":{"quote":"<verbatim>","locator":"material.md#S1"},"checker":{"type":"count","predicate":{"from":"<table>","select":["<col>"]},"op":">=","value":1}}]',
+        "`expected_from` + raw `sql` are the spec-VU face (verify example's `vu`), not a prepare candidate; use `anchor` + predicate AST.",
+      ].join("\n");
       if (ctx.json) {
-        console.log(JSON.stringify(res));
+        console.log(JSON.stringify(res.ok ? res : { ...res, hint: lintHint }));
         return 0;
       }
       const skipped = [
@@ -2097,6 +2115,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       out(ctx, paint(C.red, `  ✗ candidates lint: ${res.issues.length}/${res.checked} rejected${skippedTail}`, ctx.color));
       for (const i of res.issues) out(ctx, paint(C.dim, `    #${i.index} [${i.stage}] ${i.source_clause}: ${i.reason}`, ctx.color));
+      out(ctx, paint(C.dim, `  hint: ${lintHint}`, ctx.color));
       return 0;
     }
 

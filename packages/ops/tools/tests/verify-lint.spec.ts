@@ -96,6 +96,9 @@ describe.skipIf(!HAS_BIN)("verify lint-candidates (0.110.0)", () => {
     expect(rejections[0]).toMatchObject({ index: 1, stage: "P2", source_clause: "未知列不得参与判据。" });
     expect(String(rejections[0].reason)).toMatch(/column|schema/i);
     expect(r.j.coverage_skipped).toBe(true);
+    // #79: a rejected lint ships a pasteable candidate skeleton, not just a reason.
+    expect(String(r.j.hint)).toMatch(/minimal candidate skeleton/);
+    expect(String(r.j.hint)).toMatch(/predicate AST/);
     const after = existsSync(join(HOME, "verify", "specs")) ? readdirSync(join(HOME, "verify", "specs")).length : 0;
     expect(after).toBe(before); // nothing frozen, nothing bumped
     expect(existsSync(join(HOME, "verify", "prepares"))).toBe(false);

@@ -43,6 +43,9 @@ describe.skipIf(!HAS_BIN)("verify example (corpus-derived, 0.110.0)", () => {
     const r = jrun(["verify", "example", "--json"]);
     expect(r.rc).toBe(0);
     expect(r.j._derived_from).toMatch(/^corpus 1\.2 \(173 files, digest 683766f1077bb2c0/);
+    // #79: the payload declares the two faces (spec vu vs prepare candidates).
+    expect(String(r.j._shape_note)).toMatch(/SPEC face/);
+    expect(String(r.j._shape_note)).toMatch(/PREPARE shape/);
     expect(r.j.examples.map((e: any) => e.checker)).toEqual(TYPES);
     for (const ex of r.j.examples) {
       expect(ex.case_id).toBeTruthy();

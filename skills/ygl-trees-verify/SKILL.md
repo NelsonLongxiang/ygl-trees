@@ -86,7 +86,7 @@ SQL 三种写法统一：单语句 SELECT/WITH 走 `SqliteRunner.query`；`sql-p
 ]
 ```
 
-- 候选字段是 `anchor: {quote, locator}`，**不是** `expected_from`；`expected_from` 是冻结 spec / `verify example` 的 VU 形状，prepare 不认（照抄会被 P1 报「mis-transcription」）。`id`/`vu_id` 不要自己写，prepare 生成 `C1..`。
+- 候选字段推荐 `anchor: {quote, locator}`；`expected_from` 是冻结 spec / `verify example` 的 VU 形状（p1 现接受它作别名，但 `verify example` 的 `candidates[]` 已是 `anchor`，照抄 `vu` 仍可能带 raw `sql` 而被 P2 拒）。`id`/`vu_id` 不要自己写，prepare 生成 `C1..`。
 - 检查器只收 predicate AST：`count`/`exists` 用 `predicate`，`sql` 用 `predicate` + `fail_when`（`rows>0` 找违规）；**不收手写 SQL**（`sql` 字符串、`sql` 字段、`authored` 都会被拒）。
 - 零违规断言不要写 `count == 0`（空库 0==0 会被 P4 红队判 vacuous pass）：用 `sql` + `fail_when:"rows>0"` 扫违规行（空库得 NEEDS-MATERIAL）；正整数用 `count` + `op:">="`。
 - 先探：`verify lint-candidates <candidates.json> --text <material> --reviews <reviews.json> [--db snapshot.sqlite] --json`；失败看 `issues[].reason`（P1 逐字/定位、P2 schema、P4 红队方向）。

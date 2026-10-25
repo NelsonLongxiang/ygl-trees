@@ -16,6 +16,7 @@ import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
 import { resolveProject, projectSessionKey, projectCount, sessionId } from "../../../core/database/src/selection";
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
+import { dirname, join } from "node:path";
 import { orphanRelations } from "./rels";
 import { updateHintFromCache } from "./update-check";
 
@@ -23,6 +24,48 @@ interface Check {
   name: string;
   status: "pass" | "warn" | "fail";
   detail: string;
+}
+
+/** Documentation drift audit (#85): skills/<name>/SKILL.md frontmatter version
+ *  vs the running CLI. Only the source checkout has `skills/` + `package.json`
+ *  at the same root; a workspace home has neither, so this returns null and
+ *  doctor omits the row. */
+export interface SkillVersionAudit {
+  dir: string;
+  total: number;
+  lagging: Array<{ name: string; version: string }>;
+  malformed: string[];
+}
+
+export function auditSkillVersions(cliVersion: string, root = process.cwd()): SkillVersionAudit | null {
+  const cli = cliVersion.split(".").map((n) => Number(n) || 0);
+  let dir = root;
+  for (let i = 0; i < 6; i++, dir = dirname(dir)) {
+    if (!fs.existsSync(join(dir, "skills")) || !fs.existsSync(join(dir, "package.json"))) {
+      if (dirname(dir) === dir) break;
+      continue;
+    }
+    const skillsDir = join(dir, "skills");
+    const lagging: SkillVersionAudit["lagging"] = [];
+    const malformed: string[] = [];
+    let total = 0;
+    for (const ent of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+      if (!ent.isDirectory()) continue;
+      const file = join(skillsDir, ent.name, "SKILL.md");
+      if (!fs.existsSync(file)) continue;
+      total++;
+      const head = fs.readFileSync(file, "utf8").split("\n").slice(0, 20).join("\n");
+      const m = /^version:\s*(\d+)\.(\d+)\.(\d+)\s*$/m.exec(head);
+      if (!m) { malformed.push(ent.name); continue; }
+      const got = [Number(m[1]), Number(m[2]), Number(m[3])];
+      // major/minor lag is the actionable drift; patch-level diffs are noise.
+      if (got[0] < cli[0] || (got[0] === cli[0] && got[1] < cli[1])) {
+        lagging.push({ name: ent.name, version: `${m[1]}.${m[2]}.${m[3]}` });
+      }
+    }
+    return { dir: skillsDir, total, lagging, malformed };
+  }
+  return null;
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
@@ -399,8 +442,28 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       detail: hint?.update_available
         ? `CLI ${env.version} < npm latest ${hint.latest} — npm i -g ygl-trees@latest（提示不影响判定/rc）`
         : hint
-          ? `CLI ${env.version} is current (cached latest ${hint.latest})`
+          ? hint.latest === env.version
+            ? `CLI ${env.version} is current (cached latest ${hint.latest})`
+            : `CLI ${env.version} is newer than cached latest ${hint.latest} (cache stale — refresh is best-effort, not a gate)`
           : `no cached update check yet (best-effort, never on the critical path)`,
+    });
+  }
+
+  // ── Skill docs drift (source checkout only) ──
+  // #85: the 12 skill frontmatters are written when the command face changes;
+  // without a mechanical readout they silently lag the CLI (0.26 … 1.0.0 vs
+  // 0.114.x). Warn, never fail: stale docs do not break the workspace.
+  const skillAudit = env.version ? auditSkillVersions(env.version) : null;
+  if (skillAudit) {
+    const lagging = skillAudit.lagging.slice(0, 6).map((s) => `${s.name}@${s.version}`).join(", ");
+    const more = skillAudit.lagging.length > 6 ? ` … +${skillAudit.lagging.length - 6}` : "";
+    const bad = skillAudit.malformed.slice(0, 4).join(", ");
+    checks.push({
+      name: "skill_versions",
+      status: skillAudit.lagging.length || skillAudit.malformed.length ? "warn" : "pass",
+      detail: skillAudit.lagging.length || skillAudit.malformed.length
+        ? `${skillAudit.total} skill doc(s); ${skillAudit.lagging.length} lag CLI ${env.version}: ${lagging}${more}${skillAudit.malformed.length ? `; no semver: ${bad}` : ""} — sync skills/*/SKILL.md version with the CLI`
+        : `${skillAudit.total} skill doc(s) at CLI ${env.version} major/minor`,
     });
   }
 
