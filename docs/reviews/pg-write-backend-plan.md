@@ -14,7 +14,7 @@ kind: 评审
 
 1. **边界：每个工作区恰好一个写库，二选一，永不双写。** SQLite 仍是默认值（零服务、零配置），PG 是可选的唯一写库。这与 2026-10-15 的「不做双后端同写」裁定**不冲突**：被否决的是同时写两个库，本方案不做。被取代的只是「SQLite 是唯一选择」这一条（pg-compat.md §5、AGENTS.md「SQLite 唯一事实源」）。
 2. **当年取消 L2 的主导理由已大半消失。** 0.7.0 判的是「Store 全栈同步 vs pg 驱动纯异步的阻抗失配」。此后的进展：
-   - 0.10.0–0.12.0 已把全部写命令迁到 TypeORM 异步事务服务（`writes.ts` / `treeWrites.ts`）；
+   - 0.10.0–0.12.0 已把全部写命令迁到 TypeORM 异步事务服务（`writes.ts` / `writes.ts`）；
    - 0.89.0 铺好了 PG-A 地基：`getPgOrm` 方言接缝、FTS5 影子表方言门控、`schema_migrations(backend,version)` 双端账表、PG 原生单调的 `events.seq`。
 
    剩下的主要成本在**读路径**：约 195 处同步裸 SQL，见 §2。

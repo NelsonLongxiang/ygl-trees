@@ -203,9 +203,12 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     expect(drives.verdict).toBe("FAIL");
     expect(drives.evidence.problems.join(" ")).toMatch(/tooling must not drive verification.*scripts\/run\.mjs/);
     expect(drives.evidence.problems.join(" ")).not.toMatch(/unregistered executable/); // judged once, not twice
-    // the v1 index keeps the 0.112.0 directory allowlist (read-compat): same file, no finding
+    // #22: a v1 index turns the tooling scan OFF — admission is unproven, not
+    // proven. R3 is NEEDS-MATERIAL naming the v1 gap (never a silent PASS).
     writeFileSync(join(dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 1, specs }), "utf8");
-    expect(rule(jrun(["verify", "meta", dir, "--json"]), "R3").verdict).toBe("PASS");
+    const v1r3 = rule(jrun(["verify", "meta", dir, "--json"]), "R3");
+    expect(v1r3.verdict).toBe("NEEDS-MATERIAL");
+    expect(String(v1r3.evidence.reason)).toMatch(/v1 index: tooling dirs not checked/);
   });
 
   it("v2 R3: the argv-array idiom ygl([\"verify\", \"run\", …]) counts as driving verification", () => {

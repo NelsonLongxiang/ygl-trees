@@ -465,7 +465,11 @@ export async function main(argv: string[]): Promise<number> {
   const file = group === "verify" ? dbPath(home) : str(args, "db", "") || dbPath(home);
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
-  const needInit = !(group === "db" && action === "init") && group !== "plugin";
+  // #18②: DB-free verify reads — example / lint-candidates are construction-surface
+  // helpers that never touch the workspace db; refusing them on an empty YGL_HOME
+  // sends authors the wrong way (they need examples, not a database).
+  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe");
+  const needInit = !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE;
   if (needInit && !require("node:fs").existsSync(file)) {
     bad(ctx, `no database at ${file}`);
     // P1-4 (REVIEW-0.84.0): with --json, stdout is the machine channel — bad()

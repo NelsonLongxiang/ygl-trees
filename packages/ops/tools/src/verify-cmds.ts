@@ -738,18 +738,26 @@ export function minimalRedTeam(schemaSql: string[], submissionDir?: string): (s:
       };
       const report = await runVerify(s, { runner: runner as never, submissionDir, mode: "open", nowIso: () => "1970-01-01T00:00:00.000Z" });
       const failures: string[] = [];
-      if (report.overall === "ERROR") failures.push("spec errors out on an empty snapshot (construction bug, not a data finding)");
+      // GitHub #18.1: 先判 file-checker 缺附件——它是**作者可修的构造输入缺口**，
+      // 不是 construction bug；只有当 ERROR 里还有非 file 型时才报 construction bug，
+      // 避免误导性的第一诊断把作者带离正确修法。
+      const fileErroneous = report.vu.filter(
+        (r) => r.verdict === "ERROR" && String((r as any).evidence?.reason ?? "").includes("file checker requires --attachments"),
+      );
+      const otherErroneous = report.vu.filter(
+        (r) => r.verdict === "ERROR" && !fileErroneous.includes(r),
+      );
+      if (report.overall === "ERROR" && otherErroneous.length > 0) {
+        failures.push("spec errors out on an empty snapshot (construction bug, not a data finding)");
+      }
       for (const r of report.vu) {
         if (r.verdict === "PASS" && (r.witness?.rows_scanned ?? 0) === 0) failures.push(`${r.id} passes on an empty snapshot — vacuous pass`);
-        // GitHub #18.2: file checkers are constructible in P2 (glob/ignore only),
-        // but this red-team gate runs without attachment staging — say what to do
-        // instead of leaking the engine's bare "--attachments <dir>" wording.
-        if (r.verdict === "ERROR" && String((r as any).evidence?.reason ?? "").includes("file checker requires --attachments")) {
-          failures.push(
-            `${r.id} is a file checker: no attachments were staged for this prepare — submit them with ` +
-              "`verify submit --attach <file>` so the red-team gate can run the file checkers against the material's attachments",
-          );
-        }
+      }
+      for (const r of fileErroneous) {
+        failures.push(
+          `${r.id} is a file checker: no attachments were staged for this prepare — submit them with ` +
+            "`verify submit --attach <file>` so the red-team gate can run the file checkers against the material's attachments",
+        );
       }
       return failures;
     } finally {

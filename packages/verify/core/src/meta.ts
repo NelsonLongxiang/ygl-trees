@@ -438,6 +438,19 @@ function fileSha(repo: string, rel: string): string | null {
 function r3(repo: string, index: IndexState): MetaRule {
   const problems: string[] = [];
   const v2 = (index.version ?? 0) >= 2 && index.readable;
+  // #22: v1 indexes never read registrations — the tooling-registration scan is
+  // off, so admission is UNPROVEN, not proven. A v1 index listing at least one
+  // spec gets NEEDS-MATERIAL naming that v1 did not check tooling dirs; rc
+  // mirrors the verdict (non-zero for FAIL; NEEDS-MATERIAL is also surfaced).
+  if ((index.version ?? 0) === 1 && index.readable && index.specsListed > 0) {
+    return {
+      id: "R3",
+      severity: "S1",
+      title: "no stray executable verification artifacts",
+      verdict: "NEEDS-MATERIAL",
+      evidence: { skipped: true, reason: "v1 index: tooling dirs not checked (registration format predates v2) — re-register with meta_index_version 2 to prove admission" },
+    };
+  }
   const exts = v2 ? EXEC_EXTS_V2 : EXEC_EXTS_V1;
   const sourceRoots = index.sourceRoots.map((r) => r.replace(/\/+$/, ""));
   const inSourceRoot = (rel: string): boolean => sourceRoots.some((root) => rel === root || rel.startsWith(`${root}/`));
