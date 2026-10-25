@@ -6,7 +6,7 @@ description: >-
   三段（上下文/决策/后果）。produce design 命令 + design_type 信封 + rel 挂节点 + DESIGN.md
   单一事实源纪律。触发词：design 捕获、设计决策、ADR、DESIGN.md、ui-ux、架构决策、
   design_type、produce design、设计沉淀。
-version: 0.33.0
+version: 0.115.1
 tags: ygl-trees,methodology,design,adr,design-md
 ---
 

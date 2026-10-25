@@ -11,9 +11,9 @@
 | # | 触点 | 文件 | 说明 |
 |---|---|---|---|
 | 1 | SCHEMA_SQL | packages/core/database/src/db.ts | 建表 + 索引；FK 全部 `ON DELETE CASCADE`；命名 snake_case |
-| 2 | 可检索？ | packages/core/database/src/db.ts + packages/research/pipeline/src/writes.ts | 若需全文检索：建 FTS5 虚表 + 写路径同步 ngram（见 §三；tree 侧在 treeWrites.ts） |
+| 2 | 可检索？ | packages/core/database/src/db.ts + packages/research/pipeline/src/writes.ts | 若需全文检索：建 FTS5 虚表 + 写路径同步 ngram（见 §三；tree 侧在 writes.ts） |
 | 3 | 幂等？ | packages/core/database/src/db.ts + packages/research/pipeline/src/writes.ts | 若写命令可重复执行：content_hash 列 + 唯一索引 + 写服务判重 + `--force`（见 §二） |
-| 4 | 写服务 | packages/research/pipeline/src/writes.ts（tree 域 packages/techtree/model/src/treeWrites.ts） | **写命令的唯一写入面**：事务化服务（幂等 + 基表 + FTS 双写 + events 同事务）。Store（reads.ts）只剩读、配置面（project/tree use）与历史例外 |
+| 4 | 写服务 | packages/research/pipeline/src/writes.ts（tree 域 packages/techtree/model/src/writes.ts） | **写命令的唯一写入面**：事务化服务（幂等 + 基表 + FTS 双写 + events 同事务）。Store（reads.ts）只剩读、配置面（project/tree use）与历史例外 |
 | 5 | db export dataTables | packages/ops/tools/src/db-cmds.ts | 漏了 = 备份静默丢数据（`query_sources` 事故） |
 | 6 | MIRROR_TABLES | packages/ops/tools/src/pgsync.ts | 漏了 = PG 镜像丢数据；可检索表还要加 NGRAM_INPUT 映射 |
 | 7 | stats() | packages/research/pipeline/src/reads.ts | `db stats` / `agent brief` 的口径；漏了 = 计数审计失真 |
@@ -64,7 +64,7 @@
 
 **迁移读命令的固定动作**：`getOrm(env.db.path)` → repo.find（relations 取派生计数）→ 显式映射输出形状（含历史 clip 怪癖）→ catch 返回 rc=1 → demo 即回归。
 
-**写迁移状态（0.12.0 收官）**：全域完成——research/kb/job（0.10.0）、produce/skill/project（0.11.0）、tree/node（0.12.0，src/treeWrites.ts）。**例外清单**：`project use` / `tree use` 留 Store.metaSet（配置面）；`node validate` 保留 TreeStore（诊断面，buildIndex 副作用随读发生）；tree 域沿袭 TreeStore 传统**不写 events**（历史行为，保持）；produce export 的 artifact.export 事件仍经 Store.log。迁移规则不变：副作用进事务 + 黄金对账。produce 三命令（outline/section/report）自 0.11.0 起 JSON 纯净。
+**写迁移状态（0.12.0 收官）**：全域完成——research/kb/job（0.10.0）、produce/skill/project（0.11.0）、tree/node（0.12.0，src/writes.ts）。**例外清单**：`project use` / `tree use` 留 Store.metaSet（配置面）；`node validate` 保留 TreeStore（诊断面，buildIndex 副作用随读发生）；tree 域沿袭 TreeStore 传统**不写 events**（历史行为，保持）；produce export 的 artifact.export 事件仍经 Store.log。迁移规则不变：副作用进事务 + 黄金对账。produce 三命令（outline/section/report）自 0.11.0 起 JSON 纯净。
 
 **连接策略（0.24.0 起）**：WAL + `synchronous=NORMAL`（sqlite.org 官方推荐组合）——commit 不再逐事务 fsync（Windows 实测 ~14ms/次），同步由 WAL checkpoint 承担。**持久性语义**：断电可能回滚最后几笔事务，数据库不会损坏；本地单用户研究工作台的教科书取舍。两条连接都要设（wasm DB 构造器 + `getOrm()` initialize 后）——journal_mode 持久于文件，synchronous 是**逐连接**的。基准：claim-write 39.9→28.1ms/op（−29%）。
 

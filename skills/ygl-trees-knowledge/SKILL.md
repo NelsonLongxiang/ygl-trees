@@ -6,7 +6,7 @@ description: >-
   技能命中。让研究报告沉淀为可被下次任务自动命中的技能。
   触发词：知识库、knowledge、kb、笔记、note、批量导入、import、search、检索、promote、
   技能、skill、复用、agent match。
-version: 0.61.0
+version: 0.115.1
 tags: ygl-trees,knowledge,kb,skill,reuse
 ---
 

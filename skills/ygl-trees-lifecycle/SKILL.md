@@ -8,7 +8,7 @@ description: >-
   漂移反模式。机制细节见各专职技能，本技能只回答「什么时候」。
   触发词：更新时机、什么时候更新、何时解锁、何时该动、何时挂、维护、节奏、cadence、
   keep in sync、同步、漂移、stale、脏索引、收口、会话结束、下次做什么、lifecycle。
-version: 0.114.31
+version: 0.115.1
 tags: ygl-trees,lifecycle,cadence,maintenance,timing
 ---
 

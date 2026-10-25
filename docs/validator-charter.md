@@ -45,7 +45,7 @@ kind: 规范
 4. **不作证**：编排输出只作 CLI 的输入（快照、材料、树描述），不得作为证据引用；证据只能是 CLI 产物
    （report / archive / payload_sha256）；
 5. **有自检**：仓库自带 selfcheck（固定夹具入仓 + 注入缺陷各只翻对应叶子），改编排后必跑；
-6. **会退场**：`replaced_by` 取自 §4.7 原语表，`sunset` 为具体版本号，到期由 §4.4 R5 拦截。
+6. **会退场**：`replaced_by` 取自 §4.7 原语表（**第二列「取代它的 CLI 原语」**），`sunset` 为具体版本号；到期由 §4.4 R5b 的显式谓词拦截：**审计时钟 `engine_version` ≥ 该条 `sunset` → FAIL（点名该条）**。
 
 不满足任一条的代码，仍按本条视为临时编码执行。
 
@@ -160,7 +160,7 @@ clone/评审者能看到「为什么重登记」；把 red 改绿的动作本身
 
 - **R5（S1，v1.2）** 编排按期退场，**权威拆分两段**：
   - **R5a（静态合规；`verify meta` 默认执行、离线、不做时钟比较）**：`orchestration[]` 每条必须满足
-    `path` 在 `verify/orchestration/` 下、`sha256` 与实际文件一致、`replaced_by` ∈ §4.7 第一列提取出的
+    `path` 在 `verify/orchestration/` 下、`sha256` 与实际文件一致、`replaced_by` ∈ §4.7 **第二列（「取代它的 CLI 原语」）**提取出的
     命令 token **并集**（每条编排只指名其中一个；剥离反引号、忽略单元格括注——规则见 §4.7 表注，
     只定义一次）、`sunset` 为**完整 `MAJOR.MINOR.PATCH` 形 semver**（禁 partial / range）。
   - **R5b（时间执法；审计面显式开启，不进仓内自检）**：时钟 = **审计方发行物内嵌的能力表**——
@@ -169,6 +169,8 @@ clone/评审者能看到「为什么重登记」；把 red 改绿的动作本身
     查询（如 npm latest）不得作为时钟；被检仓自身的 pin 不构成时钟（stale pin 不能冻结自己的 sunset）。
     界规则：对已交付能力，`sunset` ≤ `capability_version` 的下一个 minor；`capability_version: unshipped`
     视为无界（R5b 跳过该条）。延期只能修订本规范（属主裁定），不得改登记。
+    **失败谓词（显式）**：对 `orchestration[]` 每条——审计时钟 `engine_version` **≥** 该条 `sunset` →
+    R5b **FAIL，点名该条**（`path` + `sunset` + 时钟值）；逐条判定，一条到期即整体 FAIL。
 
 - **R6（S1，v1.3）Cordis 应用框架符合性**：v3 索引必须显式声明 `kind: "engine" | "consumer"`
   （R2 校验；缺失/未知按名拒，禁目录启发式）。**engine 档**（本仓）：①`vendor/*` 家族包声明的
@@ -225,9 +227,9 @@ P2 违约（临时编码执行）由元规格静态面（R3）+ 评审复核抓�
 **审计面待办（护栏④）**：`--capabilities` 审计模式对 `source_roots` 广度可疑（如声明覆盖全仓）出
 warning——现不实现；滥用面 ≤ `--no-meta` 且后者有 events 审计，绊线威胁模型是意外+漂移而非恶意。
 
-**表注（verbatim 与界规则，只在此处定义一次）**：`replaced_by` 的闭集 = §4.7 第一列**所有命令 token
+**表注（verbatim 与界规则，只在此处定义一次）**：`replaced_by` 的闭集 = §4.7 **第二列（「取代它的 CLI 原语」）**所有命令 token
 的并集**（多 token 单元格如 `verify package`、`verify notify` 各贡献一项；每条编排只指名其中一个）；
-第一列无命令 token 的行（如构造面「无需新原语」）**不贡献闭集**。逐字提取 = 剥离反引号、忽略单元格
+**第二列**为 `—`/无命令 token 的行（如构造面「无需新原语」）**不贡献闭集**。逐字提取 = 剥离反引号、忽略单元格
 括注。`capability_version` = 该原语到达 R5 所需能力的交付版本；`unshipped` 表示能力尚未交付、
 R5b 不对该条设界；`—` 表示该职责无需退场界（不产生编排登记）。`sunset` 一律完整 `MAJOR.MINOR.PATCH`。
 

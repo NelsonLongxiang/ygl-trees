@@ -7,7 +7,7 @@ description: >-
   AI Gateway）。三态映射 P≥0.7 通过 / P≤0.4 未通过 / 灰带 pending。离线安全：无凭证回落 pending。
   触发词：决策模型、布尔判定、多选、评分、evaluation、P(true)、灰带、gray band、pending、
   eval gate、语义门槛、quest 条件、AI 判定、jev、gateway、choice、score。
-version: 0.26.0
+version: 0.115.1
 tags: ygl-trees,eval,gate,decision-model,choice,score
 ---
 

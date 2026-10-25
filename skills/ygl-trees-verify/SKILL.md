@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.114.31
+version: 0.115.1
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
