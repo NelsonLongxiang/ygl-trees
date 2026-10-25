@@ -102,4 +102,35 @@ describe("#37 round-3: lineage + actor cutoff", () => {
     expect((r.stdout || "") + (r.stderr || "")).toMatch(/actor missing after cutoff/);
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }, 60_000);
+
+  it("#87 regression: v2 index WITHOUT reregistrations[] → R2 PASS (warn, not fail)", () => {
+    const root = scratchIndex();
+    // 最小合法 v2 仓（舰队成员形状）：tooling 有登记、无任何 reregistrations——0.115.0 语义
+    const idx = {
+      meta_index_version: 2, orchestration: [], specs: [],
+      tooling: [{ path: "tools/check-construction.mjs", role: "gate", sha256: "a".repeat(64) }],
+    };
+    // tooling 文件真实存在且 sha 对齐（R3 也要过——最小合法仓的完整形状）
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "tools"), { recursive: true });
+    const toolContent = "export const check = () => 0;" + String.fromCharCode(10);
+    writeFileSync(join(root, "tools", "check-construction.mjs"), toolContent);
+    idx.tooling[0].sha256 = shaOf(Buffer.from(toolContent));
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+    writeFileSync(join(root, "AGENTS.md"), "# fixture" + String.fromCharCode(10));
+    const home = mkdtempSync(join(tmpdir(), "ygl-87-home-"));
+    spawnSync(process.execPath, [BIN, "db", "init"], { env: { ...process.env, YGL_HOME: home }, stdio: "ignore" });
+    const r = spawnSync(process.execPath, [BIN, "verify", "meta", root, "--json"], {
+      encoding: "utf8", env: { ...process.env, YGL_HOME: home }, timeout: 120_000,
+    });
+    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    let j: any = null;
+    try { j = JSON.parse(r.stdout); } catch { /* */ }
+    const r2 = (j?.rules ?? []).find((x: any) => x.id === "R2");
+    expect(r2?.verdict, (r.stdout || "") + (r.stderr || "")).toBe("PASS"); // 不再红
+    expect(r.status).toBe(0); // 整仓 rc0（R1 PASS、R3 扫描见 AGENTS+verify 标记）
+    // warn 可见但不影响判定
+    expect(JSON.stringify(r2?.evidence)).toMatch(/lineage_warnings/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 120_000);
 });

@@ -626,5 +626,6 @@
       "at": "2026-10-25T08:38:14.373Z"
     }
   ],
-  "actor_required_from": "2026-10-25T00:00:00.000Z"
+  "actor_required_from": "2026-10-25T00:00:00.000Z",
+  "lineage_anchors_required": true
 }

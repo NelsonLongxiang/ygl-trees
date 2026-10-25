@@ -253,6 +253,8 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     listed.set(posix(s.file), String(s.sha256 ?? ""));
   }
   const problems: string[] = [];
+  // #87：无锚但未 opt-in 的 tooling 条目 → warn（不红；进 evidence 供审计）
+  const warnings: string[] = [];
   for (const [rel, want] of listed) {
     const full = join(repo, rel);
     if (!existsSync(full)) {
@@ -277,13 +279,22 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
     for (const r of rr) {
       if (typeof r?.path === "string" && typeof r?.new_sha256 === "string") lastNew.set(posix(r.path), r.new_sha256);
     }
+    // #87：锚点要求是**仓本地治理策略**（ygl-trees 自身索引 opt-in）——
+    // 一般 v2 仓库的 tooling 无 reregistrations 是合法形状（0.115.0 起一直如此），
+    // 不能因本仓的治理升级把舰队成员判红。
+    const anchorsRequired = (index as { lineage_anchors_required?: unknown }).lineage_anchors_required === true;
     for (const t of (index.tooling ?? []) as Array<{ path?: unknown; sha256?: unknown }>) {
       if (typeof t?.path !== "string" || typeof t?.sha256 !== "string") continue;
       const expect = lastNew.get(posix(t.path));
       if (expect === undefined) {
-        // #37 条目1：无任何登记记录的路径没有 lineage 锚——不可证明，按漂移处理
-        //（--add 自动记初始锚后不应再出现）。
-        problems.push(`tooling lineage: ${posix(t.path)} has no reregistration anchor (run meta-tooling --add or backfill an initial entry) (#37 item 1)`);
+        if (anchorsRequired) {
+          problems.push(`tooling lineage: ${posix(t.path)} has no reregistration anchor (this index requires anchors — run meta-tooling --add or backfill) (#37 item 1)`);
+        }
+        // 无记录且未 opt-in（#87 向后兼容口径）：warn 不红——存量 v2 索引合法，
+        // 建议补锚（同 #37 过渡语义：新登记仍强制，--add 自动记初始锚）。
+        else {
+          warnings.push(`tooling lineage: ${posix(t.path)} has no reregistration anchor (optional here; run meta-tooling --add to anchor it)`);
+        }
       } else if (expect !== t.sha256) {
         problems.push(`tooling lineage: ${posix(t.path)} sha256 ${t.sha256.slice(0, 8)} ≠ last recorded new_sha256 ${expect.slice(0, 8)} — hand-aligned rehash without a reregistration (#37 item 1)`);
       }
@@ -323,7 +334,11 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
       state.sourceRoots = ((index.source_roots as string[] | undefined) ?? []).map((r) => posix(r));
     }
   }
-  const evidence: Record<string, unknown> = problems.length ? { problems: problems.slice(0, 10), listed: listed.size } : { listed: listed.size };
+  // #87：无锚警告（不红）进 evidence——审计可见，判定不受影响
+  const lineageWarnings = warnings.length ? { lineage_warnings: warnings.slice(0, 10) } : {};
+  const evidence: Record<string, unknown> = problems.length
+    ? { problems: problems.slice(0, 10), listed: listed.size, ...lineageWarnings }
+    : { listed: listed.size, ...lineageWarnings };
   if (version >= 2) Object.assign(evidence, { orchestration: state.orchestration.length, tooling: state.tooling.length, source_roots: state.sourceRoots.length });
   if (version >= 3) Object.assign(evidence, { kind: kind ?? "missing" });
   return {
