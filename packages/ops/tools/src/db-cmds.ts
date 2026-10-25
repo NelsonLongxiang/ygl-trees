@@ -543,18 +543,37 @@ ${cl.text}
       // FTS5 shadow tables (skills_fts_data, …_idx, …) don't carry the
       // sqlite_ prefix; replaying their CREATE after CREATE VIRTUAL TABLE
       // would collide with the ones the virtual table creates itself.
+      // DR 修单（总工席派）：影子表组仍排除，但 **CREATE VIRTUAL TABLE 本体必须随 dump**——
+      // 否则回放后五张检索表不存在（external-content/常规 fts5 一致适用）。数据行随后
+      // 由 fts 段补齐（常规 fts5 的行可以直接 INSERT 回去）。
       const FTS_TABLES = ["skills_fts", "sources_fts", "evidence_fts", "kb_fts", "nodes_fts"];
-      const isFtsOrShadow = (n: string) => FTS_TABLES.some((f) => n === f || n.startsWith(f + "_"));
+      const isShadow = (n: string) => FTS_TABLES.some((f) => n !== f && n.startsWith(f + "_"));
+      const ftsDdl: string[] = [];
       for (const r of db.all(
         "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
-      ))
-        if (!isFtsOrShadow(r.name)) lines.push(r.sql + ";");
+      )) {
+        if (isShadow(r.name)) continue; // 影子组：虚拟表自建，重复 CREATE 会撞
+        if ((FTS_TABLES as string[]).includes(r.name)) { ftsDdl.push(r.sql + ";"); continue; }
+        lines.push(r.sql + ";");
+      }
       const counts: string[] = [];
       for (const t of dataTables) {
         if (skip.has(t)) {
           counts.push(`${t}:skipped`);
           continue;
         }
+        const rows = db.all(`SELECT * FROM ${t}`);
+        for (const r of rows) {
+          const cols = Object.keys(r);
+          const vals = cols.map((c) => sqlLit(r[c])).join(",");
+          lines.push(`INSERT OR REPLACE INTO ${t}(${cols.join(",")}) VALUES(${vals});`);
+        }
+        counts.push(`${t}:${rows.length}`);
+      }
+      // fts 段：虚拟表 DDL 在基表数据之后建（无 FK 依赖），数据行回填，
+      // 保证往返后检索面可用（kbSearch/skillMatch/sourceSearch 等）。
+      lines.push(...ftsDdl);
+      for (const t of FTS_TABLES) {
         const rows = db.all(`SELECT * FROM ${t}`);
         for (const r of rows) {
           const cols = Object.keys(r);
