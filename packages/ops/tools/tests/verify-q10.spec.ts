@@ -1,0 +1,110 @@
+/**
+ * A1 v1.2 Q10 返工回归：五值矩阵（V15 5×5）/ V22 target 失配 STALE / Q11 run id 唯一 / G8 JCS
+ * 全部按契约 v1.2（docs/reviews/verify-tree-run-contract-v1.2.md）钉死。
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { aggregateTreeVerdict } from "../src/verify-cmds";
+import { jcsCanonical } from "../src/jcs";
+
+const REPO = resolve(__dirname, "../../../..");
+const BIN = join(REPO, "dist/bundle/bin.cjs");
+const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+
+function run(args: string[], home: string, cwd = REPO) {
+  const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
+    cwd, encoding: "utf8", env: { ...process.env, YGL_HOME: home, YGL_SESSION: "q10-spec" } as any,
+  });
+  let j: any = null;
+  try { j = JSON.parse(r.stdout); } catch { /* not json */ }
+  return { rc: r.status ?? -1, j, out: r.stdout + r.stderr };
+}
+
+describe.skipIf(!HAS_BIN)("A1 v1.2 Q10 rework (5-value / STALE / Q11 / JCS)", () => {
+  let home = "";
+  let snap = "";
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), "ygl-q10-"));
+    run(["db", "init"], home);
+    run(["project", "new", "p"], home);
+    // leaf spec
+    const sid = "spec_q10";
+    mkdirSync(join(home, "verify", "specs", sid), { recursive: true });
+    mkdirSync(join(home, "verify", "materials", "mat_q10"), { recursive: true });
+    writeFileSync(join(home, "verify", "materials", "mat_q10", "material.txt"), "q10 fixture");
+    writeFileSync(join(home, "verify", "materials", "mat_q10", "material.json"),
+      JSON.stringify({ material_id: "mat_q10", title: "q10", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+    writeFileSync(join(home, "verify", "specs", sid, "prepare.json"), JSON.stringify({ material_id: "mat_q10" }));
+    writeFileSync(join(home, "verify", "specs", sid, "spec.json"), JSON.stringify({
+      contract_version: "1.2", spec_id: sid, spec_version: 1, title: "q10", domain: "general",
+      created: "2026-10-22T00:00:00.000Z", runtime_min: "",
+      verifier: { engine_version: "0.114.31", corpus_version: "1.2" },
+      as_of: { kind: "snapshot", value: "2026-10-19T00:00:00.000Z" },
+      attachments: [], sealed: { review: false },
+      vu: [{ id: "V1", role: "assert", title: "q10", severity: "S3", source_clause: "x",
+        expected_from: { quote: "x", locator: "m:1" },
+        checker: { type: "exists", sql: "select 1 from t where id=1", expect: true } }],
+    }));
+    snap = join(home, "snap.db");
+    const db = new DatabaseSync(snap);
+    db.exec("CREATE TABLE t(id INTEGER); INSERT INTO t VALUES(1);");
+    db.close();
+  });
+
+  afterAll(() => rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("Q11: tree_run_id is unique across runs (run idempotency removed); digest stays equal", () => {
+    const treeMat = {
+      tree_spec_id: "ts_q10", tree_spec_version: 1, title: "q10 tree", root: "root",
+      nodes: [
+        { id: "root", kind: "group", aggregate: "all_pass", children: ["leaf"] },
+        { id: "leaf", kind: "leaf", spec_id: "spec_q10" },
+      ],
+    };
+    mkdirSync(join(home, "verify", "materials", "mat_tree_q10"), { recursive: true });
+    writeFileSync(join(home, "verify", "materials", "mat_tree_q10", "material.txt"), JSON.stringify(treeMat));
+    writeFileSync(join(home, "verify", "materials", "mat_tree_q10", "material.json"),
+      JSON.stringify({ material_id: "mat_tree_q10", title: "q10 tree", created: "2026-10-22T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+
+    const prep = run(["verify", "tree", "prepare", "mat_tree_q10"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const tsId = prep.j.tree_spec_id;
+
+    const r1 = run(["verify", "tree", "run", tsId, "--db", snap, "--no-archive"], home);
+    const r2 = run(["verify", "tree", "run", tsId, "--db", snap, "--no-archive"], home);
+    expect(r1.rc, r1.out).toBe(0);
+    expect(r2.rc, r2.out).toBe(0);
+    // Q11: run ids must differ (no idempotency claim)
+    expect(r1.j.tree_run_id).not.toBe(r2.j.tree_run_id);
+    // V7: same input → same digest
+    expect(r1.j.verdict_digest).toBe(r2.j.verdict_digest);
+  }, 120_000);
+
+  it("V22: leaf target mismatch → STALE, propagates to root (not PASS)", () => {
+    const prep = run(["verify", "tree", "prepare", "mat_tree_q10"], home);
+    expect(prep.rc, prep.out).toBe(0);
+    const tsId = prep.j.tree_spec_id;
+    // declare a target that cannot match the leaf's data_source id
+    const r = run(["verify", "tree", "run", tsId, "--db", snap, "--no-archive", "--target", "sqlite-snapshot:other-node"], home);
+    expect(r.rc, r.out).toBe(0);
+    expect(r.j.verdict).toBe("STALE");
+    const leaf = (r.j.nodes ?? []).find((n: any) => n.node_id === "leaf");
+    expect(leaf?.verdict).toBe("STALE");
+    expect(leaf?.report_verdict).toBeTruthy(); // original 4-value preserved
+    expect(String(leaf?.stale_reason)).toMatch(/target mismatch/);
+  }, 120_000);
+
+  it("G8: jcsCanonical sorts keys and emits no whitespace", () => {
+    expect(jcsCanonical({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
+    expect(jcsCanonical({ z: [3, 1], a: "x" })).toBe('{"a":"x","z":[3,1]}');
+    // number formatting: shortest representation
+    expect(jcsCanonical(1.0)).toBe("1");
+    expect(jcsCanonical(1.5)).toBe("1.5");
+  });
+});

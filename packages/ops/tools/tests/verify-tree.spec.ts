@@ -156,14 +156,28 @@ describe("A1 tree run (runtime first cut)", () => {
     rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
+  // 契约 v1.2 Q10-B 五值矩阵（V15 5×5 表驱动；全序 NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS）
   const matrix: Array<[string, string[], string]> = [
+    // all_pass
     ["all_pass", ["PASS", "PASS"], "PASS"],
     ["all_pass", ["PASS", "FAIL"], "FAIL"],
-    ["all_pass", ["PASS", "ERROR"], "PASS"],
+    ["all_pass", ["PASS", "ERROR"], "INFRA_BLOCKED"], // Q10-B：any ERROR → 至多 INFRA_BLOCKED
     ["all_pass", ["ERROR", "ERROR"], "INFRA_BLOCKED"],
+    // count_fail
+    ["count_fail", ["PASS", "FAIL"], "FAIL"],
+    ["count_fail", ["PASS", "ERROR"], "INFRA_BLOCKED"],
+    // quorum：分母只计 PASS+FAIL；any-ERROR 优先
     ["quorum(2)", ["PASS", "FAIL", "PASS"], "PASS"],
     ["quorum(2)", ["PASS", "FAIL", "FAIL"], "FAIL"],
+    ["quorum(2)", ["PASS", "PASS", "ERROR"], "INFRA_BLOCKED"],
+    ["quorum(2)", ["PASS", "FAIL", "ERROR"], "INFRA_BLOCKED"],
+    ["quorum(2)", ["FAIL", "FAIL", "ERROR"], "INFRA_BLOCKED"],
+    // 遮蔽序
     ["all_pass", ["NEUTRALIZED", "FAIL"], "NEUTRALIZED"],
+    ["all_pass", ["NEUTRALIZED", "STALE"], "NEUTRALIZED"],
+    ["all_pass", ["STALE", "FAIL"], "STALE"],
+    ["all_pass", ["STALE", "PASS"], "STALE"],
+    ["all_pass", ["FAIL", "INFRA_BLOCKED"], "INFRA_BLOCKED"],
   ];
   for (const [op, vs, want] of matrix) {
     it(`aggregate ${op} ${vs.join("+")} => ${want}`, () => {

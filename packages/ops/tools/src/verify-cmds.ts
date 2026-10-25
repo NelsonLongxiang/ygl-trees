@@ -10,6 +10,7 @@
  *
  * 运行契约：rc 只表达过程——0=跑完出报告（PASS/FAIL 都是有效结论），1=运行错误，2=用法错误。
  */
+import { jcsCanonical } from "./jcs";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -238,21 +239,31 @@ function validateTreeSpec(
   };
 }
 
-/** A1 四态聚合（契约 v1.1 矩阵）：NEUTRALIZED > FAIL > PASS > 全 ERROR=INFRA_BLOCKED。
- *  纯函数，导出以便单测直接钉矩阵。 */
+/** A1 五值聚合（契约 v1.2 Q10-B）：全序 NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS。
+ *
+ *  Q10-B：任一子 ERROR → 父至多 INFRA_BLOCKED（不可能是 PASS/FAIL）。
+ *  STALE：沿父链传播、阻断 PASS（不稀释 FAIL——被遮蔽的 FAIL 在 nodes[]/审计可见）。
+ *  quorum 分母只计 PASS+FAIL（ERROR/NEUTRALIZED/STALE 不进分母）；
+ *  但 Q10-B 的 any-ERROR 规则优先于 quorum 结果。
+ *  纯函数，导出以便单测直接钉 5×5 矩阵。 */
 export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
   const vs = verdicts.map((v) => String(v).toUpperCase());
+  // 全序最高优先：NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS
   if (vs.includes("NEUTRALIZED")) return "NEUTRALIZED";
+  if (vs.includes("STALE")) return "STALE";
+  // Q10-B：any ERROR（含 INFRA_BLOCKED 自身）→ 父至多 INFRA_BLOCKED
+  if (vs.includes("ERROR") || vs.includes("INFRA_BLOCKED")) return "INFRA_BLOCKED";
   if (op.startsWith("quorum(")) {
     const n = Number(op.slice(7, -1));
     const pass = vs.filter((v) => v === "PASS").length;
-    const hasFail = vs.includes("FAIL");
+    const fail = vs.filter((v) => v === "FAIL").length;
     if (pass >= n) return "PASS";
-    if (hasFail || vs.some((v) => v === "PASS")) return "FAIL";
+    if (fail > 0 || pass > 0) return "FAIL";
     return "INFRA_BLOCKED";
   }
   if (vs.includes("FAIL")) return "FAIL";
-  if (vs.includes("PASS")) return "PASS";
+  if (vs.length > 0 && vs.every((v) => v === "PASS")) return "PASS";
+  if (vs.includes("PASS")) return "FAIL"; // 混合 PASS+非 PASS 非 FAIL/ERROR → 保守 FAIL
   return "INFRA_BLOCKED";
 }
 
@@ -261,6 +272,18 @@ export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
  *  skipMaterials + registry 登记）；v1.2 五态（STALE）与 JCS digest 待 Q10 返工。 */
 async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<number> {
   const p = paths(env);
+  // G1/G2（Q8/Q9）：target 投影 = {kind, id, sha256?}；kind+id 恒比，声明 sha 时才比。
+  // 缺被比字段 → fail-closed stale。声明 target 的叶失配 → 该叶 STALE 沿父链传播。
+  const targetRaw = args.flags.target !== undefined ? String(args.flags.target) : String((spec as any).target ?? "");
+  let target: { kind: string; id: string; sha256?: string } | null = null;
+  if (targetRaw) {
+    const hashIdx = targetRaw.indexOf("#");
+    const base = hashIdx >= 0 ? targetRaw.slice(0, hashIdx) : targetRaw;
+    const sha = hashIdx >= 0 ? targetRaw.slice(hashIdx + 1) : undefined;
+    const colon = base.indexOf(":");
+    if (colon <= 0) { bad(ctx, "usage: --target <kind>:<id>[#sha256]"); return 2; }
+    target = { kind: base.slice(0, colon), id: base.slice(colon + 1), ...(sha ? { sha256: sha } : {}) };
+  }
   const dbFlag = args.flags.db;
   const dbArgs: string[] = Array.isArray(dbFlag) ? dbFlag.map(String) : dbFlag ? [String(dbFlag)] : [];
   const byNode: Record<string, string> = {};
@@ -396,31 +419,61 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     const snap = getSnapshot(dbFile);
     const runner = new SqliteRunner(snap.path);
     const report = await runVerify(leafSpec, { runner, mode: "open" });
-    const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
+    // Q8：叶 data_source 投影（kind+id 恒比；声明 sha256 时才比 sha）。
+    const dsProjection: { kind: string; id: string; sha256?: string } = {
+      kind: "sqlite-snapshot",
+      id: String(n.id),
+      sha256: snap.sha256,
+    };
+    const withSource = { ...report, data_source: { ...dsProjection, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
     withSource.payload_sha256 = payloadHash(withSource);
     writeJson(join(p.reports, report.run_id + ".json"), withSource);
     let archived: { archive_sha256: string; path: string } | null = null;
     if (args.flags["no-archive"] !== true) {
       archived = archiveRun(p.root, report.run_id, { id: String(leafSpec.spec_id), version: report.verifier.spec_version }, args);
     }
-    nodes.push({ node_id: n.id, kind: "leaf", spec_id: n.spec_id, report_id: report.run_id, archive_sha256: archived?.archive_sha256 ?? null, ...(archived?.path ? { archive_path: archived.path } : {}), verdict: report.overall, stale: false });
-    return report.overall;
+    // G1/G2：声明 target 的叶失配 → STALE（沿父链传播，阻 PASS）。
+    // 无 data_source 的叶（file/command）不参与 target 比较（Q8 (b) 仍适用）。
+    let stale = false;
+    let staleReason = "";
+    if (target) {
+      const kindOk = dsProjection.kind === target.kind;
+      const idOk = dsProjection.id === target.id;
+      const shaOk = target.sha256 === undefined ? true : dsProjection.sha256 === target.sha256;
+      if (!kindOk || !idOk || !shaOk) {
+        stale = true;
+        staleReason = `target mismatch (leaf ${dsProjection.kind}:${dsProjection.id}${dsProjection.sha256 ? "#" + dsProjection.sha256.slice(0, 12) : ""} vs target ${target.kind}:${target.id}${target.sha256 ? "#" + target.sha256.slice(0, 12) : ""})`;
+      }
+    }
+    nodes.push({
+      node_id: n.id, kind: "leaf", spec_id: n.spec_id, report_id: report.run_id,
+      archive_sha256: archived?.archive_sha256 ?? null, ...(archived?.path ? { archive_path: archived.path } : {}),
+      verdict: stale ? "STALE" : report.overall,
+      report_verdict: report.overall, // 叶原四值保留（v1.2 §2.4）
+      stale, ...(staleReason ? { stale_reason: staleReason } : {}),
+      data_source: dsProjection,
+    });
+    return stale ? "STALE" : report.overall;
   };
   try {
     const verdict = await evalNode(spec.root);
     const roundId = "r" + Date.now().toString(36);
-    const verdictDigest = sha256(JSON.stringify({
+    // G8（v1.2 裁定）：verdict_digest 走 JCS（RFC 8785）canonical——键全序、
+    // 无空白、数字最短表示；覆盖判定投影（tree_spec_sha256/root/target/nodes/pinned），
+    // 不含 audit/时钟/archive 字节。
+    const verdictDigest = sha256(jcsCanonical({
       tree_spec_sha256: spec.tree_spec_sha256,
       root: spec.root,
-      // V7: verdict digest covers the JUDGEMENT projection only — run ids,
-      // timestamps and archive bytes stay in audit, so two runs over the same
-      // input produce the same digest.
+      target: (spec as any).target ?? null,
       nodes: nodes.slice().sort((a, b) => String(a.node_id).localeCompare(String(b.node_id))).map((n) => ({
         id: n.node_id, verdict: n.verdict, aggregate: n.aggregate ?? null, pinned: n.pinned === true,
+        stale: n.stale === true, report_verdict: n.report_verdict ?? null,
       })),
       pinned: pinnedShas,
     }));
-    const treeRunId = "tr_" + short(verdictDigest);
+    // Q11（v1.2 裁定）：删除 run 幂等声明——tree_run_id 每次运行新生成，
+    // 不再从 verdict_digest 派生（同输入双跑 digest 仍相等，但 run id 必须不同）。
+    const treeRunId = "tr_" + short(sha256(verdictDigest + "|" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)));
     const treeReport = {
       tree_run_id: treeRunId,
       tree_spec_id: spec.tree_spec_id,
@@ -836,7 +889,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
   run: ["db", "submission", "no-archive"],
-  tree: ["pinned", "no-archive"],
+  tree: ["pinned", "no-archive", "target"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
