@@ -43,7 +43,7 @@ kind: 评审
 
 ### 1.5 V15 全序冲突：`FAIL + INFRA_BLOCKED` 被判 INFRA_BLOCKED
 - 裁定单 §2.2 全序：`NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS`；但代码 `:255` 把 `INFRA_BLOCKED` 当 ERROR 同级 cap（`if ERROR || INFRA_BLOCKED → INFRA_BLOCKED`），测试 `verify-tree.spec.ts:180` 断言 `["all_pass", ["FAIL","INFRA_BLOCKED"], "INFRA_BLOCKED"]`——**FAIL 被 INFRA_BLOCKED 遮蔽，与全序相反**。
-- 同时 Q10-B「any ERROR → 父至多 INFRA_BLOCKED（不可能是 PASS/FAIL）」与全序 `FAIL > INFRA_BLOCKED` 本身存在未裁的语义冲突（FAIL+ERROR 应 FAIL 还是 INFRA_BLOCKED）。这是裁定文本缺口，不能由实现方静默选边；需 fdc/属主补一句优先级（建议：ERROR cap 仅作用于 PASS→INFRA，不降级 FAIL/STALE/NEUTRALIZED；或明确 cap 覆盖 FAIL）。**此项未定前 V15/Q10 不能算绿。**
+- **2026-10-25 fdc 补正：裁 A（cap 只作用于 PASS，不覆盖 FAIL）**。`FAIL+ERROR = FAIL`、`FAIL+INFRA_BLOCKED = FAIL`；Q10-B 的「至多 INFRA_BLOCKED」是**正向封顶**（不许 PASS），不是负向压制。V15 按「全序 + cap-on-PASS」联合推导；开发据此改 `aggregateTreeVerdict` 与测试 `:180`（以及 quorum：cap 只封顶 quorum 结果为 PASS 的情形，quorum 结果 FAIL 仍为 FAIL）。裁定单 §2.2 / 契约 §3 已补注。
 
 ### 1.6 矩阵 provenance 与状态
 - 矩阵头 `commit eb3d6f2`，但 Q12/Q13 测试在 `29d0a3a` 才加；矩阵未在最终 HEAD 重生成。

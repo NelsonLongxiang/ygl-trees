@@ -69,11 +69,16 @@ kind: 规范
 ## 3. 聚合与验收矩阵（Q10-B + 五钉）
 
 - **Q10-B**：任一子 `ERROR` → 父至多 `INFRA_BLOCKED`；不可能是 PASS/FAIL。
+  **2026-10-25 fdc 补正（cap 语义=正向封顶）**：该 cap 只封顶 **PASS/隐含正向**，不压制 `FAIL/STALE/NEUTRALIZED`；
+  `FAIL+ERROR = FAIL`、`FAIL+INFRA_BLOCKED = FAIL`。V15 逐格按「全序 + cap-on-PASS」联合推导；属主可推翻。
 - **全序**：`NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS`；被 STALE 遮蔽的 FAIL 记 `nodes[]`/审计可见。
 - **V15 5×5**：五种父状态 × 子组合表驱动；禁止把 STALE/FAIL 稀释成 PASS。
 - **quorum 分母（验证席 2026-10-23 补，随 Q10-B 配套）**：`quorum(N)` 的分母只计 **PASS + FAIL**；
   `ERROR`/`NEUTRALIZED`/`STALE` 不进分母。但 **any ERROR → 父至多 `INFRA_BLOCKED`** 仍优先于 quorum 结果
-  （Q10-B），因此 `quorum(2)` + 2 PASS + 1 ERROR 的父=INFRA_BLOCKED，而不是 quorum PASS。
+  （Q10-B，仅当 quorum 结果为 PASS 时封顶），因此 `quorum(2)` + 2 PASS + 1 ERROR 的父=INFRA_BLOCKED；
+  `quorum(2)` + 2 PASS + 1 FAIL + 1 ERROR 的 quorum 结果为 PASS（FAIL 是少数，不改变 quorum 结果），
+  ERROR 仍把父封顶为 INFRA_BLOCKED；而 `quorum(2)` + 1 PASS + 1 FAIL + 1 ERROR 的 quorum 结果为 FAIL，
+  cap 不压制 FAIL → 父=FAIL。
 - **V15 逐算子补行**：
 
 | 组算子 | 子组合 | 父 |

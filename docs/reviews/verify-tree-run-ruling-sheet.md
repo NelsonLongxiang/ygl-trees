@@ -47,6 +47,9 @@ kind: 裁定
 
 1. **全序**：`NEUTRALIZED > STALE > FAIL > INFRA_BLOCKED > PASS`；V15 出 **5×5**；被 STALE 遮蔽的 FAIL
    记 `nodes[]`/审计可见。
+   **2026-10-25 fdc 补正（绑定澄清，cap 语义=正向封顶）**：Q10-B 的「至多 INFRA_BLOCKED」只封顶**正向判定**
+   （PASS/隐含正向），不压制 `FAIL/STALE/NEUTRALIZED`；`FAIL+ERROR = FAIL`、`FAIL+INFRA_BLOCKED = FAIL`。
+   V15 逐格按「全序 + cap-on-PASS」联合推导；属主可随时推翻此补正。
 2. **形状**：leaf report.overall 四值 / tree nodes[].verdict 五值 / stale 叶带 `report_verdict` 映射。
 3. **(a) 适用条件**：仅树声明 target 时适用；kind+id 恒比；树声明 sha 才比 sha；pinned 缺被比字段 fail-closed。
 4. **Q8 活叶失配**：= STALE 同通道传播（**弃草案 §1 的 INFRA_BLOCKED**）；V22 改固定断言，差异上报属主可见。
