@@ -7,14 +7,14 @@ kind: 评审
 # A1 Phase 2 会签 · 302cb119 席
 
 > 依据：裁定单 v2 §五（fdc + 302cb119 两席按对照表绿行抽跑；空 scratch、三一致判据；不一致整批退签）。
-> 本席证据独立采集，未与 fdc 同批合并；fdc 同批会签后冻结线解除。
+> 本席证据独立采集；fdc 已同批通过（2026-10-25，A2A `direct-5e6243d9`），两席签注齐。
 > 采集时点：2026-10-25，HEAD `3e24b58`（v0.114.31-16-g3e24b58）。
 
 ## 0. 结论
 
 - **矩阵在 HEAD 重生成**：`node scripts/tree-contract-matrix.mjs --results tmp/vitest-tree.json` → **green 13 / partial 1 / planned 9 / missing 0 / red 0**，与在档矩阵一致（仅 provenance 行的 commit/tag 从 `4316721` 变为 `3e24b58`；状态零漂移）。
 - **绿行抽跑 11 条**（Q1/Q2/Q3/Q5/Q6/Q7/V1/V5/V6/V7/V16/V20；V15 为纯函数矩阵，由测试覆盖）：rc / verdict / 表行三一致，全部符合。
-- **本席会签通过**；按裁定单需 fdc 同批会签后解冻。planned 行（Q8–Q13/G8/G4 等）仍按冻结线禁实现；Q10 返工不在本次会签范围。
+- **两席会签通过**（302cb119 本报告 + fdc757f6 同批 `direct-5e6243d9`）；**冻结线已解除**。planned 行（Q8–Q13/G8/G4 等）仍在返工清单，按 Q10 批次实现，不得在解冻前抢先落语义。
 
 ## 1. 采集环境
 
@@ -59,6 +59,6 @@ node scripts/tree-contract-matrix.mjs --results tmp/vitest-tree.json \
 
 ## 4. 会签意见
 
-- 本席：**通过**（HEAD 3e24b58，绿行抽跑与矩阵一致；空 scratch 无 meta 门干扰）。
-- 待 fdc 同批会签（同批=同一 HEAD、同一抽跑清单；任一不一致整批退签）。
-- 建议开发线在会签 commit 上一并提交本报告的矩阵 provenance 更新（仅生成行变化），冻结线解除后即进 Q10 返工 + 九缺口补齐 → 0.115.0。
+- 302cb119 席：**通过**（HEAD 3e24b58，绿行抽跑与矩阵一致；空 scratch 无 meta 门干扰）。
+- fdc757f6 席：**同批通过**（同一 HEAD、同一抽跑清单；分域复跑各绿，A2A `direct-5e6243d9`）。
+- **两席齐，冻结线解除**；开发线按裁定单进 Q10 返工 + 九缺口补齐 → 0.115.0。
