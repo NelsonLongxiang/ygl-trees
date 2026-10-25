@@ -95,3 +95,13 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 1. ~~批准 L1~~（已交付）——sync（可刷新镜像）与 migrate（一次性毕业）覆盖单向导出全部场景
 2. 定时镜像一行即达：`job add pg-mirror -- "ygl-trees db sync pg \$YGL_PG_URL" --every 60`（tick 锁已防双跑）
 3. L2 已取消（§5）；若未来需要"PG 为唯一事实源"，作为独立工具重新立项
+
+## B4 并发语义（2026-10-25 成文）
+
+| 面 | 规则 |
+|---|---|
+| 事务隔离级别 | **READ COMMITTED**（SQLite 默认行为等价；PG 显式声明）——不声称可串行化，跨事务读写以「写服务事务内幂等判定」为准 |
+| 幂等写 | `INSERT ... ON CONFLICT(...) DO NOTHING RETURNING *`（`packages/core/database/src/upsert.ts`）——判重+写入单条原子语句；RETURNING 有行=本次创建，无行=已存在（duplicate:true）。双端同 SQL（差异仅占位符） |
+| job tick 单执行 | PG：`pg_try_advisory_lock(hashtext('ygl:job-tick'))` 会话级非阻塞锁（`advisory-lock.ts`）；SQLite：单机文件写锁串行化，无跨机面 |
+| 会话选择 | `current_project@<session>` / `current_tree@<session>`（YGL_SESSION 作用域）；PG 模式要求会话 id（D4）——无会话 id 时 selection 落 workspace 全局键并要求显式 `--project` |
+| 并发验收 | N 进程同内容并发写 → 恰好一行 + 其余 duplicate:true rc0（`b4-upsert.spec` 8 进程实证）；双机 tick → 只有一个执行（advisory lock，B6 真库矩阵验证） |
