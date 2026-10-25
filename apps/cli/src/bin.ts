@@ -565,6 +565,9 @@ export async function main(argv: string[]): Promise<number> {
   const app = booted.ctx;
   const db = booted.db;
   const store = booted.store;
+  // B1 (PG plan): async read facade — research cmds switch here first; the
+  // legacy sync store stays for db-cmds/webui until their own small batch.
+  const { AsyncResearchStore } = require("../../../packages/research/pipeline/src/async-store");
   const pluginCommands = booted.pluginCommands;
   const loadedPlugins = booted.loadedPlugins;
   // #53: first native-driver open of an OLD workspace converts DELETE→WAL.
@@ -618,7 +621,8 @@ export async function main(argv: string[]): Promise<number> {
     ctx,
     cordis: app,     // Cordis Context (long-running services)
     db,              // DB instance (from ctx.database or fallback)
-    store,           // Store (from ctx.research or fallback)
+    store,           // Store (from ctx.research or fallback) — legacy sync face
+    asyncStore: new AsyncResearchStore(db),  // B1 async facade (research cmds)
     plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
     args, home, group,
     dbFile: file,   // resolved --db (or workspace default) for the brief payload

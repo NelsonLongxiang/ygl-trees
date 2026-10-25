@@ -55,7 +55,7 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human:
     });
 }
 
-export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
+export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
   const { ctx, store } = env;
   const sub = action;
   const subAction = rest[0];
@@ -87,7 +87,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return 1;
   }
   if (!workspaceWide) {
-    project = store.projectByName(sel.name);
+    project = await env.asyncStore.projectByName(sel.name);
     if (!project) {
       bad(ctx, `project not found: ${sel.name}`);
       return 1;
@@ -186,7 +186,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         }
       }
-      store.queryDone(rest[1]);
+      await env.asyncStore.queryDone(rest[1]);
       ok(ctx, `query marked done: ${rest[1]}`);
       return 0;
     }
@@ -403,7 +403,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing search text");
         return 2;
       }
-      const rows = store.sourceSearch(project.id, q).map((r: any) => ({
+      const rows = await env.asyncStore.sourceSearch(project.id, q).map((r: any) => ({
         id: r.id,
         title: clip(r.title, 50),
         rel: r.relevance,
@@ -419,7 +419,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: research source show <sourceId> [--json]");
         return 2;
       }
-      const s = store.sourceGet(rest[1]);
+      const s = await env.asyncStore.sourceGet(rest[1]);
       if (!s) {
         bad(ctx, idNotFound(env.db, "sources", rest[1], "source"));
         return 1;

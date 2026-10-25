@@ -16,7 +16,9 @@ export interface Ctx {
 export interface Env {
   ctx: Ctx;
   db: any; // DB instance (import from core/db for the real type)
-  store: any; // Store instance
+  store: any; // Store instance (legacy sync face — db-cmds/webui until B4)
+  /** B1 async read facade (PG plan): research cmds switch here first. */
+  asyncStore: any;
   args: Args;
   home: string;
   group: string;
