@@ -1,3 +1,7 @@
+## 0.115.4
+
+- #90：claimlink-quiet verbose 断言改运行期门（beforeAll 探针——离线 ctx.skip 带可见原因，无凭证克隆全绿）；#84 claim link 默认安静；#81 meta-repo 帮助面补齐；#89 vendor/cordis/bin.js 恢复跟踪。评审席复核：干净克隆 1068+3=1071、contract 145/145、readme 55/55。
+
 ## 0.115.3
 
 - #88 收口：--against-git 接受 post-genesis 新工具初始登记（chain-first Z→首提交 blob）；unknown actor 双面禁绝（actor 身份从 ROOT 仓库解析，不泄漏调用方 cwd）；readme-verify 计数门 ANSI 色码鲁棒化。评审席复核 6408613285。
