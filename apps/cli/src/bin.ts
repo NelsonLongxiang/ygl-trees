@@ -166,6 +166,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
 
 ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec → report
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
+  submit/prepare meta gate: [--meta-repo <dir> | --require-meta | --no-meta(记 meta.bypass)]  #81 可发现性
   prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
   tree prepare <material-id> [--pinned <node>=<sha256>]  freeze recursive tree spec (A1: cycles/empty/depth/operator checks)
   tree run <tree-spec-id> [--db <path>|--db <node>=<path>]  post-order run; leaves real run+archive (--no-archive skips)
