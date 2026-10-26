@@ -172,12 +172,14 @@ clone/评审者能看到「为什么重登记」；把 red 改绿的动作本身
     **失败谓词（显式）**：对 `orchestration[]` 每条——审计时钟 `engine_version` **≥** 该条 `sunset` →
     R5b **FAIL，点名该条**（`path` + `sunset` + 时钟值）；逐条判定，一条到期即整体 FAIL。
 
-- **R6（S1，v1.3）Cordis 应用框架符合性**：v3 索引必须显式声明 `kind: "engine" | "consumer"`
+- **R6（S1，v1.3；①④ v1.4 修订 2026-10-26 vendor 退役终态）Cordis 应用框架符合性**：v3 索引必须显式声明 `kind: "engine" | "consumer"`
   （R2 校验；缺失/未知按名拒，禁目录启发式）。**engine 档**（本仓）：①`vendor/*` 家族包声明的
-  `@deepseek-ai/*` 依赖全为 `workspace:~`；②`ygl.bundle.json` 的 `plugins` 恰为
+  `@deepseek-ai/*` 依赖为 `workspace:~`（fork 形，历史合法）**或与相干锚满足的 npm range**——相干锚 =
+  在库 vendor 副本版本，无在库副本时 `vendor/upstream.json` 声明的上游基线；无锚或 range 不满足即拒
+  （家族相干性不因退役放松）；②`ygl.bundle.json` 的 `plugins` 恰为
   `["database","ops","research","timer"]`（timer 第 4）；③Cordis 服务锚 `core/database/src/plugin.ts` +
-  `ops/tools/src/plugin.ts` 在场；④vendor 每包版本形态 = `vendor/upstream.json` 声明的上游基线 + fork 后缀
-  （`startswith(base + "-")`，基线表随同步维护，不把版本号钉进规则）。**consumer 档**（舰队仓）：
+  `ops/tools/src/plugin.ts` 在场；④vendor 每包版本形态 = `vendor/upstream.json` 声明的上游基线**精确对齐**
+  （`=== base`，退役终态）**或 base + fork 后缀**（`startswith(base + "-")`；基线表随同步维护，不把版本号钉进规则）。**consumer 档**（舰队仓）：
   ⑤`ygl-trees` 引擎钉版 ≥ `ENGINE_FLOOR[CONTRACT_VERSION]`（1.2 → 0.107.0；表随契约升版维护，缺表即点名）；
   ⑥`orchestration[]` 文件不得已驱动 `verify run|prepare|submit|archive`（复用 R3 的 DRIVES_VERIFY 正则族）；
   ⑦仓内不得再 vendor/fork 引擎（`vendor/**` 出现 `ygl-trees`/`@ygl/*`/cordis 包或 `packages/verify/core`

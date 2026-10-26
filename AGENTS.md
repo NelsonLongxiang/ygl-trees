@@ -126,4 +126,4 @@ CHANGELOG.md           逐版本聚合
 4. **临时文件**：`<repo>/tmp/`（gitignored）
 5. **README 健康**：每版本收口前过一遍
 6. **技能维护**：skills/ 随命令面变更同步
-7. **vendor 管理**：从 DSH vendor 源码同步（用户裁定 2026-10-17：框架级一致性，fork 4.0.5 修复 rc.11 时序问题），`@deepseek-ai/` scope，通过 pnpm workspace `workspace:~` 引用；与 DSH vendor 同版本升级
+7. **vendor 管理**（2026-10-26 退役终态，属主授权接管落地）：vendor 家族包版本与 `vendor/upstream.json` 上游基线**精确对齐**（fork 期 `-alpha.N` 后缀已去），家族内 `@deepseek-ai/*` 依赖改用**与在库副本/上游基线相干的 npm range**（`workspace:~` 为历史合法形）；vendor/* 仍在 pnpm workspace（可脱离待清理轨，S7 `track:false`）——判定面见 verify meta R6（charter §4.4 v1.4）

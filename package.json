@@ -24,26 +24,6 @@
   "bin": {
     "ygl-trees": "dist/bundle/bin.cjs"
   },
-  "scripts": {
-    "build": "tsc -p tsconfig.json && pnpm build:bundle:only && pnpm --filter @ygl/web build && node scripts/stage-web-dist.mjs",
-    "build:bundle:only": "tsdown apps/cli/src/bin.ts --format cjs --out-dir dist/bundle --platform node --target node20 --deps.never-bundle better-sqlite3 --deps.never-bundle typeorm --deps.never-bundle reflect-metadata --deps.never-bundle pg --deps.never-bundle @deepseek-ai/dsh-atomic-write",
-    "build:bundle": "pnpm build",
-    "start": "node dist/bundle/bin.cjs",
-    "demo": "bash examples/demo.sh",
-    "test": "pnpm build && pnpm test:unit && bash examples/demo.sh && bash scripts/contract-audit.sh && pnpm readme:verify && pnpm ratchet",
-    "prepublishOnly": "node scripts/prepublish-guard.mjs && pnpm test && pnpm pack:check",
-    "test:unit": "vitest run --maxWorkers=2",
-    "smoke:bun": "bash scripts/bun-smoke.sh",
-    "bench": "pnpm build && node benchmarks/bench.js",
-    "pack:repro": "node scripts/pack-repro.mjs",
-    "pack:check": "bash scripts/pack-check.sh",
-    "readme:verify": "bash scripts/readme-verify.sh",
-    "contract:audit": "bash scripts/contract-audit.sh",
-    "ratchet": "node scripts/ratchet.mjs",
-    "verify:run": "node scripts/verify-run.mjs",
-    "test:rust": "cargo test --manifest-path rust/yglverify/Cargo.toml",
-    "readme:count": "node scripts/readme-count.mjs"
-  },
   "files": [
     "dist",
     "ygl.bundle.json",
@@ -56,12 +36,13 @@
   "engines": {
     "node": ">=18"
   },
+  "packageManager": "pnpm@9.15.9",
   "dependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
-    "@deepseek-ai/cosmokit": "workspace:~",
+    "@deepseek-ai/cordis": "~4.0.5-alpha.2",
+    "@deepseek-ai/cordis-plugin-timer": "~1.1.7-alpha.2",
+    "@deepseek-ai/cosmokit": "~1.8.6-alpha.2",
     "@deepseek-ai/dsh-atomic-write": "0.0.1-rc.1",
-    "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/schemastery": "~3.18.5-alpha.2",
     "better-sqlite3": "^12.11.1",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^1.1.2"
@@ -75,8 +56,27 @@
     "vitest": "^5.0.5"
   },
   "license": "MIT",
-  "packageManager": "pnpm@9.15.9",
   "optionalDependencies": {
     "pg": "^8.13.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && pnpm build:bundle:only && pnpm --filter @ygl/web build && node scripts/stage-web-dist.mjs",
+    "build:bundle:only": "tsdown apps/cli/src/bin.ts --format cjs --out-dir dist/bundle --platform node --target node20 --deps.never-bundle better-sqlite3 --deps.never-bundle typeorm --deps.never-bundle reflect-metadata --deps.never-bundle pg --deps.never-bundle @deepseek-ai/dsh-atomic-write",
+    "build:bundle": "pnpm build",
+    "start": "node dist/bundle/bin.cjs",
+    "demo": "bash examples/demo.sh",
+    "prepublishOnly": "node scripts/prepublish-guard.mjs && pnpm test && pnpm pack:check",
+    "test": "pnpm build && pnpm test:unit && bash examples/demo.sh && bash scripts/contract-audit.sh && pnpm readme:verify && pnpm ratchet",
+    "test:unit": "vitest run --maxWorkers=2",
+    "smoke:bun": "bash scripts/bun-smoke.sh",
+    "bench": "pnpm build && node benchmarks/bench.js",
+    "pack:repro": "node scripts/pack-repro.mjs",
+    "pack:check": "bash scripts/pack-check.sh",
+    "readme:verify": "bash scripts/readme-verify.sh",
+    "contract:audit": "bash scripts/contract-audit.sh",
+    "ratchet": "node scripts/ratchet.mjs",
+    "verify:run": "node scripts/verify-run.mjs",
+    "test:rust": "cargo test --manifest-path rust/yglverify/Cargo.toml",
+    "readme:count": "node scripts/readme-count.mjs"
   }
 }

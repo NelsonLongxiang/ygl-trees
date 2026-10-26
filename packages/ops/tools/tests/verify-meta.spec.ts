@@ -453,17 +453,34 @@ describe.skipIf(!HAS_BIN)("verify meta R6 Cordis framework compliance", () => {
     expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3", "R5a", "R6"]);
   });
 
-  it("R6 engine negatives: bundle order, non-workspace dep, version suffix, missing anchor, missing upstream", () => {
+  it("R6 engine negatives: bundle order, incoherent range, no anchor, bad version, missing anchor file, missing upstream", () => {
     let dir = engineRepo("r6-engine-bundle", (d) => writeFileSync(join(d, "ygl.bundle.json"), JSON.stringify({ plugins: ["database", "ops", "timer", "research"] }), "utf8"));
     expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/plugins must be exactly/);
-    dir = engineRepo("r6-engine-dep", (d) => writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5-alpha.2", dependencies: { "@deepseek-ai/cosmokit": "^1.8.0" } }), "utf8"));
-    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/must be workspace:~/);
-    dir = engineRepo("r6-engine-version", (d) => writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5" }), "utf8"));
-    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/upstream 4\.0\.5 \+ fork suffix/);
+    // vendor 退役形负例①：range 与上游基线不相干（cosmokit 基线 1.8.6，range ~2.0.0）
+    dir = engineRepo("r6-engine-dep", (d) => {
+      writeFileSync(join(d, "vendor", "upstream.json"), JSON.stringify({ "@deepseek-ai/cordis": "4.0.5", "@deepseek-ai/cosmokit": "1.8.6" }), "utf8");
+      writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5", dependencies: { "@deepseek-ai/cosmokit": "~2.0.0" } }), "utf8");
+    });
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/is not coherent with 1\.8\.6/);
+    // 负例②：无相干锚（既不在库也无上游基线）
+    dir = engineRepo("r6-engine-ghost", (d) => writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5", dependencies: { "@deepseek-ai/ghost": "~9.9.9" } }), "utf8"));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/has no coherence anchor/);
+    // 负例③：版本既非上游精确对齐也非 base+fork 后缀
+    dir = engineRepo("r6-engine-version", (d) => writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.4" }), "utf8"));
+    expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/must be upstream 4\.0\.5 \(aligned\)/);
     dir = engineRepo("r6-engine-anchor", (d) => rmSync(join(d, "packages", "ops", "tools", "src", "plugin.ts")));
     expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/Cordis service anchor missing/);
     dir = engineRepo("r6-engine-upstream", (d) => rmSync(join(d, "vendor", "upstream.json")));
     expect(JSON.stringify(rule(metaRun(dir), "R6").evidence)).toMatch(/vendor\/upstream\.json missing/);
+  });
+
+  it("R6 engine retirement shape: versions aligned to upstream + coherent npm ranges => PASS（vendor 退役终态）", () => {
+    const dir = engineRepo("r6-engine-retired", (d) => {
+      writeFileSync(join(d, "vendor", "upstream.json"), JSON.stringify({ "@deepseek-ai/cordis": "4.0.5", "@deepseek-ai/cosmokit": "1.8.6", "@deepseek-ai/cordis-plugin-loader": "1.0.6" }), "utf8");
+      writeFileSync(join(d, "vendor", "p", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.5", dependencies: { "@deepseek-ai/cosmokit": "~1.8.6" }, peerDependencies: { "@deepseek-ai/cordis-plugin-loader": "~1.0.6" } }), "utf8");
+    });
+    const r = metaRun(dir);
+    expect(rule(r, "R6")).toMatchObject({ verdict: "PASS", evidence: { kind: "engine" } });
   });
 
   it("R6 consumer: pin >= contract floor => PASS; below floor => FAIL with named floor", () => {

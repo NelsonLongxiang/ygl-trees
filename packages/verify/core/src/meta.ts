@@ -558,6 +558,23 @@ function cmpSemver(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * R6 家族相干性用的宽松 range 判定（非完整 semver 引擎）：支持 exact / ~x.y.z / ^x.y.z
+ * 三形（预发布后缀剥去比较——判据是「与在库副本/上游基线相干」，不是全 semver 语义）。
+ */
+function rangeSatisfiesLoose(spec: string, version: string): boolean {
+  const strip = (s: string) => s.replace(/-[^-]+$/, "");
+  const v = strip(version);
+  if (spec === version || spec === v) return true;
+  const m = /^[~^](\d+)\.(\d+)\.(\d+)/.exec(spec);
+  if (!m) return false;
+  const [, a, b, c] = m;
+  const floor = `${a}.${b}.${c}`;
+  if (cmpSemver(v, floor) < 0) return false;
+  const [vx] = v.split(".");
+  return spec.startsWith("~") ? v.startsWith(`${a}.${b}.`) : vx === a;
+}
+
 function r6(repo: string, index: IndexState): MetaRule {
   const problems: string[] = [];
   const kind = index.kind;
@@ -580,6 +597,14 @@ function r6(repo: string, index: IndexState): MetaRule {
       ? readdirSync(vendorDir).filter((d) => existsSync(join(vendorDir, d, "package.json")))
       : [];
     if (pkgs.length === 0) problems.push("vendor/ has no family packages");
+    // 家族内名字 → 在库版本（vendor 退役终态下 npm range 引用须与在库副本相干）
+    const vendoredVersion = new Map<string, string>();
+    for (const d of pkgs) {
+      try {
+        const p = JSON.parse(readFileSync(join(vendorDir, d, "package.json"), "utf8")) as { name?: string; version?: string };
+        if (p.name && p.version) vendoredVersion.set(String(p.name), String(p.version));
+      } catch { /* unreadable package.json is named below */ }
+    }
     for (const d of pkgs) {
       let pkg: { name?: string; version?: string; dependencies?: Record<string, string>; peerDependencies?: Record<string, string>; optionalDependencies?: Record<string, string> };
       try {
@@ -590,16 +615,29 @@ function r6(repo: string, index: IndexState): MetaRule {
       }
       const deps = { ...(pkg.dependencies ?? {}), ...(pkg.peerDependencies ?? {}), ...(pkg.optionalDependencies ?? {}) };
       for (const [name, spec] of Object.entries(deps)) {
-        if (name.startsWith("@deepseek-ai/") && spec !== "workspace:~") {
-          problems.push(`vendor ${d}: ${name} must be workspace:~ (got ${JSON.stringify(spec)})`);
+        if (!name.startsWith("@deepseek-ai/")) continue;
+        // 1a) workspace:~ —— fork 形（旧纪律）仍合法；
+        // 1b) npm range —— vendor 退役形：range 必须被「在库 vendor 副本版本；无在库副本时
+        //     upstream.json 声明的上游基线」满足（家族相干性不因退役而放松）。
+        if (spec === "workspace:~") continue;
+        const anchor = vendoredVersion.get(name) ?? upstream[name] ?? "";
+        if (!anchor) {
+          problems.push(`vendor ${d}: ${name} ${JSON.stringify(spec)} has no coherence anchor (not vendored in-repo, no upstream baseline)`);
+        } else if (!rangeSatisfiesLoose(String(spec), anchor)) {
+          problems.push(`vendor ${d}: ${name} ${JSON.stringify(spec)} is not coherent with ${anchor} (in-repo vendor / upstream baseline)`);
         }
       }
-      // 2) version shape = declared upstream baseline + fork suffix
+      // 2) version shape = declared upstream baseline + fork suffix，或与上游基线精确对齐（退役终态）
       const name = String(pkg.name ?? "");
       const base = upstream[name];
       if (!base) problems.push(`vendor ${d}: ${name || "(no name)"} has no upstream baseline in vendor/upstream.json`);
-      else if (!String(pkg.version ?? "").startsWith(base + "-") || pkg.version === base) {
-        problems.push(`vendor ${d}: version ${JSON.stringify(pkg.version)} must be upstream ${base} + fork suffix (${base}-…)`);
+      else {
+        const v = String(pkg.version ?? "");
+        const forkSuffixed = v.startsWith(base + "-") && v !== base;
+        const aligned = v === base;
+        if (!forkSuffixed && !aligned) {
+          problems.push(`vendor ${d}: version ${JSON.stringify(pkg.version)} must be upstream ${base} (aligned) or ${base}-… (fork suffix)`);
+        }
       }
       checks.vendor_packages = pkgs.length;
     }
