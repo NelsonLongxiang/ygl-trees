@@ -253,6 +253,40 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
     });
   const wipe = (root: string) => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 
+  it("#92: 事后补登的 reregistration 不被接受（结构式：变迁提交 K 时刻账本必须已有链）", () => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const root = mkdtempSync(join(tmpdir(), "ygl-backfill-"));
+    const git = (cmd: string) => execSync(`git ${cmd}`, { cwd: root, encoding: "utf-8" });
+    git("init -q"); git("config user.email t@t"); git("config user.name t");
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, "verify"), { recursive: true });
+    const shaOf = (s: string) => require("node:crypto").createHash("sha256").update(s).digest("hex");
+    const path = "scripts/m.mjs";
+    const vA = "a9" + String.fromCharCode(10); const vX = "x9" + String.fromCharCode(10);
+    writeFileSync(join(root, path), vA);
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [], tooling: [{ path, role: "gate", sha256: shaOf(vA) }], reregistrations: [],
+    }, null, 2));
+    git("add -A"); git("commit -q -m c0-clean-A");
+    // c1：手工对齐 X，无记录（该提交红）
+    writeFileSync(join(root, path), vX);
+    const idx1 = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+    idx1.tooling[0].sha256 = shaOf(vX);
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx1, null, 2));
+    git("add -A"); git("commit -q -m c1-hand-aligned-no-entry");
+    // c2：事后补登 A→X——HEAD 上结构式核验必须仍红（旧精确/链式匹配器都放行）
+    const idx2 = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+    idx2.reregistrations.push({ path, old_sha256: shaOf(vA), new_sha256: shaOf(vX), reason: "backfilled later", actor: "t", at: "2026-10-20T00:00:00.000Z" });
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx2, null, 2));
+    git("add -A"); git("commit -q -m c2-backfill");
+    const r = spawnSync(process.execPath, [SCRIPT, "--audit", "--against-git"], { encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 120_000 });
+    expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
+    expect((r.stdout || "") + (r.stderr || "")).toMatch(/silent rehash/);
+    expect((r.stdout || "") + (r.stderr || "")).toMatch(/backfilled later\? #92/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 180_000);
+
   it("#83 返修轮: multi-edit-then-commit 跨步 git 变迁经账本链可达 → 不误报 silent rehash", () => {
     const { execSync } = require("node:child_process") as typeof import("node:child_process");
     const root = mkdtempSync(join(tmpdir(), "ygl-multiedit-"));

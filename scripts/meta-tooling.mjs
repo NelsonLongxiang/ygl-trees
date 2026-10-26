@@ -319,35 +319,47 @@ if (args.includes("--audit")) {
           .split(String.fromCharCode(10)).filter(Boolean);
       } catch { continue; }
       const chain = [];
+      const chainCommit = []; // chain[i] 由哪个提交引入（seed 记 null=genesis 态）
       // seed：账本起点态（genesis 提交时的 blob）——否则「genesis 后只改一次」
       // 的 transitions 为空，静默重哈希漏检（监督席 gap (a)）
       if (genesisCommit) {
         const seedBlob = gitProbe(["show", `${genesisCommit}:${t.path}`]);
-        if (seedBlob) chain.push(sha256buf(seedBlob)); /* 否则文件在 genesis 时不存在——首提交即起点 */
+        if (seedBlob) { chain.push(sha256buf(seedBlob)); chainCommit.push(null); } /* 否则文件在 genesis 时不存在——首提交即起点 */
       }
       for (const commit of commits) {
         const blob = gitProbe(["show", `${commit}:${t.path}`]);
-        if (blob) chain.push(sha256buf(blob)); /* file absent at this commit */
+        if (blob) { chain.push(sha256buf(blob)); chainCommit.push(commit); } /* file absent at this commit */
       }
-      // 同一 sha 连续出现合并为一次变更
+      // 同一 sha 连续出现合并为一次变迁（记录变迁落地的提交 K——#92 结构式核验用）
       const transitions = [];
-      for (let i = 1; i < chain.length; i++) if (chain[i] !== chain[i - 1]) transitions.push([chain[i - 1], chain[i]]);
-      // #83 条目4返修轮发现：合法工作流「多次编辑、一次提交」会让 git 相邻提交间出现
-      // 跨步变迁（A→C），而账本记录的是 A→B、B→C 两跳——精确对匹配会误报 silent rehash。
-      // 修：按 path 建邻接表，git 变迁只需账本链式可达（from==to 或 from→…→to）。
-      const adj = new Map();
-      for (const r of rr) {
-        if (r.path !== t.path) continue;
-        if (!adj.has(r.old_sha256)) adj.set(r.old_sha256, new Set());
-        adj.get(r.old_sha256).add(r.new_sha256);
-      }
-      const chained = (from, to) => {
+      for (let i = 1; i < chain.length; i++) if (chain[i] !== chain[i - 1]) transitions.push([chain[i - 1], chain[i], chainCommit[i]]);
+      // #92（评审席 direct-41e2808a，结构式裁决）：变迁在提交 K 落地时，K 时刻的账本
+      // （git show K:verify/meta.json）里必须已存在连接 from→to 的链——事后补登无法
+      // 回填时间、不重写历史就伪造不了。链式可达（#83 返修轮引入）同样在 K 时刻账本判定。
+      const ledgerAtCache = new Map();
+      const ledgerAt = (commit) => {
+        if (commit === null || commit === undefined) return rr;
+        if (!ledgerAtCache.has(commit)) {
+          const raw = gitProbe(["show", commit + ":verify/meta.json"]);
+          let entries = [];
+          try { entries = raw ? (JSON.parse(raw.toString()).reregistrations ?? []) : []; } catch { entries = []; }
+          ledgerAtCache.set(commit, entries);
+        }
+        return ledgerAtCache.get(commit);
+      };
+      const chainedOn = (entries, from, to) => {
         if (from === to) return true;
+        const adjK = new Map();
+        for (const r of entries) {
+          if (r?.path !== t.path || !r?.old_sha256 || !r?.new_sha256) continue;
+          if (!adjK.has(r.old_sha256)) adjK.set(r.old_sha256, new Set());
+          adjK.get(r.old_sha256).add(r.new_sha256);
+        }
         const seen = new Set([from]);
         const stack = [from];
         while (stack.length) {
           const cur = stack.pop();
-          for (const nxt of adj.get(cur) ?? []) {
+          for (const nxt of adjK.get(cur) ?? []) {
             if (nxt === to) return true;
             if (!seen.has(nxt)) { seen.add(nxt); stack.push(nxt); }
           }
@@ -360,12 +372,13 @@ if (args.includes("--audit")) {
       const inBaseline = (from, to) => baseline.some((b) => {
         const [pair, at] = b.split("@");
         const [o, n] = pair.split("->");
-        return (!o || from.startsWith(o.replace("\*", ""))) && (!n || to.startsWith(n.replace("\*", "")));
+        return (!o || from.startsWith(o.replace("*", ""))) && (!n || to.startsWith(n.replace("*", "")));
       });
-      for (const [from, to] of transitions) {
-        if (!chained(from, to) && !inBaseline(from, to)) {
+      for (const [from, to, atCommit] of transitions) {
+        if (!chainedOn(ledgerAt(atCommit), from, to) && !inBaseline(from, to)) {
           silentBad++;
-          console.error(`  ✗ silent rehash: ${t.path} ${from.slice(0, 8)}→${to.slice(0, 8)} appears in git history but has no reregistrations[] entry (#37 item 1)`);
+          const where = atCommit ? " (introduced at " + atCommit.slice(0, 8) + "; its ledger has no chain for this transition — backfilled later? #92)" : "";
+          console.error("  ✗ silent rehash: " + t.path + " " + from.slice(0, 8) + "→" + to.slice(0, 8) + " appears in git history but has no reregistrations[] entry (#37 item 1)" + where);
         }
       }
     }
