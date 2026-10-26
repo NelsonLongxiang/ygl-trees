@@ -110,7 +110,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "89b44f2f043e846e0e50dbe03566b484d8d73779cceacea27c10a6028500406d",
+      "sha256": "ebc4b7d47729aa00b09443cb24fec7da458aad959df597d7eb879513a3ec2d24",
       "role": "gate"
     },
     {
@@ -595,7 +595,7 @@
       "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "new_sha256": "befd73a2701cfd3dbb024ac23a9add368a7128d10b2febbacaa20c9c3cd8fd5b",
       "reason": "initial registration (--add; #37 item 1 anchor)",
-      "actor": "unknown",
+      "actor": "longxiang",
       "at": "2026-10-26T01:03:30.825Z"
     },
     {
@@ -603,7 +603,7 @@
       "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "new_sha256": "1f489c58929e219add55b5abccf7f2bb31de43e7a9e4f21b783f97df49e240d5",
       "reason": "initial registration (--add; #37 item 1 anchor)",
-      "actor": "unknown",
+      "actor": "longxiang",
       "at": "2026-10-26T01:03:30.917Z"
     },
     {
@@ -611,8 +611,16 @@
       "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "new_sha256": "43b800a774d7525b48e38467f1e4f6712bee34c47f1735b4ea7bfe6e420cd1a0",
       "reason": "initial registration (--add; #37 item 1 anchor)",
-      "actor": "unknown",
+      "actor": "longxiang",
       "at": "2026-10-26T01:03:31.008Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "89b44f2f043e846e0e50dbe03566b484d8d73779cceacea27c10a6028500406d",
+      "new_sha256": "ebc4b7d47729aa00b09443cb24fec7da458aad959df597d7eb879513a3ec2d24",
+      "reason": "#88: chain-first 接受 post-genesis 新工具初始登记（Z→首提交 blob）+ --add/audit 拒 unknown actor + git 探针 stderr 静默",
+      "actor": "longxiang",
+      "at": "2026-10-26T01:23:21.009Z"
     }
   ],
   "kind": "engine",

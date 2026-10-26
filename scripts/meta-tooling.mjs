@@ -203,9 +203,10 @@ if (args.includes("--audit")) {
     for (const r of rr) {
       const t = Date.parse(String(r.at ?? ""));
       if (!Number.isFinite(t) || t < cutoff) continue; // 切换点前 = legacy
-      if (!r.actor || !String(r.actor).trim()) {
+      // #88：'unknown' 也算缺失——切换点后无真名 = 无留痕。
+      if (!r.actor || !String(r.actor).trim() || String(r.actor).trim().toLowerCase() === "unknown") {
         actorBad++;
-        console.error(`  ✗ actor missing after cutoff: ${r.path} at=${r.at} (cutoff ${index.actor_required_from}) (#37 item 5)`);
+        console.error(`  ✗ actor missing/unknown after cutoff: ${r.path} at=${r.at} (cutoff ${index.actor_required_from}) (#37 item 5 / #88)`);
       }
     }
     if (actorBad) {
@@ -233,32 +234,65 @@ if (args.includes("--audit")) {
     } catch { genesisCommit = ""; }
     let gitBad = 0;
     const paths = [...new Set(rr.map((r) => r.path))];
-    /** 账本起点态：文件在 genesis 提交时的 blob（其后新增的文件取首个含它的提交的 blob）。
-     *  链首 old 必须等于这个值——否则说明更早的记录被删了（记录 2 的 old 恰好等于记录 1
-     *  的 new，仅凭「在历史里出现过」无法发现删除）。 */
-    const epochBlobOf = (path) => {
-      if (genesisCommit) {
-        try {
-          const blob = execFileSync("git", ["show", `${genesisCommit}:${path}`], { cwd: ROOT, encoding: "buffer" });
-          return createHash("sha256").update(blob).digest("hex");
-        } catch { /* 文件在 genesis 时还不存在 */ }
-      }
+    // #894784e8：git 探针统一走这里——path 不在目标提交时的 fatal 是预期分支，stderr 不外泄。
+    const gitProbe = (gitArgs) => {
       try {
-        const out = execFileSync("git", ["log", "--reverse", "--format=%H", "--", path], { cwd: ROOT, encoding: "utf8" });
-        const firstCommit = out.split(String.fromCharCode(10)).filter(Boolean)[0];
-        if (!firstCommit) return "";
-        const blob = execFileSync("git", ["show", `${firstCommit}:${path}`], { cwd: ROOT, encoding: "buffer" });
-        return createHash("sha256").update(blob).digest("hex");
-      } catch { return ""; }
+        return execFileSync("git", gitArgs, { cwd: ROOT, encoding: "buffer", stdio: ["ignore", "pipe", "ignore"] });
+      } catch { return null; }
+    };
+    const sha256buf = (b) => createHash("sha256").update(b).digest("hex");
+    /** 路径在 genesis 提交时的 blob sha（不存在 → ""）。 */
+    const genesisBlobOf = (path) => {
+      if (!genesisCommit) return "";
+      const blob = gitProbe(["show", `${genesisCommit}:${path}`]);
+      return blob ? sha256buf(blob) : "";
+    };
+    /** 路径首个 git 提交（--reverse 首行）的 blob sha（无历史 → ""）。 */
+    const firstAddBlobOf = (path) => {
+      const out = gitProbe(["log", "--reverse", "--format=%H", "--", path]);
+      if (!out) return "";
+      const firstCommit = out.toString().split(String.fromCharCode(10)).filter(Boolean)[0];
+      if (!firstCommit) return "";
+      const blob = gitProbe(["show", `${firstCommit}:${path}`]);
+      return blob ? sha256buf(blob) : "";
     };
     const pinnedGenesis = index.reregistration_genesis ?? {};
+    const Z = "0".repeat(64);
     for (const path of paths) {
       const firstIdx = rr.findIndex((r) => r.path === path);
       const first = rr[firstIdx];
-      const expected = pinnedGenesis[path] ?? epochBlobOf(path);
-      if (expected && first.old_sha256 !== expected) {
+      const pinned = pinnedGenesis[path];
+      if (pinned) {
+        // 显式 pin（reregistration_genesis）：链根必须等于 pin 值——删早期记录即露馅。
+        if (first.old_sha256 !== pinned) {
+          gitBad++;
+          console.error(`  ✗ chain first anchor: ${path} first old_sha256 ${first.old_sha256.slice(0, 8)} ≠ pinned genesis ${pinned.slice(0, 8)} (earlier record deleted? #37 item 5)`);
+        }
+        continue;
+      }
+      const atGenesis = genesisBlobOf(path);
+      if (atGenesis) {
+        // genesis 前就存在的工具：链根必须锚在 genesis blob（记录 2 的 old 恰好等于记录 1 的
+        // new，仅凭「在历史里出现过」无法发现删除——故必须精确等于起点态）。
+        if (first.old_sha256 !== atGenesis) {
+          gitBad++;
+          console.error(`  ✗ chain first anchor: ${path} first old_sha256 ${first.old_sha256.slice(0, 8)} ≠ pinned genesis ${atGenesis.slice(0, 8)} (earlier record deleted? #37 item 5)`);
+        }
+        continue;
+      }
+      // #894784e8（监督席 direct-9cbd2de7）：genesis 之后新增的工具——初始登记 = Z 锚
+      // （old=00000000），且 new 必须等于该路径**首个 git 提交**的 blob sha：
+      // 既接受正当 --add 初始登记，又不放手工构造（伪造 new 对不上首提交内容；
+      // 首登前已改过一版而漏登早期变迁，同样对不上；未提交的路径直接点名）。
+      const firstAdd = firstAddBlobOf(path);
+      if (!firstAdd) {
         gitBad++;
-        console.error(`  ✗ chain first anchor: ${path} first old_sha256 ${first.old_sha256.slice(0, 8)} ≠ pinned genesis ${expected.slice(0, 8)} (earlier record deleted? #37 item 5)`);
+        console.error(`  ✗ chain first anchor: ${path} has no git history (untracked?) — tooling entries must be committed before registering (#894784e8)`);
+        continue;
+      }
+      if (first.old_sha256 !== Z || first.new_sha256 !== firstAdd) {
+        gitBad++;
+        console.error(`  ✗ chain first anchor: ${path} post-genesis tool must root at ${Z.slice(0, 8)}→${firstAdd.slice(0, 8)} (first git commit blob), got ${first.old_sha256.slice(0, 8)}→${first.new_sha256.slice(0, 8)} (#894784e8)`);
       }
     }
     if (gitBad) {
@@ -286,16 +320,12 @@ if (args.includes("--audit")) {
       // seed：账本起点态（genesis 提交时的 blob）——否则「genesis 后只改一次」
       // 的 transitions 为空，静默重哈希漏检（监督席 gap (a)）
       if (genesisCommit) {
-        try {
-          const seedBlob = execFileSync("git", ["show", `${genesisCommit}:${t.path}`], { cwd: ROOT, encoding: "buffer" });
-          chain.push(createHash("sha256").update(seedBlob).digest("hex"));
-        } catch { /* 文件在 genesis 时不存在——首提交即起点 */ }
+        const seedBlob = gitProbe(["show", `${genesisCommit}:${t.path}`]);
+        if (seedBlob) chain.push(sha256buf(seedBlob)); /* 否则文件在 genesis 时不存在——首提交即起点 */
       }
       for (const commit of commits) {
-        try {
-              const blob = execFileSync("git", ["show", `${commit}:${t.path}`], { cwd: ROOT, encoding: "buffer" });
-          chain.push(createHash("sha256").update(blob).digest("hex"));
-        } catch { /* file absent at this commit */ }
+        const blob = gitProbe(["show", `${commit}:${t.path}`]);
+        if (blob) chain.push(sha256buf(blob)); /* file absent at this commit */
       }
       // 同一 sha 连续出现合并为一次变更
       const transitions = [];
@@ -363,20 +393,28 @@ if (add) {
     console.error(`meta-tooling: ${rel} is already registered — use --reregister for a byte change`);
     process.exit(2);
   }
+  // #88（监督席 direct-fe588519）：初始锚也要真 actor——--actor 或 git user.name，
+  // 都没有就拒绝（不得写 'unknown'：切换点后 unknown = 无留痕）。
+  let addActor = flag("actor");
+  if (!addActor) {
+    try {
+      addActor = String(execFileSync("git", ["config", "user.name"], { encoding: "utf8" })).trim();
+    } catch { /* no git */ }
+  }
+  if (!addActor) {
+    console.error('meta-tooling: --add needs --actor "<who>" (or a git user.name) for the initial registration anchor (#88)');
+    process.exit(2);
+  }
   index.tooling.push({ path: rel, sha256: sha256(join(ROOT, rel)), role });
   // #37 条目1（初始锚点）：--add 顺手记一条初始 reregistration（Z→当前 sha）——
   // 新路径从登记起就有 lineage 锚，未提交手工对齐立刻可查。
-  if (add) {
-    const rel2 = add.split("\\").join("/");
-    const added = (index.tooling ?? []).find((t) => t.path === rel2);
-    if (added) {
-      index.reregistrations = index.reregistrations ?? [];
-      index.reregistrations.push({
-        path: rel2, old_sha256: "0".repeat(64), new_sha256: added.sha256,
-        reason: "initial registration (--add; #37 item 1 anchor)", actor: flag("actor") ?? "unknown",
-        at: new Date().toISOString(),
-      });
-    }
+  {
+    index.reregistrations = index.reregistrations ?? [];
+    index.reregistrations.push({
+      path: rel, old_sha256: "0".repeat(64), new_sha256: sha256(join(ROOT, rel)),
+      reason: "initial registration (--add; #37 item 1 anchor)", actor: addActor,
+      at: new Date().toISOString(),
+    });
   }
   index.tooling.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   atomicWriteIndex(index);

@@ -99,9 +99,35 @@ describe("#37 round-3: lineage + actor cutoff", () => {
     writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
     const r = tool(root, ["--audit"]);
     expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
-    expect((r.stdout || "") + (r.stderr || "")).toMatch(/actor missing after cutoff/);
+    expect((r.stdout || "") + (r.stderr || "")).toMatch(/actor missing\/unknown after cutoff/);
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }, 60_000);
+
+  it("#88 engine face: post-cutoff actor 'unknown' → verify meta R2 FAIL（两面同规）", () => {
+    const root = scratchIndex();
+    const idx = {
+      meta_index_version: 2, orchestration: [],
+      actor_required_from: "2026-10-25T00:00:00.000Z",
+      tooling: [{ path: "scripts/p.mjs", role: "gate", sha256: "a".repeat(64) }],
+      reregistrations: [
+        { path: "scripts/p.mjs", old_sha256: Z, new_sha256: "a".repeat(64), reason: "r1", actor: "t", at: "2026-10-24T00:00:00.000Z" },
+        { path: "scripts/p.mjs", old_sha256: "a".repeat(64), new_sha256: "a".repeat(64), reason: "--add 无 actor 时的缺陷产物", actor: "unknown", at: "2026-10-26T00:00:00.000Z" },
+      ],
+    };
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+    const home = mkdtempSync(join(tmpdir(), "ygl-88-engine-home-"));
+    spawnSync(process.execPath, [BIN, "db", "init"], { env: { ...process.env, YGL_HOME: home }, stdio: "ignore" });
+    const r = spawnSync(process.execPath, [BIN, "verify", "meta", root, "--json"], {
+      encoding: "utf8", env: { ...process.env, YGL_HOME: home }, timeout: 120_000,
+    });
+    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    let j: any = null;
+    try { j = JSON.parse(r.stdout); } catch { /* */ }
+    const r2 = (j?.rules ?? []).find((x: any) => x.id === "R2");
+    expect(r2?.verdict, (r.stdout || "") + (r.stderr || "")).toBe("FAIL");
+    expect(JSON.stringify(r2?.evidence)).toMatch(/unknown/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 120_000);
 
   it("#87 regression: v2 index WITHOUT reregistrations[] → R2 PASS (warn, not fail)", () => {
     const root = scratchIndex();

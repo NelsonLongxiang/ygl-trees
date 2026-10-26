@@ -306,8 +306,9 @@ function r2(repo: string): { rule: MetaRule; index: IndexState } {
       for (const r of rr) {
         const t = Date.parse(String(r?.at ?? ""));
         if (!Number.isFinite(t) || t < cutoff) continue;
-        if (!r?.actor || !String(r.actor).trim()) {
-          problems.push(`reregistration actor missing after cutoff: ${String(r?.path)} at=${String(r?.at)} (cutoff ${String(cutoffRaw)}) (#37 item 5)`);
+        // #88：'unknown' 同样算无留痕——与 meta-tooling --audit 两面同规。
+        if (!r?.actor || !String(r.actor).trim() || String(r.actor).trim().toLowerCase() === "unknown") {
+          problems.push(`reregistration actor missing/unknown after cutoff: ${String(r?.path)} at=${String(r?.at)} (cutoff ${String(cutoffRaw)}) (#37 item 5 / #88)`);
         }
       }
     }

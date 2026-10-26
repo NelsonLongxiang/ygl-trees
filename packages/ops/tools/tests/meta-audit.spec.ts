@@ -223,4 +223,126 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
     expect((r.stdout || "") + (r.stderr || "")).toMatch(/time reversal|chain break/);
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }, 60_000);
+
+  // #88（监督席 direct-fe588519 / 评审席 issue）：--add 写 Z 锚与 --against-git 链首检查
+  // 对「genesis 之后新增的工具」冲突——正当初始登记被读成孤儿。新规：未 pin 且 genesis
+  // 时不存在 → 首条必须 00000000→首提交 blob；删首条/伪造/未提交仍红。
+  const mkNewToolRepo = () => {
+    const { root, git } = mkRepo({ "scripts/old.mjs": "o1" + String.fromCharCode(10) });
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "verify"), { recursive: true });
+    const o1 = shaOf(root, "scripts/old.mjs");
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [],
+      tooling: [{ path: "scripts/old.mjs", role: "gate", sha256: o1 }],
+      reregistrations: [{ path: "scripts/old.mjs", old_sha256: o1, new_sha256: o1, reason: "genesis", actor: "t", at: "2026-10-24T00:00:00.000Z" }],
+    }, null, 2));
+    git("add -A"); git("commit -q -m genesis");
+    writeFileSync(join(root, "scripts", "new.mjs"), "v1" + String.fromCharCode(10));
+    const n1 = shaOf(root, "scripts/new.mjs");
+    const idx = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+    idx.tooling.push({ path: "scripts/new.mjs", role: "gate", sha256: n1 });
+    idx.reregistrations.push({ path: "scripts/new.mjs", old_sha256: "0".repeat(64), new_sha256: n1, reason: "initial registration (--add; #37 item 1 anchor)", actor: "t", at: "2026-10-25T00:00:00.000Z" });
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+    git("add -A"); git("commit -q -m add-new-tool");
+    return { root, git, n1 };
+  };
+  const auditAgainstGit = (root: string) =>
+    spawnSync(process.execPath, [SCRIPT, "--audit", "--against-git"], {
+      encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 120_000,
+    });
+  const wipe = (root: string) => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+
+  it("#88: post-genesis tool initial registration → rc0; delete-first/forged/untracked variants → rc1", () => {
+    // ① 正当初始登记（Z→首提交 blob）：rc0 + git-consistent
+    {
+      const { root } = mkNewToolRepo();
+      const r = auditAgainstGit(root);
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(0);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/git-consistent/);
+      wipe(root);
+    }
+    // ② 删掉首条（先真实登记 v1→v2，再删 Z→v1）：新首条 old≠Z → rc1 点名
+    {
+      const { root, git } = mkNewToolRepo();
+      writeFileSync(join(root, "scripts", "new.mjs"), "v2" + String.fromCharCode(10));
+      const n2 = shaOf(root, "scripts/new.mjs");
+      const idx = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+      const prevNew = idx.reregistrations[idx.reregistrations.length - 1].new_sha256;
+      idx.reregistrations.push({ path: "scripts/new.mjs", old_sha256: prevNew, new_sha256: n2, reason: "real change", actor: "t", at: "2026-10-25T01:00:00.000Z" });
+      (idx.tooling as any[]).find((t) => t.path === "scripts/new.mjs").sha256 = n2;
+      idx.reregistrations = (idx.reregistrations as any[]).filter((e) => !(e.path === "scripts/new.mjs" && e.old_sha256 === "0".repeat(64)));
+      writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+      git("add -A"); git("commit -q -m delete-first");
+      const r = auditAgainstGit(root);
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/post-genesis tool must root/);
+      wipe(root);
+    }
+    // ③ 伪造 new（≠首提交 blob，tooling 同步对齐以过 stage-1）→ rc1
+    {
+      const { root, git } = mkNewToolRepo();
+      const forged = require("node:crypto").createHash("sha256").update("forged").digest("hex");
+      const idx = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+      (idx.reregistrations as any[]).find((e) => e.path === "scripts/new.mjs").new_sha256 = forged;
+      (idx.tooling as any[]).find((t) => t.path === "scripts/new.mjs").sha256 = forged;
+      writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+      git("add -A"); git("commit -q -m forge");
+      const r = auditAgainstGit(root);
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/post-genesis tool must root/);
+      wipe(root);
+    }
+    // ④ 未提交（untracked）路径登记 → rc1 no git history
+    {
+      const { root } = mkNewToolRepo();
+      writeFileSync(join(root, "scripts", "untracked.mjs"), "u1" + String.fromCharCode(10));
+      const u1 = shaOf(root, "scripts/untracked.mjs");
+      const idx = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+      idx.tooling.push({ path: "scripts/untracked.mjs", role: "gate", sha256: u1 });
+      idx.reregistrations.push({ path: "scripts/untracked.mjs", old_sha256: "0".repeat(64), new_sha256: u1, reason: "initial registration (--add; #37 item 1 anchor)", actor: "t", at: "2026-10-25T02:00:00.000Z" });
+      writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+      const r = auditAgainstGit(root);
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/no git history/);
+      wipe(root);
+    }
+  }, 300_000);
+
+  it("#88: --add without resolvable actor → rc2; post-cutoff 'unknown' actor → audit rc1", () => {
+    // ① --add 无 --actor 且断掉 git config → rc2（不得写 'unknown'）
+    {
+      const root = mkdtempSync(join(tmpdir(), "ygl-add-actor-"));
+      const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+      mkdirSync(join(root, "scripts"), { recursive: true });
+      mkdirSync(join(root, "verify"), { recursive: true });
+      writeFileSync(join(root, "scripts", "x.mjs"), "x" + String.fromCharCode(10));
+      writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, orchestration: [], tooling: [] }, null, 2));
+      const r = spawnSync(process.execPath, [SCRIPT, "--add", "scripts/x.mjs", "--role", "gate"], {
+        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root, HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/nonexistent" }, timeout: 60_000,
+      });
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(2);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/--add needs --actor/);
+      wipe(root);
+    }
+    // ② 切换点后 actor='unknown' → audit rc1 点名
+    {
+      const { root, git } = mkRepo({ "scripts/p.mjs": "v1" + String.fromCharCode(10) });
+      const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+      mkdirSync(join(root, "verify"), { recursive: true });
+      const s1 = shaOf(root, "scripts/p.mjs");
+      writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+        meta_index_version: 2, orchestration: [], tooling: [{ path: "scripts/p.mjs", role: "gate", sha256: s1 }],
+        actor_required_from: "2026-10-25T00:00:00.000Z",
+        reregistrations: [{ path: "scripts/p.mjs", old_sha256: "0".repeat(64), new_sha256: s1, reason: "initial registration", actor: "unknown", at: "2026-10-26T00:00:00.000Z" }],
+      }, null, 2));
+      git("add -A"); git("commit -q -m genesis");
+      const r = spawnSync(process.execPath, [SCRIPT, "--audit"], {
+        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 60_000,
+      });
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(1);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/actor missing\/unknown after cutoff/);
+      wipe(root);
+    }
+  }, 120_000);
 });
