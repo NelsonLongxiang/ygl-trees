@@ -95,6 +95,22 @@ describe("MCP 4-tool surface (0.115.0 domain×action router)", () => {
     c.kill();
   }, 60_000);
 
+  it("#83 ygl_write source-add batch_file → --batch argv, all-or-nothing semantics", async () => {
+    const c = mcpCall();
+    await c.send("initialize");
+    const f = join(tmpdir(), `ygl-mcp-batch-${Date.now()}.jsonl`);
+    require("node:fs").writeFileSync(f, [
+      JSON.stringify({ title: "mcp batch one", url: "https://example.com/mb1" }),
+      JSON.stringify({ title: "mcp batch dup", url: "https://example.com/mb1" }),
+    ].join("\n"), "utf8");
+    const r = await c.send("tools/call", { name: "write", arguments: { domain: "research", action: "source-add", batch_file: f, project: "p1" } });
+    expect(r.result.isError).toBeFalsy();
+    const j = JSON.parse(r.result.content[0].text);
+    expect(j).toMatchObject({ batch: "source.add", added: 1, duplicates: 1 });
+    require("node:fs").rmSync(f, { force: true });
+    c.kill();
+  }, 60_000);
+
   it("rc fidelity: ygl_write runtime error → isError + {rc, error}", async () => {
     const c = mcpCall();
     await c.send("initialize");

@@ -16,6 +16,132 @@ import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 import { emitEvent } from "../../../core/text/src/eventbus";
 import { Claim, Evidence, Query, Source } from "./entities";
 
+// #83（评审席 direct-f5453873 裁点）：research source/claim add --batch <file.jsonl>。
+// 整批拒——先行全量校验（坏行点名行号+字段，rc2，零写入），通过后在**单个**事务内落库；
+// 内容级重复按 duplicate 计数（幂等语义，非错误）；--json 单对象；--verbose 逐行。
+function batchRows(file: string): { rows: any[] } | { error: string } {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return { error: "batch file not found or unreadable: " + file };
+  }
+  const lines = raw.split(/\r?\n/);
+  const rows: any[] = [];
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n].trim();
+    if (!line) continue;
+    let row: any;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      return { error: "line " + (n + 1) + ": invalid JSON" };
+    }
+    if (row === null || typeof row !== "object" || Array.isArray(row)) {
+      return { error: "line " + (n + 1) + ": row must be a JSON object" };
+    }
+    row.__line = n + 1;
+    rows.push(row);
+  }
+  if (!rows.length) return { error: "batch file is empty (no jsonl rows): " + file };
+  return { rows };
+}
+
+function validateBatchRow(kind: "source" | "claim", row: any): string | null {
+  const L = "line " + row.__line + ": ";
+  const title = String(row.title ?? "");
+  const url = String(row.url ?? "");
+  if (kind === "source") {
+    if (!title && !url) return L + "need title and/or url";
+    if (url && !/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return L + 'url must be <scheme>:// (got: "' + String(url).slice(0, 30) + '")';
+    if (row.relevance !== undefined && row.relevance !== "") {
+      const rel = Number(row.relevance);
+      if (!Number.isInteger(rel) || rel < 0 || rel > 5) return L + "relevance must be an integer 0-5 (got: " + row.relevance + ")";
+    }
+  } else if (!String(row.text ?? "")) {
+    return L + "need text";
+  }
+  if (row.confidence !== undefined && row.confidence !== "" && !["A", "B", "C"].includes(String(row.confidence))) {
+    return L + "confidence must be A|B|C (got: " + row.confidence + ")";
+  }
+  return null;
+}
+
+/** 校验 → 单事务落库 → 回执。写失败整批回滚（runTx 语义），rc1。 */
+async function runBatch(
+  env: Env,
+  project: { id: string; name: string },
+  flags: Record<string, unknown>,
+  kind: "source" | "claim",
+): Promise<number> {
+  const ctx = env.ctx;
+  const file = String(flags.batch || "");
+  if (!file) {
+    bad(ctx, "flag needs a value: --batch <file.jsonl>");
+    return 2;
+  }
+  if (flags.query !== undefined && kind === "source") {
+    bad(ctx, "--batch cannot combine with --query (attach per-row after the batch)");
+    return 2;
+  }
+  const parsed = batchRows(file);
+  if ("error" in parsed) {
+    bad(ctx, parsed.error + " (rc=2: input error — nothing was written)");
+    return 2;
+  }
+  for (const row of parsed.rows) {
+    const problem = validateBatchRow(kind, row);
+    if (problem) {
+      bad(ctx, problem + " (rc=2: input error — nothing was written)");
+      return 2;
+    }
+  }
+  const ds = await getOrm(env.db.path);
+  try {
+    let results: any[];
+    if (kind === "source") {
+      const specs = parsed.rows.map((r) => ({
+        title: String(r.title ?? ""), url: String(r.url ?? ""),
+        abstract: String(r.abstract ?? ""), content: String(r.content ?? ""),
+        engine: String(r.engine ?? ""), relevance: r.relevance === undefined ? 0 : Number(r.relevance),
+        confidence: String(r.confidence ?? ""), tags: String(r.tags ?? ""),
+      }));
+      results = (await writes.sourceAddBatch(ds, project.id, specs)).results;
+    } else {
+      const force = flags.force === true;
+      const channel = String(flags.channel ?? "");
+      const rows = parsed.rows.map((r) => ({ text: String(r.text), confidence: r.confidence === undefined ? undefined : String(r.confidence) }));
+      results = (await writes.claimAddBatch(ds, project.id, rows as any, force, channel)).results;
+    }
+    const added = results.filter((r: any) => !r.dup).length;
+    const dups = results.length - added;
+    const verbose = flags.verbose === true;
+    if (ctx.json) {
+      console.log(JSON.stringify({
+        batch: kind + ".add", file, project: project.name,
+        added, duplicates: dups,
+        rows: results.map((r: any, i: number) => ({
+          line: parsed.rows[i].__line, id: r.row.id, title: r.row.title ?? "", text: kind === "claim" ? r.row.text : undefined,
+          duplicate: !!r.dup,
+        })),
+      }, null, 2));
+    } else {
+      ok(ctx, "batch " + kind + " add: " + added + " added, " + dups + " duplicates (" + parsed.rows.length + " rows from " + file + ")");
+      if (verbose) {
+        results.forEach((r: any, i: number) => {
+          const label = r.dup ? "  = duplicate " : "  + ";
+          const name = kind === "source" ? r.row.title : String(r.row.text).slice(0, 50);
+          out(ctx, paint(C.dim, label + r.row.id + "  " + name, ctx.color));
+        });
+      }
+    }
+    return 0;
+  } catch (e: any) {
+    bad(ctx, (e?.message || String(e)) + " (whole batch rolled back — nothing was written)");
+    return 1;
+  }
+}
+
 /** Run a write through the TypeORM transactional write service and print
  *  with JSON discipline. Keeps every write command 6 lines. */
 /** 0.80: compact timestamp for session:// adjudication urls (yyyymmddhhmm). */
@@ -202,6 +328,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       // P1-1 fix: a flag given without a value arrives as boolean true — reject
       // it instead of silently storing "true" as the title/url (cold-user report).
       if (rejectBare(ctx, args.flags, ["abstract", "content", "relevance", "confidence", "tags", "query", "engine"])) return 2;
+      // #83: --batch jsonl 全批拒（坏行先行点名、单事务落库、重复按 duplicate 计数）。
+      if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "source");
       // R284 fix: relevance is INTEGER 0-5 (screening score band); a REAL like
       // 0.95 passes SQLite's weak typing but explodes in PG migration
       // ("invalid input syntax for type integer") — reject at the CLI gate.
@@ -707,6 +835,8 @@ if (subAction === "show") {
   if (sub === "claim") {
     if (subAction === "add") {
       if (rejectBare(ctx, args.flags, ["confidence", "text"])) return 2;
+      // #83: --batch jsonl（--force/--channel 为整批命令级开关，逐行 confidence 可覆写）。
+      if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "claim");
       // 0.81: confidence accepts the letter grades (A|B|C) OR a numeric
       // level — 0-1 decimal (0.92) or 0-100 percentage (92, 85%). Column
       // stays TEXT; raw input is stored as given.

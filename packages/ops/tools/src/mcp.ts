@@ -154,9 +154,14 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   research: {
     "query-add": (a) => ["research", "query", "add", String(a.text), ...opt("-p", a.project)],
     "query-attach": (a) => ["research", "query", "attach", String(a.query_id), String(a.source_id)],
-    "source-add": (a) => ["research", "source", "add", "--title", String(a.text), "--url", String(a.b ?? ""), ...opt("-p", a.project)],
+    // #83: --batch jsonl（batch_file 与 title/text 互斥，由 CLI 层全批拒语义把关）。
+    "source-add": (a) => a.batch_file
+      ? ["research", "source", "add", "--batch", String(a.batch_file), ...opt("-p", a.project)]
+      : ["research", "source", "add", "--title", String(a.text), "--url", String(a.b ?? ""), ...opt("-p", a.project)],
     "evidence-add": (a) => ["research", "evidence", "add", String(a.text), "--quote", String(a.quote ?? ""), ...opt("-p", a.project)],
-    "claim-add": (a) => ["research", "claim", "add", String(a.text), ...opt("-p", a.project)],
+    "claim-add": (a) => a.batch_file
+      ? ["research", "claim", "add", "--batch", String(a.batch_file), ...opt("-p", a.project)]
+      : ["research", "claim", "add", String(a.text), ...opt("-p", a.project)],
     "claim-link": (a) => ["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...opt("-p", a.project)],
     "claim-resolve": (a) => ["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...opt("-p", a.project)],
   },
@@ -250,6 +255,7 @@ export function buildTools(): McpTool[] {
           stance: { type: "string", enum: ["supports", "refutes"], description: "claim-link stance" },
           as: { type: "string", enum: ["supported", "refuted", "contested"], description: "claim-resolve verdict" },
           query_id: { type: "string", description: "query-attach: query id" },
+          batch_file: { type: "string", description: "#83 source-add/claim-add: jsonl batch file path (all-or-nothing; bad row names line+field, rc=2, nothing written)" },
           source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
           name: { type: "string", description: "kb name / node name / project name" },
           description: { type: "string", description: "kb description" },

@@ -150,44 +150,63 @@ function mapQuery(q: Query): Record<string, any> {
 
 // ================================================================ sources
 
+export interface SourceSpec {
+  title: string; url: string; abstract?: string; content?: string; engine?: string;
+  relevance?: number; confidence?: string; tags?: string;
+}
+
+/** #83 单事务体：sourceAdd 与 sourceAddBatch（--batch jsonl）共用。 */
+async function sourceAddCore(mgr: EntityManager, projectId: string, o: SourceSpec): Promise<WriteResult & { created: boolean }> {
+  const url = o.url || "";
+  const urlHash = sha1(url || o.title || "");
+  const ex = await mgr.findOne(Source, { where: { projectId, urlHash } });
+  if (ex) return { row: mapSource(ex), created: false, dup: true };
+  const title = o.title || url || "untitled";
+  const abstract_ = o.abstract || "";
+  const content = o.content || "";
+  const s = new Source();
+  s.id = shortId(["src", projectId, urlHash], 10);
+  s.projectId = projectId;
+  s.url = url;
+  s.title = title;
+  s.urlHash = urlHash;
+  s.contentHash = sha1(content || abstract_);
+  s.abstract = abstract_;
+  s.content = content;
+  s.engine = o.engine || "";
+  s.relevance = o.relevance ?? 0;
+  s.confidence = o.confidence || "B";
+  s.tags = o.tags || "";
+  s.retrievedAt = nowIso();
+  // v9: creation timestamp (distinct from retrievedAt which is fetch time)
+  s.created = nowIso();
+  await mgr.save(s);
+  await ftsShadow(mgr, "INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)", [
+    s.id, title, abstract_, content, ngram(title + " " + abstract_ + " " + content + " " + (o.tags || "")),
+  ]);
+  await logEvent(mgr, "source.add", "source", s.id, title);
+  return { row: mapSource(s), created: true, dup: false };
+}
+
 export async function sourceAdd(
   ds: DataSource,
   projectId: string,
-  o: {
-    title: string; url: string; abstract?: string; content?: string; engine?: string;
-    relevance?: number; confidence?: string; tags?: string;
-  }
+  o: SourceSpec
 ): Promise<WriteResult & { created: boolean }> {
-  const url = o.url || "";
-  const urlHash = sha1(url || o.title || "");
+  return runTx(ds, async (mgr) => sourceAddCore(mgr, projectId, o));
+}
+
+/** #83（评审席 direct-f5453873 裁点）：--batch jsonl 全批拒——全部行在单个事务内落库，
+ *  任一运行时失败整批回滚（不落半批）；内容级重复按 duplicate 计数（幂等语义，非错误）。 */
+export async function sourceAddBatch(
+  ds: DataSource,
+  projectId: string,
+  specs: SourceSpec[]
+): Promise<{ results: (WriteResult & { created: boolean })[] }> {
   return runTx(ds, async (mgr) => {
-    const ex = await mgr.findOne(Source, { where: { projectId, urlHash } });
-    if (ex) return { row: mapSource(ex), created: false, dup: true };
-    const title = o.title || url || "untitled";
-    const abstract_ = o.abstract || "";
-    const content = o.content || "";
-    const s = new Source();
-    s.id = shortId(["src", projectId, urlHash], 10);
-    s.projectId = projectId;
-    s.url = url;
-    s.title = title;
-    s.urlHash = urlHash;
-    s.contentHash = sha1(content || abstract_);
-    s.abstract = abstract_;
-    s.content = content;
-    s.engine = o.engine || "";
-    s.relevance = o.relevance ?? 0;
-    s.confidence = o.confidence || "B";
-    s.tags = o.tags || "";
-    s.retrievedAt = nowIso();
-    // v9: creation timestamp (distinct from retrievedAt which is fetch time)
-    s.created = nowIso();
-    await mgr.save(s);
-    await ftsShadow(mgr, `INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)`, [
-      s.id, title, abstract_, content, ngram(`${title} ${abstract_} ${content} ${o.tags || ""}`),
-    ]);
-    await logEvent(mgr, "source.add", "source", s.id, title);
-    return { row: mapSource(s), created: true, dup: false };
+    const results: (WriteResult & { created: boolean })[] = [];
+    for (const o of specs) results.push(await sourceAddCore(mgr, projectId, o));
+    return { results };
   });
 }
 
@@ -241,6 +260,27 @@ function mapEvidence(e: Evidence): Record<string, any> {
 
 // ================================================================ claims
 
+/** #83 单事务体：claimAdd 与 claimAddBatch 共用。 */
+async function claimAddCore(mgr: EntityManager, projectId: string, text: string, confidence: string, force: boolean, channel: string): Promise<WriteResult> {
+  const hash = contentHash(text, force);
+  const ex = await mgr.findOne(Claim, { where: { projectId, contentHash: hash } });
+  if (ex) return { row: mapClaim(ex), dup: true };
+  const c = new Claim();
+  c.id = shortId(["cl", projectId, text], 10);
+  c.projectId = projectId;
+  c.text = text;
+  c.status = "unverified";
+  c.confidence = confidence;
+  // always assign: TypeORM binds explicit NULL for unset entity props,
+  // bypassing the SQL DEFAULT and tripping claims.channel NOT NULL.
+  c.channel = channel || "";
+  c.contentHash = hash;
+  c.created = nowIso(); (c as any).updated = nowIso();
+  await mgr.save(c);
+  await logEvent(mgr, "claim.add", "claim", c.id, text.slice(0, 60));
+  return { row: mapClaim(c), dup: false };
+}
+
 export async function claimAdd(
   ds: DataSource,
   projectId: string,
@@ -249,24 +289,22 @@ export async function claimAdd(
   force = false,
   channel = ""
 ): Promise<WriteResult> {
-  const hash = contentHash(text, force);
+  return runTx(ds, async (mgr) => claimAddCore(mgr, projectId, text, confidence, force, channel));
+}
+
+/** #83：--batch jsonl 全批拒——单个事务；重复行按 duplicate 计数（幂等语义，非错误）。 */
+export async function claimAddBatch(
+  ds: DataSource,
+  projectId: string,
+  rows: { text: string; confidence?: string }[],
+  force = false,
+  channel = "",
+  defaultConfidence = "B"
+): Promise<{ results: WriteResult[] }> {
   return runTx(ds, async (mgr) => {
-    const ex = await mgr.findOne(Claim, { where: { projectId, contentHash: hash } });
-    if (ex) return { row: mapClaim(ex), dup: true };
-    const c = new Claim();
-    c.id = shortId(["cl", projectId, text], 10);
-    c.projectId = projectId;
-    c.text = text;
-    c.status = "unverified";
-    c.confidence = confidence;
-    // always assign: TypeORM binds explicit NULL for unset entity props,
-    // bypassing the SQL DEFAULT and tripping claims.channel NOT NULL.
-    c.channel = channel || "";
-    c.contentHash = hash;
-    c.created = nowIso(); (c as any).updated = nowIso();
-    await mgr.save(c);
-    await logEvent(mgr, "claim.add", "claim", c.id, text.slice(0, 60));
-    return { row: mapClaim(c), dup: false };
+    const results: WriteResult[] = [];
+    for (const r of rows) results.push(await claimAddCore(mgr, projectId, r.text, r.confidence || defaultConfidence, force, channel));
+    return { results };
   });
 }
 

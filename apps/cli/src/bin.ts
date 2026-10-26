@@ -146,12 +146,14 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   query attach <qid> <sid>    link source to query (recalled count)
   query list
   source add --title --url [--abstract --content --relevance --confidence --query]
+             source add --batch <file.jsonl>   #83 批量：整批拒（坏行点名行号 rc2 零写入），重复按 duplicate 计数
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
   evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
   evidence list | show <id> | assess <id>
   evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)
   claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>]
+             claim add --batch <file.jsonl>   #83 批量：整批拒（坏行点名行号 rc2 零写入），重复按 duplicate 计数
   claim link <claimId> <evidenceId> [--stance supports|refutes]
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
   claim unlink <claimId> <evidenceId>  remove one link, recompute status (prediction status kept)
@@ -828,11 +830,11 @@ export function generateLlmsManifest(): string {
     ]],
     ["research", "Evidence-first research pipeline", [
       ["research query add \"<text>\"", "register a search query"],
-      ["research source add --title --url", "add a source (also: --relevance 0-5 --confidence A|B|C)"],
+      ["research source add --title --url", "add a source (also: --relevance 0-5 --confidence A|B|C); --batch <file.jsonl> = jsonl 整批拒批量（all-or-nothing）"],
       ["research source fetch <url>", "fetch page, extract title/meta/text"],
       ["research evidence add <sid> --quote \"...\"", "verbatim quote from source"],
       ["research evidence show <eid> [--json]", "full evidence row + linked claims + source summary"],
-      ["research claim add \"<text>\"", "refutable assertion"],
+      ["research claim add \"<text>\"", "refutable assertion; --batch <file.jsonl> = jsonl 整批拒批量（all-or-nothing，坏行点名行号）"],
       ["research claim link <cid> <eid> --stance supports|refutes", "link claim to evidence"],
       ["research claim resolve <cid> --as supported|refuted|contested", "manual arbitration"],
       ["research claim unresolve <cid>", "reset to unverified (undo link auto-promote)"],
