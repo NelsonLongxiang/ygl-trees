@@ -44,6 +44,21 @@
       "role": "test"
     },
     {
+      "path": "monitored/drift-check.mjs",
+      "sha256": "43b800a774d7525b48e38467f1e4f6712bee34c47f1735b4ea7bfe6e420cd1a0",
+      "role": "gate"
+    },
+    {
+      "path": "monitored/gh-deepview.cjs",
+      "sha256": "1f489c58929e219add55b5abccf7f2bb31de43e7a9e4f21b783f97df49e240d5",
+      "role": "gate"
+    },
+    {
+      "path": "monitored/gh-delta-watch.cjs",
+      "sha256": "befd73a2701cfd3dbb024ac23a9add368a7128d10b2febbacaa20c9c3cd8fd5b",
+      "role": "gate"
+    },
+    {
       "path": "packages/verify/core/corpus/freeze.mjs",
       "sha256": "057fc10809e4b2f8300f609af24c730fd5b818244304151f67ac9a3639d7c79e",
       "role": "gate"
@@ -574,6 +589,30 @@
       "reason": "#37 四轮：v2 夹具带初始锚（R2 lineage 新规要求）",
       "actor": "ec4ce7f8",
       "at": "2026-10-25T10:32:19.860Z"
+    },
+    {
+      "path": "monitored/gh-delta-watch.cjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "befd73a2701cfd3dbb024ac23a9add368a7128d10b2febbacaa20c9c3cd8fd5b",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "unknown",
+      "at": "2026-10-26T01:03:30.825Z"
+    },
+    {
+      "path": "monitored/gh-deepview.cjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "1f489c58929e219add55b5abccf7f2bb31de43e7a9e4f21b783f97df49e240d5",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "unknown",
+      "at": "2026-10-26T01:03:30.917Z"
+    },
+    {
+      "path": "monitored/drift-check.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "43b800a774d7525b48e38467f1e4f6712bee34c47f1735b4ea7bfe6e420cd1a0",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "unknown",
+      "at": "2026-10-26T01:03:31.008Z"
     }
   ],
   "kind": "engine",
