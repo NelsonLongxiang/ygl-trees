@@ -162,6 +162,21 @@
       "path": "vitest.config.ts",
       "sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
       "role": "test"
+    },
+    {
+      "path": "monitored/gh-delta-watch.cjs",
+      "sha256": "befd73a2701cfd3dbb024ac23a9add368a7128d10b2febbacaa20c9c3cd8fd5b",
+      "note": "monitoring asset migrated from tmp/ (phantom-deletion prevention, chief order 2026-10-26; ops seat migration a2fe6e2)"
+    },
+    {
+      "path": "monitored/gh-deepview.cjs",
+      "sha256": "1f489c58929e219add55b5abccf7f2bb31de43e7a9e4f21b783f97df49e240d5",
+      "note": "monitoring asset migrated from tmp/ (phantom-deletion prevention, chief order 2026-10-26; ops seat migration a2fe6e2)"
+    },
+    {
+      "path": "monitored/drift-check.mjs",
+      "sha256": "43b800a774d7525b48e38467f1e4f6712bee34c47f1735b4ea7bfe6e420cd1a0",
+      "note": "monitoring asset migrated from tmp/ (phantom-deletion prevention, chief order 2026-10-26; ops seat migration a2fe6e2)"
     }
   ],
   "source_roots": [
