@@ -1,4 +1,4 @@
-# ygl-trees v0.115.4 — AI Agent Research Workbench
+# ygl-trees v0.116.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -40,11 +40,11 @@ Evidence-first research pipeline
 
 ```bash
 research query add "<text>"                                  # register a search query
-research source add --title --url                            # add a source (also: --relevance 0-5 --confidence A|B|C)
+research source add --title --url                            # add a source (also: --relevance 0-5 --confidence A|B|C); --batch <file.jsonl> = jsonl 整批拒批量（all-or-nothing）
 research source fetch <url>                                  # fetch page, extract title/meta/text
-research evidence add <sid> --quote "..."                    # verbatim quote from source
+research evidence add <sid> --quote "..."                    # verbatim quote from source; --batch <file.jsonl> = 全批拒批量（行={source_id,quote,note?,locator?}）
 research evidence show <eid> [--json]                        # full evidence row + linked claims + source summary
-research claim add "<text>"                                  # refutable assertion
+research claim add "<text>"                                  # refutable assertion; --batch <file.jsonl> = jsonl 整批拒批量（all-or-nothing，坏行点名行号）
 research claim link <cid> <eid> --stance supports|refutes    # link claim to evidence
 research claim resolve <cid> --as supported|refuted|contested # manual arbitration
 research claim unresolve <cid>                               # reset to unverified (undo link auto-promote)
@@ -201,7 +201,7 @@ Spec validator (M13): material → spec → report
 ```bash
 verify submit --title <t> --text <file|-> [--attach <f>] [--clause-pattern <regex>] [--meta-repo <dir> | --require-meta | --no-meta] # freeze material (+ its clause pattern, default ^([A-Z]+[0-9]+) ); verifier repos must pass verify meta (default hard since 0.113.0); --meta-repo names a repo outside cwd, --no-meta bypasses, recorded as meta.bypass
 verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--meta-repo <dir> | --require-meta] [--draft] [--no-meta] # extract → translate → blind self-review → freeze spec (--draft = dry run); meta gate default hard for verifier repos (0.113.0); --meta-repo/--require-meta make it explicit, --no-meta bypasses with a ledger event
-verify tree prepare <material-id> [--pinned <node>=<sha256>] # freeze recursive tree spec (A1; cycles/empty/depth/operator checks)
+verify tree prepare <material-id> [--pinned <node>=<sha256>] # freeze recursive tree spec (A1; cycles/empty/depth/operator checks);材料=纯 JSON 树对象（入口容差：kind:agg→group、op→aggregate 别名，冻结面 canonical）
 verify tree run <tree-spec-id> [--db <path>|--db <node>=<path>] # post-order recursive run; leaves real run+archive (--no-archive skips)
 verify tree report <tree-run-id> | trace <tree-spec-id>      # read frozen tree run report / list tree runs
 verify run <spec-id> --db <snapshot.sqlite>                  # run checkers on a snapshot copy → report (rc=0 even on FAIL)

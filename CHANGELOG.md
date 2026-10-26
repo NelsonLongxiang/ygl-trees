@@ -1,3 +1,12 @@
+## 0.116.0
+
+- #83：source/claim/evidence 三面 `--batch <file.jsonl>`（全批拒：坏行点名 rc2 零写入）与 `--file <json>` 单对象入参（与逐字段互斥）
+- #91：引擎缺陷五件（.157 采购席实盘复跑：判据先红→修→钉测）；监督席复核两建议
+- #92：tooling 登记时序结构式核验（silent-rehash 改提交时刻账本核验；AGENTS 规则 8 落文）
+- K3 裁决线：五弹药包去 `-alpha.2`（规则 7 vendor 退役终态）+ engine 文案
+
+评审席复核 2ddf002：离线全量 1091+1=1092、contract 145/145、readme 60/60、ratchet ok、web 108/108。
+
 ## 0.115.4
 
 - #90：claimlink-quiet verbose 断言改运行期门（beforeAll 探针——离线 ctx.skip 带可见原因，无凭证克隆全绿）；#84 claim link 默认安静；#81 meta-repo 帮助面补齐；#89 vendor/cordis/bin.js 恢复跟踪。评审席复核：干净克隆 1068+3=1071、contract 145/145、readme 55/55。
