@@ -26,6 +26,10 @@ function run(args: string[]) {
   return { rc: r.status ?? -1, raw: (r.stdout || "") + (r.stderr || ""), out: r.stdout || "" };
 }
 
+// 网关可达探针（监督席 direct-bc90dd8a：无凭证环境必须离线安全）——
+// 评估成功 model_confidence 为数值；离线回落 null（ops evalClaim 无凭证 ok:false）。
+let HAS_EVAL = false;
+
 describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
   beforeAll(() => {
     HOME = mkdtempSync(resolve(tmpdir(), "ygl-linkquiet-"));
@@ -42,6 +46,8 @@ describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
     // 预链一条证据给两条 claim（by-source 批量只需 source 内 ≥1 条未链证据时 linked>0）
     run(["research", "claim", "link", CID, JSON.parse(ev1.out).id ?? JSON.parse(ev1.out).row?.id, "-p", "lq"]);
     // 预测 claim 故意不预链——批量时会触发 auto-promote skip 摘要行
+    const probe = run(["research", "claim", "evaluate", CID, "-p", "lq", "--json"]);
+    try { HAS_EVAL = typeof JSON.parse(probe.out)?.model_confidence === "number"; } catch { HAS_EVAL = false; }
   });
 
   afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
@@ -87,13 +93,24 @@ describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
     expect(r.out).not.toMatch(/\[模型\]/);
   });
 
-  it("--verbose expands the [模型] line when the evaluator is reachable (#84.2)", () => {
+  // 运行期门（it.runIf 是收集期求值，beforeAll 探针尚未跑——不能用）：
+  // 网关不可达（无凭证离线环境）时 ctx.skip 带可见原因——监督席 direct-bc90dd8a/#90：
+  // 套件必须无凭证全绿，verbose 接受性由 --verbose-accepted 断言无条件钉。
+  it("--verbose expands the [模型] line when the evaluator is reachable (#84.2)", (ctx) => {
+    if (!HAS_EVAL) ctx.skip("evaluator unreachable (offline, no credentials) — expansion assertion N/A");
     const ev = run(["research", "evidence", "add", SID, "--quote", "q4", "-p", "lq", "--json"]);
     const eid = JSON.parse(ev.out).id ?? JSON.parse(ev.out).row?.id;
     const r = run(["research", "claim", "link", CID, eid, "--verbose", "-p", "lq"]);
     expect(r.rc).toBe(0);
-    // 本环境评估可用（前测的默认安静是在真实评估下成立的）；verbose 必须展开模型行。
-    // 若未来网关不可达，此断言会大声失败——语义钉就是宁可红不可静默漂移。
     expect(r.out).toMatch(/\[模型\] 置信度/);
+  });
+
+  it("--verbose is accepted in offline environments (rc=0, quiet path)", (ctx) => {
+    if (HAS_EVAL) ctx.skip("evaluator reachable here — quiet-path assertion covered by #84.1");
+    const ev = run(["research", "evidence", "add", SID, "--quote", "q5", "-p", "lq", "--json"]);
+    const eid = JSON.parse(ev.out).id ?? JSON.parse(ev.out).row?.id;
+    const r = run(["research", "claim", "link", CID, eid, "--verbose", "-p", "lq"]);
+    expect(r.rc).toBe(0);
+    expect(r.out).not.toMatch(/\[模型\]/);
   });
 });
