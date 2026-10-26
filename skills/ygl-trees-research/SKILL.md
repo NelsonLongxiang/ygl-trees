@@ -1,7 +1,7 @@
 ---
 name: ygl-trees-research
 description: >-
-  用 ygl-trees 研究管线做证据先行的研究：检索式登记（query add）、来源采集（source add（--relevance 只收整数 0-5，非整数 rc=2） /
+  用 ygl-trees 研究管线做证据先行的研究：检索式登记（query add）、来源采集（source add（--relevance 只收整数 0-5，非整数 rc=2）；source/claim/evidence 三面均支持 --batch <file.jsonl>（全批拒：坏行点名行号 rc2 零写入、文件缺失 rc1、重复按 duplicate 计数）与 source/claim --file <json> 单对象入参（与逐字段互斥） /
   source fetch 网页抓取）、原文摘录（evidence add）、断言与证据链接（claim add / link /
   resolve 人工仲裁）、query↔source 召回关联（query attach）、产出证据支撑的报告
   （produce outline/section/report/export）。

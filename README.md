@@ -168,8 +168,7 @@ predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据
 ```bash
 # --batch <file.jsonl>：每行一个 JSON 对象；先行全量校验，坏行点名「line N: 字段」整批拒（rc2、零写入），
 # 文件缺失 rc1；内容级重复按 duplicate 计数（幂等非错误）；--verbose 逐行、默认汇总一行
-printf '%s
-' \
+printf '%s\n' \
   '{"title":"竞品分析","url":"https://example.com/a","tags":"竞品"}' \
   '{"title":"社区口碑","url":"https://example.com/b","relevance":4}' \
   > batch-sources.jsonl
@@ -177,8 +176,7 @@ ygl-trees research source add --batch batch-sources.jsonl -p myproject
 
 # claim 行={text, confidence?}——confidence 与 CLI 参数同形（A|B|C 或数值档 0.92 / 85% 原样入库）
 # evidence 行={source_id, quote, note?, locator?}
-printf '%s
-' '{"text":"2 周内 npm 周下载破 5k","confidence":0.92}' '{"text":"竞品将跟进树视图"}' > batch-claims.jsonl
+printf '%s\n' '{"text":"2 周内 npm 周下载破 5k","confidence":0.92}' '{"text":"竞品将跟进树视图"}' > batch-claims.jsonl
 ygl-trees research claim add --batch batch-claims.jsonl -p myproject
 
 # --file <json>：单对象入参（与 --batch 行同 schema），与逐字段旗标互斥；未知字段点名不静默
@@ -186,7 +184,7 @@ printf '%s' '{"text":"单条也走文件免转义","confidence":"A"}' > one-clai
 ygl-trees research claim add --file one-claim.json -p myproject
 ```
 
-引号/Unicode 注意：jsonl 内嵌双引号需 `"` 转义；中文/emoji 按 UTF-8 字节原样冻结（sha 不做归一化）；
+引号/Unicode 注意：jsonl 内嵌双引号需 `\"` 转义；中文/emoji 按 UTF-8 字节原样冻结（sha 不做归一化）；
 Windows PowerShell 下引号转义最易踩坑——统一走 `--file/--batch` 文件入参可完全避开 shell 引号地狱。
 
 断言的状态**由证据链接自动推导**：有支持有反对 → `contested`，只有支持 → `supported`，都没有 → `unverified`。

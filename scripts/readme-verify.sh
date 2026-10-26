@@ -67,8 +67,7 @@ chk "claim unresolve"     2 -- $Y research claim unresolve
 chk "kb add --help"       0 -- $Y kb add --help
 chk "source add --project" 0 -- $Y research source add --title "README 校验" --url "https://ex.com/readme-83" --project rt
 # §#83 批量与文件入参（README「批量与文件入参」示例块的真值锚）
-printf '%s
-' '{"title":"README 批量示例","url":"https://ex.com/readme-batch"}' '{"title":"README 批量示例","url":"https://ex.com/readme-batch"}' > "$YGL_HOME/rm-batch.jsonl"
+printf '%s\n' '{"title":"README 批量示例","url":"https://ex.com/readme-batch"}' '{"title":"README 批量示例","url":"https://ex.com/readme-batch"}' > "$YGL_HOME/rm-batch.jsonl"
 chk "source --batch jsonl" 0 -- $Y research source add --batch "$YGL_HOME/rm-batch.jsonl" --project rt
 printf '%s' '{"text":"README 数值置信度走文件","confidence":0.92}' > "$YGL_HOME/rm-one.json"
 chk "claim --file 数值置信度" 0 -- $Y research claim add --file "$YGL_HOME/rm-one.json" --project rt

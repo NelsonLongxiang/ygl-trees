@@ -140,7 +140,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "4221ee671d40e42675c1c5f167ea402e2ea80dd988719a5196a2dd565543509c",
+      "sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
       "role": "gate"
     },
     {
@@ -645,6 +645,22 @@
       "reason": "#83 复核④：README 批量/文件示例块补 6 条真值锚 chk",
       "actor": "longxiang",
       "at": "2026-10-26T17:46:13.088Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "4221ee671d40e42675c1c5f167ea402e2ea80dd988719a5196a2dd565543509c",
+      "new_sha256": "5e78195d02b2324a86b54c63c4642e45ab69fdb8ceabdb424ed7b7617a190730",
+      "reason": "#83 条目4返修：printf %s\\n 被吞反斜杠修复（字面换行→两字符 \\n）",
+      "actor": "longxiang",
+      "at": "2026-10-26T18:34:26.683Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "5e78195d02b2324a86b54c63c4642e45ab69fdb8ceabdb424ed7b7617a190730",
+      "new_sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
+      "reason": "#83 条目4返修：printf 行重建（引号/换行序列精确化）",
+      "actor": "longxiang",
+      "at": "2026-10-26T18:35:19.544Z"
     }
   ],
   "kind": "engine",
