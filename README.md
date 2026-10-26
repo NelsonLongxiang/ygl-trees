@@ -163,6 +163,32 @@ predict audit   预测回测：扫描 [预测·N天] 断言，本地可测判据
 
 **JSON 纪律**：写命令在 `--json` 下 stdout 只有一个 JSON 对象（重复时带 `duplicate: true`），Agent 可直接 `JSON.parse` 全量输出。
 
+**批量与文件入参（#83）——source/claim/evidence 三面同语义**：
+
+```bash
+# --batch <file.jsonl>：每行一个 JSON 对象；先行全量校验，坏行点名「line N: 字段」整批拒（rc2、零写入），
+# 文件缺失 rc1；内容级重复按 duplicate 计数（幂等非错误）；--verbose 逐行、默认汇总一行
+printf '%s
+' \
+  '{"title":"竞品分析","url":"https://example.com/a","tags":"竞品"}' \
+  '{"title":"社区口碑","url":"https://example.com/b","relevance":4}' \
+  > batch-sources.jsonl
+ygl-trees research source add --batch batch-sources.jsonl -p myproject
+
+# claim 行={text, confidence?}——confidence 与 CLI 参数同形（A|B|C 或数值档 0.92 / 85% 原样入库）
+# evidence 行={source_id, quote, note?, locator?}
+printf '%s
+' '{"text":"2 周内 npm 周下载破 5k","confidence":0.92}' '{"text":"竞品将跟进树视图"}' > batch-claims.jsonl
+ygl-trees research claim add --batch batch-claims.jsonl -p myproject
+
+# --file <json>：单对象入参（与 --batch 行同 schema），与逐字段旗标互斥；未知字段点名不静默
+printf '%s' '{"text":"单条也走文件免转义","confidence":"A"}' > one-claim.json
+ygl-trees research claim add --file one-claim.json -p myproject
+```
+
+引号/Unicode 注意：jsonl 内嵌双引号需 `"` 转义；中文/emoji 按 UTF-8 字节原样冻结（sha 不做归一化）；
+Windows PowerShell 下引号转义最易踩坑——统一走 `--file/--batch` 文件入参可完全避开 shell 引号地狱。
+
 断言的状态**由证据链接自动推导**：有支持有反对 → `contested`，只有支持 → `supported`，都没有 → `unverified`。
 
 ### produce：从证据生成报告
@@ -311,7 +337,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1087 例) + demo（128 条断言）+ contract:audit（144 项）
+pnpm test          # 四段制回归：build + unit (vitest 1089 例) + demo（128 条断言）+ contract:audit（144 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

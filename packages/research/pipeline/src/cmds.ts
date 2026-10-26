@@ -70,8 +70,16 @@ function validateBatchRow(kind: "source" | "claim" | "evidence", row: any): stri
     if (!String(row.source_id ?? "")) return L + "need source_id";
     if (!String(row.quote ?? "")) return L + "need quote";
   }
-  if (row.confidence !== undefined && row.confidence !== "" && !["A", "B", "C"].includes(String(row.confidence))) {
-    return L + "confidence must be A|B|C (got: " + row.confidence + ")";
+  // #83 复核①：置信度口径与单条 CLI 参数同形——source 沿 A|B|C 枚举（同单条
+  // validateEnum）；claim 收 A|B|C 或数值档（0-1 / 0-100%，原样入库，同单条 0.81 规则）。
+  if (row.confidence !== undefined && row.confidence !== "") {
+    const c = String(row.confidence);
+    const claimNumericOk = kind === "claim" && Number.isFinite(Number(c.replace(/%$/, ""))) && Number(c.replace(/%$/, "")) >= 0 && Number(c.replace(/%$/, "")) <= 100;
+    if (!/^[ABC]$/.test(c) && !claimNumericOk) {
+      return L + (kind === "claim"
+        ? "confidence must be A|B|C or a number 0-1 / 0-100(%) (got: " + c + ")"
+        : "confidence must be A|B|C (got: " + c + ")");
+    }
   }
   return null;
 }
@@ -373,14 +381,22 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           bad(ctx, "--file cannot combine with per-field flags (title/url/abstract/...)");
           return 2;
         }
+        // #83 复核③：读取失败 rc1（404 类）与内容畸形 rc2（用法）分流；错误统一 line 1: 前缀。
         let row: any;
+        let rawText = "";
         try {
-          row = JSON.parse(fs.readFileSync(f, "utf8"));
+          rawText = fs.readFileSync(f, "utf8");
         } catch (e: any) {
           bad(ctx, "cannot read --file: " + (e?.message || e));
           return 1;
         }
-        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "--file must contain a single JSON object"); return 2; }
+        try {
+          row = JSON.parse(rawText);
+        } catch (e: any) {
+          bad(ctx, "line 1: invalid JSON (" + (e?.message || e) + ")");
+          return 2;
+        }
+        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "line 1: row must be a JSON object (--file takes exactly one)"); return 2; }
         row.__line = 1;
         const problem = validateBatchRow("source", row);
         if (problem) { bad(ctx, problem); return 2; }
@@ -395,7 +411,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return getOrm(env.db.path)
           .then(async (ds): Promise<number> => {
             const r = await writes.sourceAdd(ds, project.id, spec);
-            writeResult(ctx, r as any, (rw) => "source added: " + rw.id + "  " + clip(rw.title, 60) + "  · project " + project.name + "  (from --file " + f + ")");
+            // #83 复核②：--file 与 --batch 同形——JSON 回执带 ignored_fields（writeResult 只展开 row，故嵌进行对象）。
+            writeResult(ctx, (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r) as any, (rw) => "source added: " + rw.id + "  " + clip(rw.title, 60) + "  · project " + project.name + "  (from --file " + f + ")");
             return 0;
           })
           .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
@@ -917,14 +934,22 @@ if (subAction === "show") {
           bad(ctx, "--file cannot combine with positional text / --text / --confidence");
           return 2;
         }
+        // #83 复核③：读取失败 rc1（404 类）与内容畸形 rc2（用法）分流；错误统一 line 1: 前缀。
         let row: any;
+        let rawText = "";
         try {
-          row = JSON.parse(fs.readFileSync(f, "utf8"));
+          rawText = fs.readFileSync(f, "utf8");
         } catch (e: any) {
           bad(ctx, "cannot read --file: " + (e?.message || e));
           return 1;
         }
-        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "--file must contain a single JSON object"); return 2; }
+        try {
+          row = JSON.parse(rawText);
+        } catch (e: any) {
+          bad(ctx, "line 1: invalid JSON (" + (e?.message || e) + ")");
+          return 2;
+        }
+        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "line 1: row must be a JSON object (--file takes exactly one)"); return 2; }
         row.__line = 1;
         const problem = validateBatchRow("claim", row);
         if (problem) { bad(ctx, problem); return 2; }
@@ -936,7 +961,7 @@ if (subAction === "show") {
         const channel = String(args.flags.channel || "");
         return runWrite(
           env,
-          (ds) => writes.claimAdd(ds, project.id, text, confidence, force, channel),
+          (ds) => writes.claimAdd(ds, project.id, text, confidence, force, channel).then((r) => (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r)),
           (r) => "claim added: " + r.id + "  " + clip(text, 60) + (channel ? "  · channel " + channel : "") + "  · project " + project.name + "  (from --file " + f + ")"
         );
       }

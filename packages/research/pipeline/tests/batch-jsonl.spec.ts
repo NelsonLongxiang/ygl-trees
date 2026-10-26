@@ -181,4 +181,37 @@ describe.skipIf(!HAS_BIN)("research --batch jsonl (#83 all-or-nothing)", () => {
     expect(r.rc).toBe(1);
     expect(r.raw).toMatch(/batch file not found/);
   });
+
+  it("#83 复核①：claim 行内数值置信度（0.92 / 85%）与 CLI 参数同形", () => {
+    const f = join(DIR, "clm-num.jsonl");
+    writeFileSync(f, [
+      JSON.stringify({ text: "numeric confidence 0.92", confidence: 0.92 }),
+      JSON.stringify({ text: "percent confidence", confidence: "85%" }),
+    ].join("\n"), "utf8");
+    const r = run(["research", "claim", "add", "--batch", f, "-p", "b1", "--json"]);
+    expect(r.rc, r.raw).toBe(0);
+    expect(j(r)).toMatchObject({ added: 2, duplicates: 0 });
+    // source 行仍收 A|B|C 枚举（同单条 validateEnum）
+    const sf = join(DIR, "src-badconf.jsonl");
+    writeFileSync(sf, JSON.stringify({ title: "x", url: "https://ex.com/x", confidence: 0.92 }) + "\n", "utf8");
+    const r2 = run(["research", "source", "add", "--batch", sf, "-p", "b1"]);
+    expect(r2.rc).toBe(2);
+    expect(r2.raw).toMatch(/line 1: confidence must be A\|B\|C/);
+  });
+
+  it("#83 复核②③：--file 未知字段进 JSON 回执（ignored_fields）；畸形 JSON rc2 带 line 1:、缺失 rc1", () => {
+    const f = join(DIR, "src-unknown.json");
+    writeFileSync(f, JSON.stringify({ title: "u", url: "https://ex.com/u", project: "ignored" }), "utf8");
+    const r = run(["research", "source", "add", "--file", f, "-p", "b1", "--json"]);
+    expect(r.rc, r.raw).toBe(0);
+    expect(j(r).ignored_fields).toEqual(["project"]);
+    const bad = join(DIR, "bad.json");
+    writeFileSync(bad, "not json", "utf8");
+    const r2 = run(["research", "claim", "add", "--file", bad, "-p", "b1"]);
+    expect(r2.rc).toBe(2);
+    expect(r2.raw).toMatch(/line 1: invalid JSON/);
+    const r3 = run(["research", "claim", "add", "--file", join(DIR, "gone.json"), "-p", "b1"]);
+    expect(r3.rc).toBe(1);
+    expect(r3.raw).toMatch(/cannot read --file/);
+  });
 });

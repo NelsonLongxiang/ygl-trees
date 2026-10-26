@@ -66,6 +66,17 @@ chk "claim unresolve"     2 -- $Y research claim unresolve
 # §0.83 并发钉住 + 帮助面（rt 项目由上方 "project new" 检查创建）
 chk "kb add --help"       0 -- $Y kb add --help
 chk "source add --project" 0 -- $Y research source add --title "README 校验" --url "https://ex.com/readme-83" --project rt
+# §#83 批量与文件入参（README「批量与文件入参」示例块的真值锚）
+printf '%s
+' '{"title":"README 批量示例","url":"https://ex.com/readme-batch"}' '{"title":"README 批量示例","url":"https://ex.com/readme-batch"}' > "$YGL_HOME/rm-batch.jsonl"
+chk "source --batch jsonl" 0 -- $Y research source add --batch "$YGL_HOME/rm-batch.jsonl" --project rt
+printf '%s' '{"text":"README 数值置信度走文件","confidence":0.92}' > "$YGL_HOME/rm-one.json"
+chk "claim --file 数值置信度" 0 -- $Y research claim add --file "$YGL_HOME/rm-one.json" --project rt
+printf '%s' '{"title":"README 单对象文件","url":"https://ex.com/readme-file","bogus":"点名未知字段"}' > "$YGL_HOME/rm-src.json"
+chk "source --file 单对象" 0 -- $Y research source add --file "$YGL_HOME/rm-src.json" --project rt
+printf '%s' 'not json' > "$YGL_HOME/rm-bad.json"
+chk "--file 畸形 JSON rc2" 2 -- $Y research claim add --file "$YGL_HOME/rm-bad.json" --project rt
+chk "--batch 文件缺失 rc1" 1 -- $Y research source add --batch "$YGL_HOME/definitely-missing.jsonl" --project rt
 chk "node list --tree"    1 -- $Y node list --tree nonexist-tree
 # §0.84 判定落账（离线安全：evaluate 不存在的 claim → rc=1 点名；calibration 空表 rc=0）
 chk "claim add 校准"      0 -- $Y research claim add "README 校准断言" -p rt
