@@ -43,7 +43,7 @@ import { join, relative, sep } from "node:path";
  *  (fdc757f6 2026-10-22: gitignored paths out of scope, `.ts/.mts/.cts` in the
  *  closed set, `source_roots[]` exempts declared product source dirs) — v1 repos
  *  judge the same throughout. */
-export const META_VERSION = "1.3";
+export const META_VERSION = "1.4";
 /** On-disk index schema versions this rule set reads. A future format must be
  *  added here and be rejected by name when unknown — never silently mis-read. */
 export const META_INDEX_VERSIONS: readonly number[] = [1, 2, 3];

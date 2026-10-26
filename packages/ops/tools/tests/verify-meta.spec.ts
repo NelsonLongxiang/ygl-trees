@@ -60,7 +60,7 @@ describe.skipIf(!HAS_BIN)("verify meta R1-R3 (0.111.0)", () => {
     const r = jrun(["verify", "meta", dir, "--json"]);
     expect(r.rc).toBe(0);
     expect(r.j.verdict).toBe("PASS");
-    expect(r.j.meta_version).toBe("1.3");
+    expect(r.j.meta_version).toBe("1.4");
     // a v1 index keeps the v1 report shape: R1–R3 only, registrations not read
     expect(r.j.meta_index_version).toBe(1);
     expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3"]);
@@ -448,7 +448,7 @@ describe.skipIf(!HAS_BIN)("verify meta R6 Cordis framework compliance", () => {
 
   it("R6 engine: vendor workspace deps + bundle order + anchors + upstream/fork version => PASS", () => {
     const r = metaRun(engineRepo("r6-engine-ok"));
-    expect(r.j.meta_version).toBe("1.3");
+    expect(r.j.meta_version).toBe("1.4");
     expect(rule(r, "R6")).toMatchObject({ id: "R6", verdict: "PASS", evidence: { kind: "engine" } });
     expect(r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3", "R5a", "R6"]);
   });
@@ -524,6 +524,6 @@ describe.skipIf(!HAS_BIN)("verify meta R6 Cordis framework compliance", () => {
     writeFileSync(join(v2dir, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, specs: [], orchestration: [], tooling: [] }), "utf8");
     const v2r = metaRun(v2dir);
     expect(v2r.j.rules.map((x: any) => x.id)).toEqual(["R1", "R2", "R3", "R5a"]);
-    expect(v2r.j.meta_version).toBe("1.3");
+    expect(v2r.j.meta_version).toBe("1.4");
   });
 });
