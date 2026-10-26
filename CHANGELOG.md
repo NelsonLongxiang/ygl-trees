@@ -1,3 +1,7 @@
+## 0.115.3
+
+- #88 收口：--against-git 接受 post-genesis 新工具初始登记（chain-first Z→首提交 blob）；unknown actor 双面禁绝（actor 身份从 ROOT 仓库解析，不泄漏调用方 cwd）；readme-verify 计数门 ANSI 色码鲁棒化。评审席复核 6408613285。
+
 ## 0.115.2
 
 - #18 监督席裁定(a)收口：无工作区 rc 收敛——verify 构造面（submit/prepare/run）rc1，其余命令保持 rc2（冻结契约不动）；verify example 不静默建库；P4 诊断分流；#22 v1 索引 R3→NEEDS-MATERIAL；#58 pg-plan 残留清理。
