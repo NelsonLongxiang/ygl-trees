@@ -2,24 +2,24 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-25T03:46:33.756Z",
+  "measured_at": "2026-10-26T15:31:25.477Z",
   "metrics": {
     "bundle_bytes": {
-      "value": 831917,
+      "value": 852712,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-25T03:46:28.071Z",
+      "measured_at": "2026-10-26T15:31:22.418Z",
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {
       "value": 1450936,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-25T03:46:28.073Z",
+      "measured_at": "2026-10-26T15:31:22.420Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 510,
+      "value": 326,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-10-25T03:46:33.756Z",
+      "measured_at": "2026-10-26T15:31:25.477Z",
       "method": "warm2-min7-retry-once"
     }
   }
