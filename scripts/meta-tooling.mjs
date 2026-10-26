@@ -70,7 +70,9 @@ if (reregister) {
   let actor = flag("actor");
   if (!actor) {
     try {
-      actor = String(execFileSync("git", ["config", "user.name"], { encoding: "utf8" })).trim();
+      // #88 条目5（评审席 comment 6407091287）：身份从 ROOT 仓库取，不从调用方 cwd 取——
+      // YGL_META_ROOT 指向别仓时不得把调用方仓库的 user.name 记成归属。
+      actor = String(execFileSync("git", ["config", "user.name"], { cwd: ROOT, encoding: "utf8" })).trim();
     } catch { /* no git */ }
   }
   if (!actor) {
@@ -398,7 +400,7 @@ if (add) {
   let addActor = flag("actor");
   if (!addActor) {
     try {
-      addActor = String(execFileSync("git", ["config", "user.name"], { encoding: "utf8" })).trim();
+      addActor = String(execFileSync("git", ["config", "user.name"], { cwd: ROOT, encoding: "utf8" })).trim();
     } catch { /* no git */ }
   }
   if (!addActor) {

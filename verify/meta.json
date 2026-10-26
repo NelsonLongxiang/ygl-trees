@@ -110,7 +110,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "ebc4b7d47729aa00b09443cb24fec7da458aad959df597d7eb879513a3ec2d24",
+      "sha256": "593027bb6bc85c81f524b651f7c649b3a3f6c136d32fc6cc31f722ad3e15295b",
       "role": "gate"
     },
     {
@@ -621,6 +621,14 @@
       "reason": "#88: chain-first 接受 post-genesis 新工具初始登记（Z→首提交 blob）+ --add/audit 拒 unknown actor + git 探针 stderr 静默",
       "actor": "longxiang",
       "at": "2026-10-26T01:23:21.009Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "ebc4b7d47729aa00b09443cb24fec7da458aad959df597d7eb879513a3ec2d24",
+      "new_sha256": "593027bb6bc85c81f524b651f7c649b3a3f6c136d32fc6cc31f722ad3e15295b",
+      "reason": "#88 条目5：actor 身份从 ROOT 仓库解析（git config 加 cwd:ROOT）——YGL_META_ROOT 指向别仓时不泄漏调用方身份",
+      "actor": "longxiang",
+      "at": "2026-10-26T02:51:58.430Z"
     }
   ],
   "kind": "engine",

@@ -325,6 +325,27 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
       expect((r.stdout || "") + (r.stderr || "")).toMatch(/--add needs --actor/);
       wipe(root);
     }
+    // ①b（#88 条目5，评审席 comment 6407091287）：调用方检出带 local user.name、
+    // YGL_META_ROOT 指向别处（非 git 目录）→ 身份不得泄漏，仍 rc2。
+    // 回归形态：不传 cwd 时会读到调用方仓库的 user.name 记成归属。
+    {
+      const { execSync } = require("node:child_process") as typeof import("node:child_process");
+      const callerRepo = mkdtempSync(join(tmpdir(), "ygl-caller-identity-"));
+      execSync("git init -q && git config user.email t@t && git config user.name tester", { cwd: callerRepo });
+      const root2 = mkdtempSync(join(tmpdir(), "ygl-add-actor2-"));
+      const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+      mkdirSync(join(root2, "scripts"), { recursive: true });
+      mkdirSync(join(root2, "verify"), { recursive: true });
+      writeFileSync(join(root2, "scripts", "x.mjs"), "x" + String.fromCharCode(10));
+      writeFileSync(join(root2, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, orchestration: [], tooling: [] }, null, 2));
+      const r = spawnSync(process.execPath, [SCRIPT, "--add", "scripts/x.mjs", "--role", "gate"], {
+        cwd: callerRepo,
+        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root2, HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/nonexistent", GIT_CONFIG_SYSTEM: "/nonexistent" }, timeout: 60_000,
+      });
+      expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(2);
+      expect((r.stdout || "") + (r.stderr || "")).toMatch(/--add needs --actor/);
+      wipe(callerRepo); wipe(root2);
+    }
     // ② 切换点后 actor='unknown' → audit rc1 点名
     {
       const { root, git } = mkRepo({ "scripts/p.mjs": "v1" + String.fromCharCode(10) });
