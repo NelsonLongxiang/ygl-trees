@@ -1,0 +1,38 @@
+{
+ "approximate": true,
+ "note": "v2 rebuild 2026-10-26 07:4x after phantom deletion of detector trio (window 07:11-07:39). Baseline counts from ledger (15 issues/0 PR @2026-10-25T18:39+08:00). Only ledger-known numbers listed; first successful --commit sweep re-baselines exact face. Gap window since 18:39 10-25 uncovered until gh auth restored — run catch-up sweep then.",
+ "baseline_at": "2026-10-25T18:39:00+08:00",
+ "issues": {
+  "#18": {
+   "title": "(ledger-known open)",
+   "author": "NelsonLongxiang",
+   "updated": "2026-10-25T10:39:00Z"
+  },
+  "#22": {
+   "title": "(ledger-known open)",
+   "author": "NelsonLongxiang",
+   "updated": "2026-10-25T10:39:00Z"
+  },
+  "#27": {
+   "title": "(ledger-known open)",
+   "author": "zhujun200409-cloud",
+   "updated": "2026-10-25T10:39:00Z"
+  },
+  "#29": {
+   "title": "(ledger-known open)",
+   "author": "NelsonLongxiang",
+   "updated": "2026-10-25T10:39:00Z"
+  },
+  "#35": {
+   "title": "(ledger-known open)",
+   "author": "zhujun200409-cloud",
+   "updated": "2026-10-25T10:39:00Z"
+  },
+  "#37": {
+   "title": "(ledger-known open)",
+   "author": "NelsonLongxiang",
+   "updated": "2026-10-25T10:39:00Z"
+  }
+ },
+ "prs": {}
+}
