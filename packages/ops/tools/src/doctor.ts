@@ -68,7 +68,7 @@ export function auditSkillVersions(cliVersion: string, root = process.cwd()): Sk
   return null;
 }
 
-export function run(env: Env, action: string, rest: string[], args: any): number {
+export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, db, store } = env;
   const checks: Check[] = [];
 
@@ -77,6 +77,44 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   if (action) {
     bad(ctx, `doctor takes no subcommands (got '${action}') — flags only: --json / --fix / --strict`);
     return 2;
+  }
+
+  // ── B7（总工 direct-f7d3b5da）：PG 直连 doctor ──
+  // PG 模式（boot 已路由至此）：连通性 + 方言/目标报告；SQLite 专项检查
+  // 显式 N/A（每项都有归属，不静默跳过）。
+  if (db === null || db === undefined) {
+    return (async (): Promise<number> => {
+      const pgUrl = String(process.env.YGL_DB_URL || "");
+      const redacted = pgUrl.replace(/\/[^@]*@/, "\/");
+      const t0 = Date.now();
+      let connected = false;
+      let latencyMs = -1;
+      let errDetail = "";
+      try {
+        const { Client } = require("pg");
+        const client = new Client({ connectionString: pgUrl, connectionTimeoutMillis: 4000 });
+        await client.connect();
+        latencyMs = Date.now() - t0;
+        connected = true;
+        await client.end();
+      } catch (e: any) {
+        errDetail = String(e?.message || e);
+      }
+      checks.push({ name: "pg_connectivity", status: connected ? "pass" : "fail", detail: connected ? "connected (" + latencyMs + "ms) → " + redacted : "cannot connect: " + errDetail + " (" + redacted + ")" });
+      checks.push({ name: "dialect", status: "pass", detail: "pg (B7 PG-direct mode)" });
+      for (const n of ["schema_version", "index_freshness", "fts_sync", "orphans", "relation_orphans", "config", "stale_lock", "eval_envelopes", "plugin_profile", "write_integrity", "update_hint"]) {
+        checks.push({ name: n, status: "warn" as const, detail: "N/A in PG mode — SQLite workspace check (run without YGL_DB_URL)" });
+      }
+      const failed = checks.filter((c) => c.status === "fail").length;
+      if (ctx.json) {
+        console.log(JSON.stringify(checks, null, 2));
+      } else {
+        head(ctx, "doctor — PG direct mode");
+        for (const c of checks) out(ctx, (c.status === "pass" ? "  ✓ " : c.status === "warn" ? "  · " : "  ✗ ") + c.name + ": " + c.detail);
+        out(ctx, paint(C.dim, "  PG 直连面：db stats | db path | doctor | webui；写/维护面需 SQLite 工作区（去掉 YGL_DB_URL）", ctx.color));
+      }
+      return failed ? 1 : 0;
+    })();
   }
 
   // ── 1. Schema version ──

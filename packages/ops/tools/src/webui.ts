@@ -47,6 +47,14 @@ interface DashboardData {
 }
 
 export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
+  // B7：PG 模式下 webui 的仪表盘/SSE/快照面全部绑定 sync SQLite Store——
+  // 诚实拒绝（命名 rc1）胜过半瘫启动（fingerprint/export 走 env.db 会当场崩）。
+  if (env.db === null || env.db === undefined) {
+    env.ctx.json
+      ? console.log(JSON.stringify({ error: "webui requires the SQLite workspace face — PG-direct mode (YGL_DB_URL) supports db stats | db path | doctor only" }))
+      : (env.ctx as any).bad ? (env.ctx as any).bad(env.ctx, "webui requires the SQLite workspace face — PG-direct mode (YGL_DB_URL) supports db stats | db path | doctor only") : console.error("webui requires the SQLite workspace face");
+    return 1;
+  }
   if (action === "serve") return serve(env, args);
   if (action !== "" && action !== "export") {
     bad(env.ctx, "usage: webui [export [--out <file>] | serve [--port N]]");

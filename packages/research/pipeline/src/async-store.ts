@@ -10,23 +10,32 @@ import { AsyncDb, getAsyncDb, assertSyncDelegationAllowed } from "../../../core/
 import { Store, Row } from "./reads";
 
 export class AsyncResearchStore {
-  private readonly sync: Store;
+  private readonly sync: Store | null;
   private readonly adb: AsyncDb;
 
-  constructor(db: DB) {
-    this.sync = new Store(db);
-    this.adb = getAsyncDb(db);
+  /** B7：传 PG URL 字符串 → PG 直连面（sync 委托面由 guard() 关闭——sqlite-only）。 */
+  constructor(db: DB | string) {
+    if (typeof db === "string") {
+      this.sync = null;
+      this.adb = getAsyncDb(null, db);
+    } else {
+      this.sync = new Store(db);
+      this.adb = getAsyncDb(db);
+    }
   }
 
-  /** #77③: delegated sync calls are sqlite-only. */
+  /** #77③: delegated sync calls are sqlite-only（PG 模式 sync=null，直接点名）。 */
   private guard(): void {
+    if (this.sync === null) {
+      throw new Error("AsyncResearchStore: this face delegates to the sync SQLite Store and is unavailable in PG mode (YGL_DB_URL); PG-direct faces: db stats / doctor / webui");
+    }
     assertSyncDelegationAllowed(this.adb, "AsyncResearchStore");
   }
 
   // ================================================================ projects
-  async projectByName(name: string): Promise<Row | null> { this.guard(); return this.sync.projectByName(name); }
-  async projectResolve(name?: string): Promise<Row> { this.guard(); return this.sync.projectResolve(name); }
-  async projectList(): Promise<Row[]> { this.guard(); return this.sync.projectList(); }
+  async projectByName(name: string): Promise<Row | null> { this.guard(); return this.sync!.projectByName(name); }
+  async projectResolve(name?: string): Promise<Row> { this.guard(); return this.sync!.projectResolve(name); }
+  async projectList(): Promise<Row[]> { this.guard(); return this.sync!.projectList(); }
 
   // ================================================================ queries
   async queryList(projectId: string): Promise<Row[]> {
@@ -35,36 +44,36 @@ export class AsyncResearchStore {
 
   // ================================================================ sources
   async sourceList(projectId: string, minRelevance?: number): Promise<Row[]> {
-    this.guard(); return this.sync.sourceList(projectId, minRelevance);
+    this.guard(); return this.sync!.sourceList(projectId, minRelevance);
   }
   async sourceSearch(projectId: string, q: string): Promise<Row[]> {
-    this.guard(); return this.sync.sourceSearch(projectId, q);
+    this.guard(); return this.sync!.sourceSearch(projectId, q);
   }
-  async sourceGet(id: string): Promise<Row | null> { this.guard(); return this.sync.sourceGet(id); }
+  async sourceGet(id: string): Promise<Row | null> { this.guard(); return this.sync!.sourceGet(id); }
 
   // ================================================================ evidence
-  async evidenceList(projectId: string): Promise<Row[]> { this.guard(); return this.sync.evidenceList(projectId); }
+  async evidenceList(projectId: string): Promise<Row[]> { this.guard(); return this.sync!.evidenceList(projectId); }
 
   // ================================================================ claims
-  async claimList(projectId: string): Promise<Row[]> { this.guard(); return this.sync.claimList(projectId); }
+  async claimList(projectId: string): Promise<Row[]> { this.guard(); return this.sync!.claimList(projectId); }
 
   // ================================================================ artifacts
-  async artifactList(projectId: string): Promise<Row[]> { this.guard(); return this.sync.artifactList(projectId); }
-  async artifactGet(id: string): Promise<Row | null> { this.guard(); return this.sync.artifactGet(id); }
+  async artifactList(projectId: string): Promise<Row[]> { this.guard(); return this.sync!.artifactList(projectId); }
+  async artifactGet(id: string): Promise<Row | null> { this.guard(); return this.sync!.artifactGet(id); }
 
   // ================================================================ skills
-  async skillList(): Promise<Row[]> { this.guard(); return this.sync.skillList(); }
-  async skillGet(name: string): Promise<Row | null> { this.guard(); return this.sync.skillGet(name); }
-  async skillMatch(q: string, limit?: number): Promise<Row[]> { this.guard(); return this.sync.skillMatch(q, limit); }
+  async skillList(): Promise<Row[]> { this.guard(); return this.sync!.skillList(); }
+  async skillGet(name: string): Promise<Row | null> { this.guard(); return this.sync!.skillGet(name); }
+  async skillMatch(q: string, limit?: number): Promise<Row[]> { this.guard(); return this.sync!.skillMatch(q, limit); }
 
   // ================================================================ events
-  async tail(limit?: number): Promise<Row[]> { this.guard(); return this.sync.tail(limit); }
+  async tail(limit?: number): Promise<Row[]> { this.guard(); return this.sync!.tail(limit); }
 
   // ================================================================ writes used by command handlers
   /** #78: command handlers call this on the async facade. It stays a delegate to the
    *  sync Store write (transactional writes live in writes.ts; this is the query status flip). */
   async queryDone(id: string): Promise<void> {
-    this.guard(); return this.sync.queryDone(id);
+    this.guard(); return this.sync!.queryDone(id);
   }
 
   // ================================================================ stats

@@ -110,6 +110,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   const { ctx, db, home } = env;
   // #91：--db 数组形（tree run 分叶绑库）——单值面统一 lastFlagOf 取末位。
   const file = lastFlagOf(args.flags.db) || dbPath(home);
+  // B7：PG 模式（boot 已收口到 stats/path 两动作）——file 显示 PG URL、export 等 SQLite 面点名拒。
+  const pgMode = db === null || db === undefined;
 
   switch (action) {
     case "init": {
@@ -139,6 +141,12 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       });
     }
     case "path":
+      if (pgMode) {
+        const pgTarget = String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db));
+        if (ctx.json) console.log(JSON.stringify({ dialect: "pg", url: pgTarget.replace(/\/\/[^@]*@/, "//") }, null, 2));
+        else out(ctx, "pg: " + pgTarget.replace(/\/\/[^@]*@/, "//"));
+        return 0;
+      }
       if (ctx.json) console.log(JSON.stringify({ path: file }, null, 2));
       else out(ctx, file);
       return 0;
@@ -239,7 +247,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 0;
       }
       head(ctx, "Database");
-      show(ctx, { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
+      // B7: PG 直连面无 SQLite 文件——dialect/url 代替 file/size。
+      show(ctx, pgMode ? { dialect: "pg", url: String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db)).replace(/\/\/[^@]*@/, "//"), ...s } : { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
       return 0;
     }
     case "export-markdown": {

@@ -468,6 +468,24 @@ export async function main(argv: string[]): Promise<number> {
   // 而且 data_source.sha256 取改写后的字节，证据与报告当场对不上。
   // #91：--db 是 MULTI_FLAGS（tree run 分叶绑库需要数组形）——单值面统一走 lastFlagOf 取末位。
   const file = group === "verify" ? dbPath(home) : lastFlagOf((args.flags as Record<string, unknown>).db) || dbPath(home);
+  // ── B7（总工 direct-f7d3b5da 裁）：CLI boot PG 分支 ──
+  // YGL_DB_URL（或 --db）为 postgres:// 时进 PG 模式：不要求/不创建 SQLite 工作区；
+  // PG 直连面放行（db stats / doctor / webui / version / help / llms），其余命令组
+  // 点名拒绝（rc2：环境组合用法错误）——绝不静默回落 SQLite（评审席信息差补报钉死的缺口）。
+  const PG_URL_RE = /^postgres(ql)?:\/\//i;
+  const dbFlagRaw = lastFlagOf((args.flags as Record<string, unknown>).db);
+  const pgUrl = PG_URL_RE.test(String(process.env.YGL_DB_URL || ""))
+    ? String(process.env.YGL_DB_URL)
+    : PG_URL_RE.test(dbFlagRaw) ? dbFlagRaw : "";
+  const PG_DIRECT = new Set(["db", "doctor", "webui", "version", "help", "llms"]);
+  if (pgUrl) {
+    const pgStatsOnly = group === "db" && action && action !== "stats" && action !== "path";
+    if (!PG_DIRECT.has(group) || pgStatsOnly) {
+      bad(ctx, `PG mode (YGL_DB_URL=${pgUrl.replace(/\/\/[^@]*@/, "//")}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | doctor | webui serve/export`);
+      if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
+      return 2;
+    }
+  }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
@@ -475,7 +493,7 @@ export async function main(argv: string[]): Promise<number> {
   // sends authors the wrong way (they need examples, not a database).
   const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe");
   if (VERIFY_DB_FREE) process.env.YGL_DB_NO_CREATE = "1"; // #18: 不静默建库（缺库→:memory:）
-  const needInit = !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE;
+  const needInit = !pgUrl && !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE; // B7: PG 模式不要求 SQLite 工作区
   if (needInit && !require("node:fs").existsSync(file)) {
     // #18.3: a missing workspace is a RUNTIME condition (db not initialized),
     // not a usage error — rc=1 on the verify construction surface too.
@@ -498,6 +516,11 @@ export async function main(argv: string[]): Promise<number> {
   // profile; per-plugin issues surface through StartupError → diagnostics.
   const VERSION = appVersion();
   let booted: BootedApp;
+  // B7：PG 模式跳过 SQLite Cordis boot——db/store 为 null，asyncStore 走 PgAsyncDb
+  // （直连面已在上方 allowlist 收口；写面/事件面全部点名拒绝，不静默回落）。
+  if (pgUrl) {
+    booted = { ctx: null as any, db: null as any, store: null as any, pluginCommands: {}, loadedPlugins: [] } as any;
+  } else
   try {
     // Batch-16: concurrent CLI workers can collide while one opens the workspace
     // ("cannot open database … database is locked" — the ORM/WAL switch). Retry
@@ -636,7 +659,7 @@ export async function main(argv: string[]): Promise<number> {
     cordis: app,     // Cordis Context (long-running services)
     db,              // DB instance (from ctx.database or fallback)
     store,           // Store (from ctx.research or fallback) — legacy sync face
-    asyncStore: new AsyncResearchStore(db),  // B1 async facade (research cmds)
+    asyncStore: pgUrl ? new AsyncResearchStore(pgUrl) : new AsyncResearchStore(db),  // B1 facade；B7: PG 直连形态
     plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
     args, home, group,
     dbFile: file,   // resolved --db (or workspace default) for the brief payload
@@ -755,6 +778,7 @@ export async function main(argv: string[]): Promise<number> {
     const code = typeof rc === "number" ? rc : 0;
     // R10.3: cmd.run ledger row — rc-mapped severity (0→info, 2→warn, else→error)
     try {
+      if (!db) return code; // B7: PG 模式无 SQLite 事件面（cmd.run 只记 SQLite 工作区）
       // 0.93 T3: session attribution (see the plugin-branch twin above)
       const actor = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli";
       db.run(
