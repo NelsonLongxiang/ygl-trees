@@ -27,6 +27,10 @@ import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
 import { compileClausePattern, lintCandidates, noClauseLinesMessage, prepareSpec } from "../../../verify/core/src/prepare";
 import { metaGate, metaRepoRootOf, refuseMeta } from "./meta-gate";
+
+/** 单值 --db 消费方（prepare/run/graduate/probe）：多值时取末位——
+ *  与 MULTI_FLAGS 之前的「后者覆盖前者」语义一致，只是显式化（tree run 独占数组形）。 */
+const lastDbFlag = (v: unknown): string => (Array.isArray(v) ? String(v[v.length - 1] ?? "") : String(v ?? ""));
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
 import type { FileScanRecord } from "../../../verify/core/src/engine";
@@ -164,8 +168,12 @@ function validateTreeSpec(
     if (!n || typeof n !== "object") return { error: "node must be an object" };
     if (typeof n.id !== "string" || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(n.id)) return { error: "bad node id: " + String(n.id) };
     if (byId.has(n.id)) return { error: "duplicate node id: " + n.id };
-    if (n.kind !== "leaf" && n.kind !== "group") return { error: "node " + n.id + ": kind must be leaf|group" };
-    const node: TreeSpecNode = { id: n.id, kind: n.kind };
+    // #83-③（总工席 direct-085b7275，.157 材料 vocab drift）：入口容差——kind:"agg"
+    // 归一化为 canonical "group"；冻结 spec 只存 canonical 词表（digest 不变）。
+    const rawKind = String(n.kind ?? "");
+    const canonicalKind = rawKind === "agg" ? "group" : rawKind;
+    if (canonicalKind !== "leaf" && canonicalKind !== "group") return { error: "node " + n.id + ": kind must be leaf|group (got: " + JSON.stringify(n.kind) + ")" };
+    const node: TreeSpecNode = { id: n.id, kind: canonicalKind as "leaf" | "group" };
     if (n.kind === "leaf") {
       if (typeof n.spec_id !== "string" || !n.spec_id) return { error: "leaf " + n.id + ": spec_id required" };
       if (!specExists(n.spec_id)) return { error: "leaf " + n.id + ": spec not found: " + n.spec_id + " (prepare it first)" };
@@ -181,12 +189,17 @@ function validateTreeSpec(
         return { error: "group " + n.id + ": children must be an array of node ids" };
       }
       if (!n.children.length) return { error: "group " + n.id + ": empty group rejected (Q6)" };
-      const agg = String(n.aggregate ?? "");
+      // #83-④：op → aggregate 入口别名（同上：容差在入口，冻结面 canonical）。
+      const aggRaw = n.aggregate !== undefined ? n.aggregate : n.op;
+      const agg = String(aggRaw ?? "");
       if (agg === "all_pass" || agg === "count_fail") {
         node.aggregate = agg;
       } else {
         const qm = /^quorum\(([0-9]+)\)$/.exec(agg);
-        if (!qm) return { error: "group " + n.id + ": unknown aggregate '" + agg + "' (want all_pass|count_fail|quorum(N))" };
+        if (!qm) {
+          const named = aggRaw === undefined ? "aggregate" : (n.aggregate !== undefined ? "aggregate '" + agg + "'" : "op '" + agg + "'");
+          return { error: "group " + n.id + ": unknown " + named + " (want all_pass|count_fail|quorum(N) — 'op' is accepted as an alias of 'aggregate')" };
+        }
         const q = Number(qm[1]);
         if (!Number.isInteger(q) || q < 1 || q > n.children.length) {
           return { error: "group " + n.id + ": quorum(N) needs 1 <= N <= " + n.children.length };
@@ -541,9 +554,11 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     const runner = new SqliteRunner(snap.path);
     const report = await runVerify(leafSpec, { runner, mode: "open" });
     // Q8：叶 data_source 投影（kind+id 恒比；声明 sha256 时才比 sha）。
+    // #83-②（总工席 direct-085b7275）：id = 被验快照身份（snap.source），不是树内
+    // 节点坐标——node.id 与 target.id（快照身份）必 mismatch 导致全叶 STALE 沿父链。
     const dsProjection: { kind: string; id: string; sha256?: string } = {
       kind: "sqlite-snapshot",
-      id: String(n.id),
+      id: snap.source || String(n.id),
       sha256: snap.sha256,
     };
     const withSource = { ...report, data_source: { ...dsProjection, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
@@ -1161,7 +1176,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const materialId = rest[1];
       if (!materialId) {
-        bad(ctx, "usage: verify tree prepare <material-id> [--pinned <node>=<sha256> ...] [--json]");
+        bad(ctx, "usage: verify tree prepare <material-id> [--pinned <node>=<sha256> ...] [--json]  (material 文本必须是纯 JSON 树对象，不要 markdown 包裹/注释)");
         return 2;
       }
       const p = paths(env);
@@ -1411,7 +1426,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const materialId = rest[0];
       const candidatesPath = String(args.flags.candidates || "");
       const reviewsPath = String(args.flags.reviews || "");
-      const dbPath = String(args.flags.db || "");
+      const dbPath = lastDbFlag(args.flags.db);
       if (!materialId || !candidatesPath || !reviewsPath || !dbPath) {
         bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>] [--meta-repo <verifier-root> | --require-meta | --no-meta]");
         return 2;
@@ -1578,7 +1593,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     case "run": {
       const specId = rest[0];
-      const dbPath = String(args.flags.db || "");
+      const dbPath = lastDbFlag(args.flags.db);
       if (!specId || !dbPath) {
         bad(ctx, "usage: verify run <spec-id> --db <snapshot.sqlite> [--submission <dir>]");
         return 2;
@@ -1717,7 +1732,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // origin:"override" while the command itself fell back to the report's
       // source — the freeze record disagreed with what ran. A flag made only of
       // whitespace is the same as absent.
-      const dbOverrideRaw = args.flags.db ? String(args.flags.db).trim() : "";
+      const dbOverrideRaw = args.flags.db ? lastDbFlag(args.flags.db).trim() : "";
       const dbOverride = dbOverrideRaw || null;
       const cmd = jobCommand(specId, el.data_source?.source ?? null, dbOverride);
       // 来源不可直接执行时不能登记作业——否则作业每分钟 ENOENT 失败（blob 引用），
@@ -2262,9 +2277,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       let schema: ReturnType<typeof probeOfDb> | undefined;
       if (args.flags.db) {
         try {
-          schema = probeOfDb(String(args.flags.db));
+          schema = probeOfDb(lastDbFlag(args.flags.db));
         } catch (e: any) {
-          bad(ctx, `cannot probe --db ${args.flags.db}: ${e?.message || e}`);
+          bad(ctx, `cannot probe --db ${lastDbFlag(args.flags.db)}: ${e?.message || e}`);
           return 1;
         }
       }

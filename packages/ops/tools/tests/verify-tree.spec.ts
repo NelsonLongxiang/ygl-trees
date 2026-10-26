@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -268,5 +268,65 @@ describe("A1 tree run (runtime first cut)", () => {
     expect(rv.rc, rv.out + rv.err).toBe(0);
     expect(rv.j.verdict).toBe("NEUTRALIZED");
     expect(rv.j.nodes.find((x: any) => x.node_id === "root").verdict).toBe("NEUTRALIZED");
+  });
+
+  // #83-①（总工席 direct-085b7275）：多值 --db 互相覆盖的判据钉——分叶绑库后
+  // 各叶按自己的快照判定；修复前 parser 后值覆盖前值，双叶共用一库必然错判。
+  it("multi --db per-leaf binding: each leaf judged on its own snapshot", () => {
+    expect(run(["project", "new", "pdb"]).rc).toBe(0);
+    const snapA = join(HOME, "multi-a.db");
+    const snapB = join(HOME, "multi-b.db");
+    for (const [f, ids] of [[snapA, [1]], [snapB, [2]]] as const) {
+      const db = new DatabaseSync(f);
+      db.exec("CREATE TABLE t(id INTEGER);");
+      for (const id of ids) db.exec("INSERT INTO t VALUES(" + id + ");");
+      db.close();
+    }
+    // spec_pa: 存在 id=1 → 仅 A 上 PASS；spec_pb: 存在 id=2 → 仅 B 上 PASS
+    for (const [sid, sql] of [["spec_pa", "select 1 from t where id=1"], ["spec_pb", "select 1 from t where id=2"]] as const) {
+      mkdirSync(join(HOME, "verify", "specs", sid), { recursive: true });
+      mkdirSync(join(HOME, "verify", "materials", "mat_" + sid), { recursive: true });
+      writeFileSync(join(HOME, "verify", "materials", "mat_" + sid, "material.txt"), "fixture " + sid);
+      writeFileSync(join(HOME, "verify", "materials", "mat_" + sid, "material.json"), JSON.stringify({ material_id: "mat_" + sid, title: sid, created: "2026-10-27T00:00:00.000Z", text_sha256: "", text_path: "material.txt", files: [] }));
+      writeFileSync(join(HOME, "verify", "specs", sid, "prepare.json"), JSON.stringify({ material_id: "mat_" + sid }));
+      writeFileSync(join(HOME, "verify", "specs", sid, "spec.json"), JSON.stringify({
+        contract_version: "1.2", spec_id: sid, spec_version: 1, title: sid, domain: "general",
+        created: "2026-10-27T00:00:00.000Z", runtime_min: "",
+        verifier: { engine_version: "0.114.18", corpus_version: "1.2" },
+        as_of: { kind: "snapshot", value: "2026-10-26T00:00:00.000Z" },
+        attachments: [], sealed: { review: false },
+        vu: [{ id: "V1", role: "assert", title: sid, severity: "S3", source_clause: "x",
+          expected_from: { quote: "x", locator: "m:1" },
+          checker: { type: "exists", sql, expect: true } }],
+      }));
+    }
+    const prep = submitTree({
+      tree_spec_version: 1, root: "root",
+      nodes: [group("root", ["pa", "pb"]), leaf("pa", "spec_pa"), leaf("pb", "spec_pb")],
+    });
+    expect(prep.rc, JSON.stringify(prep.j) + prep.err).toBe(0);
+    const r = run(["verify", "tree", "run", prep.j.tree_spec_id, "--db", "pa=" + snapA, "--db", "pb=" + snapB]);
+    expect(r.rc, r.out + r.err).toBe(0);
+    const byId = Object.fromEntries(r.j.nodes.map((x: any) => [x.node_id, x.verdict]));
+    expect(byId.pa).toBe("PASS"); // 只在 A 上成立
+    expect(byId.pb).toBe("PASS"); // 只在 B 上成立——覆盖 bug 下双叶共用 B，pa 必 FAIL
+  });
+
+  // #83-③④：入口词表容差——kind:"agg" 与 op:"all_pass" 归一化为 canonical，冻结面不变。
+  it("vocab drift tolerance: kind agg + op alias accepted, frozen canonical", () => {
+    const prep = submitTree({
+      tree_spec_version: 1, root: "root",
+      nodes: [
+        { id: "root", kind: "agg", op: "all_pass", children: ["a", "b"] },
+        leaf("a", "spec_a"), leaf("b", "spec_b"),
+      ],
+    });
+    expect(prep.rc, JSON.stringify(prep.j) + prep.err).toBe(0);
+    // 冻结 spec 只存 canonical 词表
+    const frozen = JSON.parse(readFileSync(join(HOME, "verify", "trees", prep.j.tree_spec_id + ".json"), "utf8"));
+    const rootNode = frozen.nodes.find((x: any) => x.id === "root");
+    expect(rootNode.kind).toBe("group");
+    expect(rootNode.aggregate).toBe("all_pass");
+    expect(JSON.stringify(frozen)).not.toContain('"agg"');
   });
 });

@@ -82,6 +82,11 @@ ygl-trees verify tree archive <tree-run-id> [--json]
 
 ### 3.2 JSON 形状（冻结前先给形状，不带实现）
 
+> **材料要求（#83-⑤，2026-10-27 补注）**：tree prepare 的 material 文本必须是**纯 JSON 树对象**
+> （顶层 object、无 markdown 包裹/注释/尾逗号）——非 JSON 一律 rc=2 点名「tree spec is not
+> valid JSON」。入口容差（不改正冻结词表）：`kind:"agg"` 归一化为 `"group"`、`op` 是
+> `aggregate` 的别名；冻结 spec 只存 canonical 词表，digest 不变。
+
 写命令成功 = 单对象：
 
 ```json

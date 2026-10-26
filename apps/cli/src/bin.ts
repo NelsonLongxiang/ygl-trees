@@ -168,7 +168,7 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
   submit/prepare meta gate: [--meta-repo <dir> | --require-meta | --no-meta(记 meta.bypass)]  #81 可发现性
   prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
-  tree prepare <material-id> [--pinned <node>=<sha256>]  freeze recursive tree spec (A1: cycles/empty/depth/operator checks)
+  tree prepare <material-id> [--pinned <node>=<sha256>]  freeze recursive tree spec (A1: cycles/empty/depth/operator checks);材料文本必须是纯 JSON 树对象（勿 markdown 包裹）
   tree run <tree-spec-id> [--db <path>|--db <node>=<path>]  post-order run; leaves real run+archive (--no-archive skips)
   tree report <tree-run-id> | tree trace <tree-spec-id>
   run <spec-id> --db <snapshot.sqlite> run checkers on a snapshot copy (rc=0 even on FAIL)
@@ -927,7 +927,7 @@ export function generateLlmsManifest(): string {
     ["verify", "Spec validator (M13): material → spec → report", [
       ["verify submit --title <t> --text <file|-> [--attach <f>] [--clause-pattern <regex>] [--meta-repo <dir> | --require-meta | --no-meta]", "freeze material (+ its clause pattern, default ^([A-Z]+[0-9]+) ); verifier repos must pass verify meta (default hard since 0.113.0); --meta-repo names a repo outside cwd, --no-meta bypasses, recorded as meta.bypass"],
       ["verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--meta-repo <dir> | --require-meta] [--draft] [--no-meta]", "extract → translate → blind self-review → freeze spec (--draft = dry run); meta gate default hard for verifier repos (0.113.0); --meta-repo/--require-meta make it explicit, --no-meta bypasses with a ledger event"],
-      ["verify tree prepare <material-id> [--pinned <node>=<sha256>]", "freeze recursive tree spec (A1; cycles/empty/depth/operator checks)"],
+      ["verify tree prepare <material-id> [--pinned <node>=<sha256>]", "freeze recursive tree spec (A1; cycles/empty/depth/operator checks);材料=纯 JSON 树对象（入口容差：kind:agg→group、op→aggregate 别名，冻结面 canonical）"],
       ["verify tree run <tree-spec-id> [--db <path>|--db <node>=<path>]", "post-order recursive run; leaves real run+archive (--no-archive skips)"],
       ["verify tree report <tree-run-id> | trace <tree-spec-id>", "read frozen tree run report / list tree runs"],
       ["verify run <spec-id> --db <snapshot.sqlite>", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],

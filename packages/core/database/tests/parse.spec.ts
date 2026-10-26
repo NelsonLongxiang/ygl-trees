@@ -26,6 +26,13 @@ describe("parse() flag/value boundaries", () => {
     expect(a._).toEqual(["x", "-y"]);
   });
 
+  it("#83-①: repeated --db collects into an array (tree run per-leaf binding)", () => {
+    const a = parse(["verify", "tree", "run", "ts_x", "--db", "a.db", "--db", "b=n2.db"]);
+    expect(a.flags.db).toEqual(["a.db", "b=n2.db"]);
+    const single = parse(["verify", "run", "s", "--db", "only.db"]);
+    expect(single.flags.db).toEqual(["only.db"]); // 单值也是数组形——消费方 lastDbFlag 取末位
+  });
+
   it("accepts negative numbers as values", () => {
     const a = parse(["x", "--cost", "-1"]);
     expect(a.flags.cost).toBe("-1");

@@ -55,7 +55,9 @@ const BOOLEAN_FLAGS = new Set(["json", "no-color", "no-colour", "quiet", "debug"
  * overwriting (`--attach a --attach b` → ["a","b"]) — multi-file checker
  * specs need multiple staged attachments (0.114.12 engine gap: the last
  * flag silently won). Every other flag keeps last-wins. */
-const MULTI_FLAGS = new Set(["attach"]);
+// #83-①（总工席 direct-085b7275，.157 实盘）：--db 必须多值——tree run 分叶绑库
+// （--db <node>=<path> ...）依赖数组形；单值消费方自行取末位（旧覆盖语义的显式化）。
+const MULTI_FLAGS = new Set(["attach", "db"]);
 
 export function parse(argv: string[]): Args {
   const _: string[] = [];
