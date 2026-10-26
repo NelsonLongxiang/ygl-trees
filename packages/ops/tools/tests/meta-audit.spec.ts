@@ -253,6 +253,43 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
     });
   const wipe = (root: string) => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 
+  it("#83 返修轮: multi-edit-then-commit 跨步 git 变迁经账本链可达 → 不误报 silent rehash", () => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const root = mkdtempSync(join(tmpdir(), "ygl-multiedit-"));
+    const git = (cmd: string) => execSync(`git ${cmd}`, { cwd: root, encoding: "utf-8" });
+    git("init -q"); git("config user.email t@t"); git("config user.name t");
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, "verify"), { recursive: true });
+    const shaOf = (s: string) => require("node:crypto").createHash("sha256").update(s).digest("hex");
+    const path = "scripts/m.mjs";
+    const vA = "a1" + String.fromCharCode(10); const vB = "b1" + String.fromCharCode(10); const vC = "c1" + String.fromCharCode(10);
+    writeFileSync(join(root, path), vA);
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [],
+      tooling: [{ path, role: "gate", sha256: shaOf(vA) }],
+      reregistrations: [{ path, old_sha256: shaOf(vA), new_sha256: shaOf(vB), reason: "edit 1", actor: "t", at: "2026-10-20T00:00:00.000Z" }],
+    }, null, 2));
+    git("add -A"); git("commit -q -m state-A");
+    // 工作区两跳（A→B→C 各记一跳），一次提交到 C——git 变迁 A→C 跨步
+    writeFileSync(join(root, path), vC);
+    const idx = JSON.parse(readFileSync(join(root, "verify", "meta.json"), "utf8"));
+    idx.tooling[0].sha256 = shaOf(vC);
+    idx.reregistrations.push({ path, old_sha256: shaOf(vB), new_sha256: shaOf(vC), reason: "edit 2", actor: "t", at: "2026-10-20T00:01:00.000Z" });
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify(idx, null, 2));
+    git("add -A"); git("commit -q -m jump-to-C");
+    const r = spawnSync(process.execPath, [SCRIPT, "--audit", "--against-git"], { encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 120_000 });
+    expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(0);
+    // 负例：git 里再进一个未登记态 X（C→X 无账本对且不可达）→ silent rehash
+    // （tooling/first-anchor/last-new 保持一致——只有 git 对账面能抓到）
+    writeFileSync(join(root, path), "x1" + String.fromCharCode(10));
+    git("add -A"); git("commit -q -m unrecorded-X");
+    const rX = spawnSync(process.execPath, [SCRIPT, "--audit", "--against-git"], { encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 120_000 });
+    expect(rX.status, (rX.stdout || "") + (rX.stderr || "")).toBe(1);
+    expect((rX.stdout || "") + (rX.stderr || "")).toMatch(/silent rehash/);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 180_000);
+
   it("#88: post-genesis tool initial registration → rc0; delete-first/forged/untracked variants → rc1", () => {
     // ① 正当初始登记（Z→首提交 blob）：rc0 + git-consistent
     {

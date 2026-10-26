@@ -110,7 +110,7 @@
     },
     {
       "path": "scripts/meta-tooling.mjs",
-      "sha256": "593027bb6bc85c81f524b651f7c649b3a3f6c136d32fc6cc31f722ad3e15295b",
+      "sha256": "31d2f0390a09e7549153fc753dde64939aa252f93ef9d178180ba6cbe40fc640",
       "role": "gate"
     },
     {
@@ -661,6 +661,14 @@
       "reason": "#83 条目4返修：printf 行重建（引号/换行序列精确化）",
       "actor": "longxiang",
       "at": "2026-10-26T18:35:19.544Z"
+    },
+    {
+      "path": "scripts/meta-tooling.mjs",
+      "old_sha256": "593027bb6bc85c81f524b651f7c649b3a3f6c136d32fc6cc31f722ad3e15295b",
+      "new_sha256": "31d2f0390a09e7549153fc753dde64939aa252f93ef9d178180ba6cbe40fc640",
+      "reason": "#83 返修轮：silent rehash 对账改链式可达——多次编辑一次提交的跨步 git 变迁不再误报（邻接表 from→…→to）",
+      "actor": "longxiang",
+      "at": "2026-10-26T19:42:50.184Z"
     }
   ],
   "kind": "engine",

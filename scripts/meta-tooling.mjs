@@ -332,7 +332,28 @@ if (args.includes("--audit")) {
       // 同一 sha 连续出现合并为一次变更
       const transitions = [];
       for (let i = 1; i < chain.length; i++) if (chain[i] !== chain[i - 1]) transitions.push([chain[i - 1], chain[i]]);
-      const recorded = new Set(rr.filter((r) => r.path === t.path).map((r) => r.old_sha256 + "->" + r.new_sha256));
+      // #83 条目4返修轮发现：合法工作流「多次编辑、一次提交」会让 git 相邻提交间出现
+      // 跨步变迁（A→C），而账本记录的是 A→B、B→C 两跳——精确对匹配会误报 silent rehash。
+      // 修：按 path 建邻接表，git 变迁只需账本链式可达（from==to 或 from→…→to）。
+      const adj = new Map();
+      for (const r of rr) {
+        if (r.path !== t.path) continue;
+        if (!adj.has(r.old_sha256)) adj.set(r.old_sha256, new Set());
+        adj.get(r.old_sha256).add(r.new_sha256);
+      }
+      const chained = (from, to) => {
+        if (from === to) return true;
+        const seen = new Set([from]);
+        const stack = [from];
+        while (stack.length) {
+          const cur = stack.pop();
+          for (const nxt of adj.get(cur) ?? []) {
+            if (nxt === to) return true;
+            if (!seen.has(nxt)) { seen.add(nxt); stack.push(nxt); }
+          }
+        }
+        return false;
+      };
       // 历史欠账基线（meta.reregistration_baseline）：enforcement 之前的真实变迁，
       // 已被核对过并永久豁免——不追溯。
       const baseline = (index.reregistration_baseline ?? []).map(String);
@@ -342,7 +363,7 @@ if (args.includes("--audit")) {
         return (!o || from.startsWith(o.replace("\*", ""))) && (!n || to.startsWith(n.replace("\*", "")));
       });
       for (const [from, to] of transitions) {
-        if (!recorded.has(from + "->" + to) && !inBaseline(from, to)) {
+        if (!chained(from, to) && !inBaseline(from, to)) {
           silentBad++;
           console.error(`  ✗ silent rehash: ${t.path} ${from.slice(0, 8)}→${to.slice(0, 8)} appears in git history but has no reregistrations[] entry (#37 item 1)`);
         }
