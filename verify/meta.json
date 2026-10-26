@@ -140,7 +140,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "1d7ef6f1a3a6689be040aef7713242b7248de37699722c83f6c983a3aa4f91e1",
+      "sha256": "770cf3d5990825fa0c1e1d042df21ec1d1a087efe43ca016cb183aa35febd1db",
       "role": "gate"
     },
     {
@@ -629,6 +629,14 @@
       "reason": "#88 条目5：actor 身份从 ROOT 仓库解析（git config 加 cwd:ROOT）——YGL_META_ROOT 指向别仓时不泄漏调用方身份",
       "actor": "longxiang",
       "at": "2026-10-26T02:51:58.430Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "1d7ef6f1a3a6689be040aef7713242b7248de37699722c83f6c983a3aa4f91e1",
+      "new_sha256": "770cf3d5990825fa0c1e1d042df21ec1d1a087efe43ca016cb183aa35febd1db",
+      "reason": "#88 轮：计数门 ANSI 色码鲁棒化——控制台附属环境下 vitest 汇总行带 ESC 序列导致提取为空假红",
+      "actor": "longxiang",
+      "at": "2026-10-26T04:13:46.260Z"
     }
   ],
   "kind": "engine",

@@ -98,7 +98,11 @@ if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV
 if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   N=$((N+1))
   README_NUM=$(sed -n 's/.*vitest \([0-9][0-9]*\) 例.*/\1/p' README.md | head -1)
-  ACTUAL=$(node node_modules/vitest/vitest.mjs run --maxWorkers=1 2>/dev/null | sed -n 's/.*Tests[[:space:]]*[0-9][0-9]* passed.*(\([0-9][0-9]*\)).*/\1/p' | tail -1)
+  # ANSI 色码鲁棒化（#88 轮）：vitest 在控制台附属环境（WMI/计划任务派生等）会输出
+  # 带 ESC 序列的 "Tests  1062 passed" 行，正则不解色则提取为空 → 假红。
+  ACTUAL=$(node node_modules/vitest/vitest.mjs run --maxWorkers=1 2>/dev/null \
+    | sed 's/\x1b\[[0-9;]*m//g' \
+    | sed -n 's/.*Tests[[:space:]]*[0-9][0-9]* passed.*(\([0-9][0-9]*\)).*/\1/p' | tail -1)
   if [ -n "$README_NUM" ] && [ -n "$ACTUAL" ] && [ "$README_NUM" = "$ACTUAL" ]; then
     echo "  ✓ unit 计数门锚: README $README_NUM == vitest $ACTUAL"
   else
