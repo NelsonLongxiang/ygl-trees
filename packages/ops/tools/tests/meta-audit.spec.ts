@@ -287,6 +287,32 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }, 180_000);
 
+  it("#92 对照：合法 --reregister 与文件改动同一提交落地 → 结构式核验绿", () => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const root = mkdtempSync(join(tmpdir(), "ygl-samecommit-"));
+    const git = (cmd: string) => execSync(`git ${cmd}`, { cwd: root, encoding: "utf-8" });
+    git("init -q"); git("config user.email t@t"); git("config user.name t");
+    const { mkdirSync } = require("node:fs") as typeof import("node:fs");
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, "verify"), { recursive: true });
+    const shaOf = (s: string) => require("node:crypto").createHash("sha256").update(s).digest("hex");
+    const path = "scripts/m.mjs";
+    const vA = "a7" + String.fromCharCode(10); const vB = "b7" + String.fromCharCode(10);
+    writeFileSync(join(root, path), vA);
+    writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({
+      meta_index_version: 2, orchestration: [], tooling: [{ path, role: "gate", sha256: shaOf(vA) }], reregistrations: [],
+    }, null, 2));
+    git("add -A"); git("commit -q -m base-A");
+    // 合法流：改文件 + --reregister 记录 → **同一提交**落地（先 reregister 后 commit 的推荐序）
+    writeFileSync(join(root, path), vB);
+    const r1 = spawnSync(process.execPath, [SCRIPT, "--reregister", path, "--reason", "legit same-commit", "--actor", "t"], { encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 60_000 });
+    expect(r1.status, (r1.stdout || "") + (r1.stderr || "")).toBe(0);
+    git("add -A"); git("commit -q -m change-with-entry");
+    const r = spawnSync(process.execPath, [SCRIPT, "--audit", "--against-git"], { encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root }, timeout: 120_000 });
+    expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(0);
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }, 180_000);
+
   it("#83 返修轮: multi-edit-then-commit 跨步 git 变迁经账本链可达 → 不误报 silent rehash", () => {
     const { execSync } = require("node:child_process") as typeof import("node:child_process");
     const root = mkdtempSync(join(tmpdir(), "ygl-multiedit-"));

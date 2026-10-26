@@ -127,3 +127,4 @@ CHANGELOG.md           逐版本聚合
 5. **README 健康**：每版本收口前过一遍
 6. **技能维护**：skills/ 随命令面变更同步
 7. **vendor 管理**（2026-10-26 退役终态，属主授权接管落地）：vendor 家族包版本与 `vendor/upstream.json` 上游基线**精确对齐**（fork 期 `-alpha.N` 后缀已去），家族内 `@deepseek-ai/*` 依赖改用**与在库副本/上游基线相干的 npm range**（`workspace:~` 为历史合法形）；vendor/* 仍在 pnpm workspace（可脱离待清理轨，S7 `track:false`）——判定面见 verify meta R6（charter §4.4 v1.4）
+8. **tooling 登记时序（#92 结构式核验）**：改动 `verify/meta.json` tooling[] 登记的文件时，**先 `node scripts/meta-tooling.mjs --reregister <path> --reason "<why>" --actor <who>` 再 commit**（或同提交携带记录）——记录若晚于文件改动提交落地，`--audit --against-git` 判红（变迁提交时刻账本核验，事后补登不被接受；多次编辑一次提交合法，账本链式可达即可）
