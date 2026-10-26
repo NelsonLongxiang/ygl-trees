@@ -561,7 +561,7 @@ async function runFactChecker(
     }
     case "file": {
       const dir = opts.submissionDir;
-      if (!dir) return { verdict: "ERROR", evidence: { reason: "file checker requires --attachments <dir>" } };
+      if (!dir) return { verdict: "ERROR", evidence: { reason: "file checker requires --submission <dir> (the CLI flag name; --attachments is not a flag)" } };
       if (c.glob === "*" || c.glob === "**" || c.glob === "**/*") {
         return { verdict: "ERROR", evidence: { reason: 'glob "*" matches everything and proves nothing — construct rejected' } };
       }

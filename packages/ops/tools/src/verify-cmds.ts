@@ -762,7 +762,7 @@ export function minimalRedTeam(schemaSql: string[], submissionDir?: string): (s:
       // 不是 construction bug；只有当 ERROR 里还有非 file 型时才报 construction bug，
       // 避免误导性的第一诊断把作者带离正确修法。
       const fileErroneous = report.vu.filter(
-        (r) => r.verdict === "ERROR" && String((r as any).evidence?.reason ?? "").includes("file checker requires --attachments"),
+        (r) => r.verdict === "ERROR" && String((r as any).evidence?.reason ?? "").includes("file checker requires --submission"),
       );
       const otherErroneous = report.vu.filter(
         (r) => r.verdict === "ERROR" && !fileErroneous.includes(r),
