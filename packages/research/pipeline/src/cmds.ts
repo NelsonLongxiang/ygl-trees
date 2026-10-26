@@ -738,7 +738,7 @@ if (subAction === "show") {
     }
     if (subAction === "link") {
       if (!rest[1] || !rest[2]) {
-        bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance refutes] [--by-source]");
+        bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance refutes] [--by-source] [--verbose]");
         return 2;
       }
       const stanceRaw = String(args.flags.stance || "supports");
@@ -755,6 +755,9 @@ if (subAction === "show") {
       // 0.84.0 评审 F2/F4（REVIEW-0.84.0 + tmp/review-0.84.0.md）：
       // link 后置评估抽成公共步骤——by-source 批量路径与单条路径同一语义；
       // duplicate 路径不再付全价网关评估（幂等重跑 3-5s/次的隐性税）。
+      // #84: 模型置信度默认安静——审计行（events claim.eval）是唯一事实源；
+      // 人类面只在 --verbose 展开三行（批量 30+ 时信号不被淹没）。
+      const verbose = !!args.flags.verbose;
       const evalAndLog = async (claimId: string, claimStatus: string): Promise<{ label?: string; score?: number }> => {
         try {
           // 0.86 M7-1 (Cordis P0-1): the model-eval gateway call goes through
@@ -787,7 +790,7 @@ if (subAction === "show") {
             // 0.91a review (direct-55b4ca85): emission is best-effort — a
             // throwing subscriber must never fail the (already durable) write.
             try { emitEvent({ kind: "claim.eval", entity: "claim", entityId: claimId, payload: evPayload, ts: evTs }); } catch { /* audit row is the source of truth */ }
-            if (!ctx.json) {
+            if (!ctx.json && verbose) {
               out(ctx, paint(C.dim, `  [模型] 置信度 ${evalResult.confidence_label} (${evalResult.confidence_score}/5) — ${evalResult.reasoning.slice(0, 60)}`, ctx.color));
             }
             return { label: evalResult.confidence_label, score: evalResult.confidence_score ?? undefined };
@@ -813,17 +816,28 @@ if (subAction === "show") {
               (store.db.all("SELECT evidence_id FROM claim_evidence WHERE claim_id=?", [rest[1]]) as any[])
                 .map((x: any) => x.evidence_id)
             );
-            let linked = 0, dups = 0, status = "";
+            // #84：批量面只在状态变化/预测跳晋级处打一行摘要（默认安静、--verbose 展开模型行）。
+            const statusBefore = String((store.db.get("SELECT status FROM claims WHERE id=?", [rest[1]]) as any)?.status ?? "");
+            let linked = 0, dups = 0, status = "", autoPromote: boolean | undefined;
             for (const ev of evs) {
               const r = await writes.claimLink(ds, rest[1], ev.id, stance);
               existing.has(ev.id) ? dups++ : linked++;
               status = r.status;
+              autoPromote = r.auto_promote;
             }
             // F2：批量路径同样落 claim.eval（此前校准数据源盲区）；全 dup 时跳过（F4）
             let model: { label?: string; score?: number } = {};
             if (linked > 0) model = await evalAndLog(rest[1], status);
             if (ctx.json) console.log(JSON.stringify({ claim: rest[1], source: rest[2], linked, duplicates: dups, status, ...(model.label ? { model_label: model.label, model_confidence: model.score } : {}) }, null, 2));
-            else ok(ctx, `linked ${linked} evidence from source ${rest[2]} (${dups} already) — claim status: ${status}`);
+            else {
+              ok(ctx, `linked ${linked} evidence from source ${rest[2]} (${dups} already) — claim status: ${status}`);
+              if (linked > 0 && !ctx.json && (status !== statusBefore || autoPromote === false)) {
+                const why = status !== statusBefore
+                  ? `status changed: ${statusBefore || "∅"} → ${status}`
+                  : `prediction claim stays ${status} — auto-promote skipped`;
+                out(ctx, paint(C.dim, `  [状态] ${why}`, ctx.color));
+              }
+            }
             return 0;
           })
           .catch((e: any): number => {

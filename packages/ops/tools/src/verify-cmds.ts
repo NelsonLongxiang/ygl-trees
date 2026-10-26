@@ -1413,7 +1413,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const reviewsPath = String(args.flags.reviews || "");
       const dbPath = String(args.flags.db || "");
       if (!materialId || !candidatesPath || !reviewsPath || !dbPath) {
-        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>]");
+        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>] [--meta-repo <verifier-root> | --require-meta | --no-meta]");
         return 2;
       }
       // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
