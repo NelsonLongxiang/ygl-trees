@@ -47,7 +47,13 @@ function batchRows(file: string): { rows: any[] } | { error: string } {
   return { rows };
 }
 
-function validateBatchRow(kind: "source" | "claim", row: any): string | null {
+const BATCH_ROW_FIELDS: Record<"source" | "claim" | "evidence", Set<string>> = {
+  source: new Set(["title", "url", "abstract", "content", "engine", "relevance", "confidence", "tags"]),
+  claim: new Set(["text", "confidence"]),
+  evidence: new Set(["source_id", "quote", "note", "locator"]),
+};
+
+function validateBatchRow(kind: "source" | "claim" | "evidence", row: any): string | null {
   const L = "line " + row.__line + ": ";
   const title = String(row.title ?? "");
   const url = String(row.url ?? "");
@@ -58,8 +64,11 @@ function validateBatchRow(kind: "source" | "claim", row: any): string | null {
       const rel = Number(row.relevance);
       if (!Number.isInteger(rel) || rel < 0 || rel > 5) return L + "relevance must be an integer 0-5 (got: " + row.relevance + ")";
     }
-  } else if (!String(row.text ?? "")) {
-    return L + "need text";
+  } else if (kind === "claim") {
+    if (!String(row.text ?? "")) return L + "need text";
+  } else {
+    if (!String(row.source_id ?? "")) return L + "need source_id";
+    if (!String(row.quote ?? "")) return L + "need quote";
   }
   if (row.confidence !== undefined && row.confidence !== "" && !["A", "B", "C"].includes(String(row.confidence))) {
     return L + "confidence must be A|B|C (got: " + row.confidence + ")";
@@ -67,12 +76,18 @@ function validateBatchRow(kind: "source" | "claim", row: any): string | null {
   return null;
 }
 
+/** 未知行字段点名（监督席 direct-23b690c6：不静默忽略）——回执 warning 面。 */
+function unknownBatchFields(kind: "source" | "claim" | "evidence", row: any): string[] {
+  const allowed = BATCH_ROW_FIELDS[kind];
+  return Object.keys(row).filter((k) => k !== "__line" && !allowed.has(k));
+}
+
 /** 校验 → 单事务落库 → 回执。写失败整批回滚（runTx 语义），rc1。 */
 async function runBatch(
   env: Env,
   project: { id: string; name: string },
   flags: Record<string, unknown>,
-  kind: "source" | "claim",
+  kind: "source" | "claim" | "evidence",
 ): Promise<number> {
   const ctx = env.ctx;
   const file = String(flags.batch || "");
@@ -86,6 +101,12 @@ async function runBatch(
   }
   const parsed = batchRows(file);
   if ("error" in parsed) {
+    // 监督席 direct-7d8e3d8c 口径：文件不存在/不可读 = 404 类运行错误（rc1，与
+    // evidence --file 缺失一致）；行内 JSON/格式坏 = 用法错误（rc2）。
+    if (/^batch file not found/.test(parsed.error)) {
+      bad(ctx, parsed.error + " (rc=1: resource not found — nothing was written)");
+      return 1;
+    }
     bad(ctx, parsed.error + " (rc=2: input error — nothing was written)");
     return 2;
   }
@@ -107,30 +128,44 @@ async function runBatch(
         confidence: String(r.confidence ?? ""), tags: String(r.tags ?? ""),
       }));
       results = (await writes.sourceAddBatch(ds, project.id, specs)).results;
-    } else {
+    } else if (kind === "claim") {
       const force = flags.force === true;
       const channel = String(flags.channel ?? "");
       const rows = parsed.rows.map((r) => ({ text: String(r.text), confidence: r.confidence === undefined ? undefined : String(r.confidence) }));
       results = (await writes.claimAddBatch(ds, project.id, rows as any, force, channel)).results;
+    } else {
+      const force = flags.force === true;
+      const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? "") }));
+      results = (await writes.evidenceAddBatch(ds, project.id, rows, force)).results;
     }
     const added = results.filter((r: any) => !r.dup).length;
     const dups = results.length - added;
     const verbose = flags.verbose === true;
+    // 未知字段点名（direct-23b690c6：不静默忽略）
+    const unknowns = parsed.rows
+      .map((r: any) => ({ line: r.__line as number, fields: unknownBatchFields(kind, r) }))
+      .filter((u: any) => u.fields.length);
     if (ctx.json) {
       console.log(JSON.stringify({
         batch: kind + ".add", file, project: project.name,
         added, duplicates: dups,
+        ...(unknowns.length ? { ignored_fields: unknowns } : {}),
         rows: results.map((r: any, i: number) => ({
-          line: parsed.rows[i].__line, id: r.row.id, title: r.row.title ?? "", text: kind === "claim" ? r.row.text : undefined,
+          line: parsed.rows[i].__line, id: r.row.id, title: r.row.title ?? "",
+          text: kind === "claim" ? r.row.text : undefined,
+          quote: kind === "evidence" ? String(r.row.quote).slice(0, 50) : undefined,
           duplicate: !!r.dup,
         })),
       }, null, 2));
     } else {
       ok(ctx, "batch " + kind + " add: " + added + " added, " + dups + " duplicates (" + parsed.rows.length + " rows from " + file + ")");
+      for (const u of unknowns) {
+        out(ctx, paint(C.yellow, "  note: line " + u.line + " ignored unknown field(s): " + u.fields.join(", ") + " (allowed: " + [...BATCH_ROW_FIELDS[kind]].join("|") + ")", ctx.color));
+      }
       if (verbose) {
         results.forEach((r: any, i: number) => {
           const label = r.dup ? "  = duplicate " : "  + ";
-          const name = kind === "source" ? r.row.title : String(r.row.text).slice(0, 50);
+          const name = kind === "source" ? r.row.title : kind === "claim" ? String(r.row.text).slice(0, 50) : String(r.row.quote).slice(0, 50);
           out(ctx, paint(C.dim, label + r.row.id + "  " + name, ctx.color));
         });
       }
@@ -330,6 +365,41 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       if (rejectBare(ctx, args.flags, ["abstract", "content", "relevance", "confidence", "tags", "query", "engine"])) return 2;
       // #83: --batch jsonl 全批拒（坏行先行点名、单事务落库、重复按 duplicate 计数）。
       if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "source");
+      // #83 余项②：--file <json> 单对象入参（与 --batch 行同 schema；与逐字段旗标互斥）。
+      if (args.flags.file !== undefined) {
+        const f = String(args.flags.file || "");
+        if (!f) { bad(ctx, "flag needs a value: --file <json>"); return 2; }
+        if (args.flags.title !== undefined || args.flags.url !== undefined || args.flags.abstract !== undefined || args.flags.content !== undefined || args.flags.relevance !== undefined || args.flags.confidence !== undefined || args.flags.tags !== undefined) {
+          bad(ctx, "--file cannot combine with per-field flags (title/url/abstract/...)");
+          return 2;
+        }
+        let row: any;
+        try {
+          row = JSON.parse(fs.readFileSync(f, "utf8"));
+        } catch (e: any) {
+          bad(ctx, "cannot read --file: " + (e?.message || e));
+          return 1;
+        }
+        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "--file must contain a single JSON object"); return 2; }
+        row.__line = 1;
+        const problem = validateBatchRow("source", row);
+        if (problem) { bad(ctx, problem); return 2; }
+        const unknown = unknownBatchFields("source", row);
+        if (unknown.length && !ctx.json) out(ctx, paint(C.yellow, "  note: ignored unknown field(s): " + unknown.join(", "), ctx.color));
+        const spec = {
+          title: String(row.title ?? ""), url: String(row.url ?? ""),
+          abstract: String(row.abstract ?? ""), content: String(row.content ?? ""),
+          engine: String(row.engine ?? ""), relevance: row.relevance === undefined ? 0 : Number(row.relevance),
+          confidence: String(row.confidence ?? ""), tags: String(row.tags ?? ""),
+        };
+        return getOrm(env.db.path)
+          .then(async (ds): Promise<number> => {
+            const r = await writes.sourceAdd(ds, project.id, spec);
+            writeResult(ctx, r as any, (rw) => "source added: " + rw.id + "  " + clip(rw.title, 60) + "  · project " + project.name + "  (from --file " + f + ")");
+            return 0;
+          })
+          .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
+      }
       // R284 fix: relevance is INTEGER 0-5 (screening score band); a REAL like
       // 0.95 passes SQLite's weak typing but explodes in PG migration
       // ("invalid input syntax for type integer") — reject at the CLI gate.
@@ -643,6 +713,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     }
 
     if (subAction === "add") {
+      // #83 余项①：evidence add --batch <file.jsonl>（行={source_id,quote,note?,locator?}）。
+      if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "evidence");
       const sourceId = rest[1];
       // Report ⑤: --file reads the quote from disk — long multi-line excerpts
       // stop fighting the shell for --quote escaping.
@@ -837,6 +909,37 @@ if (subAction === "show") {
       if (rejectBare(ctx, args.flags, ["confidence", "text"])) return 2;
       // #83: --batch jsonl（--force/--channel 为整批命令级开关，逐行 confidence 可覆写）。
       if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "claim");
+      // #83 余项②：--file <json> 单对象入参（{text, confidence?}；与位置参数/逐字段互斥）。
+      if (args.flags.file !== undefined) {
+        const f = String(args.flags.file || "");
+        if (!f) { bad(ctx, "flag needs a value: --file <json>"); return 2; }
+        if (rest.slice(1).join(" ") || args.flags.text !== undefined || args.flags.confidence !== undefined) {
+          bad(ctx, "--file cannot combine with positional text / --text / --confidence");
+          return 2;
+        }
+        let row: any;
+        try {
+          row = JSON.parse(fs.readFileSync(f, "utf8"));
+        } catch (e: any) {
+          bad(ctx, "cannot read --file: " + (e?.message || e));
+          return 1;
+        }
+        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "--file must contain a single JSON object"); return 2; }
+        row.__line = 1;
+        const problem = validateBatchRow("claim", row);
+        if (problem) { bad(ctx, problem); return 2; }
+        const unknown = unknownBatchFields("claim", row);
+        if (unknown.length && !ctx.json) out(ctx, paint(C.yellow, "  note: ignored unknown field(s): " + unknown.join(", "), ctx.color));
+        const text = String(row.text);
+        const rowConfidence = String(row.confidence ?? "");
+        const confidence = rowConfidence || configGet(env.db, "default_confidence");
+        const channel = String(args.flags.channel || "");
+        return runWrite(
+          env,
+          (ds) => writes.claimAdd(ds, project.id, text, confidence, force, channel),
+          (r) => "claim added: " + r.id + "  " + clip(text, 60) + (channel ? "  · channel " + channel : "") + "  · project " + project.name + "  (from --file " + f + ")"
+        );
+      }
       // 0.81: confidence accepts the letter grades (A|B|C) OR a numeric
       // level — 0-1 decimal (0.92) or 0-100 percentage (92, 85%). Column
       // stays TEXT; raw input is stored as given.

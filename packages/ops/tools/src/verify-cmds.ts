@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
+import { lastFlagOf } from "../../../core/database/src/types";
 import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
@@ -28,9 +29,9 @@ import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../ve
 import { compileClausePattern, lintCandidates, noClauseLinesMessage, prepareSpec } from "../../../verify/core/src/prepare";
 import { metaGate, metaRepoRootOf, refuseMeta } from "./meta-gate";
 
-/** 单值 --db 消费方（prepare/run/graduate/probe）：多值时取末位——
- *  与 MULTI_FLAGS 之前的「后者覆盖前者」语义一致，只是显式化（tree run 独占数组形）。 */
-const lastDbFlag = (v: unknown): string => (Array.isArray(v) ? String(v[v.length - 1] ?? "") : String(v ?? ""));
+/** 单值 --db 消费方（prepare/run/graduate/probe）：#91 统一走 types.lastFlagOf
+ *  （全仓唯一取值器；tree run 独占数组形）。 */
+const lastDbFlag = lastFlagOf;
 import { runMeta } from "../../../verify/core/src/meta";
 import { runProbeMatrix } from "../../../verify/core/src/probe";
 import type { FileScanRecord } from "../../../verify/core/src/engine";
@@ -168,7 +169,7 @@ function validateTreeSpec(
     if (!n || typeof n !== "object") return { error: "node must be an object" };
     if (typeof n.id !== "string" || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(n.id)) return { error: "bad node id: " + String(n.id) };
     if (byId.has(n.id)) return { error: "duplicate node id: " + n.id };
-    // #83-③（总工席 direct-085b7275，.157 材料 vocab drift）：入口容差——kind:"agg"
+    // 缺陷③（总工席 direct-085b7275，.157 材料 vocab drift）：入口容差——kind:"agg"
     // 归一化为 canonical "group"；冻结 spec 只存 canonical 词表（digest 不变）。
     const rawKind = String(n.kind ?? "");
     const canonicalKind = rawKind === "agg" ? "group" : rawKind;
@@ -189,7 +190,11 @@ function validateTreeSpec(
         return { error: "group " + n.id + ": children must be an array of node ids" };
       }
       if (!n.children.length) return { error: "group " + n.id + ": empty group rejected (Q6)" };
-      // #83-④：op → aggregate 入口别名（同上：容差在入口，冻结面 canonical）。
+      // 缺陷④（总工席 direct-085b7275）：op → aggregate 入口别名（容差在入口，冻结面 canonical）；
+      // 双给属冲突——报错不静默择一（监督席 direct-6a421e26 建议 a）。
+      if (n.aggregate !== undefined && n.op !== undefined) {
+        return { error: "group " + n.id + ": both aggregate and op given — pick one (op is an alias of aggregate)" };
+      }
       const aggRaw = n.aggregate !== undefined ? n.aggregate : n.op;
       const agg = String(aggRaw ?? "");
       if (agg === "all_pass" || agg === "count_fail") {
@@ -554,7 +559,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     const runner = new SqliteRunner(snap.path);
     const report = await runVerify(leafSpec, { runner, mode: "open" });
     // Q8：叶 data_source 投影（kind+id 恒比；声明 sha256 时才比 sha）。
-    // #83-②（总工席 direct-085b7275）：id = 被验快照身份（snap.source），不是树内
+    // 缺陷②（总工席 direct-085b7275）：id = 被验快照身份（snap.source），不是树内
     // 节点坐标——node.id 与 target.id（快照身份）必 mismatch 导致全叶 STALE 沿父链。
     const dsProjection: { kind: string; id: string; sha256?: string } = {
       kind: "sqlite-snapshot",

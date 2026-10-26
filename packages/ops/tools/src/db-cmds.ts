@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
-import { Env } from "../../../core/database/src/types";
+import { Env, lastFlagOf } from "../../../core/database/src/types";
 import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
 import { clearLockDir, dbPath, pidAlive, takeoverLockDir } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
@@ -108,7 +108,8 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<{ impo
 
 export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
   const { ctx, db, home } = env;
-  const file = args.flags.db ? String(args.flags.db) : dbPath(home);
+  // #91：--db 数组形（tree run 分叶绑库）——单值面统一 lastFlagOf 取末位。
+  const file = lastFlagOf(args.flags.db) || dbPath(home);
 
   switch (action) {
     case "init": {

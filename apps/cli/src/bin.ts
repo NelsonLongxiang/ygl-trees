@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { dbPath } from "../../../packages/core/database/src/db";
 import { Ctx, bad, out, paint, C } from "../../../packages/core/text/src/fmt";
-import { Args, parse, str, num, bool, Env } from "../../../packages/core/database/src/types";
+import { Args, parse, str, num, bool, Env, lastFlagOf } from "../../../packages/core/database/src/types";
 import { apply as DatabasePlugin } from "../../../packages/core/database/src/plugin";
 import { apply as ResearchPlugin } from "../../../packages/research/pipeline/src/plugin";
 import { apply as OpsPlugin } from "../../../packages/ops/tools/src/plugin";
@@ -146,14 +146,15 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   query attach <qid> <sid>    link source to query (recalled count)
   query list
   source add --title --url [--abstract --content --relevance --confidence --query]
-             source add --batch <file.jsonl>   #83 批量：整批拒（坏行点名行号 rc2 零写入），重复按 duplicate 计数
+             source add --file <json> | --batch <file.jsonl>   #83：单对象入参 / 整批拒批量（重复按 duplicate 计数）
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
   evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
+             evidence add --batch <file.jsonl>   #83 全批拒批量（行={source_id,quote,note?,locator?}）
   evidence list | show <id> | assess <id>
   evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)
   claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>]
-             claim add --batch <file.jsonl>   #83 批量：整批拒（坏行点名行号 rc2 零写入），重复按 duplicate 计数
+             claim add --file <json> | --batch <file.jsonl>   #83：单对象入参 / 整批拒批量（重复按 duplicate 计数）
   claim link <claimId> <evidenceId> [--stance supports|refutes]
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
   claim unlink <claimId> <evidenceId>  remove one link, recompute status (prediction status kept)
@@ -465,7 +466,8 @@ export async function main(argv: string[]): Promise<number> {
   // verify 组（r15 P1-1）：`--db` 是业务库快照，不是工作区库——把它当工作区库会让
   // `verify run/prepare` 就地给业务库跑 ygl schema 迁移（实测灌入 57 张表、user_version 0→12），
   // 而且 data_source.sha256 取改写后的字节，证据与报告当场对不上。
-  const file = group === "verify" ? dbPath(home) : str(args, "db", "") || dbPath(home);
+  // #91：--db 是 MULTI_FLAGS（tree run 分叶绑库需要数组形）——单值面统一走 lastFlagOf 取末位。
+  const file = group === "verify" ? dbPath(home) : lastFlagOf((args.flags as Record<string, unknown>).db) || dbPath(home);
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
@@ -833,7 +835,7 @@ export function generateLlmsManifest(): string {
       ["research query add \"<text>\"", "register a search query"],
       ["research source add --title --url", "add a source (also: --relevance 0-5 --confidence A|B|C); --batch <file.jsonl> = jsonl 整批拒批量（all-or-nothing）"],
       ["research source fetch <url>", "fetch page, extract title/meta/text"],
-      ["research evidence add <sid> --quote \"...\"", "verbatim quote from source"],
+      ["research evidence add <sid> --quote \"...\"", "verbatim quote from source; --batch <file.jsonl> = 全批拒批量（行={source_id,quote,note?,locator?}）"],
       ["research evidence show <eid> [--json]", "full evidence row + linked claims + source summary"],
       ["research claim add \"<text>\"", "refutable assertion; --batch <file.jsonl> = jsonl 整批拒批量（all-or-nothing，坏行点名行号）"],
       ["research claim link <cid> <eid> --stance supports|refutes", "link claim to evidence"],

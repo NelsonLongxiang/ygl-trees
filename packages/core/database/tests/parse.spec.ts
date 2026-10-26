@@ -26,7 +26,7 @@ describe("parse() flag/value boundaries", () => {
     expect(a._).toEqual(["x", "-y"]);
   });
 
-  it("#83-①: repeated --db collects into an array (tree run per-leaf binding)", () => {
+  it("缺陷① direct-085b7275: repeated --db collects into an array (tree run per-leaf binding)", () => {
     const a = parse(["verify", "tree", "run", "ts_x", "--db", "a.db", "--db", "b=n2.db"]);
     expect(a.flags.db).toEqual(["a.db", "b=n2.db"]);
     const single = parse(["verify", "run", "s", "--db", "only.db"]);

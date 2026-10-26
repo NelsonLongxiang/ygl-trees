@@ -82,9 +82,9 @@ describe.skipIf(!HAS_BIN)("research --batch jsonl (#83 all-or-nothing)", () => {
     expect(sourceCount()).toBe(before);
   });
 
-  it("source --batch missing file: rc=2", () => {
+  it("source --batch missing file: rc=1（监督席 direct-7d8e3d8c 口径：404 类，与 evidence --file 对齐）", () => {
     const r = run(["research", "source", "add", "--batch", join(DIR, "nope.jsonl"), "-p", "b1"]);
-    expect(r.rc).toBe(2);
+    expect(r.rc).toBe(1);
     expect(r.raw).toMatch(/batch file not found/);
   });
 
@@ -132,5 +132,53 @@ describe.skipIf(!HAS_BIN)("research --batch jsonl (#83 all-or-nothing)", () => {
     const r = run(["research", "source", "add", "--batch", f, "--query", "whatever", "-p", "b1"]);
     expect(r.rc).toBe(2);
     expect(r.raw).toMatch(/--batch cannot combine with --query/);
+  });
+
+  it("#91: repeated --db keeps last-wins on single-db commands (db stats)", () => {
+    const f = join(DIR, "b91.db");
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const d = new DatabaseSync(f);
+    d.exec("CREATE TABLE IF NOT EXISTS t(x)");
+    d.close();
+    const r = run(["db", "stats", "--db", "nope-first.db", "--db", f]);
+    expect(r.rc, r.raw).toBe(0); // 末值胜：读 f，不再逗号拼接
+    expect(r.raw).not.toMatch(/nope-first\.db,/);
+  });
+
+  it("#83 余项：evidence --batch happy path + duplicate + unknown field note", () => {
+    const src = run(["research", "source", "add", "--title", "evsrc", "--url", "https://ex.com/ev", "-p", "b1", "--json"]);
+    const sid = j(src).id ?? j(src).row?.id;
+    const f = join(DIR, "ev-ok.jsonl");
+    writeFileSync(f, [
+      JSON.stringify({ source_id: sid, quote: "ev quote one", locator: "p1" }),
+      JSON.stringify({ source_id: sid, quote: "ev quote one" }),
+      JSON.stringify({ source_id: sid, quote: "ev quote two", project: "should-warn" }),
+    ].join("\n"), "utf8");
+    const r = run(["research", "evidence", "add", "--batch", f, "-p", "b1"]);
+    expect(r.rc, r.raw).toBe(0);
+    expect(r.out).toMatch(/batch evidence add: 2 added, 1 duplicates/);
+    expect(r.out).toMatch(/line 3 ignored unknown field\(s\): project/);
+  });
+
+  it("#83 余项：source/claim --file 单对象入参", () => {
+    const sf = join(DIR, "src-single.json");
+    writeFileSync(sf, JSON.stringify({ title: "file src", url: "https://ex.com/fs" }), "utf8");
+    const r1 = run(["research", "source", "add", "--file", sf, "-p", "b1", "--json"]);
+    expect(r1.rc, r1.raw).toBe(0);
+    expect(j(r1).title).toBe("file src");
+    const cf = join(DIR, "clm-single.json");
+    writeFileSync(cf, JSON.stringify({ text: "claim from file", confidence: "A" }), "utf8");
+    const r2 = run(["research", "claim", "add", "--file", cf, "-p", "b1", "--json"]);
+    expect(r2.rc, r2.raw).toBe(0);
+    expect(j(r2).text).toBe("claim from file");
+    const r3 = run(["research", "claim", "add", "positional", "--file", cf, "-p", "b1"]);
+    expect(r3.rc).toBe(2);
+    expect(r3.raw).toMatch(/--file cannot combine/);
+  });
+
+  it("#83 口径：批量文件缺失 rc1（404 类，与 evidence --file 对齐）", () => {
+    const r = run(["research", "source", "add", "--batch", join(DIR, "definitely-missing.jsonl"), "-p", "b1"]);
+    expect(r.rc).toBe(1);
+    expect(r.raw).toMatch(/batch file not found/);
   });
 });

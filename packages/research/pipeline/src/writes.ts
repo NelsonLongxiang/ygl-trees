@@ -220,6 +220,28 @@ function mapSource(s: Source): Record<string, any> {
 
 // ================================================================ evidence
 
+/** #83 单事务体：evidenceAdd 与 evidenceAddBatch 共用。 */
+async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: string, quote: string, note: string, locator: string, force: boolean): Promise<WriteResult> {
+  const hash = contentHash(quote, force);
+  const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
+  if (!src) throw new Error("source not found: " + sourceId);
+  const ex = await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
+  if (ex) return { row: mapEvidence(ex), dup: true };
+  const e = new Evidence();
+  e.id = shortId(["ev", sourceId, quote], 10);
+  e.projectId = projectId;
+  e.sourceId = sourceId;
+  e.quote = quote;
+  e.note = note;
+  e.locator = locator;
+  e.contentHash = hash;
+  e.created = nowIso();
+  await mgr.save(e);
+  await ftsShadow(mgr, "INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [e.id, quote, ngram(quote)]);
+  await logEvent(mgr, "evidence.add", "evidence", e.id, quote.slice(0, 60));
+  return { row: mapEvidence(e), dup: false };
+}
+
 export async function evidenceAdd(
   ds: DataSource,
   projectId: string,
@@ -229,25 +251,20 @@ export async function evidenceAdd(
   locator = "",
   force = false
 ): Promise<WriteResult> {
-  const hash = contentHash(quote, force);
+  return runTx(ds, async (mgr) => evidenceAddCore(mgr, projectId, sourceId, quote, note, locator, force));
+}
+
+/** #83：--batch jsonl 全批拒（同 source/claim 语义；source 不存在属运行时错误→整批回滚 rc1）。 */
+export async function evidenceAddBatch(
+  ds: DataSource,
+  projectId: string,
+  rows: { source_id: string; quote: string; note?: string; locator?: string }[],
+  force = false
+): Promise<{ results: WriteResult[] }> {
   return runTx(ds, async (mgr) => {
-    const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
-    if (!src) throw new Error(`source not found: ${sourceId}`);
-    const ex = await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
-    if (ex) return { row: mapEvidence(ex), dup: true };
-    const e = new Evidence();
-    e.id = shortId(["ev", sourceId, quote], 10);
-    e.projectId = projectId;
-    e.sourceId = sourceId;
-    e.quote = quote;
-    e.note = note;
-    e.locator = locator;
-    e.contentHash = hash;
-    e.created = nowIso();
-    await mgr.save(e);
-    await ftsShadow(mgr, `INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)`, [e.id, quote, ngram(quote)]);
-    await logEvent(mgr, "evidence.add", "evidence", e.id, quote.slice(0, 60));
-    return { row: mapEvidence(e), dup: false };
+    const results: WriteResult[] = [];
+    for (const r of rows) results.push(await evidenceAddCore(mgr, projectId, r.source_id, r.quote, r.note || "", r.locator || "", force));
+    return { results };
   });
 }
 

@@ -140,13 +140,13 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 ```
 query add       登记检索式
 query attach    检索式 ↔ 来源关联（query list 显示召回数）
-source add      收来源，按 (project, url_hash) 去重；--query 顺带关联（引用不存在 → 整体拒绝 rc=1，零落地）
+source add      收来源，按 (project, url_hash) 去重；--query 顺带关联（引用不存在 → 整体拒绝 rc=1，零落地）；--file <json> 单对象入参；--batch <file.jsonl> 全批拒批量（坏行点名行号 rc=2、文件缺失 rc=1、重复按 duplicate 计数）
                 全组接受 --project <p> 长旗标钉住目标项目（并发会话不依赖共享 current 指针；回执带 · project 回显）
                 --adjudication "<裁决摘要>"：会话内裁决原生载体（url 自动 session://adjudication/<时刻>，摘要兼作标题）；--url 收任意 <scheme>://（https/file/session/a2a/… 跨 Agent 引用免落盘）
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
-evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义
+evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义；--batch <file.jsonl> 批量（行={source_id,quote,note?,locator?}，全批拒）
 evidence rm     删除证据：仍被任一断言链接时默认拒绝（点名先 claim unlink）；--force 级联删链并重算状态
-claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）
+claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）；--file <json> 单对象、--batch <file.jsonl> 全批拒批量（行={text,confidence?}）
                 --channel <台账通道>（0.90）：预测注册时登记结算数据通道（github-issues|review-rounds|npm-registry|manual…），结算防通道错配
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
                 --by-source：传来源 id 一次挂齐其全部证据；误传来源 id 会列出该来源的证据 id
@@ -311,7 +311,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1083 例) + demo（128 条断言）+ contract:audit（144 项）
+pnpm test          # 四段制回归：build + unit (vitest 1087 例) + demo（128 条断言）+ contract:audit（144 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

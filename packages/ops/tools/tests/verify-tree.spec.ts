@@ -270,7 +270,7 @@ describe("A1 tree run (runtime first cut)", () => {
     expect(rv.j.nodes.find((x: any) => x.node_id === "root").verdict).toBe("NEUTRALIZED");
   });
 
-  // #83-①（总工席 direct-085b7275）：多值 --db 互相覆盖的判据钉——分叶绑库后
+  // 缺陷①（总工席 direct-085b7275）：多值 --db 互相覆盖的判据钉——分叶绑库后
   // 各叶按自己的快照判定；修复前 parser 后值覆盖前值，双叶共用一库必然错判。
   it("multi --db per-leaf binding: each leaf judged on its own snapshot", () => {
     expect(run(["project", "new", "pdb"]).rc).toBe(0);
@@ -312,7 +312,7 @@ describe("A1 tree run (runtime first cut)", () => {
     expect(byId.pb).toBe("PASS"); // 只在 B 上成立——覆盖 bug 下双叶共用 B，pa 必 FAIL
   });
 
-  // #83-③④：入口词表容差——kind:"agg" 与 op:"all_pass" 归一化为 canonical，冻结面不变。
+  // 缺陷③④（direct-085b7275）：入口词表容差——kind:"agg" 与 op:"all_pass" 归一化为 canonical，冻结面不变。
   it("vocab drift tolerance: kind agg + op alias accepted, frozen canonical", () => {
     const prep = submitTree({
       tree_spec_version: 1, root: "root",
@@ -328,5 +328,15 @@ describe("A1 tree run (runtime first cut)", () => {
     expect(rootNode.kind).toBe("group");
     expect(rootNode.aggregate).toBe("all_pass");
     expect(JSON.stringify(frozen)).not.toContain('"agg"');
+    // 监督席 direct-6a421e26 建议 a：aggregate 与 op 双给 → 冲突报错，不静默择一。
+    const conflict = submitTree({
+      tree_spec_version: 1, root: "root",
+      nodes: [
+        { id: "root", kind: "agg", aggregate: "all_pass", op: "count_fail", children: ["a"] },
+        leaf("a", "spec_a"),
+      ],
+    });
+    expect(conflict.rc).toBe(2);
+    expect(conflict.raw + conflict.out).toMatch(/both aggregate and op given/);
   });
 });
