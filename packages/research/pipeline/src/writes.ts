@@ -915,6 +915,17 @@ export async function projectArchive(ds: DataSource, name: string): Promise<Reco
   });
 }
 
+/** #82：restore——归档的反向（status 回 active）。资产一直在，无需搬运。 */
+export async function projectRestore(ds: DataSource, name: string): Promise<Record<string, any>> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM projects WHERE name=?`, [name])) as any[];
+    if (!rows.length) return { not_found: true };
+    await mgr.query(`UPDATE projects SET status='active', updated=? WHERE id=?`, [nowIso(), rows[0].id]);
+    await logEvent(mgr, "project.restore", "project", rows[0].id, name);
+    return { ...rows[0], status: "active", restored: true };
+  });
+}
+
 /** #82：硬删只对**空项目**开放（无级联）——调用方先按类型点名计数并拒绝非空；
  *  这里再断言一次（同事务内），防止并发或调用方漏检。 */
 export async function projectDeleteEmpty(ds: DataSource, name: string): Promise<Record<string, any>> {

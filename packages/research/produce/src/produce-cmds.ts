@@ -48,6 +48,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     bad(ctx, `project not found: ${sel.name}`);
     return 1;
   }
+  // #82（监督席 direct-d41b913e ①：归档写闸漏）——produce 全部子命令都写项目（outline/section/
+  // report/export/task），归档项目一律拒（读面在 project show/list）。restore 是唯一出口。
+  if (String(project.status || "active") === "archived") {
+    bad(ctx, `project ${project.name} is archived — run: ygl-trees project restore ${project.name}   (then retry)`);
+    return 1;
+  }
   const pid = project.id;
 
   const readBody = (): string => {

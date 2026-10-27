@@ -264,7 +264,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     // #82（验证席 direct-08d214ee 复验洞）：归档项目不再收新数据——软删=清理语义闭环，
     // 否则空壳被继续灌数据等于换个名字继续用。读面不受限（list/show/audit 照常）。
     if (String(project.status || "active") === "archived" && isWriteSub(sub, subAction)) {
-      bad(ctx, `project ${project.name} is archived — restore it (project use ${project.name} --archived) or pick another project before writing`);
+      bad(ctx, `project ${project.name} is archived — run: ygl-trees project restore ${project.name}   (then retry; read-only inspection still works with --project)`);
       return 1;
     }
   }

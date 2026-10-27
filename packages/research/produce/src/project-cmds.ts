@@ -117,7 +117,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // #82（验证席 direct-08d214ee b）：归档项目默认**拒选**——要显式 --archived 才选（只读巡查用）。
       if (String(found.status || "active") === "archived" && args.flags.archived !== true && args.flags.archived !== "true") {
-        bad(ctx, `project ${name} is archived — pass --archived to select it for read-only inspection, or create a new project`);
+        bad(ctx, `project ${name} is archived — run: ygl-trees project restore ${name}   (or pass --archived to select it for read-only inspection)`);
         return 1;
       }
       // R16.2: default writes the session key (parallel sessions no longer
@@ -206,6 +206,29 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             return 0;
           }
           ok(ctx, `project deleted: ${resolved.name}  (was empty)`);
+          return 0;
+        });
+    }
+    case "restore": {
+      // #82（监督席 direct-d41b913e ②：报错指路死胡同）：归档不是单向——restore 把 status 拨回 active。
+      const nm = rest[0] || String(args.flags.project || args.flags.p || "");
+      if (!nm) {
+        bad(ctx, "usage: project restore <name>");
+        return 2;
+      }
+      const found = store.projectByName(nm) as any;
+      if (!found) {
+        bad(ctx, `project not found: ${nm}`);
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.projectRestore(ds, found.name))
+        .then((r: any): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify(r, null, 2));
+            return 0;
+          }
+          ok(ctx, `project restored: ${found.name}  (status=active; writing allowed again)`);
           return 0;
         });
     }

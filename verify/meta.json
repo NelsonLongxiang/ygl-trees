@@ -170,7 +170,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
+      "sha256": "3eed8e418329d71181029fb1f35006a5fe70d8720d01a19139ccdd9326588927",
       "role": "gate"
     },
     {
@@ -909,6 +909,14 @@
       "reason": "#98 复核：--json 机读面纯净（无尾随人类行）",
       "actor": "longxiang",
       "at": "2026-10-27T13:33:51.974Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
+      "new_sha256": "3eed8e418329d71181029fb1f35006a5fe70d8720d01a19139ccdd9326588927",
+      "reason": "#107 REQUEST-fix③：计数门前置（基准机口径/非基准机显式 SKIP 打原因）",
+      "actor": "longxiang",
+      "at": "2026-10-27T22:30:44.348Z"
     }
   ],
   "kind": "engine",

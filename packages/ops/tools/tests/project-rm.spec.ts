@@ -73,7 +73,7 @@ describe.skipIf(!HAS_BIN)("#82 project rm（软删默认 / 拒绝级联 / 按类
     run(["project", "rm", "arch-use"]);
     const denied = run(["project", "use", "arch-use", "--json"]);
     expect(denied.status).toBe(1);
-    expect(String(denied.stdout || "")).toMatch(/is archived — pass --archived/);
+    expect(String(denied.stdout || "")).toMatch(/is archived — run: ygl-trees project restore/);
     const allowed = run(["project", "use", "arch-use", "--archived", "--json"]);
     expect(allowed.status).toBe(0);
   });
@@ -86,5 +86,27 @@ describe.skipIf(!HAS_BIN)("#82 project rm（软删默认 / 拒绝级联 / 按类
     const me = JSON.parse(String(list.stdout || "[]")).find((p) => p.name === "arch-cur");
     expect(me.status).toBe("archived");
     expect(me.current).toBe(false);
+  });
+
+  it("归档写闸覆盖 produce/task 面：produce outline 与 task add 在归档项目上 rc1（监督席 ①）", () => {
+    run(["project", "new", "arch-produce", "-q", "q"]);
+    run(["project", "rm", "arch-produce"]);
+    const outline = run(["produce", "outline", "-p", "arch-produce", "--json"]);
+    expect(outline.status).toBe(1);
+    expect(String(outline.stdout || "")).toMatch(/is archived/);
+    const task = run(["task", "add", "不该落库", "-p", "arch-produce", "--json"]);
+    expect(task.status).toBe(1);
+    expect(String(task.stdout || "")).toMatch(/is archived/);
+  });
+
+  it("project restore 是归档的出口：restore 后写入恢复（监督席 ②③）", () => {
+    run(["project", "new", "arch-restore", "-q", "q"]);
+    run(["project", "rm", "arch-restore"]);
+    expect(run(["research", "claim", "add", "x", "-p", "arch-restore", "--json"]).status).toBe(1);
+    const r = run(["project", "restore", "arch-restore", "--json"]);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(String(r.stdout || "{}"))).toMatchObject({ status: "active", restored: true });
+    const after = run(["research", "claim", "add", "现在可以了", "-p", "arch-restore", "--json"]);
+    expect(after.status).toBe(0);
   });
 });
