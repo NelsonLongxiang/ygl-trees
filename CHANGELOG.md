@@ -1,3 +1,11 @@
+## 0.116.1
+
+- 【SECURITY】#105：agent brief next_actions 存名插值 shell 词化（singleLine 全控制字符转义、每条 action 恒单行、注释段 slug 化）+ 执行级重放负测（canary 不生成）——修复换行粘贴注入面（公开 npm）
+- 【SECURITY】#106 REQUEST-fix 三条：shellQuote 去 SAFE 捷径+附着式 --tree=、README 计数实测
+- 含已合并 #103（web 复制命令单引号+--project= 附着）/#104（G13 四测 roadmap）
+
+评审/验证：G13 四测+换行注入负测+工件级三壳重放（验证席）。
+
 ## 0.116.0
 
 - #83：source/claim/evidence 三面 `--batch <file.jsonl>`（全批拒：坏行点名 rc2 零写入）与 `--file <json>` 单对象入参（与逐字段互斥）
