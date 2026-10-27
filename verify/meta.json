@@ -105,7 +105,7 @@
     },
     {
       "path": "scripts/interp-anchor.mjs",
-      "sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
+      "sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
       "role": "gate"
     },
     {
@@ -909,6 +909,14 @@
       "reason": "#98 复核：--json 机读面纯净（无尾随人类行）",
       "actor": "longxiang",
       "at": "2026-10-27T13:33:51.974Z"
+    },
+    {
+      "path": "scripts/interp-anchor.mjs",
+      "old_sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
+      "new_sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
+      "reason": "#105 hotfix 分支带入 G12 解释器锚（run-sh 判定面）",
+      "actor": "longxiang",
+      "at": "2026-10-27T17:47:02.391Z"
     }
   ],
   "kind": "engine",

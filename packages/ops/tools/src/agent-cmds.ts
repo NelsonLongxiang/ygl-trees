@@ -11,6 +11,16 @@ import { resolveProject, ambiguousProject, projectCount, projectSample, sessionI
 
 /** Build the brief payload (where am I / what exists / what next).
  *  Shared by the `agent brief` command and the WebUI dashboard. */
+
+/** G13 (#105)：next_actions 里的存名插值一律 POSIX 单引号词化——换行/分号/$() 在粘贴面即命令注入。
+ *  单引号包住整词（换行留在引号内仍是一个 argv），内嵌 ' 转义为 '\''。 */
+export function shellQuote(value: string): string {
+  const v = String(value ?? "");
+  if (v === "") return "''";
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(v)) return v;
+  return "'" + v.replace(/'/g, "'\\''") + "'";
+}
+
 export function buildBrief(env: Env): any {
   const { store } = env;
   // R16.1: resolved selection (flag > env > session > global), annotated.
@@ -65,7 +75,7 @@ export function buildBrief(env: Env): any {
       });
       if (others.length) {
         payload.next_actions.unshift(
-          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} '${o.entity_id}'`).join(", ")} — 命令请带 -t/-p 固定上下文`
+          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} ${shellQuote(o.entity_id)}`).join(", ")} — 命令请带 -t/-p 固定上下文`
         );
       }
     }
@@ -105,7 +115,8 @@ export function buildBrief(env: Env): any {
 
   // Health: surface data problems an agent should fix first.
   const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
-  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index   # tree '${t.name}' index is stale`);
+  // #105：裸 `node index` 会索引错树 → 显式 -t <tree>；树名经 shellQuote（换行/分号注入面）
+  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index -t ${shellQuote(t.name)}   # tree ${shellQuote(t.name)} index is stale`);
   const dupGroups = store.db.all(
     `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
