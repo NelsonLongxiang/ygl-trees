@@ -46,6 +46,37 @@ git config core.sshCommand "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax
 
 ## 一、发布前门禁（必跑）
 
+### G1 离线门（roadmap/#96 条目 1）
+
+```bash
+bash scripts/offline-gate.sh          # 干净克隆 + env -i 无凭证 install + pnpm test，rc≠0 即阻断
+```
+
+### G2 全量 diff 门 / G3 真调用门（评审过程门禁，检查清单项）
+
+- [ ] **G2**：任何快审/双审盖章前**读完整 diff**——按 grep 过滤过的行不算读过（PR#140 事故）。
+- [ ] **G3**：工具/MCP 类判据必须有**一次真实往返**——`tools/list` 里出现不算证明。
+- [ ] **G4**：`node scripts/commit-claims.mjs <发版区间>` ——提交说明声称的路径逐条对 `--stat`，声称了却不在 diff = 红。
+
+### G7 真 PG 矩阵门（总工裁 direct-2c7c431a：本地 docker 门，发版必跑）
+
+```bash
+bash scripts/pg-gate.sh               # pinned postgres:16.4-alpine → dual-backend-matrix --strict
+```
+
+结果（rc、双腿、镜像 tag）贴进发布记录；**「矩阵绿」是发布收口条件的一部分**。不可达 PG 必红（df3a792 起）。
+
+### G8 发布后复跑基线（发布完成后）
+
+```bash
+node scripts/post-release-check.mjs <version>   # npm 装 + tag 克隆 pnpm test + verify meta .，JSON 结果进记录
+```
+
+### G9 合并祖先守卫（pre-push 内建 + 事后复核）
+
+- pre-push 钩子内置非快进拒推（不可经 YGL_SKIP_HOOKS 跳过——只跳测试套件）。
+- 合并后复核：`node scripts/merge-check.mjs <合并 sha>` ——防「回执是真的、代码不在主干上」。
+
 ```bash
 pnpm test          # 单测 + 构建 + demo
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物

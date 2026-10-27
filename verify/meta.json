@@ -55,7 +55,7 @@
     },
     {
       "path": "monitored/gh-delta-watch.cjs",
-      "sha256": "befd73a2701cfd3dbb024ac23a9add368a7128d10b2febbacaa20c9c3cd8fd5b",
+      "sha256": "0933ffc96ba9df4a57621080fa0bfcac03e08f1a582cbdc7d5eae5944e51e207",
       "role": "gate"
     },
     {
@@ -85,7 +85,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "6f42dba480e47a604cd785a1209d487c1bae7df36afde293444ba25cea4994fd",
+      "sha256": "b65d5afe6e7b029ad41e1adc4616a9b0e264d64bce83e6c95a8ebcf25e0c04c8",
       "role": "gate"
     },
     {
@@ -130,7 +130,7 @@
     },
     {
       "path": "scripts/ratchet.mjs",
-      "sha256": "d322e1211cfa953f5f8b9ebb5c7b15a6cd1f0640542e808d589a504ec256577f",
+      "sha256": "d1fb8574ebe50e292f4ca16955387611585f175f2ddb057ad7bd1cf046e9ec7a",
       "role": "gate"
     },
     {
@@ -693,6 +693,30 @@
       "reason": "#93-①(a) 6431183774：PG 腿增 pg-stats 步（真正需要 PG——死 PG 下 strict 必红，名存实亡断根）",
       "actor": "longxiang",
       "at": "2026-10-27T01:12:35.627Z"
+    },
+    {
+      "path": "monitored/gh-delta-watch.cjs",
+      "old_sha256": "befd73a2701cfd3dbb024ac23a9add368a7128d10b2febbacaa20c9c3cd8fd5b",
+      "new_sha256": "0933ffc96ba9df4a57621080fa0bfcac03e08f1a582cbdc7d5eae5944e51e207",
+      "reason": "v3 匿名 REST 兜底双通道(gh 断期 ⑦ 保命)",
+      "actor": "验证席",
+      "at": "2026-10-27T08:09:40.089Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "6f42dba480e47a604cd785a1209d487c1bae7df36afde293444ba25cea4994fd",
+      "new_sha256": "b65d5afe6e7b029ad41e1adc4616a9b0e264d64bce83e6c95a8ebcf25e0c04c8",
+      "reason": "#96 G7：PG 腿真库注释改为本地 docker 门（pg-gate.sh pinned postgres:16.4-alpine，总工裁 direct-2c7c431a）",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:32:18.319Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "d322e1211cfa953f5f8b9ebb5c7b15a6cd1f0640542e808d589a504ec256577f",
+      "new_sha256": "d1fb8574ebe50e292f4ca16955387611585f175f2ddb057ad7bd1cf046e9ec7a",
+      "reason": "#96 G6：ratchet --write 强制 --reason 归因（rc2 拒无理由）+ _attribution 写入基线",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:32:45.915Z"
     }
   ],
   "kind": "engine",

@@ -15,8 +15,9 @@
  *   node scripts/dual-backend-matrix.mjs --json          # 机器可读
  *   YGL_PG_URL=postgresql://… node scripts/… --strict    # 带 PG 腿
  *
- * 注：PG 腿的真库由 CI/发版环境提供（docker postgres:16）；本脚本只编排与判定，
- * 不内建容器管理。
+ * 注：PG 腿的真库由**本地 docker 门**提供（scripts/pg-gate.sh 起 pinned
+ * postgres:16.4-alpine；总工裁 direct-2c7c431a：本仓无 CI 面，私仓 Actions 按分钟计费，
+ * 用本地 docker 门）。本脚本只编排与判定，不内建容器管理。
  */
 import { spawnSync } from "node:child_process";
 import { resolve, dirname } from "node:path";

@@ -29,6 +29,14 @@ const WEB = join(ROOT, "dist/apps/web/dist");
 const args = process.argv.slice(2);
 const write = args.includes("--write");
 const asJson = args.includes("--json");
+// G6（roadmap/#96 条目 5）：棘轮重锁必须归因——--write 拒绝无 --reason（rc2），
+// 理由写进基线 _attribution（当日裁定号 + 增量拆分）。
+const reasonIdx = args.indexOf("--reason");
+const reason = reasonIdx >= 0 && args[reasonIdx + 1] ? args[reasonIdx + 1] : "";
+if (write && !reason.trim()) {
+  console.error("ratchet: --write refuses without --reason <ruling id>: <attribution> (G6: ratchet relock attribution)");
+  process.exit(2);
+}
 
 function dirBytes(dir) {
   let total = 0;
@@ -137,6 +145,7 @@ const next = {
   node: process.version,
   platform: process.platform,
   measured_at: new Date().toISOString(),
+  ...(write ? { _attribution: reason } : {}),
   metrics,
 };
 

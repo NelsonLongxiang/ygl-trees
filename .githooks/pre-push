@@ -1,34 +1,48 @@
 #!/usr/bin/env bash
 # pre-push gate — the CI-equivalent check that runs where there is no CI.
 #
-# Gitee Go is unavailable for this account (gitee-go service status returns
-# HTTP 403 for every pipeline command), so the repository-level gate lives
-# here instead: a push must pass the same three-stage gate the release
-# procedure uses.
+# The repo lives on GitHub now; this account runs no CI for it (private-repo
+# Actions minutes are billed; chief engineer ruling direct-2c7c431a: local
+# docker gate instead — see scripts/pg-gate.sh), so the gate lives here.
 #
-#   push to a branch  →  pnpm test        (unit + build + demo)
-#   push of a TAG     →  pnpm test + pnpm pack:check  (artifact-level)
+#   push to a branch  →  G9 ancestor guard (unskippable) + pnpm test
+#   push of a TAG     →  G9 ancestor guard + pnpm test + pnpm pack:check
 #
 # Bypass deliberately (never silently):  YGL_SKIP_HOOKS=1 git push ...
+#   skips ONLY the test suites — the G9 ancestor guard below still runs
+#   (it is cheap; catching a non-fast-forward push before the transfer
+#   beats re-discovering a lost merge afterwards).
 #
 # Install:  git config core.hooksPath .githooks
 set -uo pipefail
 
-if [ "${YGL_SKIP_HOOKS:-}" = "1" ]; then
-  echo "pre-push: YGL_SKIP_HOOKS=1 → gates skipped (deliberate bypass)"
-  exit 0
-fi
-
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 1
 
-# stdin carries "<local ref> <local sha> <remote ref> <remote sha>" lines
+# ── G9 merge-ancestor guard (roadmap/#96 item 8) — runs BEFORE and
+# INDEPENDENT of YGL_SKIP_HOOKS: a non-fast-forward push would silently
+# drop remote history ("receipt real, code not on trunk" — dad595b).
+G9_NONFF=0
 TAG_PUSH=0
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
   case "$remote_ref" in
     refs/tags/*) TAG_PUSH=1 ;;
   esac
+  if [ -n "$_remote_sha" ] && [ "$_remote_sha" != "0000000000000000000000000000000000000000" ]; then
+    if ! git merge-base --is-ancestor "$_remote_sha" "$_local_sha" 2>/dev/null; then
+      G9_NONFF=1
+      echo "pre-push: G9 NON-FAST-FORWARD — remote tip is not an ancestor of the local push"
+      echo "  pull/rebase first. This guard is not skippable via YGL_SKIP_HOOKS."
+    fi
+  fi
 done
+[ "$G9_NONFF" = "0" ] || exit 1
+
+if [ "${YGL_SKIP_HOOKS:-}" = "1" ]; then
+  echo "pre-push: YGL_SKIP_HOOKS=1 → test suites skipped (G9 ancestor guard already ran above)"
+  exit 0
+fi
+
 
 echo "pre-push gate: pnpm test (unit + build + demo)"
 if ! pnpm test; then
@@ -53,8 +67,9 @@ echo "pre-push: gates passed"
 # fails with SIGPIPE / "Connection closed by remote host" even though the
 # gates passed. The gates above are the evidence — retry with the documented
 # bypass rather than re-running them over a dead connection:
-#   YGL_SKIP_HOOKS=1 git push
+#   YGL_SKIP_HOOKS=1 git push   (test suites only — the G9 ancestor
+#                                guard re-runs on the retry; it cannot drop)
 echo "pre-push: (if the transfer now fails with a broken pipe, that is the"
 echo "pre-push:  remote's idle timeout during these 2 min — re-run with"
-echo "pre-push:  YGL_SKIP_HOOKS=1 git push, gates already passed above)"
+echo "pre-push:  YGL_SKIP_HOOKS=1 git push: test suites skip, G9 guard still runs)"
 exit 0
