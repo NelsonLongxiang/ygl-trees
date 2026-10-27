@@ -197,8 +197,8 @@ describe("专家 ↔ agent 协同：状态条、证据薄弱筛选、裁决命�
   });
 
   it("the verdict command is the CLI's own, pinned to the project on screen", () => {
-    expect(resolveCommand("c4", "refuted", "jf")).toBe("ygl-trees research claim resolve c4 --as refuted -p jf");
-    expect(resolveCommand("c4", "supported")).toBe("ygl-trees research claim resolve c4 --as supported");
+    expect(resolveCommand("c4", "refuted", "jf")).toBe("ygl-trees research claim resolve 'c4' --as refuted --project='jf'");
+    expect(resolveCommand("c4", "supported")).toBe("ygl-trees research claim resolve 'c4' --as supported");
   });
 
   it("evidence names its source by title when the page has it, else locator, else id", () => {
