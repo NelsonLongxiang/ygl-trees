@@ -469,19 +469,33 @@ export async function main(argv: string[]): Promise<number> {
   // #91：--db 是 MULTI_FLAGS（tree run 分叶绑库需要数组形）——单值面统一走 lastFlagOf 取末位。
   const file = group === "verify" ? dbPath(home) : lastFlagOf((args.flags as Record<string, unknown>).db) || dbPath(home);
   // ── B7（总工 direct-f7d3b5da 裁）：CLI boot PG 分支 ──
-  // YGL_DB_URL（或 --db）为 postgres:// 时进 PG 模式：不要求/不创建 SQLite 工作区；
-  // PG 直连面放行（db stats / doctor / webui / version / help / llms），其余命令组
-  // 点名拒绝（rc2：环境组合用法错误）——绝不静默回落 SQLite（评审席信息差补报钉死的缺口）。
+  // YGL_DB_URL 为 postgres:// 时进 PG 模式：不要求/不创建 SQLite 工作区（db init 例外——
+  // 它绑定 SQLite 工作区，env 留给后续 PG 步骤，#93-① 与 B6 矩阵 PG 腿一致）；
+  // PG 直连面放行，其余命令组点名拒绝（rc2：环境组合用法错误）——绝不静默回落 SQLite。
+  // #93-③(a)：--db 携带 postgres:// 属凭证入 argv（ps/shell history/cmd.run 台账可见）——
+  // 拒绝并指路 env。#93-③(b)：env PG + 显式 --db <sqlite 路径> 冲突 fail-closed 点名双目标（plan D2）。
   const PG_URL_RE = /^postgres(ql)?:\/\//i;
   const dbFlagRaw = lastFlagOf((args.flags as Record<string, unknown>).db);
-  const pgUrl = PG_URL_RE.test(String(process.env.YGL_DB_URL || ""))
-    ? String(process.env.YGL_DB_URL)
-    : PG_URL_RE.test(dbFlagRaw) ? dbFlagRaw : "";
-  const PG_DIRECT = new Set(["db", "doctor", "webui", "version", "help", "llms"]);
+  const { redactPgUrl } = require("../../../packages/core/database/src/asyncdb");
+  if (PG_URL_RE.test(dbFlagRaw)) {
+    bad(ctx, "--db does not accept a postgres:// URL (credentials would land in argv history) — pass it via YGL_DB_URL instead (#93 / plan §3.5)");
+    return 2;
+  }
+  let pgUrl = PG_URL_RE.test(String(process.env.YGL_DB_URL || "")) ? String(process.env.YGL_DB_URL) : "";
+  if (pgUrl && group === "db" && action === "init") pgUrl = ""; // #93-①: db init 绑定 SQLite 工作区（env 留给后续 PG 步骤）——走正常 SQLite 路径
+  if (pgUrl && dbFlagRaw) {
+    bad(ctx, `conflicting targets: YGL_DB_URL=${redactPgUrl(pgUrl)} (PG) vs --db ${dbFlagRaw} (SQLite) — pick one (plan D2 fail-closed, no silent precedence)`);
+    return 2;
+  }
+  // #93-①：db init 在 PG 模式下放行（绑定 SQLite 工作区）；verify self-check 是
+  // 语料驱动 DB-free 面（同 example/lint-candidates/probe），放行。
+  const PG_DB_ACTIONS = new Set(["stats", "path", "init"]);
+  const VERIFY_PG_FREE = group === "verify" && action === "self-check";
+  const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
-    const pgStatsOnly = group === "db" && action && action !== "stats" && action !== "path";
-    if (!PG_DIRECT.has(group) || pgStatsOnly) {
-      bad(ctx, `PG mode (YGL_DB_URL=${pgUrl.replace(/\/\/[^@]*@/, "//")}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | doctor | webui serve/export`);
+    const refused = !(PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
+    if (refused) {
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
@@ -491,7 +505,7 @@ export async function main(argv: string[]): Promise<number> {
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
   // helpers that never touch the workspace db; refusing them on an empty YGL_HOME
   // sends authors the wrong way (they need examples, not a database).
-  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe");
+  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check"); // #93-①: self-check 语料驱动
   if (VERIFY_DB_FREE) process.env.YGL_DB_NO_CREATE = "1"; // #18: 不静默建库（缺库→:memory:）
   const needInit = !pgUrl && !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE; // B7: PG 模式不要求 SQLite 工作区
   if (needInit && !require("node:fs").existsSync(file)) {

@@ -85,7 +85,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "d2cc2ea116f1572d19399e5aec20a0286a36f95ea45bf20c290b849e64ff0e00",
+      "sha256": "7950830b40f1fcfc8b774abc39f0aeef721c21aef8c7ca9b615c1499ae80ceef",
       "role": "gate"
     },
     {
@@ -677,6 +677,14 @@
       "reason": "#92 结构式：silent-rehash 对账在变迁提交 K 时刻账本核验（git show K:verify/meta.json 须已含连接链）——事后补登无法回填",
       "actor": "longxiang",
       "at": "2026-10-26T20:20:48.252Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "d2cc2ea116f1572d19399e5aec20a0286a36f95ea45bf20c290b849e64ff0e00",
+      "new_sha256": "7950830b40f1fcfc8b774abc39f0aeef721c21aef8c7ca9b615c1499ae80ceef",
+      "reason": "#93-①: contract 步 env-scrub YGL_DB_URL（B7 allowlist 下 PG 腿一致性——它考 SQLite 面）",
+      "actor": "longxiang",
+      "at": "2026-10-27T00:40:59.450Z"
     }
   ],
   "kind": "engine",

@@ -84,6 +84,15 @@ export class PgAsyncDb implements AsyncDb {
   }
 }
 
+/** #93-②：PG URL 脱敏——单点助手，所有打印面共用。
+ *  剥 userinfo（user:pass@）和查询串里的凭证参数（password/user/sslpassword/
+ *  sslkey/sslcert/passfile，大小写不敏感）。凭证不得进 stdout/错误文本/事件/归档（plan §3.5）。 */
+export function redactPgUrl(url: string): string {
+  let u = String(url || "").replace(/\/\/[^@\/]*@/i, "//");
+  u = u.replace(/([?&])(user|password|passfile|sslpassword|sslkey|sslcert)=([^&]*)/gi, (_m, q, k) => q + k + "=***");
+  return u;
+}
+
 /** Factory: create the async adapter for the current workspace DB.
  *  B6：YGL_DB_URL 为 postgres:// 时返回 PgAsyncDb（PG 直连面），否则 SQLite。 */
 export function getAsyncDb(db: DB | null, url?: string): AsyncDb {

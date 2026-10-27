@@ -74,3 +74,75 @@ describe.skipIf(!HAS_BIN)("B7 CLI boot PG branch", () => {
     expect(existsSync(join(HOME, "ygl-trees.db"))).toBe(true);
   });
 });
+
+describe.skipIf(!HAS_BIN)("#93 B7 PG boot hardening", () => {
+  beforeAll(() => { HOME = mkdtempSync(join(tmpdir(), "ygl-b93-")); });
+  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("#93-② query-string credentials redacted in db path --json", () => {
+    const r = run(["db", "path", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl?user=alice&password=s3cretPW" });
+    expect(r.rc).toBe(0);
+    expect(r.out).not.toContain("s3cretPW");
+    expect(r.out).toContain("password=***");
+  });
+
+  it("#93-② redacted in refusal message (write cmd under PG env)", () => {
+    const r = run(["research", "source", "list", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl?password=s3cretPW&user=alice" });
+    expect(r.rc).toBe(2);
+    expect(r.raw).not.toContain("s3cretPW");
+  });
+
+  it("#93-② redacted in doctor --json connectivity detail", () => {
+    const r = run(["doctor", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl?user=alice&password=s3cretPW" });
+    expect(r.rc).toBe(1);
+    expect(r.out).not.toContain("s3cretPW");
+  });
+
+  it("#93-② userinfo + query creds both stripped (redactPgUrl unit)", async () => {
+    const { redactPgUrl } = await import("../../../core/database/src/asyncdb");
+    const out = redactPgUrl("postgres://bob:hunter2@h:5/db?sslpassword=zz&sslkey=k1&SSLCERT=c2&passfile=pf&x=1");
+    expect(out).not.toContain("hunter2");
+    expect(out).not.toContain("bob@");
+    for (const v of ["zz", "k1", "c2", "pf"]) expect(out).not.toContain(v + "&");
+    expect(out).toContain("x=1");
+  });
+
+  it("#93-③(a) --db postgres:// refused rc2 pointing to env", () => {
+    const r = run(["db", "path", "--db", "postgres://alice:s3cretPW@127.0.0.1:1/y"], {});
+    expect(r.rc).toBe(2);
+    expect(r.raw).toMatch(/YGL_DB_URL/);
+    expect(r.raw).not.toContain("s3cretPW");
+  });
+
+  it("#93-③(b) env PG + explicit --db sqlite → fail-closed naming both", () => {
+    const r = run(["db", "stats", "--db", "x.db", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl" });
+    expect(r.rc).toBe(2);
+    expect(r.raw).toMatch(/conflicting targets/);
+    expect(r.raw).toContain("x.db");
+  });
+
+  it("#93-① db init under PG env binds SQLite workspace (rc0, file created)", () => {
+    const r = run(["db", "init", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl" });
+    expect(r.rc).toBe(0);
+    expect(existsSync(join(HOME, "ygl-trees.db"))).toBe(true);
+  });
+
+  it("#93-① verify self-check under PG env not refused by allowlist", () => {
+    const r = run(["verify", "self-check", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl" });
+    expect(r.rc, r.raw).not.toBe(2);
+    expect(r.raw).not.toMatch(/PG mode/);
+  });
+
+  it("#93-① matrix PG-leg consistency: no step refused rc2 by boot allowlist", () => {
+    // init + self-check 是 PG 腿带 YGL_DB_URL 的两步；contract 步已 env-scrub（矩阵侧）。
+    const steps = [
+      ["db", "init", "--json"],
+      ["verify", "self-check", "--json"],
+    ];
+    for (const args of steps) {
+      const r = run(args, { YGL_DB_URL: "postgres://127.0.0.1:1/ygl" });
+      const refused = r.rc === 2 && /PG mode/.test(r.raw);
+      expect(refused, args.join(" ") + " must not be allowlist-refused").toBe(false);
+    }
+  });
+});

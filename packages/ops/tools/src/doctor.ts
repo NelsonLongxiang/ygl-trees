@@ -8,6 +8,7 @@
  *
  * @module @ygl/ops-tools/doctor
  */
+import { redactPgUrl } from "../../../core/database/src/asyncdb";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
@@ -85,7 +86,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   if (db === null || db === undefined) {
     return (async (): Promise<number> => {
       const pgUrl = String(process.env.YGL_DB_URL || "");
-      const redacted = pgUrl.replace(/\/[^@]*@/, "\/");
+      const redacted = redactPgUrl(pgUrl);
       const t0 = Date.now();
       let connected = false;
       let latencyMs = -1;

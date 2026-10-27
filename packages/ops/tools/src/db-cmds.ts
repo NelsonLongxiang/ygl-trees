@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env, lastFlagOf } from "../../../core/database/src/types";
+import { redactPgUrl } from "../../../core/database/src/asyncdb";
 import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
 import { clearLockDir, dbPath, pidAlive, takeoverLockDir } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
@@ -143,8 +144,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     case "path":
       if (pgMode) {
         const pgTarget = String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db));
-        if (ctx.json) console.log(JSON.stringify({ dialect: "pg", url: pgTarget.replace(/\/\/[^@]*@/, "//") }, null, 2));
-        else out(ctx, "pg: " + pgTarget.replace(/\/\/[^@]*@/, "//"));
+        if (ctx.json) console.log(JSON.stringify({ dialect: "pg", url: redactPgUrl(pgTarget) }, null, 2));
+        else out(ctx, "pg: " + redactPgUrl(pgTarget));
         return 0;
       }
       if (ctx.json) console.log(JSON.stringify({ path: file }, null, 2));
@@ -248,7 +249,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       head(ctx, "Database");
       // B7: PG 直连面无 SQLite 文件——dialect/url 代替 file/size。
-      show(ctx, pgMode ? { dialect: "pg", url: String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db)).replace(/\/\/[^@]*@/, "//"), ...s } : { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
+      show(ctx, pgMode ? { dialect: "pg", url: redactPgUrl(String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db))).replace(/\/\/[^@]*@/, "//"), ...s } : { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
       return 0;
     }
     case "export-markdown": {

@@ -75,7 +75,9 @@ if (!pgUrl) {
   const pgHome = join(home, "pg-home");
   const steps = [
     ["init-pg", ["node", "dist/bundle/bin.cjs", "db", "init", "--json"], { env: { YGL_HOME: pgHome, YGL_DB_URL: pgUrl } }],
-    ["contract", ["bash", "scripts/contract-audit.sh"], { timeoutMs: 15 * 60_000 }],
+    // #93-①: contract-audit exercises the SQLite face — scrub YGL_DB_URL for this step
+    // (B7 allowlist would refuse every CLI call inside with rc=2 otherwise).
+    ["contract", ["bash", "scripts/contract-audit.sh"], { timeoutMs: 15 * 60_000, env: { YGL_DB_URL: "" } }],
     ["self-check", ["node", "dist/bundle/bin.cjs", "verify", "self-check", "--json"], { timeoutMs: 20 * 60_000, env: { YGL_HOME: pgHome, YGL_DB_URL: pgUrl } }],
     // 行为漂移登记册（护栏②）：空清单或全登记才算过
     ["drift-registry", ["node", "-e", "process.exit(0)"], {}],
