@@ -19,6 +19,8 @@ const g: GraphPayload = {
     { id: "task:t2", label: "t2", type: "task" },
     { id: "task:x9", label: "x9", type: "task" },
     { id: "source:s1", label: "s1", type: "source" },
+    { id: "source:s2", label: "s2", type: "source" },
+    { id: "source:s3", label: "s3", type: "source" },
     { id: "kb:k1", label: "孤立笔记", type: "kb" },
   ],
   edges: [
@@ -28,6 +30,8 @@ const g: GraphPayload = {
     { source: "node:b", target: "claim:c1", label: "evidenced-by" },
     { source: "node:b", target: "task:x9", label: "tracked-by" },
     { source: "node:a", target: "source:s1", label: "evidenced-by" },
+    { source: "node:a", target: "source:s2", label: "evidenced-by" },
+    { source: "node:a", target: "source:s3", label: "evidenced-by" },
   ],
 };
 const ctx = {
@@ -35,16 +39,26 @@ const ctx = {
     { id: "t1", title: "写报告", status: "doing" },
     { id: "t2", title: "旧任务", status: "done" },
   ],
-  sources: [{ id: "s1", url: "https://example.com/doc", note: null }],
+  // the real row shape (reads.ts sourceList): title + url, no note
+  sources: [
+    { id: "s1", title: "xyflow 受控节点文档", url: "https://example.com/doc", relevance: 5 },
+    { id: "s2", title: null, url: "https://example.com/untitled", relevance: 3 },
+  ],
 };
 const all = resolveEntities(g, ctx);
 const byId = (id: string) => all.find((e) => e.id === id)!;
 const none = { hiddenTypes: new Set<string>(), showDoneTasks: false };
 
 describe("resolveEntities", () => {
-  it("shows task titles and source urls instead of the ids the server sends", () => {
+  it("shows task titles and source titles instead of the ids the server sends (review of 24ea1e5)", () => {
     expect(byId("task:t1").label).toBe("写报告");
-    expect(byId("source:s1").label).toBe("https://example.com/doc");
+    expect(byId("source:s1").label).toBe("xyflow 受控节点文档"); // title wins over url
+    expect(byId("source:s2").label).toBe("https://example.com/untitled"); // no title → url
+  });
+
+  it("a source outside the page's list (other project, or past the top-20 cap) keeps its id and says so", () => {
+    expect(byId("source:s3")).toMatchObject({ label: "s3", unlisted: true });
+    expect(byId("source:s1").unlisted).toBeUndefined();
   });
 
   it("marks done tasks, and tasks from other projects (no title on this page, R16.4) as foreign", () => {

@@ -75,6 +75,7 @@ function EntityNode({ data }: NodeProps<Node<EntityData>>) {
         {typeLabel(e.type)}
         {e.done && " · 已完成"}
         {e.foreign && " · 其他项目"}
+        {e.unlisted && " · 未列出"}
       </div>
       <div style={{ fontWeight: e.hub ? 700 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.label}</div>
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
@@ -87,7 +88,7 @@ const nodeTypes = { entity: EntityNode };
 interface Props {
   graph: GraphPayload;
   tasks?: Array<{ id: string; title: string; status: string }>;
-  sources?: Array<{ id: string; url: string; note?: string | null }>;
+  sources?: Array<{ id: string; title?: string | null; url?: string | null }>;
 }
 
 export default function KnowledgeGraph(props: Props) {
@@ -125,7 +126,7 @@ function GraphCanvas({ graph, tasks, sources }: Props) {
         position: { x: e.x, y: e.y },
         initialWidth: e.hub ? CARD_W + 28 : CARD_W,
         initialHeight: 44,
-        ariaLabel: `${typeLabel(e.type)}：${e.label}${e.done ? "，已完成" : ""}${e.foreign ? "，其他项目" : ""}`,
+        ariaLabel: `${typeLabel(e.type)}：${e.label}${e.done ? "，已完成" : ""}${e.foreign ? "，其他项目" : ""}${e.unlisted ? "，未列出" : ""}`,
         data: { entity: e, dim: false, selected: false },
       })),
     [view]
@@ -252,7 +253,7 @@ function GraphCanvas({ graph, tasks, sources }: Props) {
             </>
           ) : (
             <>
-              <p className="dim" style={{ margin: 0 }}>{typeLabel(sel.type)}{sel.done && " · 已完成"}{sel.foreign && " · 其他项目（标题只在选中该项目时可见）"}</p>
+              <p className="dim" style={{ margin: 0 }}>{typeLabel(sel.type)}{sel.done && " · 已完成"}{sel.foreign && " · 其他项目（标题只在选中该项目时可见）"}{sel.unlisted && " · 未列出（本页只带本项目按相关度前 20 条来源的标题）"}</p>
               <h2 style={{ marginTop: 4, marginBottom: 8, overflowWrap: "anywhere" }}>{sel.label}</h2>
               <p className="dim" style={{ marginTop: 0, fontFamily: "var(--font-mono)", fontSize: 11, overflowWrap: "anywhere" }}>{sel.id}</p>
               <p className="dim" style={{ marginBottom: 4 }}>关联（{links.length}）</p>

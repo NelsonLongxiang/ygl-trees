@@ -21,6 +21,8 @@ export interface Entity {
   done?: boolean;
   /** a task from another project: the page only gets titles for the selected one (R16.4) */
   foreign?: boolean;
+  /** a source outside the page's list (other project, or past the server's top-20-by-relevance cap) */
+  unlisted?: boolean;
 }
 
 export interface Placed extends Entity {
@@ -62,7 +64,7 @@ const rank = (type: string) => {
 /** Payload entities with their readable labels (the server sends task / source ids as labels). */
 export function resolveEntities(
   g: GraphPayload,
-  ctx: { tasks?: Array<{ id: string; title: string; status: string }>; sources?: Array<{ id: string; url: string; note?: string | null }> } = {}
+  ctx: { tasks?: Array<{ id: string; title: string; status: string }>; sources?: Array<{ id: string; title?: string | null; url?: string | null }> } = {}
 ): Entity[] {
   const tasks = new Map((ctx.tasks ?? []).map((t) => [t.id, t]));
   const sources = new Map((ctx.sources ?? []).map((s) => [s.id, s]));
@@ -74,10 +76,11 @@ export function resolveEntities(
     return {
       id: n.id,
       type: n.type,
-      label: task?.title || source?.note || source?.url || n.label,
+      label: task?.title || source?.title || source?.url || n.label,
       hub: n.type === "node" || hubs.has(n.id),
       ...(task && { done: task.status === "done" }),
       ...(n.type === "task" && !task && { foreign: true }),
+      ...(n.type === "source" && !source && { unlisted: true }),
     };
   });
 }

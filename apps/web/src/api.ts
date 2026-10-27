@@ -37,7 +37,8 @@ export interface DashboardData {
    * 收集（R19：未选择时不填），此处类型化承载，渲染组件读这些键。 */
   claim_evidence?: Array<{ claim_id: string; evidence_id: string; stance: string }>;
   evidence?: Array<{ id: string; quote: string; locator?: string | null; source_id: string }>;
-  sources?: Array<{ id: string; url: string; note?: string | null }>;
+  /** this project's sources, top 20 by relevance (server caps the list) */
+  sources?: Array<{ id: string; title?: string | null; url?: string | null; relevance?: number }>;
   tasks: Array<{ id: string; title: string; status: string }>;
   artifacts: Array<{ id: string; kind: string; title: string; version: number; created: string }>;
   timeline: Array<{ day: string; research: number; tree: number; eval: number; other: number }>;
