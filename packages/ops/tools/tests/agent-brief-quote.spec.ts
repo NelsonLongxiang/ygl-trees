@@ -53,17 +53,21 @@ describe.skipIf(!HAS_BIN)("#105 next_actions shell-quote（G13 后端面）", ()
         ? name.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")
         : name;
       const lines = actions.filter((a) => a.includes("node index"));
-      const picked = lines.map((l) => ({ l, argv: words(l.split("   #")[0]) })).find((x) => x.argv[x.argv.indexOf("-t") + 1] === escaped);
+      const picked = lines.map((l) => ({ l, argv: words(l.split("   #")[0]) })).find((x) => {
+        const at = x.argv.find((a) => a.startsWith("--tree="));
+        return at !== undefined && at.slice("--tree=".length) === escaped;
+      });
       expect(picked, `no node index action carrying ${JSON.stringify(name)}`).toBeTruthy();
       const argv = picked!.argv;
       expect(argv).toContain("index");
-      // 显式 -t <tree>（#105③：裸 node index 会索引错树）
-      const ti = argv.indexOf("-t");
+      // 附着式 --tree='<v>'（#106 REQUEST-fix②：前导 - 与 =ls 等号展开都被附着式+引号挡死）
+      expect(argv.some((a) => a.startsWith("--tree="))).toBe(true);
+      const ti = argv.findIndex((a) => a.startsWith("--tree="));
       expect(ti).toBeGreaterThan(-1);
       // 安全字符名逐字往返；含控制字符的名字按设计转义为字面 \n（不可往返 = 不会误操作错树）
-      expect(argv[ti + 1]).toBe(escaped);
+      expect(argv[ti].slice("--tree=".length)).toBe(escaped); // 安全名逐字往返；控制字符名转义形（不往返=不会误操作）
       // 关键：命令本体里的换行必须被引号包住（words() 未抛未闭合引号即证单一 argv）
-      expect(picked!.l.split("   #")[0]).toContain("node index -t ");
+      expect(picked!.l.split("   #")[0]).toMatch(/node index --tree=/);
     });
   }
 
@@ -78,19 +82,32 @@ describe.skipIf(!HAS_BIN)("#105 next_actions shell-quote（G13 后端面）", ()
     }
   });
 
-  it("执行级重放：把 next_action 丢进 bash，canary 不得被创建（crafted 名端到端负测）", () => {
-    const canary = join(tmpdir(), "ygl105_replay_canary.txt");
-    try { rmSync(canary, { force: true }); } catch { /* absent */ }
-    const crafted = "t1\ntouch " + canary + " #";
-    run(["tree", "new", crafted]);
-    run(["node", "add", "n3", "-t", crafted]);
-    const brief = run(["agent", "brief", "--json"]);
-    const actions: string[] = JSON.parse(String(brief.stdout || "{}")).next_actions || [];
-    const line = actions.find((a) => a.includes("node index") && a.includes("t1"))!;
-    expect(line).toBeTruthy();
-    // 真按用户粘贴的方式执行：整条 action 写成脚本，Git Bash 跑（失败无所谓——我们只关心 canary）
-    const sh = process.platform === "win32" ? (process.env.GIT_BASH || "C:\\Program Files\\Git\\bin\\bash.exe") : "/bin/bash";
-    const r = spawnSync(sh, ["-c", line], { encoding: "utf8", timeout: 60_000, env: { ...process.env, YGL_HOME: HOME } });
-    expect(existsSync(canary), "canary created — 注入成立；输出=" + JSON.stringify(line) + " out=" + String(r.stdout || "").slice(0, 100)).toBe(false);
+  it("三壳重放：bash -i / sh / zsh -f -i 下同一 action 都不得创建 canary（#106 REQUEST-fix①）", () => {
+    const shells: Array<[string, string[]]> =
+      process.platform === "win32"
+        ? [
+            [process.env.GIT_BASH || "C:\\Program Files\\Git\\bin\\bash.exe", ["-i", "-c"]],
+            [process.env.GIT_BASH || "C:\\Program Files\\Git\\bin\\bash.exe", ["-c"]],
+          ]
+        : [["bash", ["-i", "-c"]], ["sh", ["-c"]], ["zsh", ["-f", "-i", "-c"]]];
+    for (const name of ["t1\ntouch CANARY #", "a$(touch CANARY)", "=ls", "-rf"]) {
+      const canary = join(tmpdir(), "ygl106_canary_" + Math.random().toString(36).slice(2) + ".txt");
+      const crafted = name.replace(/CANARY/g, canary);
+      run(["tree", "new", crafted]);
+      run(["node", "add", "n9", "--tree", crafted]);
+      const brief = run(["agent", "brief", "--json"]);
+      const actions: string[] = JSON.parse(String(brief.stdout || "{}")).next_actions || [];
+      const line = actions.find((a) => a.includes("node index"))!;
+      expect(line).toBeTruthy();
+      // 注释段必须无 shell 语法字符（zsh 交互态 # 不是注释）
+      const comment = line.split("   #")[1] || "";
+      expect(comment).not.toMatch(/[$()`;&|<>]/);
+      for (const [bin, flags] of shells) {
+        const rr = spawnSync(bin, [...flags, line], { encoding: "utf8", timeout: 30_000, env: { ...process.env, YGL_HOME: HOME } });
+        if (rr.error && (rr.error as any).code === "ENOENT") continue; // 壳不存在 → 跳过该壳（下面另有断言）
+        expect(existsSync(canary), `${bin} ${flags.join(" ")} created canary for ${JSON.stringify(name)}`).toBe(false);
+        try { rmSync(canary, { force: true }); } catch { /* absent */ }
+      }
+    }
   });
 });

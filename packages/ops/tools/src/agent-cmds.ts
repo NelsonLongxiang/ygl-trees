@@ -29,10 +29,15 @@ export function singleLine(value: string): string {
 }
 
 export function shellQuote(value: string): string {
+  // G13/#106 REQUEST-fix：**不设 SAFE 捷径**——zsh 会把 =-首词做等号展开（`=ls` → /bin/ls），
+  // 前导 - 会被当旗标。一律单引号词化，配合附着式 --tree='<v>' 使用。
   const v = String(value ?? "");
-  if (v === "") return "''";
-  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(v)) return v;
   return "'" + v.replace(/'/g, "'\\''") + "'";
+}
+
+/** 注释段专用 slug：只留 [A-Za-z0-9_.-]，其余 → _，截 24 —— 任何壳里都不构成语法（zsh 交互态 # 不是注释）。 */
+export function commentSlug(value: string): string {
+  return String(value ?? "").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24);
 }
 
 export function buildBrief(env: Env): any {
@@ -89,7 +94,7 @@ export function buildBrief(env: Env): any {
       });
       if (others.length) {
         payload.next_actions.unshift(
-          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} ${singleLine(o.entity_id)}`).join(", ")} — 命令请带 -t/-p 固定上下文`
+          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} ${commentSlug(o.entity_id)}`).join(", ")} — 命令请带 -t/-p 固定上下文`
         );
       }
     }
@@ -130,7 +135,7 @@ export function buildBrief(env: Env): any {
   // Health: surface data problems an agent should fix first.
   const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
   // #105：裸 `node index` 会索引错树 → 显式 -t <tree>；树名经 shellQuote（换行/分号注入面）
-  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index -t ${shellQuote(singleLine(t.name))}   # tree ${singleLine(t.name)} index is stale`);
+  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index --tree=${shellQuote(singleLine(t.name))}   # tree ${commentSlug(t.name)} index is stale`);
   const dupGroups = store.db.all(
     `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
