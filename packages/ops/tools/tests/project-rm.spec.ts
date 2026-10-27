@@ -57,4 +57,34 @@ describe.skipIf(!HAS_BIN)("#82 project rm（软删默认 / 拒绝级联 / 按类
     expect(r.status).toBe(1);
     expect(String(r.stdout || "")).toMatch(/project not found: nope-xyz/);
   });
+
+  it("归档项目拒写：research claim add → rc1 带名错误（验证席 direct-08d214ee a）", () => {
+    run(["project", "new", "arch-write", "-q", "q"]);
+    run(["project", "rm", "arch-write"]);
+    const r = run(["research", "claim", "add", "不应落库", "-p", "arch-write", "--json"]);
+    expect(r.status).toBe(1);
+    expect(String(r.stdout || "")).toMatch(/project arch-write is archived/);
+    const claims = run(["research", "claim", "list", "-p", "arch-write", "--json"]);
+    expect(JSON.parse(String(claims.stdout || "[]")).length).toBe(0);
+  });
+
+  it("归档项目拒选：project use → rc1；--archived 放行（只读巡查）（验证席 b）", () => {
+    run(["project", "new", "arch-use", "-q", "q"]);
+    run(["project", "rm", "arch-use"]);
+    const denied = run(["project", "use", "arch-use", "--json"]);
+    expect(denied.status).toBe(1);
+    expect(String(denied.stdout || "")).toMatch(/is archived — pass --archived/);
+    const allowed = run(["project", "use", "arch-use", "--archived", "--json"]);
+    expect(allowed.status).toBe(0);
+  });
+
+  it("归档不清空资产但不标 current（验证席 c/d）", () => {
+    run(["project", "new", "arch-cur", "-q", "q"]);
+    run(["research", "claim", "add", "留证据", "-p", "arch-cur"]);
+    run(["project", "rm", "arch-cur"]);           // 软删并清选择桶
+    const list = run(["project", "list", "--json"]);
+    const me = JSON.parse(String(list.stdout || "[]")).find((p) => p.name === "arch-cur");
+    expect(me.status).toBe("archived");
+    expect(me.current).toBe(false);
+  });
 });

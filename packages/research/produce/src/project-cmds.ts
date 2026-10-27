@@ -93,7 +93,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const authorizes =
         sel.source === "flag" || sel.source === "env" || sel.source === "session" || sel.source === "only";
       const cur = authorizes ? sel.name : null;
-      const marked = rows.map((r: any) => ({ ...r, current: r.name === cur }));
+      // #82（验证席 d）：archived 永不标 current（软删项目不是工作目标）
+      const marked = rows.map((r: any) => ({ ...r, current: r.name === cur && String(r.status || "active") !== "archived" }));
       table(ctx, marked, ["project", "status", "src", "claims", "artifacts", "updated"], [
         "name",
         "status",
@@ -109,8 +110,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing project name");
         return 2;
       }
-      if (!store.projectByName(name)) {
+      const found = store.projectByName(name) as any;
+      if (!found) {
         bad(ctx, `project not found: ${name}`);
+        return 1;
+      }
+      // #82（验证席 direct-08d214ee b）：归档项目默认**拒选**——要显式 --archived 才选（只读巡查用）。
+      if (String(found.status || "active") === "archived" && args.flags.archived !== true && args.flags.archived !== "true") {
+        bad(ctx, `project ${name} is archived — pass --archived to select it for read-only inspection, or create a new project`);
         return 1;
       }
       // R16.2: default writes the session key (parallel sessions no longer
@@ -170,6 +177,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return getOrm(env.db.path)
           .then((ds) => writes.projectArchive(ds, resolved.name))
           .then((r): number => {
+            // 归档即退出选择：清本会话桶（否则 list 把 archived 标成 current，验证席 d）
+            const key = `current_project@${sessionId()}`;
+            if (store.db.metaGet(key) === resolved.name) store.db.metaSet(key, "");
             if (ctx.json) {
               console.log(JSON.stringify({ ...r, soft: true, remaining: counts }, null, 2));
               return 0;
