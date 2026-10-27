@@ -1,7 +1,7 @@
 ---
 name: ygl-trees-verify
 description: >-
-  ygl-trees spec-validator 验证器（M13，0.96→0.102）：把「业务规范」变成可执行、可复核、零人工确认的验证器——
+  ygl-trees spec-validator 验证器（M13，0.96→0.116）：把「业务规范」变成可执行、可复核、零人工确认的验证器——
   业务方交一段话+附件（submit 冻结材料）→ agent 构造判据（prepare P0–P5：提取/盲审/红队/守卫，出 spec）
   → 引擎在数据库快照副本上跑七型检查器（sql/sql-pair/count/exists/file/command/agent）出报告（run）
   → 归档成可带走的确定性 zip（archive，默认必做）+ 封包签名（ed25519，认表不认报文）+ 递归自校验（self-check）。
@@ -54,6 +54,8 @@ ygl-trees verify list                           # 工作区全部 spec/run 概�
   `prepare` 用 rc 表达"能不能跑"：`ready=false` → rc=1，用法错 → 2。
 - **零人工确认**：`trace` 是审计面不是审批面。想改判据 = 改材料重新 submit → 新 spec → 新 run。
 - **快照纪律**：`run --db` 指向**副本**；引擎只读打开（`PRAGMA query_only`），不碰源库。
+- **--db 重复给值**（0.116.0/#91）：单库命令**末值胜**（`lastFlagOf`——`db stats --db a --db b` 读 b）；
+  仅 `verify tree run` 保留多 `--db` 分叶绑库的数组形。
 
 ```bash
 ygl-trees verify:run   # 组合入口：submit → prepare → run 串接（rc 只表达过程错误）
@@ -252,6 +254,8 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 | `[P1] … names clause "S9", which the frozen material does not declare` | `#<片段>` 先按子句 id 解析（`#S1`/`#L2` 是 id 不是行号）；引用物理行写 `#line=<n>`；编号约定不同在 `verify submit --clause-pattern` 声明（随材料冻结） |
 | prepare `error` + `[P3] orphan review` | 评审文件里有条 `source_clause` 没有任何候选携带（判据被删或改名）——候选与评审要 1:1 |
 | `verify meta` R3 把当前目录 git 仓库的脚本判 stray | meta 门默认扫 **cwd 所属仓库**（含 `AGENTS.md`/`verify/` 标记即 hard）；submit/prepare 加 `--meta-repo <verifier-root>` 指定准入根，或在中性目录运行；`verify meta <repo>` 可先单独看该仓的 R1–R3 |
+| 空 `YGL_HOME` 报 `no database`（#18） | verify 构造面缺工作区是**运行条件 rc=1**（实测 `verify submit` rc=1）；非 verify 命令 rc=2（实测 `kb add`）。`verify example/lint-candidates/probe` 免 DB（实测 rc=0、无 ygl-trees.db 残留，缺库回落 `:memory:`）——要落库先 `db init` |
+| 改了 `verify/meta.json` tooling[] 登记的文件后 `meta-tooling --audit` 判红 | 登记时序（0.116.0/#92）：先 `node scripts/meta-tooling.mjs --reregister <path> --reason "<为何变>" --actor <谁>` **再 commit**（或同提交携带记录）；`--audit --against-git` 按变迁提交时刻核验，**事后补登判红**；多次编辑一次提交合法（账本链式可达） |
 | 想知道这次尝试落哪个文件 | CLI `prepare --json` 的 `record`（相对 verify 根）；`GET /api/verify/spec` 载荷带 `attempts:[{file,created,verdict}]` 投影 |
 | 作业端点 400 `submission_dir` | 请求体不许带路径/argv；file 型检查器走 CLI `--submission` |
 | command 型 VU 全 `ERROR` 且 reason 含 `allowlist` | 不是 bug：`YGL_VERIFY_ALLOW_CMD` 为空/不含该 argv[0]；显式列白名单（逗号分隔） |
