@@ -14,6 +14,20 @@ import { resolveProject, ambiguousProject, projectCount, projectSample, sessionI
 
 /** G13 (#105)：next_actions 里的存名插值一律 POSIX 单引号词化——换行/分号/$() 在粘贴面即命令注入。
  *  单引号包住整词（换行留在引号内仍是一个 argv），内嵌 ' 转义为 '\''。 */
+/** G13/#105（验证席复验 NO-GO 补正）：**注释不是安全边界**——`# 后面` 的存名里一个换行就能终结注释、
+ *  让后续行成为独立命令。凡是要塞进 next_action 的存名（含注释段），一律先经本函数转义掉全部控制字符，
+ *  保证每条 action 恒为单行（\\n / \\r / \\t / 其余 C0 → \\xNN）。
+ *  含控制字符的名字因此**不往返**（粘贴后是字面 \\n，CLI 会以 tree not found 大声失败）——
+ *  失败可诊断，注入不可容忍；需要真操作此类名字时用 db sql 面。 */
+export function singleLine(value: string): string {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, (c) => {
+    if (c === "\n") return "\\n";
+    if (c === "\r") return "\\r";
+    if (c === "\t") return "\\t";
+    return "\\x" + c.charCodeAt(0).toString(16).padStart(2, "0");
+  });
+}
+
 export function shellQuote(value: string): string {
   const v = String(value ?? "");
   if (v === "") return "''";
@@ -75,7 +89,7 @@ export function buildBrief(env: Env): any {
       });
       if (others.length) {
         payload.next_actions.unshift(
-          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} ${shellQuote(o.entity_id)}`).join(", ")} — 命令请带 -t/-p 固定上下文`
+          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} ${singleLine(o.entity_id)}`).join(", ")} — 命令请带 -t/-p 固定上下文`
         );
       }
     }
@@ -116,7 +130,7 @@ export function buildBrief(env: Env): any {
   // Health: surface data problems an agent should fix first.
   const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
   // #105：裸 `node index` 会索引错树 → 显式 -t <tree>；树名经 shellQuote（换行/分号注入面）
-  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index -t ${shellQuote(t.name)}   # tree ${shellQuote(t.name)} index is stale`);
+  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index -t ${shellQuote(singleLine(t.name))}   # tree ${singleLine(t.name)} index is stale`);
   const dupGroups = store.db.all(
     `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
