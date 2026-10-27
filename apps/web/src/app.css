@@ -42,3 +42,5 @@
 /* the hovered / focused column lifts at once — DESIGN.md allows transitions on background/color only */
 .yt-tl-col.is-active path, .yt-tl-col.is-active rect:not(.yt-tl-hit) { filter: brightness(1.15); }
 .yt-tl-table td { font-variant-numeric: tabular-nums; }
+.yt-tab:hover { color: var(--color-primary) !important; }
+.yt-tab:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: var(--radius-sm); }

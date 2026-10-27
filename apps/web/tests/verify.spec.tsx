@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
-import Verify, { ReportDetail, ScopeTag, scopeHint, scopeLabel } from "../src/Verify";
+import Verify, { ReportDetail, ScopeTag, VerifyTabs, scopeHint, scopeLabel, validateMaterial } from "../src/Verify";
 import type { VerifyReportDetail } from "../src/api";
 
 /**
@@ -26,6 +26,37 @@ describe("verify 三视图（M13-2）", () => {
     expect(html).toContain("选择文件并上传");
     expect(html).toContain("全局去重");
     expect(html).toContain("结构化是 agent 构造的产物");
+  });
+
+  it("三个视图是 ARIA tabs：tablist / tab / tabpanel，选中的可聚焦、其余 tabindex=-1（不用 antd Tabs，web_dist 棘轮）", () => {
+    expect(html).toContain('role="tablist"');
+    expect((html.match(/role="tab"/g) ?? []).length).toBe(3);
+    expect(html).toMatch(/role="tab" id="vt-material" aria-selected="true" aria-controls="vp-material" tabindex="0"/);
+    expect((html.match(/aria-selected="false"[^>]*tabindex="-1"/g) ?? []).length).toBe(2);
+    expect(html).toContain('role="tabpanel" id="vp-material" aria-labelledby="vt-material"');
+  });
+
+  it("材料表单是普通受控字段：label 关联到输入框，必填提示与原规则同文（不用 antd Form / Upload）", () => {
+    expect(html).toContain('for="vm-title"');
+    expect(html).toContain('id="vm-title"');
+    expect(html).toContain('for="vm-text"');
+    expect(html).toContain('type="file"');
+    expect(html).not.toContain("ant-form");
+    expect(html).not.toContain("ant-upload");
+    expect(validateMaterial({ title: " ", text: "" })).toEqual({
+      title: "给这份材料一个标题",
+      text: "材料是一段话，不是表单——写清楚业务事实即可",
+    });
+    expect(validateMaterial({ title: "t", text: "x" })).toEqual({});
+  });
+
+  it("只渲染当前视图的面板", () => {
+    const t = renderToStaticMarkup(createElement(VerifyTabs, { items: [
+      { key: "a", label: "甲", render: () => createElement("p", null, "面板甲") },
+      { key: "b", label: "乙", render: () => createElement("p", null, "面板乙") },
+    ] }));
+    expect(t).toContain("面板甲");
+    expect(t).not.toContain("面板乙");
   });
 
   it("构造追溯是只读审计面：有说明、没有确认按钮", () => {
