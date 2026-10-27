@@ -70,6 +70,11 @@ bash scripts/pg-gate.sh               # pinned postgres:16.4-alpine → dual-bac
 
 ### G8 发布后复跑基线（发布完成后）
 
+> **禁 shallow clone**：G8 的 tag 克隆必须 full clone——`--depth 1` 会让 `meta-tooling --audit --against-git` 的 chain-first 锚（pinned genesis）误红 11 项（0.116.1 复跑实测）。`scripts/post-release-check.mjs` 用的是普通 clone，符合要求。
+>
+> **0.116.1 已知红腿（如实入账）**：该版 `readme-verify` 59/60——唯一红是 unit 计数行（README=1204 基准机值 vs 非基准机实测 1168，跨平台计数差）。计数门前置（非基准机显式 SKIP 打原因）随 #107 合入 master、下一版生效；**不构成功能回归**。
+
+
 ```bash
 node scripts/post-release-check.mjs <version>   # npm 装 + tag 克隆 pnpm test + verify meta .，JSON 结果进记录
 ```
