@@ -175,7 +175,12 @@ describe("#93-1(b) 矩阵 PG 腿步骤清单钉（删 pg-stats 行 → 本测试
     const j = src.indexOf('backend: "pg"', i);
     const leg = src.slice(i, j);
     expect(leg).toContain('["pg-stats"');
-    expect(leg).toContain('"db", "stats", "--json"');
-    expect(leg).toContain('YGL_DB_URL: pgUrl'); // 该步必须带 PG env（真连 PG）
-  });
+    expect(leg).toContain('["pg-stats"');
+    // 监督席 direct-51eb5832：env 断言**绑定 pg-stats 行本身**——只在其它步带 env 而
+    // pg-stats 被剥掉时本测试必须红（db stats 读 SQLite 空转不再隐形）。
+    const pgStatsLine = leg.split("\n").find((l) => l.includes('["pg-stats"'));
+    expect(pgStatsLine, "pg-stats step line not found in PG leg").toBeTruthy();
+    expect(pgStatsLine).toContain('"db", "stats", "--json"');
+    expect(pgStatsLine).toContain("YGL_DB_URL: pgUrl"); // pg-stats 这一行必须带 PG env
+});
 });
