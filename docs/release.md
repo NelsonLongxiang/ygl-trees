@@ -74,6 +74,21 @@ bash scripts/pg-gate.sh               # pinned postgres:16.4-alpine → dual-bac
 node scripts/post-release-check.mjs <version>   # npm 装 + tag 克隆 pnpm test + verify meta .，JSON 结果进记录
 ```
 
+### G12 解释器锚（防回归注记）
+
+**处置**：pnpm scripts 的 shell 链**不得直写 `bash -c '…'`**——Windows 下 pnpm 经 cmd 解析，
+裸 `bash` 会按 PATH 序漂移（本机实证漂到 WSL：`/mnt/d` 下旧 node 跑 tsc 报 `SyntaxError: ??`，
+2026-10-27 假红同根）。四条 shell 链（build / test / prepublishOnly / bench）一律经
+`node scripts/run-sh.mjs "<chain>"`：解释器钉在代码里（win=Git Bash 绝对路径或 `GIT_BASH`，
+缺失大声红；posix=`/bin/bash`）。`node scripts/interp-anchor.mjs`（`pnpm gate:g12`）守两件事：
+`scripts/*.sh` shebang 锚 bash、scripts 字段的 shell 链必须经 run-sh。**新增 shell 链照此写**。
+
+### G11 仓内体量门
+
+```bash
+node scripts/volume-gate.mjs      # spec.md 26KB / docs 活跃 880KB 双上限；超阈归档（spec §5）
+```
+
 ### G9 合并祖先守卫（pre-push 内建 + 事后复核）
 
 - pre-push 钩子内置非快进拒推（不可经 YGL_SKIP_HOOKS 跳过——只跳测试套件）。
