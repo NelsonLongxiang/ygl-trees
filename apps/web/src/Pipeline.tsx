@@ -3,6 +3,7 @@ import { Button, Card, Collapse, Empty, Input, Space, Table, Tag, Typography } f
 import { C } from "./tokens";
 import { ToneTag } from "./ToneTag";
 import { copyText } from "./clipboard";
+import { shellQuote } from "./shell";
 
 /**
  * 研究管线视图（0.92 单A，direct-0f20e882 队列工单；spec webui-design.md §3）。
@@ -157,9 +158,16 @@ export function facetRows(rows: Row[], f: Facets): Row[] {
   return rows.filter((r) => (!f.status || r.bucket === f.status) && (!f.evidence || evidenceOf(r, f.evidence)));
 }
 
-/** The command an expert runs to adjudicate a claim (writes stay in the CLI; the page only copies). */
+/**
+ * The command an expert runs to adjudicate a claim (writes stay in the CLI; the
+ * page only copies). Claim id and project are data, so both are shell-quoted
+ * (#101, G13). The project rides as `--project=<value>`, not `-p <value>`:
+ * quotes are gone by the time the CLI parses, and a separate `-p --global`
+ * reads `--global` as a flag; attached to `=`, a leading dash stays the value.
+ */
 export function resolveCommand(claimId: string, as: "supported" | "refuted" | "contested", project?: string | null): string {
-  return `ygl-trees research claim resolve ${claimId} --as ${as}${project ? ` -p ${project}` : ""}`;
+  const cmd = `ygl-trees research claim resolve ${shellQuote(claimId)} --as ${as}`;
+  return project ? `${cmd} --project=${shellQuote(project)}` : cmd;
 }
 
 /** Where a quote comes from: the source's title when this page has it, else the locator, else the source id. */
