@@ -1,26 +1,27 @@
 {
-  "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-26T15:31:25.477Z",
+  "measured_at": "2026-10-27T20:55:15.446Z",
+  "_attribution": "#82（总工裁 B）：bundle +4.7KB（dbfc6e7 867085 → 871791，project rm/归档门/restore）；其余 ~14.4KB 为 master 既有漂移，非本 PR（run-sh 不在 bundle）",
+  "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 852712,
+      "value": 871791,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-26T15:31:22.418Z",
+      "measured_at": "2026-10-27T20:55:12.640Z",
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {
-      "value": 1450936,
+      "value": 1395091,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-26T15:31:22.420Z",
+      "measured_at": "2026-10-27T20:55:12.641Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 326,
+      "value": 297,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-10-26T15:31:25.477Z",
+      "measured_at": "2026-10-27T20:55:15.445Z",
       "method": "warm2-min7-retry-once"
     }
   }

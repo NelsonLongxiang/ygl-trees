@@ -170,7 +170,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
+      "sha256": "3eed8e418329d71181029fb1f35006a5fe70d8720d01a19139ccdd9326588927",
       "role": "gate"
     },
     {
@@ -911,12 +911,20 @@
       "at": "2026-10-27T13:33:51.974Z"
     },
     {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
+      "new_sha256": "3eed8e418329d71181029fb1f35006a5fe70d8720d01a19139ccdd9326588927",
+      "reason": "#107 REQUEST-fix③：计数门前置（基准机口径/非基准机显式 SKIP 打原因）",
+      "actor": "longxiang",
+      "at": "2026-10-27T22:30:44.348Z"
+    },
+    {
       "path": "scripts/interp-anchor.mjs",
       "old_sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
       "new_sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
-      "reason": "#105 hotfix 分支带入 G12 解释器锚（run-sh 判定面）",
+      "reason": "merge master 38b1c1f（#106）后合并态：interp-anchor 双线内容合一（run-sh 判据 + 注释）",
       "actor": "longxiang",
-      "at": "2026-10-27T17:47:02.391Z"
+      "at": "2026-10-27T22:40:43.865Z"
     }
   ],
   "kind": "engine",

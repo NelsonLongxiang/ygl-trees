@@ -902,6 +902,50 @@ export async function skillRefAdd(
   });
 }
 
+
+/** #82（总工裁 direct-a7b1e30a / 复核 direct-9ea58cd0 B）：软删默认——status='archived'，
+ *  **不动任何资产**（证据链不可逆，级联删除在 agent 批量脚本下是灾难放大器）。 */
+export async function projectArchive(ds: DataSource, name: string): Promise<Record<string, any>> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM projects WHERE name=?`, [name])) as any[];
+    if (!rows.length) return { not_found: true };
+    await mgr.query(`UPDATE projects SET status='archived', updated=? WHERE id=?`, [nowIso(), rows[0].id]);
+    await logEvent(mgr, "project.archive", "project", rows[0].id, name);
+    return { ...rows[0], status: "archived", archived: true };
+  });
+}
+
+/** #82：restore——归档的反向（status 回 active）。资产一直在，无需搬运。 */
+export async function projectRestore(ds: DataSource, name: string): Promise<Record<string, any>> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM projects WHERE name=?`, [name])) as any[];
+    if (!rows.length) return { not_found: true };
+    await mgr.query(`UPDATE projects SET status='active', updated=? WHERE id=?`, [nowIso(), rows[0].id]);
+    await logEvent(mgr, "project.restore", "project", rows[0].id, name);
+    return { ...rows[0], status: "active", restored: true };
+  });
+}
+
+/** #82：硬删只对**空项目**开放（无级联）——调用方先按类型点名计数并拒绝非空；
+ *  这里再断言一次（同事务内），防止并发或调用方漏检。 */
+export async function projectDeleteEmpty(ds: DataSource, name: string): Promise<Record<string, any>> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM projects WHERE name=?`, [name])) as any[];
+    if (!rows.length) return { not_found: true };
+    const pid = rows[0].id;
+    const counts: Record<string, number> = {};
+    for (const t of ["queries", "sources", "evidence", "claims", "artifacts", "trees"]) {
+      const r = (await mgr.query(`SELECT COUNT(*) AS n FROM ${t} WHERE project_id=?`, [pid])) as any[];
+      counts[t] = Number(r[0]?.n ?? 0);
+    }
+    const nonEmpty = Object.entries(counts).filter(([, n]) => n > 0);
+    if (nonEmpty.length) return { refused: true, counts };
+    await mgr.query(`DELETE FROM projects WHERE id=?`, [pid]);
+    await logEvent(mgr, "project.delete", "project", pid, name);
+    return { ...rows[0], deleted: true, counts };
+  });
+}
+
 // ================================================================ projects (batch 2)
 
 /** R16.2: `project new` selects via the SESSION key only — the global

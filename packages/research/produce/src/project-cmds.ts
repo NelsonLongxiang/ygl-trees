@@ -93,7 +93,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const authorizes =
         sel.source === "flag" || sel.source === "env" || sel.source === "session" || sel.source === "only";
       const cur = authorizes ? sel.name : null;
-      const marked = rows.map((r: any) => ({ ...r, current: r.name === cur }));
+      // #82（验证席 d）：archived 永不标 current（软删项目不是工作目标）
+      const marked = rows.map((r: any) => ({ ...r, current: r.name === cur && String(r.status || "active") !== "archived" }));
       table(ctx, marked, ["project", "status", "src", "claims", "artifacts", "updated"], [
         "name",
         "status",
@@ -109,8 +110,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing project name");
         return 2;
       }
-      if (!store.projectByName(name)) {
+      const found = store.projectByName(name) as any;
+      if (!found) {
         bad(ctx, `project not found: ${name}`);
+        return 1;
+      }
+      // #82（验证席 direct-08d214ee b）：归档项目默认**拒选**——要显式 --archived 才选（只读巡查用）。
+      if (String(found.status || "active") === "archived" && args.flags.archived !== true && args.flags.archived !== "true") {
+        bad(ctx, `project ${name} is archived — run: ygl-trees project restore ${name}   (or pass --archived to select it for read-only inspection)`);
         return 1;
       }
       // R16.2: default writes the session key (parallel sessions no longer
@@ -142,6 +149,88 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, paint(C.dim, `      pin explicitly (recommended): ygl-trees <cmd> --project ${name} · or isolate this shell: export YGL_SESSION=<name>`, ctx.color));
       }
       return 0;
+    }
+    case "rm": {
+      // #82（总工裁 direct-a7b1e30a；复核 direct-9ea58cd0 B）：软删默认、**拒绝并列资产计数、不级联**。
+      // 有资产 → 点名计数（claims/evidence/sources/queries/artifacts/trees 各 N）→ rc1；
+      // 用户自行迁移/清理后再删。--force 只对**空项目**做硬删（级联在 agent 批量脚本下是灾难放大器）。
+      const name = rest[0] || String(args.flags.project || args.flags.p || "");
+      if (!name) {
+        bad(ctx, "usage: project rm <name> [--force]   (default: soft delete = status archived, assets untouched)");
+        return 2;
+      }
+      const resolved = store.projectByName(name);
+      if (!resolved) {
+        bad(ctx, `project not found: ${name}`);
+        return 1;
+      }
+      const counts: Record<string, number> = {};
+      for (const t of ["queries", "sources", "evidence", "claims", "artifacts", "trees"]) {
+        const r = store.db.get(`SELECT COUNT(*) AS n FROM ${t} WHERE project_id=?`, [resolved.id]) as any;
+        counts[t] = Number(r?.n ?? 0);
+      }
+      const named = Object.entries(counts)
+        .filter(([, n]) => n > 0)
+        .map(([t, n]) => `${t} ${n}`)
+        .join(" · ");
+      if (!args.flags.force) {
+        return getOrm(env.db.path)
+          .then((ds) => writes.projectArchive(ds, resolved.name))
+          .then((r): number => {
+            // 归档即退出选择：清本会话桶（否则 list 把 archived 标成 current，验证席 d）
+            const key = `current_project@${sessionId()}`;
+            if (store.db.metaGet(key) === resolved.name) store.db.metaSet(key, "");
+            if (ctx.json) {
+              console.log(JSON.stringify({ ...r, soft: true, remaining: counts }, null, 2));
+              return 0;
+            }
+            ok(ctx, `project archived: ${resolved.name}  (status=archived; assets untouched)`);
+            if (named) out(ctx, paint(C.dim, `  remains: ${named} — archiving keeps the evidence chain intact`, ctx.color));
+            return 0;
+          });
+      }
+      if (named) {
+        // 非空 + --force = 拒绝（无级联），按类型点名
+        bad(ctx, `project not empty — refusing hard delete (no cascade): ${named}. Migrate or clean them first, or use the default soft delete (drop --force)`);
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.projectDeleteEmpty(ds, resolved.name))
+        .then((r): number => {
+          if ((r as any).refused) {
+            bad(ctx, `project not empty — refusing hard delete (no cascade): ${Object.entries((r as any).counts || {}).filter(([, n]) => Number(n) > 0).map(([t, n]) => `${t} ${n}`).join(" · ")}`);
+            return 1;
+          }
+          if (ctx.json) {
+            console.log(JSON.stringify({ ...r, deleted: true }, null, 2));
+            return 0;
+          }
+          ok(ctx, `project deleted: ${resolved.name}  (was empty)`);
+          return 0;
+        });
+    }
+    case "restore": {
+      // #82（监督席 direct-d41b913e ②：报错指路死胡同）：归档不是单向——restore 把 status 拨回 active。
+      const nm = rest[0] || String(args.flags.project || args.flags.p || "");
+      if (!nm) {
+        bad(ctx, "usage: project restore <name>");
+        return 2;
+      }
+      const found = store.projectByName(nm) as any;
+      if (!found) {
+        bad(ctx, `project not found: ${nm}`);
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.projectRestore(ds, found.name))
+        .then((r: any): number => {
+          if (ctx.json) {
+            console.log(JSON.stringify(r, null, 2));
+            return 0;
+          }
+          ok(ctx, `project restored: ${found.name}  (status=active; writing allowed again)`);
+          return 0;
+        });
     }
     case "show": {
       // R16.3: project show is project-scoped — same strict gate as research.
