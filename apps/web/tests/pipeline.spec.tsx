@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import Pipeline, {
   pipelineRows, overallStance, readView, writeView, VIEW_KEY, type PipelineClaim, type PipelineLink, type PipelineEvidence,
+  joinRows, summarize, facetRows, resolveCommand, sourceLabel,
 } from "../src/Pipeline";
 
 /**
@@ -175,5 +176,62 @@ describe("评审 0e0fcfa：看法持久化 / 筛选收窄看板 / 徽章整体�
     expect(html).toContain("color:var(--color-warning);border-color:var(--color-warning)");
     expect(overallStance(pipelineRows(claims, links, evidence).find((r) => r.id === "c3")!.items).color).toBe("var(--color-danger)");
     expect(overallStance(pipelineRows(claims, links, evidence).find((r) => r.id === "c1")!.items).color).toBe("var(--color-success)");
+  });
+});
+
+describe("专家 ↔ agent 协同：状态条、证据薄弱筛选、裁决命令、来源标题", () => {
+  const rows = joinRows(claims, links, evidence);
+
+  it("summarize counts every status and how thin the evidence is", () => {
+    const s = summarize(rows);
+    expect(s.status).toEqual({ supported: 2, contested: 1, unverified: 1, refuted: 1 });
+    expect(s.none).toBe(3); // c2, c4, c5 have no linked evidence
+    expect(s.single).toBe(1); // c3
+  });
+
+  it("status and evidence facets narrow together; null means all", () => {
+    expect(facetRows(rows, { status: "supported", evidence: null }).map((r) => r.id)).toEqual(["c1", "c2"]);
+    expect(facetRows(rows, { status: "supported", evidence: "none" }).map((r) => r.id)).toEqual(["c2"]);
+    expect(facetRows(rows, { status: null, evidence: "single" }).map((r) => r.id)).toEqual(["c3"]);
+    expect(facetRows(rows, { status: null, evidence: null })).toHaveLength(5);
+  });
+
+  it("the verdict command is the CLI's own, pinned to the project on screen", () => {
+    expect(resolveCommand("c4", "refuted", "jf")).toBe("ygl-trees research claim resolve c4 --as refuted -p jf");
+    expect(resolveCommand("c4", "supported")).toBe("ygl-trees research claim resolve c4 --as supported");
+  });
+
+  it("evidence names its source by title when the page has it, else locator, else id", () => {
+    const titles = new Map([["s1", "npm 发布记录"], ["s2", "评审纪要"]]);
+    expect(sourceLabel({ id: "e", quote: "q", locator: "P1 段", source_id: "s2" }, titles)).toBe("评审纪要 · P1 段");
+    expect(sourceLabel({ id: "e", quote: "q", locator: "https://example.com/a", source_id: "s1" }, titles)).toBe("npm 发布记录"); // a url locator adds nothing
+    expect(sourceLabel({ id: "e", quote: "q", locator: "P2 段", source_id: "s9" }, titles)).toBe("P2 段");
+    expect(sourceLabel({ id: "e", quote: "q", source_id: "s9" }, titles)).toBe("s9");
+  });
+
+  const html = renderToStaticMarkup(createElement(Pipeline, { claims, claimEvidence: links, evidence, project: "jf" }));
+
+  it("the strip names each status with its count and share, and filters by pressed buttons", () => {
+    expect(html).toContain('aria-label="按状态与证据筛选"');
+    expect(html).toMatch(/已证实 2<\/span><span[^>]*>40%/);
+    expect(html).toContain("无证据 3");
+    expect(html).toContain("仅一条证据 1");
+    expect((html.match(/aria-pressed="false"/g) ?? []).length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("only claims awaiting a verdict (unverified / contested) offer the verdict copy", () => {
+    expect((html.match(/>裁决 /g) ?? []).length).toBe(2);
+  });
+
+  it("a claim with no evidence says so instead of showing an empty badge", () => {
+    expect(html).toContain("无证据</span>");
+  });
+
+  it("a facet narrows the board and shows how many remain", () => {
+    const f = renderToStaticMarkup(createElement(Pipeline, { claims, claimEvidence: links, evidence, defaultFacets: { status: "refuted", evidence: null } }));
+    expect(f).toContain("1 / 5 条断言");
+    expect(f).toContain("断言五");
+    expect(f).not.toContain("断言一");
+    expect(f).toContain("清除筛选");
   });
 });

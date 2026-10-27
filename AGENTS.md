@@ -97,7 +97,7 @@ export function apply(ctx: Context, config) { ... }    // apps 经 ctx.plugin() 
 ```
 docs/spec.md           需求规格 R1-R14 + 验收标准
 docs/roadmap.md        路线图：三段主题 + 顺序 + 依赖 + 出口条件（裁定入口 #94；执行记录不在此）
-docs/plan.md           现行里程碑（M11+）+ 执行记录；M1–M10 → docs/plan-archive-2026-10-20.md；0.7–0.40 执行记录 → docs/plan-archive-2026-10-23.md；0.41–0.45 与 0.96–0.113.x → docs/plan-archive-2026-10-26.md
+docs/plan.md           现行里程碑（M11+）+ 执行记录；M1–M10 → docs/plan-archive-2026-10-20.md；0.7–0.40 执行记录 → docs/plan-archive-2026-10-23.md；0.41–0.45 与 0.96–0.113.x → docs/plan-archive-2026-10-26.md；M11/M12（0.93–0.95）→ docs/plan-archive-2026-10-27.md
 docs/CHANGELOG-archive-2026-10-20.md / -2026-10-23.md  CHANGELOG 历史归档（0.94− / 0.111.1−；归档按拆分日期命名）
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
