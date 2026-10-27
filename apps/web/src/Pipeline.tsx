@@ -161,11 +161,13 @@ export function facetRows(rows: Row[], f: Facets): Row[] {
 /**
  * The command an expert runs to adjudicate a claim (writes stay in the CLI; the
  * page only copies). Claim id and project are data, so both are shell-quoted
- * (#101): a free-text project name must never run as shell when pasted.
+ * (#101, G13). The project rides as `--project=<value>`, not `-p <value>`:
+ * quotes are gone by the time the CLI parses, and a separate `-p --global`
+ * reads `--global` as a flag; attached to `=`, a leading dash stays the value.
  */
 export function resolveCommand(claimId: string, as: "supported" | "refuted" | "contested", project?: string | null): string {
   const cmd = `ygl-trees research claim resolve ${shellQuote(claimId)} --as ${as}`;
-  return project ? `${cmd} -p ${shellQuote(project)}` : cmd;
+  return project ? `${cmd} --project=${shellQuote(project)}` : cmd;
 }
 
 /** Where a quote comes from: the source's title when this page has it, else the locator, else the source id. */

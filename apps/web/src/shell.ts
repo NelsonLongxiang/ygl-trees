@@ -1,16 +1,13 @@
 /**
- * Every argument of a command this page puts on the clipboard goes through
- * here (#101). The page never runs commands, but the expert pastes them into a
- * shell: a project name like `x;touch /tmp/pwn` or `a$(id)` would run the
- * injected part, and `my proj` would split into two arguments.
+ * Every free-text argument of a command this page puts on the clipboard goes
+ * through here (#101, G13). The page never runs commands, but the expert pastes
+ * them into a shell: a project named `x;touch /tmp/pwn` or `a$(id)` would run
+ * the injected part, `my proj` would split in two, and zsh (macOS's default)
+ * expands a leading `=` — `=ls` becomes /bin/ls (review of 4ca51fd).
  *
- * POSIX single quotes: nothing inside them is special, and a quote itself is
- * written `'\''` (close, escaped quote, reopen). A value made only of plainly
- * safe characters is left bare so ordinary ids and names stay readable.
+ * So: always POSIX single quotes, no "looks safe" shortcut. Nothing inside
+ * them is special in sh, bash or zsh; a quote itself is written `'\''`.
  */
-const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
-
 export function shellQuote(value: string): string {
-  if (SAFE.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
