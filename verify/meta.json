@@ -170,7 +170,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "3eed8e418329d71181029fb1f35006a5fe70d8720d01a19139ccdd9326588927",
+      "sha256": "a4314761cca668177de31df2ac9ba7581c6792901ab375cada90b41189ad0c48",
       "role": "gate"
     },
     {
@@ -925,6 +925,14 @@
       "reason": "merge master 38b1c1f（#106）后合并态：interp-anchor 双线内容合一（run-sh 判据 + 注释）",
       "actor": "longxiang",
       "at": "2026-10-27T22:40:43.865Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "3eed8e418329d71181029fb1f35006a5fe70d8720d01a19139ccdd9326588927",
+      "new_sha256": "a4314761cca668177de31df2ac9ba7581c6792901ab375cada90b41189ad0c48",
+      "reason": "#108 计数门去开关（任何机器严格比较）——去掉 YGL_COUNT_BASELINE 前置块",
+      "actor": "longxiang",
+      "at": "2026-10-27T23:57:35.141Z"
     }
   ],
   "kind": "engine",

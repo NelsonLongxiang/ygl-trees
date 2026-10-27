@@ -108,16 +108,9 @@ if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV
 if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   N=$((N+1))
   README_NUM=$(sed -n 's/.*vitest \([0-9][0-9]*\) 例.*/\1/p' README.md | head -1)
-  # 基准环境前置（验证席 direct-0c74f406 A② + direct-9c98bb08 ③）：README 数字=**基准机**唯一事实源。
-  # 非基准机显式 SKIP 并打原因——不静默绿、不假红；平台差集见 docs/reviews/unit-count-baseline.md。
-  BASELINE_MISS=""
-  [ -f dist/bundle/bin.cjs ] || BASELINE_MISS="dist/bundle/bin.cjs missing"
-  command -v cargo >/dev/null 2>&1 || BASELINE_MISS="${BASELINE_MISS:+$BASELINE_MISS; }cargo absent"
-  [ "${YGL_COUNT_BASELINE:-}" = "1" ] || BASELINE_MISS="${BASELINE_MISS:+$BASELINE_MISS; }非基准机（未设 YGL_COUNT_BASELINE=1）"
-  if [ -n "$BASELINE_MISS" ]; then
-    echo "  – unit 计数门 SKIP（$BASELINE_MISS）——README 数字=基准机测量（YGL_COUNT_BASELINE=1 + bundle + cargo），此处不判"
-    N=$((N-1))
-  else
+  # #108（验证席裁）：**无开关**——计数门在任何机器都跑比较（opt-in flag 会变成关闸闸门，
+  # 偏离裁 A 本意）。收敛前提：环境条件用例一律 it 级 skip（注册+skip，总数不变）。
+
   # ANSI 色码鲁棒化（#88 轮）：vitest 在控制台附属环境（WMI/计划任务派生等）会输出
   # 带 ESC 序列的 "Tests  1062 passed" 行，正则不解色则提取为空 → 假红。
   ACTUAL=$(node node_modules/vitest/vitest.mjs run --maxWorkers=1 2>/dev/null \
@@ -128,7 +121,6 @@ if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   else
     echo "  ✗ unit 计数漂移: README=$README_NUM vitest=$ACTUAL（run: pnpm readme:count）"
     F=$((F+1))
-  fi
   fi
 fi
 echo "readme-verify: $((N-F))/$N 通过"
