@@ -48,22 +48,22 @@ if [ "${YGL_SKIP_HOOKS:-}" = "1" ]; then
 fi
 
 
-# verify meta (R3 登记面) — cheap, runs before the test suites: an unregistered or drifted
-# executable in the committed state is a gate-face hole (verify seat direct-35202d12).
-echo "pre-push gate: verify meta (tooling registration face)"
-if ! node dist/bundle/bin.cjs verify meta . >/dev/null 2>&1; then
-  echo
-  echo "pre-push: FAILED at 'verify meta' — tooling[] registration drift in the COMMITTED state."
-  echo "  fix: node scripts/meta-tooling.mjs --reregister <path> --reason \"<why>\" --actor <who>"
-  echo "       node scripts/meta-tooling.mjs --add <path> --role <role> --actor <who>"
-  exit 1
-fi
-
 echo "pre-push gate: pnpm test (unit + build + demo)"
 if ! pnpm test; then
   echo
   echo "pre-push: FAILED at 'pnpm test' — push blocked."
   echo "  fix the failure, or bypass deliberately with:  YGL_SKIP_HOOKS=1 git push"
+  exit 1
+fi
+
+# verify meta (R3 登记面) — runs AFTER the test build so dist/bundle is fresh; a stale or
+# missing bundle would misread as "registration drift" (#98 复核). Output kept visible.
+echo "pre-push gate: verify meta (tooling registration face)"
+if ! node dist/bundle/bin.cjs verify meta .; then
+  echo
+  echo "pre-push: FAILED at 'verify meta' — tooling[] registration drift in the COMMITTED state."
+  echo "  fix: node scripts/meta-tooling.mjs --reregister <path> --reason \"<why>\" --actor <who>"
+  echo "       node scripts/meta-tooling.mjs --add <path> --role <role> --actor <who>"
   exit 1
 fi
 

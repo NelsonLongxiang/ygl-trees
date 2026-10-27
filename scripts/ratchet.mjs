@@ -10,12 +10,12 @@
  *   cold_start_ms   `--version` 冷启动最小值（预热 2 次不计 + 7 次取最小；超容差延迟复测一次；容差 30%，只看大滑坡）
  *
  * 变好：自动收紧基线（棘轮齿），并在输出里写明旧值 → 新值。
- * 变坏：超容差即失败（rc=1），要么优化，要么显式 `--write` 认账重设基线。
+ * 变坏：超容差即失败（rc=1），要么优化，要么显式 `--write --reason "<裁定>: <归因>"` 认账重设基线（G6 归因）。
  *
  * 不测墙钟总量（单测总时长）——并行负载下它测的是机器忙闲，不是产品快慢；
  * 与墙钟不相关的测量点一律先修测量方式再上闸（评测文章的反面教训）。
  *
- * 用法：node scripts/ratchet.mjs [--write] [--json]
+ * 用法：node scripts/ratchet.mjs [--write --reason "<ruling>: <why>"] [--json]
  */
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -161,14 +161,14 @@ if (write) {
 }
 const tightened = report.filter((r) => r.status === "tightened").length;
 if (tightened > 0 && !write) {
-  console.log(`\nratchet: ${tightened} metric(s) measured tighter than the baseline — run \`node scripts/ratchet.mjs --write\` to lock them in (baseline left untouched)`);
+  console.log(`\nratchet: ${tightened} metric(s) measured tighter than the baseline — run \`node scripts/ratchet.mjs --write --reason "<ruling>: <why>"\` to lock them in (baseline left untouched)`);
 }
 // A missing baseline (fresh checkout, new metric) used to be measured and then
 // silently dropped: nothing failed, nothing was written, and the next run
 // repeated the same no-op. Name the state and the command that fixes it.
 const seeded = report.filter((r) => r.status === "seeded").length;
 if (seeded > 0 && !write) {
-  console.log(`ratchet: ${seeded} metric(s) had no baseline — run \`node scripts/ratchet.mjs --write\` to seed the ratchet`);
+  console.log(`ratchet: ${seeded} metric(s) had no baseline — run \`node scripts/ratchet.mjs --write --reason "<ruling>: <why>"\` to seed the ratchet`);
 }
 
 if (asJson) {

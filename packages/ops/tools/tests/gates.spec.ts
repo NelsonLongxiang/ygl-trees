@@ -150,3 +150,29 @@ describe("#98/#96 复核补：G4 豁免面 + G9 删除放行", () => {
     expect(t).toContain('"$_local_sha" = "0000000000000000000000000000000000000000"');
   });
 });
+
+describe("#98 二次复核（macOS）", () => {
+  it("G11 volume-gate measures via fs (no GNU du) and refuses zero measurement", () => {
+    const src = readFileSync(join(REPO, "scripts", "volume-gate.mjs"), "utf8");
+    expect(src).not.toContain("du -b");
+    expect(src).toContain("readdirSync");
+    expect(src).toContain("refusing to judge");
+    const r = spawnSync(process.execPath, [join(REPO, "scripts", "volume-gate.mjs"), "--json"], { encoding: "utf8", timeout: 60_000 });
+    expect(r.status).toBe(0);
+    const j = JSON.parse(String(r.stdout || "{}"));
+    const docs = (j.report || []).find((x) => x.metric === "docs_active_bytes");
+    expect(docs.value).toBeGreaterThan(0); // 真的量到了（macOS du 假 0 的镜像反例）
+  });
+  it("G8 post-release WORK dir is outside the repo and seeds a private package.json", () => {
+    const src = readFileSync(join(REPO, "scripts", "post-release-check.mjs"), "utf8");
+    expect(src).toContain("os.tmpdir()");
+    expect(src).not.toMatch(/mkdtempSync\(join\(REPO, "tmp"/);
+    expect(src).toContain("post-release-probe");
+  });
+  it("pre-push runs verify meta AFTER the test build (stale-bundle false red 断根)", () => {
+    const t = readFileSync(join(REPO, ".githooks", "pre-push"), "utf8");
+    const testIdx = t.indexOf("pnpm test");
+    const metaIdx = t.indexOf("verify meta");
+    expect(metaIdx).toBeGreaterThan(testIdx);
+  });
+});

@@ -8,7 +8,8 @@
  * 用法：node scripts/post-release-check.mjs <version>   # 例 0.116.0
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import { join, resolve } from "node:path";
 
 const version = process.argv[2];
@@ -17,7 +18,9 @@ if (!version) {
   process.exit(2);
 }
 const REPO = resolve(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
-const WORK = mkdtempSync(join(REPO, "tmp", "post-release-"));
+// #98 复核（macOS）：工作目录**出仓**（os.tmpdir）——仓内会让 npm 向上找到仓库根的
+// workspace package.json（同名 ygl-trees + workspace: 依赖）而崩溃。
+const WORK = mkdtempSync(join(os.tmpdir(), "ygl-post-release-"));
 // #98: 平台分流——win 用 .cmd 垫片经 shell，非 win 直接可执行（npm/pnpm 带 shebang）。
 const isWin = process.platform === "win32";
 const sh = (cmd, args, opts = {}) =>
@@ -33,6 +36,8 @@ const step = (name, fn) => {
 
 try {
   mkdirSync(join(WORK, "npm-install"), { recursive: true });
+  // 再兜一层：该目录写最小 package.json（私有、无依赖），npm 不会向上继承任何 workspace
+  writeFileSync(join(WORK, "npm-install", "package.json"), JSON.stringify({ name: "post-release-probe", version: "0.0.0", private: true }, null, 2));
   step("npm-bootstrap", () => {
     const r = sh("npm", ["install", `ygl-trees@${version}`, "--no-fund", "--no-audit"], { cwd: join(WORK, "npm-install") });
     if (r.status !== 0) throw new Error("npm install rc=" + r.status + " " + String(r.stderr || "").slice(0, 150));

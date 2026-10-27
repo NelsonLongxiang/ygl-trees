@@ -150,7 +150,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "1df9202457046622bd88a4a9f60cd8727bf0cce5fa982370a1b515fa143ca260",
+      "sha256": "7a8377a25243a927e720075655430494003ed75b755f81ea3fc6962b3a6189da",
       "role": "gate"
     },
     {
@@ -160,7 +160,7 @@
     },
     {
       "path": "scripts/ratchet.mjs",
-      "sha256": "963d63427643b51677dff592347ab979c39cfae4d3e7301a82687dc80ff13f27",
+      "sha256": "06325f06c0c2eea6b19f0329d17553cccf966a87629764194e45acb7c3207eaa",
       "role": "gate"
     },
     {
@@ -205,7 +205,7 @@
     },
     {
       "path": "scripts/volume-gate.mjs",
-      "sha256": "2e17660647c6350b13b617a8abb9971d55083d1d81ba04e018ae235df6c29bbc",
+      "sha256": "ba7f3a04109b999943a6b7a3bc6490fb261ee26a4df00e416f6b97c79593fcfa",
       "role": "gate"
     },
     {
@@ -869,6 +869,46 @@
       "reason": "GH_CONFIG_DIR 默认注入(与 delta-watch 同步,深扫 gh 模式)",
       "actor": "验证席",
       "at": "2026-10-27T12:39:34.929Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "963d63427643b51677dff592347ab979c39cfae4d3e7301a82687dc80ff13f27",
+      "new_sha256": "06325f06c0c2eea6b19f0329d17553cccf966a87629764194e45acb7c3207eaa",
+      "reason": "#98 复核：提示全量补 --reason（含 tightened 分支）+ 头注/用法行",
+      "actor": "longxiang",
+      "at": "2026-10-27T13:32:53.784Z"
+    },
+    {
+      "path": "scripts/volume-gate.mjs",
+      "old_sha256": "2e17660647c6350b13b617a8abb9971d55083d1d81ba04e018ae235df6c29bbc",
+      "new_sha256": "8fe9e687656eeeb705dac8fd692169c5a7577f7b2a0e0fc2376d240d007570aa",
+      "reason": "#98 复核（macOS）：du -b GNU 专有 → 纯 Node 文件系统测量；测量失败必 rc≠0",
+      "actor": "longxiang",
+      "at": "2026-10-27T13:32:59.378Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "1df9202457046622bd88a4a9f60cd8727bf0cce5fa982370a1b515fa143ca260",
+      "new_sha256": "7a8377a25243a927e720075655430494003ed75b755f81ea3fc6962b3a6189da",
+      "reason": "#98 复核（macOS）：WORK 出仓 os.tmpdir + npm-install 目录最小 package.json（避免继承仓库 workerspace）",
+      "actor": "longxiang",
+      "at": "2026-10-27T13:32:59.430Z"
+    },
+    {
+      "path": "scripts/volume-gate.mjs",
+      "old_sha256": "8fe9e687656eeeb705dac8fd692169c5a7577f7b2a0e0fc2376d240d007570aa",
+      "new_sha256": "611569e1f8c2ab831e4bf49993748350f3d0027848adebccd03ba8be5b551f9a",
+      "reason": "#98 复核：注释措辞（门禁口径自证不含不可移植命令）",
+      "actor": "longxiang",
+      "at": "2026-10-27T13:33:24.736Z"
+    },
+    {
+      "path": "scripts/volume-gate.mjs",
+      "old_sha256": "611569e1f8c2ab831e4bf49993748350f3d0027848adebccd03ba8be5b551f9a",
+      "new_sha256": "ba7f3a04109b999943a6b7a3bc6490fb261ee26a4df00e416f6b97c79593fcfa",
+      "reason": "#98 复核：--json 机读面纯净（无尾随人类行）",
+      "actor": "longxiang",
+      "at": "2026-10-27T13:33:51.974Z"
     }
   ],
   "kind": "engine",
