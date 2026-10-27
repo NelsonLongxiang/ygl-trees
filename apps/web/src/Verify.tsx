@@ -7,9 +7,9 @@
  * - 构造追溯是**只读审计面**：没有 ✓/✗ 按钮，判定链上没有人工确认。
  * - 报告看板把 FAIL / NEEDS-MATERIAL 的例外项置顶——它们是工作清单，不是统计数字。
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
-  Alert, Button, Card, Descriptions, Empty, Form, Input, Listy, message as antdMessage, Space, Table, Tabs, Tag, Tooltip, Typography, Upload,
+  Alert, Button, Card, Descriptions, Empty, Input, Listy, message as antdMessage, Space, Table, Tag, Tooltip, Typography,
 } from "antd";
 
 import type {
@@ -115,68 +115,96 @@ function SelectRow({ selected, onSelect, children }: { selected: boolean; onSele
   );
 }
 
+/** Plain controlled fields, not antd Form + Upload: one two-field draft and a file
+ *  picker did not need Form's store, async-validator or Upload's list/progress
+ *  machinery (~90 kB of the web_dist ratchet). Same rules, same messages. */
+export function validateMaterial(v: { title: string; text: string }): { title?: string; text?: string } {
+  const e: { title?: string; text?: string } = {};
+  if (!v.title.trim()) e.title = "给这份材料一个标题";
+  if (!v.text.trim()) e.text = "材料是一段话，不是表单——写清楚业务事实即可";
+  return e;
+}
+
+function Field({ label, htmlFor, error, extra, children }: { label: string; htmlFor?: string; error?: string; extra?: string; children: ReactNode }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label htmlFor={htmlFor} style={{ display: "block", marginBottom: 6 }}>{label}</label>
+      {children}
+      {error && <div role="alert" style={{ color: C.danger, fontSize: 12, marginTop: 4 }}>{error}</div>}
+      {extra && <Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 4 }}>{extra}</Text>}
+    </div>
+  );
+}
+
 function MaterialForm() {
   // hook API, not the static one: the holder renders under ConfigProvider, so
   // toasts follow the theme switch (antd App wrapper would add ~27 kB of Modal)
   const [message, messageHolder] = antdMessage.useMessage();
-  const [form] = Form.useForm();
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [errors, setErrors] = useState<{ title?: string; text?: string }>({});
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [refs, setRefs] = useState<VerifyAttachmentRef[]>([]);
   const [saved, setSaved] = useState<{ material_id: string; text_sha256: string; files?: Array<{ path: string; sha256: string; size: number }> } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const submit = async (v: { title: string; text: string }) => {
+  const submit = async (ev: FormEvent) => {
+    ev.preventDefault();
+    const e = validateMaterial({ title, text });
+    setErrors(e);
+    if (e.title || e.text) return;
     setBusy(true);
     try {
-      const r = await submitVerifyMaterial({ ...v, attachments: refs });
+      const r = await submitVerifyMaterial({ title, text, attachments: refs });
       setSaved(r);
       message.success(`草稿已保存：${r.material_id}`);
-    } catch (e: any) {
-      message.error(String(e?.message || e));
+    } catch (err: any) {
+      message.error(String(err?.message || err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // one file at a time, in the order picked: each gets its own receipt or error
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      for (const f of Array.from(files)) {
+        try {
+          const ref = await uploadVerifyBlob(f);
+          setRefs((prev) => [...prev, { sha256: ref.sha256, name: f.name, mime: ref.mime }]);
+          message.success(`${f.name} 已入仓 ${ref.sha256.slice(0, 12)}… (${ref.size} B)`);
+        } catch (err: any) {
+          message.error(`${f.name}：${String(err?.message || err)}`);
+        }
+      }
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = ""; // the same file can be picked again
     }
   };
 
   return (
     <>
       {messageHolder}
-      <Form form={form} layout="vertical" onFinish={submit} style={{ maxWidth: 720 }}>
-        <Form.Item name="title" label="标题" rules={[{ required: true, message: "给这份材料一个标题" }]}>
-          <Input placeholder="例：7 月运费对账材料" />
-        </Form.Item>
-        <Form.Item
-          name="text"
+      <form onSubmit={submit} noValidate style={{ maxWidth: 720 }}>
+        <Field label="标题" htmlFor="vm-title" error={errors.title}>
+          <Input id="vm-title" value={title} onChange={(e) => setTitle(e.target.value)} status={errors.title ? "error" : undefined} aria-invalid={!!errors.title} aria-required placeholder="例：7 月运费对账材料" />
+        </Field>
+        <Field
           label="一段话"
-          rules={[{ required: true, message: "材料是一段话，不是表单——写清楚业务事实即可" }]}
+          htmlFor="vm-text"
+          error={errors.text}
           extra="模糊输入是常态：数字、口径、批号、判断依据都写进来；结构化是 agent 构造的产物，不是你的义务。"
         >
-          <Input.TextArea rows={8} placeholder="例：本期账单覆盖 7 月 1 日至 7 月 31 日，共 3 单，合计 4,412.50 元；报价基准见财务 6 月 30 日邮件。" />
-        </Form.Item>
-        <Form.Item label="附件" extra="xlsx / png / pdf / zip 等原始文件；服务端按内容算 sha256 并全局去重，同一份文件重复上传不占第二份磁盘。">
+          <Input.TextArea id="vm-text" rows={8} value={text} onChange={(e) => setText(e.target.value)} status={errors.text ? "error" : undefined} aria-invalid={!!errors.text} aria-required placeholder="例：本期账单覆盖 7 月 1 日至 7 月 31 日，共 3 单，合计 4,412.50 元；报价基准见财务 6 月 30 日邮件。" />
+        </Field>
+        <Field label="附件" extra="xlsx / png / pdf / zip 等原始文件；服务端按内容算 sha256 并全局去重，同一份文件重复上传不占第二份磁盘。">
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
           <Space orientation="vertical" size={6} style={{ width: "100%" }}>
-            <Upload
-              multiple
-              showUploadList
-              disabled={uploading}
-              customRequest={async ({ file, onSuccess, onError }) => {
-                const f = file as File;
-                setUploading(true);
-                try {
-                  const ref = await uploadVerifyBlob(f);
-                  setRefs((prev) => [...prev, { sha256: ref.sha256, name: f.name, mime: ref.mime }]);
-                  onSuccess?.(ref as any);
-                  message.success(`${f.name} 已入仓 ${ref.sha256.slice(0, 12)}… (${ref.size} B)`);
-                } catch (e: any) {
-                  message.error(String(e?.message || e));
-                  onError?.(e);
-                } finally {
-                  setUploading(false);
-                }
-              }}
-            >
-              <Button loading={uploading}>选择文件并上传</Button>
-            </Upload>
+            <Button loading={uploading} onClick={() => fileRef.current?.click()}>选择文件并上传</Button>
             {refs.length > 0 && (
               <Space orientation="vertical" size={0}>
                 {refs.map((r) => (
@@ -187,12 +215,11 @@ function MaterialForm() {
               </Space>
             )}
           </Space>
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={busy}>提交材料</Button>
-        </Form.Item>
+        </Field>
+        <Button type="primary" htmlType="submit" loading={busy}>提交材料</Button>
         {saved && (
           <Alert
+            style={{ marginTop: 16 }}
             type="success"
             showIcon
             title={`material_id = ${saved.material_id}`}
@@ -204,7 +231,7 @@ function MaterialForm() {
             }
           />
         )}
-      </Form>
+      </form>
     </>
   );
 }
@@ -467,13 +494,75 @@ export function ReportDetail({ detail }: { detail: VerifyReportDetail }) {
 
 export default function Verify() {
   return (
-    <Tabs
-      size="small"
+    <VerifyTabs
       items={[
-        { key: "material", label: "材料提交", children: <MaterialForm /> },
-        { key: "trace", label: "构造追溯", children: <TraceView /> },
-        { key: "report", label: "报告看板", children: <ReportBoard /> },
+        { key: "material", label: "材料提交", render: () => <MaterialForm /> },
+        { key: "trace", label: "构造追溯", render: () => <TraceView /> },
+        { key: "report", label: "报告看板", render: () => <ReportBoard /> },
       ]}
     />
+  );
+}
+
+/**
+ * Three fixed views need no overflow menu, ink-bar motion or lazy panes — the
+ * ARIA tabs pattern by hand (tablist / tab / tabpanel, arrow keys, roving
+ * tabindex) instead of antd Tabs and its rc-tabs + dropdown tail.
+ */
+export function VerifyTabs({ items }: { items: Array<{ key: string; label: string; render: () => ReactNode }> }) {
+  const [active, setActive] = useState(items[0].key);
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const move = (delta: number) => {
+    const i = items.findIndex((t) => t.key === active);
+    const next = items[(i + delta + items.length) % items.length].key;
+    setActive(next);
+    refs.current[next]?.focus();
+  };
+  const current = items.find((t) => t.key === active)!;
+  return (
+    <div>
+      <div
+        role="tablist"
+        aria-label="验证器视图"
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight") { e.preventDefault(); move(1); }
+          if (e.key === "ArrowLeft") { e.preventDefault(); move(-1); }
+        }}
+        style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}
+      >
+        {items.map((t) => {
+          const on = t.key === active;
+          return (
+            <button
+              key={t.key}
+              ref={(el) => { refs.current[t.key] = el; }}
+              type="button"
+              role="tab"
+              id={`vt-${t.key}`}
+              aria-selected={on}
+              aria-controls={`vp-${t.key}`}
+              tabIndex={on ? 0 : -1}
+              onClick={() => setActive(t.key)}
+              className="yt-tab"
+              style={{
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${on ? C.primary : "transparent"}`,
+                color: on ? C.primary : C.text,
+                padding: "8px 12px",
+                marginBottom: -1,
+                cursor: "pointer",
+                font: "inherit",
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      <div role="tabpanel" id={`vp-${current.key}`} aria-labelledby={`vt-${current.key}`}>
+        {current.render()}
+      </div>
+    </div>
   );
 }
