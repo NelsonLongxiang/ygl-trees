@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "note": "G11 仓内体量门基线（总工裁 direct-a2f54173 A·G11）：spec.md 总字节 + docs/ 活跃字节（不含 *archive*）双阈值。超阈必须归档（plan.md 拆分模式）否则红。收紧即自动下压（棘轮同款）。",
+  "measured_at": "2026-10-27T11:39:03.071Z",
+  "ceilings": {
+    "spec_bytes": 26000,
+    "docs_active_bytes": 880000
+  }
+}

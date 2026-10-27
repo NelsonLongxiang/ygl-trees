@@ -57,6 +57,8 @@ bash scripts/offline-gate.sh          # 干净克隆 + env -i 无凭证 install 
 - [ ] **G2**：任何快审/双审盖章前**读完整 diff**——按 grep 过滤过的行不算读过（PR#140 事故）。
 - [ ] **G3**：工具/MCP 类判据必须有**一次真实往返**——`tools/list` 里出现不算证明。
 - [ ] **G4**：`node scripts/commit-claims.mjs <发版区间>` ——提交说明声称的路径逐条对 `--stat`，声称了却不在 diff = 红。
+      豁免面：message 里 `reads:<path>` 行显式声明只读不称；跑批 `--allow p1,p2`（须在发布记录注明理由）。
+      本批示例（6e5d84e..830db22）：`--allow skills/ygl-trees-research,scripts/dual-backend-matrix.mjs`（前者为文档引述、后者为被读对象的引用，非改动声称）。
 
 ### G7 真 PG 矩阵门（总工裁 direct-2c7c431a：本地 docker 门，发版必跑）
 

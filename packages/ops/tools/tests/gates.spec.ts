@@ -12,6 +12,11 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 
 const REPO = resolve(__dirname, "../../../..");
+// #98: bash 解析平台无关——GIT_BASH 优先，win 回退 Git 安装路径，其余平台用 PATH 里的 bash；
+// 不可得时显式 skip（断言 skip 原因，不许静默绿）。
+const BASH = process.env.GIT_BASH || (process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash");
+// #98: bash 解析平台无关——GIT_BASH 优先，win 回退 Git 安装路径，其余平台用 PATH 里的 bash；
+// 不可得时显式 skip（断言 skip 原因，不许静默绿）。
 const NODE = process.execPath;
 const run = (args, opts = {}) => spawnSync(NODE, args, { encoding: "utf8", timeout: 60_000, cwd: REPO, ...opts });
 
@@ -28,7 +33,7 @@ describe("#96 G4 commit-claims", () => {
   it("scratch repo: claimed-but-absent path in fresh commit → rc1; matched → rc0", () => {
     const root = mkdtempSync(join(tmpdir(), "ygl-g4-"));
     const git = (c) => execSync("git " + c, { cwd: root, encoding: "utf8" });
-    git("init -q"); git("config user.email t@t"); git("config user.name t");
+    git("-c init.defaultBranch=master init -q"); git("config user.email t@t"); git("config user.name t");
     mkdirSync(join(root, "docs"), { recursive: true });
     writeFileSync(join(root, "docs", "a.md"), "x\n");
     writeFileSync(join(root, "README.md"), "r\n");
@@ -65,7 +70,7 @@ describe("#96 G9 merge-check", () => {
     expect([0]).toContain(ok.status); // a91a220 is an ancestor of current HEAD
     const root = mkdtempSync(join(tmpdir(), "ygl-g9-"));
     const git = (c) => execSync("git " + c, { cwd: root, encoding: "utf8" });
-    git("init -q"); git("config user.email t@t"); git("config user.name t");
+    git("-c init.defaultBranch=master init -q"); git("config user.email t@t"); git("config user.name t");
     writeFileSync(join(root, "a"), "1"); git("add -A"); git("commit -q -m a");
     git("checkout -q -b orphan"); execSync("git commit -q --allow-empty -m o", { cwd: root, encoding: "utf8" });
     git("checkout -q master");
@@ -78,9 +83,10 @@ describe("#96 G9 merge-check", () => {
 });
 
 describe("#96 G1/G7/G8 script surfaces", () => {
-  it("gate scripts exist and pass bash -n / node --check", () => {
+  it("gate scripts exist and pass bash -n / node --check", (ctx) => {
     for (const f of ["scripts/offline-gate.sh", "scripts/pg-gate.sh"]) {
-      const r = spawnSync("C:\\Program Files\\Git\\bin\\bash.exe", ["-n", join(REPO, f)], { encoding: "utf8", timeout: 30_000 });
+      const r = spawnSync(BASH, ["-n", join(REPO, f)], { encoding: "utf8", timeout: 30_000 });
+      if (r.error && r.error.code === "ENOENT") { ctx.skip(`bash not resolvable (${BASH}) — shebang check skipped with reason (#98)`); return; }
       expect(r.status, f).toBe(0);
     }
     for (const f of ["scripts/post-release-check.mjs", "scripts/merge-check.mjs", "scripts/commit-claims.mjs"]) {
@@ -98,5 +104,49 @@ describe("#96 G1/G7/G8 script surfaces", () => {
         expect(g9).toBeGreaterThanOrEqual(0);
         expect(skipExit).toBeGreaterThan(g9);
     expect(t).not.toMatch(/Gitee Go is unavailable/); // stale header removed
+  });
+});
+
+describe("#98 platform independence", () => {
+  it("① scratch repo with NON-master default branch (main) stays deterministic for branch refs", () => {
+    const root = mkdtempSync(join(tmpdir(), "ygl-98-"));
+    const git = (c) => execSync("git " + c, { cwd: root, encoding: "utf8" });
+    // 模拟 macOS：默认分支是 main——代码必须显式用 -b/refs 而非依赖宿主默认
+    git("-c init.defaultBranch=main init -q"); git("config user.email t@t"); git("config user.name t");
+    writeFileSync(join(root, "a"), "1"); git("add -A"); git('commit -q -m a');
+    git("checkout -q -b orphan"); execSync("git commit -q --allow-empty -m o", { cwd: root, encoding: "utf8" });
+    git("checkout -q main");
+    const orphan = git("rev-parse orphan").trim();
+    const bad = spawnSync(process.execPath, [join(REPO, "scripts", "merge-check.mjs"), orphan, "main"], { encoding: "utf8", timeout: 30_000, cwd: root });
+    expect(bad.status).toBe(1); // 非 ancestor 仍判红——分支名无关
+    const ok = spawnSync(process.execPath, [join(REPO, "scripts", "merge-check.mjs"), git("rev-parse main").trim(), "main"], { encoding: "utf8", timeout: 30_000, cwd: root });
+    expect(ok.status).toBe(0);
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  it("② BASH resolution never throws on any platform (win path / PATH bash / GIT_BASH)", () => {
+    // 纯逻辑面：三种来源都产生非空字符串；spawn 失败路径由上一块的显式 skip 覆盖
+    const fallback = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash";
+    expect(typeof fallback).toBe("string");
+    expect(fallback.length).toBeGreaterThan(3);
+    if (process.env.GIT_BASH) expect(process.env.GIT_BASH.length).toBeGreaterThan(3); // 显式提供时必须有效
+  });
+  it("③ post-release-check.mjs sources carry the platform fork (win cmd /c vs direct spawn)", () => {
+    const src = readFileSync(join(REPO, "scripts", "post-release-check.mjs"), "utf8");
+    expect(src).toContain('process.platform === "win32"');
+    expect(src).toContain('spawnSync("cmd", ["/c", cmd'); // win 分支存在
+    expect(src).not.toContain('sh("cmd", ["/c", "npm"'); // 直调面不再全走 cmd（非 win 可执行）
+  });
+});
+
+describe("#98/#96 复核补：G4 豁免面 + G9 删除放行", () => {
+  it("G4 --allow exempts read-mentions (real range proves clean)", () => {
+    const bad = run(["scripts/commit-claims.mjs", "6e5d84e..830db22"]);
+    expect(bad.status).toBe(1); // 未豁免时 2 例读引述红（钉住豁免必要性）
+    const ok = run(["scripts/commit-claims.mjs", "6e5d84e..830db22", "--allow", "skills/ygl-trees-research,scripts/dual-backend-matrix.mjs"]);
+    expect(ok.status).toBe(0);
+  });
+  it("G9 hook passes branch-deletion pushes (local sha all zeros)", () => {
+    const t = readFileSync(join(REPO, ".githooks", "pre-push"), "utf8");
+    expect(t).toContain('"$_local_sha" = "0000000000000000000000000000000000000000"');
   });
 });

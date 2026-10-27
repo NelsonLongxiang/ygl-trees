@@ -41,7 +41,8 @@ describe("#20 package.json release-chain integrity", () => {
     const keys = RAW.match(/"prepublishOnly"/g) ?? [];
     expect(keys).toHaveLength(1);
     const chain = JSON.parse(RAW).scripts.prepublishOnly as string;
-    expect(chain).toBe("node scripts/prepublish-guard.mjs && pnpm test && pnpm pack:check");
+    // G12（#98 同批）：shell 链经 run-sh.mjs 钉解释器（bash -c 在 win/cmd 下仍漂 PATH——实证 WSL），链序不变
+    expect(chain).toBe('node scripts/run-sh.mjs "node scripts/prepublish-guard.mjs && pnpm test && pnpm pack:check"');
     expect(chain.indexOf("prepublish-guard")).toBeLessThan(chain.indexOf("pnpm test"));
   });
 });

@@ -50,12 +50,12 @@
     },
     {
       "path": "monitored/gh-deepview.cjs",
-      "sha256": "1f489c58929e219add55b5abccf7f2bb31de43e7a9e4f21b783f97df49e240d5",
+      "sha256": "6e3a2fad5062e2076d6abdff4b46379220283d270225971a75e937be90f50885",
       "role": "gate"
     },
     {
       "path": "monitored/gh-delta-watch.cjs",
-      "sha256": "0933ffc96ba9df4a57621080fa0bfcac03e08f1a582cbdc7d5eae5944e51e207",
+      "sha256": "ad992cde1d5d2d6298f4e4925e8ccd61bce49135278746009b541c115f7d0430",
       "role": "gate"
     },
     {
@@ -70,7 +70,7 @@
     },
     {
       "path": "scripts/commit-claims.mjs",
-      "sha256": "357c1804963e365a085c47287fc49c1a2abeedc64beba1cbc4f7c87a22cfaaa4",
+      "sha256": "a294c538f1729eb6f7b7ce8d3f8dfb48d9938c6d1a1f9e5cd6694cfe3eb83250",
       "role": "gate"
     },
     {
@@ -102,6 +102,11 @@
       "path": "scripts/gen-examples.mjs",
       "sha256": "8239520b0dace19c3ebd6387fb13c6a4be23d35f4a87dd348814b6d8377dba08",
       "role": "build"
+    },
+    {
+      "path": "scripts/interp-anchor.mjs",
+      "sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
+      "role": "gate"
     },
     {
       "path": "scripts/json-check.mjs",
@@ -145,7 +150,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "ebe3de3a8c490aeaecc3e5390756f2780e7c65f08ea7b36dcd5dae48fdc16c7f",
+      "sha256": "1df9202457046622bd88a4a9f60cd8727bf0cce5fa982370a1b515fa143ca260",
       "role": "gate"
     },
     {
@@ -155,7 +160,7 @@
     },
     {
       "path": "scripts/ratchet.mjs",
-      "sha256": "d1fb8574ebe50e292f4ca16955387611585f175f2ddb057ad7bd1cf046e9ec7a",
+      "sha256": "963d63427643b51677dff592347ab979c39cfae4d3e7301a82687dc80ff13f27",
       "role": "gate"
     },
     {
@@ -166,6 +171,11 @@
     {
       "path": "scripts/readme-verify.sh",
       "sha256": "eaf022dc6435cb6b2a964f4f928d5516ab7bbace19e63fd00c22b339d1ecd5c3",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/run-sh.mjs",
+      "sha256": "6f59329593e5b1014e0f496ec5b59f425ad999c211d7b7f77e473547b7a29267",
       "role": "gate"
     },
     {
@@ -192,6 +202,11 @@
       "path": "scripts/verify-run.mjs",
       "sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
       "role": "test"
+    },
+    {
+      "path": "scripts/volume-gate.mjs",
+      "sha256": "2e17660647c6350b13b617a8abb9971d55083d1d81ba04e018ae235df6c29bbc",
+      "role": "gate"
     },
     {
       "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
@@ -782,6 +797,78 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "longxiang",
       "at": "2026-10-27T10:47:11.816Z"
+    },
+    {
+      "path": "monitored/gh-delta-watch.cjs",
+      "old_sha256": "0933ffc96ba9df4a57621080fa0bfcac03e08f1a582cbdc7d5eae5944e51e207",
+      "new_sha256": "ad992cde1d5d2d6298f4e4925e8ccd61bce49135278746009b541c115f7d0430",
+      "reason": "GH_CONFIG_DIR 默认恢复路径注入(gh 认证 2026-10-27 恢复于 Roaming)",
+      "actor": "验证席",
+      "at": "2026-10-27T11:36:01.873Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "d1fb8574ebe50e292f4ca16955387611585f175f2ddb057ad7bd1cf046e9ec7a",
+      "new_sha256": "2bf2fe73cc1476f9b27c395cb7776d352d9f27d1fb58704580e16a772de3230c",
+      "reason": "#98/#96 复核：G6 提示补 --reason、--write 保 _note",
+      "actor": "longxiang",
+      "at": "2026-10-27T11:43:45.766Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "2bf2fe73cc1476f9b27c395cb7776d352d9f27d1fb58704580e16a772de3230c",
+      "new_sha256": "963d63427643b51677dff592347ab979c39cfae4d3e7301a82687dc80ff13f27",
+      "reason": "#98/#96 复核：G6 提示补 --reason、--write 保 _note（消息引号修正）",
+      "actor": "longxiang",
+      "at": "2026-10-27T11:43:57.403Z"
+    },
+    {
+      "path": "scripts/interp-anchor.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
+      "reason": "initial registration (#98 G12 锚定判据定稿；两次预提交编辑合并为提交态根锚)",
+      "actor": "longxiang",
+      "at": "2026-10-27T11:52:02.504Z"
+    },
+    {
+      "path": "scripts/volume-gate.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "2e17660647c6350b13b617a8abb9971d55083d1d81ba04e018ae235df6c29bbc",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T11:52:02.572Z"
+    },
+    {
+      "path": "scripts/commit-claims.mjs",
+      "old_sha256": "357c1804963e365a085c47287fc49c1a2abeedc64beba1cbc4f7c87a22cfaaa4",
+      "new_sha256": "a294c538f1729eb6f7b7ce8d3f8dfb48d9938c6d1a1f9e5cd6694cfe3eb83250",
+      "reason": "#98 跨平台修复（G4 豁免面/G8 平台分流+真 verify meta）",
+      "actor": "longxiang",
+      "at": "2026-10-27T11:52:20.863Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "ebe3de3a8c490aeaecc3e5390756f2780e7c65f08ea7b36dcd5dae48fdc16c7f",
+      "new_sha256": "1df9202457046622bd88a4a9f60cd8727bf0cce5fa982370a1b515fa143ca260",
+      "reason": "#98 跨平台修复（G4 豁免面/G8 平台分流+真 verify meta）",
+      "actor": "longxiang",
+      "at": "2026-10-27T11:52:20.924Z"
+    },
+    {
+      "path": "scripts/run-sh.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "6f59329593e5b1014e0f496ec5b59f425ad999c211d7b7f77e473547b7a29267",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T12:11:35.874Z"
+    },
+    {
+      "path": "monitored/gh-deepview.cjs",
+      "old_sha256": "1f489c58929e219add55b5abccf7f2bb31de43e7a9e4f21b783f97df49e240d5",
+      "new_sha256": "6e3a2fad5062e2076d6abdff4b46379220283d270225971a75e937be90f50885",
+      "reason": "GH_CONFIG_DIR 默认注入(与 delta-watch 同步,深扫 gh 模式)",
+      "actor": "验证席",
+      "at": "2026-10-27T12:39:34.929Z"
     }
   ],
   "kind": "engine",

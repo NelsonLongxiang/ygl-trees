@@ -140,12 +140,14 @@ for (const m of METRICS) {
   report.push({ metric: m.key, label: m.label, value, base, tolerance, status: "held", retried });
 }
 
+const baselineRaw = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, "utf8")) : null;
 const next = {
   version: 1,
   node: process.version,
   platform: process.platform,
   measured_at: new Date().toISOString(),
   ...(write ? { _attribution: reason } : {}),
+  ...(baselineRaw && baselineRaw._note ? { _note: baselineRaw._note } : {}), // G6 复核：--write 不丢已有 _note
   metrics,
 };
 
@@ -177,7 +179,7 @@ if (asJson) {
     const delta = r.base === null ? "seed" : r.status === "tightened" ? `${r.base} → ${r.value}` : r.status === "regressed" ? `${r.base} → ${r.value} (tolerance +${r.tolerance})` : r.status === "accepted" ? `${r.base} → ${r.value} (accepted)` : String(r.value);
     console.log(`  ${mark} ${r.label.padEnd(44)} ${delta}  [${r.status}]`);
   }
-  console.log(failed ? "\nratchet: 指标回归 —— 优化，或显式 --write 认账重设基线" : "\nratchet: 全部指标未退化");
+console.log(failed ? "\nratchet: 指标回归 —— 优化，或显式 --write --reason '<ruling>: <why>' 认账重设基线（G6 归因）" : "\nratchet: 全部指标未退化");
 }
 
 process.exit(failed ? 1 : 0);

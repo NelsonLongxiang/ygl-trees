@@ -5,12 +5,13 @@
 "use strict";
 const { execFileSync } = require("node:child_process");
 const REPO = "NelsonLongxiang/ygl-trees";
+const GH_ENV = Object.assign({}, process.env, { GH_CONFIG_DIR: process.env.GH_CONFIG_DIR || "C:\\Users\\Administrator\\AppData\\Roaming\\GitHub CLI" });
 const OPEN_FIELDS = ["number", "title", "author", "createdAt", "updatedAt"];
 const CLOSED_FIELDS = ["number", "title", "author", "closedAt"];
 
 function gh(args, fields) {
   try {
-    return JSON.parse(execFileSync("gh", args, { encoding: "utf8", timeout: 60000, stdio: ["ignore","pipe","pipe"] }));
+    return JSON.parse(execFileSync("gh", args, { encoding: "utf8", timeout: 60000, stdio: ["ignore","pipe","pipe"], env: GH_ENV }));
   } catch (e) {
     process.stderr.write("GH-DEEPVIEW-UNAVAILABLE :: " + ((e.stderr||e.message)+"").replace(/\s+/g," ").slice(0,140) + "\n");
     process.exit(1);

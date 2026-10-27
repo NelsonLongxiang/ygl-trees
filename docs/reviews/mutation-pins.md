@@ -26,6 +26,6 @@ kind: 参考
 ## 钉 3：#91 lastFlagOf 末位胜
 
 - **被钉物**：`packages/core/database/src/types.ts` `lastFlagOf`（MULTI_FLAGS 数组取末位）
-- **所在测试**：`packages/ops/tools/tests/batch-jsonl.spec.ts` →「#91: repeated --db keeps last-wins」
+- **所在测试**：`packages/research/pipeline/tests/batch-jsonl.spec.ts` →「#91: repeated --db keeps last-wins」（#96 复核更正：原写 ops/tools 路径有误）
 - **已记录变异**：取首位代替末位（`v[v.length-1]` → `v[0]`）→ db stats 对不可达首库报错 → 钉测红
 - **复现**：改后钉测 fail（rc≠0）

@@ -18,7 +18,12 @@ if (!version) {
 }
 const REPO = resolve(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const WORK = mkdtempSync(join(REPO, "tmp", "post-release-"));
-const sh = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: "utf8", timeout: 45 * 60_000, ...opts });
+// #98: 平台分流——win 用 .cmd 垫片经 shell，非 win 直接可执行（npm/pnpm 带 shebang）。
+const isWin = process.platform === "win32";
+const sh = (cmd, args, opts = {}) =>
+  isWin
+    ? spawnSync("cmd", ["/c", cmd, ...args], { encoding: "utf8", timeout: 45 * 60_000, ...opts })
+    : spawnSync(cmd, args, { encoding: "utf8", timeout: 45 * 60_000, ...opts });
 const steps = [];
 const step = (name, fn) => {
   const t0 = Date.now();
@@ -29,27 +34,29 @@ const step = (name, fn) => {
 try {
   mkdirSync(join(WORK, "npm-install"), { recursive: true });
   step("npm-bootstrap", () => {
-    const r = sh("cmd", ["/c", "npm", "install", `ygl-trees@${version}`, "--no-fund", "--no-audit"], { cwd: join(WORK, "npm-install") });
+    const r = sh("npm", ["install", `ygl-trees@${version}`, "--no-fund", "--no-audit"], { cwd: join(WORK, "npm-install") });
     if (r.status !== 0) throw new Error("npm install rc=" + r.status + " " + String(r.stderr || "").slice(0, 150));
     const bin = join(WORK, "npm-install", "node_modules", ".bin", "ygl-trees");
     const home = join(WORK, "home");
-    const b = sh("cmd", ["/c", "node", join(WORK, "npm-install", "node_modules", "ygl-trees", "dist", "bundle", "bin.cjs"), "db", "init"], { env: { ...process.env, YGL_HOME: home } });
+    const b = sh(process.execPath, [join(WORK, "npm-install", "node_modules", "ygl-trees", "dist", "bundle", "bin.cjs"), "db", "init"], { env: { ...process.env, YGL_HOME: home } });
     if (b.status !== 0) throw new Error("db init rc=" + b.status);
     return "npm install + db init rc0";
   });
   step("tag-clone-test", () => {
     const r = sh("git", ["clone", "-q", "-b", `v${version}`, "https://github.com/NelsonLongxiang/ygl-trees.git", join(WORK, "tag")]);
     if (r.status !== 0) throw new Error("tag clone rc=" + r.status);
-    const i = sh("cmd", ["/c", "pnpm", "install", "--frozen-lockfile"], { cwd: join(WORK, "tag") });
+    const i = sh("pnpm", ["install", "--frozen-lockfile"], { cwd: join(WORK, "tag") });
     if (i.status !== 0) throw new Error("tag install rc=" + i.status);
-    const t = sh("cmd", ["/c", "pnpm", "test"], { cwd: join(WORK, "tag") });
+    const t = sh("pnpm", ["test"], { cwd: join(WORK, "tag") });
     if (t.status !== 0) throw new Error("tag pnpm test rc=" + t.status + " " + String(t.stdout || "").slice(-150));
     return "tag clone pnpm test rc0";
   });
   step("verify-meta", () => {
-    const m = sh(process.execPath, [join(WORK, "tag", "scripts", "meta-tooling.mjs"), "--audit", "--against-git"], { cwd: join(WORK, "tag") });
-    if (m.status !== 0) throw new Error("verify meta rc=" + m.status);
-    return "meta-tooling --audit --against-git rc0";
+    // #98 复核更正：真跑 CLI 面 `verify meta <tag-root>`（此前跑的是 meta-tooling --audit——面不对）
+    const tagRoot = join(WORK, "tag");
+    const m = sh(process.execPath, [join(tagRoot, "dist", "bundle", "bin.cjs"), "verify", "meta", tagRoot], { cwd: tagRoot });
+    if (m.status !== 0) throw new Error("verify meta rc=" + m.status + " " + String(m.stdout || m.stderr || "").slice(0, 150));
+    return "CLI verify meta <tag-root> rc0";
   });
 } finally {
   const failed = steps.filter((s) => s.status === "fail").length;

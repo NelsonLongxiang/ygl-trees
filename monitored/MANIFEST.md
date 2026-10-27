@@ -6,8 +6,8 @@
 
 | 文件 | sha256（前 16） | 大小 | 用途 |
 |---|---|---|---|
-| `gh-delta-watch.cjs` | 0933ffc96ba9df4a… | 3783 B | GitHub 差量监控（发版席哨兵） |
-| `gh-deepview.cjs` | 1f489c58929e219a… | 1951 B | GitHub 差量监控（发版席哨兵） |
+| `gh-delta-watch.cjs` | ad992cde1d5d2d62… | 4080 B | GitHub 差量监控（发版席哨兵） |
+| `gh-deepview.cjs` | 6e3a2fad5062e207… | 2117 B | GitHub 差量监控（发版席哨兵） |
 | `gh-watch-state.json` | dd9be29060cac10d… | 1353 B | GitHub 差量监控（发版席哨兵） |
 
 ## 纪律

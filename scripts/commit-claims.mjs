@@ -5,14 +5,19 @@
  * 抓的形态：5e4978d——message 说改了 skills/…，--stat 里没有任何 skills/ 文件。
  * 规则：message 里的**路径样 token**（含 / 的词、反引号内的路径、<path> 形）逐个
  * 对照该提交的变更文件列表（前缀匹配）；声称了却不在 = 红（rc1）。
- * 逃逸面（如实）：不含 / 的普通词不检查（避免英文句子误报）。
+ * 豁免面（#96 复核 comment 6440944943）：
+ *   ① message 里的 `reads:<path>` 行显式声明「只读不称」——该 path 豁免；
+ *   ② 命令行 --allow <path>[,<path>] 显式豁免（发版区间跑批用，须在发布记录注明理由）；
+ *   ③ 不含 / 的普通词不检查（避免英文句子误报）。
  *
- * 用法：node scripts/commit-claims.mjs <commit-or-range> [--root <repo>]
+ * 用法：node scripts/commit-claims.mjs <commit-or-range> [--root <repo>] [--allow p1,p2]
  */
 import { execFileSync } from "node:child_process";
 
 const args = process.argv.slice(2);
 const root = args.includes("--root") ? args[args.indexOf("--root") + 1] : ".";
+const allowIdx = args.indexOf("--allow");
+const allow = new Set(allowIdx >= 0 && args[allowIdx + 1] ? args[allowIdx + 1].split(",").filter(Boolean) : []);
 const target = args.find((a) => !a.startsWith("--") && a !== root) || "";
 if (!target) {
   console.error("usage: node scripts/commit-claims.mjs <commit-or-range> [--root <repo>]");
@@ -34,6 +39,9 @@ const topLevel = new Set(
 let bad = 0;
 for (const rev of revs) {
   const msg = git(["log", "-1", "--format=%B", rev]);
+  // message 内显式「只读」声明（reads:<path>）——该 path 本提交不算声称
+  const readsDeclared = new Set();
+  for (const m of msg.matchAll(/^reads:\s*(\S+)/gim)) readsDeclared.add(m[1].replace(/^[.\/]+|[.,;:)\"'\]]+$/g, ""));
   const stat = git(["show", "--format=", "--name-only", rev]);
   const changed = stat.split("\n").filter(Boolean);
   // 路径样 token：反引号内含 / 的串、裸含 / 且不带空格的词、<path> 形
@@ -56,6 +64,8 @@ for (const rev of revs) {
     // "db/stats/--json"、"init-pg/self-check" 这类引述他文件内容的散文不报。
     const first = norm.split("/")[0];
     if (!topLevel.has(first)) continue;
+    if (allow.has(norm) || [...allow].some((a) => norm.startsWith(a))) continue; // ② 显式豁免
+    if (readsDeclared.has(norm) || [...readsDeclared].some((a) => norm.startsWith(a + "/") || norm === a)) continue; // ① reads: 声明
     if (norm.startsWith("--")) continue;
     const hit = changed.some((f) => f === norm || f.startsWith(norm + "/") || f.startsWith(norm) || norm.startsWith(f + "/"));
     if (!hit) {
