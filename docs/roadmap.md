@@ -6,7 +6,7 @@ kind: 设计
 
 # ygl-trees 路线图
 
-> 定稿依据：评审席提案（2026-10-27）→ 总工席意见（direct-b713604d）→ 属主裁定：「同意总工席版本：评审席从 fork 起草 docs/roadmap.md 的 PR（含总工席增补的门禁与「暂不做」项），属主裁定队列另开 GitHub 讨论 issue。」
+> 定稿依据：评审席提案（2026-10-27）→ 总工席意见（direct-b713604d；PR 复审 direct-612fb22c 增补 G9/G10）→ 属主裁定：「同意总工席版本：评审席从 fork 起草 docs/roadmap.md 的 PR（含总工席增补的门禁与「暂不做」项），属主裁定队列另开 GitHub 讨论 issue。」
 >
 > 分工：本文只写**主题、顺序、依赖、出口条件**。做了什么、何时做的记在 [plan.md](plan.md)（执行记录）与 CHANGELOG；需要属主拍板的事项统一进裁定队列 [#94](https://github.com/NelsonLongxiang/ygl-trees/issues/94)。各项进度以对应 issue 的完成清单为准，本文不写状态注记（[doc-governance.md](doc-governance.md)「一事实一家」）。
 
@@ -35,10 +35,12 @@ kind: 设计
 | G6 | 棘轮重锁归因 | `ratchet-baseline.json` 任何上调必须写明当日裁定编号和增量归因（例：#83 的 +6.2 KB 与 ~14.6 KB 漂移分开记） |
 | G7 | 真 PG 矩阵 | `scripts/dual-backend-matrix.mjs --strict` 对真实 docker `postgres:16` 跑，镜像版本在 CI 钉死；对不可达 PG 必须 rc≠0 |
 | G8 | 发布后复跑基线 | 每次发布后，从 npm 包 + `v*` 标签干净克隆复跑关键测试（含 bootstrap / 安装路径），结果记进对应 issue |
+| G9 | 合并祖先守卫 | 推送前检查远端基线分支（ygl-trees 为 `origin/master`，其他仓按各自默认分支）是本地基线分支的祖先，否则拒推；每次合并后记录并复核 `git merge-base --is-ancestor <合并 sha> <远端基线分支>` rc=0——防「回执是真的、代码却不在主干上」（dad595b 丢失为第二例） |
+| G10 | 代理面冒烟 | 有代理面的仓（如 market 的 `/go/<id>/`），E2E 必须恒含三探针：`/go/<id>/` 页面加载、静态资源 200、`/api` 透传探针——常规 E2E 漏过了四层白屏缺陷 |
 
 **出口条件**
 - 连续 N 个版本（N 由属主在 #94 定）没有「发布后才发现」的回归。
-- G1–G8 全部有脚本或检查清单落地，并在一次实际发版中全部执行过。
+- G1–G10 全部有脚本或检查清单落地，并在一次实际发版中全部执行过（G10 只对有代理面的仓适用）。
 - `--strict` 矩阵在真 PG 上为绿。
 
 ### 下一步（约 2–6 周）：打通两条关键路径
