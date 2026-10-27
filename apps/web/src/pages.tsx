@@ -228,7 +228,13 @@ export function PipelinePage() {
   return (
     <Section icon={<CheckCircleOutlined />} title="研究管线" extra={`${data.claims.length} 断言 · ${data.evidence?.length ?? 0} 证据引文`}>
       <Suspense fallback={CANVAS_FALLBACK}>
-        <Pipeline claims={data.claims} claimEvidence={data.claim_evidence ?? []} evidence={data.evidence ?? []} />
+        <Pipeline
+          claims={data.claims}
+          claimEvidence={data.claim_evidence ?? []}
+          evidence={data.evidence ?? []}
+          sources={data.sources ?? []}
+          project={data.brief.project?.name}
+        />
       </Suspense>
     </Section>
   );
