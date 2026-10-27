@@ -75,6 +75,10 @@ if (!pgUrl) {
   const pgHome = join(home, "pg-home");
   const steps = [
     ["init-pg", ["node", "dist/bundle/bin.cjs", "db", "init", "--json"], { env: { YGL_HOME: pgHome, YGL_DB_URL: pgUrl } }],
+    // #93-①（评审席 6431183774 重述标准 a）：PG 腿必须含一步**真正需要 PG** 的面——
+    // db stats 在 PG env 下直连 PG（不可达 → rc1 → 腿红 → --strict rc≠0）。
+    // 死 PG 下全绿的「名存实亡」从这里断根。
+    ["pg-stats", ["node", "dist/bundle/bin.cjs", "db", "stats", "--json"], { timeoutMs: 30_000, env: { YGL_HOME: pgHome, YGL_DB_URL: pgUrl } }],
     // #93-①: contract-audit exercises the SQLite face — scrub YGL_DB_URL for this step
     // (B7 allowlist would refuse every CLI call inside with rc=2 otherwise).
     ["contract", ["bash", "scripts/contract-audit.sh"], { timeoutMs: 15 * 60_000, env: { YGL_DB_URL: "" } }],

@@ -146,3 +146,23 @@ describe.skipIf(!HAS_BIN)("#93 B7 PG boot hardening", () => {
     }
   });
 });
+
+describe.skipIf(!HAS_BIN)("#93 复核补钉（direct-929d02dd/7b99c88e）", () => {
+  beforeAll(() => { HOME = mkdtempSync(join(tmpdir(), "ygl-b93b-")); });
+  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("#93-③ every --db value checked: postgres:// + later sqlite path → rc2", () => {
+    const r = run(["db", "stats", "--db", "postgres://alice:pw@127.0.0.1:1/ygl", "--db", "./ygl-trees.db", "--json"], {});
+    expect(r.rc).toBe(2);
+    expect(r.raw).toMatch(/YGL_DB_URL/);
+    expect(r.raw).not.toContain(":pw@");
+  });
+
+  it("#93-①(a) matrix pg-stats step fails on dead PG (rc≠0, connect error)", () => {
+    // 矩阵 PG 腿新增的 pg-stats 步——对着无监听端口，db stats 必须 rc1 连接错误（名存实亡断根）
+    const r = run(["db", "stats", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl" });
+    expect(r.rc).toBe(1);
+    expect(r.raw).not.toMatch(/no database at/);
+    expect(r.raw.length).toBeGreaterThan(0);
+  });
+});

@@ -85,7 +85,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "7950830b40f1fcfc8b774abc39f0aeef721c21aef8c7ca9b615c1499ae80ceef",
+      "sha256": "6f42dba480e47a604cd785a1209d487c1bae7df36afde293444ba25cea4994fd",
       "role": "gate"
     },
     {
@@ -685,6 +685,14 @@
       "reason": "#93-①: contract 步 env-scrub YGL_DB_URL（B7 allowlist 下 PG 腿一致性——它考 SQLite 面）",
       "actor": "longxiang",
       "at": "2026-10-27T00:40:59.450Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "7950830b40f1fcfc8b774abc39f0aeef721c21aef8c7ca9b615c1499ae80ceef",
+      "new_sha256": "6f42dba480e47a604cd785a1209d487c1bae7df36afde293444ba25cea4994fd",
+      "reason": "#93-①(a) 6431183774：PG 腿增 pg-stats 步（真正需要 PG——死 PG 下 strict 必红，名存实亡断根）",
+      "actor": "longxiang",
+      "at": "2026-10-27T01:12:35.627Z"
     }
   ],
   "kind": "engine",

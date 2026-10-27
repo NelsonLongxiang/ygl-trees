@@ -475,9 +475,15 @@ export async function main(argv: string[]): Promise<number> {
   // #93-③(a)：--db 携带 postgres:// 属凭证入 argv（ps/shell history/cmd.run 台账可见）——
   // 拒绝并指路 env。#93-③(b)：env PG + 显式 --db <sqlite 路径> 冲突 fail-closed 点名双目标（plan D2）。
   const PG_URL_RE = /^postgres(ql)?:\/\//i;
-  const dbFlagRaw = lastFlagOf((args.flags as Record<string, unknown>).db);
+  const dbFlagAll = Array.isArray((args.flags as Record<string, unknown>).db)
+    ? ((args.flags as Record<string, unknown>).db as unknown[]).map(String)
+    : (args.flags as Record<string, unknown>).db !== undefined && (args.flags as Record<string, unknown>).db !== ""
+      ? [String((args.flags as Record<string, unknown>).db)]
+      : [];
+  const dbFlagRaw = dbFlagAll.length ? dbFlagAll[dbFlagAll.length - 1] : "";
   const { redactPgUrl } = require("../../../packages/core/database/src/asyncdb");
-  if (PG_URL_RE.test(dbFlagRaw)) {
+  // #93-③：逐值检查**所有** --db（只查末值会被前面的 postgres:// 绕过——评审席 comment 6431183774）
+  if (dbFlagAll.some((v) => PG_URL_RE.test(v))) {
     bad(ctx, "--db does not accept a postgres:// URL (credentials would land in argv history) — pass it via YGL_DB_URL instead (#93 / plan §3.5)");
     return 2;
   }
