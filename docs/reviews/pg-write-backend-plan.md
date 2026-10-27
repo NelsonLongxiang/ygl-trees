@@ -154,7 +154,11 @@ B0 之后，B2、B3 可以和 B1 并行，改动面基本不重叠：B2 在 db.t
 
 ### 四条护栏（进 B0 契约面）
 
-1. **B6 双后端矩阵含 verify self-check 全链**（不只 demo/contract——七型检查器 + 递归 self-check 双跑）
+1. **B6 双后端矩阵含 verify self-check 全链**（不只 demo/contract——七型检查器 + 递归 self-check 双跑）。
+   > **#93-1(b) 修订（2026-10-27，评审席 comment 6431656096）**：在 verify-on-PG
+   > 交付前（当前 verify 链仍绑 SQLite 快照面），PG 腿**仅验 PG 连通性**（pg-stats 步
+   > 真连 PG，死 PG 下 --strict 必红）；self-check/contract 维持 SQLite 面跑。原表述
+   > 「self-check 双后端」作为 verify-on-PG 交付后的目标态，届时恢复。
 2. **行为漂移登记制**：发现 → 登记（`docs/pg-compat-drift.md`）→ 统一口径；禁静默改（digest 血统同族纪律）
 3. **B4 ON CONFLICT RETURNING 同时服务 SQLite 幂等路径**（一次投入双端收益）
 4. **快照来源记录不含会话 id**（隐私面——data_source 只记 url_host/db_name/engine_version）

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 
@@ -164,5 +164,18 @@ describe.skipIf(!HAS_BIN)("#93 复核补钉（direct-929d02dd/7b99c88e）", () =
     expect(r.rc).toBe(1);
     expect(r.raw).not.toMatch(/no database at/);
     expect(r.raw.length).toBeGreaterThan(0);
+  });
+});
+
+describe("#93-1(b) 矩阵 PG 腿步骤清单钉（删 pg-stats 行 → 本测试红）", () => {
+  it("matrix PG leg steps include pg-stats (reads the actual script)", () => {
+    const src = readFileSync(resolve(REPO, "scripts/dual-backend-matrix.mjs"), "utf8");
+    // PG 腿块：从 pgUrl 分支起截到 legs.push(backend pg)
+    const i = src.indexOf("pgHome");
+    const j = src.indexOf('backend: "pg"', i);
+    const leg = src.slice(i, j);
+    expect(leg).toContain('["pg-stats"');
+    expect(leg).toContain('"db", "stats", "--json"');
+    expect(leg).toContain('YGL_DB_URL: pgUrl'); // 该步必须带 PG env（真连 PG）
   });
 });
