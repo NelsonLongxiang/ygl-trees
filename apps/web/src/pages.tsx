@@ -277,7 +277,7 @@ export function GraphPage() {
   return (
     <Section icon={<NodeIndexOutlined />} title="知识图谱" extra={`${g.nodes.length} 实体 · ${g.edges.length} 关系`}>
       <Suspense fallback={CANVAS_FALLBACK}>
-        <KnowledgeGraph graph={g} />
+        <KnowledgeGraph graph={g} tasks={data.tasks} sources={data.sources} />
       </Suspense>
     </Section>
   );
