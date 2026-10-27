@@ -143,6 +143,62 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       return 0;
     }
+    case "rm": {
+      // #82（总工裁 direct-a7b1e30a；复核 direct-9ea58cd0 B）：软删默认、**拒绝并列资产计数、不级联**。
+      // 有资产 → 点名计数（claims/evidence/sources/queries/artifacts/trees 各 N）→ rc1；
+      // 用户自行迁移/清理后再删。--force 只对**空项目**做硬删（级联在 agent 批量脚本下是灾难放大器）。
+      const name = rest[0] || String(args.flags.project || args.flags.p || "");
+      if (!name) {
+        bad(ctx, "usage: project rm <name> [--force]   (default: soft delete = status archived, assets untouched)");
+        return 2;
+      }
+      const resolved = store.projectByName(name);
+      if (!resolved) {
+        bad(ctx, `project not found: ${name}`);
+        return 1;
+      }
+      const counts: Record<string, number> = {};
+      for (const t of ["queries", "sources", "evidence", "claims", "artifacts", "trees"]) {
+        const r = store.db.get(`SELECT COUNT(*) AS n FROM ${t} WHERE project_id=?`, [resolved.id]) as any;
+        counts[t] = Number(r?.n ?? 0);
+      }
+      const named = Object.entries(counts)
+        .filter(([, n]) => n > 0)
+        .map(([t, n]) => `${t} ${n}`)
+        .join(" · ");
+      if (!args.flags.force) {
+        return getOrm(env.db.path)
+          .then((ds) => writes.projectArchive(ds, resolved.name))
+          .then((r): number => {
+            if (ctx.json) {
+              console.log(JSON.stringify({ ...r, soft: true, remaining: counts }, null, 2));
+              return 0;
+            }
+            ok(ctx, `project archived: ${resolved.name}  (status=archived; assets untouched)`);
+            if (named) out(ctx, paint(C.dim, `  remains: ${named} — archiving keeps the evidence chain intact`, ctx.color));
+            return 0;
+          });
+      }
+      if (named) {
+        // 非空 + --force = 拒绝（无级联），按类型点名
+        bad(ctx, `project not empty — refusing hard delete (no cascade): ${named}. Migrate or clean them first, or use the default soft delete (drop --force)`);
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.projectDeleteEmpty(ds, resolved.name))
+        .then((r): number => {
+          if ((r as any).refused) {
+            bad(ctx, `project not empty — refusing hard delete (no cascade): ${Object.entries((r as any).counts || {}).filter(([, n]) => Number(n) > 0).map(([t, n]) => `${t} ${n}`).join(" · ")}`);
+            return 1;
+          }
+          if (ctx.json) {
+            console.log(JSON.stringify({ ...r, deleted: true }, null, 2));
+            return 0;
+          }
+          ok(ctx, `project deleted: ${resolved.name}  (was empty)`);
+          return 0;
+        });
+    }
     case "show": {
       // R16.3: project show is project-scoped — same strict gate as research.
       const sel = resolveProject(
