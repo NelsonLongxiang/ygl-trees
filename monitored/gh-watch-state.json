@@ -1,37 +1,31 @@
 {
- "approximate": true,
- "note": "v2 rebuild 2026-10-26 07:4x after phantom deletion of detector trio (window 07:11-07:39). Baseline counts from ledger (15 issues/0 PR @2026-10-25T18:39+08:00). Only ledger-known numbers listed; first successful --commit sweep re-baselines exact face. Gap window since 18:39 10-25 uncovered until gh auth restored — run catch-up sweep then.",
- "baseline_at": "2026-10-25T18:39:00+08:00",
+ "baseline_at": "2026-10-27T06:47:15.580Z",
+ "note": "真面基线（匿名 REST 扫描，2026-10-27 15:0x，gh auth 断期间替代路径）。此前 approximate 基线(15 issues@10-25 18:39)已按本面校正：现 5 open/0 PR，缺口窗大量关闭见 kb。gh 恢复后 --commit 会再校准。",
  "issues": {
-  "#18": {
-   "title": "(ledger-known open)",
+  "#93": {
+   "title": "B7 (1147e67): PG boot allowlist breaks the B6 matrix PG leg; query-string creden",
    "author": "NelsonLongxiang",
-   "updated": "2026-10-25T10:39:00Z"
+   "updated": "2026-10-27T02:18:56Z"
   },
-  "#22": {
-   "title": "(ledger-known open)",
+  "#82": {
+   "title": "[P2] 缺 project rm：项目起错名/重命名后留下空壳，无法清理",
    "author": "NelsonLongxiang",
-   "updated": "2026-10-25T10:39:00Z"
+   "updated": "2026-10-25T03:10:37Z"
   },
-  "#27": {
-   "title": "(ledger-known open)",
-   "author": "zhujun200409-cloud",
-   "updated": "2026-10-25T10:39:00Z"
-  },
-  "#29": {
-   "title": "(ledger-known open)",
+  "#80": {
+   "title": "[P2] verify 谓词能力空洞：pragma/派生表/视图无法表达（view 被探针拒、函数调用被 from 拒）",
    "author": "NelsonLongxiang",
-   "updated": "2026-10-25T10:39:00Z"
+   "updated": "2026-10-25T03:10:34Z"
   },
   "#35": {
-   "title": "(ledger-known open)",
-   "author": "zhujun200409-cloud",
-   "updated": "2026-10-25T10:39:00Z"
-  },
-  "#37": {
-   "title": "(ledger-known open)",
+   "title": "讨论：假如 ygl-trees 就是一个递归验证器——结构、运营、边界与意义（r32，Claude-OPS-5.5 必须参与）",
    "author": "NelsonLongxiang",
-   "updated": "2026-10-25T10:39:00Z"
+   "updated": "2026-10-23T20:16:19Z"
+  },
+  "#27": {
+   "title": "讨论：验证器如何提取品味——从证据结构到品味本体（r31，Claude-OPS-5.5 必须参与）",
+   "author": "NelsonLongxiang",
+   "updated": "2026-10-24T08:18:19Z"
   }
  },
  "prs": {}

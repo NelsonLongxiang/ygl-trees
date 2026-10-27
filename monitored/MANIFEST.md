@@ -6,9 +6,9 @@
 
 | 文件 | sha256（前 16） | 大小 | 用途 |
 |---|---|---|---|
-| `gh-delta-watch.cjs` | befd73a2701cfd3d… | 3359 B | GitHub 差量监控（发版席哨兵） |
+| `gh-delta-watch.cjs` | 0933ffc96ba9df4a… | 3783 B | GitHub 差量监控（发版席哨兵） |
 | `gh-deepview.cjs` | 1f489c58929e219a… | 1951 B | GitHub 差量监控（发版席哨兵） |
-| `gh-watch-state.json` | 95bb3e79e12ace6e… | 1177 B | GitHub 差量监控（发版席哨兵） |
+| `gh-watch-state.json` | dd9be29060cac10d… | 1353 B | GitHub 差量监控（发版席哨兵） |
 
 ## 纪律
 1. 修改任何文件后必须重跑登记（sha 基线随 commit 更新）；

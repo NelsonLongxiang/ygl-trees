@@ -69,6 +69,11 @@
       "role": "test"
     },
     {
+      "path": "scripts/commit-claims.mjs",
+      "sha256": "357c1804963e365a085c47287fc49c1a2abeedc64beba1cbc4f7c87a22cfaaa4",
+      "role": "gate"
+    },
+    {
       "path": "scripts/contract-audit.sh",
       "sha256": "0078235cb0c7da08ed6cd8b8863e346e5109b3fc2a0c058f283e1468983f3ed3",
       "role": "gate"
@@ -109,8 +114,18 @@
       "role": "gate"
     },
     {
+      "path": "scripts/merge-check.mjs",
+      "sha256": "1753f95926d256483a5e6d3d79d55113ec4509e43949d7ab892c0b032a34c612",
+      "role": "gate"
+    },
+    {
       "path": "scripts/meta-tooling.mjs",
       "sha256": "b46e842635a2a931a099731d62c00c8b7926e9ee8e7c33c22901542ff2350f8b",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/offline-gate.sh",
+      "sha256": "f62eb77107adfbc4b25a1db638157eba3e01e0a9adae3913588fd22b596ca34d",
       "role": "gate"
     },
     {
@@ -122,6 +137,16 @@
       "path": "scripts/pack-repro.mjs",
       "sha256": "4f37db48bccdbad3068e6f47244d9c5140ede24e14e359b869b78ba107f6b131",
       "role": "build"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "sha256": "a6885311ce1aa4f5bc8a69ed77ec208f9b4b1cea5f4c453fec5df2442d45a207",
+      "role": "gate"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "sha256": "ebe3de3a8c490aeaecc3e5390756f2780e7c65f08ea7b36dcd5dae48fdc16c7f",
+      "role": "gate"
     },
     {
       "path": "scripts/prepublish-guard.mjs",
@@ -717,6 +742,46 @@
       "reason": "#96 G6：ratchet --write 强制 --reason 归因（rc2 拒无理由）+ _attribution 写入基线",
       "actor": "longxiang",
       "at": "2026-10-27T10:32:45.915Z"
+    },
+    {
+      "path": "scripts/commit-claims.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "357c1804963e365a085c47287fc49c1a2abeedc64beba1cbc4f7c87a22cfaaa4",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:47:11.545Z"
+    },
+    {
+      "path": "scripts/merge-check.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "1753f95926d256483a5e6d3d79d55113ec4509e43949d7ab892c0b032a34c612",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:47:11.611Z"
+    },
+    {
+      "path": "scripts/offline-gate.sh",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "f62eb77107adfbc4b25a1db638157eba3e01e0a9adae3913588fd22b596ca34d",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:47:11.677Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "a6885311ce1aa4f5bc8a69ed77ec208f9b4b1cea5f4c453fec5df2442d45a207",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:47:11.744Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "ebe3de3a8c490aeaecc3e5390756f2780e7c65f08ea7b36dcd5dae48fdc16c7f",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "longxiang",
+      "at": "2026-10-27T10:47:11.816Z"
     }
   ],
   "kind": "engine",
