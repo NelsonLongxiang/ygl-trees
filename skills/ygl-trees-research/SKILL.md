@@ -7,7 +7,7 @@ description: >-
   （produce outline/section/report/export）。
   触发词：研究、调研、evidence、证据、claim、断言、来源、source、引文、仲裁、resolve、
   报告、report、文献、抓取、fetch。
-version: 0.115.1
+version: 0.116.0
 tags: ygl-trees,research,evidence,claim,report
 ---
 

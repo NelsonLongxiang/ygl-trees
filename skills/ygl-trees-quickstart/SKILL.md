@@ -10,7 +10,7 @@ description: >-
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle、
   MCP、mcp、read、write、verify、doctor、domain、action、工具、tool。
-version: 0.115.1
+version: 0.116.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 

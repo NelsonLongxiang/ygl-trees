@@ -6,7 +6,7 @@ description: >-
   节点↔artifact/spec/design（产出）。rel 词汇表与方向语义；防止"两条平行流水线"反模式。
   触发词：关联、挂接、rel、evidenced-by、decided-by、tracked-by、关联织物、
   relation fabric、cross-linking、研究资产挂节点。
-version: 0.115.1
+version: 0.116.0
 tags: ygl-trees,methodology,relations,fabric
 ---
 
