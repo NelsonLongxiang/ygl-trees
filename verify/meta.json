@@ -105,7 +105,7 @@
     },
     {
       "path": "scripts/interp-anchor.mjs",
-      "sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
+      "sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
       "role": "gate"
     },
     {
@@ -917,6 +917,14 @@
       "reason": "#107 REQUEST-fix③：计数门前置（基准机口径/非基准机显式 SKIP 打原因）",
       "actor": "longxiang",
       "at": "2026-10-27T22:30:44.348Z"
+    },
+    {
+      "path": "scripts/interp-anchor.mjs",
+      "old_sha256": "60596ba104990dbb0e016cc995b0a46d1443bca9a7f7189552bdd1e55d0ac6b3",
+      "new_sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
+      "reason": "merge master 38b1c1f（#106）后合并态：interp-anchor 双线内容合一（run-sh 判据 + 注释）",
+      "actor": "longxiang",
+      "at": "2026-10-27T22:40:43.865Z"
     }
   ],
   "kind": "engine",

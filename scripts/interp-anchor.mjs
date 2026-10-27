@@ -26,7 +26,9 @@ const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 for (const [k, v] of Object.entries(pkg.scripts || {})) {
   const s = String(v);
   const shellish = /&&|\|\||[<>]|`|\$\(|\*/.test(s);
-  if (shellish && !/^node scripts\/run-sh\.mjs /.test(s)) {
+  // 裸 `bash x.sh` 在 win/cmd 下同样按 PATH 漂（本机实测漂到 WSL）——一律经 run-sh
+  const bareBash = /^bash\s/.test(s);
+  if ((shellish || bareBash) && !/^node scripts\/run-sh\.mjs /.test(s)) {
     bad++;
     console.error(`  ✗ interp-anchor: pnpm script '${k}' uses shell syntax without explicit bash -c wrap (G12): ${s.slice(0, 80)}`);
   }

@@ -11,6 +11,35 @@ import { resolveProject, ambiguousProject, projectCount, projectSample, sessionI
 
 /** Build the brief payload (where am I / what exists / what next).
  *  Shared by the `agent brief` command and the WebUI dashboard. */
+
+/** G13 (#105)：next_actions 里的存名插值一律 POSIX 单引号词化——换行/分号/$() 在粘贴面即命令注入。
+ *  单引号包住整词（换行留在引号内仍是一个 argv），内嵌 ' 转义为 '\''。 */
+/** G13/#105（验证席复验 NO-GO 补正）：**注释不是安全边界**——`# 后面` 的存名里一个换行就能终结注释、
+ *  让后续行成为独立命令。凡是要塞进 next_action 的存名（含注释段），一律先经本函数转义掉全部控制字符，
+ *  保证每条 action 恒为单行（\\n / \\r / \\t / 其余 C0 → \\xNN）。
+ *  含控制字符的名字因此**不往返**（粘贴后是字面 \\n，CLI 会以 tree not found 大声失败）——
+ *  失败可诊断，注入不可容忍；需要真操作此类名字时用 db sql 面。 */
+export function singleLine(value: string): string {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, (c) => {
+    if (c === "\n") return "\\n";
+    if (c === "\r") return "\\r";
+    if (c === "\t") return "\\t";
+    return "\\x" + c.charCodeAt(0).toString(16).padStart(2, "0");
+  });
+}
+
+export function shellQuote(value: string): string {
+  // G13/#106 REQUEST-fix：**不设 SAFE 捷径**——zsh 会把 =-首词做等号展开（`=ls` → /bin/ls），
+  // 前导 - 会被当旗标。一律单引号词化，配合附着式 --tree='<v>' 使用。
+  const v = String(value ?? "");
+  return "'" + v.replace(/'/g, "'\\''") + "'";
+}
+
+/** 注释段专用 slug：只留 [A-Za-z0-9_.-]，其余 → _，截 24 —— 任何壳里都不构成语法（zsh 交互态 # 不是注释）。 */
+export function commentSlug(value: string): string {
+  return String(value ?? "").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24);
+}
+
 export function buildBrief(env: Env): any {
   const { store } = env;
   // R16.1: resolved selection (flag > env > session > global), annotated.
@@ -65,7 +94,7 @@ export function buildBrief(env: Env): any {
       });
       if (others.length) {
         payload.next_actions.unshift(
-          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} '${o.entity_id}'`).join(", ")} — 命令请带 -t/-p 固定上下文`
+          `# 并行会话切换过选择: ${others.map((o) => `${o.kind === "tree.use" ? "tree" : "project"} ${commentSlug(o.entity_id)}`).join(", ")} — 命令请带 -t/-p 固定上下文`
         );
       }
     }
@@ -105,7 +134,8 @@ export function buildBrief(env: Env): any {
 
   // Health: surface data problems an agent should fix first.
   const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
-  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index   # tree '${t.name}' index is stale`);
+  // #105：裸 `node index` 会索引错树 → 显式 -t <tree>；树名经 shellQuote（换行/分号注入面）
+  for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index --tree=${shellQuote(singleLine(t.name))}   # tree ${commentSlug(t.name)} index is stale`);
   const dupGroups = store.db.all(
     `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
