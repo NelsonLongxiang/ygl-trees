@@ -1664,10 +1664,23 @@ if (subAction === "show") {
     )
   );
   return action ? 2 : 0;
-}/** 写面判定（#82）：落在项目上的写（读面不限）。 */
-function isWriteSub(_sub: string, subAction: string): boolean {
-  const verbs = new Set(["add", "import", "fetch", "attach", "link", "resolve", "ingest", "promote", "evaluate", "assess"]);
-  return verbs.has(subAction);
+}
+
+/** #82 + #110：归档闸改为**只读白名单**（"非只读即拒"）——列举式黑名单已漏过
+ *  claim unlink / claim unresolve（拆证据链、重算 status 也 rc0），故反转判定：
+ *  只有下列 (sub, subAction) 组合被视为只读；其余一律按写面拒绝（含未来新增动词）。
+ *  无 subAction 的裸列举一律只读（query/source/evidence/claim 的 list 默认形态）。 */
+const READ_ONLY: Record<string, Set<string>> = {
+  query: new Set(["list", ""]),
+  source: new Set(["list", "search", "show", ""]),
+  evidence: new Set(["list", "show", ""]),
+  claim: new Set(["list", "show", "calibration", ""]),
+  predict: new Set(["list", "audit", ""]),
+};
+function isWriteSub(sub: string, subAction: string): boolean {
+  const ro = READ_ONLY[sub];
+  if (!ro) return true; // 未知 sub → 按写面处理（fail-closed）
+  return !ro.has(String(subAction ?? ""));
 }
 
 
