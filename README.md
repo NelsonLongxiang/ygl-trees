@@ -335,7 +335,7 @@ ygl-trees agent ask "<question>"     natural language interface
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1183 例，含 skip；结构性差异（条件注册：HAS_BIN/rust/平台分支）不追，清单见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（145 项）
+pnpm test          # 四段制回归：build + unit (vitest 1185 例，含 skip（#108 终修：三壳 it.skipIf 注册恒定；与基准机 34 例差集待 manifest 对齐后统一），含 skip（全平台恒定——环境差异用例 it.skipIf 注册计 skipped，#108 终修），含 skip；结构性差异（条件注册：HAS_BIN/rust/平台分支）不追，清单见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（145 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

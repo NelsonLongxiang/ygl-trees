@@ -82,32 +82,35 @@ describe.skipIf(!HAS_BIN)("#105 next_actions shell-quote（G13 后端面）", ()
     }
   });
 
-  it("三壳重放：bash -i / sh / zsh -f -i 下同一 action 都不得创建 canary（#106 REQUEST-fix①）", () => {
-    const shells: Array<[string, string[]]> =
-      process.platform === "win32"
-        ? [
-            [process.env.GIT_BASH || "C:\\Program Files\\Git\\bin\\bash.exe", ["-i", "-c"]],
-            [process.env.GIT_BASH || "C:\\Program Files\\Git\\bin\\bash.exe", ["-c"]],
-          ]
-        : [["bash", ["-i", "-c"]], ["sh", ["-c"]], ["zsh", ["-f", "-i", "-c"]]];
-    for (const name of ["t1\ntouch CANARY #", "a$(touch CANARY)", "=ls", "-rf"]) {
-      const canary = join(tmpdir(), "ygl106_canary_" + Math.random().toString(36).slice(2) + ".txt");
-      const crafted = name.replace(/CANARY/g, canary);
-      run(["tree", "new", crafted]);
-      run(["node", "add", "n9", "--tree", crafted]);
-      const brief = run(["agent", "brief", "--json"]);
-      const actions: string[] = JSON.parse(String(brief.stdout || "{}")).next_actions || [];
-      const line = actions.find((a) => a.includes("node index"))!;
-      expect(line).toBeTruthy();
-      // 注释段必须无 shell 语法字符（zsh 交互态 # 不是注释）
-      const comment = line.split("   #")[1] || "";
-      expect(comment).not.toMatch(/[$()`;&|<>]/);
-      for (const [bin, flags] of shells) {
-        const rr = spawnSync(bin, [...flags, line], { encoding: "utf8", timeout: 30_000, env: { ...process.env, YGL_HOME: HOME } });
-        if (rr.error && (rr.error as any).code === "ENOENT") continue; // 壳不存在 → 跳过该壳（下面另有断言）
-        expect(existsSync(canary), `${bin} ${flags.join(" ")} created canary for ${JSON.stringify(name)}`).toBe(false);
+  // #108 终修（评审席单文件案）：固定 [sh, zsh, bash] 三壳；每壳独立 it——
+  //  win32 或该壳不存在（ENOENT 探测）→ it.skipIf 注册+skip（**计数恒定**，全平台 1219）。
+  const shellAvail = (bin: string): boolean => {
+    const r = spawnSync(bin, ["-c", "true"], { encoding: "utf8", timeout: 5000 });
+    return !(r.error && (r.error as any).code === "ENOENT");
+  };
+  const IS_WIN = process.platform === "win32";
+  const canaryNames = ["t1\ntouch CANARY #", "a$(touch CANARY)", "=ls", "-rf"];
+  for (const [shellName, shellBin, flags] of [
+    ["sh", "sh", ["-c"]] as const,
+    ["zsh", "zsh", ["-f", "-i", "-c"]] as const,
+    ["bash", process.env.GIT_BASH || (IS_WIN ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash"), ["-i", "-c"]] as const,
+  ]) {
+    it.skipIf(IS_WIN || !shellAvail(shellBin))(`${shellName} 重放：${shellBin} 下敌意名 canary 不生成（#106①/#108）`, () => {
+      for (const name of canaryNames) {
+        const canary = join(tmpdir(), "ygl108_" + shellName + "_" + Math.random().toString(36).slice(2) + ".txt");
+        const crafted = name.replace(/CANARY/g, canary);
+        run(["tree", "new", crafted]);
+        run(["node", "add", "nz", "--tree", crafted]);
+        const brief = run(["agent", "brief", "--json"]);
+        const actions: string[] = JSON.parse(String(brief.stdout || "{}")).next_actions || [];
+        const line = actions.find((a) => a.includes("node index"))!;
+        expect(line).toBeTruthy();
+        const comment = line.split("   #")[1] || "";
+        expect(comment).not.toMatch(/[$()`;&|<>]/);
+        const rr = spawnSync(shellBin, [...flags, line], { encoding: "utf8", timeout: 30_000, env: { ...process.env, YGL_HOME: HOME } });
+        expect(existsSync(canary), `${shellName} created canary for ${JSON.stringify(name)}`).toBe(false);
         try { rmSync(canary, { force: true }); } catch { /* absent */ }
       }
-    }
-  });
+    });
+  }
 });
