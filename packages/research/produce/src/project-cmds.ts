@@ -177,9 +177,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return getOrm(env.db.path)
           .then((ds) => writes.projectArchive(ds, resolved.name))
           .then((r): number => {
-            // 归档即退出选择：清本会话桶（否则 list 把 archived 标成 current，验证席 d）
+            // 归档即退出选择：清会话桶 **和 global 指针**（#110 P2：只清会话时，
+            // `project use p --global` 残留的全局指针仍解析到归档项目，配合破坏动词成组合洞）
             const key = `current_project@${sessionId()}`;
             if (store.db.metaGet(key) === resolved.name) store.db.metaSet(key, "");
+            if (store.db.metaGet("current_project") === resolved.name) store.db.metaSet("current_project", "");
             if (ctx.json) {
               console.log(JSON.stringify({ ...r, soft: true, remaining: counts }, null, 2));
               return 0;
@@ -315,7 +317,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "":
-      out(ctx, paint(C.dim, "  project: new <name> [-q question] | list | use <name> | show", ctx.color));
+      out(ctx, paint(C.dim, "  project: new <name> [-q question] | list | use <name> [--global] [--archived] | show | rm <name> [--force] | restore <name>", ctx.color));
       return 0;
     default:
       bad(ctx, `unknown project action: ${action}`);

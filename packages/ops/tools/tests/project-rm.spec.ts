@@ -109,4 +109,33 @@ describe.skipIf(!HAS_BIN)("#82 project rm（软删默认 / 拒绝级联 / 按类
     const after = run(["research", "claim", "add", "现在可以了", "-p", "arch-restore", "--json"]);
     expect(after.status).toBe(0);
   });
+
+  it("#110 P1：破坏动词入闸——归档项目 claim unlink / unresolve 均 rc1（非只读即拒）", () => {
+    run(["project", "new", "p1-gate", "-q", "q"]);
+    const c = run(["research", "claim", "add", "断言甲", "-p", "p1-gate", "--json"]);
+    const cid = JSON.parse(String(c.stdout || "{}")).id;
+    run(["project", "rm", "p1-gate"]);
+    for (const verb of ["unlink", "unresolve"]) {
+      const r = run(["research", "claim", verb, cid, "-p", "p1-gate", "--json"]);
+      expect(r.status, verb).toBe(1);
+      expect(String(r.stdout || "")).toMatch(/is archived/);
+    }
+  });
+
+  it("#110 P2：--global 指针随归档清除——rm 后无 -p 的破坏动词不再落到归档项目", () => {
+    run(["project", "new", "p2-global", "-q", "q"]);
+    run(["project", "use", "p2-global", "--global"]);
+    run(["project", "rm", "p2-global"]);
+    const r = run(["research", "claim", "unlink", "any", "--json"]);
+    // 要么已无选择（rc2 ambiguous/no project），要么归档拒写（rc1）——都不许 rc0 写成功
+    expect([1, 2]).toContain(r.status);
+    expect(String(r.stdout || "")).not.toMatch(/"ok":\s*true/);
+  });
+
+  it("#110 P3：project 帮助串含 rm/restore", () => {
+    const r = run(["project"]);
+    const out = String(r.stdout || "");
+    expect(out).toContain("rm <name>");
+    expect(out).toContain("restore <name>");
+  });
 });
