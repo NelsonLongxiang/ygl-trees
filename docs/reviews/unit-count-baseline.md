@@ -37,3 +37,25 @@ node -e "const j=require('/tmp/inv.json');console.log(j.testResults.map(f=>f.nam
 两侧按 `文件<TAB>用例数` 排序 diff 即得差集。预期来源（按 `skipIf` 静态清单）：
 `HAS_BIN` 组（bundle 在场才跑）、`hasRust` 组（cargo 在场才跑）、`it.skipIf(process.platform)` 单例。
 本机（bundle 有、cargo 无）若差集集中在 rust 组，则**前置收敛后两平台应立即一致**；否则说明还有环境敏感测试未收敛，回 C 继续查。
+
+## #108 前提校正（实测证据，2026-10-28）
+
+验证席派单称「`describe.skipIf` 整组不注册、从 total 消失」。**实测否证**（vitest 5.0.5，最小探针）：
+
+```ts
+describe.skipIf(true)("s", () => { it("a",()=>{}); it("b",()=>{}); it("c",()=>{}); });
+describe("n", () => { it.skipIf(true)("d",()=>{}); it("e",()=>{}); });
+// 输出：Tests  1 passed | 4 skipped (5)
+```
+
+→ `describe.skipIf` **注册并计入 total**（3 例进 skipped），与 `it.skipIf` 同口径。因此 36 例差集**另有来源**，不是 describe/it 的注册差异。
+
+本机全量清单（`--reporter=json`）：**145 文件 / total 1177 / skipped 5 / 零用例文件 0**。
+要定位 36 例，需要 macOS 同口径清单逐文件 diff：
+
+```bash
+npx vitest run --reporter=json --outputFile=/tmp/inv.json --maxWorkers=2
+node -e "const j=require('/tmp/inv.json');for(const f of j.testResults){const a=f.assertionResults||[];console.log(f.name.replace(/.*ygl-trees[\\/]/,'').replace(/\\\\/g,'/')+'\\t'+a.length+'\\t'+a.filter(x=>x.status==='skipped'||x.status==='pending').length)}" | sort > /tmp/manifest.tsv
+```
+
+两边 `manifest.tsv` diff 即得逐文件差集（当前 58 个 `describe.skipIf` 文件是高优先怀疑面）。
