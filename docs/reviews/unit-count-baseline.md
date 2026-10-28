@@ -59,3 +59,26 @@ node -e "const j=require('/tmp/inv.json');for(const f of j.testResults){const a=
 ```
 
 两边 `manifest.tsv` diff 即得逐文件差集（当前 58 个 `describe.skipIf` 文件是高优先怀疑面）。
+
+## 33 例结构性差异（#108 裁定：随版不追，逐项机制点名）
+
+**裁定（验证席 direct-0a981a84 / 2026-10-28）**：33 例差集按**结构性差异**记录、随版不追（不等 macOS manifest 3 日窗口）。
+
+**两侧实测口径**
+
+| 环境 | 文件 | total | skipped |
+|---|---|---|---|
+| Windows（bundle 有 / cargo 1.90 有） | 146 | **1180** | 5 |
+| macOS（bundle + cargo） | — | **1213** | 1 |
+
+**产生差异的机制（逐条点名，均可从 source 复核）**
+
+1. **`describe.skipIf(!HAS_BIN)` 条件注册**——`HAS_BIN` 由 spawn `dist/bundle/bin.cjs --version` 决定；bundle 不在场时整组消失（**不注册**，不进 total）。
+   影响面：`grep -rl 'describe.skipIf(!HAS_BIN)' packages apps` 共 **20** 文件（b7-cli-pg-boot 3 组、meta-*、kb-fts、mcp-http、db-init、dr-fts-roundtrip、json-success-paths 等）。
+2. **`it.skipIf(process.platform === "win32")` 平台单例**——注册但按平台 skip（**计入 total**）。
+   影响面：`meta-gate-subdir` symlink realpath 1 例（Windows 跳、macOS 跑）。
+3. **rust 组 `describe.skipIf(!hasRust)`**——`rust-parity`、`seal-parity` 各 1 例；cargo 缺失时整组不注册。
+4. **`if (HAS_BIN) { it(...) }` 手动包裹型**——条件成立才**定义**测试（本机扫到 `task-bundle.spec.ts`、`claimeval.spec.ts` 两处），效果同 1。
+5. **离线/凭证条件**（`claimlink-quiet` 的 `--verbose` 离线路径）——1 例，按凭证在场与否注册。
+
+**结论**：差异来自**注册时机**（1/3/4/5 = 整组消失型）而非 vitest 口径；机制清单即 done-when 4 要求的「条件注册来源逐条点名」。**逐文件精确差集**仍需 macOS `manifest.tsv`——命令见上节；本轮按裁定不作阻塞项。
