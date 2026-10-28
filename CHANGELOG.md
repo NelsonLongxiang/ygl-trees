@@ -1,3 +1,27 @@
+# 0.117.0（2026-10-28）
+
+**门禁批量版**（Now 出口判据凑齐：G1–G13 落地并在本版实跑）。
+
+## 安全（#105/#110 闭环延伸）
+
+- `project` 归档闸由列举式黑名单**反转为只读白名单**（非只读即拒、未知子命令也拒）——`claim unlink`/`unresolve` 等破坏动词在归档项目上 rc1（#110）
+- `project rm` 同时清除会话选择桶与 `--global` 指针（堵组合洞）
+- `project restore <name>`：归档的显式出口；帮助串补 `rm`/`restore`
+
+## 功能（#82）
+
+- `project rm`：软删默认（`status=archived`，资产不动）；`--force` 仅对**空项目**硬删，非空拒绝并**按类型点名计数**（无级联）
+
+## 门禁（#96/#98/#108）
+
+- G1 离线门 / G4 commit-claims / G5 mutation-pins / G6 ratchet --reason 归因 / G7 pg-gate / G8 post-release-check / G9 merge-ancestor 守卫 / G11 volume-gate 双阈值 / G12 interp-anchor 解释器锚
+- G2b（未清 REQUEST-fix=合并禁制）与 G13（复制命令 shell-quote）入 roadmap
+- unit 计数门：去开关，任何机器严格比较；README 双口径并列
+
+## 文档
+
+- ADR：P1 与发布冻结窗口；spec §3b 业务交付面定位 · §5 仓内体量预算（G11）；契约 1.3 提案；plan M13 全批归档
+
 ## 0.116.1
 
 - 【SECURITY】#105：agent brief next_actions 存名插值 shell 词化（singleLine 全控制字符转义、每条 action 恒单行、注释段 slug 化）+ 执行级重放负测（canary 不生成）——修复换行粘贴注入面（公开 npm）
