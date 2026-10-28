@@ -130,7 +130,7 @@
     },
     {
       "path": "scripts/offline-gate.sh",
-      "sha256": "f62eb77107adfbc4b25a1db638157eba3e01e0a9adae3913588fd22b596ca34d",
+      "sha256": "101c2854a7a7962ef54a91a8e2a5077265f6a08466664b9f71ffa6af18cba270",
       "role": "gate"
     },
     {
@@ -933,6 +933,14 @@
       "reason": "#108 计数门去开关（任何机器严格比较）——去掉 YGL_COUNT_BASELINE 前置块",
       "actor": "longxiang",
       "at": "2026-10-27T23:57:35.141Z"
+    },
+    {
+      "path": "scripts/offline-gate.sh",
+      "old_sha256": "f62eb77107adfbc4b25a1db638157eba3e01e0a9adae3913588fd22b596ca34d",
+      "new_sha256": "101c2854a7a7962ef54a91a8e2a5077265f6a08466664b9f71ffa6af18cba270",
+      "reason": "#98 家族第三例：G1 env 组装改数组传参（Windows PATH 空格）",
+      "actor": "longxiang",
+      "at": "2026-10-28T05:56:46.078Z"
     }
   ],
   "kind": "engine",

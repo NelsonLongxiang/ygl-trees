@@ -15,13 +15,15 @@ cd "$WORK/repo"
 # 干净环境：只留平台必需（HOME/PATH/TMPDIR + Windows SystemRoot/COMSPEC/PATHEXT）。
 # 剥掉一切 YGL_*、AI_GATEWAY_*、凭据类变量。
 run_clean() {
-  local keep="HOME=$HOME PATH=$PATH TMPDIR=${TMPDIR:-/tmp}"
-  if [ -n "${SYSTEMROOT:-}" ] || [ -n "${SystemRoot:-}" ]; then keep="$keep SYSTEMROOT=${SystemRoot:-${SYSTEMROOT:-}}"; fi
-  for v in COMSPEC PATHEXT NUMBER_OF_PROCESSORS PROCESSOR_ARCHITECTURE USERPROFILE LOCALAPPDATA APPDATA; do
+  # #98 家族第三例（验证席 direct-f720918e）：Windows PATH 含空格，字符串拼 env 会被拆参。
+  # 正解：**数组**传参——每个 NAME=VALUE 是一个元素，不经 word splitting。
+  local -a args=("HOME=$HOME" "PATH=$PATH" "TMPDIR=${TMPDIR:-/tmp}")
+  local v val
+  for v in SYSTEMROOT SystemRoot COMSPEC PATHEXT NUMBER_OF_PROCESSORS PROCESSOR_ARCHITECTURE USERPROFILE LOCALAPPDATA APPDATA; do
     eval "val=\${$v:-}"
-    [ -n "$val" ] && keep="$keep $v=$val"
+    [ -n "$val" ] && args+=("$v=$val")
   done
-  env -i $keep bash -c "$1"
+  env -i "${args[@]}" bash -c "$1"
 }
 echo "offline-gate: env -i install --frozen-lockfile"
 run_clean "pnpm install --frozen-lockfile" || { echo "✗ offline install failed (G1)"; exit 1; }
