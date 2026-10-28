@@ -135,6 +135,38 @@
               3 步 20ms · Agent 就绪
 ```
 
+
+## 门禁层（G1–G13 · 可执行判据）
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ 发布前（Now 出口）                    G1 离线门 offline-gate.sh      │
+│                                     （env -i 干净 clone + 全链测试）  │
+│  评审过程门                           G2 全 diff 读 / G3 真调用      │
+│                                     （docs/release.md checklist）   │
+│  构造面                               G4 commit-claims.mjs（消息声明   │
+│                                     ↔ diff 一致）/ G5 mutation-pins  │
+│  体量与归因                           G6 ratchet.mjs --reason 归属化  │
+│                                     G11 volume-gate.mjs 双阈值       │
+│  环境面                               G12 interp-anchor.mjs +         │
+│                                     run-sh.mjs（解释器锚定）         │
+│  数据面                               G7 pg-gate.sh（真 PG 矩阵）     │
+│ 合并面                               G9 merge-check.mjs + pre-push   │
+│                                     （祖先守卫，首捕实弹 e8653f6）      │
+│ 发布后                               G8 post-release-check.mjs        │
+│                                     （tag clone 复跑，禁 shallow）    │
+│ 规则层                               G2b 未清 REQUEST-fix=合并禁制    │
+│                                     G13 复制类命令必须 shell-quote    │
+└────────────────────────────────────────────────────────────────────┘
+                │
+                ▼
+    scripts/（G1/G4/G6/G7/G8/G9/G11/G12 脚本）+ docs/release.md（G2/G3 checklist）
+    + verify/meta.json tooling[]（登记与 R3 一致性）+ .githooks/pre-push（pre-push 面）
+```
+
+**判据锚**：每门红→绿对照 + 负例钉（G11 双阈值实测 / G12 漂移负例 / G13 敌意名四例）。
+**计数门**：`readme-verify.sh` unit 计数＝README 单值与 vitest total 严格相等（无开关；跨平台口径并列注明，差集追查中）。
+
 ---
 
 *v0.116.0 · 52 版本账 · SQLite(+可选 PG 直连面) + Cordis + TypeScript · MIT*
