@@ -46,6 +46,12 @@ git config core.sshCommand "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax
 
 ## 一、发布前门禁（必跑）
 
+> **tag 前文档一致性核对（2026-10-28 F1 教训，gate 家族候选）**：打 tag 前必须核对
+> README/CHANGELOG/llms.txt 与**最新裁定/最新实测**一致——0.117.0 曾把「撤钦定数值」
+> 的修正留在 tag 之后，导致发布件带着已撤回的分析（README:338）。核对项：
+> ①README 计数句 vs 本机实测/基准机口径 ②CHANGELOG 版本节 vs 实际 diff ③llms.txt 版本头
+> ④docs 内所有引用裁定编号的数值（如 1219/1183）是否已被后续裁定推翻。
+
 ### G1 离线门（roadmap/#96 条目 1）
 
 ```bash
