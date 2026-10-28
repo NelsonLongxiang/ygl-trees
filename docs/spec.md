@@ -177,6 +177,12 @@
 - **R16.5 跨指针一致性**：`tree use` 对 `project_id` 非空且 ≠ 当前项目 → WARN 不阻断；`tree new --project <未知>` → rc=2 点名（修 `proj?.id || ""` 静默落空）；不回填历史 `trees.project_id`（workspace 级标签语义）
 - **R16.6 验收**：33 项目工作区未选择时 `claim list` / `claim add` / `claim link` / `agent brief` 均 rc=2 且 JSON 单对象，`doctor` / `project list` / `kb search` rc=0（`node list` 属树作用域：未选树时保持既有 rc=1，不受项目门禁）；单项目工作区全部 rc=0；`--project` / `YGL_PROJECT` / 会话键三路各放行并标注 `selection_source`；会话键指向已删项目 → rc=1 点名；仅全局指针时 `doctor` WARN；webui 未选择态显示「未选择」；`contract:audit` 增上述断言，demo 增「未选择即拒绝」与「会话选择后放行」两条；兼容性——跨会话不再自动继承上次选择，CHANGELOG 与升级说明写明
 
+## 3b. 业务交付面定位（2026-10-28 总工裁 direct-a7b1e30a A③ 三拆之三）
+
+ygl-trees 的**业务交付面 = CLI（npm 包）**：安装即用、退出码契约冻结、--json 机器可读。
+其余面（webui / MCP / Web 客户端）是 CLI 的**投影**，不是独立交付物——它们可以落后于 CLI
+一个版本，但 CLI 的契约面（rc/snake_case/幂等）在任何版本都不得破坏。发布单位=单一 npm 包。
+
 ## 4. 兼容性承诺
 
 - v2 老库首次被 v3 CLI 打开时自动迁移，无损、无需人工介入；迁移在事务内
