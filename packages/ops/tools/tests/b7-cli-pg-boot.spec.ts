@@ -121,10 +121,11 @@ describe.skipIf(!HAS_BIN)("#93 B7 PG boot hardening", () => {
     expect(r.raw).toContain("x.db");
   });
 
-  it("#93-① db init under PG env binds SQLite workspace (rc0, file created)", () => {
+  it("#115 db init under PG env refuses before creating SQLite files", () => {
     const r = run(["db", "init", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl" });
-    expect(r.rc).toBe(0);
-    expect(existsSync(join(HOME, "ygl-trees.db"))).toBe(true);
+    expect(r.rc).toBe(2);
+    expect(JSON.parse(r.out).error).toContain("PG db init is not implemented");
+    expect(existsSync(join(HOME, "ygl-trees.db"))).toBe(false);
   });
 
   it("#93-① verify self-check under PG env not refused by allowlist", () => {
@@ -134,9 +135,8 @@ describe.skipIf(!HAS_BIN)("#93 B7 PG boot hardening", () => {
   });
 
   it("#93-① matrix PG-leg consistency: no step refused rc2 by boot allowlist", () => {
-    // init + self-check 是 PG 腿带 YGL_DB_URL 的两步；contract 步已 env-scrub（矩阵侧）。
+    // PG init is now an expected-refusal probe; self-check remains a DB-free positive face.
     const steps = [
-      ["db", "init", "--json"],
       ["verify", "self-check", "--json"],
     ];
     for (const args of steps) {

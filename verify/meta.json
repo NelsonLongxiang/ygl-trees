@@ -75,7 +75,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "0078235cb0c7da08ed6cd8b8863e346e5109b3fc2a0c058f283e1468983f3ed3",
+      "sha256": "3a06893f24208a36c82d7d566a6fa71348d3e1793980debded10987dffe25ed0",
       "role": "gate"
     },
     {
@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "b65d5afe6e7b029ad41e1adc4616a9b0e264d64bce83e6c95a8ebcf25e0c04c8",
+      "sha256": "d6d96e84c489771ac03fd0dc66ac829e4faac018d331135ee472ee3c2de2821c",
       "role": "gate"
     },
     {
@@ -941,6 +941,22 @@
       "reason": "#98 家族第三例：G1 env 组装改数组传参（Windows PATH 空格）",
       "actor": "longxiang",
       "at": "2026-10-28T05:56:46.078Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "b65d5afe6e7b029ad41e1adc4616a9b0e264d64bce83e6c95a8ebcf25e0c04c8",
+      "new_sha256": "d6d96e84c489771ac03fd0dc66ac829e4faac018d331135ee472ee3c2de2821c",
+      "reason": "#115: PG init is expected rc2 with no home files; preserve real pg-stats and scrub PG env on SQLite leg",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T05:01:00.955Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "0078235cb0c7da08ed6cd8b8863e346e5109b3fc2a0c058f283e1468983f3ed3",
+      "new_sha256": "3a06893f24208a36c82d7d566a6fa71348d3e1793980debded10987dffe25ed0",
+      "reason": "#115: pin PG init pre-write refusal and unknown backend/option JSON rc2",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T05:01:01.083Z"
     }
   ],
   "kind": "engine",

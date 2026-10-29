@@ -22,7 +22,7 @@
 import { spawnSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,7 +38,7 @@ function sh(cmd, argv, opts = {}) {
     cwd: ROOT,
     encoding: "utf8",
     timeout: opts.timeoutMs ?? 30 * 60_000,
-    env: { ...process.env, ...(opts.env || {}) },
+    env: { ...process.env, YGL_DB_URL: "", ...(opts.env || {}) },
   });
   return { status: r.status ?? -1, out: (r.stdout || "") + (r.stderr || ""), ms: Date.now() - t0 };
 }
@@ -59,7 +59,9 @@ const home = mkdtempSync(join(tmpdir(), "ygl-b6-"));
   const results = [];
   for (const [name, cmd, opts] of steps) {
     const r = sh(cmd[0], cmd.slice(1), opts);
-    results.push({ step: name, status: r.status === 0 ? "pass" : "fail", ms: r.ms, tail: r.out.slice(-200) });
+    const expected = opts.expectedRc ?? 0;
+    const untouched = !opts.noFilesUnder || !existsSync(opts.noFilesUnder);
+    results.push({ step: name, status: r.status === expected && untouched ? "pass" : "fail", ms: r.ms, tail: r.out.slice(-200) });
   }
   legs.push({ backend: "sqlite", status: results.every((r) => r.status === "pass") ? "pass" : "fail", steps: results });
 }
@@ -75,7 +77,7 @@ if (!pgUrl) {
 } else {
   const pgHome = join(home, "pg-home");
   const steps = [
-    ["init-pg", ["node", "dist/bundle/bin.cjs", "db", "init", "--json"], { env: { YGL_HOME: pgHome, YGL_DB_URL: pgUrl } }],
+    ["init-pg-refused", ["node", "dist/bundle/bin.cjs", "db", "init", "--json"], { expectedRc: 2, noFilesUnder: pgHome, env: { YGL_HOME: pgHome, YGL_DB_URL: pgUrl } }],
     // #93-①（评审席 6431183774 重述标准 a）：PG 腿必须含一步**真正需要 PG** 的面——
     // db stats 在 PG env 下直连 PG（不可达 → rc1 → 腿红 → --strict rc≠0）。
     // 死 PG 下全绿的「名存实亡」从这里断根。
@@ -90,7 +92,9 @@ if (!pgUrl) {
   const results = [];
   for (const [name, cmd, opts] of steps) {
     const r = sh(cmd[0], cmd.slice(1), opts);
-    results.push({ step: name, status: r.status === 0 ? "pass" : "fail", ms: r.ms, tail: r.out.slice(-200) });
+    const expected = opts.expectedRc ?? 0;
+    const untouched = !opts.noFilesUnder || !existsSync(opts.noFilesUnder);
+    results.push({ step: name, status: r.status === expected && untouched ? "pass" : "fail", ms: r.ms, tail: r.out.slice(-200) });
   }
   legs.push({ backend: "pg", status: results.every((r) => r.status === "pass") ? "pass" : "fail", steps: results });
 }

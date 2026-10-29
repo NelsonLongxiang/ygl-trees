@@ -98,7 +98,7 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 
 ## B8 单一 PG 业务后端
 
-业务入口使用 `YGL_DB_URL`，目标须已用官方 `db migrate pg` 显式迁移；`YGL_PG_URL` 是 `db sync pg` / `db migrate pg` 的出口 URL，不会启用 PG 业务模式，也不自动作为 `YGL_DB_URL` 别名。凭证由用户配置环境变量，不放 `--db` 或命令历史。使用独立 `YGL_HOME`；存在 SQLite 文件或已有 PG 绑定目标不一致时拒绝，不回落、不双写。
+业务入口使用 `YGL_DB_URL`，目标须已用官方 `db migrate pg` 显式迁移；`YGL_PG_URL` 是 `db sync pg` / `db migrate pg` 的出口 URL，不会启用 PG 业务模式，也不自动作为 `YGL_DB_URL` 别名。凭证由用户配置环境变量，不放 `--db` 或命令历史。使用独立 `YGL_HOME`；存在 SQLite 文件或已有 PG 绑定目标不一致时拒绝并点名本地冲突文件，不回落、不双写。`db init` 仅用于 SQLite；设置 PG `YGL_DB_URL` 时在工作区写入前 rc2 拒绝，不支持 `--backend pg`（或任何 `--backend`），未知 init 参数也拒绝。PG 需从独立 SQLite 源工作区执行显式 `db migrate pg`，再选中迁移后的 PG 目标；本修复不实现 PG init，不改写或删除已有文件。
 
 可用面：`kb add/list/show`、`project new/use/list/show`、`research source/evidence/claim add/list/show`（包括各类型已支持的 file/batch 入口）。批量全部行先校验、单事务写入，中段失败整批回滚；`source add --query` 对既有 query 的挂接同 PG 事务。批3补充 `research query add/attach/list`、`claim link/unlink/resolve/unresolve`、`source/evidence rm` 和 `kb link/import`。其他未列命令（含 query done、eval、fetch、新搜索、project archive/restore/rm/global、其他域、verify-on-PG）仍拒绝。
 

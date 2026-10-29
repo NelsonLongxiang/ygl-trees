@@ -530,6 +530,14 @@ else
   fail "schema parity" "$(node scripts/schema-parity.mjs 2>&1 | head -5)"
 fi
 
+# Init is SQLite-only; rejected requests must not create or modify their home.
+INIT_REFUSAL=$(env YGL_HOME="$WS/refused-init" YGL_DB_URL='postgres://fixture-user:fixture-secret@127.0.0.1:1/unused' $Y db init --json 2>&1); INIT_RC=$?
+if [ "$INIT_RC" = "2" ] && [ ! -e "$WS/refused-init" ] && printf '%s' "$INIT_REFUSAL" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.exit(typeof j.error==="string"&&!s.includes("fixture-secret")&&!s.includes("fixture-user")?0:1)}catch{process.exit(1)}})'; then
+  pass "PG init refuses rc2 before home creation, single safe JSON error"
+else fail "PG init refusal" "rc=$INIT_RC or workspace/credential side effect"; fi
+json_err "init unsupported backend" 2 -- $Y db init --backend pg
+json_err "init unknown option" 2 -- $Y db init --bogus-flag
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1
