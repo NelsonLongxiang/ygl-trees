@@ -82,3 +82,7 @@ node -e "const j=require('/tmp/inv.json');for(const f of j.testResults){const a=
 5. **离线/凭证条件**（`claimlink-quiet` 的 `--verbose` 离线路径）——1 例，按凭证在场与否注册。
 
 **结论**：差异来自**注册时机**（1/3/4/5 = 整组消失型）而非 vitest 口径；机制清单即 done-when 4 要求的「条件注册来源逐条点名」。**逐文件精确差集**仍需 macOS `manifest.tsv`——命令见上节；本轮按裁定不作阻塞项。
+
+## 36 例根因（#108，总工席裁定 #020 采纳评审席定位）
+
+`apps/web/tests/shell.spec.ts` 的真实 shell 用例原来按**过滤后的** `SHELLS` 循环生成（`/bin/sh`、`/bin/zsh`、`/bin/bash` 里本机存在的）：macOS 3 shell × 12 名 = 36 例，Windows 0 例——不是 skip，是**根本不注册**，于是从 total 里消失。修法：循环固定清单 `ALL_SHELLS`，逐例 `it.skipIf(!hasShell(sh))`，各平台注册同一 total（模拟「无 shell」实测：8 passed | 39 skipped (47)，与 macOS 47 相同）。修后 macOS（bundle + Rust）实测 **1322**（1258 passed + 64 skipped），README 取此值。
