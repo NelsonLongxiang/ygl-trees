@@ -100,11 +100,23 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 
 业务入口使用 `YGL_DB_URL`，目标须已用官方 `db migrate pg` 显式迁移；`YGL_PG_URL` 是 `db sync pg` / `db migrate pg` 的出口 URL，不会启用 PG 业务模式，也不自动作为 `YGL_DB_URL` 别名。凭证由用户配置环境变量，不放 `--db` 或命令历史。使用独立 `YGL_HOME`；存在 SQLite 文件或已有 PG 绑定目标不一致时拒绝，不回落、不双写。
 
-可用面：`kb add/list/show`、`project new/use/list/show`、`research source/evidence/claim add/list/show`（包括各类型已支持的 file/batch 入口）。批量全部行先校验、单事务写入，中段失败整批回滚；`source add --query` 对既有 query 的挂接同 PG 事务。其余 mutation/query/fetch/link/resolve/archive/delete 等未列命令仍拒绝。
+可用面：`kb add/list/show`、`project new/use/list/show`、`research source/evidence/claim add/list/show`（包括各类型已支持的 file/batch 入口）。批量全部行先校验、单事务写入，中段失败整批回滚；`source add --query` 对既有 query 的挂接同 PG 事务。批3补充 `research query add/attach/list`、`claim link/unlink/resolve/unresolve`、`source/evidence rm` 和 `kb link/import`。其他未列命令（含 query done、eval、fetch、新搜索、project archive/restore/rm/global、其他域、verify-on-PG）仍拒绝。
 
 项目解析只读优先级：显式 `-p/--project` → `YGL_PROJECT` → 当前 session 选择 → 唯一项目；多项目无选择 rc2，指定不存在项目 rc1。不会读取全局最近项目作 fallback。读命令不写选择或文件；`project use` 仅更新本 session 并发事件，返回替换前 prior，archived 拒选，`--global` 拒绝。
 
 检索范围以官方迁移为准：sources/evidence 有 ngram + GENERATED ALWAYS ngram_tsv + GIN，输入与基表/events 同事务。claims 原来在两个后端都没有全文检索，只提供基表/events/list/show；不声称检索 PASS、不新加检索 schema。doctor 的 claims_fulltext 与 verify_on_pg 明确 skip 并给原因；verify 仍走 SQLite 快照链。
+
+### 研究闭环状态与删除边界
+
+claim 状态复用完整 SQLite 规则：预测挂证不自动结算；人工仲裁锁保留 status/updated；unlink 返回 recalculated；unresolve 事件保留。既有边界也镜像：resolve 为 unverified 后再 unresolve 返回 duplicate 且不发解除事件，后续挂证仍受人工锁约束。命令可用不构成授权 agent 仲裁现库断言或结算预测。单条 link 可跨项目（workspace-wide，并给 cross_project 提示），unlink/resolve/unresolve/删除各按原项目边界，不统一收窄。duplicate 表示关系已存在，不保证 stance 改写为 no-op。
+
+PG 关系变更先持有 evidence 读锁，再持有 claim 写锁至事务提交。删除先封锁 source/evidence，受影响 claims 按稳定 id 排序取锁，再做精确删除锥、检索清理、状态重算和事件；默认保护不变。kb import 先排序/预检/解析文件，再整批单事务；>1MB 默认跳过、force 允许尺寸但不取消内容去重。
+
+事件同 ts 使用 PG 单调 seq，而非 rowid。官方迁移历史事件 seq 可能 NULL；若最大 ts 仲裁组有无法确定总序的 NULL/重复 seq，明确报“历史仲裁事件顺序不可确定”并回滚，不猜随机 id、不自动补 seq。单条历史事件无序歧义；原生有序事件正常。
+
+实际命令所需缺列会在写入前以表名.列名提示，SQL/凭据/参数不回显；不自动 ALTER 或扩大迁移。旧 PG 镜像不是升级后的业务库，先备份并核对能力；**不可用 --fresh 覆盖现库当升级**。
+
+**已登记输出差异**：query attach 成功面在 SQLite 的既有 --json 路径仍输出人类文本（本批保留字节）；PG 新路径遵守单 JSON 冻结契约。该面不计 PG/SQLite 成功输出 parity PASS，SQLite 修复另案；错误路径和 SQLite 前后黄金仍单独核对。
 
 ## B4 并发语义（2026-10-25 成文）
 

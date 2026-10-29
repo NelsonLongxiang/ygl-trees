@@ -2,26 +2,26 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-29T00:38:01.482Z",
-  "_attribution": "B8 batch-1 fdc APPROVE direct-8156fd43: 875691B -> 894174B (18483B PG writes/binding/readback/doctor). Existing baseline drift 871791B -> 875691B = 3900B, not B8. No ticker lock or exactly-once claim.",
+  "measured_at": "2026-10-29T03:18:53.824Z",
+  "_attribution": "B8 batch3 fdc APPROVE direct-31d31976: own feature delta 905551B -> 920401B = 14850B (query/claim locks/seq fail-closed/deletion/import/capability checks). Existing baseline 894174B -> batch2 905551B = 11377B separately attributed, not batch3; no web increase.",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 894174,
+      "value": 920401,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-29T00:37:58.129Z",
+      "measured_at": "2026-10-29T03:18:50.809Z",
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {
       "value": 1395091,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-29T00:37:58.130Z",
+      "measured_at": "2026-10-29T03:18:50.811Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 341,
+      "value": 314,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-10-29T00:38:01.481Z",
+      "measured_at": "2026-10-29T03:18:53.824Z",
       "method": "warm2-min7-retry-once"
     }
   }
