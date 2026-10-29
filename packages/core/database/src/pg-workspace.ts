@@ -55,6 +55,16 @@ export async function bindPgWorkspace(ds: DataSource, home: string, url: string,
   checkPgWorkspace(home, url);
 }
 
+/** Only identifier metadata may enter this error; driver SQL and values stay masked. */
+export class PgCapabilityError extends Error {}
+
+export async function requirePgColumns(db: { query(sql: string, params?: any[]): Promise<any> }, requirements: Record<string, string[]>): Promise<void> {
+  const rows = await db.query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=ANY($1)", [Object.keys(requirements)]);
+  const found = new Set(rows.map((r: any) => r.table_name + "." + r.column_name));
+  const missing = Object.entries(requirements).flatMap(([table, cols]) => cols.filter(c => !found.has(table + "." + c)).map(c => table + "." + c));
+  if (missing.length) throw new PgCapabilityError("PG schema missing required columns: " + missing.join(", ") + "; no changes made. Use a compatible explicitly migrated target; do not overwrite an existing database with --fresh.");
+}
+
 export function pgFailure(): string {
   // Driver messages/SQL/parameters may contain raw URLs or credentials: do not echo them.
   return "PG operation failed (connection/schema/transaction); check the configured target and migrated schema; no SQLite fallback";

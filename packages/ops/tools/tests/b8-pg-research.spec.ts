@@ -140,7 +140,7 @@ describe.skipIf(!adminUrl)("B8 batch 2 real PG CLI (official migration)", () => 
     expect((await client.query("SELECT value FROM meta WHERE key='current_project@fresh'")).rows).toEqual([]);
   });
   it("out-of-scope verbs and global selection remain refused",()=>{
-    for(const args of [["research","claim","resolve",claimId],["research","claim","link",claimId,evidenceId],["research","source","fetch","https://example.test"],["research","evidence","rm",evidenceId],["project","rm","alpha"]])expect(cli([...args,"--json"]).rc).toBe(2);
+    for(const args of [["research","claim","evaluate",claimId],["research","predict","audit"],["research","source","fetch","https://example.test"],["research","evidence","assess",evidenceId],["project","rm","alpha"]])expect(cli([...args,"--json"]).rc).toBe(2);
   });
   it("missing generated source search column fails before any business insert",async()=>{
     await client.query("ALTER TABLE sources RENAME COLUMN ngram_tsv TO b8_saved_tsv");

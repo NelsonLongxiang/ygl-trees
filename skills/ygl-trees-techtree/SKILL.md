@@ -25,11 +25,12 @@ tags: ygl-trees,techtree,dag,unlock,gate
 | `tree new <name>` | `write {domain:"tree", action:"tree-new", tree:"..."}` |
 | `node add <key>` | `write {domain:"tree", action:"node-add", key:"..."}` |
 | `node link <a> <b>` | `write {domain:"tree", action:"node-link", key:"<a>", child:"<b>"}` |
-| `node unlock <key>` | `write {domain:"tree", action:"node-unlock", key:"..."}` |
+| `node unlock <key> --context c1` | `write {domain:"tree", action:"node-unlock", key:"...", context:"c1"}` |
+| `node cond <key> --name budget --op ">=" --value 2` | `write {domain:"tree", action:"node-cond", key:"...", name:"budget", op:">=", value:2}` |
 | `node index` | `write {domain:"tree", action:"node-index"}` |
 | `node list` | `read {domain:"tree", action:"state"}` |
-| `node can <key>` | `read {domain:"node", action:"can", key:"..."}` |
-| `node ready --all` | `read {domain:"node", action:"ready", all:true}` |
+| `node can <key> --context c1 --state budget=2` | `read {domain:"node", action:"can", key:"...", context:"c1", state:"budget=2"}` |
+| `node ready --all --context c1` | `read {domain:"node", action:"ready", all:true, context:"c1"}` |
 
 ## 1. 建树
 
@@ -71,6 +72,10 @@ ygl-trees node unlock mining && ygl-trees node lock mining
 - `cond --due` 提取 eval 问题文本中的 `YYYY-MM-DD`；默认 7 天窗口（含逾期），`--eval` 判定后仍需人工 resolve/unlock——判定 ≠ 仲裁（0.82）
 - **`--tree <t>` 长旗标（0.83）**：node 组树选择别名（与 `-t` 等价）——并发会话互踩 current_tree 时钉住目标；例外：`node import --tree <name>` 是导入目标树名，不是选择器
 - **`can --eval` attachments 快照（0.83）**：`--json` 增 `eval_attachments[]`、人类视图 `attachments ×N:`——本次判定吃了哪些 rel 证据一目了然，P 值复现不必翻库
+
+### 命名状态 context
+
+`can/ready/path/unlock/lock` 支持 `--context <name>`，默认 `default`，只选择同一棵树内的运行状态袋，不改变结构/项目/session。例：`node unlock mining --context c1` 后，`node can steel --context c1` 和 `node ready --context c1` 使用 c1 的已解锁集合；c2/default 不继承 c1。`node path steel --context c1` 从该集合规划，`node lock mining --context c1` 仅回锁 c1。MCP 已开放的 can/ready/node-unlock 使用 `context` 参数；node lock/path 未列入 MCP 白名单，本修复不新增该动作。`state` 是 CLI `k=v,k2=v2` 临时判据值字符串，不是 JSON 对象。node-cond 的 op/value 必填，缺值返回 rc2，不创建不可满足的空门槛。解锁仍沿既有显式标记语义，不新增强制判门。
 
 ## 3. 迁移与保真
 

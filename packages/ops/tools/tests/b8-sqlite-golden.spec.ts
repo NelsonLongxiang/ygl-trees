@@ -14,6 +14,7 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
   for (const key of ["YGL_DB_URL","YGL_PG_URL","YGL_PROJECT","DSH_SESSION_ID","NODE_OPTIONS"]) delete (env as any)[key];
   const sf=join(dir,"source.json"), cf=join(dir,"claim.json"), ef=join(dir,"quote.txt");
   const sb=join(dir,"sources.jsonl"), cb=join(dir,"claims.jsonl"), eb=join(dir,"evidence.jsonl"), bad=join(dir,"bad.jsonl");
+  const importDir=join(dir,"markdown");
   const commands = [
     ["project","new","golden-project","-q","中文 question","--json"],
     ["project","new","golden-project","-q","中文 question","--json"],
@@ -44,6 +45,37 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
     ["research","evidence","add","missing","--quote","bad reference","--json"],
     ["research","source","add","--relevance","0.3","--title","bad","--json"],
     ["research","claim","add","--file",cf,"--text","conflict","--json"],
+    ["research","query","add","Golden query","--json"],
+    ["research","query","add","Golden query","--json"],
+    ["research","query","attach","$query","$source","--json"],
+    ["research","query","attach","$query","$source","--json"],
+    ["research","query","list","--json"],
+    ["research","claim","link","$claim","$evidence","--json"],
+    ["research","claim","link","$claim","$evidence","--stance","refutes","--json"],
+    ["research","claim","resolve","$claim","--as","refuted","--note","isolated golden fixture","--json"],
+    ["research","claim","unlink","$claim","$evidence","--json"],
+    ["research","claim","show","$claim","--json"],
+    ["research","claim","unresolve","$claim","--json"],
+    ["research","claim","link","$claim","$evidence","--json"],
+    ["research","claim","resolve","$claim","--as","unverified","--json"],
+    ["research","claim","unresolve","$claim","--json"],
+    ["research","claim","link","$claim","$evidence","--json"],
+    ["research","claim","add","[预测·7天] isolated golden prediction","--json"],
+    ["research","claim","link","$prediction","$evidence","--json"],
+    ["research","claim","resolve","$prediction","--as","supported","--note","fixture only","--json"],
+    ["research","claim","unlink","$prediction","$evidence","--json"],
+    ["research","claim","show","$prediction","--json"],
+    ["research","evidence","rm","$evidence","--json"],
+    ["research","source","rm","$source","--json"],
+    ["research","evidence","rm","$evidence","--force","--json"],
+    ["research","claim","show","$claim","--json"],
+    ["research","source","rm","$source","--force","--json"],
+    ["kb","link","KB 黄金","Human","--rel","supports","--json"],
+    ["kb","link","KB 黄金","Human","--rel","supports","--json"],
+    ["kb","link","KB 黄金","missing","--json"],
+    ["kb","import",importDir,"--json"],
+    ["kb","import",importDir,"--json"],
+    ["kb","import",importDir,"--force","--json"],
   ];
   const collect = (bin: string) => {
     rmSync(home, {recursive:true,force:true}); mkdirSync(home);
@@ -54,14 +86,15 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
     writeFileSync(sb,[{title:"Batch source",url:"https://example.test/batch"},{title:"Batch source",url:"https://example.test/batch"}].map(r=>JSON.stringify(r)).join(String.fromCharCode(10)));
     writeFileSync(cb,[{text:"Batch claim"},{text:"Batch claim"}].map(r=>JSON.stringify(r)).join(String.fromCharCode(10)));
     writeFileSync(bad,[{title:"Must not land",url:"https://example.test/bad"},{title:"Invalid row",relevance:0.3}].map(r=>JSON.stringify(r)).join(String.fromCharCode(10)));
+    mkdirSync(importDir,{recursive:true});writeFileSync(join(importDir,"one.md"),"# Golden import one\nbody 中文");writeFileSync(join(importDir,"two.md"),"---\ntitle: Golden import two\n---\nbody two");
     const ids:Record<string,string>={};
     return commands.map((template,i) => {
       const args=template.map(v=>ids[v]||v);
       if(args.includes(eb)) writeFileSync(eb,[{source_id:ids.$source,quote:"Batch quote"},{source_id:ids.$source,quote:"Batch quote"}].map(r=>JSON.stringify(r)).join(String.fromCharCode(10)));
       const r=spawnSync(process.execPath,["--require",hook,bin,...args],{cwd:ROOT,env:{...env,B8_CLOCK_MILLIS:String(1893553445000+(i+1)*1000)},encoding:"utf8",timeout:20000});
-      const expected=args.includes(bad)||args.includes("0.3")||args.includes("conflict")?2:args.includes("missing")?1:0;
+      const expected=args.includes(bad)||args.includes("0.3")||args.includes("conflict")?2:args.includes("missing")||(args[0]==="research"&&["source","evidence"].includes(args[1])&&args[2]==="rm"&&!args.includes("--force"))?1:0;
       expect(r.status,r.stdout+r.stderr).toBe(expected);
-      if(args[0]==="research"&&args[2]==="add"&&r.status===0&&args.includes("--json")){const row=JSON.parse(r.stdout);if(row.id&&!ids["$"+args[1]])ids["$"+args[1]]=row.id;}
+      if(args[0]==="research"&&args[2]==="add"&&r.status===0&&args.includes("--json")){const row=JSON.parse(r.stdout);if(row.id&&!ids["$"+args[1]])ids["$"+args[1]]=row.id;if(args[1]==="claim"&&args[3]?.startsWith("[预测·"))ids.$prediction=row.id;}
       return {args,rc:r.status,out:r.stdout,err:r.stderr};
     });
   };

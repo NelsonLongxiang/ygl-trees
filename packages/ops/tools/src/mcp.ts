@@ -45,12 +45,12 @@ export interface CliOutcome {
  *  Uses process.argv[1] (the running script — bundle or source) to re-invoke
  *  the CLI as a child process. This works in both dev (dist/apps/...) and
  *  bundle (dist/bundle/bin.cjs) contexts. */
-function cliExec(parts: string[]): Promise<CliOutcome> {
+function cliExec(parts: string[], childEnv: NodeJS.ProcessEnv): Promise<CliOutcome> {
   const { spawn } = require("node:child_process") as typeof import("node:child_process");
   const self = process.argv[1]; // the bin.cjs or bin.js that's running this MCP server
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [self, "--json", ...parts], {
-      env: { ...process.env, YGL_SERVE: "1", YGL_MCP_CHILD: "1" },
+      env: { ...childEnv, YGL_SERVE: "1", YGL_MCP_CHILD: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -70,14 +70,18 @@ function cliExec(parts: string[]): Promise<CliOutcome> {
 
 /** Compat wrapper: rc=0 → parsed JSON; rc≠0 → throw an Error carrying
  *  `.rc` + `.json` so tools/call can surface {rc, error} machine-readably. */
-function cliJson(parts: string[]): Promise<unknown> {
-  return cliExec(parts).then((o) => {
+function cliJson(parts: string[], childEnv: NodeJS.ProcessEnv): Promise<unknown> {
+  return cliExec(parts, childEnv).then((o) => {
     if (o.rc === 0) return o.json;
     const e = new Error(`CLI rc=${o.rc}: ${o.stderr.slice(0, 200)}`) as Error & { rc: number; json: unknown };
     e.rc = o.rc;
     e.json = o.json && typeof o.json === "object" ? o.json : { error: o.stderr.slice(0, 300) || `CLI rc=${o.rc}` };
     throw e;
   });
+}
+
+function usageError(error: string): Error & { rc: number; json: { error: string } } {
+  return Object.assign(new Error(error), { rc: 2, json: { error } });
 }
 
 /** arg helper: optional string flag pair */
@@ -121,8 +125,8 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     show: () => ["tree", "show"],
   },
   node: {
-    can: (a) => { const p = ["node", "can", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return p; },
-    ready: (a) => { const p = ["node", "ready"]; if (a.all) p.push("--all"); if (a.tree) p.push("-t", String(a.tree)); return p; },
+    can: (a) => { const p = ["node", "can", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return [...p, ...opt("--context", a.context), ...opt("--state", a.state)]; },
+    ready: (a) => { const p = ["node", "ready"]; if (a.all) p.push("--all"); if (a.tree) p.push("-t", String(a.tree)); return [...p, ...opt("--context", a.context), ...opt("--state", a.state)]; },
   },
   task: {
     list: (a) => [...opt("-p", a.project), "task", "list"],
@@ -168,7 +172,11 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     "claim-resolve": (a) => ["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...opt("-p", a.project)],
   },
   kb: {
-    add: (a) => ["kb", "add", "--name", String(a.name), "--description", String(a.description ?? ""), "-f", String(a.file)],
+    add: (a) => {
+      if (!a.name || (!a.file && !a.body && !a.description)) throw usageError("kb add requires name and body (or file)");
+      if (a.file && (a.body !== undefined || a.description !== undefined)) throw usageError("kb add accepts body or file, not both");
+      return ["kb", "add", "--title", String(a.name), ...(a.file ? ["-f", String(a.file)] : ["--body", String(a.body ?? a.description)])];
+    },
     link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
   },
   tree: {
@@ -176,16 +184,24 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     "tree-use": (a) => ["tree", "use", String(a.tree)],
     "node-add": (a) => ["node", "add", String(a.key), ...opt("--name", a.name), ...opt("-t", a.tree)],
     "node-link": (a) => ["node", "link", String(a.key), String(a.child), ...opt("-t", a.tree)],
-    "node-unlock": (a) => ["node", "unlock", String(a.key), ...opt("-t", a.tree)],
+    "node-unlock": (a) => ["node", "unlock", String(a.key), ...opt("-t", a.tree), ...opt("--context", a.context)],
     "node-index": (a) => ["node", "index", ...opt("-t", a.tree)],
-    "node-cond": (a) => { const p = ["node", "cond", String(a.key), "--name", String(a.name)]; if (a.optional) p.push("--optional"); return [...p, ...opt("-t", a.tree)]; },
+    "node-cond": (a) => {
+      if (!a.key || !a.name || !a.op || a.value === undefined || a.value === null || String(a.value) === "") throw usageError("node-cond requires key, name, op and a non-empty value");
+      const p = ["node", "cond", String(a.key), "--name", String(a.name), "--op", String(a.op), "--value", String(a.value), ...opt("--kind", a.kind), ...opt("--expr", a.expr), ...opt("--effect", a.effect), ...opt("--weight", a.weight), ...opt("--options", a.options), ...opt("--answer", a.answer), ...opt("--levels", a.levels), ...opt("--min-score", a.min_score)];
+      if (a.optional) p.push("--optional");
+      return [...p, ...opt("-t", a.tree)];
+    },
   },
   task: {
     add: (a) => ["task", "add", String(a.text), ...opt("-p", a.project)],
     advance: (a) => ["task", String(a.to ?? "doing"), String(a.id)],
   },
   rel: {
-    attach: (a) => ["rel", "attach", String(a.node), String(a.type), String(a.target)],
+    attach: (a) => {
+      if (!a.node || !a.type || !a.target || !String(a.target).includes(":")) throw usageError("rel attach requires node, relation type, and a typed target such as kb:<id>");
+      return ["rel", "add", String(a.node).startsWith("node:") ? String(a.node) : "node:" + String(a.node), String(a.target), "--rel", String(a.type)];
+    },
   },
   project: {
     new: (a) => ["project", "new", String(a.name), ...opt("-q", a.question)],
@@ -203,7 +219,9 @@ const routeActions = (routes: Record<string, Record<string, ArgvBuilder>>): Reco
   return out;
 };
 
-export function buildTools(): McpTool[] {
+export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
+  const childEnv = { ...env };
+  const runCli = (parts: string[]) => cliJson(parts, childEnv);
   const readActions = routeActions(READ_ROUTES);
   const writeActions = routeActions(WRITE_ROUTES);
   const allReadActions = [...new Set(Object.values(readActions).flat())];
@@ -226,6 +244,8 @@ export function buildTools(): McpTool[] {
           tree: { type: "string", description: "tree name filter" },
           node: { type: "string", description: "node key (rel list)" },
           key: { type: "string", description: "node key (can)" },
+          context: { type: "string", description: "node can/ready: named state context, default is default" },
+          state: { type: "string", description: "node can/ready: temporary state using the CLI key=value,key2=value2 syntax" },
           project: { type: "string", description: "project filter" },
           all: { type: "boolean", description: "include all (ready/predict)" },
           eval: { type: "boolean", description: "enable semantic re-ranking (kb search)" },
@@ -233,12 +253,12 @@ export function buildTools(): McpTool[] {
         },
         required: ["domain", "action"],
       },
-      execute: (a) => {
+      execute: async (a) => {
         const domain = READ_ROUTES[String(a.domain)];
         if (!domain) return Promise.reject(new Error(`unknown domain: ${String(a.domain)}`));
         const builder = domain[String(a.action)];
         if (!builder) return Promise.reject(new Error(`unknown action '${String(a.action)}' for domain '${String(a.domain)}'`));
-        return cliJson(builder(a));
+        return runCli(builder(a));
       },
     },
     {
@@ -260,7 +280,8 @@ export function buildTools(): McpTool[] {
           batch_file: { type: "string", description: "#83 source-add/claim-add/evidence-add: jsonl batch file path (all-or-nothing; bad row names line+field rc=2, file missing rc=1, nothing written on failure)" },
           source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
           name: { type: "string", description: "kb name / node name / project name" },
-          description: { type: "string", description: "kb description" },
+          body: { type: "string", description: "kb add: note body; mutually exclusive with file" },
+          description: { type: "string", description: "kb add: compatibility alias for body; mutually exclusive with file" },
           file: { type: "string", description: "kb add: markdown file path" },
           note: { type: "string", description: "kb link: note id" },
           evidence_id: { type: "string", description: "kb link: evidence id" },
@@ -268,22 +289,33 @@ export function buildTools(): McpTool[] {
           key: { type: "string", description: "node key" },
           child: { type: "string", description: "node-link: child key" },
           optional: { type: "boolean", description: "node-cond: optional" },
+          context: { type: "string", description: "node-unlock: named state context, default is default" },
+          op: { type: "string", enum: [">=", "==", "<=", "!=", "has", "telemetry", "eval", "eval-choice", "eval-score"], description: "node-cond: required comparison operator" },
+          value: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }], description: "node-cond: required condition value or evaluation question" },
+          kind: { type: "string", description: "node-cond: flag/resource/etc. condition kind" },
+          expr: { type: "string", description: "node-cond: optional state expression" },
+          effect: { type: "string", enum: ["gate", "cost_mul"], description: "node-cond effect" },
+          weight: { type: "number", description: "node-cond weight" },
+          options: { type: "string", description: "eval-choice: comma-separated key=description options" },
+          answer: { type: "string", description: "eval-choice: expected option key" },
+          levels: { type: "string", description: "eval-score: comma-separated level descriptions" },
+          min_score: { type: "number", description: "eval-score: minimum acceptable level" },
           id: { type: "string", description: "task advance: task id" },
           to: { type: "string", enum: ["doing", "done", "todo"], description: "task advance target" },
           node: { type: "string", description: "rel attach: node key" },
           type: { type: "string", description: "rel attach: relation type" },
-          target: { type: "string", description: "rel attach: target id" },
+          target: { type: "string", description: "rel attach: typed target such as kb:<id> or evidence:<id>" },
           project: { type: "string", description: "explicit project" },
           question: { type: "string", description: "project new: research question" },
         },
         required: ["domain", "action"],
       },
-      execute: (a) => {
+      execute: async (a) => {
         const domain = WRITE_ROUTES[String(a.domain)];
         if (!domain) return Promise.reject(new Error(`unknown domain: ${String(a.domain)}`));
         const builder = domain[String(a.action)];
         if (!builder) return Promise.reject(new Error(`unknown action '${String(a.action)}' for domain '${String(a.domain)}'`));
-        return cliJson(builder(a));
+        return runCli(builder(a));
       },
     },
     {
@@ -306,14 +338,14 @@ export function buildTools(): McpTool[] {
         },
         required: ["action", "a"],
       },
-      execute: (a) => {
+      execute: async (a) => {
         switch (String(a.action)) {
-          case "submit": return cliJson(["verify", "submit", "--title", String(a.a), "--text", String(a.b ?? a.a)]);
-          case "prepare": return cliJson(["verify", "prepare", String(a.a), ...opt("--candidates", a.b), ...opt("--reviews", a.c), ...opt("--db", a.db)]);
-          case "run": return cliJson(["verify", "run", String(a.a), ...opt("--db", a.b)]);
-          case "report": return cliJson(["verify", "report", String(a.a)]);
-          case "archive": return cliJson(["verify", "archive", "verify", String(a.a)]);
-          case "meta": return cliJson(["verify", "meta", String(a.a)]);
+          case "submit": return runCli(["verify", "submit", "--title", String(a.a), "--text", String(a.b ?? a.a)]);
+          case "prepare": return runCli(["verify", "prepare", String(a.a), ...opt("--candidates", a.b), ...opt("--reviews", a.c), ...opt("--db", a.db)]);
+          case "run": return runCli(["verify", "run", String(a.a), ...opt("--db", a.b)]);
+          case "report": return runCli(["verify", "report", String(a.a)]);
+          case "archive": return runCli(["verify", "archive", "verify", String(a.a)]);
+          case "meta": return runCli(["verify", "meta", String(a.a)]);
           default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
         }
       },
@@ -327,7 +359,7 @@ export function buildTools(): McpTool[] {
           fix: { type: "boolean", description: "Auto-fix dirty index + stale locks" },
         },
       },
-      execute: (a) => cliJson(["doctor", ...(a.fix ? ["--fix"] : [])]),
+      execute: (a) => runCli(["doctor", ...(a.fix ? ["--fix"] : [])]),
     },
   ];
 }
@@ -424,9 +456,9 @@ export function serveMcp(version: string): void {
  * YGL_SESSION isolation: per-request header `X-YGL-Session` overrides env (market proxy
  * passes the caller's session identity through).
  */
-export function serveMcpHttp(version: string, port: number, opts: { token?: string } = {}): void {
+export function serveMcpHttp(version: string, port: number, opts: { token?: string } = {}): import("node:http").Server {
   const { createServer } = require("node:http") as typeof import("node:http");
-  const tools = buildTools();
+  const startupEnv = { ...process.env };
   const server = createServer((req, res) => {
     const url = (req.url || "").split("?")[0];
     if (url !== "/mcp") {
@@ -449,7 +481,7 @@ export function serveMcpHttp(version: string, port: number, opts: { token?: stri
       }
     }
     const yglSession = String(req.headers["x-ygl-session"] || "");
-    if (yglSession) process.env.YGL_SESSION = yglSession;
+    const tools = buildTools({ ...startupEnv, ...(yglSession ? { YGL_SESSION: yglSession } : {}) });
 
     let body = "";
     req.on("data", (d: Buffer) => {
@@ -475,6 +507,7 @@ export function serveMcpHttp(version: string, port: number, opts: { token?: stri
     });
   });
   server.listen(port, "127.0.0.1", () => {
-    process.stderr.write(`[ygl-trees MCP] HTTP server ready — POST http://127.0.0.1:${port}/mcp — ${tools.length} tools\n`);
+    process.stderr.write(`[ygl-trees MCP] HTTP server ready — POST http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}/mcp — 4 tools\n`);
   });
+  return server;
 }

@@ -232,16 +232,17 @@ ${paint(C.bold, "tree / node", color)}   tech-tree node model
                                       [--force rewrite an existing condition in place]
                                       [--effect gate|cost_mul] [--weight n]
   node index                         rebuild closure + topo order
-  node can <key> [--state k=v]       evaluate required vs optional gates
+  node can <key> [--context ctx] [--state k=v] evaluate required vs optional gates
                                      (--eval: eval 题型经决策模型判定；
                                       boolean P / choice P(期望答案) / score ±1 灰带)
-  node ready [--state k=v] [--eval]  currently unlockable set
+  node ready [--context ctx] [--state k=v] [--eval] currently unlockable set
                                      (--all: sweep every tree — no tree use needed)
   node cond --due [--days n] [--eval]  eval gates with YYYY-MM-DD deadlines due in n days
-  node path <key>                    dependency-order path to target (all locked ancestors; OR branches not optimized)
+  node path <key> [--context ctx]    dependency-order path to target (all locked ancestors; OR branches not optimized)
   node parents|children <key>        direct relations
   node ancestors|descendants <key>   transitive, via closure index
-  node list | show <key> | search "<q>" | unlock|lock <key> | rm <key>
+  node list | show <key> | search "<q>" | rm <key>
+  node unlock|lock <key> [--context ctx] mark state in one named context (default: default)
   node validate                      cycles, dangling edges, dirty index
   node export [--out file.json]      portable JSON
   node import --file <file.json>     [--tree name] [--merge] — strict, transactional
@@ -462,6 +463,12 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  if (group === "db" && action === "init") {
+    const allowed = new Set(["home", "db", "json", "no-color", "no-colour", "quiet", "debug", "help", "version"]);
+    if (Object.keys(args.flags).some(k => !allowed.has(k))) { bad(ctx, "unknown option for db init; --backend and other backend selectors are not implemented"); return 2; }
+    if (args._.length !== 2) { bad(ctx, "db init takes no positional arguments"); return 2; }
+    if (["home", "db"].some(k => args.flags[k] === true || (Array.isArray(args.flags[k]) && (args.flags[k] as unknown[]).some(v => v === true)))) { bad(ctx, "db init --home and --db require a path value"); return 2; }
+  }
   const home = str(args, "home", HOME);
   // verify 组（r15 P1-1）：`--db` 是业务库快照，不是工作区库——把它当工作区库会让
   // `verify run/prepare` 就地给业务库跑 ygl schema 迁移（实测灌入 57 张表、user_version 0→12），
@@ -469,8 +476,7 @@ export async function main(argv: string[]): Promise<number> {
   // #91：--db 是 MULTI_FLAGS（tree run 分叶绑库需要数组形）——单值面统一走 lastFlagOf 取末位。
   const file = group === "verify" ? dbPath(home) : lastFlagOf((args.flags as Record<string, unknown>).db) || dbPath(home);
   // ── B7（总工 direct-f7d3b5da 裁）：CLI boot PG 分支 ──
-  // YGL_DB_URL 为 postgres:// 时进 PG 模式：不要求/不创建 SQLite 工作区（db init 例外——
-  // 它绑定 SQLite 工作区，env 留给后续 PG 步骤，#93-① 与 B6 矩阵 PG 腿一致）；
+  // YGL_DB_URL selects PG without creating a SQLite workspace; PG init is not implemented.
   // PG 直连面放行，其余命令组点名拒绝（rc2：环境组合用法错误）——绝不静默回落 SQLite。
   // #93-③(a)：--db 携带 postgres:// 属凭证入 argv（ps/shell history/cmd.run 台账可见）——
   // 拒绝并指路 env。#93-③(b)：env PG + 显式 --db <sqlite 路径> 冲突 fail-closed 点名双目标（plan D2）。
@@ -488,28 +494,28 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (process.env.YGL_DB_URL && !PG_URL_RE.test(process.env.YGL_DB_URL)) { bad(ctx, "invalid YGL_DB_URL: configure a postgres:// target or unset it explicitly (no SQLite fallback)"); return 2; }
-  let pgUrl = PG_URL_RE.test(String(process.env.YGL_DB_URL || "")) ? String(process.env.YGL_DB_URL) : "";
-  if (pgUrl && group === "db" && action === "init") pgUrl = ""; // #93-①: db init 绑定 SQLite 工作区（env 留给后续 PG 步骤）——走正常 SQLite 路径
+  const pgUrl = PG_URL_RE.test(String(process.env.YGL_DB_URL || "")) ? String(process.env.YGL_DB_URL) : "";
+  if (pgUrl && group === "db" && action === "init") { bad(ctx, "PG db init is not implemented; no workspace files were created. Use the explicit db migrate pg workflow from a separate SQLite source workspace, then select the migrated PG target via YGL_DB_URL."); return 2; }
   if (pgUrl && dbFlagRaw) {
     bad(ctx, `conflicting targets: YGL_DB_URL=${redactPgUrl(pgUrl)} (PG) vs --db ${dbFlagRaw} (SQLite) — pick one (plan D2 fail-closed, no silent precedence)`);
     return 2;
   }
-  // #93-①：db init 在 PG 模式下放行（绑定 SQLite 工作区）；verify self-check 是
-  // 语料驱动 DB-free 面（同 example/lint-candidates/probe），放行。
-  const PG_DB_ACTIONS = new Set(["stats", "path", "init"]);
-  const PG_RESEARCH = group === "research" && ["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "");
-  const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
+  // verify self-check is corpus-driven and does not initialize a PG or SQLite business workspace.
+  const PG_DB_ACTIONS = new Set(["stats", "path"]);
+  const PG_RESEARCH = group === "research" && ((["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "")) || (action === "query" && ["add", "attach", "list"].includes(args._[2] || "")) || (action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) || (["source", "evidence"].includes(action || "") && args._[2] === "rm"));
+  const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
   const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui; B8: kb add/list/show | project new/use/list/show | research source/evidence/claim add/list/show`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
   }
-  const { checkPgWorkspace, bindPgWorkspace, pgFailure } = require("../../../packages/core/database/src/pg-workspace");
+  const { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns } = require("../../../packages/core/database/src/pg-workspace");
+  if (pgUrl && PG_BUSINESS && require("node:fs").existsSync(dbPath(home))) { bad(ctx, `conflicting targets: SQLite file ${dbPath(home)} present in the selected PG workspace; use a separate YGL_HOME (no SQLite fallback)`); return 2; }
   try {
     if (pgUrl || require("node:fs").existsSync(require("node:path").join(home, "pg-binding.json"))) {
       checkPgWorkspace(home, pgUrl, PG_BUSINESS ? dbPath(home) : undefined);
@@ -524,7 +530,22 @@ export async function main(argv: string[]): Promise<number> {
       const { getPgOrm, closeOrm } = require("../../../packages/core/database/src/orm");
       try {
         const ds = await getPgOrm(pgUrl);
-        if ((PG_RESEARCH && args._[2] === "add") || (group === "kb" && action === "add") || (group === "project" && ["new", "use"].includes(action || ""))) {
+        if (PG_RESEARCH && action === "query") {
+          await requirePgColumns(ds, { queries: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], query_sources: ["query_id", "source_id", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if (group === "kb" && ["link", "import"].includes(action || "")) {
+          await requirePgColumns(ds, action === "link" ? { kb_notes: ["id", "title"], kb_links: ["from_id", "to_id", "rel"] } : { kb_notes: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram", "ngram_tsv"] });
+        }
+        if (PG_RESEARCH && action === "claim") {
+          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "confidence", "content_hash", "created", "updated", "channel"] });
+        }
+        if (PG_RESEARCH && ["source", "evidence"].includes(action || "") && args._[2] === "rm") {
+          await requirePgColumns(ds, { sources: ["id", "project_id", "title", "ngram", "ngram_tsv"], evidence: ["id", "project_id", "source_id", "quote", "ngram", "ngram_tsv"], claims: ["id", "project_id", "text", "status", "updated"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if (PG_RESEARCH && action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) {
+          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "updated", "channel"], evidence: ["id", "project_id", "source_id"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if ((PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
           await bindPgWorkspace(ds, home, pgUrl, appVersion());
         } else {
           // Read commands do not create/update metadata or workspace files.
@@ -532,8 +553,8 @@ export async function main(argv: string[]): Promise<number> {
           const b = JSON.parse(rows[0]?.value || "null");
           if (b?.mode !== "pg" || b.url_hash !== require("../../../packages/core/database/src/pg-workspace").pgTargetHash(pgUrl)) throw new Error("PG binding mismatch");
         }
-      } catch { await closeOrm(); throw new Error("PG bind failed"); }
-    } catch { bad(ctx, pgFailure()); return 1; }
+      } catch (e) { await closeOrm(); throw e; }
+    } catch (e: any) { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; }
   }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
