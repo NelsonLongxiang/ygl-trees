@@ -58,6 +58,48 @@ ygl-trees plugin list                         # state（启用/停用）+ cfg（
 | `commands` | 否 | `{ <组名>: { run(env, action, rest, args) → rc } }`——贡献 CLI 命令组；dispatch 顺序：插件命令 → 内建 DOMAIN_ROUTES → unknown |
 | `package.json` 的 `yglTrees` | 否 | 兼容声明（如 `"^0.36"`）；主版本不符启动时 stderr 警告（不拒绝） |
 
+### run 的参数与旗标（当前实现，unstable）
+
+以下为 **v0.117.x 当前实现行为，非冻结契约；解析细节可能变更**。四参数签名 `run(env, action, rest, args)` 是已声明接口；布尔键集合、重复键处理等细节没有因此成为冻结面。退出码与 `--json` 输出仍遵守仓库的冻结 Agent API 契约。实现定位：[Args / parse](../packages/core/database/src/types.ts) 与 [插件分发](../apps/cli/src/bin.ts)。
+
+```ts
+// CLI 已完成 shell 拆词；args 不是原始 argv。
+type Args = {
+  _: string[]; // 所有位置参数，包含命令组和 action；不含旗标及已消费的旗标值
+  flags: Record<string, string | boolean | string[]>;
+};
+// 调用：run(env, args._[1] || "", args._.slice(2), args)
+```
+
+例如 `ygl-trees demo greet Ada --name=Grace --json`：
+
+```json
+{"action":"greet","rest":["Ada"],"args":{"_":["demo","greet","Ada"],"flags":{"name":"Grace","json":true}}}
+```
+
+- `action` 单独传入（无 action 时为空字符串）；`rest` **不含 action**，也不含旗标或已被旗标消费的值。
+- `env.ctx` 是 json/color/quiet 输出上下文；`env.cordis` 才是 Cordis Context。插件应检查自己的输入，不要把裸值旗标的 `true` 直接字符串化。
+
+| 当前解析行为 | 最小复现命令 | 传给插件的结果 |
+|---|---|---|
+| 普通值旗标 / inline | `ygl-trees demo greet --name Ada --json` / `ygl-trees demo greet --name=Ada --json` | `args.flags.name === "Ada"`；值不做数字或布尔转换 |
+| inline 布尔样文本仍是字符串 | `ygl-trees demo greet --name=false --json` | `args.flags.name === "false"`；同理 `--json=false` 的 flags 值也是字符串，不是 false 布尔值 |
+| 固定布尔键 | `ygl-trees demo greet Ada --json --quiet` | `flags.json === true`、`flags.quiet === true`；当前集合为 json/no-color/no-colour/quiet/debug/help/version；help/version 会在分发前短路，不调用插件 |
+| 非布尔键不自动成为开关 | `ygl-trees demo greet --toggle value --json` / `ygl-trees demo greet --toggle --json` | 前者 `flags.toggle === "value"`，后者为 `true`；自定义 `--toggle` 会消费后面的普通 token |
+| 裸值旗标 / 空值 | `ygl-trees demo greet --name --json` / `ygl-trees demo greet --name= --json` | flags.name 分别为 `true` / `""`；示例 action 将二者拒为 rc2，单 JSON 错误 |
+| 普通键重复取末值 | `ygl-trees demo greet --name Ada --name Grace --json` | `flags.name === "Grace"` |
+| 指定重复键收集数组 | `ygl-trees demo greet --attach=a --attach=b --json` | `flags.attach === ["a","b"]`；当前仅 attach/db 收数组，单个值也为数组，其他键不是通用数组选项；裸重复键仍可能得到 true，须校验 |
+| `--` 终止解析 | `ygl-trees demo greet --json -- --literal` | `rest === ["--literal"]`；分隔符本身不保留，后续内容全为位置参数 |
+| 短旗标 | `ygl-trees demo greet -n Ada --json` | `flags.n === "Ada"`，不自动变成 name；本示例只读取 name。单字母短旗标可识别，不展开组合短旗标 |
+
+`--db` / `--home` 等全局选项还会影响 CLI 启动：例如重复 `--db` 虽保留数组，单库启动使用末值，全部值仍受 PG URL 禁入 argv 的检查。不要为传插件业务数据而借用这些全局键。未知业务旗标由插件自行校验，不存在自动 schema 注册。
+
+安装 [demo](../examples/plugin-demo) 后可运行 `ygl-trees demo greet --name Ada --json`；成功返回 rc0 与单对象 `{"plugin":"ygl-plugin-demo","greeting":"Hello, Ada","name":"Ada"}`。可用以下只读命令检查解析器本身（仓库已 build）：
+
+```bash
+node -e 'console.log(require("./dist/packages/core/database/src/types.js").parse(process.argv.slice(1)))' demo greet --attach=a --attach=b --json=false -- --literal
+```
+
 安全模型：插件代码以进程全权限运行——**只装你信任的包**（与 DSH profile 同语义）。
 
 ## 结构（DSH 典范的 ygl-trees 缩放版）

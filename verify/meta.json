@@ -40,7 +40,7 @@
     },
     {
       "path": "examples/plugin-demo/index.js",
-      "sha256": "147aa99e53672f8c6c442797e8c2b96ca8303c5ee6099041aa79687e05186a11",
+      "sha256": "89583aa0816e9d7eb135dc7ad03c36ecdfeab5d836e488355596d7bc5ae568ee",
       "role": "test"
     },
     {
@@ -957,6 +957,14 @@
       "reason": "#115: pin PG init pre-write refusal and unknown backend/option JSON rc2",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-29T05:01:01.083Z"
+    },
+    {
+      "path": "examples/plugin-demo/index.js",
+      "old_sha256": "147aa99e53672f8c6c442797e8c2b96ca8303c5ee6099041aa79687e05186a11",
+      "new_sha256": "89583aa0816e9d7eb135dc7ad03c36ecdfeab5d836e488355596d7bc5ae568ee",
+      "reason": "#120: demonstrate args.flags name with real CLI tests; document parsing as unstable, no parser change",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T06:45:26.398Z"
     }
   ],
   "kind": "engine",
