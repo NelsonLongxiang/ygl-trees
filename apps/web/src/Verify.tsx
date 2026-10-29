@@ -237,17 +237,10 @@ function MaterialForm() {
 }
 
 function TraceView() {
-  const [specs, setSpecs] = useState<VerifySpecRow[]>([]);
+  const specs = useLoad(fetchVerifySpecs);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<VerifySpecDetail | null>(null);
   const [materialText, setMaterialText] = useState<string>("");
-  const [loadErr, setLoadErr] = useState<string>("");
-
-  useEffect(() => {
-    fetchVerifySpecs()
-      .then((rows) => { setSpecs(rows); setLoadErr(""); })
-      .catch((e) => { setSpecs([]); setLoadErr(String(e?.message || e)); });
-  }, []);
 
   useEffect(() => {
     if (!selected) return;
@@ -287,125 +280,287 @@ function TraceView() {
   ];
 
   return (
-    <Space align="start" size={16} style={{ width: "100%", alignItems: "flex-start" }}>
-      <Card size="small" title="规范" style={{ width: 280, flex: "0 0 280px" }}>
-        {loadErr ? (
-          <Alert type="error" showIcon title="规范清单加载失败" description={<Text code>{loadErr}</Text>} />
-        ) : specs.length === 0 ? (
-          <Empty description="还没有规范" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        ) : (
-          <Listy
-            items={specs}
-            rowKey="spec_id"
-            itemRender={(s) => (
-              <SelectRow selected={s.spec_id === selected} onSelect={() => setSelected(s.spec_id)}>
-                <Space orientation="vertical" size={0}>
-                  <Text strong>{s.title || s.spec_id}</Text>
-                  <Text type="secondary">
-                    v{s.spec_version} · {s.units} 判据 · {s.runs} 次运行
-                  </Text>
-                  <Text type="secondary">
-                    {s.verdict ? `构造：${s.verdict}` : "构造：—"} {s.last_overall ? `· 最近：${s.last_overall}` : ""}
-                  </Text>
-                </Space>
-              </SelectRow>
-            )}
-          />
-        )}
-      </Card>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {!detail ? (
-          <Card size="small"><Empty description="选择左侧规范查看构造追溯" image={Empty.PRESENTED_IMAGE_SIMPLE} /></Card>
-        ) : (
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-            <Alert
-              type="info"
-              showIcon
-              title="只读审计面"
-              description="这里展示 prepare 的产物（判据↔检查器↔自审结论），用于事后复核；判定链上没有人工确认按钮。"
-            />
-            <Card size="small" title="材料原文（专家提交的一段话）">
-              <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>{materialText || "（材料正文缺失）"}</Paragraph>
-            </Card>
-            <Card size="small" title="构造结论">
-              <Descriptions size="small" column={4}>
-                <Descriptions.Item label="verdict"><VerdictTag verdict={detail.prepare?.verdict ?? ""} /></Descriptions.Item>
-                <Descriptions.Item label="轮次">{detail.prepare?.rounds ?? 0}</Descriptions.Item>
-                <Descriptions.Item label="候选">{detail.prepare?.units ?? detail.spec.vu.length}</Descriptions.Item>
-                <Descriptions.Item label="被拒">{detail.prepare?.rejected?.length ?? 0}</Descriptions.Item>
-              </Descriptions>
-              {(detail.prepare?.rejected?.length ?? 0) > 0 && (
-                <Space orientation="vertical" size={4} style={{ marginTop: 8 }}>
-                  {detail.prepare!.rejected!.map((r, i) => (
-                    <Text key={i} type="secondary">· [{r.stage}] {r.reason}</Text>
-                  ))}
-                </Space>
-              )}
-            </Card>
-            <Card size="small" title={`判据 ↔ 检查器（${detail.spec.vu.length}）`}>
-              <Table
-                size="small"
-                rowKey="id"
-                pagination={false}
-                dataSource={detail.spec.vu}
-                columns={unitColumns as any}
+    <Split
+      side={
+        <Card size="small" title="规范">
+          <ListState load={specs} empty="还没有规范">
+            {(all) => (
+              <Listy
+                items={all}
+                rowKey="spec_id"
+                itemRender={(s) => (
+                  <SelectRow selected={s.spec_id === selected} onSelect={() => setSelected(s.spec_id)}>
+                    <Space orientation="vertical" size={0}>
+                      <Text strong>{s.title || s.spec_id}</Text>
+                      <Text type="secondary">
+                        v{s.spec_version} · {s.units} 判据 · {s.runs} 次运行
+                      </Text>
+                      <Text type="secondary">
+                        {s.verdict ? `构造：${s.verdict}` : "构造：—"} {s.last_overall ? `· 最近：${s.last_overall}` : ""}
+                      </Text>
+                    </Space>
+                  </SelectRow>
+                )}
               />
-            </Card>
-          </Space>
-        )}
-      </div>
-    </Space>
+            )}
+          </ListState>
+        </Card>
+      }
+    >
+      {!detail ? (
+        <Card size="small"><Empty description="选择左侧规范查看构造追溯" image={Empty.PRESENTED_IMAGE_SIMPLE} /></Card>
+      ) : (
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            title="只读审计面"
+            description="这里展示 prepare 的产物（判据↔检查器↔自审结论），用于事后复核；判定链上没有人工确认按钮。"
+          />
+          <Card size="small" title="材料原文（专家提交的一段话）">
+            <Paragraph style={{ margin: 0, whiteSpace: "pre-wrap" }}>{materialText || "（材料正文缺失）"}</Paragraph>
+          </Card>
+          <Card size="small" title="构造结论">
+            <Descriptions size="small" column={4}>
+              <Descriptions.Item label="verdict"><VerdictTag verdict={detail.prepare?.verdict ?? ""} /></Descriptions.Item>
+              <Descriptions.Item label="轮次">{detail.prepare?.rounds ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="候选">{detail.prepare?.units ?? detail.spec.vu.length}</Descriptions.Item>
+              <Descriptions.Item label="被拒">{detail.prepare?.rejected?.length ?? 0}</Descriptions.Item>
+            </Descriptions>
+            {(detail.prepare?.rejected?.length ?? 0) > 0 && (
+              <Space orientation="vertical" size={4} style={{ marginTop: 8 }}>
+                {detail.prepare!.rejected!.map((r, i) => (
+                  <Text key={i} type="secondary">· [{r.stage}] {r.reason}</Text>
+                ))}
+              </Space>
+            )}
+          </Card>
+          <Card size="small" title={`判据 ↔ 检查器（${detail.spec.vu.length}）`}>
+            <Table
+              size="small"
+              rowKey="id"
+              pagination={false}
+              dataSource={detail.spec.vu}
+              columns={unitColumns as any}
+            />
+          </Card>
+        </Space>
+      )}
+    </Split>
   );
 }
 
+/**
+ * A spec is re-prepared as a new spec_id with a higher spec_version in the same
+ * domain; only the highest one still runs. Current specs come first ordered as a
+ * work queue — last run not passing, then never run, then passing — and the
+ * superseded ones apart, so a retired v3 that last FAILed is not on top.
+ */
+export function specLineup(rows: VerifySpecRow[]): { current: VerifySpecRow[]; superseded: VerifySpecRow[] } {
+  const line = (s: VerifySpecRow) => s.domain || s.spec_id;
+  const top = new Map<string, number>();
+  for (const s of rows) top.set(line(s), Math.max(top.get(line(s)) ?? -Infinity, s.spec_version));
+  const rank = (s: VerifySpecRow) => (!s.runs ? 1 : s.last_overall === "PASS" ? 2 : 0);
+  const byTitle = (a: VerifySpecRow, b: VerifySpecRow) => (a.title || a.spec_id).localeCompare(b.title || b.spec_id);
+  const isCurrent = (s: VerifySpecRow) => s.spec_version === top.get(line(s));
+  return {
+    current: rows.filter(isCurrent).sort((a, b) => rank(a) - rank(b) || byTitle(a, b)),
+    superseded: rows.filter((s) => !isCurrent(s)).sort((a, b) => byTitle(a, b) || b.spec_version - a.spec_version),
+  };
+}
+
+/** How a spec's runs came out, most common first: "5170 PASS · 3 FAIL". */
+export function runTally(rows: VerifyReportRow[]): string {
+  const n = new Map<string, number>();
+  for (const r of rows) n.set(r.overall || "—", (n.get(r.overall || "—") ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(" · ");
+}
+
+/** Runs render a page at a time: one spec on a real verifier has thousands. */
+export const RUN_PAGE = 30;
+
+/**
+ * Report board on real data (a verifier home holds tens of thousands of runs):
+ * pick a spec, see its latest report at once, and page back through its runs.
+ * The old board fetched and listed every run of every spec — 74k rows crashed
+ * the tab.
+ */
 function ReportBoard() {
-  const [rows, setRows] = useState<VerifyReportRow[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [detail, setDetail] = useState<VerifyReportDetail | null>(null);
-  const [loadErr, setLoadErr] = useState<string>("");
+  const specs = useLoad(fetchVerifySpecs);
+  const [spec, setSpec] = useState<VerifySpecRow | null>(null);
+  const [runs, setRuns] = useState<{ spec: string; rows: VerifyReportRow[] } | null>(null);
+  const [shown, setShown] = useState(RUN_PAGE);
+  const [onlyBad, setOnlyBad] = useState(false);
+  const [run, setRun] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ run: string; d: VerifyReportDetail | null } | null>(null);
+  // a run picked far down the list shows its report above it: bring it into view
+  const top = useRef<HTMLDivElement | null>(null);
+  const reveal = useRef(false);
+  const open = (id: string) => {
+    reveal.current = true;
+    setRun(id);
+  };
+  useEffect(() => {
+    if (!reveal.current || detail?.run !== run) return;
+    reveal.current = false;
+    top.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [detail, run]);
+
+  const pick = (s: VerifySpecRow) => {
+    setSpec(s);
+    setRun(s.last_run || null);
+    setShown(RUN_PAGE);
+    setOnlyBad(false);
+  };
+
+  // The latest report first, the run list after it: the server reads report
+  // files synchronously, so a list request sent first (seconds on thousands of
+  // runs) would hold the one-file detail request behind it.
+  const latestIn = !spec?.last_run || detail?.run === spec.last_run;
+  useEffect(() => {
+    if (!spec || !latestIn) return;
+    let live = true;
+    fetchVerifyReports(spec.spec_id)
+      .then((rows) => live && setRuns({ spec: spec.spec_id, rows }))
+      .catch(() => live && setRuns({ spec: spec.spec_id, rows: [] }));
+    return () => { live = false; };
+  }, [spec, latestIn]);
 
   useEffect(() => {
-    fetchVerifyReports()
-      .then((r) => { setRows(r); setLoadErr(""); })
-      .catch((e) => { setRows([]); setLoadErr(String(e?.message || e)); });
-  }, []);
+    if (!run) return;
+    let live = true;
+    fetchVerifyReport(run)
+      .then((d) => live && setDetail({ run, d }))
+      .catch(() => live && setDetail({ run, d: null }));
+    return () => { live = false; };
+  }, [run]);
 
-  useEffect(() => {
-    if (!selected) return;
-    fetchVerifyReport(selected).then(setDetail).catch(() => setDetail(null));
-  }, [selected]);
+  const rows = runs?.spec === spec?.spec_id ? runs?.rows ?? null : null;
+  const filtered = rows && onlyBad ? rows.filter((r) => r.overall !== "PASS") : rows;
 
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Card size="small" title="运行记录">
-        {loadErr ? (
-          <Alert type="error" showIcon title="运行记录加载失败" description={<Text code>{loadErr}</Text>} />
-        ) : rows.length === 0 ? (
-          <Empty description="还没有运行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        ) : (
-          <Listy
-            items={rows}
-            rowKey="run_id"
-            itemRender={(r) => (
-              <SelectRow selected={r.run_id === selected} onSelect={() => setSelected(r.run_id)}>
-                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <Space orientation="vertical" size={0} style={{ flex: 1, minWidth: 0 }}>
-                    <Text strong>{r.run_id}</Text>
-                    <Text type="secondary">{r.spec_id} v{r.spec_version} · {r.mode} · {r.finished}</Text>
-                  </Space>
-                  <Text type="secondary">
-                    {r.summary.pass}✓ {r.summary.fail}✗ {r.summary.needs_material}? {r.summary.error}! · 归档 {r.archived}
-                  </Text>
-                  <ScopeTag scope={r.semantic_scope} />
-                  <VerdictTag verdict={r.overall} />
-                </div>
-              </SelectRow>
+    <Split
+      side={
+        <Card size="small" title="规范">
+          <ListState load={specs} empty="还没有规范">
+            {(all) => {
+              const { current, superseded } = specLineup(all);
+              const item = (s: VerifySpecRow) => (
+                <SelectRow selected={s.spec_id === spec?.spec_id} onSelect={() => pick(s)}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <Space orientation="vertical" size={0} style={{ flex: 1, minWidth: 0 }}>
+                      <Text strong>{s.title || s.spec_id}</Text>
+                      <Text type="secondary">v{s.spec_version} · {s.runs ? `${s.runs} 次运行` : "还没运行过"}</Text>
+                    </Space>
+                    {s.runs ? <VerdictTag verdict={s.last_overall} /> : null}
+                  </div>
+                </SelectRow>
+              );
+              return (
+                <>
+                  <Listy items={current} rowKey="spec_id" itemRender={item} />
+                  {superseded.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: "pointer", color: C.secondary, padding: "4px 0" }}>
+                        已被新版本取代（{superseded.length}）
+                      </summary>
+                      <Listy items={superseded} rowKey="spec_id" itemRender={item} />
+                    </details>
+                  )}
+                </>
+              );
+            }}
+          </ListState>
+        </Card>
+      }
+    >
+      {!spec ? (
+        <Card size="small"><Empty description="选择左侧规范：先看它最近一次报告，再往回翻运行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} /></Card>
+      ) : (
+        <Space orientation="vertical" size={12} style={{ width: "100%", scrollMarginTop: 72 }} ref={top}>
+          {!run ? null : detail?.run !== run ? (
+            <Card size="small"><Text type="secondary">报告加载中…</Text></Card>
+          ) : detail.d ? (
+            <ReportDetail detail={detail.d} latest={run === spec.last_run} />
+          ) : (
+            <Alert type="error" showIcon title={`报告读不到：${run}`} />
+          )}
+          <Card
+            size="small"
+            title={`运行记录${rows ? `（${rows.length}）` : ""}`}
+            extra={rows && rows.length > 0 ? <Text type="secondary">{runTally(rows)}</Text> : null}
+          >
+            {!filtered ? (
+              <Text type="secondary">运行记录加载中…（运行多时首次读取会慢）</Text>
+            ) : (
+              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+                <Button size="small" aria-pressed={onlyBad} type={onlyBad ? "primary" : "default"} ghost={onlyBad} onClick={() => { setOnlyBad(!onlyBad); setShown(RUN_PAGE); }}>
+                  只看未通过
+                </Button>
+                {filtered.length === 0 ? (
+                  <Text type="secondary">{onlyBad ? "没有未通过的运行" : "没有运行记录"}</Text>
+                ) : (
+                  <Listy
+                    items={filtered.slice(0, shown)}
+                    rowKey="run_id"
+                    itemRender={(r) => (
+                      <SelectRow selected={r.run_id === run} onSelect={() => open(r.run_id)}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                          <Text style={{ flex: 1, minWidth: 0 }}>{r.finished || r.started || "—"}</Text>
+                          <Text type="secondary">
+                            {r.summary.pass}✓ {r.summary.fail}✗ {r.summary.needs_material}? {r.summary.error}!
+                          </Text>
+                          <Text type="secondary" code>{r.run_id}</Text>
+                          <VerdictTag verdict={r.overall} />
+                        </div>
+                      </SelectRow>
+                    )}
+                  />
+                )}
+                {filtered.length > shown && (
+                  <Button size="small" onClick={() => setShown(shown + RUN_PAGE)}>
+                    再显示 {Math.min(RUN_PAGE, filtered.length - shown)} 条（还有 {filtered.length - shown}）
+                  </Button>
+                )}
+              </Space>
             )}
-          />
-        )}
-      </Card>
-      {detail && <ReportDetail detail={detail} />}
-    </Space>
+          </Card>
+        </Space>
+      )}
+    </Split>
+  );
+}
+
+/** A fetch's three states. Lists used to say "还没有规范" for the 17 s a real
+ *  verifier home takes to answer — an empty list while loading is a lie. */
+type Load<T> = { state: "loading" } | { state: "error"; error: string } | { state: "ok"; value: T };
+function useLoad<T>(fn: () => Promise<T>): Load<T> {
+  const [v, setV] = useState<Load<T>>({ state: "loading" });
+  useEffect(() => {
+    let live = true;
+    fn()
+      .then((value) => live && setV({ state: "ok", value }))
+      .catch((e) => live && setV({ state: "error", error: String(e?.message || e) }));
+    return () => { live = false; };
+  }, [fn]);
+  return v;
+}
+
+export function ListState<T>({ load, empty, children }: { load: Load<T[]>; empty: string; children: (rows: T[]) => ReactNode }) {
+  if (load.state === "loading") return <Text type="secondary" role="status">加载中…</Text>;
+  if (load.state === "error") return <Alert type="error" showIcon title="加载失败" description={<Text code>{load.error}</Text>} />;
+  if (!load.value.length) return <Empty description={empty} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  return <>{children(load.value)}</>;
+}
+
+/** List on the left, detail filling the rest. antd Space wraps each child in
+ *  an item box, so the detail's flex:1 never applied and it stayed narrow. */
+function Split({ side, children }: { side: ReactNode; children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{ flex: "0 0 280px", maxWidth: "100%" }}>{side}</div>
+      <div style={{ flex: "1 1 360px", minWidth: 0 }}>{children}</div>
+    </div>
   );
 }
 
@@ -414,7 +569,7 @@ function ReportBoard() {
  * 边界只在首屏出现一次（标签 + ≤1.2 报告的一行缺省说明）；VU 表只在报告真带
  * `semantic_scope`（契约 1.3 起）时才加「边界」列——缺省不逐行重复（监督席评审 ①③）。
  */
-export function ReportDetail({ detail }: { detail: VerifyReportDetail }) {
+export function ReportDetail({ detail, latest }: { detail: VerifyReportDetail; latest?: boolean }) {
   const exceptions = detail.report.exceptions ?? [];
   const exceptionIds = new Set(exceptions.map((e) => e.vu));
   const declaredPerVu = detail.report.vu.some((v) => v.semantic_scope != null);
@@ -440,7 +595,7 @@ export function ReportDetail({ detail }: { detail: VerifyReportDetail }) {
     },
   ];
   return (
-    <Card size="small" title="报告">
+    <Card size="small" title={latest ? "最近一次报告" : "报告"} extra={<Text type="secondary">{detail.report.finished || detail.report.started}</Text>}>
       <Space orientation="vertical" size={8} style={{ width: "100%" }}>
         <Space wrap>
           <VerdictTag verdict={detail.report.overall} />

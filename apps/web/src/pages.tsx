@@ -289,12 +289,20 @@ export function GraphPage() {
   );
 }
 
+/** "5 份文档 · 9 个版本": a regenerated report is one document, not five (same
+ *  kind + title = one document, as the roster groups them). Counted here, not
+ *  imported from Artifacts, which is lazy — it carries react-markdown. */
+export function artifactsExtra(rows: Array<{ kind: string; title: string }>): string {
+  const docs = new Set(rows.map((a) => `${a.kind}\u0000${a.title}`)).size;
+  return docs === rows.length ? `${docs} 份文档` : `${docs} 份文档 · ${rows.length} 个版本`;
+}
+
 export function ArtifactsPage() {
   const { data } = useDashboard();
   if (!data) return null;
   if (!data.artifacts.length && data.unselected) return <UnselectedNotice />;
   return (
-    <Section icon={<FileTextOutlined />} title="产出工件" extra={`${data.artifacts.length} 工件 · react-markdown 全文渲染`}>
+    <Section icon={<FileTextOutlined />} title="产出工件" extra={artifactsExtra(data.artifacts)}>
       <Suspense fallback={<Card loading />}>
         <Artifacts artifacts={data.artifacts} />
       </Suspense>

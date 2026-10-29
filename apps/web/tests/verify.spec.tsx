@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
-import Verify, { ReportDetail, ScopeTag, VerifyTabs, scopeHint, scopeLabel, validateMaterial } from "../src/Verify";
-import type { VerifyReportDetail } from "../src/api";
+import Verify, {
+  ListState, RUN_PAGE, ReportDetail, ScopeTag, VerifyTabs, runTally, scopeHint, scopeLabel, specLineup, validateMaterial,
+} from "../src/Verify";
+import type { VerifyReportDetail, VerifyReportRow, VerifySpecRow } from "../src/api";
 
 /**
  * M13-2 三视图渲染验证（静态渲染，不引 jsdom——与 pipeline.spec.tsx 同法）：
@@ -149,5 +151,64 @@ describe("语义边界标签（T6）", () => {
     expect(html).toMatch(/<th[^>]*>边界<\/th>/);
     expect((html.match(/>边界 事实</g) ?? []).length).toBe(1); // V1 一行
     expect((html.match(/>边界 仅结构</g) ?? []).length).toBe(2); // 报告头一次 + V2 一行
+  });
+});
+
+/**
+ * 报告看板在真实数据上（设计验证器一个 home 7.4 万份报告）：旧看板一次拉全部运行记录并整列渲染，
+ * 标签页直接崩溃。现在先选规范、立刻看它最近一次报告，运行记录按规范取、分页渲染。
+ */
+describe("报告看板：真实数据规模", () => {
+  const spec = (over: Partial<VerifySpecRow>): VerifySpecRow => ({
+    spec_id: "spec_x", spec_version: 1, title: "t", domain: "", created: "", units: 1, verdict: "ready", rounds: 1,
+    material: "", runs: 1, last_overall: "PASS", last_run: "run_x", ...over,
+  });
+
+  it("同一 domain 只有最高版本算现行；旧版本另列，不因最后一次 FAIL 被置顶", () => {
+    const { current, superseded } = specLineup([
+      spec({ spec_id: "a3", domain: "design.aggregate", spec_version: 3, title: "聚合验收", last_overall: "FAIL" }),
+      spec({ spec_id: "a13", domain: "design.aggregate", spec_version: 13, title: "聚合验收" }),
+      spec({ spec_id: "lint", domain: "design.lint", spec_version: 16, title: "格式检查" }),
+    ]);
+    expect(current.map((s) => s.spec_id).sort()).toEqual(["a13", "lint"]);
+    expect(superseded.map((s) => s.spec_id)).toEqual(["a3"]);
+  });
+
+  it("现行规范按工作清单排：最近未通过 → 从未运行 → 通过；无 domain 的各自成线", () => {
+    const { current, superseded } = specLineup([
+      spec({ spec_id: "p", title: "a" }),
+      spec({ spec_id: "n", title: "b", runs: 0, last_overall: "" }),
+      spec({ spec_id: "f", title: "c", last_overall: "FAIL" }),
+      spec({ spec_id: "m", title: "d", last_overall: "NEEDS-MATERIAL" }),
+    ]);
+    expect(current.map((s) => s.spec_id)).toEqual(["f", "m", "n", "p"]);
+    expect(superseded).toEqual([]);
+  });
+
+  it("运行结果汇总按次数从多到少", () => {
+    const r = (overall: string) => ({ overall } as VerifyReportRow);
+    expect(runTally([r("PASS"), r("FAIL"), r("PASS"), r("")])).toBe("2 PASS · 1 FAIL · 1 —");
+    expect(RUN_PAGE).toBeLessThanOrEqual(50);
+  });
+
+  it("加载中不说「还没有」：真实 home 首次读取要十几秒，空清单在这段时间里是假话", () => {
+    const render = (load: Parameters<typeof ListState>[0]["load"]) =>
+      renderToStaticMarkup(createElement(ListState, { load, empty: "还没有规范", children: (rows: unknown[]) => `${rows.length} 条` }));
+    expect(render({ state: "loading" })).toContain("加载中");
+    expect(render({ state: "loading" })).not.toContain("还没有规范");
+    expect(render({ state: "ok", value: [] })).toContain("还没有规范");
+    expect(render({ state: "ok", value: [1, 2] })).toContain("2 条");
+    expect(render({ state: "error", error: "api/verify/specs 500" })).toContain("api/verify/specs 500");
+  });
+
+  it("最近一次报告带标题与完成时刻", () => {
+    const d: VerifyReportDetail = {
+      report: { run_id: "run_1", overall: "PASS", reason: "ok", summary: { pass: 1, fail: 0, needs_material: 0, error: 0 }, started: "", finished: "2026-10-29T03:04:15.666Z", vu: [] },
+      archives: [],
+    };
+    const html = renderToStaticMarkup(createElement(ReportDetail, { detail: d, latest: true }));
+    expect(html).toContain("最近一次报告");
+    expect(html).toContain("2026-10-29T03:04:15.666Z");
+    expect(renderToStaticMarkup(createElement(ReportDetail, { detail: d }))).not.toContain("最近一次报告");
   });
 });
