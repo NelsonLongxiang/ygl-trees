@@ -497,19 +497,19 @@ export async function main(argv: string[]): Promise<number> {
   // #93-①：db init 在 PG 模式下放行（绑定 SQLite 工作区）；verify self-check 是
   // 语料驱动 DB-free 面（同 example/lint-candidates/probe），放行。
   const PG_DB_ACTIONS = new Set(["stats", "path", "init"]);
-  const PG_RESEARCH = group === "research" && ["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "");
-  const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
+  const PG_RESEARCH = group === "research" && ((["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "")) || (action === "query" && ["add", "attach", "list"].includes(args._[2] || "")) || (action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) || (["source", "evidence"].includes(action || "") && args._[2] === "rm"));
+  const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
   const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui; B8: kb add/list/show | project new/use/list/show | research source/evidence/claim add/list/show`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
   }
-  const { checkPgWorkspace, bindPgWorkspace, pgFailure } = require("../../../packages/core/database/src/pg-workspace");
+  const { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns } = require("../../../packages/core/database/src/pg-workspace");
   try {
     if (pgUrl || require("node:fs").existsSync(require("node:path").join(home, "pg-binding.json"))) {
       checkPgWorkspace(home, pgUrl, PG_BUSINESS ? dbPath(home) : undefined);
@@ -524,7 +524,22 @@ export async function main(argv: string[]): Promise<number> {
       const { getPgOrm, closeOrm } = require("../../../packages/core/database/src/orm");
       try {
         const ds = await getPgOrm(pgUrl);
-        if ((PG_RESEARCH && args._[2] === "add") || (group === "kb" && action === "add") || (group === "project" && ["new", "use"].includes(action || ""))) {
+        if (PG_RESEARCH && action === "query") {
+          await requirePgColumns(ds, { queries: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], query_sources: ["query_id", "source_id", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if (group === "kb" && ["link", "import"].includes(action || "")) {
+          await requirePgColumns(ds, action === "link" ? { kb_notes: ["id", "title"], kb_links: ["from_id", "to_id", "rel"] } : { kb_notes: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram", "ngram_tsv"] });
+        }
+        if (PG_RESEARCH && action === "claim") {
+          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "confidence", "content_hash", "created", "updated", "channel"] });
+        }
+        if (PG_RESEARCH && ["source", "evidence"].includes(action || "") && args._[2] === "rm") {
+          await requirePgColumns(ds, { sources: ["id", "project_id", "title", "ngram", "ngram_tsv"], evidence: ["id", "project_id", "source_id", "quote", "ngram", "ngram_tsv"], claims: ["id", "project_id", "text", "status", "updated"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if (PG_RESEARCH && action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) {
+          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "updated", "channel"], evidence: ["id", "project_id", "source_id"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if ((PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
           await bindPgWorkspace(ds, home, pgUrl, appVersion());
         } else {
           // Read commands do not create/update metadata or workspace files.
@@ -532,8 +547,8 @@ export async function main(argv: string[]): Promise<number> {
           const b = JSON.parse(rows[0]?.value || "null");
           if (b?.mode !== "pg" || b.url_hash !== require("../../../packages/core/database/src/pg-workspace").pgTargetHash(pgUrl)) throw new Error("PG binding mismatch");
         }
-      } catch { await closeOrm(); throw new Error("PG bind failed"); }
-    } catch { bad(ctx, pgFailure()); return 1; }
+      } catch (e) { await closeOrm(); throw e; }
+    } catch (e: any) { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; }
   }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`

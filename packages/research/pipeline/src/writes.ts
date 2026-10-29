@@ -20,7 +20,7 @@ import { Event } from "../../../core/database/src/entities";
 import { contentHash, ngram, nowIso, sha1, shortId } from "../../../core/text/src/text";
 import { ormDialect } from "../../../core/database/src/orm";
 import { insertOrFetch } from "../../../core/database/src/upsert";
-import { pgTargetHash } from "../../../core/database/src/pg-workspace";
+import { pgTargetHash, PgCapabilityError, requirePgColumns } from "../../../core/database/src/pg-workspace";
 import { currentSelectionVia, eventActor } from "../../../core/database/src/selection";
 // 0.91a (Cordis review direct-032bf3b4): static import — the old
 // `require()`-in-try/catch form silently dies under ESM hosts (vitest),
@@ -126,6 +126,16 @@ export async function queryAdd(
 ): Promise<WriteResult> {
   const hash = contentHash(text, force);
   return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) === "postgres") {
+      await requirePgColumns(mgr, { queries: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+      await assertPgWriteTarget(mgr);
+      await assertPgProjectWritable(mgr, projectId);
+      const r = await insertOrFetch({ table: "queries", cols: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], values: [shortId(["q", projectId, text], 10), projectId, text, engine, "pending", "", hash, nowIso()], conflictCols: ["project_id", "content_hash"] }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+      if (!r.row) throw new Error("query upsert returned no row");
+      if (!r.duplicate) await logEvent(mgr, "query.add", "query", r.row.id, text);
+      const q = r.row;
+      return { row: { id: q.id, project_id: q.project_id, text: q.text, engine: q.engine, status: q.status, note: q.note, content_hash: q.content_hash, created: q.created }, dup: r.duplicate };
+    }
     const ex = await mgr.findOne(Query, { where: { projectId, contentHash: hash } });
     if (ex) return { row: mapQuery(ex), dup: true };
     const q = new Query();
@@ -397,15 +407,17 @@ export async function claimLink(
   claimId: string,
   evidenceId: string,
   stance: "supports" | "refutes" = "supports"
-): Promise<{ status: string; auto_promote: boolean }> {
+): Promise<{ status: string; auto_promote: boolean; duplicate?: boolean }> {
   return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) === "postgres") await preparePgClaimMutation(mgr, claimId, evidenceId);
     // Resolve both ends before writing: a bad/foreign id must surface as a
     // named not-found, not as a raw FOREIGN KEY constraint failure.
-    const c = (await mgr.query(`SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
+    const c = (await stateRows(mgr, `SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
     if (!c.length) throw new Error(`claim not found: ${claimId}`);
-    const e = (await mgr.query(`SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
+    const e = (await stateRows(mgr, `SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
     if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
-    await mgr.query(
+    const duplicate = ormDialect(mgr) === "postgres" && (await mgr.query("SELECT 1 FROM claim_evidence WHERE claim_id=$1 AND evidence_id=$2", [claimId, evidenceId])).length > 0;
+    await stateRows(mgr,
       `INSERT INTO claim_evidence(claim_id,evidence_id,stance) VALUES(?,?,?)
        ON CONFLICT(claim_id,evidence_id) DO UPDATE SET stance=excluded.stance`,
       [claimId, evidenceId, stance]
@@ -422,7 +434,7 @@ export async function claimLink(
       // keeps its arbitrated status and updated stamp untouched).
       const r = await recomputeClaimStatus(mgr, claimId);
       await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId} (prediction: auto-promote skipped)`);
-      return { status: r.status, auto_promote: false };
+      return { status: r.status, auto_promote: false, ...(duplicate ? { duplicate: true } : {}) };
     }
     // GitHub #14 ①: one implementation for the status derivation — the old
     // inline copy here drifted from recomputeClaimStatus (it skipped `updated`).
@@ -430,18 +442,58 @@ export async function claimLink(
     // say so instead of claiming an auto-promotion that did not happen.
     const r = await recomputeClaimStatus(mgr, claimId);
     await logEvent(mgr, "claim.link", "claim", claimId, `${stance} ${evidenceId}`);
-    return { status: r.status, auto_promote: r.recalculated };
+    return { status: r.status, auto_promote: r.recalculated, ...(duplicate ? { duplicate: true } : {}) };
   });
 }
 
-/** Recompute a claim's status from its remaining claim_evidence rows.
- *  Prediction claims (`[预测·…]` prefix) keep their status: evidence linking is
- *  evidence gathering, arbitration stays `claim resolve` (same guard as claimLink). */
+/** Internal SQL here is fixed text without literal question marks; parameters remain bound. */
+function stateRows(mgr: EntityManager, sql: string, params: unknown[] = []): Promise<any[]> {
+  let i = 0;
+  return mgr.query(ormDialect(mgr) === "postgres" ? sql.replace(/\?/g, () => "$" + ++i) : sql, params);
+}
+
+async function preparePgDeletion(mgr: EntityManager, table: "sources" | "evidence", id: string): Promise<void> {
+  await requirePgColumns(mgr, { sources: ["id", "project_id", "title", "ngram", "ngram_tsv"], evidence: ["id", "project_id", "source_id", "quote", "ngram", "ngram_tsv"], claims: ["id", "project_id", "text", "status", "updated"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+  await assertPgWriteTarget(mgr);
+  const owner = await mgr.query("SELECT project_id FROM " + table + " WHERE id=$1", [id]);
+  if (!owner.length) throw new PgWriteError((table === "sources" ? "source" : "evidence") + " not found: " + id);
+  await assertPgProjectWritable(mgr, owner[0].project_id);
+  const locked = await mgr.query("SELECT id FROM " + table + " WHERE id=$1 FOR UPDATE", [id]);
+  if (!locked.length) throw new PgWriteError((table === "sources" ? "source" : "evidence") + " not found: " + id);
+  const evidence = table === "sources" ? await mgr.query("SELECT id FROM evidence WHERE source_id=$1 ORDER BY id FOR UPDATE", [id]) : [{ id }];
+  const ids = evidence.map((e: any) => e.id);
+  if (ids.length) {
+    // All link/unlink writers acquire the evidence fence before their claim lock.
+    // Once fenced, the reference set cannot grow; lock every affected claim in stable order.
+    await mgr.query("SELECT c.id FROM claims c WHERE c.id IN (SELECT ce.claim_id FROM claim_evidence ce WHERE ce.evidence_id=ANY($1)) ORDER BY c.id FOR UPDATE", [ids]);
+  }
+}
+
+async function preparePgClaimMutation(mgr: EntityManager, claimId: string, evidenceId?: string): Promise<void> {
+  await requirePgColumns(mgr, { claims: ["id", "project_id", "text", "status", "updated", "channel"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+  await assertPgWriteTarget(mgr);
+  const owner = await mgr.query("SELECT project_id FROM claims WHERE id=$1", [claimId]);
+  if (!owner.length) throw new PgWriteError("claim not found: " + claimId);
+  await assertPgProjectWritable(mgr, owner[0].project_id);
+  if (evidenceId) {
+    const sourceOwner = await mgr.query("SELECT project_id FROM evidence WHERE id=$1", [evidenceId]);
+    if (sourceOwner.length) await assertPgProjectWritable(mgr, sourceOwner[0].project_id);
+  }
+  // Evidence before claims: deletion can fence new links, then lock affected claims in id order.
+  if (evidenceId) {
+    const e = await mgr.query("SELECT id FROM evidence WHERE id=$1 FOR SHARE", [evidenceId]);
+    if (!e.length) throw new PgWriteError("evidence not found: " + evidenceId);
+  }
+  const c = await mgr.query("SELECT id FROM claims WHERE id=$1 FOR UPDATE", [claimId]);
+  if (!c.length) throw new PgWriteError("claim not found: " + claimId);
+}
+
+/** Predictions preserve state; ordinary claims honor the last effective arbitration before deriving links. */
 async function recomputeClaimStatus(mgr: EntityManager, claimId: string): Promise<{ status: string; recalculated: boolean }> {
-  const c = (await mgr.query(`SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
+  const c = (await stateRows(mgr, `SELECT id, text FROM claims WHERE id=?`, [claimId])) as any[];
   if (!c.length) throw new Error(`claim not found: ${claimId}`);
   if (String(c[0]?.text ?? "").startsWith("[预测·")) {
-    const cur = (await mgr.query(`SELECT status FROM claims WHERE id=?`, [claimId])) as any[];
+    const cur = (await stateRows(mgr, `SELECT status FROM claims WHERE id=?`, [claimId])) as any[];
     return { status: String(cur?.[0]?.status ?? "unverified"), recalculated: false };
   }
   // Q3 (r29, 0.110.x): arbitration lock — an explicit `claim resolve` is a
@@ -449,20 +501,24 @@ async function recomputeClaimStatus(mgr: EntityManager, claimId: string): Promis
   // must not silently re-derive it away. The events table is the truth source
   // (no schema v13): latest event wins; `claim.unresolve` explicitly releases
   // the lock (derive from links again). Prediction claims already keep status.
-  const arb = (await mgr.query(
-    `SELECT kind, payload FROM events
-      WHERE kind IN ('claim.resolve','claim.unresolve') AND entity='claim' AND entity_id=?
-      ORDER BY ts DESC, rowid DESC LIMIT 1`,
-    [claimId]
-  )) as any[];
+  let arb: any[];
+  if (ormDialect(mgr) === "postgres") {
+    const candidates = await mgr.query("SELECT kind,payload,seq FROM events WHERE entity='claim' AND entity_id=$1 AND kind IN ('claim.resolve','claim.unresolve') AND ts=(SELECT MAX(ts) FROM events WHERE entity='claim' AND entity_id=$1 AND kind IN ('claim.resolve','claim.unresolve'))", [claimId]);
+    if (candidates.length > 1 && (candidates.some((e: any) => e.seq == null) || new Set(candidates.map((e: any) => String(e.seq))).size !== candidates.length)) {
+      throw new PgWriteError("历史仲裁事件顺序不可确定: tied timestamp with missing or duplicate events.seq; nothing was recalculated");
+    }
+    arb = candidates.sort((a: any, b: any) => BigInt(a.seq ?? 0) > BigInt(b.seq ?? 0) ? -1 : BigInt(a.seq ?? 0) < BigInt(b.seq ?? 0) ? 1 : 0).slice(0, 1);
+  } else {
+    arb = await mgr.query("SELECT kind,payload FROM events WHERE kind IN ('claim.resolve','claim.unresolve') AND entity='claim' AND entity_id=? ORDER BY ts DESC,rowid DESC LIMIT 1", [claimId]);
+  }
   if (arb.length && String(arb[0].kind) === "claim.resolve") {
     const status = String(arb[0].payload || "").split(/[\s|]/)[0] || "unverified";
     return { status, recalculated: false };
   }
-  const sup = (await mgr.query(
+  const sup = (await stateRows(mgr,
     `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='supports'`, [claimId]
   )) as any[];
-  const ref = (await mgr.query(
+  const ref = (await stateRows(mgr,
     `SELECT COUNT(*) AS c FROM claim_evidence WHERE claim_id=? AND stance='refutes'`, [claimId]
   )) as any[];
   const sN = Number(sup?.[0]?.c ?? 0);
@@ -482,20 +538,20 @@ export async function claimUnlink(
   evidenceId: string
 ): Promise<{ claim: string; evidence: string; stance: string; status: string; recalculated: boolean }> {
   return runTx(ds, async (mgr) => {
-    const c = (await mgr.query(`SELECT id FROM claims WHERE id=?`, [claimId])) as any[];
+    if (ormDialect(mgr) === "postgres") await preparePgClaimMutation(mgr, claimId, evidenceId);
+    const c = (await stateRows(mgr, `SELECT id FROM claims WHERE id=?`, [claimId])) as any[];
     if (!c.length) throw new Error(`claim not found: ${claimId}`);
-    const e = (await mgr.query(`SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
+    const e = (await stateRows(mgr, `SELECT id FROM evidence WHERE id=?`, [evidenceId])) as any[];
     if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
-    const link = (await mgr.query(
+    const link = (await stateRows(mgr,
       `SELECT stance FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [claimId, evidenceId]
     )) as any[];
     if (!link.length) {
-      throw new Error(
-        `link not found: claim ${claimId} ↔ evidence ${evidenceId} — run research claim show ${claimId} to see its linked evidence`
-      );
+      const message = `link not found: claim ${claimId} ↔ evidence ${evidenceId} — run research claim show ${claimId} to see its linked evidence`;
+      throw ormDialect(mgr) === "postgres" ? new PgWriteError(message) : new Error(message);
     }
     const stance = String(link[0]?.stance ?? "supports");
-    await mgr.query(`DELETE FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [claimId, evidenceId]);
+    await stateRows(mgr, `DELETE FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [claimId, evidenceId]);
     const r = await recomputeClaimStatus(mgr, claimId);
     await logEvent(
       mgr,
@@ -526,25 +582,26 @@ export async function evidenceRemove(
   statuses: Record<string, string>;
 }> {
   return runTx(ds, async (mgr) => {
-    const e = (await mgr.query(`SELECT id, quote FROM evidence WHERE id=?`, [evidenceId])) as any[];
-    if (!e.length) throw new Error(`evidence not found: ${evidenceId}`);
-    const links = (await mgr.query(
+    if (ormDialect(mgr) === "postgres") await preparePgDeletion(mgr, "evidence", evidenceId);
+    const e = (await stateRows(mgr,`SELECT id, quote FROM evidence WHERE id=?`, [evidenceId])) as any[];
+    if (!e.length) throw new PgWriteError(`evidence not found: ${evidenceId}`);
+    const links = (await stateRows(mgr,
       `SELECT claim_id FROM claim_evidence WHERE evidence_id=? ORDER BY claim_id`, [evidenceId]
     )) as any[];
     const claims = links.map((l: any) => String(l.claim_id));
     if (claims.length && !force) {
-      throw new Error(
+      throw new PgWriteError(
         `evidence ${evidenceId} is linked to ${claims.length} claim(s): ${claims.join(" ")} — ` +
           `unlink first (research claim unlink <claim> ${evidenceId}) or pass --force to cascade`
       );
     }
     const statuses: Record<string, string> = {};
     for (const cid of claims) {
-      await mgr.query(`DELETE FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [cid, evidenceId]);
+      await stateRows(mgr,`DELETE FROM claim_evidence WHERE claim_id=? AND evidence_id=?`, [cid, evidenceId]);
       const r = await recomputeClaimStatus(mgr, cid);
       statuses[cid] = r.status;
     }
-    await mgr.query(`DELETE FROM evidence WHERE id=?`, [evidenceId]);
+    await stateRows(mgr,`DELETE FROM evidence WHERE id=?`, [evidenceId]);
     // Write-path rule 1: FTS shadow writes live in the same transaction as the
     // base row. A delete that skips the shadow leaves a searchable orphan whose
     // base row is gone (external review #6).
@@ -572,13 +629,14 @@ export async function sourceRemove(
   force = false
 ): Promise<{ id: string; evidence_removed: number; claims_recomputed: number; forced: boolean; cascaded: number }> {
   return runTx(ds, async (mgr) => {
-    const s = (await mgr.query(`SELECT id, title FROM sources WHERE id=?`, [sourceId])) as any[];
-    if (!s.length) throw new Error(`source not found: ${sourceId}`);
-    const evs = (await mgr.query(`SELECT id FROM evidence WHERE source_id=? ORDER BY id`, [sourceId])) as any[];
+    if (ormDialect(mgr) === "postgres") await preparePgDeletion(mgr, "sources", sourceId);
+    const s = (await stateRows(mgr,`SELECT id, title FROM sources WHERE id=?`, [sourceId])) as any[];
+    if (!s.length) throw new PgWriteError(`source not found: ${sourceId}`);
+    const evs = (await stateRows(mgr,`SELECT id FROM evidence WHERE source_id=? ORDER BY id`, [sourceId])) as any[];
     const evIds = evs.map((r: any) => String(r.id));
     if (evIds.length && !force) {
       const list = evIds.slice(0, 8).join(" ") + (evIds.length > 8 ? " …" : "");
-      throw new Error(
+      throw new PgWriteError(
         `source ${sourceId} still has ${evIds.length} evidence row(s): ${list} — ` +
           `removing it would silently delete them and strand their claim links ` +
           `(evidence.source_id cascades); remove them first (research evidence rm <id> [--force]) ` +
@@ -587,14 +645,14 @@ export async function sourceRemove(
     }
     const claims = new Set<string>();
     for (const eid of evIds) {
-      const links = (await mgr.query(`SELECT claim_id FROM claim_evidence WHERE evidence_id=?`, [eid])) as any[];
+      const links = (await stateRows(mgr,`SELECT claim_id FROM claim_evidence WHERE evidence_id=?`, [eid])) as any[];
       for (const l of links) claims.add(String(l.claim_id));
-      await mgr.query(`DELETE FROM claim_evidence WHERE evidence_id=?`, [eid]);
-      await mgr.query(`DELETE FROM evidence WHERE id=?`, [eid]);
+      await stateRows(mgr,`DELETE FROM claim_evidence WHERE evidence_id=?`, [eid]);
+      await stateRows(mgr,`DELETE FROM evidence WHERE id=?`, [eid]);
       await ftsShadow(mgr, `DELETE FROM evidence_fts WHERE id=?`, [eid]);
     }
-    for (const cid of claims) await recomputeClaimStatus(mgr, cid);
-    await mgr.query(`DELETE FROM sources WHERE id=?`, [sourceId]);
+    for (const cid of [...claims].sort()) await recomputeClaimStatus(mgr, cid);
+    await stateRows(mgr,`DELETE FROM sources WHERE id=?`, [sourceId]);
     await ftsShadow(mgr, `DELETE FROM sources_fts WHERE id=?`, [sourceId]);
     await logEvent(
       mgr,
@@ -624,7 +682,8 @@ export async function sourceRemove(
  * unverified → duplicate:true, no event spam. */
 export async function claimUnresolve(ds: DataSource, claimId: string): Promise<{ status: string; duplicate: boolean }> {
   return runTx(ds, async (mgr) => {
-    const c = (await mgr.query(`SELECT id, status FROM claims WHERE id=?`, [claimId])) as any[];
+    if (ormDialect(mgr) === "postgres") await preparePgClaimMutation(mgr, claimId);
+    const c = (await stateRows(mgr, `SELECT id, status FROM claims WHERE id=?`, [claimId])) as any[];
     if (!c.length) throw new Error(`claim not found: ${claimId}`);
     if (String(c[0]?.status) === "unverified") return { status: "unverified", duplicate: true };
     await mgr.update(Claim, { id: claimId }, { status: "unverified", updated: nowIso() } as any);
@@ -635,6 +694,7 @@ export async function claimUnresolve(ds: DataSource, claimId: string): Promise<{
 
 export async function claimResolve(ds: DataSource, claimId: string, status: string, note = ""): Promise<void> {
   return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) === "postgres") await preparePgClaimMutation(mgr, claimId);
     // v9: update the timestamp when the claim is resolved
     await mgr.update(Claim, { id: claimId }, { status, updated: nowIso() } as any);
     await logEvent(mgr, "claim.resolve", "claim", claimId, `${status}${note ? " | " + note : ""}`);
@@ -651,6 +711,18 @@ export async function queryAttach(
   note = ""
 ): Promise<{ dup: boolean; queryText: string; sourceTitle: string; sourceId: string }> {
   return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) === "postgres") {
+      await requirePgColumns(mgr, { queries: ["id", "project_id", "text"], sources: ["id", "project_id", "title"], query_sources: ["query_id", "source_id", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+      await assertPgWriteTarget(mgr);
+      await assertPgProjectWritable(mgr, projectId);
+      const sources = await mgr.query("SELECT id,title FROM sources WHERE id=$1 AND project_id=$2 FOR SHARE", [sourceId, projectId]);
+      const queries = await mgr.query("SELECT id,text FROM queries WHERE (id=$1 OR text=$1) AND project_id=$2 ORDER BY id LIMIT 1 FOR SHARE", [queryIdOrText, projectId]);
+      if (!queries.length) throw new PgWriteError("query not found: " + queryIdOrText);
+      if (!sources.length) throw new PgWriteError("source not found in this project: " + sourceId);
+      const inserted = await mgr.query("INSERT INTO query_sources(query_id,source_id,note,created) VALUES($1,$2,$3,$4) ON CONFLICT(query_id,source_id) DO NOTHING RETURNING query_id", [queries[0].id, sourceId, note, nowIso()]);
+      if (inserted.length) await logEvent(mgr, "query.attach", "query", queries[0].id, sourceId);
+      return { dup: !inserted.length, queryText: queries[0].text, sourceTitle: sources[0].title, sourceId };
+    }
     const q = await mgr.findOne(Query, { where: [{ id: queryIdOrText, projectId }, { text: queryIdOrText, projectId }] });
     if (!q) throw new Error(`query not found: ${queryIdOrText}`);
     const s = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
@@ -669,7 +741,7 @@ export async function queryAttach(
   });
 }
 
-export class PgWriteError extends Error {}
+export class PgWriteError extends PgCapabilityError {}
 
 async function assertPgSearch(mgr: EntityManager, table: "sources" | "evidence"): Promise<void> {
   const rows = await mgr.query("SELECT is_generated FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1 AND column_name='ngram_tsv'", [table]);
@@ -692,28 +764,31 @@ async function assertPgWriteTarget(mgr: EntityManager): Promise<void> {
 
 // ================================================================ kb
 
+async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string }, hash: string): Promise<WriteResult> {
+
+  if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) throw new Error("PG writes require YGL_SESSION or DSH_SESSION_ID");
+  await assertPgWriteTarget(mgr);
+  const id = shortId(["kb", o.title], 10);
+  const now = nowIso();
+  const r = await insertOrFetch({
+    table: "kb_notes",
+    cols: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram"],
+    values: [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", 0, hash, now, now, ngram(o.title + " " + (o.tags || "") + " " + o.body)],
+    conflictCols: ["content_hash"],
+  }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+  if (!r.row) throw new Error("kb upsert returned no row");
+  if (!r.duplicate) await logEvent(mgr, "kb.add", "kb_note", r.row.id, o.title);
+  const { ngram: _ngram, ngram_tsv: _tsv, ...row } = r.row;
+  return { row, dup: r.duplicate };
+}
+
 export async function kbAdd(
   ds: DataSource,
   o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string; force?: boolean }
 ): Promise<WriteResult> {
   const hash = contentHash(`${o.title}\n${o.body}`, !!o.force);
   return runTx(ds, async (mgr) => {
-    if (ormDialect(mgr) === "postgres") {
-      if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) throw new Error("PG writes require YGL_SESSION or DSH_SESSION_ID");
-      await assertPgWriteTarget(mgr);
-      const id = shortId(["kb", o.title], 10);
-      const now = nowIso();
-      const r = await insertOrFetch({
-        table: "kb_notes",
-        cols: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram"],
-        values: [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", 0, hash, now, now, ngram(o.title + " " + (o.tags || "") + " " + o.body)],
-        conflictCols: ["content_hash"],
-      }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
-      if (!r.row) throw new Error("kb upsert returned no row");
-      if (!r.duplicate) await logEvent(mgr, "kb.add", "kb_note", r.row.id, o.title);
-      const { ngram: _ngram, ngram_tsv: _tsv, ...row } = r.row;
-      return { row, dup: r.duplicate };
-    }
+    if (ormDialect(mgr) === "postgres") return kbAddPgCore(mgr, o, hash);
     const ex = (await mgr.query(`SELECT * FROM kb_notes WHERE content_hash=?`, [hash])) as any[];
     if (ex.length) return { row: ex[0], dup: true };
     const id = shortId(["kb", o.title], 10);
@@ -741,6 +816,19 @@ export async function kbAdd(
  *  command deleted kb_fts and kb_notes with two autocommit statements, so a
  *  crash/busy error between them left the shadow out of sync (doctor's
  *  fts/kb mismatch), which is what users hit under high-concurrency imports. */
+export async function kbLinkPg(ds: DataSource, aRef: string, bRef: string, rel = "related"): Promise<{ a: { id: string; title: string }; b: { id: string; title: string }; rel: string }> {
+  return runTx(ds, async (mgr) => {
+    await requirePgColumns(mgr, { kb_notes: ["id", "title"], kb_links: ["from_id", "to_id", "rel"] });
+    await assertPgWriteTarget(mgr);
+    const a = (await mgr.query("SELECT id,title FROM kb_notes WHERE id=$1 OR title=$1 ORDER BY id LIMIT 1 FOR SHARE", [aRef]))[0];
+    const b = (await mgr.query("SELECT id,title FROM kb_notes WHERE id=$1 OR title=$1 ORDER BY id LIMIT 1 FOR SHARE", [bRef]))[0];
+    if (!a || !b) throw new PgWriteError("both notes must exist");
+    const inserted = await mgr.query("INSERT INTO kb_links(from_id,to_id,rel) VALUES($1,$2,$3) ON CONFLICT(from_id,to_id,rel) DO NOTHING RETURNING from_id", [a.id, b.id, rel]);
+    if (inserted.length) await logEvent(mgr, "kb.link", "kb_note", a.id, { to: b.id, rel });
+    return { a, b, rel };
+  });
+}
+
 export async function kbRemove(ds: DataSource, id: string): Promise<WriteResult> {
   return runTx(ds, async (mgr) => {
     const note = (await mgr.query(`SELECT id,title FROM kb_notes WHERE id=?`, [id])) as any[];
@@ -784,6 +872,11 @@ export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promi
   return runTx(ds, async (mgr) => {
     let added = 0;
     let dups = 0;
+    if (ormDialect(mgr) === "postgres") {
+      await requirePgColumns(mgr, { kb_notes: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram", "ngram_tsv"] });
+      for (const o of items) { const result = await kbAddPgCore(mgr, o, contentHash(`${o.title}\n${o.body}`, false)); result.dup ? dups++ : added++; }
+      return { added, dups };
+    }
     for (const o of items) {
       const hash = contentHash(`${o.title}\n${o.body}`, false);
       const ex = (await mgr.query(`SELECT id FROM kb_notes WHERE content_hash=?`, [hash])) as any[];

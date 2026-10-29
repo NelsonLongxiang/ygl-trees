@@ -7,7 +7,7 @@ import { ok, bad, out, head, table, show, paint, C, writeResult, ack } from "../
 import { clip, parseFrontmatter } from "../../../core/text/src/text";
 import { emitEvent } from "../../../core/text/src/eventbus";
 import { getOrm, getPgOrm } from "../../../core/database/src/orm";
-import { pgFailure } from "../../../core/database/src/pg-workspace";
+import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import * as writes from "../../../research/pipeline/src/writes";
 import { deriveL1 } from "../../../research/pipeline/src/reads";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
@@ -170,7 +170,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, env.pgUrl ? (e instanceof PgCapabilityError ? e.message : pgFailure()) : e?.message || String(e));
           return 1;
         });
     }
@@ -210,6 +210,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb link <note-a> <note-b> [--rel <type>]");
         return 2;
       }
+      if (env.pgUrl) return getPgOrm(env.pgUrl).then(ds => writes.kbLinkPg(ds, rest[0], rest[1], String(args.flags.rel || "related"))).then(r => { ack(ctx, r, `linked ${r.a.title} --${r.rel}--> ${r.b.title}`); return 0; }).catch(e => { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; });
       const a = store.kbGet(rest[0]);
       const b = store.kbGet(rest[1]);
       if (!a || !b) {
@@ -234,7 +235,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, env.pgUrl ? (e instanceof PgCapabilityError ? e.message : pgFailure()) : e?.message || String(e));
           return 1;
         });
     }
@@ -269,7 +270,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, env.pgUrl ? (e instanceof PgCapabilityError ? e.message : pgFailure()) : e?.message || String(e));
           return 1;
         });
     }
@@ -332,7 +333,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           origin: `import:${f}`,
         };
       });
-      return getOrm(env.db.path)
+      return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
         .then((ds) => writes.kbImportBulk(ds, items))
         .then((r): number => {
           if (ctx.json) console.log(JSON.stringify({ added: r.added, duplicates: r.dups, files: files.length, target }, null, 2));
@@ -340,7 +341,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, env.pgUrl ? (e instanceof PgCapabilityError ? e.message : pgFailure()) : e?.message || String(e));
           return 1;
         });
     }

@@ -8,7 +8,7 @@ import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../..
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
 import { getOrm, getPgOrm } from "../../../core/database/src/orm";
-import { pgFailure } from "../../../core/database/src/pg-workspace";
+import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
@@ -195,8 +195,13 @@ function nowCompact(): string {
 
 async function readOne(env: Env, sql: string, params: unknown[] = []): Promise<any> { return env.pgUrl ? env.asyncStore.queryOne(sql, params) : env.store.db.get(sql, params); }
 async function readRows(env: Env, sql: string, params: unknown[] = []): Promise<any[]> { return env.pgUrl ? env.asyncStore.query(sql, params) : env.store.db.all(sql, params); }
+async function mutationNotFound(env: Env, table: "claims" | "evidence" | "sources", id: string, kind: string): Promise<string> {
+  if (!env.pgUrl) return idNotFound(env.db, table, id, kind);
+  const owner = await env.asyncStore.queryOne("SELECT p.name FROM " + table + " t JOIN projects p ON p.id=t.project_id WHERE t.id=?", [id]);
+  return kind + " not found: " + id + (owner ? "  (it belongs to project '" + owner.name + "' — use -p " + owner.name + ")" : "");
+}
 function writeOrm(env: Env) { return env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path); }
-function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof writes.PgWriteError) ? pgFailure() : e?.message || String(e); }
+function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) ? pgFailure() : e?.message || String(e); }
 
 function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
@@ -302,14 +307,25 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 2;
       }
       const note = String(args.flags.note || "");
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then((ds) => writes.queryAttach(ds, project.id, rest[1], rest[2], note))
         .then((r): number => {
+          if (env.pgUrl && ctx.json) { console.log(JSON.stringify({ query: rest[1], source: r.sourceId, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
           if (r.dup) out(ctx, paint(C.yellow, `  ! already attached: ${r.sourceId}`, ctx.color));
           else ok(ctx, `attached: ${clip(r.sourceTitle || r.sourceId, 40)} → "${clip(r.queryText, 40)}"`);
           return 0;
         })
-        .catch((e: any): number => {
+        .catch(async (e: any): Promise<number> => {
+          if (env.pgUrl) {
+            let msg = writeError(env, e);
+            if (e instanceof writes.PgWriteError) {
+              const q = await env.asyncStore.queryOne("SELECT p.name FROM queries q JOIN projects p ON p.id=q.project_id WHERE q.id=? OR q.text=?", [rest[1], rest[1]]);
+              const s = await env.asyncStore.queryOne("SELECT p.name FROM sources s JOIN projects p ON p.id=s.project_id WHERE s.id=?", [rest[2]]);
+              const owner = msg.startsWith("query not found") ? q : s;
+              if (owner) msg += "  (it belongs to project '" + owner.name + "' — use -p " + owner.name + ")";
+            }
+            bad(ctx, msg); return 1;
+          }
           // #47 residual: query attach answers with the owning project, not a
           // generic "query not found" (scoped+owner naming is the current rule).
           const msg = e?.message || String(e);
@@ -328,7 +344,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         });
     }
         if (subAction === "list" || subAction === undefined) {
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then(async (ds): Promise<number> => {
           const qs = await ds.getRepository(Query).find({
             where: { projectId: project.id },
@@ -684,13 +700,13 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       // Project scoping matters here: sourceGet(id) alone would let a session
       // pointed at project A delete project B's source.
-      const s0 = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [id, project.id]);
+      const s0 = await readOne(env, "SELECT id FROM sources WHERE id=? AND project_id=?", [id, project.id]);
       if (!s0) {
-        bad(ctx, idNotFound(env.db, "sources", id, "source"));
+        bad(ctx, await mutationNotFound(env, "sources", id, "source"));
         return 1;
       }
       const force = args.flags.force === true;
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then((ds) => writes.sourceRemove(ds, id, force))
         .then((r: any): number => {
           if (ctx.json) {
@@ -703,7 +719,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
@@ -720,13 +736,13 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         bad(ctx, "usage: research evidence rm <evidenceId> [--force cascade claim links]");
         return 2;
       }
-      const e0 = store.db.get("SELECT id, quote FROM evidence WHERE id=? AND project_id=?", [id, project.id]);
+      const e0 = await readOne(env, "SELECT id, quote FROM evidence WHERE id=? AND project_id=?", [id, project.id]);
       if (!e0) {
-        bad(ctx, idNotFound(env.db, "evidence", id, "evidence"));
+        bad(ctx, await mutationNotFound(env, "evidence", id, "evidence"));
         return 1;
       }
       const force = args.flags.force === true;
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then((ds) => writes.evidenceRemove(ds, id, force))
         .then((r): number => {
           if (ctx.json) {
@@ -739,7 +755,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
@@ -1032,20 +1048,21 @@ if (subAction === "show") {
       // 人类面只在 --verbose 展开三行（批量 30+ 时信号不被淹没）。
       const verbose = !!args.flags.verbose;
       const evalAndLog = async (claimId: string, claimStatus: string): Promise<{ label?: string; score?: number }> => {
+        if (env.pgUrl) return {};
         try {
           // 0.86 M7-1 (Cordis P0-1): the model-eval gateway call goes through
           // ctx.ops.evalClaim — the service owns the ops domain; research no
           // longer reaches into ops source by relative require.
           const opsEval = (env as any).cordis?.ops;
           if (!opsEval) return {};
-          const evRows = store.db.all(
+          const evRows = await readRows(env,
             `SELECT e.quote, ce.stance, s.title AS source_title
                FROM claim_evidence ce
                JOIN evidence e ON e.id = ce.evidence_id
                LEFT JOIN sources s ON s.id = e.source_id
               WHERE ce.claim_id = ?`, [claimId]) as any[];
           const evalResult = await opsEval.evalClaim({
-            claim_text: (store.db.get("SELECT text FROM claims WHERE id=?", [claimId]) as any)?.text || "",
+            claim_text: (await readOne(env, "SELECT text FROM claims WHERE id=?", [claimId]) as any)?.text || "",
             claim_status: claimStatus,
             evidence: evRows,
           });
@@ -1072,25 +1089,25 @@ if (subAction === "show") {
         return {};
       };
       if (args.flags["by-source"]) {
-        const evs = store.db.all(
+        const evs = await readRows(env,
           "SELECT id FROM evidence WHERE source_id=? AND project_id=? ORDER BY created",
           [rest[2], project.id]
         ) as any[];
         if (!evs.length) {
-          const srcExists = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [rest[2], project.id]);
+          const srcExists = await readOne(env, "SELECT id FROM sources WHERE id=? AND project_id=?", [rest[2], project.id]);
           bad(ctx, srcExists
             ? `source ${rest[2]} has no evidence yet — research evidence add ${rest[2]} --quote ".." first`
-            : idNotFound(env.db, "sources", rest[2], "source"));
+            : await mutationNotFound(env, "sources", rest[2], "source"));
           return 1;
         }
-        return getOrm(env.db.path)
+        return writeOrm(env)
           .then(async (ds): Promise<number> => {
             const existing = new Set(
-              (store.db.all("SELECT evidence_id FROM claim_evidence WHERE claim_id=?", [rest[1]]) as any[])
+              (await readRows(env, "SELECT evidence_id FROM claim_evidence WHERE claim_id=?", [rest[1]]) as any[])
                 .map((x: any) => x.evidence_id)
             );
             // #84：批量面只在状态变化/预测跳晋级处打一行摘要（默认安静、--verbose 展开模型行）。
-            const statusBefore = String((store.db.get("SELECT status FROM claims WHERE id=?", [rest[1]]) as any)?.status ?? "");
+            const statusBefore = String((await readOne(env, "SELECT status FROM claims WHERE id=?", [rest[1]]) as any)?.status ?? "");
             let linked = 0, dups = 0, status = "", autoPromote: boolean | undefined;
             for (const ev of evs) {
               const r = await writes.claimLink(ds, rest[1], ev.id, stance);
@@ -1113,29 +1130,30 @@ if (subAction === "show") {
             }
             return 0;
           })
-          .catch((e: any): number => {
-            bad(ctx, e?.message || String(e));
+          .catch(async (e: any): Promise<number> => {
+            bad(ctx, writeError(env, e));
             return 1;
           });
       }
       // F4 (0.110.x): cross-project link hint — the stored project_id is the
       // criterion (a link-time snapshot, not dynamic visibility); either end
       // with no project → no hint.
-      const crossProject = (() => {
-        const cp = store.db.get("SELECT p.name AS name FROM claims c JOIN projects p ON p.id=c.project_id WHERE c.id=?", [rest[1]]) as any;
-        const ep = store.db.get("SELECT p.name AS name FROM evidence e JOIN projects p ON p.id=e.project_id WHERE e.id=?", [rest[2]]) as any;
+      const crossProject = await (async () => {
+        const cp = await readOne(env, "SELECT p.name AS name FROM claims c JOIN projects p ON p.id=c.project_id WHERE c.id=?", [rest[1]]) as any;
+        const ep = await readOne(env, "SELECT p.name AS name FROM evidence e JOIN projects p ON p.id=e.project_id WHERE e.id=?", [rest[2]]) as any;
         if (!cp?.name || !ep?.name || cp.name === ep.name) return null;
         return { claim: cp.name, evidence: ep.name };
       })();
       // F4：duplicate 检出在 link 前完成（幂等重跑跳过评估 + 回执如实标 duplicate）
-      const wasDup = !!store.db.get("SELECT 1 FROM claim_evidence WHERE claim_id=? AND evidence_id=?", [rest[1], rest[2]]);
-      return getOrm(env.db.path)
+      const wasDup = env.pgUrl ? false : !!await readOne(env, "SELECT 1 FROM claim_evidence WHERE claim_id=? AND evidence_id=?", [rest[1], rest[2]]);
+      return writeOrm(env)
         .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
         .then(async (r): Promise<number> => {
           // R15 深度集成：链接后自动触发置信度评估。0.84.0 修复两处——
           // ① await 落地：fire-and-forget 会被 CLI 短进程退出截断（事件从未落账）；
           // ② JSON 纯度：评估先结算再打回执，模型档位并入 JSON 对象（契约② stdout 单对象）。
-          const model = wasDup ? {} : await evalAndLog(rest[1], r.status);
+          const duplicate = env.pgUrl ? r.duplicate === true : wasDup;
+          const model = duplicate ? {} : await evalAndLog(rest[1], r.status);
           const modelLabel = model.label;
           const modelScore = model.score;
           // 0.82.1: prediction claims never auto-promote on link — the receipt
@@ -1145,7 +1163,7 @@ if (subAction === "show") {
             ? `selection '${project.name}' owns neither end of this link; the link is cross-project because ids resolve workspace-wide — pin ownership explicitly with -p when both ends should be scoped`
             : undefined;
           if (ctx.json) {
-            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(wasDup ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
+            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(duplicate ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
           } else if (r.auto_promote === false) {
             ok(ctx, `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`);
           } else {
@@ -1156,13 +1174,13 @@ if (subAction === "show") {
           }
           return 0;
         })
-        .catch((e: any): number => {
+        .catch(async (e: any): Promise<number> => {
           // Report ④-2: the three-id taxonomy (source/evidence/claim) makes
           // "evidence not found: X" ambiguous when X is actually a SOURCE id.
           // Detect that case and hand back the real evidence ids to use.
           const m = /^evidence not found: (.+)$/.exec(e?.message || "");
           if (m) {
-            const evs = store.db.all(
+            const evs = await readRows(env,
               "SELECT id FROM evidence WHERE source_id=? AND project_id=? ORDER BY created LIMIT 8",
               [m[1], project.id]
             ) as any[];
@@ -1170,13 +1188,13 @@ if (subAction === "show") {
               bad(ctx, `${e.message} — that id is a SOURCE; its evidence: ${evs.map((x) => x.id).join(" ")} (or rerun with --by-source to link them all)`);
               return 1;
             }
-            const srcExists = store.db.get("SELECT id FROM sources WHERE id=? AND project_id=?", [m[1], project.id]);
+            const srcExists = await readOne(env, "SELECT id FROM sources WHERE id=? AND project_id=?", [m[1], project.id]);
             if (srcExists) {
               bad(ctx, `${e.message} — that id is a SOURCE with no evidence yet: research evidence add ${m[1]} --quote ".." first`);
               return 1;
             }
           }
-          bad(ctx, e?.message || String(e));
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
@@ -1188,21 +1206,21 @@ if (subAction === "show") {
         bad(ctx, "usage: research claim resolve <claimId> --as supported|refuted|contested|unverified [--note \"..\"]");
         return 2;
       }
-      const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
+      const c0 = await readOne(env, "SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
       if (!c0) {
-        bad(ctx, idNotFound(env.db, "claims", id, "claim"));
+        bad(ctx, await mutationNotFound(env, "claims", id, "claim"));
         return 1;
       }
       const note = String(args.flags.note || "");
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then((ds) => writes.claimResolve(ds, id, as, note))
         .then((): number => {
           if (ctx.json) console.log(JSON.stringify({ id, status: as, note }, null, 2));
           else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+        .catch(async (e: any): Promise<number> => {
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
@@ -1215,12 +1233,12 @@ if (subAction === "show") {
         bad(ctx, "usage: research claim unresolve <claimId>");
         return 2;
       }
-      const c0 = store.db.get("SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
+      const c0 = await readOne(env, "SELECT id, status FROM claims WHERE id=? AND project_id=?", [id, project.id]);
       if (!c0) {
-        bad(ctx, idNotFound(env.db, "claims", id, "claim"));
+        bad(ctx, await mutationNotFound(env, "claims", id, "claim"));
         return 1;
       }
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then((ds) => writes.claimUnresolve(ds, id))
         .then((r): number => {
           if (ctx.json) console.log(JSON.stringify({ id, status: r.status, duplicate: r.duplicate }, null, 2));
@@ -1229,8 +1247,8 @@ if (subAction === "show") {
             : `claim ${id}: ${c0.status} → unverified  (back in tracking; arbitration: claim resolve)`);
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+        .catch(async (e: any): Promise<number> => {
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
@@ -1243,17 +1261,17 @@ if (subAction === "show") {
         bad(ctx, "usage: research claim unlink <claimId> <evidenceId>");
         return 2;
       }
-      const c0 = store.db.get("SELECT id FROM claims WHERE id=? AND project_id=?", [cid, project.id]);
+      const c0 = await readOne(env, "SELECT id FROM claims WHERE id=? AND project_id=?", [cid, project.id]);
       if (!c0) {
-        bad(ctx, idNotFound(env.db, "claims", cid, "claim"));
+        bad(ctx, await mutationNotFound(env, "claims", cid, "claim"));
         return 1;
       }
-      const e0 = store.db.get("SELECT id FROM evidence WHERE id=? AND project_id=?", [eid, project.id]);
+      const e0 = await readOne(env, "SELECT id FROM evidence WHERE id=? AND project_id=?", [eid, project.id]);
       if (!e0) {
-        bad(ctx, idNotFound(env.db, "evidence", eid, "evidence"));
+        bad(ctx, await mutationNotFound(env, "evidence", eid, "evidence"));
         return 1;
       }
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then((ds) => writes.claimUnlink(ds, cid, eid))
         .then((r): number => {
           if (ctx.json) {
@@ -1263,8 +1281,8 @@ if (subAction === "show") {
           }
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+        .catch(async (e: any): Promise<number> => {
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
