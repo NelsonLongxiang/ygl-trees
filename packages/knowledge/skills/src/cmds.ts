@@ -6,7 +6,8 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, show, paint, C, writeResult, ack } from "../../../core/text/src/fmt";
 import { clip, parseFrontmatter } from "../../../core/text/src/text";
 import { emitEvent } from "../../../core/text/src/eventbus";
-import { getOrm } from "../../../core/database/src/orm";
+import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+import { pgFailure } from "../../../core/database/src/pg-workspace";
 import * as writes from "../../../research/pipeline/src/writes";
 import { deriveL1 } from "../../../research/pipeline/src/reads";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
@@ -32,18 +33,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb add --title \"...\" --body|-f <file>");
         return 2;
       }
-      return getOrm(env.db.path)
-        .then((ds) =>
+      return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
+        .then(async (ds) =>
           writes.kbAdd(ds, {
             title,
             body,
             tags: String(args.flags.tags || ""),
             source_url: String(args.flags.url || ""),
-            confidence: String(args.flags.confidence || configGet(env.db, "default_confidence")),
+            confidence: String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"))),
             force,
           })
         )
-        .then((r): number => {
+        .then(async (r): Promise<number> => {
           const row = (r as any).row;
           // Real-user report ①: three kb adds returned ✓, none was ever
           // readable back. The transaction itself is sound (kb_notes +
@@ -53,7 +54,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           //   1. every receipt carries the workspace it wrote to
           //   2. a verify probe re-reads the row through the SAME read path
           //      kb search/list use — a miss is printed loudly, not silently
-          const verify = store.kbGet(row.id);
+          const verify = env.pgUrl ? await env.asyncStore.kbGet(row.id) : store.kbGet(row.id);
           if (ctx.json) {
             console.log(JSON.stringify({
               ...row,
@@ -69,10 +70,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               out(ctx, paint(C.yellow, `    run: ygl-trees doctor   (write_integrity check names phantom writes)`, ctx.color));
             }
           }
-          return 0;
+          return env.pgUrl && !verify ? 1 : 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, env.pgUrl ? pgFailure() : e?.message || String(e));
           return 1;
         });
     }
@@ -124,6 +125,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "list":
+      if (env.pgUrl) return env.asyncStore.kbList().then((rows) => {
+        table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "updated"], ["id", "title", "tags", "confidence", "reuse", "updated"]); return 0;
+      });
       table(ctx, store.kbList(), ["id", "title", "tags", "conf", "reuse", "updated"], [
         "id",
         "title",
@@ -175,6 +179,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb show <note-key> [--json]");
         return 2;
       }
+      if (env.pgUrl) return env.asyncStore.kbGet(rest[0]).then((n) => {
+        if (!n) { bad(ctx, "note not found: " + rest[0]); return 1; }
+        if (ctx.json) console.log(JSON.stringify(n, null, 2));
+        else { head(ctx, n.title); show(ctx, { id: n.id, tags: n.tags || "-", confidence: n.confidence, reuse: n.reuse, origin: n.origin || "-" }); out(ctx, ""); out(ctx, n.body); }
+        return 0;
+      });
       const n = store.kbGet(rest[0]);
       if (!n) {
         bad(ctx, `note not found: ${rest[0]}`);

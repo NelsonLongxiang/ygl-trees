@@ -37,12 +37,20 @@ export interface Env {
     tail(limit?: number): Promise<any[]>;
     queryDone(id: string): Promise<void>;
     stats(): Promise<Record<string, number>>;
+    kbGet(id: string): Promise<any | null>;
+    kbList(): Promise<any[]>;
+    configValue(key: string, fallback: string): Promise<string>;
+    metaGet(key: string): Promise<string>;
+    query(sql: string, params?: unknown[]): Promise<any[]>;
+    queryOne(sql: string, params?: unknown[]): Promise<any | null>;
   };
   args: Args;
   home: string;
   group: string;
   /** Resolved workspace database file for this invocation (--db or default). */
   dbFile?: string;
+  /** Validated PG target, never a credential source from argv. */
+  pgUrl?: string;
   /** CLI version (diagnostics surface; update-hint/doctor only) */
   version?: string;
 }

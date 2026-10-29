@@ -19,6 +19,8 @@ import { Claim, Evidence, Query, QuerySource, Source } from "./entities";
 import { Event } from "../../../core/database/src/entities";
 import { contentHash, ngram, nowIso, sha1, shortId } from "../../../core/text/src/text";
 import { ormDialect } from "../../../core/database/src/orm";
+import { insertOrFetch } from "../../../core/database/src/upsert";
+import { pgTargetHash } from "../../../core/database/src/pg-workspace";
 import { currentSelectionVia, eventActor } from "../../../core/database/src/selection";
 // 0.91a (Cordis review direct-032bf3b4): static import — the old
 // `require()`-in-try/catch form silently dies under ESM hosts (vitest),
@@ -610,6 +612,13 @@ export async function queryAttach(
   });
 }
 
+async function assertPgWriteTarget(mgr: EntityManager): Promise<void> {
+  const url = (mgr.connection.options as any).url as string;
+  const rows = await mgr.query("SELECT value FROM meta WHERE key=$1 FOR SHARE", ["backend_binding"]);
+  const binding = JSON.parse(rows[0]?.value || "null");
+  if (binding?.mode !== "pg" || binding.url_hash !== pgTargetHash(url)) throw new Error("PG database backend binding mismatch");
+}
+
 // ================================================================ kb
 
 export async function kbAdd(
@@ -618,6 +627,22 @@ export async function kbAdd(
 ): Promise<WriteResult> {
   const hash = contentHash(`${o.title}\n${o.body}`, !!o.force);
   return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) === "postgres") {
+      if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) throw new Error("PG writes require YGL_SESSION or DSH_SESSION_ID");
+      await assertPgWriteTarget(mgr);
+      const id = shortId(["kb", o.title], 10);
+      const now = nowIso();
+      const r = await insertOrFetch({
+        table: "kb_notes",
+        cols: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram"],
+        values: [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", 0, hash, now, now, ngram(o.title + " " + (o.tags || "") + " " + o.body)],
+        conflictCols: ["content_hash"],
+      }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+      if (!r.row) throw new Error("kb upsert returned no row");
+      if (!r.duplicate) await logEvent(mgr, "kb.add", "kb_note", r.row.id, o.title);
+      const { ngram: _ngram, ngram_tsv: _tsv, ...row } = r.row;
+      return { row, dup: r.duplicate };
+    }
     const ex = (await mgr.query(`SELECT * FROM kb_notes WHERE content_hash=?`, [hash])) as any[];
     if (ex.length) return { row: ex[0], dup: true };
     const id = shortId(["kb", o.title], 10);
@@ -953,6 +978,22 @@ export async function projectDeleteEmpty(ds: DataSource, name: string): Promise<
  *  implicitly (parallel sessions used to steal each other's selection). */
 export async function projectCreate(ds: DataSource, name: string, question = ""): Promise<Record<string, any>> {
   return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) === "postgres") {
+      const sid = process.env.YGL_SESSION || process.env.DSH_SESSION_ID;
+      if (!sid?.trim()) throw new Error("PG writes require YGL_SESSION or DSH_SESSION_ID");
+      await assertPgWriteTarget(mgr);
+      const now = nowIso();
+      const r = await insertOrFetch({
+        table: "projects", cols: ["id", "name", "question", "status", "created", "updated"],
+        values: [shortId(["proj", name], 10), name, question, "active", now, now], conflictCols: ["name"],
+      }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+      if (!r.row) throw new Error("project upsert returned no row");
+      if (r.row.status === "archived") throw new Error("project is archived; restore it before selecting it");
+      await mgr.query("INSERT INTO meta(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ["current_project@" + sid, name]);
+      if (!r.duplicate) await logEvent(mgr, "project.create", "project", r.row.id, name);
+      await logEvent(mgr, "project.use", "project", name, { name, session: sid });
+      return r.duplicate ? { ...r.row, duplicate: true } : r.row;
+    }
     // Idempotency (frozen contract): re-creating a project selects it instead
     // of failing on the UNIQUE name — "new" is also the switch verb.
     const sessionKey = `current_project@${process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "default"}`;

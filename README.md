@@ -332,10 +332,14 @@ ygl-trees agent ask "<question>"     natural language interface
 
 `agent brief --json` 直接给出结构化状态和建议动作序列，Agent 可以照着执行。
 
+### B8 首批 PG 业务面（候验收）
+
+SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 中配置 `YGL_DB_URL`（仅环境凭证）和 `YGL_SESSION` / `DSH_SESSION_ID`：`kb add`、`project new` 可写入 PG，`kb list/show`、`project list/show` 提供读回。幂等、检索输入与审计事件沿 TypeORM 事务；不双写、不创建 SQLite 业务文件。首次连接记录无凭证绑定；库内/目录目标冲突、缺会话、PG 不可达均 fail-closed。其他业务写面与 verify-on-PG **不在首批交付范围**。
+
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1185 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（145 项）
+pnpm test          # 四段制回归：build + unit (vitest 1201 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（145 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

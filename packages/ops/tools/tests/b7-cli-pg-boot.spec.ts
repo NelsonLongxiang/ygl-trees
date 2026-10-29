@@ -31,7 +31,7 @@ describe.skipIf(!HAS_BIN)("B7 CLI boot PG branch", () => {
   afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
   it("write command in PG mode → rc2 named refusal, no SQLite file created", () => {
-    const r = run(["kb", "add", "--name", "x", "--description", "x", "--json"], { YGL_DB_URL: PG });
+    const r = run(["kb", "import", "missing-directory", "--json"], { YGL_DB_URL: PG });
     expect(r.rc).toBe(2);
     expect(r.raw).toMatch(/PG mode/);
     expect(r.raw).toMatch(/PG-direct faces: db stats/);

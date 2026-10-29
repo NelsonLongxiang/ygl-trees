@@ -3,7 +3,8 @@
  *  shape identical to the previous raw-SQL implementation. */
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
-import { getOrm } from "../../../core/database/src/orm";
+import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+import { pgFailure } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, sessionId } from "../../../core/database/src/selection";
 import * as writes from "../../pipeline/src/writes";
 import { Project } from "../../pipeline/src/entities";
@@ -11,6 +12,7 @@ import { Project } from "../../pipeline/src/entities";
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
   const name = rest[0];
+  if (env.pgUrl) return runPgProject(env, action, rest, args);
 
   /** Report ③-3: selection changes are events (session-tagged) — see the
    *  twin helper in techtree/model/src/cmds.ts for the rationale. */
@@ -323,4 +325,45 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       bad(ctx, `unknown project action: ${action}`);
       return 2;
   }
+}
+
+/** The first PG batch exposes creation and readback only; other project mutations stay refused at boot. */
+async function runPgProject(env: Env, action: string, rest: string[], args: any): Promise<number> {
+  const { ctx, asyncStore } = env;
+  const sid = sessionId();
+  try {
+    if (action === "new") {
+      const name = rest[0];
+      if (!name) { bad(ctx, "missing project name"); return 2; }
+      const prior = await asyncStore.metaGet("current_project@" + sid);
+      const p = await writes.projectCreate(await getPgOrm(env.pgUrl!), name, String(args.flags.q || args.flags.question || ""));
+      ack(ctx, { ...p, selected: p.name, prior: prior || null, session: sid }, p.duplicate
+        ? "project exists, selected: " + p.name + "  (duplicate, not re-created)"
+        : "project created and selected: " + p.name);
+      return 0;
+    }
+    if (action === "list") {
+      const selected = await asyncStore.metaGet("current_project@" + sid);
+      const rows = (await asyncStore.projectList()).map((p: any) => ({ ...p, current: p.name === selected && p.status !== "archived" }));
+      table(ctx, rows, ["project", "status", "src", "claims", "artifacts", "updated"], ["name", "status", "sources", "claims", "artifacts", "updated"]);
+      return 0;
+    }
+    if (action === "show") {
+      const explicit = String(args.flags.p || args.flags.project || "");
+      const fromEnv = process.env.YGL_PROJECT || "";
+      const selected = await asyncStore.metaGet("current_project@" + sid);
+      const rows = await asyncStore.projectList();
+      const name = explicit || fromEnv || selected || (rows.length === 1 ? rows[0].name : "");
+      const via = explicit ? "flag" : fromEnv ? "env" : selected ? "session" : "only";
+      if (!name) { bad(ctx, "no project selected; pass --project <name> or run project new"); return rows.length > 1 ? 2 : 1; }
+      const p = await asyncStore.projectByName(name);
+      if (!p) { bad(ctx, "project not found: " + name); return 1; }
+      const queries = await asyncStore.query("SELECT q.id,q.text,q.engine,q.status,q.created,(SELECT COUNT(*)::int FROM query_sources qs WHERE qs.query_id=q.id) AS sources FROM queries q WHERE q.project_id=? ORDER BY q.created", [p.id]);
+      const claims = await asyncStore.query("SELECT c.id,c.text,c.status,c.confidence,(SELECT COUNT(*)::int FROM claim_evidence ce WHERE ce.claim_id=c.id AND ce.stance='supports') AS sup,(SELECT COUNT(*)::int FROM claim_evidence ce WHERE ce.claim_id=c.id AND ce.stance='refutes') AS ref FROM claims c WHERE c.project_id=? ORDER BY c.created", [p.id]);
+      if (ctx.json) console.log(JSON.stringify({ project: p, queries, claims, selection_source: via }, null, 2));
+      else { head(ctx, "Project " + p.name + "  (selection: " + via + ")"); show(ctx, { id: p.id, status: p.status, question: p.question || "(none)", inclusion: p.inclusion || "-", exclusion: p.exclusion || "-", queries: queries.length, claims: claims.length }); }
+      return 0;
+    }
+    bad(ctx, "project action is unavailable in PG mode"); return 2;
+  } catch { bad(ctx, pgFailure()); return 1; }
 }

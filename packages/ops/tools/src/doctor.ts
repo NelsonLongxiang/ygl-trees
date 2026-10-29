@@ -9,6 +9,8 @@
  * @module @ygl/ops-tools/doctor
  */
 import { redactPgUrl } from "../../../core/database/src/asyncdb";
+import { getPgOrm } from "../../../core/database/src/orm";
+import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY } from "./config";
@@ -23,7 +25,7 @@ import { updateHintFromCache } from "./update-check";
 
 interface Check {
   name: string;
-  status: "pass" | "warn" | "fail";
+  status: "pass" | "warn" | "fail" | "skip";
   detail: string;
 }
 
@@ -86,6 +88,28 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   if (db === null || db === undefined) {
     return (async (): Promise<number> => {
       const pgUrl = String(process.env.YGL_DB_URL || "");
+      if (fs.existsSync(join(env.home, "pg-binding.json"))) {
+        try {
+          const ds = await getPgOrm(pgUrl);
+          await ds.query("SELECT 1");
+          checks.push({ name: "pg_connectivity", status: "pass", detail: "connected" });
+          const migration = await ds.query("SELECT MAX(version) AS version FROM schema_migrations WHERE backend IN ('pg','postgres')");
+          checks.push({ name: "schema_version", status: Number(migration[0]?.version) === SCHEMA_VERSION ? "pass" : "fail", detail: "PG schema migration version " + migration[0]?.version + " (expected " + SCHEMA_VERSION + ")" });
+          const binding = await ds.query("SELECT value FROM meta WHERE key=$1", ["backend_binding"]);
+          const b = JSON.parse(binding[0]?.value || "null");
+          checks.push({ name: "backend_binding", status: b?.mode === "pg" && b.url_hash === pgTargetHash(pgUrl) ? "pass" : "fail", detail: "PG database binding matches workspace target" });
+          const sid = process.env.YGL_SESSION || process.env.DSH_SESSION_ID;
+          checks.push({ name: "session_isolation", status: sid ? "pass" : "fail", detail: sid ? "session-scoped project selection enabled" : "set YGL_SESSION or DSH_SESSION_ID" });
+          const search = await ds.query("SELECT is_generated FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='kb_notes' AND column_name='ngram_tsv'");
+          checks.push({ name: "pg_search_index", status: search[0]?.is_generated === "ALWAYS" ? "pass" : "fail", detail: "kb_notes ngram_tsv must be generated from transactionally written ngram" });
+          const counts = await ds.query("SELECT COUNT(*)::int AS n FROM kb_notes WHERE ngram IS NULL OR (body<>'' AND ngram='')");
+          checks.push({ name: "write_integrity", status: counts[0]?.n === 0 ? "pass" : "fail", detail: "knowledge rows carry search input" });
+        } catch { checks.push({ name: "pg_health", status: "fail", detail: pgFailure() }); }
+        for (const name of ["sqlite_fts", "sqlite_lock", "verify_on_pg"]) checks.push({ name, status: "skip", detail: "not applicable: verify remains the SQLite snapshot chain; no PG verification claim" });
+        if (ctx.json) console.log(JSON.stringify(checks, null, 2));
+        else { head(ctx, "doctor — PG business workspace"); for (const c of checks) out(ctx, (c.status === "pass" ? "  ✓ " : c.status === "skip" ? "  - " : "  ✗ ") + c.name + ": " + c.detail); }
+        return checks.some(c => c.status === "fail") ? 1 : 0;
+      }
       const redacted = redactPgUrl(pgUrl);
       const t0 = Date.now();
       let connected = false;
@@ -99,7 +123,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         connected = true;
         await client.end();
       } catch (e: any) {
-        errDetail = String(e?.message || e);
+        errDetail = pgFailure();
       }
       checks.push({ name: "pg_connectivity", status: connected ? "pass" : "fail", detail: connected ? "connected (" + latencyMs + "ms) → " + redacted : "cannot connect: " + errDetail + " (" + redacted + ")" });
       checks.push({ name: "dialect", status: "pass", detail: "pg (B7 PG-direct mode)" });

@@ -68,18 +68,19 @@ export async function getOrm(dbFile: string): Promise<DataSource> {
   throw lastErr;
 }
 
-/** 0.89 (PG-A ①): dialect seam — the SAME entity registry over PostgreSQL.
- * Dual-write (B segment) will route PG-side writes through here; A segment
- * proves the seam (probe + docker smoke) and gates FTS5 shadow writes. */
+/** Same entity registry over the single PG backend. Schema is explicitly migrated, never synchronized. */
 export async function getPgOrm(url: string): Promise<DataSource> {
   if (pgCached && pgCached.url === url) return pgCached.ds;
+  if (pgCached) { await pgCached.ds.destroy(); pgCached = null; }
   const ds = new DataSource({
     type: "postgres",
     url,
     synchronize: false, // NEVER — schema authority is SCHEMA_SQL / MIGRATE_DDL
     entities: [...RESEARCH_ENTITIES, ...CORE_ENTITIES],
+    connectTimeoutMS: 4000,
   });
-  await ds.initialize();
+  try { await ds.initialize(); }
+  catch (e) { if (ds.isInitialized) await ds.destroy(); throw e; }
   pgCached = { url, ds };
   ormState.opened = true;
   return ds;

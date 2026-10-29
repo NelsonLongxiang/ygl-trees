@@ -12,6 +12,10 @@ tags: ygl-trees,knowledge,kb,skill,reuse
 
 # 知识复用闭环：报告 → 笔记 → skill → 自动命中
 
+## PG 首批边界（B8）
+
+在显式迁移好的 PG 库与独立工作目录上，`kb add` 走 TypeORM 事务写（幂等/基表/ngram/审计事件同事务），`kb list/show` 可读回。用户先配置 `YGL_DB_URL` 与独立 session；不把 URL 放进 argv，不创建 SQLite 业务文件。PG import/search/link/ingest/promote 等尚未接线，不尝试借同步 store 回落。
+
 ## 1. 入库
 
 ```bash
