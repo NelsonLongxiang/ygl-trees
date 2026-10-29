@@ -44,3 +44,26 @@
 .yt-tl-table td { font-variant-numeric: tabular-nums; }
 .yt-tab:hover { color: var(--color-primary) !important; }
 .yt-tab:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: var(--radius-sm); }
+/* artifacts: one row per document, then a reading column for its body (reports run to 50 KB) */
+.yt-doc-row { display: flex; gap: var(--spacing-md); align-items: baseline; background: var(--color-surface); border-left: 3px solid var(--color-border); border-radius: var(--radius-sm); padding: 6px 12px; margin: 4px 0; cursor: pointer; transition: background-color 0.15s; }
+.yt-doc-row:hover { background: var(--color-surface-hover); }
+.yt-doc-row:focus-visible, .yt-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.yt-link { background: none; border: none; padding: 0 0 0 15px; font: inherit; font-size: 12px; cursor: pointer; }
+.yt-link:hover { color: var(--color-primary); }
+.yt-doc { background: var(--color-surface); border: 1px solid var(--color-border-dim); border-radius: var(--radius-sm); padding: var(--spacing-md) var(--spacing-lg); margin: 2px 0 8px; line-height: 1.7; overflow-wrap: anywhere; }
+.yt-doc > * { max-width: 76ch; }
+.yt-doc h1, .yt-doc h2, .yt-doc h3, .yt-doc h4 { color: var(--color-text); line-height: 1.35; margin: 1.4em 0 0.5em; }
+.yt-doc h1 { font-size: 1.35em; margin-top: 0.2em; }
+.yt-doc h2 { font-size: 1.15em; padding-bottom: 4px; border-bottom: 1px solid var(--color-border-dim); }
+.yt-doc h3 { font-size: 1em; }
+.yt-doc h4 { font-size: 0.95em; color: var(--color-secondary); }
+.yt-doc p, .yt-doc ul, .yt-doc ol, .yt-doc table, .yt-doc pre, .yt-doc blockquote { margin: 0 0 0.8em; }
+.yt-doc ul, .yt-doc ol { padding-left: 1.5em; }
+.yt-doc li + li { margin-top: 0.25em; }
+.yt-doc a { color: var(--color-primary); }
+.yt-doc code { font-family: var(--font-mono); background: var(--color-neutral); padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+.yt-doc pre { background: var(--color-neutral); padding: 8px 12px; border-radius: var(--radius-sm); overflow-x: auto; max-width: 100%; }
+.yt-doc pre code { padding: 0; background: none; }
+.yt-doc blockquote { border-left: 3px solid var(--color-border); padding-left: 10px; color: var(--color-secondary); }
+.yt-doc table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; }
+.yt-doc th, .yt-doc td { border: 1px solid var(--color-border-dim); padding: 3px 8px; text-align: left; vertical-align: top; }

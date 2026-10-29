@@ -1,8 +1,13 @@
 /**
  * 0.35: artifacts view — kind-grouped roster, click renders the full markdown
  * body via react-markdown (reports / specs / designs readable in place).
+ *
+ * On real data a report is regenerated as claims move (`produce report` → v1…v5,
+ * same title), so the roster shows one row per document — its latest version,
+ * with the date — and keeps the older versions one click away. Bodies run to
+ * 50 KB; they render in a reading column (.yt-doc), not the full page width.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 export interface ArtifactMeta {
@@ -21,6 +26,33 @@ const KIND_ZH: Record<string, string> = {
   section: "章节",
   note: "笔记",
 };
+/** Finished deliverables first, working parts after. */
+const KIND_ORDER = ["report", "design", "spec", "outline", "section", "note"];
+
+export interface ArtifactDoc {
+  latest: ArtifactMeta;
+  /** Older versions of the same document, newest first. */
+  older: ArtifactMeta[];
+}
+
+/** Kind → documents (same kind + title = one document), newest version on top. */
+export function groupArtifacts(rows: ArtifactMeta[]): Array<{ kind: string; docs: ArtifactDoc[] }> {
+  const kinds = [...new Set(rows.map((a) => a.kind))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  return kinds.map((kind) => {
+    const byTitle = new Map<string, ArtifactMeta[]>();
+    for (const a of rows.filter((r) => r.kind === kind)) byTitle.set(a.title, [...(byTitle.get(a.title) ?? []), a]);
+    const docs = [...byTitle.values()].map((vs) => {
+      const [latest, ...older] = vs.sort((a, b) => b.version - a.version || b.created.localeCompare(a.created));
+      return { latest, older };
+    });
+    docs.sort((a, b) => b.latest.created.localeCompare(a.latest.created));
+    return { kind, docs };
+  });
+}
+const rank = (k: string) => (KIND_ORDER.includes(k) ? KIND_ORDER.indexOf(k) : KIND_ORDER.length);
+
+/** UTC day, the same day boundary as the activity timeline. */
+export const day = (iso: string) => (iso || "").slice(0, 10) || "—";
 
 async function fetchArtifact(id: string): Promise<{ title: string; content: string } | null> {
   const r = await fetch(`api/artifact?id=${encodeURIComponent(id)}`);
@@ -28,96 +60,89 @@ async function fetchArtifact(id: string): Promise<{ title: string; content: stri
   return r.json();
 }
 
+type Body = { state: "loading" } | { state: "error" } | { state: "ok"; content: string };
+
 export default function Artifacts({ artifacts }: { artifacts: ArtifactMeta[] }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [body, setBody] = useState<{ title: string; content: string } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [body, setBody] = useState<Body>({ state: "loading" });
+  const [history, setHistory] = useState<Set<string>>(new Set());
+  // the latest click wins: a slow first body must not land under the second row
+  const pending = useRef<string | null>(null);
 
   if (!artifacts.length) return <p className="dim">暂无产出（produce outline/section/report/spec/design）</p>;
 
-  const kinds = [...new Set(artifacts.map((a) => a.kind))];
   const toggle = async (id: string) => {
     if (open === id) {
       setOpen(null);
-      setBody(null);
+      pending.current = null;
       return;
     }
     setOpen(id);
-    setBody(null);
-    setLoading(true);
-    setBody(await fetchArtifact(id));
-    setLoading(false);
+    setBody({ state: "loading" });
+    pending.current = id;
+    const got = await fetchArtifact(id).catch(() => null);
+    if (pending.current !== id) return;
+    setBody(got ? { state: "ok", content: got.content } : { state: "error" });
   };
+  const flip = (id: string) =>
+    setHistory((h) => {
+      const n = new Set(h);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const row = (a: ArtifactMeta, label?: string) => (
+    <div key={a.id}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open === a.id}
+        onClick={() => toggle(a.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle(a.id);
+          }
+        }}
+        className="yt-doc-row"
+        style={{ borderLeftColor: open === a.id ? "var(--color-primary)" : undefined }}
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>{label ?? a.title}</span>
+        <span className="dim">v{a.version} · {day(a.created)}</span>
+      </div>
+      {open === a.id && (
+        <div className="yt-doc">
+          {body.state === "loading" && <p className="dim" role="status">加载中…</p>}
+          {body.state === "error" && <p className="dim" role="alert">正文读不到（工件可能已被删除），再点一次重试</p>}
+          {body.state === "ok" && <ReactMarkdown>{body.content}</ReactMarkdown>}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div>
-      {kinds.map((k) => {
-        const rows = artifacts.filter((a) => a.kind === k);
-        return (
-          <div key={k}>
-            <div className="dim" style={{ textTransform: "uppercase", letterSpacing: "0.05em", margin: "6px 0 2px" }}>
-              {KIND_ZH[k] || k} · {rows.length}
-            </div>
-            {rows.map((a) => (
-              <div key={a.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggle(a.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      toggle(a.id);
-                    }
-                  }}
-                  style={{
-                    background: "var(--color-surface)",
-                    borderLeft: open === a.id ? "3px solid var(--color-primary)" : "3px solid var(--color-border)",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "6px 12px",
-                    margin: "4px 0",
-                    cursor: "pointer",
-                  }}
-                >
-                  {a.title} <span className="dim">v{a.version}</span>
-                </div>
-                {open === a.id && (
-                  <div
-                    style={{
-                      background: "var(--color-surface)",
-                      border: "1px solid var(--color-border-dim)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "var(--spacing-md)",
-                      margin: "2px 0 8px",
-                      fontSize: "0.85em",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {loading && <p className="dim">加载中…</p>}
-                    {body && (
-                      <ReactMarkdown
-                        components={{
-                          h1: (p) => <h2 style={{ color: "var(--color-tertiary)", fontSize: "1.05em", margin: "8px 0 4px" }} {...p} />,
-                          h2: (p) => <h3 style={{ color: "var(--color-tertiary)", fontSize: "0.95em", margin: "8px 0 3px" }} {...p} />,
-                          a: (p) => <a style={{ color: "var(--color-primary)" }} {...p} />,
-                          code: (p) => <code style={{ background: "var(--color-neutral)", padding: "1px 5px", borderRadius: "3px", fontSize: "0.85em" }} {...p} />,
-                          pre: (p) => <pre style={{ background: "var(--color-neutral)", padding: "8px", borderRadius: "var(--radius-sm)", overflowX: "auto" }} {...p} />,
-                          blockquote: (p) => <blockquote style={{ borderLeft: "3px solid var(--color-border)", margin: "6px 0", paddingLeft: "10px", color: "var(--color-secondary)" }} {...p} />,
-                          table: (p) => <table style={{ borderCollapse: "collapse", fontSize: "0.9em" }} {...p} />,
-                          th: (p) => <th style={{ border: "1px solid var(--color-border-dim)", padding: "3px 7px", textAlign: "left" }} {...p} />,
-                          td: (p) => <td style={{ border: "1px solid var(--color-border-dim)", padding: "3px 7px" }} {...p} />,
-                        }}
-                      >
-                        {body.content}
-                      </ReactMarkdown>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+      {groupArtifacts(artifacts).map(({ kind, docs }) => (
+        <div key={kind}>
+          <div className="dim" style={{ letterSpacing: "0.05em", margin: "10px 0 2px" }}>
+            {KIND_ZH[kind] || kind} · {docs.length}
           </div>
-        );
-      })}
+          {docs.map(({ latest, older }) => (
+            <div key={latest.id}>
+              {row(latest)}
+              {older.length > 0 && (
+                <button type="button" className="yt-link dim" aria-expanded={history.has(latest.id)} onClick={() => flip(latest.id)}>
+                  {history.has(latest.id) ? "收起旧版本" : `另有 ${older.length} 个旧版本`}
+                </button>
+              )}
+              {history.has(latest.id) && (
+                <div style={{ marginLeft: 16 }}>{older.map((a) => row(a, `${a.title}（旧版）`))}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
