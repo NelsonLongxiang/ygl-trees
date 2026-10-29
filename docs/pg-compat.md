@@ -116,7 +116,7 @@ PG 关系变更先持有 evidence 读锁，再持有 claim 写锁至事务提交
 
 实际命令所需缺列会在写入前以表名.列名提示，SQL/凭据/参数不回显；不自动 ALTER 或扩大迁移。旧 PG 镜像不是升级后的业务库，先备份并核对能力；**不可用 --fresh 覆盖现库当升级**。
 
-**已登记输出差异**：query attach 成功面在 SQLite 的既有 --json 路径仍输出人类文本（本批保留字节）；PG 新路径遵守单 JSON 冻结契约。该面不计 PG/SQLite 成功输出 parity PASS，SQLite 修复另案；错误路径和 SQLite 前后黄金仍单独核对。
+`query attach --json` 在 SQLite 与 PG 均返回单对象 `{query, source}`，重复附加 `duplicate:true`，保持 rc0；不带 --json 的人类文本不变。#114 修复的两条 SQLite 成功/重复输出是明确的黄金变更：旧基线人类文本保留作精确对照，新输出单独断言为完整 JSON，其余命令不做字段归一化。
 
 ## B4 并发语义（2026-10-25 成文）
 

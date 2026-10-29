@@ -340,14 +340,14 @@ ygl-trees agent ask "<question>"     natural language interface
 
 `db init` 仅支持 SQLite。PG `YGL_DB_URL` 下 init 在写入工作区前拒绝（rc2）；`--backend` 与未知 init 参数不被静默接受。PG 使用独立 SQLite 源显式 migrate 后直连，不支持 PG init。
 
-SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 中配置 `YGL_DB_URL`（仅环境凭证）和 `YGL_SESSION` / `DSH_SESSION_ID`：`kb add`、`project new` 可写入 PG，`kb list/show`、`project list/show` 提供读回。幂等、检索输入与审计事件沿 TypeORM 事务；不双写、不创建 SQLite 业务文件。首次连接记录无凭证绑定；库内/目录目标冲突、缺会话、PG 不可达均 fail-closed。批 2 接入 `research source/evidence/claim add`（含既有 file/batch）和 list/show，`project use` 仅更新本 session、返回 prior 并留事件，`--global` 拒绝；归档项目拒写/拒选。PG 业务入口仅 `YGL_DB_URL`；`YGL_PG_URL` 只供 sync/migrate 出口，不是业务别名。source/evidence 检索输入同事务，claims 与 SQLite 一样不提供全文检索。批3接入 query add/attach/list、claim link/unlink/resolve/unresolve、source/evidence rm（默认保护/force精确锥）与 kb link/import；事务内行锁保护并发状态。预测不自动结算、人工锁及updated/recalculated沿用SQLite。历史仲裁事件同ts但seq缺失歧义会点名拒绝，不自动ALTER旧库或补序。query attach成功输出存在明确例外：SQLite既有--json人类文本本批不改，PG返回单JSON，不冒双端该面parity。其他未列写面与verify-on-PG仍不在交付范围。
+SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 中配置 `YGL_DB_URL`（仅环境凭证）和 `YGL_SESSION` / `DSH_SESSION_ID`：`kb add`、`project new` 可写入 PG，`kb list/show`、`project list/show` 提供读回。幂等、检索输入与审计事件沿 TypeORM 事务；不双写、不创建 SQLite 业务文件。首次连接记录无凭证绑定；库内/目录目标冲突、缺会话、PG 不可达均 fail-closed。批 2 接入 `research source/evidence/claim add`（含既有 file/batch）和 list/show，`project use` 仅更新本 session、返回 prior 并留事件，`--global` 拒绝；归档项目拒写/拒选。PG 业务入口仅 `YGL_DB_URL`；`YGL_PG_URL` 只供 sync/migrate 出口，不是业务别名。source/evidence 检索输入同事务，claims 与 SQLite 一样不提供全文检索。批3接入 query add/attach/list、claim link/unlink/resolve/unresolve、source/evidence rm（默认保护/force精确锥）与 kb link/import；事务内行锁保护并发状态。预测不自动结算、人工锁及updated/recalculated沿用SQLite。历史仲裁事件同ts但seq缺失歧义会点名拒绝，不自动ALTER旧库或补序。query attach在SQLite和PG均返回单JSON（query/source，重复附duplicate:true、rc0），非JSON人类输出不变；#114的两条黄金输出变化逐项明示，其余命令继续原字节对照。其他未列写面与verify-on-PG仍不在交付范围。
 
 ## 五b、开发与运维工具
 
 PG 测试分开计数：B8 的 62 条真库用例（七份 spec）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 62 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1338 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1342 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

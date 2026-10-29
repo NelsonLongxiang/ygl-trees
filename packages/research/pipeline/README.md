@@ -23,7 +23,7 @@ Import from `@ygl/research-pipeline` when you need research pipeline: query/sour
 
 Query upserts/attachments, claim mutations and protected removals use the same transaction manager as binding checks and events. Claim recomputation is shared: prediction preservation, arbitration lock, updated/recalculated and the duplicate-unresolve edge retain SQLite behavior. PG native event ties use monotonic seq; ambiguous historical NULL seq refuses and rolls back. Evidence fences precede claim row locks; removal locks affected claim ids in sorted order and removes only its exact reference cone. No eval call or automatic live arbitration is added. Command-required missing columns receive safe identifier-only diagnostics, never automatic schema changes.
 
-Query attach is an explicit output exception: the existing SQLite successful --json path emits human text, unchanged here; PG returns a single object. Cross-backend success-output parity is not claimed for that face.
+Query attach uses one JSON receipt in both backends: `{query, source}`, with `duplicate: true` on repetition and rc0. Human success/duplicate lines remain unchanged without --json. The golden regression explicitly records the two repaired SQLite outputs against the legacy bytes; every other command stays byte-identical.
 
 ## Further Exploration
 
