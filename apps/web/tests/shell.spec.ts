@@ -49,17 +49,21 @@ describe("resolveCommand — the exact clipboard text (#101, G13)", () => {
 });
 
 const HOSTILE = ["x;touch PWNED", "a$(touch PWNED2)", "it's", "my proj", "`touch PWNED3`", "q\"d'q", "nl\ntouch PWNED4", "=ls", "--global", "~root", "*", "!!"];
-const SHELLS = ["/bin/sh", "/bin/zsh", "/bin/bash"].filter((s) => process.platform !== "win32" && existsSync(s));
+// The list is fixed and each case skips on its own, so every platform registers
+// the same cases: filtering the list made them vanish from the total (#108).
+const ALL_SHELLS = ["/bin/sh", "/bin/zsh", "/bin/bash"];
+const hasShell = (sh: string) => process.platform !== "win32" && existsSync(sh);
+const SHELLS = ALL_SHELLS.filter(hasShell);
 
 /**
  * Hand the copied text to each shell with `ygl-trees` swapped for a printer of
  * its arguments. Every hostile name must arrive as ONE argument, byte for byte,
  * and nothing in it may run (no file appears in the probe dir).
  */
-describe.skipIf(!SHELLS.length)("pasted into real shells (sh, zsh, bash)", () => {
-  for (const sh of SHELLS) {
+describe("pasted into real shells (sh, zsh, bash)", () => {
+  for (const sh of ALL_SHELLS) {
     for (const project of HOSTILE) {
-      it(`${sh}: ${JSON.stringify(project)} arrives intact and runs nothing`, () => {
+      it.skipIf(!hasShell(sh))(`${sh}: ${JSON.stringify(project)} arrives intact and runs nothing`, () => {
         const dir = mkdtempSync(join(tmpdir(), "ygl-quote-"));
         try {
           const line = resolveCommand("c1", "supported", project).replace(/^ygl-trees /, "printf '%s\\n' ");
