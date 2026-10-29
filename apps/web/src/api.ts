@@ -163,8 +163,10 @@ export async function fetchVerifySpecs(): Promise<VerifySpecRow[]> {
   return r.json();
 }
 
-export async function fetchVerifyReports(): Promise<VerifyReportRow[]> {
-  const r = await fetch("api/verify/reports");
+/** One spec's runs (`?spec=`). The unfiltered list is every run in the home —
+ *  74k rows / 25 MB on a real verifier — so the board never asks for it. */
+export async function fetchVerifyReports(spec: string): Promise<VerifyReportRow[]> {
+  const r = await fetch(`api/verify/reports?spec=${encodeURIComponent(spec)}`);
   if (!r.ok) throw new Error(`api/verify/reports ${r.status}`);
   return r.json();
 }
