@@ -20,13 +20,64 @@
  * 用本地 docker 门）。本脚本只编排与判定，不内建容器管理。
  */
 import { spawnSync } from "node:child_process";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { readdirSync, readFileSync, mkdirSync, writeFileSync, openSync, closeSync } from "node:fs";
+import { createRequire } from "node:module";
+
+export function pgSpecs(root = ROOT) {
+  return ["packages/ops/tools/tests", "packages/research/pipeline/tests"].flatMap(dir =>
+    readdirSync(join(root, dir)).filter(f => /^b8-pg-.+\.spec\.ts$/.test(f) && f !== "b8-pg-gate.spec.ts").map(f => dir + "/" + f)
+  ).sort();
+}
+export function countPgReport(report, specs) {
+  if (!report.success || !Array.isArray(report.testResults)) throw new Error("B8 suite did not finish successfully");
+  const files = new Map(report.testResults.map(f => [f.name.replaceAll("\\", "/"), f]));
+  let passed = 0, offline = 0;
+  for (const spec of specs) {
+    const found = [...files].filter(([name]) => name.endsWith("/" + spec) || name === spec);
+    if (found.length !== 1 || !found[0][1].assertionResults?.length) throw new Error("B8 report missing suite: " + spec);
+    for (const a of found[0][1].assertionResults) {
+      if (a.status !== "passed") throw new Error("B8 gate rejects failed, skipped or pending cases: " + spec);
+      if ((a.ancestorTitles || []).includes("B8 PG primitives")) offline++; else passed++;
+    }
+  }
+  if (!passed) throw new Error("B8 gate collected no real PG cases");
+  return { passed, skipped: 0, offline, files: specs.length };
+}
+async function b8Main() {
+  const url = process.env.B8_TEST_PG_ADMIN_URL;
+  if (!url || !/^postgres(ql)?:\/\//i.test(url)) throw new Error("B8_TEST_PG_ADMIN_URL must select an isolated PostgreSQL admin database");
+  // Check connectivity without putting the URL in argv or echoing driver messages.
+  const { Client } = createRequire(import.meta.url)("pg");
+  const client = new Client({ connectionString: url, connectionTimeoutMillis: 4000 });
+  try { await client.connect(); await client.query("SELECT 1"); }
+  catch { throw new Error("B8 PG admin target unavailable (no skipped fallback)"); }
+  finally { await client.end().catch(() => {}); }
+  mkdirSync(join(ROOT, "tmp"), { recursive: true });
+  const dir = mkdtempSync(join(ROOT, "tmp/b8-pg-gate-"));
+  const specs = pgSpecs();
+  if (!specs.length) throw new Error("B8 PG specs not found");
+  const log = openSync(join(dir, "vitest.log"), "w");
+  let run;
+  try {
+    run = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", ...specs, "--maxWorkers=1", "--reporter=json", "--outputFile=" + join(dir, "vitest.json")], {
+      cwd: ROOT, env: { ...process.env, YGL_DB_URL: "", YGL_PG_URL: "", B8_TEST_PG_ADMIN_URL: url },
+      stdio: ["ignore", log, log], timeout: 15 * 60_000,
+    });
+  } finally { closeSync(log); }
+  if (run.error || run.status !== 0) throw new Error("B8 real PG tests failed; inspect " + relative(ROOT, dir));
+  const result = countPgReport(JSON.parse(readFileSync(join(dir, "vitest.json"), "utf8")), specs);
+  writeFileSync(join(dir, "summary.json"), JSON.stringify({ b8_pg: result, report: relative(ROOT, join(dir, "vitest.json")) }, null, 2) + "\n");
+  console.log("b8_pg: " + result.passed + " passed, 0 skipped; offline=" + result.offline + "; suites=" + result.files + "; report=" + relative(ROOT, dir));
+}
+
+function matrixMain() {
 const args = process.argv.slice(2);
 const strict = args.includes("--strict");
 const json = args.includes("--json");
@@ -121,3 +172,10 @@ if (json) {
   console.log(overallOk ? "dual-backend matrix: PASS" : "dual-backend matrix: FAIL");
 }
 process.exit(overallOk ? 0 : 1);
+
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.includes("--b8-pg-only")) {
+    b8Main().catch(e => { console.error("b8_pg: FAIL — " + e.message); process.exitCode = 1; });
+  } else matrixMain();
+}

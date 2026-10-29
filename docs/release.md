@@ -69,10 +69,10 @@ bash scripts/offline-gate.sh          # 干净克隆 + env -i 无凭证 install 
 ### G7 真 PG 矩阵门（总工裁 direct-2c7c431a：本地 docker 门，发版必跑）
 
 ```bash
-bash scripts/pg-gate.sh               # pinned postgres:16.4-alpine → dual-backend-matrix --strict
+bash scripts/pg-gate.sh               # pinned postgres:16.4-alpine → B8 real PG → dual-backend-matrix --strict
 ```
 
-结果（rc、双腿、镜像 tag）贴进发布记录；**「矩阵绿」是发布收口条件的一部分**。不可达 PG 必红（df3a792 起）。
+结果（rc、双腿、镜像 tag、`b8_pg: N passed, 0 skipped` 与报告路径）贴进发布记录；**「矩阵绿」包括 B8 真库测试，是发布收口条件的一部分**。G7 在自己的 loopback 临时容器上设置 `B8_TEST_PG_ADMIN_URL`，必跑 business/research/query/claim-cli/kb-loop/removal/claim-state 七份 B8 PG spec；offline primitives 单列，不冒充真库覆盖。用例数从本次报告读取，不硬编码旧 issue 计数。缺 Docker、PG 不可达、任一失败/跳过或缺文件报告均红，不回落 skip。默认 `pnpm test` 不启动 Docker，其 PG 跳过数不算 G7 通过。
 
 ### G8 发布后复跑基线（发布完成后）
 

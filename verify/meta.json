@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "d6d96e84c489771ac03fd0dc66ac829e4faac018d331135ee472ee3c2de2821c",
+      "sha256": "4ab6f47654b5ad2d1a24b1dac21422d9ae98b37b68c0fe24e6f4c19b1e198c60",
       "role": "gate"
     },
     {
@@ -145,7 +145,7 @@
     },
     {
       "path": "scripts/pg-gate.sh",
-      "sha256": "a6885311ce1aa4f5bc8a69ed77ec208f9b4b1cea5f4c453fec5df2442d45a207",
+      "sha256": "ae2faef203c0227196d0f18198d526be0a2650693102c9e55d9fc3e116315012",
       "role": "gate"
     },
     {
@@ -973,6 +973,46 @@
       "reason": "#119: real MCP kb/rel/condition/context child CLI contract probes",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-29T08:15:22.041Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "a6885311ce1aa4f5bc8a69ed77ec208f9b4b1cea5f4c453fec5df2442d45a207",
+      "new_sha256": "41b209788b94d03f01e534e619e3c47a2c8458537cc0d9144a81106372dd85c5",
+      "reason": "#124: require isolated B8 real-PG cases and zero skipped report before matrix",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T17:04:18.417Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "41b209788b94d03f01e534e619e3c47a2c8458537cc0d9144a81106372dd85c5",
+      "new_sha256": "7e170bddbec158be7a37a16ec8de1b9454315c68c230dab28990f20e20f9eed7",
+      "reason": "#124: invoke existing matrix B8-only entry before strict legs",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T17:11:25.652Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "d6d96e84c489771ac03fd0dc66ac829e4faac018d331135ee472ee3c2de2821c",
+      "new_sha256": "99beec7c140e236e721e2bdfd8c6c687ef3491b6b0175ff7971d39d61eb6e390",
+      "reason": "#124: real PG suite entry with report validation and safe failure counts",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T17:11:25.740Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "7e170bddbec158be7a37a16ec8de1b9454315c68c230dab28990f20e20f9eed7",
+      "new_sha256": "ae2faef203c0227196d0f18198d526be0a2650693102c9e55d9fc3e116315012",
+      "reason": "#124: official migration seeds only owned throwaway container before real PG stats",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T17:34:22.712Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "99beec7c140e236e721e2bdfd8c6c687ef3491b6b0175ff7971d39d61eb6e390",
+      "new_sha256": "4ab6f47654b5ad2d1a24b1dac21422d9ae98b37b68c0fe24e6f4c19b1e198c60",
+      "reason": "#124: include relative path formatter in reused PG report entry",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T17:42:31.363Z"
     }
   ],
   "kind": "engine",
