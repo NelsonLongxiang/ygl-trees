@@ -161,6 +161,23 @@ export interface SourceSpec {
 async function sourceAddCore(mgr: EntityManager, projectId: string, o: SourceSpec): Promise<WriteResult & { created: boolean }> {
   const url = o.url || "";
   const urlHash = sha1(url || o.title || "");
+  if (ormDialect(mgr) === "postgres") {
+    await assertPgWriteTarget(mgr);
+    await assertPgProjectWritable(mgr, projectId);
+    await assertPgSearch(mgr, "sources");
+    const now = nowIso();
+    const r = await insertOrFetch({
+      table: "sources",
+      cols: ["id", "project_id", "url", "title", "url_hash", "content_hash", "abstract", "content", "engine", "relevance", "confidence", "tags", "retrieved_at", "created", "ngram"],
+      values: [shortId(["src", projectId, urlHash], 10), projectId, url, o.title || url || "untitled", urlHash, sha1(o.content || o.abstract || ""), o.abstract || "", o.content || "", o.engine || "", o.relevance ?? 0, o.confidence || "B", o.tags || "", now, now, ngram((o.title || url || "untitled") + " " + (o.abstract || "") + " " + (o.content || "") + " " + (o.tags || ""))],
+      conflictCols: ["project_id", "url_hash"],
+    }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+    if (!r.row) throw new Error("source upsert returned no row");
+    if (!r.duplicate) await logEvent(mgr, "source.add", "source", r.row.id, r.row.title);
+    const s = r.row;
+    const row = { id: s.id, project_id: s.project_id, url: s.url, title: s.title, url_hash: s.url_hash, content_hash: s.content_hash, abstract: s.abstract, content: s.content, engine: s.engine, relevance: s.relevance, confidence: s.confidence, tags: s.tags, retrieved_at: s.retrieved_at };
+    return { row, created: !r.duplicate, dup: r.duplicate };
+  }
   const ex = await mgr.findOne(Source, { where: { projectId, urlHash } });
   if (ex) return { row: mapSource(ex), created: false, dup: true };
   const title = o.title || url || "untitled";
@@ -193,9 +210,19 @@ async function sourceAddCore(mgr: EntityManager, projectId: string, o: SourceSpe
 export async function sourceAdd(
   ds: DataSource,
   projectId: string,
-  o: SourceSpec
+  o: SourceSpec,
+  queryRef = ""
 ): Promise<WriteResult & { created: boolean }> {
-  return runTx(ds, async (mgr) => sourceAddCore(mgr, projectId, o));
+  return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) !== "postgres" || !queryRef) return sourceAddCore(mgr, projectId, o);
+    await assertPgWriteTarget(mgr);
+    const qs = await mgr.query("SELECT id,text FROM queries WHERE (id=$1 OR text=$1) AND project_id=$2 FOR SHARE", [queryRef, projectId]);
+    if (!qs.length) throw new PgWriteError("query not found in selected project: " + queryRef);
+    const result = await sourceAddCore(mgr, projectId, o);
+    const linked = await mgr.query("INSERT INTO query_sources(query_id,source_id,note,created) VALUES($1,$2,'',$3) ON CONFLICT(query_id,source_id) DO NOTHING RETURNING query_id", [qs[0].id, result.row.id, nowIso()]);
+    if (linked.length) await logEvent(mgr, "query.attach", "query", qs[0].id, result.row.id);
+    return result;
+  });
 }
 
 /** #83（评审席 direct-f5453873 裁点）：--batch jsonl 全批拒——全部行在单个事务内落库，
@@ -225,6 +252,22 @@ function mapSource(s: Source): Record<string, any> {
 /** #83 单事务体：evidenceAdd 与 evidenceAddBatch 共用。 */
 async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: string, quote: string, note: string, locator: string, force: boolean): Promise<WriteResult> {
   const hash = contentHash(quote, force);
+  if (ormDialect(mgr) === "postgres") {
+    await assertPgWriteTarget(mgr);
+    await assertPgProjectWritable(mgr, projectId);
+    await assertPgSearch(mgr, "evidence");
+    const source = await mgr.query("SELECT id,project_id FROM sources WHERE id=$1 FOR SHARE", [sourceId]);
+    if (!source.length || source[0].project_id !== projectId) throw new PgWriteError("source not found in selected project: " + sourceId);
+    const r = await insertOrFetch({
+      table: "evidence", cols: ["id", "project_id", "source_id", "quote", "note", "locator", "content_hash", "created", "ngram"],
+      values: [shortId(["ev", sourceId, quote], 10), projectId, sourceId, quote, note, locator, hash, nowIso(), ngram(quote)],
+      conflictCols: ["source_id", "content_hash"],
+    }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+    if (!r.row) throw new Error("evidence upsert returned no row");
+    if (!r.duplicate) await logEvent(mgr, "evidence.add", "evidence", r.row.id, quote.slice(0, 60));
+    const e = r.row;
+    return { row: { id: e.id, project_id: e.project_id, source_id: e.source_id, quote: e.quote, note: e.note, locator: e.locator, content_hash: e.content_hash, created: e.created }, dup: r.duplicate };
+  }
   const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
   if (!src) throw new Error("source not found: " + sourceId);
   const ex = await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
@@ -282,6 +325,20 @@ function mapEvidence(e: Evidence): Record<string, any> {
 /** #83 单事务体：claimAdd 与 claimAddBatch 共用。 */
 async function claimAddCore(mgr: EntityManager, projectId: string, text: string, confidence: string, force: boolean, channel: string): Promise<WriteResult> {
   const hash = contentHash(text, force);
+  if (ormDialect(mgr) === "postgres") {
+    await assertPgWriteTarget(mgr);
+    await assertPgProjectWritable(mgr, projectId);
+    const now = nowIso();
+    const r = await insertOrFetch({
+      table: "claims", cols: ["id", "project_id", "text", "status", "confidence", "channel", "content_hash", "created", "updated"],
+      values: [shortId(["cl", projectId, text], 10), projectId, text, "unverified", confidence, channel || "", hash, now, now],
+      conflictCols: ["project_id", "content_hash"],
+    }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+    if (!r.row) throw new Error("claim upsert returned no row");
+    if (!r.duplicate) await logEvent(mgr, "claim.add", "claim", r.row.id, text.slice(0, 60));
+    const c = r.row;
+    return { row: { id: c.id, project_id: c.project_id, text: c.text, status: c.status, confidence: c.confidence, content_hash: c.content_hash, created: c.created, channel: c.channel || "" }, dup: r.duplicate };
+  }
   const ex = await mgr.findOne(Claim, { where: { projectId, contentHash: hash } });
   if (ex) return { row: mapClaim(ex), dup: true };
   const c = new Claim();
@@ -612,7 +669,21 @@ export async function queryAttach(
   });
 }
 
+export class PgWriteError extends Error {}
+
+async function assertPgSearch(mgr: EntityManager, table: "sources" | "evidence"): Promise<void> {
+  const rows = await mgr.query("SELECT is_generated FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1 AND column_name='ngram_tsv'", [table]);
+  if (rows[0]?.is_generated !== "ALWAYS") throw new PgWriteError("PG schema missing generated search column: " + table + ".ngram_tsv; explicit migration required (nothing written)");
+}
+
+async function assertPgProjectWritable(mgr: EntityManager, projectId: string): Promise<void> {
+  const rows = await mgr.query("SELECT name,status FROM projects WHERE id=$1 FOR SHARE", [projectId]);
+  if (!rows.length) throw new PgWriteError("project not found: " + projectId);
+  if (rows[0].status === "archived") throw new PgWriteError("project " + rows[0].name + " is archived — restore it before writing");
+}
+
 async function assertPgWriteTarget(mgr: EntityManager): Promise<void> {
+  if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) throw new PgWriteError("PG writes require YGL_SESSION or DSH_SESSION_ID");
   const url = (mgr.connection.options as any).url as string;
   const rows = await mgr.query("SELECT value FROM meta WHERE key=$1 FOR SHARE", ["backend_binding"]);
   const binding = JSON.parse(rows[0]?.value || "null");
@@ -968,6 +1039,24 @@ export async function projectDeleteEmpty(ds: DataSource, name: string): Promise<
     await mgr.query(`DELETE FROM projects WHERE id=?`, [pid]);
     await logEvent(mgr, "project.delete", "project", pid, name);
     return { ...rows[0], deleted: true, counts };
+  });
+}
+
+/** PG selection is a configuration write, scoped to the calling session and audited atomically. */
+export async function projectUsePg(ds: DataSource, name: string): Promise<Record<string, any>> {
+  return runTx(ds, async (mgr) => {
+    await assertPgWriteTarget(mgr);
+    const rows = await mgr.query("SELECT * FROM projects WHERE name=$1 FOR SHARE", [name]);
+    if (!rows.length) throw new PgWriteError("project not found: " + name);
+    await assertPgProjectWritable(mgr, rows[0].id);
+    const sid = process.env.YGL_SESSION || process.env.DSH_SESSION_ID!;
+    const key = "current_project@" + sid;
+    // Seed then lock this session's key, not every business operation globally.
+    await mgr.query("INSERT INTO meta(key,value) VALUES($1,'') ON CONFLICT(key) DO NOTHING", [key]);
+    const prior = (await mgr.query("SELECT value FROM meta WHERE key=$1 FOR UPDATE", [key]))[0].value;
+    await mgr.query("UPDATE meta SET value=$2 WHERE key=$1", [key, name]);
+    await logEvent(mgr, "project.use", "project", name, { name, session: sid });
+    return { project: name, scope: "session", session: sid, selected: name, prior: prior || null };
   });
 }
 

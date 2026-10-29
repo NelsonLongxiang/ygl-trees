@@ -87,7 +87,7 @@ describe.skipIf(!HAS_BIN)("#93 B7 PG boot hardening", () => {
   });
 
   it("#93-② redacted in refusal message (write cmd under PG env)", () => {
-    const r = run(["research", "source", "list", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl?password=s3cretPW&user=alice" });
+    const r = run(["research", "source", "fetch", "https://example.test", "--json"], { YGL_DB_URL: "postgres://127.0.0.1:1/ygl?password=s3cretPW&user=alice" });
     expect(r.rc).toBe(2);
     expect(r.raw).not.toContain("s3cretPW");
   });

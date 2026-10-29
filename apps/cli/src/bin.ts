@@ -497,13 +497,14 @@ export async function main(argv: string[]): Promise<number> {
   // #93-①：db init 在 PG 模式下放行（绑定 SQLite 工作区）；verify self-check 是
   // 语料驱动 DB-free 面（同 example/lint-candidates/probe），放行。
   const PG_DB_ACTIONS = new Set(["stats", "path", "init"]);
-  const PG_BUSINESS = (group === "kb" && ["add", "list", "show"].includes(action || "")) || (group === "project" && ["new", "list", "show"].includes(action || ""));
+  const PG_RESEARCH = group === "research" && ["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "");
+  const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
   const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui; B8 batch 1: kb add/list/show | project new/list/show`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui; B8: kb add/list/show | project new/use/list/show | research source/evidence/claim add/list/show`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
@@ -515,6 +516,7 @@ export async function main(argv: string[]): Promise<number> {
     }
   } catch { bad(ctx, "workspace backend binding conflicts with configured target; use the bound PG target or a separate YGL_HOME (no SQLite fallback)"); return 2; }
   if (pgUrl && PG_BUSINESS) {
+    if (group === "project" && action === "use" && args.flags.global !== undefined) { bad(ctx, "PG project use does not support --global; selection is session-scoped"); return 2; }
     if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) {
       bad(ctx, "PG business commands require YGL_SESSION or DSH_SESSION_ID for session isolation"); return 2;
     }
@@ -522,7 +524,7 @@ export async function main(argv: string[]): Promise<number> {
       const { getPgOrm, closeOrm } = require("../../../packages/core/database/src/orm");
       try {
         const ds = await getPgOrm(pgUrl);
-        if ((group === "kb" && action === "add") || (group === "project" && action === "new")) {
+        if ((PG_RESEARCH && args._[2] === "add") || (group === "kb" && action === "add") || (group === "project" && ["new", "use"].includes(action || ""))) {
           await bindPgWorkspace(ds, home, pgUrl, appVersion());
         } else {
           // Read commands do not create/update metadata or workspace files.

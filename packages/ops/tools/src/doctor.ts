@@ -104,6 +104,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           checks.push({ name: "pg_search_index", status: search[0]?.is_generated === "ALWAYS" ? "pass" : "fail", detail: "kb_notes ngram_tsv must be generated from transactionally written ngram" });
           const counts = await ds.query("SELECT COUNT(*)::int AS n FROM kb_notes WHERE ngram IS NULL OR (body<>'' AND ngram='')");
           checks.push({ name: "write_integrity", status: counts[0]?.n === 0 ? "pass" : "fail", detail: "knowledge rows carry search input" });
+          for (const table of ["sources", "evidence"]) {
+            const column = await ds.query("SELECT is_generated FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1 AND column_name='ngram_tsv'", [table]);
+            checks.push({ name: table + "_search", status: column[0]?.is_generated === "ALWAYS" ? "pass" : "fail", detail: table + ".ngram_tsv must be generated from transactionally written ngram" });
+          }
+          checks.push({ name: "claims_fulltext", status: "skip", detail: "not implemented in either backend: claims provides base rows, events and list/show only" });
         } catch { checks.push({ name: "pg_health", status: "fail", detail: pgFailure() }); }
         for (const name of ["sqlite_fts", "sqlite_lock", "verify_on_pg"]) checks.push({ name, status: "skip", detail: "not applicable: verify remains the SQLite snapshot chain; no PG verification claim" });
         if (ctx.json) console.log(JSON.stringify(checks, null, 2));
