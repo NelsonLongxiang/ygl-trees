@@ -219,7 +219,7 @@ ygl-trees job add <title> -- "<cmd>" --every 60   # cron 每分钟跑 job tick
 ygl-trees job add "闸门探针" -- "node probe.mjs" --every 30   # 树节奏化监控：任意命令皆可（0.79.1 实证）
 ```
 
-禁止双后端同写：ygl-trees 永远只写 SQLite，PG 是单向出口。
+禁止双后端同写：SQLite 默认；B8 首批允许在**显式迁移好的 PG 库**上执行 `kb add` / `project new`，`kb list/show` 与 `project list/show` 是最小读回面。凭证仅经 `YGL_DB_URL` 环境变量（由用户配置，不放 argv），并提供 `YGL_SESSION` 或 `DSH_SESSION_ID`。使用独立 `YGL_HOME`，业务写不创建 SQLite 文件。首次连接会校验/记录 PG `meta.backend_binding` 并发布本地无凭证绑定指针；目标冲突、PG 不可达、会话缺失一律拒绝，不回退 SQLite。其余写面尚未交付，verify 仍走 SQLite 快照链。
 
 ## 8. 性能基准
 

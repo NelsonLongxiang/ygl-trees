@@ -487,6 +487,7 @@ export async function main(argv: string[]): Promise<number> {
     bad(ctx, "--db does not accept a postgres:// URL (credentials would land in argv history) — pass it via YGL_DB_URL instead (#93 / plan §3.5)");
     return 2;
   }
+  if (process.env.YGL_DB_URL && !PG_URL_RE.test(process.env.YGL_DB_URL)) { bad(ctx, "invalid YGL_DB_URL: configure a postgres:// target or unset it explicitly (no SQLite fallback)"); return 2; }
   let pgUrl = PG_URL_RE.test(String(process.env.YGL_DB_URL || "")) ? String(process.env.YGL_DB_URL) : "";
   if (pgUrl && group === "db" && action === "init") pgUrl = ""; // #93-①: db init 绑定 SQLite 工作区（env 留给后续 PG 步骤）——走正常 SQLite 路径
   if (pgUrl && dbFlagRaw) {
@@ -496,15 +497,41 @@ export async function main(argv: string[]): Promise<number> {
   // #93-①：db init 在 PG 模式下放行（绑定 SQLite 工作区）；verify self-check 是
   // 语料驱动 DB-free 面（同 example/lint-candidates/probe），放行。
   const PG_DB_ACTIONS = new Set(["stats", "path", "init"]);
+  const PG_BUSINESS = (group === "kb" && ["add", "list", "show"].includes(action || "")) || (group === "project" && ["new", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
   const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
-    const refused = !(PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
+    const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db init | doctor | verify self-check | webui; B8 batch 1: kb add/list/show | project new/list/show`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
+  }
+  const { checkPgWorkspace, bindPgWorkspace, pgFailure } = require("../../../packages/core/database/src/pg-workspace");
+  try {
+    if (pgUrl || require("node:fs").existsSync(require("node:path").join(home, "pg-binding.json"))) {
+      checkPgWorkspace(home, pgUrl, PG_BUSINESS ? dbPath(home) : undefined);
+    }
+  } catch { bad(ctx, "workspace backend binding conflicts with configured target; use the bound PG target or a separate YGL_HOME (no SQLite fallback)"); return 2; }
+  if (pgUrl && PG_BUSINESS) {
+    if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) {
+      bad(ctx, "PG business commands require YGL_SESSION or DSH_SESSION_ID for session isolation"); return 2;
+    }
+    try {
+      const { getPgOrm, closeOrm } = require("../../../packages/core/database/src/orm");
+      try {
+        const ds = await getPgOrm(pgUrl);
+        if ((group === "kb" && action === "add") || (group === "project" && action === "new")) {
+          await bindPgWorkspace(ds, home, pgUrl, appVersion());
+        } else {
+          // Read commands do not create/update metadata or workspace files.
+          const rows = await ds.query("SELECT value FROM meta WHERE key=$1", ["backend_binding"]);
+          const b = JSON.parse(rows[0]?.value || "null");
+          if (b?.mode !== "pg" || b.url_hash !== require("../../../packages/core/database/src/pg-workspace").pgTargetHash(pgUrl)) throw new Error("PG binding mismatch");
+        }
+      } catch { await closeOrm(); throw new Error("PG bind failed"); }
+    } catch { bad(ctx, pgFailure()); return 1; }
   }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
@@ -681,7 +708,7 @@ export async function main(argv: string[]): Promise<number> {
     store,           // Store (from ctx.research or fallback) — legacy sync face
     asyncStore: pgUrl ? new AsyncResearchStore(pgUrl) : new AsyncResearchStore(db),  // B1 facade；B7: PG 直连形态
     plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
-    args, home, group,
+    args, home, group, pgUrl: pgUrl || undefined,
     dbFile: file,   // resolved --db (or workspace default) for the brief payload
     version: appVersion(), // diagnostics surface (doctor update_hint; never gates)
   };
@@ -821,11 +848,15 @@ export async function main(argv: string[]): Promise<number> {
   return dispatch()
     .then((rc) => rc)
     .catch((e: any) => {
-      bad(ctx, e?.message || String(e));
-      if (process.env.YGL_DEBUG) console.error(e);
+      bad(ctx, pgUrl ? pgFailure() : e?.message || String(e));
+      if (process.env.YGL_DEBUG && !pgUrl) console.error(e);
       return 1;
     })
-    .finally(() => {
+    .finally(async () => {
+      if (pgUrl) {
+        await env.asyncStore.close();
+        await require("../../../packages/core/database/src/orm").closeOrm();
+      }
       // Cordis lifecycle (0.76): Services' stop() hooks clean resources.
       // This fork has no ctx.dispose() — we call Service.stop() explicitly.
       // DatabaseService.stop() closes SQLite + releases .ygllock + closes ORM.

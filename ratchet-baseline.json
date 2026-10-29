@@ -2,26 +2,26 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-10-27T20:55:15.446Z",
-  "_attribution": "#82（总工裁 B）：bundle +4.7KB（dbfc6e7 867085 → 871791，project rm/归档门/restore）；其余 ~14.4KB 为 master 既有漂移，非本 PR（run-sh 不在 bundle）",
+  "measured_at": "2026-10-29T00:38:01.482Z",
+  "_attribution": "B8 batch-1 fdc APPROVE direct-8156fd43: 875691B -> 894174B (18483B PG writes/binding/readback/doctor). Existing baseline drift 871791B -> 875691B = 3900B, not B8. No ticker lock or exactly-once claim.",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 871791,
+      "value": 894174,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-27T20:55:12.640Z",
+      "measured_at": "2026-10-29T00:37:58.129Z",
       "method": "stat-size-of-dist-bundle"
     },
     "web_dist_bytes": {
       "value": 1395091,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-10-27T20:55:12.641Z",
+      "measured_at": "2026-10-29T00:37:58.130Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 297,
+      "value": 341,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-10-27T20:55:15.445Z",
+      "measured_at": "2026-10-29T00:38:01.481Z",
       "method": "warm2-min7-retry-once"
     }
   }

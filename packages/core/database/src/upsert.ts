@@ -44,7 +44,7 @@ export function upsertSql(
   const insertSql =
     `INSERT INTO ${spec.table} (${spec.cols.join(",")}) VALUES (${placeholders.join(",")}) ` +
     `ON CONFLICT(${spec.conflictCols.join(",")}) DO NOTHING RETURNING *`;
-  const where = spec.conflictCols.map((_, i) => `${spec.conflictCols[i]} = ${ph(spec.cols.length + i)}`).join(" AND ");
+  const where = spec.conflictCols.map((_, i) => `${spec.conflictCols[i]} = ${ph(i)}`).join(" AND ");
   const selectSql = `SELECT * FROM ${spec.table} WHERE ${opts.selectWhere ?? where}`;
   return { insertSql, selectSql };
 }

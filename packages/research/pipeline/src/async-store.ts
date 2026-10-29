@@ -33,9 +33,36 @@ export class AsyncResearchStore {
   }
 
   // ================================================================ projects
-  async projectByName(name: string): Promise<Row | null> { this.guard(); return this.sync!.projectByName(name); }
+  async projectByName(name: string): Promise<Row | null> {
+    if (this.adb.dialect === "pg") return this.adb.get("SELECT * FROM projects WHERE name=?", [name]);
+    this.guard(); return this.sync!.projectByName(name);
+  }
   async projectResolve(name?: string): Promise<Row> { this.guard(); return this.sync!.projectResolve(name); }
-  async projectList(): Promise<Row[]> { this.guard(); return this.sync!.projectList(); }
+  async projectList(): Promise<Row[]> {
+    if (this.adb.dialect === "pg") return this.adb.all("SELECT p.name,p.status,(SELECT COUNT(*)::int FROM sources s WHERE s.project_id=p.id) AS sources,(SELECT COUNT(*)::int FROM claims c WHERE c.project_id=p.id) AS claims,(SELECT COUNT(*)::int FROM artifacts a WHERE a.project_id=p.id) AS artifacts,p.updated FROM projects p ORDER BY p.updated DESC");
+    this.guard(); return this.sync!.projectList();
+  }
+
+  async kbGet(id: string): Promise<Row | null> {
+    return this.adb.get("SELECT id,title,body,source_url,origin,tags,confidence,reuse,content_hash,created,updated FROM kb_notes WHERE id=? OR title=?", [id, id]);
+  }
+
+  async kbList(): Promise<Row[]> {
+    return this.adb.all("SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC");
+  }
+
+  async configValue(key: string, fallback: string): Promise<string> {
+    const r = await this.adb.get("SELECT value FROM config WHERE key=?", [key]);
+    return r?.value || fallback;
+  }
+
+  async metaGet(key: string): Promise<string> {
+    return (await this.adb.get("SELECT value FROM meta WHERE key=?", [key]))?.value || "";
+  }
+
+  async close(): Promise<void> {
+    if (this.adb.dialect === "pg") await (this.adb as import("../../../core/database/src/asyncdb").PgAsyncDb).close();
+  }
 
   // ================================================================ queries
   async queryList(projectId: string): Promise<Row[]> {
