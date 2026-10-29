@@ -98,6 +98,22 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
       return {args,rc:r.status,out:r.stdout,err:r.stderr};
     });
   };
-  try { expect(collect(join(ROOT,"dist/bundle/bin.cjs"))).toEqual(collect(resolve(baseline))); }
+  try {
+    const actual=collect(join(ROOT,"dist/bundle/bin.cjs")), prior=collect(resolve(baseline));
+    let attachCount=0;
+    for(let i=0;i<actual.length;i++){
+      const row=actual[i], old=prior[i];
+      if(row.args[0]==="research"&&row.args[1]==="query"&&row.args[2]==="attach"){
+        // #114 deliberately repairs exactly these two old non-JSON outputs; no other field is normalized.
+        const duplicate=attachCount++>0;
+        const fixed=JSON.stringify({query:row.args[3],source:row.args[4],...(duplicate?{duplicate:true}:{})},null,2)+String.fromCharCode(10);
+        const legacy=duplicate?"  ! already attached: "+row.args[4]+String.fromCharCode(10):'  ✓ attached: Golden source → "Golden query"'+String.fromCharCode(10);
+        expect(row.out).toBe(fixed);
+        expect([legacy,fixed]).toContain(old.out);
+        expect({...row,out:undefined}).toEqual({...old,out:undefined});
+      }else expect(row).toEqual(old);
+    }
+    expect(attachCount).toBe(2);
+  }
   finally { rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100}); }
 }, 180000);

@@ -310,7 +310,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       return writeOrm(env)
         .then((ds) => writes.queryAttach(ds, project.id, rest[1], rest[2], note))
         .then((r): number => {
-          if (env.pgUrl && ctx.json) { console.log(JSON.stringify({ query: rest[1], source: r.sourceId, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          if (ctx.json) { console.log(JSON.stringify({ query: rest[1], source: r.sourceId, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
           if (r.dup) out(ctx, paint(C.yellow, `  ! already attached: ${r.sourceId}`, ctx.color));
           else ok(ctx, `attached: ${clip(r.sourceTitle || r.sourceId, 40)} → "${clip(r.queryText, 40)}"`);
           return 0;
