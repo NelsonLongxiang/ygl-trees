@@ -332,6 +332,13 @@ async function runPgProject(env: Env, action: string, rest: string[], args: any)
   const { ctx, asyncStore } = env;
   const sid = sessionId();
   try {
+    if (action === "use") {
+      if (!rest[0]) { bad(ctx, "missing project name"); return 2; }
+      if (args.flags.global !== undefined) { bad(ctx, "PG project use does not support --global; selection is session-scoped"); return 2; }
+      const result = await writes.projectUsePg(await getPgOrm(env.pgUrl!), rest[0]);
+      ack(ctx, result, "now using: " + rest[0] + "  (session selection — session " + sid.slice(0, 8) + ")");
+      return 0;
+    }
     if (action === "new") {
       const name = rest[0];
       if (!name) { bad(ctx, "missing project name"); return 2; }
@@ -343,18 +350,14 @@ async function runPgProject(env: Env, action: string, rest: string[], args: any)
       return 0;
     }
     if (action === "list") {
-      const selected = await asyncStore.metaGet("current_project@" + sid);
-      const rows = (await asyncStore.projectList()).map((p: any) => ({ ...p, current: p.name === selected && p.status !== "archived" }));
+      const selection = await asyncStore.pgProjectSelection(String(args.flags.p || args.flags.project || ""));
+      const rows = (await asyncStore.projectList()).map((p: any) => ({ ...p, current: p.name === selection.name && p.status !== "archived" }));
       table(ctx, rows, ["project", "status", "src", "claims", "artifacts", "updated"], ["name", "status", "sources", "claims", "artifacts", "updated"]);
       return 0;
     }
     if (action === "show") {
-      const explicit = String(args.flags.p || args.flags.project || "");
-      const fromEnv = process.env.YGL_PROJECT || "";
-      const selected = await asyncStore.metaGet("current_project@" + sid);
+      const { name, source: via } = await asyncStore.pgProjectSelection(String(args.flags.p || args.flags.project || ""));
       const rows = await asyncStore.projectList();
-      const name = explicit || fromEnv || selected || (rows.length === 1 ? rows[0].name : "");
-      const via = explicit ? "flag" : fromEnv ? "env" : selected ? "session" : "only";
       if (!name) { bad(ctx, "no project selected; pass --project <name> or run project new"); return rows.length > 1 ? 2 : 1; }
       const p = await asyncStore.projectByName(name);
       if (!p) { bad(ctx, "project not found: " + name); return 1; }
@@ -365,5 +368,5 @@ async function runPgProject(env: Env, action: string, rest: string[], args: any)
       return 0;
     }
     bad(ctx, "project action is unavailable in PG mode"); return 2;
-  } catch { bad(ctx, pgFailure()); return 1; }
+  } catch (e) { bad(ctx, e instanceof writes.PgWriteError ? e.message : pgFailure()); return 1; }
 }

@@ -38,6 +38,15 @@ export class AsyncResearchStore {
     this.guard(); return this.sync!.projectByName(name);
   }
   async projectResolve(name?: string): Promise<Row> { this.guard(); return this.sync!.projectResolve(name); }
+
+  async pgProjectSelection(flag?: string): Promise<{ name: string; source: "flag" | "env" | "session" | "only" | "none" }> {
+    if (flag) return { name: flag, source: "flag" };
+    if (process.env.YGL_PROJECT) return { name: process.env.YGL_PROJECT, source: "env" };
+    const selected = await this.metaGet("current_project@" + (process.env.YGL_SESSION || process.env.DSH_SESSION_ID || ""));
+    if (selected) return { name: selected, source: "session" };
+    const rows = await this.adb.all("SELECT name FROM projects LIMIT 2");
+    return rows.length === 1 ? { name: rows[0].name, source: "only" } : { name: "", source: "none" };
+  }
   async projectList(): Promise<Row[]> {
     if (this.adb.dialect === "pg") return this.adb.all("SELECT p.name,p.status,(SELECT COUNT(*)::int FROM sources s WHERE s.project_id=p.id) AS sources,(SELECT COUNT(*)::int FROM claims c WHERE c.project_id=p.id) AS claims,(SELECT COUNT(*)::int FROM artifacts a WHERE a.project_id=p.id) AS artifacts,p.updated FROM projects p ORDER BY p.updated DESC");
     this.guard(); return this.sync!.projectList();
@@ -76,7 +85,10 @@ export class AsyncResearchStore {
   async sourceSearch(projectId: string, q: string): Promise<Row[]> {
     this.guard(); return this.sync!.sourceSearch(projectId, q);
   }
-  async sourceGet(id: string): Promise<Row | null> { this.guard(); return this.sync!.sourceGet(id); }
+  async sourceGet(id: string): Promise<Row | null> {
+    if (this.adb.dialect === "pg") return this.adb.get("SELECT id,project_id,url,title,url_hash,content_hash,abstract,content,engine,relevance,confidence,tags,retrieved_at,created FROM sources WHERE id=?", [id]);
+    this.guard(); return this.sync!.sourceGet(id);
+  }
 
   // ================================================================ evidence
   async evidenceList(projectId: string): Promise<Row[]> { this.guard(); return this.sync!.evidenceList(projectId); }

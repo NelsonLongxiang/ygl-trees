@@ -7,7 +7,8 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
-import { getOrm } from "../../../core/database/src/orm";
+import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+import { pgFailure } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
@@ -125,7 +126,7 @@ async function runBatch(
       return 2;
     }
   }
-  const ds = await getOrm(env.db.path);
+  const ds = await writeOrm(env);
   try {
     let results: any[];
     if (kind === "source") {
@@ -180,7 +181,7 @@ async function runBatch(
     }
     return 0;
   } catch (e: any) {
-    bad(ctx, (e?.message || String(e)) + " (whole batch rolled back — nothing was written)");
+    bad(ctx, writeError(env, e) + " (whole batch rolled back — nothing was written)");
     return 1;
   }
 }
@@ -192,6 +193,11 @@ function nowCompact(): string {
   return new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
 }
 
+async function readOne(env: Env, sql: string, params: unknown[] = []): Promise<any> { return env.pgUrl ? env.asyncStore.queryOne(sql, params) : env.store.db.get(sql, params); }
+async function readRows(env: Env, sql: string, params: unknown[] = []): Promise<any[]> { return env.pgUrl ? env.asyncStore.query(sql, params) : env.store.db.all(sql, params); }
+function writeOrm(env: Env) { return env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path); }
+function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof writes.PgWriteError) ? pgFailure() : e?.message || String(e); }
+
 function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
   // F1 (0.110.x): write receipts name the target project + the selection layer;
@@ -201,15 +207,15 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human:
   const via = currentSelectionVia();
   // 0.114.22 (K3 #K3-2): shared-bucket + recent same-dimension selection change
   // => the target may move under this write; warn (not refuse). No actor compare.
-  const selectionWarning = selectionChangeWarning(env.db, "project", (via || "none") as any);
+  const selectionWarning = env.pgUrl ? undefined : selectionChangeWarning(env.db, "project", (via || "none") as any);
   if (!ctx.json && selectionWarning) process.stderr.write(`  note: ${selectionWarning}\n`);
-  if (!ctx.json && projectName && via && via !== "flag" && via !== "env") {
+  if (!env.pgUrl && !ctx.json && projectName && via && via !== "flag" && via !== "env") {
     const n = Number((env.db.get("SELECT COUNT(*) AS n FROM projects") as any)?.n ?? 0);
     if (n > 1) {
       console.error(`  note: writing to project '${projectName}' via ${via} selection (cwd=${process.cwd()}) — pass -p <name> to bind the target explicitly`);
     }
   }
-  return getOrm(env.db.path)
+  return writeOrm(env)
     .then(fn)
     .then((r) => {
       writeResult(ctx, r as any, human, {
@@ -219,7 +225,7 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human:
       return 0;
     })
     .catch((e: any) => {
-      bad(ctx, e?.message || String(e));
+      bad(ctx, writeError(env, e));
       return 1;
     });
 }
@@ -238,11 +244,13 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     args.flags.all === true &&
     (subAction === "calibration" || (sub === "predict" && subAction === "list"));
   let project: any;
-  const sel = resolveProject(
-    store.db,
-    args.flags.p ?? args.flags.project ? String(args.flags.p ?? args.flags.project) : undefined
-  );
-  if (!workspaceWide && ambiguousProject(store.db, sel)) {
+  const explicitProject = args.flags.p ?? args.flags.project ? String(args.flags.p ?? args.flags.project) : undefined;
+  const sel = env.pgUrl ? { ...await env.asyncStore.pgProjectSelection(explicitProject), id: "" } : resolveProject(store.db, explicitProject);
+  if (env.pgUrl && !sel.name) {
+    bad(ctx, "no unambiguous project selected; pass --project <name> or run project use <name>");
+    return (await env.asyncStore.projectList()).length > 1 ? 2 : 1;
+  }
+  if (!env.pgUrl && !workspaceWide && ambiguousProject(store.db, sel)) {
     // R16.3 fail-closed: a global pointer (or nothing) must not authorize
     // project-scoped commands in a multi-project workspace.
     bad(
@@ -268,6 +276,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       return 1;
     }
   }
+  if (env.pgUrl) process.env.YGL_SELECTION_VIA = sel.source;
   process.env.YGL_SELECTION_PROJECT = project?.name || "";
 
   const readBody = (): string => {
@@ -414,14 +423,14 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           engine: String(row.engine ?? ""), relevance: row.relevance === undefined ? 0 : Number(row.relevance),
           confidence: String(row.confidence ?? ""), tags: String(row.tags ?? ""),
         };
-        return getOrm(env.db.path)
+        return writeOrm(env)
           .then(async (ds): Promise<number> => {
-            const r = await writes.sourceAdd(ds, project.id, spec);
+            const r = await writes.sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
             // #83 复核②：--file 与 --batch 同形——JSON 回执带 ignored_fields（writeResult 只展开 row，故嵌进行对象）。
             writeResult(ctx, (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r) as any, (rw) => "source added: " + rw.id + "  " + clip(rw.title, 60) + "  · project " + project.name + "  (from --file " + f + ")");
             return 0;
           })
-          .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
+          .catch((e: any): number => { bad(ctx, writeError(env, e)); return 1; });
       }
       // R284 fix: relevance is INTEGER 0-5 (screening score band); a REAL like
       // 0.95 passes SQLite's weak typing but explodes in PG migration
@@ -475,7 +484,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         content: readBody() || String(args.flags.content || ""),
         engine: String(args.flags.engine || ""),
         relevance: Number(args.flags.relevance || 0),
-        confidence: String(args.flags.confidence || configGet(env.db, "default_confidence")),
+        confidence: String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"))),
         tags: String(args.flags.tags || ""),
       };
       const qRef = String(args.flags.query || "");
@@ -484,7 +493,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       // left the source landed with a pure error receipt (assets fragment
       // silently). Pre-validate the query ref before ANY write; if the
       // attach still fails post-write, name the landed source + the retry.
-      if (qRef) {
+      if (qRef && !env.pgUrl) {
         const q = store.db.get(
           "SELECT id FROM queries WHERE (id=? OR text=?) AND project_id=?",
           [qRef, qRef, project.id]
@@ -494,11 +503,11 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 1;
         }
       }
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then(async (ds): Promise<number> => {
-          const r = await writes.sourceAdd(ds, project.id, spec);
+          const r = await writes.sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
           writeResult(ctx, r as any, (row) => `source added: ${row.id}  ${clip(row.title, 60)}  · project ${project.name}`);
-          if (qRef) {
+          if (qRef && !env.pgUrl) {
             try {
               const at = await writes.queryAttach(ds, project.id, qRef, r.row.id);
               if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.queryText, 40)}"`, ctx.color));
@@ -510,7 +519,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, e?.message || String(e));
+          bad(ctx, writeError(env, e));
           return 1;
         });
     }
@@ -592,7 +601,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     }
     if (subAction === "list") {
       const min = Number(args.flags.min || -1);
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then(async (ds): Promise<number> => {
           const srcs = await ds.getRepository(Source).find({
             where: { projectId: project.id, relevance: MoreThanOrEqual(Number.isFinite(min) ? min : -1) },
@@ -619,7 +628,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, `orm query failed: ${e?.message || e}`);
+          bad(ctx, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`);
           return 1;
         });
     }
@@ -647,14 +656,14 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       const s = await env.asyncStore.sourceGet(rest[1]);
       if (!s) {
-        bad(ctx, idNotFound(env.db, "sources", rest[1], "source"));
+        bad(ctx, env.pgUrl ? "source not found: " + rest[1] : idNotFound(env.db, "sources", rest[1], "source"));
         return 1;
       }
       // F3 (#44): R16.3 says reads fail closed; source show was the one
       // id-addressed read that returned another project's row. The owning
       // project is knowable, so the refusal names it.
       if (s.project_id !== project.id) {
-        const owner = ownerProjectName(env.db, "sources", rest[1]) ?? "another project";
+        const owner = env.pgUrl ? (await env.asyncStore.queryOne("SELECT name FROM projects WHERE id=?", [s.project_id]))?.name || "another project" : ownerProjectName(env.db, "sources", rest[1]) ?? "another project";
         bad(ctx, `source not found in project '${project.name}': ${rest[1]} (it belongs to project '${owner}' — use -p ${owner})`);
         return 1;
       }
@@ -765,9 +774,9 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 2;
       }
       {
-        const srcOwner = store.db.get("SELECT project_id FROM sources WHERE id=?", [sourceId]) as any;
+        const srcOwner = env.pgUrl ? await env.asyncStore.queryOne("SELECT project_id FROM sources WHERE id=?", [sourceId]) : store.db.get("SELECT project_id FROM sources WHERE id=?", [sourceId]) as any;
         if (srcOwner && srcOwner.project_id !== project.id) {
-          bad(ctx, idNotFound(env.db, "sources", sourceId, "source"));
+          bad(ctx, env.pgUrl ? "source not found in selected project: " + sourceId : idNotFound(env.db, "sources", sourceId, "source"));
           return 1;
         }
       }
@@ -840,7 +849,7 @@ if (subAction === "show") {
         bad(ctx, "usage: research evidence show <evidenceId> [--json]");
         return 2;
       }
-      const e = store.db.get(
+      const e = await readOne(env,
         `SELECT e.id, e.project_id, e.source_id, e.quote, e.note, e.locator, e.created,
                 s.title AS source_title, s.url AS source_url, s.relevance AS source_relevance,
                 s.confidence AS source_confidence
@@ -849,16 +858,16 @@ if (subAction === "show") {
         [id, project.id]
       ) as any;
       if (!e) {
-        const other = store.db.get("SELECT project_id FROM evidence WHERE id=?", [id]) as any;
+        const other = await readOne(env, "SELECT project_id FROM evidence WHERE id=?", [id]) as any;
         if (other) {
-          const pname = (store.db.get("SELECT name FROM projects WHERE id=?", [other.project_id]) as any)?.name || other.project_id;
+          const pname = (await readOne(env, "SELECT name FROM projects WHERE id=?", [other.project_id]))?.name || other.project_id;
           bad(ctx, `evidence not found in project '${project.name}': ${id} (it belongs to project '${pname}' — use -p ${pname})`);
         } else {
           bad(ctx, `evidence not found: ${id}`);
         }
         return 1;
       }
-      const links = store.db.all(
+      const links = await readRows(env,
         `SELECT ce.claim_id, ce.stance, c.text AS claim_text, c.status AS claim_status
            FROM claim_evidence ce JOIN claims c ON c.id=ce.claim_id
           WHERE ce.evidence_id=? ORDER BY c.created`,
@@ -903,7 +912,7 @@ if (subAction === "show") {
     }
 
     if (subAction === "list" || subAction === undefined) {
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then(async (ds): Promise<number> => {
           const evs = await ds.getRepository(Evidence).find({
             where: { projectId: project.id },
@@ -921,7 +930,7 @@ if (subAction === "show") {
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, `orm query failed: ${e?.message || e}`);
+          bad(ctx, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`);
           return 1;
         });
     }
@@ -963,7 +972,7 @@ if (subAction === "show") {
         if (unknown.length && !ctx.json) out(ctx, paint(C.yellow, "  note: ignored unknown field(s): " + unknown.join(", "), ctx.color));
         const text = String(row.text);
         const rowConfidence = String(row.confidence ?? "");
-        const confidence = rowConfidence || configGet(env.db, "default_confidence");
+        const confidence = rowConfidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"));
         const channel = String(args.flags.channel || "");
         return runWrite(
           env,
@@ -989,7 +998,7 @@ if (subAction === "show") {
         bad(ctx, 'missing claim text: research claim add "<text>"');
         return 2;
       }
-      const confidence = String(args.flags.confidence || configGet(env.db, "default_confidence"));
+      const confidence = String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence")));
       // 0.90 (direct-ce9eaf7a): predictions register the ledger channel they
       // settle against — free string, suggested vocabulary
       // github-issues|review-rounds|npm-registry|downloads-api|manual.
@@ -1401,22 +1410,22 @@ if (subAction === "show") {
         bad(ctx, "usage: research claim show <claimId> [--json]");
         return 2;
       }
-      const c = store.db.get(
+      const c = await readOne(env,
         "SELECT id, project_id, text, status, confidence, channel, created, updated FROM claims WHERE id=? AND project_id=?",
         [id, project.id]
       ) as any;
       if (!c) {
         // distinguish workspace-visible-but-other-project from truly missing
-        const other = store.db.get("SELECT project_id FROM claims WHERE id=?", [id]) as any;
+        const other = await readOne(env, "SELECT project_id FROM claims WHERE id=?", [id]) as any;
         if (other) {
-          const pname = (store.db.get("SELECT name FROM projects WHERE id=?", [other.project_id]) as any)?.name || other.project_id;
+          const pname = (await readOne(env, "SELECT name FROM projects WHERE id=?", [other.project_id]))?.name || other.project_id;
           bad(ctx, `claim not found in project '${project.name}': ${id} (it belongs to project '${pname}' — use -p ${pname})`);
         } else {
           bad(ctx, `claim not found: ${id}`);
         }
         return 1;
       }
-      const links = store.db.all(
+      const links = await readRows(env,
         `SELECT ce.evidence_id, ce.stance, e.quote, e.locator, e.note, e.created,
                 s.id AS source_id, s.title AS source_title, s.url AS source_url
            FROM claim_evidence ce
@@ -1461,7 +1470,7 @@ if (subAction === "show") {
     }
 
     if (subAction === "list" || subAction === undefined) {
-      return getOrm(env.db.path)
+      return writeOrm(env)
         .then(async (ds): Promise<number> => {
           const cls = await ds.getRepository(Claim).find({
             where: { projectId: project.id },
@@ -1488,7 +1497,7 @@ if (subAction === "show") {
           return 0;
         })
         .catch((e: any): number => {
-          bad(ctx, `orm query failed: ${e?.message || e}`);
+          bad(ctx, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`);
           return 1;
         });
     }

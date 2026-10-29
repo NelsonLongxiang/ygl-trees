@@ -96,6 +96,16 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 2. 定时镜像一行即达：`job add pg-mirror -- "ygl-trees db sync pg \$YGL_PG_URL" --every 60`（tick 锁已防双跑）
 3. L2 已取消（§5）；若未来需要"PG 为唯一事实源"，作为独立工具重新立项
 
+## B8 单一 PG 业务后端
+
+业务入口使用 `YGL_DB_URL`，目标须已用官方 `db migrate pg` 显式迁移；`YGL_PG_URL` 是 `db sync pg` / `db migrate pg` 的出口 URL，不会启用 PG 业务模式，也不自动作为 `YGL_DB_URL` 别名。凭证由用户配置环境变量，不放 `--db` 或命令历史。使用独立 `YGL_HOME`；存在 SQLite 文件或已有 PG 绑定目标不一致时拒绝，不回落、不双写。
+
+可用面：`kb add/list/show`、`project new/use/list/show`、`research source/evidence/claim add/list/show`（包括各类型已支持的 file/batch 入口）。批量全部行先校验、单事务写入，中段失败整批回滚；`source add --query` 对既有 query 的挂接同 PG 事务。其余 mutation/query/fetch/link/resolve/archive/delete 等未列命令仍拒绝。
+
+项目解析只读优先级：显式 `-p/--project` → `YGL_PROJECT` → 当前 session 选择 → 唯一项目；多项目无选择 rc2，指定不存在项目 rc1。不会读取全局最近项目作 fallback。读命令不写选择或文件；`project use` 仅更新本 session 并发事件，返回替换前 prior，archived 拒选，`--global` 拒绝。
+
+检索范围以官方迁移为准：sources/evidence 有 ngram + GENERATED ALWAYS ngram_tsv + GIN，输入与基表/events 同事务。claims 原来在两个后端都没有全文检索，只提供基表/events/list/show；不声称检索 PASS、不新加检索 schema。doctor 的 claims_fulltext 与 verify_on_pg 明确 skip 并给原因；verify 仍走 SQLite 快照链。
+
 ## B4 并发语义（2026-10-25 成文）
 
 | 面 | 规则 |
@@ -103,5 +113,5 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 | 事务隔离级别 | **READ COMMITTED**（SQLite 默认行为等价；PG 显式声明）——不声称可串行化，跨事务读写以「写服务事务内幂等判定」为准 |
 | 幂等写 | `INSERT ... ON CONFLICT(...) DO NOTHING RETURNING *`（`packages/core/database/src/upsert.ts`）——判重+写入单条原子语句；RETURNING 有行=本次创建，无行=已存在（duplicate:true）。双端同 SQL（差异仅占位符） |
 | job tick 单执行 | PG：`pg_try_advisory_lock(hashtext('ygl:job-tick'))` 会话级非阻塞锁（`advisory-lock.ts`）；SQLite：单机文件写锁串行化，无跨机面 |
-| 会话选择 | `current_project@<session>` / `current_tree@<session>`（YGL_SESSION 作用域）；PG 模式要求会话 id（D4）——无会话 id 时 selection 落 workspace 全局键并要求显式 `--project` |
+| 会话选择 | PG 业务命令必须带 `YGL_SESSION` 或 `DSH_SESSION_ID`；缺失即 rc2，不落全局键。`project use` 仅更新 `current_project@<session>` 并返回 prior；`--global` 明确拒绝 |
 | 并发验收 | N 进程同内容并发写 → 恰好一行 + 其余 duplicate:true rc0（`b4-upsert.spec` 8 进程实证）；双机 tick → 只有一个执行（advisory lock，B6 真库矩阵验证） |

@@ -22,6 +22,7 @@ export interface Env {
    *  AsyncResearchStore) — no `any` escape hatch. */
   asyncStore: {
     projectByName(name: string): Promise<any>;
+    pgProjectSelection(flag?: string): Promise<{ name: string; source: "flag" | "env" | "session" | "only" | "none" }>;
     projectResolve(name?: string): Promise<any>;
     projectList(): Promise<any[]>;
     sourceList(projectId: string, minRelevance?: number): Promise<any[]>;
