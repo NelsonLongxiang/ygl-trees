@@ -232,16 +232,17 @@ ${paint(C.bold, "tree / node", color)}   tech-tree node model
                                       [--force rewrite an existing condition in place]
                                       [--effect gate|cost_mul] [--weight n]
   node index                         rebuild closure + topo order
-  node can <key> [--state k=v]       evaluate required vs optional gates
+  node can <key> [--context ctx] [--state k=v] evaluate required vs optional gates
                                      (--eval: eval 题型经决策模型判定；
                                       boolean P / choice P(期望答案) / score ±1 灰带)
-  node ready [--state k=v] [--eval]  currently unlockable set
+  node ready [--context ctx] [--state k=v] [--eval] currently unlockable set
                                      (--all: sweep every tree — no tree use needed)
   node cond --due [--days n] [--eval]  eval gates with YYYY-MM-DD deadlines due in n days
-  node path <key>                    dependency-order path to target (all locked ancestors; OR branches not optimized)
+  node path <key> [--context ctx]    dependency-order path to target (all locked ancestors; OR branches not optimized)
   node parents|children <key>        direct relations
   node ancestors|descendants <key>   transitive, via closure index
-  node list | show <key> | search "<q>" | unlock|lock <key> | rm <key>
+  node list | show <key> | search "<q>" | rm <key>
+  node unlock|lock <key> [--context ctx] mark state in one named context (default: default)
   node validate                      cycles, dangling edges, dirty index
   node export [--out file.json]      portable JSON
   node import --file <file.json>     [--tree name] [--merge] — strict, transactional

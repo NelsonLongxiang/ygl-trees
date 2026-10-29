@@ -308,6 +308,10 @@ db obsidian [dir]           # 导出 Obsidian markdown vault
 
 ---
 
+### MCP 参数与 HTTP 会话
+
+MCP `write` 的 `kb/add` 使用 `name` 加 `body` 或 `file`（二选一）；`rel/attach` 的 `node` 为节点引用、`type` 为关系词、`target` 必须带实体前缀（如 `kb:<id>`）；`tree/node-cond` 必须提供 `op/value`，不会再创建空值门槛。`read node/can`、`read node/ready`、`write tree/node-unlock` 支持 `context`；can/ready 的 `state` 使用 `budget=2,flag=1` 字符串。HTTP 的 `X-YGL-Session` 仅覆盖本请求；无头使用服务启动时 session，不改全局 process.env。合法连接凭据保留在受控子进程环境中，不放入 argv 或回执。
+
 ## 四、调度
 
 ```bash
@@ -341,7 +345,7 @@ SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 
 ## 五b、开发与运维工具
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1275 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（148 项）
+pnpm test          # 四段制回归：build + unit (vitest 1286 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

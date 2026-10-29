@@ -538,6 +538,40 @@ else fail "PG init refusal" "rc=$INIT_RC or workspace/credential side effect"; f
 json_err "init unsupported backend" 2 -- $Y db init --backend pg
 json_err "init unknown option" 2 -- $Y db init --bogus-flag
 
+# #119: exercise MCP builders through real child CLI invocations, not argv string snapshots alone.
+MCPOUT=$(node <<'NODE'
+const path=require('node:path');
+const {buildTools}=require('./dist/packages/ops/tools/src/mcp.js');
+process.argv[1]=path.resolve('dist/bundle/bin.cjs');
+const tools=buildTools({...process.env,YGL_SESSION:'mcp-contract'});
+const exec=(tool,args)=>tools.find(t=>t.name===tool).execute(args);
+(async()=>{
+ let failed=0;
+ const check=(name,ok)=>{console.log((ok?'PASS ':'FAIL ')+name);if(!ok)failed++;};
+ await exec('write',{domain:'project',action:'new',name:'mcp-contract'});
+ await exec('write',{domain:'tree',action:'tree-new',tree:'mcp-contract-tree',project:'mcp-contract'});
+ const n=await exec('write',{domain:'tree',action:'node-add',tree:'mcp-contract-tree',key:'mcp-parent'});
+ await exec('write',{domain:'tree',action:'node-add',tree:'mcp-contract-tree',key:'mcp-child'});
+ const kb=await exec('write',{domain:'kb',action:'add',name:'MCP contract note',body:'MCP contract body'});
+ check('kb title/body',kb.title==='MCP contract note'&&kb.body==='MCP contract body');
+ const rel=await exec('write',{domain:'rel',action:'attach',node:'mcp-contract-tree/mcp-parent',type:'evidenced-by',target:'kb:'+kb.id});
+ check('rel typed endpoints',rel.src==='node:'+n.id&&rel.dst==='kb:'+kb.id&&rel.rel==='evidenced-by');
+ await exec('write',{domain:'tree',action:'node-cond',tree:'mcp-contract-tree',key:'mcp-child',name:'budget',kind:'resource',op:'>=',value:2});
+ const can=await exec('read',{domain:'node',action:'can',tree:'mcp-contract-tree',key:'mcp-child',state:'budget=2'});
+ check('condition satisfiable',can.ok===true);
+ await exec('write',{domain:'tree',action:'node-link',tree:'mcp-contract-tree',key:'mcp-parent',child:'mcp-child'});
+ await exec('write',{domain:'tree',action:'node-unlock',tree:'mcp-contract-tree',key:'mcp-parent',context:'named'});
+ const named=await exec('read',{domain:'node',action:'can',tree:'mcp-contract-tree',key:'mcp-child',context:'named',state:'budget=2'});
+ const other=await exec('read',{domain:'node',action:'can',tree:'mcp-contract-tree',key:'mcp-child',context:'other',state:'budget=2'});
+ check('context isolates state',named.ok===true&&other.ok===false);
+ process.exitCode=failed?1:0;
+})().catch(e=>{console.error(e.message);process.exitCode=1;});
+NODE
+); MCPRC=$?
+for MCPCHECK in 'kb title/body' 'rel typed endpoints' 'condition satisfiable' 'context isolates state'; do
+  if [ "$MCPRC" = "0" ] && printf '%s\n' "$MCPOUT" | grep -Fx "PASS $MCPCHECK" >/dev/null; then pass "MCP $MCPCHECK"; else fail "MCP $MCPCHECK" "MCP child flow failed; inspect targeted tests"; fi
+done
+
 rm -rf "$WS"
 echo "contract-audit: $((N-FAIL))/$N 通过"
 [ "$FAIL" = "0" ] || exit 1
