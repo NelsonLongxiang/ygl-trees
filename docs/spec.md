@@ -177,6 +177,10 @@
 - **R16.5 跨指针一致性**：`tree use` 对 `project_id` 非空且 ≠ 当前项目 → WARN 不阻断；`tree new --project <未知>` → rc=2 点名（修 `proj?.id || ""` 静默落空）；不回填历史 `trees.project_id`（workspace 级标签语义）
 - **R16.6 验收**：33 项目工作区未选择时 `claim list` / `claim add` / `claim link` / `agent brief` 均 rc=2 且 JSON 单对象，`doctor` / `project list` / `kb search` rc=0（`node list` 属树作用域：未选树时保持既有 rc=1，不受项目门禁）；单项目工作区全部 rc=0；`--project` / `YGL_PROJECT` / 会话键三路各放行并标注 `selection_source`；会话键指向已删项目 → rc=1 点名；仅全局指针时 `doctor` WARN；webui 未选择态显示「未选择」；`contract:audit` 增上述断言，demo 增「未选择即拒绝」与「会话选择后放行」两条；兼容性——跨会话不再自动继承上次选择，CHANGELOG 与升级说明写明
 
+### 节点运行状态 context（#119 可发现性补全）
+
+`node can/ready/path/unlock/lock` 的 `--context <name>` 选择树内命名运行状态，默认 default；不改变节点结构或项目/session选择。MCP已开放的 can/ready/node-unlock 用同名 context 参数转发；未开放的lock/path不因本文新增。HTTP MCP请求session通过各自子进程env隔离，无头回到启动session，全局process.env不被请求改写。
+
 ## 3b. 业务交付面定位（2026-10-28 总工裁 direct-a7b1e30a A③ 三拆之三）
 
 ygl-trees 的**业务交付面 = CLI（npm 包）**：安装即用、退出码契约冻结、--json 机器可读。

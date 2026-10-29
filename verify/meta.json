@@ -75,7 +75,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "3a06893f24208a36c82d7d566a6fa71348d3e1793980debded10987dffe25ed0",
+      "sha256": "aa152aad3cb7feb9e69301eabbbfc2a5488918817cd6f5c8021227ae8cb6b879",
       "role": "gate"
     },
     {
@@ -965,6 +965,14 @@
       "reason": "#120: demonstrate args.flags name with real CLI tests; document parsing as unstable, no parser change",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-29T06:45:26.398Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "3a06893f24208a36c82d7d566a6fa71348d3e1793980debded10987dffe25ed0",
+      "new_sha256": "aa152aad3cb7feb9e69301eabbbfc2a5488918817cd6f5c8021227ae8cb6b879",
+      "reason": "#119: real MCP kb/rel/condition/context child CLI contract probes",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T08:15:22.041Z"
     }
   ],
   "kind": "engine",
