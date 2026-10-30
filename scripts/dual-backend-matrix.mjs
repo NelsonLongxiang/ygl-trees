@@ -99,8 +99,16 @@ export function goldenHash(bytes, expected) {
   if (actual !== expected) throw new Error("SQLite golden baseline sha256 mismatch");
   return actual;
 }
+export function goldenSpecs(root = ROOT) {
+  const spec = "packages/ops/tools/tests/b8-sqlite-golden.spec.ts";
+  if (!existsSync(join(root, spec))) throw new Error("SQLite golden spec is missing: " + spec);
+  return [spec];
+}
+export function goldenArgv(reportPath) {
+  return ["node_modules/vitest/vitest.mjs", "run", ...goldenSpecs(), "--maxWorkers=1", "--reporter=json", "--outputFile=" + reportPath];
+}
 export function goldenReport(report) {
-  const expected = "packages/ops/tools/tests/b8-sqlite-golden.spec.ts";
+  const [expected] = goldenSpecs();
   const rows = report.testResults;
   if (!report.success || !Array.isArray(rows) || rows.length !== 1 ||
       !rows[0].name.replaceAll("\\", "/").endsWith(expected) ||
@@ -142,7 +150,7 @@ async function sqliteGoldenMain() {
   const log = openSync(join(dir, "vitest.log"), "w");
   let run;
   try {
-    run = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "packages/ops/tools/tests/b8-sqlite-golden.spec.ts", "--maxWorkers=1", "--reporter=json", "--outputFile=" + join(dir, "vitest.json")], {
+    run = spawnSync(process.execPath, goldenArgv(join(dir, "vitest.json")), {
       cwd: ROOT, env: { ...process.env, YGL_DB_URL: "", YGL_PG_URL: "", B8_SQLITE_BASELINE_BIN: bin },
       stdio: ["ignore", log, log], timeout: 15 * 60_000,
     });

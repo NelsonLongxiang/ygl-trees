@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "af15f0fdfd6ff72a409e3ed51992434e17d624d13b5292079f1dc7dd0de0a444",
+      "sha256": "5057d535535acc62bf7b8c006ef5a05f35b94647a811b48e96637cee2e262ab0",
       "role": "gate"
     },
     {
@@ -1069,6 +1069,14 @@
       "reason": "#136: create tmp parent, fail closed on allocation and validate cleanup target before trap",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-30T18:24:48.511Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "af15f0fdfd6ff72a409e3ed51992434e17d624d13b5292079f1dc7dd0de0a444",
+      "new_sha256": "5057d535535acc62bf7b8c006ef5a05f35b94647a811b48e96637cee2e262ab0",
+      "reason": "#135: one goldenSpecs definition shared by goldenReport and actual goldenArgv",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-30T19:47:07.250Z"
     }
   ],
   "kind": "engine",
