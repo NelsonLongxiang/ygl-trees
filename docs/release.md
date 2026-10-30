@@ -172,7 +172,7 @@ node scripts/pack-repro.mjs                 # 官方字节（clean worktree + �
 
 **必守顺序（#131）**：release 提交先并入 master → push 项目主远端 master →（创建并 push tag）→ guard → publish。tag 可先准备，但 tag commit 和远端 master 两者都必须先于 npm 可见；不能只推 release 分支/tag 就发布。`--remote` 使用项目主远端名字（当前 `github`，不是固定要求名为 origin）。guard 每次新 fetch 该远端 master，验证远端 tag 的 peeled commit 与本地 HEAD 一致，再验证该 commit 是远端 master 的祖先；失败输出双方 SHA。离线 `--no-network` 或未给 `--remote` 仅为本地 tag 检查，`remote_verified:false`，不能作为发布门通过证据。
 
-**0.117.1 R4 已知偏差**：npm 发布于 2026-10-30 05:20:31.517Z，source merge08a785d 于05:22:47Z才 push master（#131时间线）；发布内容正确不等于顺序合规。本修复记录已知偏差，不伪造追溯豁免或把之后合并当作当时满足。下一次 npm 发版必须使用新门并附发布记录；关单仍需下一版 npm+tag 复核。
+**0.117.1 R4 属主豁免**：npm 发布于 2026-10-30 05:20:31.517Z，source merge 08a785d 于 05:22:47Z 才 push master（#131 时间线）；发布内容正确不等于当时顺序合规。该偏差已由[属主豁免](https://github.com/NelsonLongxiang/ygl-trees/issues/131#issuecomment-6516781684)覆盖并登记于评审验证器 `r4_exemptions[]`：npm 先于 master 约 2 分钟，但 tag 早于发布且内容已核。属主同时要求发版席「以后先并 master 再发布」。豁免只覆盖 0.117.1，不扩展到后续发版；下一次 npm 发版必须使用新门并附发布记录，#131 关单仍需下一版 npm+tag 复核。
 
 **官方字节流（0.110.1 起）**——tarball 直发，保证「审计字节 = 发布字节」：
 

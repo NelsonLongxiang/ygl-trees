@@ -5,7 +5,7 @@
 
 评审席复核：62137a6 面 PR#127 等 + 443a7c5 树逐字节核验。
 
-已知发布顺序偏差（#131）：npm 0.117.1 于 2026-10-30 05:20:31.517Z 发布，而 release source 于05:22:47Z才进入远端 master；内容一致不等于当时满足 R4。记录为已知偏差，不追认豁免。后续发布须先并入并推送 master、核对 tag，再在 npm publish 前最后执行联网祖先 guard。
+已知发布顺序偏差（#131）：npm 0.117.1 于 2026-10-30 05:20:31.517Z 发布，而 release source 于 05:22:47Z 才进入远端 master；内容一致不等于当时满足 R4。此偏差已由[属主 R4 豁免](https://github.com/NelsonLongxiang/ygl-trees/issues/131#issuecomment-6516781684)覆盖（tag 早于发布、内容已核），并已登记于评审验证器 `r4_exemptions[]`。属主同时要求以后先并 master 再发布；后续发布须先并入并推送 master、核对 tag，再在 npm publish 前最后执行联网祖先 guard。
 
 # 0.117.0（2026-10-28）
 
