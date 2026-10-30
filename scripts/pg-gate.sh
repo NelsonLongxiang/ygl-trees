@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # G7 真 PG 矩阵门（roadmap/#96 条目 6；总工裁 direct-2c7c431a：本地 docker 门，非 GitHub Actions）。
-# 起 pinned postgres:16 容器 → B8 真库用例零跳过 → dual-backend-matrix --strict → 清理。
+# 起 pinned postgres:16 容器 → B8 真库零跳过 → 固定 npm SQLite 黄金 → dual-backend-matrix --strict → 清理。
 # 发版必跑；结果（rc、腿、镜像）贴进发布记录。"矩阵绿"是发布收口条件的一部分。
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -29,6 +29,7 @@ PG_PORT=$(docker port "$CONTAINER_ID" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')
 export YGL_PG_URL="postgres://postgres:$PG_PW@127.0.0.1:$PG_PORT/ygl"
 export B8_TEST_PG_ADMIN_URL="postgres://postgres:$PG_PW@127.0.0.1:$PG_PORT/postgres"
 node scripts/dual-backend-matrix.mjs --b8-pg-only || exit $?
+node scripts/dual-backend-matrix.mjs --b8-sqlite-only || exit $?
 unset B8_TEST_PG_ADMIN_URL  # dedicated report above owns B8 counts; matrix must not rerun the same suite
 # Only the disposable container receives schema: PG init is intentionally unsupported.
 mkdir -p tmp

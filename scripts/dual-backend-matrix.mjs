@@ -29,6 +29,7 @@ import { join } from "node:path";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 import { readdirSync, readFileSync, mkdirSync, writeFileSync, openSync, closeSync } from "node:fs";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 export function pgSpecs(root = ROOT) {
   return ["packages/ops/tools/tests", "packages/research/pipeline/tests"].flatMap(dir =>
@@ -85,6 +86,72 @@ async function b8Main() {
   const result = countPgReport(JSON.parse(readFileSync(join(dir, "vitest.json"), "utf8")), specs);
   writeFileSync(join(dir, "summary.json"), JSON.stringify({ b8_pg: result, report: relative(ROOT, join(dir, "vitest.json")) }, null, 2) + "\n");
   console.log("b8_pg: " + result.passed + " passed, 0 skipped; offline=" + result.offline + "; suites=" + result.files + "; report=" + relative(ROOT, dir));
+}
+
+export const SQLITE_BASELINE = Object.freeze({
+  version: "0.117.1",
+  url: "https://registry.npmjs.org/ygl-trees/-/ygl-trees-0.117.1.tgz",
+  tar_sha256: "998ca839fbce3809f4975ae0ebb7db6f173d89b21a011c1b82012f3e71f7bcc3",
+  bundle_sha256: "5f6ebe94025835496a71a4ac00858763a3d73a69b29cf69c20ccb612cbeeb1d7",
+});
+export function goldenHash(bytes, expected) {
+  const actual = createHash("sha256").update(bytes).digest("hex");
+  if (actual !== expected) throw new Error("SQLite golden baseline sha256 mismatch");
+  return actual;
+}
+export function goldenReport(report) {
+  const expected = "packages/ops/tools/tests/b8-sqlite-golden.spec.ts";
+  const rows = report.testResults;
+  if (!report.success || !Array.isArray(rows) || rows.length !== 1 ||
+      !rows[0].name.replaceAll("\\", "/").endsWith(expected) ||
+      rows[0].assertionResults?.length !== 1 || rows[0].assertionResults[0].status !== "passed") {
+    throw new Error("SQLite golden gate requires exactly one passed case and zero skipped");
+  }
+  return { passed: 1, skipped: 0 };
+}
+async function sqliteGoldenMain() {
+  const gitRead = (...args) => {
+    const r = spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
+    if (r.error || r.status !== 0) throw new Error("cannot record SQLite golden source identity");
+    return r.stdout.trim();
+  };
+  const source = { head: gitRead("rev-parse", "HEAD"), tree: gitRead("rev-parse", "HEAD^{tree}"), dirty: !!gitRead("status", "--porcelain") };
+  const candidateSha = createHash("sha256").update(readFileSync(join(ROOT, "dist/bundle/bin.cjs"))).digest("hex");
+  mkdirSync(join(ROOT, "tmp"), { recursive: true });
+  const dir = mkdtempSync(join(ROOT, "tmp/b8-sqlite-gate-"));
+  const arg = process.argv.indexOf("--baseline-tgz");
+  let bytes;
+  if (arg >= 0) {
+    if (!process.argv[arg + 1] || process.argv[arg + 1].startsWith("--")) throw new Error("--baseline-tgz needs a verified local tarball path");
+    bytes = readFileSync(resolve(process.argv[arg + 1]));
+  } else {
+    const response = await fetch(SQLITE_BASELINE.url, { signal: AbortSignal.timeout(60000) });
+    if (!response.ok) throw new Error("cannot obtain pinned npm SQLite golden baseline: HTTP " + response.status);
+    bytes = Buffer.from(await response.arrayBuffer());
+  }
+  goldenHash(bytes, SQLITE_BASELINE.tar_sha256);
+  const tarball = join(dir, "baseline.tgz");
+  writeFileSync(tarball, bytes);
+  const unpack = spawnSync("tar", ["-xzf", "baseline.tgz", "package/dist/bundle", "package/package.json"], { cwd: dir, encoding: "utf8", timeout: 60000 });
+  writeFileSync(join(dir, "extract.log"), String(unpack.error?.message || "") + "\n" + (unpack.stdout || "") + (unpack.stderr || ""));
+  if (unpack.error || unpack.status !== 0) throw new Error("cannot extract verified npm baseline; inspect " + relative(ROOT, dir));
+  const pkg = JSON.parse(readFileSync(join(dir, "package/package.json"), "utf8"));
+  if (pkg.version !== SQLITE_BASELINE.version) throw new Error("SQLite golden baseline version mismatch");
+  const bin = join(dir, "package/dist/bundle/bin.cjs");
+  goldenHash(readFileSync(bin), SQLITE_BASELINE.bundle_sha256);
+  const log = openSync(join(dir, "vitest.log"), "w");
+  let run;
+  try {
+    run = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "packages/ops/tools/tests/b8-sqlite-golden.spec.ts", "--maxWorkers=1", "--reporter=json", "--outputFile=" + join(dir, "vitest.json")], {
+      cwd: ROOT, env: { ...process.env, YGL_DB_URL: "", YGL_PG_URL: "", B8_SQLITE_BASELINE_BIN: bin },
+      stdio: ["ignore", log, log], timeout: 15 * 60_000,
+    });
+  } finally { closeSync(log); }
+  if (run.error || run.status !== 0) throw new Error("SQLite golden regression failed; inspect " + relative(ROOT, dir));
+  const result = goldenReport(JSON.parse(readFileSync(join(dir, "vitest.json"), "utf8")));
+  goldenHash(readFileSync(join(ROOT, "dist/bundle/bin.cjs")), candidateSha);
+  writeFileSync(join(dir, "summary.json"), JSON.stringify({ b8_sqlite_golden: result, baseline: SQLITE_BASELINE, source, candidate_bundle_sha256: candidateSha, report: relative(ROOT, join(dir, "vitest.json")) }, null, 2) + "\n");
+  console.log("b8_sqlite_golden: 1 passed, 0 skipped (baseline ygl-trees@" + SQLITE_BASELINE.version + " sha256 " + SQLITE_BASELINE.bundle_sha256 + ") report=" + relative(ROOT, dir));
 }
 
 function matrixMain() {
@@ -185,7 +252,9 @@ process.exit(overallOk ? 0 : 1);
 
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.includes("--b8-pg-only")) {
+  if (process.argv.includes("--b8-sqlite-only")) {
+    sqliteGoldenMain().catch(e => { console.error("b8_sqlite_golden: FAIL — " + e.message); process.exitCode = 1; });
+  } else if (process.argv.includes("--b8-pg-only")) {
     b8Main().catch(e => { console.error("b8_pg: FAIL — " + e.message); process.exitCode = 1; });
   } else matrixMain();
 }

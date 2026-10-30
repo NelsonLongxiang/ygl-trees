@@ -74,6 +74,8 @@ bash scripts/pg-gate.sh               # pinned postgres:16.4-alpine → B8 real 
 
 结果（rc、双腿、镜像 tag、`b8_pg: N passed, 0 skipped` 与报告路径）贴进发布记录；**「矩阵绿」包括 B8 真库测试，是发布收口条件的一部分**。G7 在自己的 loopback 临时容器上设置 `B8_TEST_PG_ADMIN_URL`，必跑 business/research/query/claim-cli/kb-loop/removal/claim-state 七份 B8 PG spec；offline primitives 单列，不冒充真库覆盖。用例数从本次报告读取，不硬编码旧 issue 计数。缺 Docker、PG 不可达、任一失败/跳过或缺文件报告均红，不回落 skip。默认 `pnpm test` 不启动 Docker，其 PG 跳过数不算 G7 通过。容器清理只使用本轮 `docker run` 成功返回的不可变 ID，创建失败不按同名删除。直调 `--b8-pg-only` 仅接受显式端口的数值 loopback（127.0.0.1/::1）、`/postgres` 且无 query/fragment 的 URL；这是误配防线，不证明本地库可丢弃，调用者仍须使用隔离测试实例，标准 G7 自动创建该实例。
 
+G7 同时必跑 SQLite 字节黄金门（#132）：`node scripts/dual-backend-matrix.mjs --b8-sqlite-only`，设置 `B8_SQLITE_BASELINE_BIN` 执行 `b8-sqlite-golden.spec.ts`。基线固定 npm `ygl-trees@0.117.1`（下一版相对当前已发布版），源码内记录下载 URL、tarball SHA-256 与 bundle SHA-256；不跟随 latest 漂移。下一次选择新基线必须显式改 pin、记录来源与哈希并走评审，不自动接受字节变化。发布记录必须附 `b8_sqlite_golden: 1 passed, 0 skipped (baseline ygl-trees@<v> sha256 <…>)`、原始报告与 summary 路径。下载/解包/版本/哈希不符、spec非零/skip/缺报告均失败，不冒绿；离线可用 `--baseline-tgz <已下载包>`，仍必须通过同一 pin 的 tarball+bundle 哈希。黄金门只保留 #114 已明示两条输出差异，不批量更新基线。
+
 ### G8 发布后复跑基线（发布完成后）
 
 > **禁 shallow clone**：G8 的 tag 克隆必须 full clone——`--depth 1` 会让 `meta-tooling --audit --against-git` 的 chain-first 锚（pinned genesis）误红 11 项（0.116.1 复跑实测）。`scripts/post-release-check.mjs` 用的是普通 clone，符合要求。
