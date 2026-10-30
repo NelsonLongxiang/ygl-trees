@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "22372b4ad9cbcd2abd02d79fa80fdf97a40cc2927ec09fb3d97f767235fd78e7",
+      "sha256": "af15f0fdfd6ff72a409e3ed51992434e17d624d13b5292079f1dc7dd0de0a444",
       "role": "gate"
     },
     {
@@ -1053,6 +1053,14 @@
       "reason": "#132: mandatory SQLite golden after B8 PG and before strict matrix",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-30T11:48:15.278Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "22372b4ad9cbcd2abd02d79fa80fdf97a40cc2927ec09fb3d97f767235fd78e7",
+      "new_sha256": "af15f0fdfd6ff72a409e3ed51992434e17d624d13b5292079f1dc7dd0de0a444",
+      "reason": "#132: relative tar input under extraction cwd avoids Git Bash drive-colon remote interpretation; retain extract stderr",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-30T12:15:02.599Z"
     }
   ],
   "kind": "engine",

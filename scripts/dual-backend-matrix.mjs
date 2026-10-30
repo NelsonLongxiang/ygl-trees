@@ -132,7 +132,8 @@ async function sqliteGoldenMain() {
   goldenHash(bytes, SQLITE_BASELINE.tar_sha256);
   const tarball = join(dir, "baseline.tgz");
   writeFileSync(tarball, bytes);
-  const unpack = spawnSync("tar", ["-xzf", tarball, "-C", dir, "package/dist/bundle", "package/package.json"], { cwd: ROOT, encoding: "utf8", timeout: 60000 });
+  const unpack = spawnSync("tar", ["-xzf", "baseline.tgz", "package/dist/bundle", "package/package.json"], { cwd: dir, encoding: "utf8", timeout: 60000 });
+  writeFileSync(join(dir, "extract.log"), String(unpack.error?.message || "") + "\n" + (unpack.stdout || "") + (unpack.stderr || ""));
   if (unpack.error || unpack.status !== 0) throw new Error("cannot extract verified npm baseline; inspect " + relative(ROOT, dir));
   const pkg = JSON.parse(readFileSync(join(dir, "package/package.json"), "utf8"));
   if (pkg.version !== SQLITE_BASELINE.version) throw new Error("SQLite golden baseline version mismatch");
