@@ -139,8 +139,8 @@ export interface ReportRow {
   semantic_scope: string | null;
 }
 
-/** 报告清单（看板摘要行）。归档数量从 archives 侧车读，不猜。 */
-export async function listReports(env: Env, specId?: string): Promise<ReportRow[]> {
+/** Up to 200 report summaries; use reportPage for cursor pagination after preparing the index. */
+export async function firstReportPage(env: Env, specId?: string): Promise<ReportRow[]> {
   return (await reportPage(env, new URLSearchParams(specId ? { spec: specId } : {}))).items;
 }
 
@@ -155,7 +155,7 @@ export interface ArchiveRow {
   with: string[];
 }
 
-export async function listArchives(env: Env): Promise<ArchiveRow[]> {
+export async function firstArchivePage(env: Env): Promise<ArchiveRow[]> {
   return (await archivePage(env, new URLSearchParams())).items;
 }
 

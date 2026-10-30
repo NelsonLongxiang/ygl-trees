@@ -11,7 +11,7 @@ import {
   getMaterial,
   handleVerifyApi,
   listMaterials,
-  listReports,
+  firstReportPage,
   listSpecs,
   reportDetail,
   specDetail,
@@ -88,6 +88,7 @@ beforeAll(async () => {
 
   server = createDashboardServer({ ctx: { json: true, color: false, quiet: true }, db, store, home } as any, { allowUpload: true });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  await (server as any).verifyListReady;
   const addr: any = server.address();
   base = `http://127.0.0.1:${addr.port}`;
 });
@@ -133,7 +134,7 @@ describe("verify 服务面：读投影", () => {
   });
 
   it("报告清单按 finished 倒序，归档数来自侧车而非猜测", async () => {
-    const rows = await listReports({ home } as any);
+    const rows = await firstReportPage({ home } as any);
     expect(rows.map((r) => r.run_id)).toEqual(["run_b", "run_a"]);
     expect(rows.find((r) => r.run_id === "run_a")).toMatchObject({ overall: "PASS", archived: 1, mode: "sealed" });
     expect(rows.find((r) => r.run_id === "run_b")).toMatchObject({ overall: "NEEDS-MATERIAL", archived: 0 });

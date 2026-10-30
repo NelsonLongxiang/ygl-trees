@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { listReports } from "../src/verify-web";
+import { firstReportPage } from "../src/verify-web";
 import { scopeLine } from "../src/verify-cmds";
 
 const REPO = resolve(__dirname, "../../../..");
@@ -109,7 +109,8 @@ describe.skipIf(!HAS_BIN)("semantic_scope 渲染面（发布产物）", () => {
     expect(JSON.parse(readFileSync(join(HOME, "verify", "reports", `${runId}.json`), "utf8")).payload_sha256).toBe(report.payload_sha256);
 
     // 看板摘要行：无字段 → null（UI 按 structural 显示；服务端不替报告发明值）
-    const row = (await listReports({ home: HOME } as any)).find((r) => r.run_id === runId)!;
+    await (await import("../src/verify-list-index")).prepareListIndex(HOME);
+    const row = (await firstReportPage({ home: HOME } as any)).find((r) => r.run_id === runId)!;
     expect(row).toBeTruthy();
     expect(row.semantic_scope).toBeNull();
   }, 60_000);

@@ -9,6 +9,7 @@
  */
 import { createHash } from "node:crypto";
 import { readBlob } from "./blob-store";
+import { updateListIndex } from "./verify-list-index";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { canonicalStringify } from "../../../verify/core/src/canonical";
@@ -594,6 +595,7 @@ export function appendRegistry(verifyRoot: string, runId: string, spec: { id: st
     archives: [...(prev?.archives ?? []).filter((a) => a.path !== entry.path), entry],
   };
   writeFileSync(registryPath(verifyRoot, runId), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  updateListIndex(registryPath(verifyRoot, runId), next);
   return next;
 }
 

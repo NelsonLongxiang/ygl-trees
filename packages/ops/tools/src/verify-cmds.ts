@@ -11,6 +11,7 @@
  * 运行契约：rc 只表达过程——0=跑完出报告（PASS/FAIL 都是有效结论），1=运行错误，2=用法错误。
  */
 import { jcsCanonical } from "./jcs";
+import { updateListIndex } from "./verify-list-index";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -678,6 +679,7 @@ export function writeJson(path: string, value: unknown): void {
   const tmp = `${path}.tmp-${process.pid}-${Date.now().toString(36)}`;
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   renameSync(tmp, path);
+  updateListIndex(path, value);
 }
 
 /** 以文件形态注入 prepare 的候选（agent 的提取/翻译产物）。 */

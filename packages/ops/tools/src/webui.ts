@@ -23,6 +23,7 @@ import { onEvent } from "../../../core/text/src/eventbus";
 import { BLOB_LIMIT, createMaterialDraft, handleVerifyApi, openBlobUpload, uploadAllowed, VERIFY_BODY_LIMIT } from "./verify-web";
 import { prepareViaHttp, runViaHttp } from "./verify-jobs";
 import { pruneIncoming } from "./blob-store";
+import { prepareListIndex, watchListIndex } from "./verify-list-index";
 
 interface DashboardData {
   brief: any;
@@ -390,6 +391,10 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
     } catch { /* eventbus optional — fingerprint tick still covers */ }
   }
 
+  const listWatch = watchListIndex(env.home);
+  const listReady = prepareListIndex(env.home).then(() => listWatch.settled());
+  // Keep initialization failures observable without an unhandled rejection before the first request.
+  listReady.catch(() => {});
   const server = http.createServer(async (req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");
     const url = u.pathname;
@@ -674,6 +679,8 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         return;
       }
       try {
+        await listReady;
+        await listWatch.settled();
         const r = await handleVerifyApi(env, req.method || "GET", u);
         send(r.status, r.body);
       } catch { send(500, { error: "verify list unavailable" }); }
@@ -690,6 +697,13 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
     sseClients.clear();
   };
   server.on("close", dropLive);
+  const close = server.close.bind(server);
+  server.close = (callback?: (error?: Error) => void) => {
+    dropLive();
+    void listWatch.close().then(() => listReady.catch(() => {})).then(() => close(callback));
+    return server;
+  };
+  Object.assign(server, { verifyListReady: listReady });
   (server as any).closeLive = () => {
     dropLive();
     if (unsubBus) { try { unsubBus(); } catch { /* */ } unsubBus = null; }
@@ -737,10 +751,11 @@ function serve(env: Env, args: any): Promise<number> {
     const server = createDashboardServer(env, { allowUpload: uploadAllowed(host), enableVerifyJobs: args.flags["enable-verify-jobs"] === true });
     const onErr = (e: any) => {
       bad(ctx, `webui serve: ${e?.message || e}`);
-      resolve(1);
+      (server as any).closeLive?.();
+      server.close(() => resolve(1));
     };
     server.once("error", onErr);
-    server.listen(port, host, () => {
+    (server as any).verifyListReady.then(() => server.listen(port, host, () => {
       server.removeListener("error", onErr);
       const addr = server.address();
       const p = typeof addr === "object" && addr ? addr.port : port;
@@ -763,7 +778,7 @@ function serve(env: Env, args: any): Promise<number> {
           })();
         }, 60_000);
       }
-    });
+    })).catch(onErr);
     const shutdown = () => {
       // SSE clients hold live sockets forever: server.close() alone would wait
       // for them and never call back. Drop them, then close.

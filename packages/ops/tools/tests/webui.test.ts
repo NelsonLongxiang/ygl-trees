@@ -44,7 +44,7 @@ afterAll(async () => {
 
 function env() {
   // 顶层 import（vitest ESM 解析）— require 相对路径在测试包布局下不可靠
-  return { ctx: { json: true, color: false, quiet: true }, db, store, asyncStore: new AsyncResearchStore(db) } as any;
+  return { home: dir, ctx: { json: true, color: false, quiet: true }, db, store, asyncStore: new AsyncResearchStore(db) } as any;
 }
 
 describe("webui gatherData", () => {
