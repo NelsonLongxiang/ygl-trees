@@ -130,7 +130,7 @@
     },
     {
       "path": "scripts/offline-gate.sh",
-      "sha256": "101c2854a7a7962ef54a91a8e2a5077265f6a08466664b9f71ffa6af18cba270",
+      "sha256": "67a89124876ecec107e25d8e2b982aa3b34081bb24097f595c4c027229a9f8b5",
       "role": "gate"
     },
     {
@@ -1061,6 +1061,14 @@
       "reason": "#132: relative tar input under extraction cwd avoids Git Bash drive-colon remote interpretation; retain extract stderr",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-30T12:15:02.599Z"
+    },
+    {
+      "path": "scripts/offline-gate.sh",
+      "old_sha256": "101c2854a7a7962ef54a91a8e2a5077265f6a08466664b9f71ffa6af18cba270",
+      "new_sha256": "67a89124876ecec107e25d8e2b982aa3b34081bb24097f595c4c027229a9f8b5",
+      "reason": "#136: create tmp parent, fail closed on allocation and validate cleanup target before trap",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-30T18:24:48.511Z"
     }
   ],
   "kind": "engine",
