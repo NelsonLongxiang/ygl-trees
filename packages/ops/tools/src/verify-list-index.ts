@@ -3,9 +3,11 @@
 import Sqlite from "better-sqlite3";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, watch, type FSWatcher } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 import type { ReportRow, ArchiveRow } from "./verify-web";
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
+const unsettled = new Map<string, Set<Map<string, unknown>>>();
 const text = (v: unknown, n = 1024) => String(v ?? "").slice(0, n);
 export const listIndexPath = (root: string) => join(root, ".list-index.sqlite");
 function open(root: string) {
@@ -64,10 +66,23 @@ export function updateListIndex(file: string, value: unknown): void {
 }
 async function fileStamp(path:string) { try {const s=await stat(path);return s.mtimeMs+":"+s.ctimeMs+":"+s.size;}catch(e:any){if(e.code==="ENOENT")return "missing";throw e;} }
 async function readRecord(root:string,kind:string,name:string) {
-  const path=join(root,kind,name),stamp=await fileStamp(path);
-  let value=null;
-  if(stamp!=="missing"){try{value=JSON.parse(await readFile(path,"utf8"));}catch(e:any){if(e.code!=="ENOENT"&&!(e instanceof SyntaxError))throw e;}}
-  return {kind,id:name.slice(0,-5),stamp,value};
+  const path=join(root,kind,name),id=name.slice(0,-5);
+  for(let attempt=0;attempt<6;attempt++){
+    const before=await fileStamp(path);
+    if(before==="missing"){
+      // Atomic replacement can expose a short absence; require a second observation.
+      await pause(10);
+      if(attempt===5&&await fileStamp(path)==="missing")return {kind,id,stamp:"missing",value:null};
+    } else {
+      try {
+        const value=JSON.parse(await readFile(path,"utf8"));
+        const valid=kind==="reports"?reportSummary(value)?.run_id===id:Array.isArray(value?.archives);
+        if(valid&&before===await fileStamp(path))return {kind,id,stamp:before,value};
+      } catch(e:any) {if(e.code!=="ENOENT"&&!(e instanceof SyntaxError))throw e;}
+    }
+    if(attempt<5)await pause(10*2**attempt);
+  }
+  throw new Error("verifier list record unsettled or incomplete: "+kind+"/"+name);
 }
 /** Legacy import/recovery runs before server readiness, never on a list request. */
 export async function prepareListIndex(home:string):Promise<void> {
@@ -100,6 +115,7 @@ export async function prepareListIndex(home:string):Promise<void> {
 }
 export function readListIndex<T>(home:string,read:(db:any)=>T):T {
   const root=join(home,"verify");
+  for(const faults of unsettled.get(resolve(root))||[])if(faults.size)throw new Error("verifier list record unsettled or incomplete");
   if(existsSync(join(root,".list-index-dirty")))throw new Error("verifier list index needs reconciliation");
   if(!existsSync(listIndexPath(root)))throw new Error("verifier list index not prepared");
   const db=new Sqlite(listIndexPath(root),{readonly:true});
@@ -109,7 +125,14 @@ export function readListIndex<T>(home:string,read:(db:any)=>T):T {
 export function watchListIndex(home:string) {
   const root=join(home,"verify"),watchers:FSWatcher[]=[];
   let chain=Promise.resolve(),closed=false,fault:unknown;
+  const faults=new Map<string,unknown>(),key=resolve(root);
+  let owners=unsettled.get(key);if(!owners){owners=new Set();unsettled.set(key,owners);}owners.add(faults);
   const enqueue=(kind:string,name:string|null)=>{
+    if(closed)return;
+    if(name&&(!name.endsWith(".json")||!ID.test(name.slice(0,-5))))return;
+    const record=kind+"/"+name;
+    const pending=new Error("verifier list record unsettled or incomplete");
+    faults.set(record,pending);
     chain=chain.then(async()=>{
       if(closed)return;
       if(!name)throw new Error("verifier list watcher lost filename; restart to reconcile index");
@@ -120,12 +143,14 @@ export function watchListIndex(home:string) {
         const current=(db.prepare("SELECT stamp FROM files WHERE kind=? AND id=?").get(kind,row.id) as any)?.stamp;
         if(current===revision)replace(db,kind,row.id,row.value,row.stamp);
       })();}finally{db.close();}
-    }).catch(e=>{fault=e;});
+      if(faults.get(record)===pending)faults.delete(record);
+    }).catch(e=>{if(faults.get(record)===pending)faults.set(record,e);});
   };
   for(const kind of ["reports","archives"]){mkdirSync(join(root,kind),{recursive:true});const w=watch(join(root,kind),(_event,file)=>enqueue(kind,file?.toString()??null));w.unref();w.on("error",e=>{fault=e;});watchers.push(w);}
   return { async settled(){
     await new Promise<void>(r=>setImmediate(r));
     let pending;do{pending=chain;await pending;await new Promise<void>(r=>setImmediate(r));}while(pending!==chain);
     if(fault)throw fault;
-  }, async close(){closed=true;for(const w of watchers)w.close();await chain;} };
+    if(faults.size)throw faults.values().next().value;
+  }, async close(){closed=true;for(const w of watchers)w.close();await chain;owners!.delete(faults);if(!owners!.size)unsettled.delete(key);} };
 }

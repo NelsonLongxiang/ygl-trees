@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {mkdirSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import * as nativeFs from 'node:fs';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import Sqlite from 'better-sqlite3';
@@ -9,6 +10,7 @@ import {writeJson} from '../src/verify-cmds';
 import {appendRegistry} from '../src/archive';
 import * as fsp from 'node:fs/promises';
 vi.mock('node:fs/promises',{spy:true});
+vi.mock('node:fs',{spy:true});
 describe('#125 durable index requirements',()=>{
  it('idle requests never reparse every report after five seconds',async()=>{mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-red-'));try{for(const d of ['reports','archives'])mkdirSync(join(home,'verify',d),{recursive:true});for(let i=0;i<100;i++)writeFileSync(join(home,'verify/reports','r'+i+'.json'),JSON.stringify({run_id:'r'+i,spec_id:'s'+(i%2)}));await prepareListIndex(home);const env={home}as any;const call=()=>handleVerifyApi(env,'GET',new URL('http://local/api/verify/reports?spec=s0'));await call();vi.mocked(fsp.stat).mockClear();let parsed=0;const parse=JSON.parse,spy=vi.spyOn(JSON,'parse').mockImplementation(((s:string)=>{if(s.includes('spec_id')&&!s.includes('archived'))parsed++;return parse(s);})as any),clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+10000);try{await call();expect(parsed).toBe(0);expect(vi.mocked(fsp.stat).mock.calls.filter(c=>String(c[0]).endsWith('.json'))).toHaveLength(0);}finally{spy.mockRestore();clock.mockRestore();}}finally{rmSync(home,{recursive:true,force:true});}});
  it('fresh environments and changed specs read durable summaries without raw report IO',async()=>{
@@ -84,5 +86,63 @@ describe('#125 durable index requirements',()=>{
    writeJson(file,{run_id:'racing',spec_id:'s',overall:'PASS'});release();await preparation;
    const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.items[0].overall).toBe('PASS');
   }finally{vi.mocked(fsp.readFile).mockRestore();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('one create event plus a partial read never settles an absent report when no second event arrives',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-partial-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
+  const callbacks:((event:string,file:string)=>void)[]=[];
+  try{
+   await prepareListIndex(home);
+   const watchSpy=vi.mocked(nativeFs.watch).mockImplementation(((_dir:any,callback:any)=>{callbacks.push(callback);return {unref(){},on(){return this;},close(){}};})as any);
+   watcher=watchListIndex(home);watchSpy.mockRestore();
+   const file=join(home,'verify/reports/partial.json');writeFileSync(file,JSON.stringify({run_id:'partial',spec_id:'s',overall:'PASS'}));
+   vi.mocked(fsp.readFile).mockResolvedValueOnce('' as any);
+   callbacks[0]('rename','partial.json');await watcher.settled();
+   const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.items[0]).toMatchObject({run_id:'partial',overall:'PASS'});
+  }finally{vi.mocked(fsp.readFile).mockRestore();await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('invalid JSON is visible and cannot erase the last valid projection or become a settled file revision',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-unsettled-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
+  const callbacks:((event:string,file:string)=>void)[]=[];
+  try{
+   await prepareListIndex(home);const file=join(home,'verify/reports/partial.json');writeJson(file,{run_id:'partial',spec_id:'s',overall:'PASS'});
+   const watchSpy=vi.mocked(nativeFs.watch).mockImplementation(((_dir:any,callback:any)=>{callbacks.push(callback);return {unref(){},on(){return this;},close(){}};})as any);
+   watcher=watchListIndex(home);watchSpy.mockRestore();writeFileSync(file,'{"run_id":');callbacks[0]('change','partial.json');
+   await expect(watcher.settled()).rejects.toThrow(/unsettled|incomplete/);
+   const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect(JSON.parse((db.prepare('SELECT row_json FROM reports WHERE run_id=?').get('partial')as any).row_json).overall).toBe('PASS');expect((db.prepare('SELECT stamp FROM files WHERE kind=? AND id=?').get('reports','partial')as any).stamp).toMatch(/^hook:/);}finally{db.close();}
+   await expect(handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'))).rejects.toThrow(/unsettled|incomplete/);
+   writeFileSync(file,JSON.stringify({run_id:'partial',spec_id:'s',overall:'FAIL'}));callbacks[0]('change','partial.json');await watcher.settled();
+   const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.items[0].overall).toBe('FAIL');
+  }finally{await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('a valid JSON read from a file replaced during the read is retried, never committed with the new stamp',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-replaced-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
+  const callbacks:((event:string,file:string)=>void)[]=[];
+  try{
+   await prepareListIndex(home);const file=join(home,'verify/reports/replaced.json');writeJson(file,{run_id:'replaced',spec_id:'s',overall:'PASS'});
+   const watchSpy=vi.mocked(nativeFs.watch).mockImplementation(((_dir:any,callback:any)=>{callbacks.push(callback);return {unref(){},on(){return this;},close(){}};})as any);
+   watcher=watchListIndex(home);watchSpy.mockRestore();
+   const read=fsp.readFile;vi.mocked(fsp.readFile).mockImplementationOnce((async(...args:any[])=>{const old=await (read as any)(...args);writeFileSync(file,JSON.stringify({run_id:'replaced',spec_id:'s',overall:'FAIL',reason:'newer data has different length'}));return old;})as any);
+   callbacks[0]('change','replaced.json');await watcher.settled();
+   const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.items[0].overall).toBe('FAIL');
+  }finally{vi.mocked(fsp.readFile).mockRestore();await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('a partially written archive sidecar is retried without dropping committed archive rows',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-side-partial-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
+  const callbacks:((event:string,file:string)=>void)[]=[];
+  try{
+   await prepareListIndex(home);const file=join(home,'verify/archives/r.json');writeFileSync(file,JSON.stringify({archives:[{archive_id:'a',filename:'a.zip',created:'2099'}]}));
+   const watchSpy=vi.mocked(nativeFs.watch).mockImplementation(((_dir:any,callback:any)=>{callbacks.push(callback);return {unref(){},on(){return this;},close(){}};})as any);
+   watcher=watchListIndex(home);watchSpy.mockRestore();vi.mocked(fsp.readFile).mockResolvedValueOnce('{"archives":' as any);
+   callbacks[1]('rename','r.json');await watcher.settled();
+   const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/archives'));expect(r.body.total).toBe(1);expect(r.body.items[0].archive_id).toBe('a');
+  }finally{vi.mocked(fsp.readFile).mockRestore();await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('startup preparation cannot mark malformed JSON ready or store its stamp',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-start-partial-'));
+  try{
+   mkdirSync(join(home,'verify/reports'),{recursive:true});writeFileSync(join(home,'verify/reports/r.json'),'{"run_id":');
+   await expect(prepareListIndex(home)).rejects.toThrow(/unsettled|incomplete/);
+   const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect(db.prepare('SELECT * FROM files WHERE kind=? AND id=?').get('reports','r')).toBeUndefined();expect(db.prepare("SELECT * FROM metadata WHERE key='ready'").get()).toBeUndefined();}finally{db.close();}
+  }finally{rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
 });
