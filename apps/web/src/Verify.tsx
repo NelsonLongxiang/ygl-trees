@@ -388,8 +388,11 @@ export const RUN_PAGE = 30;
 function ReportBoard() {
   const specs = useLoad(fetchVerifySpecs);
   const [spec, setSpec] = useState<VerifySpecRow | null>(null);
-  const [runs, setRuns] = useState<{ spec: string; rows: VerifyReportRow[] } | null>(null);
-  const [shown, setShown] = useState(RUN_PAGE);
+  const [runs, setRuns] = useState<{ spec: string; onlyBad: boolean; rows: VerifyReportRow[]; total: number; next: string | null } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [runsError, setRunsError] = useState("");
+  const [reloadRuns, setReloadRuns] = useState(0);
+  const requestVersion = useRef(0);
   const [onlyBad, setOnlyBad] = useState(false);
   const [run, setRun] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ run: string; d: VerifyReportDetail | null } | null>(null);
@@ -409,22 +412,21 @@ function ReportBoard() {
   const pick = (s: VerifySpecRow) => {
     setSpec(s);
     setRun(s.last_run || null);
-    setShown(RUN_PAGE);
+    requestVersion.current++;
+    setRuns(null);
+    setRunsError("");
     setOnlyBad(false);
   };
 
-  // The latest report first, the run list after it: the server reads report
-  // files synchronously, so a list request sent first (seconds on thousands of
-  // runs) would hold the one-file detail request behind it.
-  const latestIn = !spec?.last_run || detail?.run === spec.last_run;
   useEffect(() => {
-    if (!spec || !latestIn) return;
+    if (!spec) return;
     let live = true;
-    fetchVerifyReports(spec.spec_id)
-      .then((rows) => live && setRuns({ spec: spec.spec_id, rows }))
-      .catch(() => live && setRuns({ spec: spec.spec_id, rows: [] }));
+    setRunsError("");
+    fetchVerifyReports(spec.spec_id, undefined, onlyBad)
+      .then((page) => live && setRuns({ spec: spec.spec_id, onlyBad, rows: page.items, total: page.total, next: page.next_cursor }))
+      .catch((e) => live && setRunsError(String(e?.message || e)));
     return () => { live = false; };
-  }, [spec, latestIn]);
+  }, [spec, onlyBad, reloadRuns]);
 
   useEffect(() => {
     if (!run) return;
@@ -435,8 +437,18 @@ function ReportBoard() {
     return () => { live = false; };
   }, [run]);
 
-  const rows = runs?.spec === spec?.spec_id ? runs?.rows ?? null : null;
-  const filtered = rows && onlyBad ? rows.filter((r) => r.overall !== "PASS") : rows;
+  const activeRuns = runs?.spec === spec?.spec_id && runs?.onlyBad === onlyBad ? runs : null;
+  const rows = activeRuns?.rows ?? null;
+  const loadMore = async () => {
+    if (!spec || !activeRuns?.next || loadingMore) return;
+    const version = requestVersion.current;
+    setLoadingMore(true); setRunsError("");
+    try {
+      const page = await fetchVerifyReports(spec.spec_id, activeRuns.next, onlyBad);
+      if (version === requestVersion.current) setRuns({ ...activeRuns, rows: [...activeRuns.rows, ...page.items], total: page.total, next: page.next_cursor });
+    } catch (e: any) { if (version === requestVersion.current) setRunsError(String(e?.message || e)); }
+    finally { setLoadingMore(false); }
+  };
 
   return (
     <Split
@@ -487,21 +499,22 @@ function ReportBoard() {
           )}
           <Card
             size="small"
-            title={`运行记录${rows ? `（${rows.length}）` : ""}`}
-            extra={rows && rows.length > 0 ? <Text type="secondary">{runTally(rows)}</Text> : null}
+            title={`运行记录${activeRuns ? `（已载 ${activeRuns.rows.length} / ${activeRuns.total}）` : ""}`}
+            extra={rows && rows.length > 0 ? <Text type="secondary">已载：{runTally(rows)}</Text> : null}
           >
-            {!filtered ? (
-              <Text type="secondary">运行记录加载中…（运行多时首次读取会慢）</Text>
+            {runsError && <Alert type="error" showIcon title="运行记录加载失败" description={runsError} action={<Button size="small" onClick={() => { requestVersion.current++; setRuns(null); setRunsError(""); setReloadRuns(v => v + 1); }}>重新加载</Button>} />}
+            {!rows ? (
+              runsError ? null : <Text type="secondary">运行记录加载中…</Text>
             ) : (
               <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-                <Button size="small" aria-pressed={onlyBad} type={onlyBad ? "primary" : "default"} ghost={onlyBad} onClick={() => { setOnlyBad(!onlyBad); setShown(RUN_PAGE); }}>
+                <Button size="small" aria-pressed={onlyBad} type={onlyBad ? "primary" : "default"} ghost={onlyBad} onClick={() => { requestVersion.current++; setRuns(null); setRunsError(""); setOnlyBad(!onlyBad); }}>
                   只看未通过
                 </Button>
-                {filtered.length === 0 ? (
+                {rows.length === 0 ? (
                   <Text type="secondary">{onlyBad ? "没有未通过的运行" : "没有运行记录"}</Text>
                 ) : (
                   <Listy
-                    items={filtered.slice(0, shown)}
+                    items={rows}
                     rowKey="run_id"
                     itemRender={(r) => (
                       <SelectRow selected={r.run_id === run} onSelect={() => open(r.run_id)}>
@@ -517,9 +530,9 @@ function ReportBoard() {
                     )}
                   />
                 )}
-                {filtered.length > shown && (
-                  <Button size="small" onClick={() => setShown(shown + RUN_PAGE)}>
-                    再显示 {Math.min(RUN_PAGE, filtered.length - shown)} 条（还有 {filtered.length - shown}）
+                {activeRuns?.next && (
+                  <Button size="small" loading={loadingMore} onClick={loadMore}>
+                    加载更多（还有 {activeRuns.total - activeRuns.rows.length}）
                   </Button>
                 )}
               </Space>

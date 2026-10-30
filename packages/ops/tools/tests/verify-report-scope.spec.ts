@@ -83,7 +83,7 @@ describe.skipIf(!HAS_BIN)("semantic_scope 渲染面（发布产物）", () => {
 
   afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
-  it("verify run / verify report 的人类输出首屏带边界行；JSON 面不变；看板投影透传 null", () => {
+  it("verify run / verify report 的人类输出首屏带边界行；JSON 面不变；看板投影透传 null", async () => {
     const db = join(HOME, "snap.db");
     const d = new DatabaseSync(db);
     d.exec("CREATE TABLE bills(id TEXT PRIMARY KEY, amount INTEGER); INSERT INTO bills VALUES ('a', 5);");
@@ -109,7 +109,7 @@ describe.skipIf(!HAS_BIN)("semantic_scope 渲染面（发布产物）", () => {
     expect(JSON.parse(readFileSync(join(HOME, "verify", "reports", `${runId}.json`), "utf8")).payload_sha256).toBe(report.payload_sha256);
 
     // 看板摘要行：无字段 → null（UI 按 structural 显示；服务端不替报告发明值）
-    const row = listReports({ home: HOME } as any).find((r) => r.run_id === runId)!;
+    const row = (await listReports({ home: HOME } as any)).find((r) => r.run_id === runId)!;
     expect(row).toBeTruthy();
     expect(row.semantic_scope).toBeNull();
   }, 60_000);

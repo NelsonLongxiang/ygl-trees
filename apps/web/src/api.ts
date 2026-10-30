@@ -163,10 +163,13 @@ export async function fetchVerifySpecs(): Promise<VerifySpecRow[]> {
   return r.json();
 }
 
-/** One spec's runs (`?spec=`). The unfiltered list is every run in the home —
- *  74k rows / 25 MB on a real verifier — so the board never asks for it. */
-export async function fetchVerifyReports(spec: string): Promise<VerifyReportRow[]> {
-  const r = await fetch(`api/verify/reports?spec=${encodeURIComponent(spec)}`);
+export interface VerifyPage<T> { items: T[]; total: number; next_cursor: string | null }
+/** One bounded page; a cursor is scoped to the selected spec and filter. */
+export async function fetchVerifyReports(spec: string, cursor?: string, onlyBad = false): Promise<VerifyPage<VerifyReportRow>> {
+  const q = new URLSearchParams({ spec, limit: "30" });
+  if (cursor) q.set("cursor", cursor);
+  if (onlyBad) q.set("only_bad", "1");
+  const r = await fetch(`api/verify/reports?${q}`);
   if (!r.ok) throw new Error(`api/verify/reports ${r.status}`);
   return r.json();
 }
@@ -283,8 +286,10 @@ export interface VerifyArchiveRow {
   with: string[];
 }
 
-export async function fetchVerifyArchives(): Promise<VerifyArchiveRow[]> {
-  const r = await fetch("api/verify/archives");
+export async function fetchVerifyArchives(cursor?: string): Promise<VerifyPage<VerifyArchiveRow>> {
+  const q = new URLSearchParams({ limit: "200" });
+  if (cursor) q.set("cursor", cursor);
+  const r = await fetch(`api/verify/archives?${q}`);
   if (!r.ok) throw new Error(`api/verify/archives ${r.status}`);
   return r.json();
 }
