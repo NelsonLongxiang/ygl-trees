@@ -58,6 +58,8 @@ git config core.sshCommand "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax
 bash scripts/offline-gate.sh          # 干净克隆 + env -i 无凭证 install + pnpm test，rc≠0 即阻断
 ```
 
+G1 在分配前创建仓内 `tmp/`；目录创建或 `mktemp` 失败、结果为空或不在预期临时路径内时立即退出，不开始 clone 或注册删除 trap。只有已校验且存在的本轮工作目录才会在退出时清理。
+
 ### G2 全量 diff 门 / G3 真调用门（评审过程门禁，检查清单项）
 
 - [ ] **G2**：任何快审/双审盖章前**读完整 diff**——按 grep 过滤过的行不算读过（PR#140 事故）。
