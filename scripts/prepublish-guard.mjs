@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Release-order guard (GitHub #17): refuse to publish when the release tag is
- * missing from HEAD or from the remote.
+ * missing from HEAD or the remote, or its commit is not on freshly fetched remote master.
  *
  * 0.110.0 shipped with npm published ~3.5 minutes BEFORE the annotated tag
  * existed. The tag ended up anchored correctly, but the window in which
@@ -67,15 +67,32 @@ if (!tagsAtHead.includes(tag)) {
   );
 }
 
+let remote, remoteMaster;
+let remoteVerified = false;
 if (remoteFlag >= 0) {
-  const remote = args[remoteFlag + 1];
+  remote = args[remoteFlag + 1];
   if (!remote || remote.startsWith("-")) die("usage: --remote <git-remote> (e.g. origin)", 2);
   if (!noNetwork) {
-    const remoteR = tryGit("ls-remote", remote, `refs/tags/${tag}`);
-    if (!remoteR.ok) die(`cannot verify remote '${remote}' (offline? retry with --no-network): ${remoteR.out}`);
+    const known = tryGit("remote");
+    if (!known.ok || !known.out.split("\n").includes(remote)) die(`unknown git remote: ${remote}`, 2);
+    const remoteR = tryGit("ls-remote", remote, `refs/tags/${tag}`, `refs/tags/${tag}^{}`);
+    if (!remoteR.ok) die(`cannot verify remote '${remote}' (network required for release verification): ${remoteR.out}`);
     if (!remoteR.out) die(`${tag} is not on remote '${remote}' yet — push it before publishing: git push ${remote} ${tag}`);
+    const remoteTags = new Map(remoteR.out.split("\n").map(line => { const [sha, ref] = line.trim().split(/\s+/); return [ref, sha]; }));
+    const remoteTagCommit = remoteTags.get(`refs/tags/${tag}^{}`) || remoteTags.get(`refs/tags/${tag}`);
+    if (remoteTagCommit !== head) die(`${tag} remote tag target ${remoteTagCommit || "(unknown)"} differs from local tag commit ${head}`);
+    const masterRef = `refs/remotes/${remote}/master`;
+    const fetched = tryGit("fetch", "--no-tags", remote, `+refs/heads/master:${masterRef}`);
+    if (!fetched.ok) die(`${tag} commit ${head}: cannot freshly fetch ${remote}/master; remote master SHA unverified`);
+    const masterR = tryGit("rev-parse", "--verify", `${masterRef}^{commit}`);
+    if (!masterR.ok) die(`${tag} commit ${head}: remote master SHA unverified`);
+    remoteMaster = masterR.out;
+    if (!tryGit("merge-base", "--is-ancestor", head, remoteMaster).ok) {
+      die(`${tag} commit ${head} is not an ancestor of ${remote}/master ${remoteMaster}; merge the release and push master before publishing`);
+    }
+    remoteVerified = true;
   }
 }
 
-if (asJson) console.log(JSON.stringify({ ok: true, version, tag, head }));
-else console.log(`prepublish-guard: ok — ${tag} anchored at ${head.slice(0, 12)}`);
+if (asJson) console.log(JSON.stringify({ ok: true, version, tag, head, remote, remote_master: remoteMaster, remote_verified: remoteVerified }));
+else console.log(`prepublish-guard: ok — ${tag} anchored at ${head.slice(0, 12)}; ${remoteVerified ? `ancestor of ${remote}/master ${remoteMaster}` : "local-only check, remote release order NOT verified"}`);

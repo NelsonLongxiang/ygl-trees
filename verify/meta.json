@@ -155,7 +155,7 @@
     },
     {
       "path": "scripts/prepublish-guard.mjs",
-      "sha256": "3e70e0f0fe27041652d7007226d5c2529de167592473e3a1adf3f71165de6588",
+      "sha256": "800924c6c578ced66e37b7383a662eb2e4394d2f4cd2dd62cb13abb50ff010cd",
       "role": "release"
     },
     {
@@ -1029,6 +1029,14 @@
       "reason": "PG gate hardening: validate numeric loopback admin target before connecting",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-29T23:52:22.374Z"
+    },
+    {
+      "path": "scripts/prepublish-guard.mjs",
+      "old_sha256": "3e70e0f0fe27041652d7007226d5c2529de167592473e3a1adf3f71165de6588",
+      "new_sha256": "800924c6c578ced66e37b7383a662eb2e4394d2f4cd2dd62cb13abb50ff010cd",
+      "reason": "#131: require exact remote tag target and freshly fetched remote master ancestry before npm publish",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-30T08:48:37.468Z"
     }
   ],
   "kind": "engine",
