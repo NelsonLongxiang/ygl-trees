@@ -100,8 +100,8 @@ afterAll(async () => {
 });
 
 describe("verify 服务面：读投影", () => {
-  it("规范清单带 prepare 结论与 run 聚合（last_overall 取最近一次）", () => {
-    const rows = listSpecs({ home } as any);
+  it("规范清单带 prepare 结论与 run 聚合（last_overall 取最近一次）", async () => {
+    const rows = await listSpecs({ home } as any);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       spec_id: "spec_111111111111",
@@ -132,8 +132,8 @@ describe("verify 服务面：读投影", () => {
     expect(specDetail({ home } as any, "spec_missing")).toBeNull();
   });
 
-  it("报告清单按 finished 倒序，归档数来自侧车而非猜测", () => {
-    const rows = listReports({ home } as any);
+  it("报告清单按 finished 倒序，归档数来自侧车而非猜测", async () => {
+    const rows = await listReports({ home } as any);
     expect(rows.map((r) => r.run_id)).toEqual(["run_b", "run_a"]);
     expect(rows.find((r) => r.run_id === "run_a")).toMatchObject({ overall: "PASS", archived: 1, mode: "sealed" });
     expect(rows.find((r) => r.run_id === "run_b")).toMatchObject({ overall: "NEEDS-MATERIAL", archived: 0 });
@@ -301,10 +301,10 @@ describe("verify 服务面：HTTP 契约", () => {
   it("归档清单端点存在，报告可按 spec 过滤", async () => {
     const arch = await fetch(`${base}/api/verify/archives`);
     expect(arch.status).toBe(200);
-    expect(Array.isArray(await arch.json())).toBe(true);
+    expect((await arch.json()) as any).toMatchObject({ items: expect.any(Array), total: expect.any(Number), next_cursor: null });
 
-    const all = (await (await fetch(`${base}/api/verify/reports`)).json()) as any[];
-    const filtered = (await (await fetch(`${base}/api/verify/reports?spec=${encodeURIComponent(all[0].spec_id)}`)).json()) as any[];
+    const { items: all } = (await (await fetch(`${base}/api/verify/reports`)).json()) as { items: any[] };
+    const { items: filtered } = (await (await fetch(`${base}/api/verify/reports?spec=${encodeURIComponent(all[0].spec_id)}`)).json()) as { items: any[] };
     expect(filtered.length).toBeGreaterThan(0);
     expect(filtered.every((r) => r.spec_id === all[0].spec_id)).toBe(true);
   });

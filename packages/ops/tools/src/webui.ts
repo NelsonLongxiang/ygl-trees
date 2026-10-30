@@ -673,8 +673,10 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         });
         return;
       }
-      const r = handleVerifyApi(env, req.method || "GET", u);
-      send(r.status, r.body);
+      try {
+        const r = await handleVerifyApi(env, req.method || "GET", u);
+        send(r.status, r.body);
+      } catch { send(500, { error: "verify list unavailable" }); }
       return;
     } else {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });

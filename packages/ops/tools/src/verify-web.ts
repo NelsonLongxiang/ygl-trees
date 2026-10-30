@@ -21,6 +21,7 @@ import { BLOB_LIMIT, blobPath, createBlobSink, hasBlob, mimeFor, pruneIncoming }
 import { shellSafePath } from "./graduate";
 
 import type { Env } from "../../../core/database/src/types";
+import { archivePage, reportPage, specRows, VerifyListUsageError } from "./verify-list";
 
 const sha256 = (buf: Buffer | string): string => createHash("sha256").update(buf).digest("hex");
 
@@ -94,33 +95,7 @@ export interface SpecRow {
 }
 
 /** 规范清单：spec.json + prepare.json 的投影，附该规范的历史 run 数。 */
-export function listSpecs(env: Env): SpecRow[] {
-  const p = verifyPaths(env);
-  const reports = listReports(env);
-  return listDirs(p.specs)
-    .map((d) => {
-      const spec = readJson<any>(join(p.specs, d, "spec.json"));
-      if (!spec) return null;
-      const prep = readJson<any>(join(p.specs, d, "prepare.json")) ?? {};
-      const runs = reports.filter((r) => r.spec_id === spec.spec_id);
-      const last = runs.slice().sort((a, b) => String(a.finished).localeCompare(String(b.finished))).pop();
-      return {
-        spec_id: String(spec.spec_id),
-        spec_version: Number(spec.spec_version ?? 0),
-        title: String(spec.title ?? ""),
-        domain: String(spec.domain ?? ""),
-        created: String(spec.created ?? ""),
-        units: Array.isArray(spec.vu) ? spec.vu.length : 0,
-        verdict: String(prep.verdict ?? ""),
-        rounds: Number(prep.rounds ?? 0),
-        material: String(prep.material_id ?? ""),
-        runs: runs.length,
-        last_overall: String(last?.overall ?? ""),
-        last_run: String(last?.run_id ?? ""),
-      } satisfies SpecRow;
-    })
-    .filter((x): x is SpecRow => x !== null);
-}
+export const listSpecs = specRows;
 
 /** 构造追溯视图的载荷：规范 + prepare 产物 + trace（全部只读）。 */
 export function specDetail(env: Env, specId: string): { spec: unknown; prepare: unknown; trace: unknown; attempts: Array<{ file: string; created: string | null; verdict: string | null }> } | null {
@@ -165,40 +140,8 @@ export interface ReportRow {
 }
 
 /** 报告清单（看板摘要行）。归档数量从 archives 侧车读，不猜。 */
-export function listReports(env: Env, specId?: string): ReportRow[] {
-  const p = verifyPaths(env);
-  if (!existsSync(p.reports)) return [];
-  return readdirSync(p.reports)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => readJson<any>(join(p.reports, f)))
-    // 坏报告静默跳过是**显式决定**（r19 N2 WONTFIX）：一条损坏/半写的 report.json 不该让整块
-    // 看板 500——单条诊断由 `verify report <run>` 点名（它会把解析错误打出来），这里只保证列表可用。
-    // 若将来要在 UI 加「N 条损坏」脚注，从本函数旁路收集计数再做，不要把错误塞进 ReportRow。
-    .filter((r): r is any => !!r && !!r.run_id)
-    .map((r) => {
-      const side = readJson<any>(join(p.archives, `${r.run_id}.json`));
-      return {
-        run_id: String(r.run_id),
-        spec_id: String(r.spec_id ?? ""),
-        spec_version: Number(r.verifier?.spec_version ?? 0),
-        overall: String(r.overall ?? ""),
-        reason: String(r.reason ?? ""),
-        summary: {
-          pass: Number(r.summary?.pass ?? 0),
-          fail: Number(r.summary?.fail ?? 0),
-          needs_material: Number(r.summary?.needs_material ?? 0),
-          error: Number(r.summary?.error ?? 0),
-        },
-        started: String(r.started ?? ""),
-        finished: String(r.finished ?? ""),
-        mode: String(r.verifier?.mode ?? ""),
-        binary_sha256: String(r.verifier?.binary_sha256 ?? ""),
-        archived: Array.isArray(side?.archives) ? side.archives.length : 0,
-        semantic_scope: typeof r.semantic_scope === "string" ? r.semantic_scope : null,
-      } satisfies ReportRow;
-    })
-    .filter((r) => (specId ? r.spec_id === specId : true))
-    .sort((a, b) => String(b.finished).localeCompare(String(a.finished)));
+export async function listReports(env: Env, specId?: string): Promise<ReportRow[]> {
+  return (await reportPage(env, new URLSearchParams(specId ? { spec: specId } : {}))).items;
 }
 
 /** 归档清单（跨 run 展开，按创建时刻倒序）——报告看板的「归档」列的事实源。 */
@@ -212,28 +155,8 @@ export interface ArchiveRow {
   with: string[];
 }
 
-export function listArchives(env: Env): ArchiveRow[] {
-  const p = verifyPaths(env);
-  if (!existsSync(p.archives)) return [];
-  const rows: ArchiveRow[] = [];
-  for (const f of readdirSync(p.archives)) {
-    if (!f.endsWith(".json")) continue;
-    const runId = f.slice(0, -5);
-    if (!ID_RE.test(runId)) continue;
-    const side = readJson<any>(join(p.archives, f));
-    for (const a of Array.isArray(side?.archives) ? side.archives : []) {
-      rows.push({
-        run_id: runId,
-        archive_id: String(a?.archive_id ?? ""),
-        filename: String(a?.filename ?? ""),
-        archive_sha256: String(a?.archive_sha256 ?? ""),
-        zip_sha256: String(a?.zip_sha256 ?? ""),
-        created: String(a?.created ?? ""),
-        with: Array.isArray(a?.with) ? a.with.map(String) : [],
-      });
-    }
-  }
-  return rows.sort((a, b) => b.created.localeCompare(a.created));
+export async function listArchives(env: Env): Promise<ArchiveRow[]> {
+  return (await archivePage(env, new URLSearchParams())).items;
 }
 
 /**
@@ -419,7 +342,7 @@ export interface VerifyApiResult {
 }
 
 /** `/api/verify/*` 的只读分发。返回 handled=false 时由调用方走 404。 */
-export function handleVerifyApi(env: Env, method: string, url: URL): VerifyApiResult {
+export async function handleVerifyApi(env: Env, method: string, url: URL): Promise<VerifyApiResult> {
   const path = url.pathname;
   const q = url.searchParams;
   const ok = (body: unknown): VerifyApiResult => ({ status: 200, body, handled: true });
@@ -428,7 +351,7 @@ export function handleVerifyApi(env: Env, method: string, url: URL): VerifyApiRe
 
   if (path === "/api/verify/specs") {
     if (method !== "GET") return deny("GET only");
-    return ok(listSpecs(env));
+    return ok(await specRows(env));
   }
   if (path === "/api/verify/spec") {
     if (method !== "GET") return deny("GET only — material drafts are POST /api/verify/material");
@@ -441,11 +364,17 @@ export function handleVerifyApi(env: Env, method: string, url: URL): VerifyApiRe
     if (method !== "GET") return deny("GET only");
     const spec = q.get("spec") || "";
     if (spec && !ID_RE.test(spec)) return miss(`spec not found: ${spec}`);
-    return ok(listReports(env, spec || undefined));
+    try { return ok(await reportPage(env, q)); } catch (e) {
+      if (e instanceof VerifyListUsageError) return { status: 400, body: { error: e.message }, handled: true };
+      throw e;
+    }
   }
   if (path === "/api/verify/archives") {
     if (method !== "GET") return deny("GET only");
-    return ok(listArchives(env));
+    try { return ok(await archivePage(env, q)); } catch (e) {
+      if (e instanceof VerifyListUsageError) return { status: 400, body: { error: e.message }, handled: true };
+      throw e;
+    }
   }
   if (path === "/api/verify/report") {
     if (method !== "GET") return deny("GET only");
