@@ -50,10 +50,20 @@ export function countPgReport(report, specs) {
   if (!passed) throw new Error("B8 gate collected no real PG cases");
   return { passed, skipped: 0, offline, files: specs.length };
 }
+export function b8TestTarget(raw) {
+  // Test admin calls create/drop databases: numeric loopback only, with no target overrides.
+  let target;
+  try { target = new URL(raw); } catch { /* reject without echoing the connection string */ }
+  if (!target || !["postgres:", "postgresql:"].includes(target.protocol) ||
+      !["127.0.0.1", "[::1]"].includes(target.hostname) || target.search || target.hash ||
+      target.pathname !== "/postgres" || !target.port) {
+    throw new Error("B8_TEST_PG_ADMIN_URL must select an isolated loopback test target (127.0.0.1 or ::1, explicit port, /postgres, no query)");
+  }
+  return target.toString();
+}
 async function b8Main() {
-  const url = process.env.B8_TEST_PG_ADMIN_URL;
-  if (!url || !/^postgres(ql)?:\/\//i.test(url)) throw new Error("B8_TEST_PG_ADMIN_URL must select an isolated PostgreSQL admin database");
-  // Check connectivity without putting the URL in argv or echoing driver messages.
+  const url = b8TestTarget(process.env.B8_TEST_PG_ADMIN_URL);
+
   const { Client } = createRequire(import.meta.url)("pg");
   const client = new Client({ connectionString: url, connectionTimeoutMillis: 4000 });
   try { await client.connect(); await client.query("SELECT 1"); }
