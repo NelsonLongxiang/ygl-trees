@@ -347,7 +347,7 @@ SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 
 PG 测试分开计数：B8 的 62 条真库用例（七份 spec）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 62 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1358 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1367 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
@@ -391,7 +391,7 @@ serve。serve 从不取写锁（WAL 并发读写安全），`db unlock` 也以�
 |---|---|
 | `/` | **React 客户端**（`apps/web`：@xyflow/react 水平树视图 + 时间轴 + react-markdown 产出渲染）——0.88 起唯一前端，npm 包自带 `dist/apps/web/dist`，开箱即用 |
 | `/api/data` `/api/events` | 数据/实时通道（SSE 表指纹推送；`webui export` 落同一载荷的 JSON 快照） |
-| `/api/verify/reports` `/api/verify/archives` | 有界清单 `{items,total,next_cursor}`；`limit` 默认200/最大500，`cursor` 翻页；报告可加 `spec`/`only_bad=1`。暖列表用异步摘要索引，不逐请求全量解析；详情仍走单报告端点 |
+| `/api/verify/reports` `/api/verify/archives` | 有界清单 `{items,total,next_cursor}`；`limit` 默认200/最大500，`cursor` 翻页；报告可加 `spec`/`only_bad=1`。列表查持久按spec摘要索引，服务就绪前准备旧数据，写入口/文件名watch增量维护；请求不因空闲5秒全量parse/stat，详情仍走单报告端点 |
 
 **诚实故障（0.88 单3）**：React dist 缺失时 `webui serve` 直接拒绝启动（rc=1，提示构建/重装命令），
 不再静默回落内嵌 HTML；`/classic` 路由随内嵌仪表盘一并退役。

@@ -19,7 +19,7 @@ HTTP MCP snapshots its startup environment and derives a separate child environm
 
 ## Verifier HTTP lists
 
-`verify-list` asynchronously indexes summary projections with bounded file concurrency and per-spec lookup. Report/archive endpoints return bounded pages (`items`, `total`, `next_cursor`), default200/max500; cursor scope includes the filter. Directory changes invalidate the index; in-place updates are rechecked within5seconds using file timestamps. Full report bodies are not cached. Cold indexing still reads the directory but does not block unrelated API requests. Detail/CLI/report persistence semantics are unchanged.
+`verify-list` queries the derived `verify/.list-index.sqlite` summary index by spec and stable cursor. Report/archive pages return `items/total/next_cursor`, default200/max500. The server prepares/reconciles legacy files before readiness, not on an HTTP list request. Official report/sidecar writes update summaries; filename watchers maintain external changes without periodic whole-directory stat scans. Source JSON remains authoritative; no business schema/export/migration changes. Use `firstReportPage/firstArchivePage` for at most200rows; use page APIs for cursors. Missing/corrupt index or watcher faults are explicit failures, never an implicit list-time full scan. Close waits for watchers and preparation to finish.
 
 ## Further Exploration
 
