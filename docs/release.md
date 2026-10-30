@@ -165,24 +165,31 @@ node scripts/pack-repro.mjs --check-dirty   # {"dirty":false} 才可出包
 node scripts/pack-repro.mjs                 # 官方字节（clean worktree + 本树 build）
 ```
 
-`--allow-dirty` 仅供本地实验，**不得用于发布字节**。官方流程固定为：fresh worktree@release-commit
+`--allow-dirty` 仅供本地实验，**不得用于发布字节**。官方流程固定为：干净主检出@release-commit（共享检出按文件/窗口协调，不用 worktree）
 → 该树 `pnpm install && pnpm build` → `pack:repro`；主树脏时禁止出包。
 
 ## 二、发布命令
+
+**必守顺序（#131）**：release 提交先并入 master → push 项目主远端 master →（创建并 push tag）→ guard → publish。tag 可先准备，但 tag commit 和远端 master 两者都必须先于 npm 可见；不能只推 release 分支/tag 就发布。`--remote` 使用项目主远端名字（当前 `github`，不是固定要求名为 origin）。guard 每次新 fetch 该远端 master，验证远端 tag 的 peeled commit 与本地 HEAD 一致，再验证该 commit 是远端 master 的祖先；失败输出双方 SHA。离线 `--no-network` 或未给 `--remote` 仅为本地 tag 检查，`remote_verified:false`，不能作为发布门通过证据。
+
+**0.117.1 R4 已知偏差**：npm 发布于 2026-10-30 05:20:31.517Z，source merge08a785d 于05:22:47Z才 push master（#131时间线）；发布内容正确不等于顺序合规。本修复记录已知偏差，不伪造追溯豁免或把之后合并当作当时满足。下一次 npm 发版必须使用新门并附发布记录；关单仍需下一版 npm+tag 复核。
 
 **官方字节流（0.110.1 起）**——tarball 直发，保证「审计字节 = 发布字节」：
 
 ```bash
 node scripts/pack-repro.mjs --check-dirty        # 必须 clean
 node scripts/pack-repro.mjs                      # 产出并记录 bytes + sha256
-git tag -a v<version> <commit> -m "v<version>"   # 先 tag
-git push <remote> v<version>
-node scripts/prepublish-guard.mjs --remote github  # tag 必须在 HEAD 且远端存在
+git switch master                             # release PR 已按授权合入
+git push github master                        # 先让 tag commit 可从远端 master 到达
+git switch --detach <release-commit>           # 主检出干净/无他席在用才切；不是 worktree
+git tag -a v<version> <release-commit> -m "v<version>"
+git push github v<version>
+node scripts/prepublish-guard.mjs --remote github  # npm publish 前最后一步：远端 tag 一致且 master 祖先门
 npm publish <pack:repro 产出的 tgz> --registry=https://registry.npmjs.org/
 ```
 
 `prepublishOnly` 只覆盖**目录发布**（`npm/pnpm publish` 在包目录内），对 `npm publish <tgz>`
-**不执行**——所以 exact-bytes 流程必须显式跑 `prepublish-guard.mjs`（GitHub #17 的两层闸）。
+**不执行**——所以 exact-bytes 流程必须显式跑 `prepublish-guard.mjs --remote github`，作为 `npm publish <tgz>` 前最后一步（GitHub #17/#131）。目录流中的默认本地检查不替代这个联网检查。
 
 目录发布仍可用 pnpm（`workspace:` 协议重写是 npm 的缺口）：
 
