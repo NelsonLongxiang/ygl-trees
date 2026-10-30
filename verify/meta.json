@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "a730f4d2b408fd3e299ba0ebe1ca2d5cbe34e133eeeb3613a2f0ff8601dd0fd8",
+      "sha256": "22372b4ad9cbcd2abd02d79fa80fdf97a40cc2927ec09fb3d97f767235fd78e7",
       "role": "gate"
     },
     {
@@ -145,7 +145,7 @@
     },
     {
       "path": "scripts/pg-gate.sh",
-      "sha256": "161e985fc93e63143d29b1cc9420da8fbd6be3f4e616131964037dadd13eeda1",
+      "sha256": "7e8a8010e636b7ed9c3ce3e2b428ea8d71cf9b0e419a16b309cc9009c4d38a9d",
       "role": "gate"
     },
     {
@@ -1037,6 +1037,22 @@
       "reason": "#131: require exact remote tag target and freshly fetched remote master ancestry before npm publish",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-30T08:48:37.468Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "a730f4d2b408fd3e299ba0ebe1ca2d5cbe34e133eeeb3613a2f0ff8601dd0fd8",
+      "new_sha256": "22372b4ad9cbcd2abd02d79fa80fdf97a40cc2927ec09fb3d97f767235fd78e7",
+      "reason": "#132: pinned npm baseline, zero-skip SQLite golden and source/bundle identity evidence",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-30T11:48:15.194Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "161e985fc93e63143d29b1cc9420da8fbd6be3f4e616131964037dadd13eeda1",
+      "new_sha256": "7e8a8010e636b7ed9c3ce3e2b428ea8d71cf9b0e419a16b309cc9009c4d38a9d",
+      "reason": "#132: mandatory SQLite golden after B8 PG and before strict matrix",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-30T11:48:15.278Z"
     }
   ],
   "kind": "engine",
