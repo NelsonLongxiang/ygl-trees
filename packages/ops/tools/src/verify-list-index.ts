@@ -23,7 +23,8 @@ function open(root: string) {
     "CREATE INDEX IF NOT EXISTS report_order ON reports(finished DESC,run_id DESC);" +
     "CREATE TABLE IF NOT EXISTS archives(run_id TEXT NOT NULL,entry_key TEXT NOT NULL,created TEXT NOT NULL,row_json TEXT NOT NULL,PRIMARY KEY(run_id,entry_key));" +
     "CREATE INDEX IF NOT EXISTS archive_order ON archives(created DESC,entry_key DESC);" +
-    "CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);");
+    "CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);" +
+    "CREATE TABLE IF NOT EXISTS excluded(kind TEXT NOT NULL,id TEXT NOT NULL,stamp TEXT NOT NULL,reason TEXT NOT NULL,PRIMARY KEY(kind,id));");
   return db;
   } catch (e) { db.close(); throw e; }
 }
@@ -33,7 +34,9 @@ export function reportSummary(r: any): ReportRow | null {
     summary:{pass:Number(r.summary?.pass??0),fail:Number(r.summary?.fail??0),needs_material:Number(r.summary?.needs_material??0),error:Number(r.summary?.error??0)},
     started:text(r.started,64),finished:text(r.finished,64),mode:text(r.verifier?.mode,64),binary_sha256:text(r.verifier?.binary_sha256,128),archived:0,semantic_scope:typeof r.semantic_scope==="string"?text(r.semantic_scope,64):null };
 }
-function replace(db: any, kind: string, id: string, value: any, stamp: string) {
+function replace(db: any, kind: string, id: string, value: any, stamp: string, exclusion = "") {
+  db.prepare("DELETE FROM excluded WHERE kind=? AND id=?").run(kind,id);
+  if(exclusion)db.prepare("INSERT INTO excluded VALUES(?,?,?,?)").run(kind,id,stamp,exclusion);
   if (kind === "reports") {
     db.prepare("DELETE FROM reports WHERE run_id=?").run(id);
     const r = reportSummary(value);
@@ -67,21 +70,30 @@ export function updateListIndex(file: string, value: unknown): void {
 async function fileStamp(path:string) { try {const s=await stat(path);return s.mtimeMs+":"+s.ctimeMs+":"+s.size;}catch(e:any){if(e.code==="ENOENT")return "missing";throw e;} }
 async function readRecord(root:string,kind:string,name:string) {
   const path=join(root,kind,name),id=name.slice(0,-5);
+  let invalid: { stamp: string; bytes: string; reason: string; observations: number } | undefined;
   for(let attempt=0;attempt<6;attempt++){
     const before=await fileStamp(path);
     if(before==="missing"){
+      invalid=undefined;
       // Atomic replacement can expose a short absence; require a second observation.
       await pause(10);
       if(attempt===5&&await fileStamp(path)==="missing")return {kind,id,stamp:"missing",value:null};
     } else {
       try {
-        const value=JSON.parse(await readFile(path,"utf8"));
-        const valid=kind==="reports"?reportSummary(value)?.run_id===id:Array.isArray(value?.archives);
-        if(valid&&before===await fileStamp(path))return {kind,id,stamp:before,value};
-      } catch(e:any) {if(e.code!=="ENOENT"&&!(e instanceof SyntaxError))throw e;}
+        const bytes=await readFile(path,"utf8");
+        let value:any,reason="invalid json";
+        try{value=JSON.parse(bytes);reason="invalid record";}catch(e){if(!(e instanceof SyntaxError))throw e;}
+        const valid=kind==="reports"?reportSummary(value)?.run_id===id:Array.isArray(value?.archives)&&(value.run_id===undefined||value.run_id===id);
+        const after=await fileStamp(path);
+        if(before===after){
+          if(valid)return {kind,id,stamp:before,value,excluded:""};
+          invalid=invalid?.stamp===before&&invalid.bytes===bytes?{...invalid,observations:invalid.observations+1}:{stamp:before,bytes,reason,observations:1};
+        }else invalid=undefined;
+      } catch(e:any) {invalid=undefined;if(e.code!=="ENOENT"&&!(e instanceof SyntaxError))throw e;}
     }
     if(attempt<5)await pause(10*2**attempt);
   }
+  if(invalid?.observations===6)return {kind,id,stamp:invalid.stamp,value:null,excluded:invalid.reason};
   throw new Error("verifier list record unsettled or incomplete: "+kind+"/"+name);
 }
 /** Legacy import/recovery runs before server readiness, never on a list request. */
@@ -105,7 +117,7 @@ export async function prepareListIndex(home:string):Promise<void> {
         }));
         db.transaction(()=>{for(const row of rows)if(row){
           const current=(db.prepare("SELECT stamp FROM files WHERE kind=? AND id=?").get(kind,row.id) as any)?.stamp;
-          if(current===prior.get(row.id))replace(db,row.kind,row.id,row.value,row.stamp);
+          if(current===prior.get(row.id))replace(db,row.kind,row.id,row.value,row.stamp,row.excluded);
         }})();
       }
     }
@@ -141,7 +153,7 @@ export function watchListIndex(home:string) {
       const row=await readRecord(root,kind,name);if(closed)return;
       const db=open(root);try{db.transaction(()=>{
         const current=(db.prepare("SELECT stamp FROM files WHERE kind=? AND id=?").get(kind,row.id) as any)?.stamp;
-        if(current===revision)replace(db,kind,row.id,row.value,row.stamp);
+        if(current===revision)replace(db,kind,row.id,row.value,row.stamp,row.excluded);
       })();}finally{db.close();}
       if(faults.get(record)===pending)faults.delete(record);
     }).catch(e=>{if(faults.get(record)===pending)faults.set(record,e);});

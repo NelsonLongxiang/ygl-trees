@@ -8,6 +8,8 @@ import {handleVerifyApi} from '../src/verify-web';
 import {prepareListIndex,updateListIndex,watchListIndex,listIndexPath} from '../src/verify-list-index';
 import {writeJson} from '../src/verify-cmds';
 import {appendRegistry} from '../src/archive';
+import {createDashboardServer} from '../src/webui';
+import {once} from 'node:events';
 import * as fsp from 'node:fs/promises';
 vi.mock('node:fs/promises',{spy:true});
 vi.mock('node:fs',{spy:true});
@@ -35,7 +37,14 @@ describe('#125 durable index requirements',()=>{
  it('filename watcher maintains external edits and deletions and closes without handles',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-watch-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
   try{
-   await prepareListIndex(home);watcher=watchListIndex(home);const path=join(home,'verify/reports/external.json');
+   await prepareListIndex(home);
+   let ready=false;const {watch}=await vi.importActual<typeof import('node:fs')>('node:fs');
+   const probe=vi.mocked(nativeFs.watch).mockImplementation(((dir:any,callback:any)=>watch(dir,(event:any,file:any)=>{if(file?.toString()==='watch-ready')ready=true;callback(event,file);}))as any);
+   watcher=watchListIndex(home);probe.mockRestore();
+   const sentinel=join(home,'verify/reports/watch-ready');
+   await vi.waitFor(()=>{writeFileSync(sentinel,'ready');expect(ready).toBe(true);},{timeout:3000,interval:20});
+   rmSync(sentinel);await watcher.settled();
+   const path=join(home,'verify/reports/external.json');
    writeFileSync(path,JSON.stringify({run_id:'external',spec_id:'watched',overall:'FAIL'}));
    await vi.waitFor(async()=>{await watcher!.settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));expect(r.body.total).toBe(1);},{timeout:3000,interval:20});
    writeFileSync(path,JSON.stringify({run_id:'external',spec_id:'watched',overall:'PASS'}));
@@ -100,19 +109,22 @@ describe('#125 durable index requirements',()=>{
    const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.items[0]).toMatchObject({run_id:'partial',overall:'PASS'});
   }finally{vi.mocked(fsp.readFile).mockRestore();await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
- it('invalid JSON is visible and cannot erase the last valid projection or become a settled file revision',async()=>{
+ it('changing invalid JSON is visible and cannot erase the last valid projection or become a settled file revision',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-unsettled-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
   const callbacks:((event:string,file:string)=>void)[]=[];
   try{
    await prepareListIndex(home);const file=join(home,'verify/reports/partial.json');writeJson(file,{run_id:'partial',spec_id:'s',overall:'PASS'});
    const watchSpy=vi.mocked(nativeFs.watch).mockImplementation(((_dir:any,callback:any)=>{callbacks.push(callback);return {unref(){},on(){return this;},close(){}};})as any);
    watcher=watchListIndex(home);watchSpy.mockRestore();writeFileSync(file,'{"run_id":');callbacks[0]('change','partial.json');
+   let reading=0;
+   vi.mocked(fsp.readFile).mockImplementation((async(...args:any[])=>{const bytes=nativeFs.readFileSync(args[0],args[1]);if(String(args[0])===file)writeFileSync(file,'{'+String(++reading));return bytes;})as any);
    await expect(watcher.settled()).rejects.toThrow(/unsettled|incomplete/);
+   vi.mocked(fsp.readFile).mockRestore();
    const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect(JSON.parse((db.prepare('SELECT row_json FROM reports WHERE run_id=?').get('partial')as any).row_json).overall).toBe('PASS');expect((db.prepare('SELECT stamp FROM files WHERE kind=? AND id=?').get('reports','partial')as any).stamp).toMatch(/^hook:/);}finally{db.close();}
    await expect(handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'))).rejects.toThrow(/unsettled|incomplete/);
    writeFileSync(file,JSON.stringify({run_id:'partial',spec_id:'s',overall:'FAIL'}));callbacks[0]('change','partial.json');await watcher.settled();
    const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.items[0].overall).toBe('FAIL');
-  }finally{await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+  }finally{vi.mocked(fsp.readFile).mockRestore();await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
  it('a valid JSON read from a file replaced during the read is retried, never committed with the new stamp',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-replaced-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
@@ -137,12 +149,48 @@ describe('#125 durable index requirements',()=>{
    const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/archives'));expect(r.body.total).toBe(1);expect(r.body.items[0].archive_id).toBe('a');
   }finally{vi.mocked(fsp.readFile).mockRestore();await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
- it('startup preparation cannot mark malformed JSON ready or store its stamp',async()=>{
+ it('startup preparation records stable malformed JSON as excluded, not a valid report',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-start-partial-'));
   try{
-   mkdirSync(join(home,'verify/reports'),{recursive:true});writeFileSync(join(home,'verify/reports/r.json'),'{"run_id":');
-   await expect(prepareListIndex(home)).rejects.toThrow(/unsettled|incomplete/);
-   const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect(db.prepare('SELECT * FROM files WHERE kind=? AND id=?').get('reports','r')).toBeUndefined();expect(db.prepare("SELECT * FROM metadata WHERE key='ready'").get()).toBeUndefined();}finally{db.close();}
+   mkdirSync(join(home,'verify/reports'),{recursive:true});writeFileSync(join(home,'verify/reports/r.json'),'{not json');
+   await expect(prepareListIndex(home)).resolves.toBeUndefined();
+   const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect((db.prepare('SELECT reason FROM excluded WHERE kind=? AND id=?').get('reports','r')as any).reason).toBe('invalid json');expect(db.prepare('SELECT * FROM reports WHERE run_id=?').get('r')).toBeUndefined();}finally{db.close();}
   }finally{rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('prepare excludes stable invalid reports and sidecars without stopping the server or good lists',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-bad-prepare-'));let server:ReturnType<typeof createDashboardServer>|undefined;
+  try{
+   for(const kind of ['reports','archives'])mkdirSync(join(home,'verify',kind),{recursive:true});
+   writeFileSync(join(home,'verify/reports/good.json'),JSON.stringify({run_id:'good',spec_id:'s'}));
+   writeFileSync(join(home,'verify/reports/bad.json'),'{not json');
+   writeFileSync(join(home,'verify/reports/mismatch.json'),JSON.stringify({run_id:'other',spec_id:'s'}));
+   writeFileSync(join(home,'verify/archives/bad.json'),'{not json');
+   writeFileSync(join(home,'verify/archives/mismatch.json'),JSON.stringify({archives:'not an array'}));
+   await expect(prepareListIndex(home)).resolves.toBeUndefined();
+   const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect(db.prepare('SELECT COUNT(*) n FROM excluded').get()).toEqual({n:4});}finally{db.close();}
+   server=createDashboardServer({home,db:{get:()=>({n:0})},ctx:{json:true,color:false,quiet:true}}as any);await (server as any).verifyListReady;
+   server.listen(0,'127.0.0.1');await once(server,'listening');const base='http://127.0.0.1:'+(server.address()as any).port;
+   const r=await fetch(base+'/api/verify/reports?spec=s');expect(r.status).toBe(200);expect((await r.json()as any).items.map((x:any)=>x.run_id)).toEqual(['good']);
+   expect((await fetch(base+'/api/node?tree=test')).status).toBe(400);
+  }finally{if(server)await new Promise<void>(r=>{server!.close(()=>r());server!.closeAllConnections();});rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('watcher excludes stable invalid and mismatched records, then replaces exclusions on valid rewrites',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-bad-watch-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
+  const callbacks:((event:string,file:string)=>void)[]=[];
+  try{
+   await prepareListIndex(home);
+   const watchSpy=vi.mocked(nativeFs.watch).mockImplementation(((_dir:any,callback:any)=>{callbacks.push(callback);return {unref(){},on(){return this;},close(){}};})as any);
+   watcher=watchListIndex(home);watchSpy.mockRestore();
+   for(const [kind,body]of [['reports','{not json'],['reports',JSON.stringify({run_id:'other'})],['archives','{not json'],['archives',JSON.stringify({archives:'bad'})],['archives',JSON.stringify({run_id:'other',archives:[]})]]){
+    const file=join(home,'verify',kind,'bad.json');writeFileSync(file,body);callbacks[kind==='reports'?0:1]('change','bad.json');
+    await expect(watcher.settled()).resolves.toBeUndefined();
+    const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect((db.prepare('SELECT reason FROM excluded WHERE kind=? AND id=?').get(kind,'bad')as any).reason).toMatch(/json|record/);}finally{db.close();}
+    const page:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/'+kind));expect(page.status).toBe(200);expect(page.body.total).toBe(0);
+   }
+   writeFileSync(join(home,'verify/reports/bad.json'),JSON.stringify({run_id:'bad',spec_id:'s'}));callbacks[0]('change','bad.json');
+   writeFileSync(join(home,'verify/archives/bad.json'),JSON.stringify({archives:[{archive_id:'a'}]}));callbacks[1]('change','bad.json');await watcher.settled();
+   const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=s'));expect(r.body.total).toBe(1);expect(r.body.items[0].archived).toBe(1);
+   const db=new Sqlite(listIndexPath(join(home,'verify')),{readonly:true});try{expect(db.prepare('SELECT COUNT(*) n FROM excluded').get()).toEqual({n:0});}finally{db.close();}
+  }finally{await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
 });
