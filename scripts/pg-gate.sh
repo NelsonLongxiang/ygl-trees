@@ -8,21 +8,23 @@ PG_IMAGE="${PG_IMAGE:-postgres:16.4-alpine}"   # 钉装：镜像 tag 显式记�
 PG_PORT="${PG_PORT:-0}"
 PG_PW="gategate"
 CONTAINER="ygl-pg-gate-$$"
+CONTAINER_ID=""
 SEED_HOME=""
 cleanup() {
-  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  if [[ "$CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]]; then docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true; fi
   if [[ "$SEED_HOME" == "$PWD/tmp/g7-seed."* ]]; then rm -rf -- "$SEED_HOME"; fi
 }
 trap cleanup EXIT
 command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 || { echo "✗ docker unavailable (G7 cannot skip PG)"; exit 1; }
 echo "pg-gate: starting $PG_IMAGE on loopback :$PG_PORT"
-docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PG_PW" -e POSTGRES_DB=ygl -p "127.0.0.1:$PG_PORT:5432" "$PG_IMAGE" >/dev/null || { echo "✗ docker run failed"; exit 1; }
+CONTAINER_ID=$(docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PG_PW" -e POSTGRES_DB=ygl -p "127.0.0.1:$PG_PORT:5432" "$PG_IMAGE") || { CONTAINER_ID=""; echo "✗ docker run failed"; exit 1; }
+[[ "$CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]] || { CONTAINER_ID=""; echo "✗ invalid created container ID"; exit 1; }
 for i in $(seq 1 30); do
-  docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break
+  docker exec "$CONTAINER_ID" pg_isready -U postgres >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1 || { echo "✗ postgres not ready in 30s"; exit 1; }
-PG_PORT=$(docker port "$CONTAINER" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')
+docker exec "$CONTAINER_ID" pg_isready -U postgres >/dev/null 2>&1 || { echo "✗ postgres not ready in 30s"; exit 1; }
+PG_PORT=$(docker port "$CONTAINER_ID" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')
 [ -n "$PG_PORT" ] || { echo "✗ missing loopback PG port"; exit 1; }
 export YGL_PG_URL="postgres://postgres:$PG_PW@127.0.0.1:$PG_PORT/ygl"
 export B8_TEST_PG_ADMIN_URL="postgres://postgres:$PG_PW@127.0.0.1:$PG_PORT/postgres"

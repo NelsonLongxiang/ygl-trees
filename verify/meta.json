@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "4ab6f47654b5ad2d1a24b1dac21422d9ae98b37b68c0fe24e6f4c19b1e198c60",
+      "sha256": "a730f4d2b408fd3e299ba0ebe1ca2d5cbe34e133eeeb3613a2f0ff8601dd0fd8",
       "role": "gate"
     },
     {
@@ -145,7 +145,7 @@
     },
     {
       "path": "scripts/pg-gate.sh",
-      "sha256": "ae2faef203c0227196d0f18198d526be0a2650693102c9e55d9fc3e116315012",
+      "sha256": "161e985fc93e63143d29b1cc9420da8fbd6be3f4e616131964037dadd13eeda1",
       "role": "gate"
     },
     {
@@ -1013,6 +1013,22 @@
       "reason": "#124: include relative path formatter in reused PG report entry",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-29T17:42:31.363Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "ae2faef203c0227196d0f18198d526be0a2650693102c9e55d9fc3e116315012",
+      "new_sha256": "161e985fc93e63143d29b1cc9420da8fbd6be3f4e616131964037dadd13eeda1",
+      "reason": "PG gate hardening: clean up only successfully created immutable container ID",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T23:52:22.297Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "4ab6f47654b5ad2d1a24b1dac21422d9ae98b37b68c0fe24e6f4c19b1e198c60",
+      "new_sha256": "a730f4d2b408fd3e299ba0ebe1ca2d5cbe34e133eeeb3613a2f0ff8601dd0fd8",
+      "reason": "PG gate hardening: validate numeric loopback admin target before connecting",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-29T23:52:22.374Z"
     }
   ],
   "kind": "engine",
