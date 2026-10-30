@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {readFileSync,mkdirSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {readFileSync,mkdirSync,mkdtempSync,writeFileSync,rmSync,existsSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const loadGate=()=>import(pathToFileURL(resolve(__dirname,'../../../../scripts/dual-backend-matrix.mjs')).href);
@@ -23,5 +23,14 @@ describe('#132 required SQLite golden release gate',()=>{
  it('unavailable and corrupted baseline paths fail rather than producing a skipped green gate',()=>{
   mkdirSync(resolve(root,'tmp'),{recursive:true});const dir=mkdtempSync(resolve(root,'tmp/sqlite-gate-negative-'));
   try{writeFileSync(resolve(dir,'bad.tgz'),'not a tarball');for(const filename of ['missing.tgz','bad.tgz']){const r=spawnSync(process.execPath,[resolve(root,'scripts/dual-backend-matrix.mjs'),'--b8-sqlite-only','--baseline-tgz',resolve(dir,filename)],{cwd:root,encoding:'utf8',timeout:10000});expect(r.status).toBe(1);expect(r.stderr).toContain('b8_sqlite_golden: FAIL');expect(r.stdout).not.toContain('1 passed');}}finally{rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+ });
+ it('#135 exported golden specs exist and identify exactly the reports accepted by the gate',async()=>{
+  const {goldenSpecs,goldenReport}=await loadGate();const specs=goldenSpecs();expect(specs).toEqual(['packages/ops/tools/tests/b8-sqlite-golden.spec.ts']);
+  for(const spec of specs){expect(existsSync(resolve(root,spec))).toBe(true);for(const name of [spec,root+'/'+spec,(root+'/'+spec).replaceAll('/','\\')])expect(goldenReport({success:true,testResults:[{name,assertionResults:[{status:'passed'}]}]})).toEqual({passed:1,skipped:0});}
+  expect(()=>goldenReport({success:true,testResults:[{name:'unrelated.spec.ts',assertionResults:[{status:'passed'}]}]})).toThrow();
+ });
+ it('#135 actual golden argv targets only the exported list and stores the path literal once',async()=>{
+  const {goldenSpecs,goldenArgv}=await loadGate();const argv=goldenArgv('result.json');expect(argv).toEqual(['node_modules/vitest/vitest.mjs','run',...goldenSpecs(),'--maxWorkers=1','--reporter=json','--outputFile=result.json']);
+  const source=readFileSync(resolve(root,'scripts/dual-backend-matrix.mjs'),'utf8');expect(source.split('b8-sqlite-golden.spec.ts')).toHaveLength(2);expect(source).toContain('spawnSync(process.execPath, goldenArgv(');
  });
 });
