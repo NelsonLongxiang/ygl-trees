@@ -574,7 +574,6 @@ ${cl.text}
           counts.push(`${t}:skipped`);
           continue;
         }
-        // #150: secret config values never leave the workspace in a dump
         const rows = exportableRows(db, t);
         for (const r of rows) {
           const cols = Object.keys(r);

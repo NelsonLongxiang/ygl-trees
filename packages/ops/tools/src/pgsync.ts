@@ -52,8 +52,6 @@ export interface SyncResult {
 
 /** Copy one table (batched, 500/insert) into an open PG client. */
 async function copyTable(client: any, db: DB, t: string, keepSecretConfig = false): Promise<number> {
-  // #150: the sync mirror never carries secret config values; migrate (the
-  // live-store graduation) keeps them; config.set events are always redacted.
   const rows = exportableRows(db, t, keepSecretConfig);
   if (rows.length) {
     const baseCols = Object.keys(rows[0]);

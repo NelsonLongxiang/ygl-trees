@@ -15,8 +15,7 @@ export interface ConfigSpec {
   def: string;
   type: "string" | "number" | "boolean";
   note: string;
-  /** #150: credential — never echoed, never written to events, never exported. */
-  secret?: boolean;
+  secret?: boolean; // #150: never echoed, logged or exported
 }
 
 export const CONFIG_REGISTRY: ConfigSpec[] = [
@@ -39,27 +38,22 @@ export function specOf(key: string): ConfigSpec | undefined {
   return BY_KEY.get(key);
 }
 
-/** Marker stored in events.payload instead of a secret value. */
 export const REDACTED = "[redacted]";
 
 export function isSecretKey(key: string): boolean {
   return BY_KEY.get(key)?.secret === true;
 }
 
-/** Display form of a secret: empty stays empty; otherwise only the last 4
- *  chars survive (and not even those for short values). */
+/** Only the last 4 chars of a long secret survive. */
 export function maskSecret(v: string): string {
   if (!v) return "";
   return v.length > 12 ? `••••${v.slice(-4)}` : "••••";
 }
 
-/** Display value for any key (masked when the key is secret). */
 export function displayValue(key: string, v: string): string {
   return isSecretKey(key) ? maskSecret(v) : v;
 }
 
-/** SQL fragment + params selecting config.set events that still carry a
- *  plaintext secret value. */
 function secretEventWhere(): { where: string; params: string[] } {
   const keys = CONFIG_REGISTRY.filter((c) => c.secret).map((c) => c.key);
   return {
@@ -68,14 +62,12 @@ function secretEventWhere(): { where: string; params: string[] } {
   };
 }
 
-/** #150: historical config.set events holding a plaintext secret (pre-fix). */
 export function countSecretEvents(db: DB): number {
   const { where, params } = secretEventWhere();
   return Number((db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM events WHERE ${where}`, params))?.n ?? 0);
 }
 
-/** #150: overwrite plaintext secrets in config.set events with the marker.
- *  The event (who/when/which key) stays for audit; only the value goes. */
+/** Keep the audit row (who/when/which key), drop the value. */
 export function redactSecretEvents(db: DB): number {
   const n = countSecretEvents(db);
   if (n) {
@@ -85,9 +77,7 @@ export function redactSecretEvents(db: DB): number {
   return n;
 }
 
-/** Rows of `table` as they may leave the workspace (db export / db sync pg):
- *  secret config rows are dropped unless keepSecretConfig (migrate graduates
- *  the live store), and config.set events never carry a secret value. */
+/** Rows leaving the workspace: secret config dropped (migrate keeps it), events redacted. */
 export function exportableRows(db: DB, table: string, keepSecretConfig = false): any[] {
   const rows = db.all(`SELECT * FROM ${table}`) as any[];
   if (table === "config" && !keepSecretConfig) return rows.filter((r) => !isSecretKey(String(r.key)));
@@ -152,7 +142,7 @@ export function configSet(db: DB, key: string, value: string): { key: string; va
     "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
     [`${key}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, nowIso(), "cli", "config.set", "config", key, spec.secret ? REDACTED : v]
   );
-  if (spec.secret) redactSecretEvents(db); // scrub any pre-#150 plaintext history too
+  if (spec.secret) redactSecretEvents(db);
   return { key, value: displayValue(key, v) };
 }
 
