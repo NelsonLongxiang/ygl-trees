@@ -479,6 +479,8 @@ store-only zip（不压缩）、条目按路径字节序、mtime 固定 `1980-01
 `materials_sha256` 与 spec 一致；`manifest.engine_version` 与 `report.verifier.engine_version` 一致。
 任一环失败 rc=1 并点名文件；判定结论（PASS/FAIL）不在归档校验里表达。
 
+树组普通报告只使用四值 VU：子节点的 `STALE`、`INFRA_BLOCKED`、`NEUTRALIZED` 投影为 `ERROR`；原树五值保留在 `tree.verdict` 和树报告中，叶的 `report_verdict` 不变。组报告 summary/overall 与归档校验共用同一折叠实现（`FAIL > NEEDS-MATERIAL > ERROR > PASS`），不能把 `PASS + INFRA_BLOCKED` 生成为普通 PASS，也不将 STALE 解释成 NEEDS-MATERIAL。历史报告和归档不回写。
+
 ### 7.5 rc 与默认策略
 
 `archive` 成功 rc=0；run 时归档失败不改写报告但 rc=1（`--json` 带 `archive_error`）；`--no-archive` 仅跳过归档。
