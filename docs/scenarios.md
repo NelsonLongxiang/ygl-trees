@@ -32,7 +32,7 @@
 - **入口**：对未来可证伪的事下断言（版本节奏/外部指标/行为承诺），到期要机器可读地结算。
 - **最小命令序列**：`research claim add "[预测·N天] <日期> <判据>" --channel <通道>` → `node cond add`（eval 门，可选）→ 标记节点 + `rel` → 到期 `research predict audit` → 结算 evidence note 尾部三段式 `outcome=1|0, brier=…, settler=…` → `research claim calibration --all` 看偏差。
 - **出口**：predictions 投影（`research predict list`）里 outcome/brier/settler 三列可 SQL 直出；校准曲线有基线快照。
-- **验收判据**：判据登记 verbatim（禁止转述）；结算行三段式格式固定；快照后 events 只增不洗。
+- **验收判据**：判据登记 verbatim（禁止转述）；结算行三段式格式固定；快照后 events 只增不洗。自动计数只识别完整 `树≥N` / `kb≥N` 或 `--state` 已绑定的 `key≥N`（N 为非负安全整数）；可用空白分隔的单一种类 ` 或 ` / ` 且 ` 连接完整指标。分数、主体限定或无法测量的子句整体为 manual，不能拿全工作区树数替代某树叶节点数；audit 只报告、不改已存储状态。
 - **常见反模式**：claim link 抢跑仲裁（0.82.1 护栏已拦截）；标记节点与断言终态不同步；事实性里程碑挂 eval 门（门型错配，模型必 fail）。
 - demo：§5e predict audit · §5j 生命周期护栏 · §5j2 投影+结算 · §5l 校准读出 · §6a eval 门。工作区实战：predictions-2027q1 全序列。
 

@@ -25,6 +25,12 @@ Query upserts/attachments, claim mutations and protected removals use the same t
 
 Query attach uses one JSON receipt in both backends: `{query, source}`, with `duplicate: true` on repetition and rc0. Human success/duplicate lines remain unchanged without --json. The golden regression explicitly records the two repaired SQLite outputs against the legacy bytes; every other command stays byte-identical.
 
+## Prediction audit metrics
+
+`measureCriterion` measures complete `key≥N` clauses, where `N` is a nonnegative safe integer. The reserved keys `树` and `kb` count all workspace trees and knowledge notes; other explicit keys bind to `--state` by exact key, then shallowest suffix. Whitespace around `≥` is optional. Multiple clauses may use whitespace-delimited ` 或 ` (any) or ` 且 ` (all), but not both operators in one criterion. Every clause must be recognized and measurable.
+
+Subject-qualified prose such as `adoption 树 ≥4/6 叶节点解锁`, fractions, decimal thresholds, extra requirements or unknown clauses return `null` and project as `manual`; no workspace count is substituted for their intended subject. The registry probe likewise requires the complete `npm 再发≥N个版本` criterion. Audit leaves stored claim text/status/updated unchanged and never arbitrates or unlocks. Existing resolved predictions remain resolved in the projection.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
