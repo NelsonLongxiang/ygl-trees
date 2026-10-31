@@ -15,13 +15,15 @@ export interface ConfigSpec {
   def: string;
   type: "string" | "number" | "boolean";
   note: string;
+  /** #150: credential — never echoed, never written to events, never exported. */
+  secret?: boolean;
 }
 
 export const CONFIG_REGISTRY: ConfigSpec[] = [
   { key: "eval.pass_threshold", def: "0.7", type: "number", note: "P(true) ≥ 此值判定通过（决策模型门槛）" },
   { key: "eval.fail_threshold", def: "0.4", type: "number", note: "P(true) ≤ 此值判定未通过；两值之间为灰带 pending" },
   { key: "eval.offline", def: "false", type: "boolean", note: "强制决策模型离线（等价 YGL_EVAL_OFFLINE=1，环境变量优先）" },
-  { key: "decision_model_llm_token", def: "", type: "string", note: "决策模型凭证——优先于 AI_GATEWAY_API_KEY 与 ~/.vercel.ai-gateway.env；空=回落" },
+  { key: "decision_model_llm_token", def: "", type: "string", secret: true, note: "决策模型凭证（机密：只显示末 4 位、不进事件/导出）——优先于 AI_GATEWAY_API_KEY 与 ~/.vercel.ai-gateway.env；推荐用环境变量；空=回落" },
   { key: "decision_model_llm_api_base", def: "", type: "string", note: "决策模型端点——优先于默认 Vercel Gateway；给主机名自动补 /v4/ai/evaluation-model，空=默认" },
   { key: "fetch.timeout_ms", def: "15000", type: "number", note: "source fetch 超时（毫秒）" },
   { key: "fetch.user_agent", def: "ygl-trees/0.15 (+local research cli)", type: "string", note: "source fetch 的 User-Agent" },
@@ -35,6 +37,65 @@ const BY_KEY = new Map(CONFIG_REGISTRY.map((c) => [c.key, c]));
 
 export function specOf(key: string): ConfigSpec | undefined {
   return BY_KEY.get(key);
+}
+
+/** Marker stored in events.payload instead of a secret value. */
+export const REDACTED = "[redacted]";
+
+export function isSecretKey(key: string): boolean {
+  return BY_KEY.get(key)?.secret === true;
+}
+
+/** Display form of a secret: empty stays empty; otherwise only the last 4
+ *  chars survive (and not even those for short values). */
+export function maskSecret(v: string): string {
+  if (!v) return "";
+  return v.length > 12 ? `••••${v.slice(-4)}` : "••••";
+}
+
+/** Display value for any key (masked when the key is secret). */
+export function displayValue(key: string, v: string): string {
+  return isSecretKey(key) ? maskSecret(v) : v;
+}
+
+/** SQL fragment + params selecting config.set events that still carry a
+ *  plaintext secret value. */
+function secretEventWhere(): { where: string; params: string[] } {
+  const keys = CONFIG_REGISTRY.filter((c) => c.secret).map((c) => c.key);
+  return {
+    where: `kind='config.set' AND entity_id IN (${keys.map(() => "?").join(",")}) AND payload != ?`,
+    params: [...keys, REDACTED],
+  };
+}
+
+/** #150: historical config.set events holding a plaintext secret (pre-fix). */
+export function countSecretEvents(db: DB): number {
+  const { where, params } = secretEventWhere();
+  return Number((db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM events WHERE ${where}`, params))?.n ?? 0);
+}
+
+/** #150: overwrite plaintext secrets in config.set events with the marker.
+ *  The event (who/when/which key) stays for audit; only the value goes. */
+export function redactSecretEvents(db: DB): number {
+  const n = countSecretEvents(db);
+  if (n) {
+    const { where, params } = secretEventWhere();
+    db.run(`UPDATE events SET payload=? WHERE ${where}`, [REDACTED, ...params]);
+  }
+  return n;
+}
+
+/** Rows of `table` as they may leave the workspace (db export / db sync pg):
+ *  secret config rows are dropped unless keepSecretConfig (migrate graduates
+ *  the live store), and config.set events never carry a secret value. */
+export function exportableRows(db: DB, table: string, keepSecretConfig = false): any[] {
+  const rows = db.all(`SELECT * FROM ${table}`) as any[];
+  if (table === "config" && !keepSecretConfig) return rows.filter((r) => !isSecretKey(String(r.key)));
+  if (table === "events") {
+    return rows.map((r) => (r.kind === "config.set" && isSecretKey(String(r.entity_id)) && r.payload !== REDACTED
+      ? { ...r, payload: REDACTED } : r));
+  }
+  return rows;
 }
 
 /** Raw row from the config table ('' when unset). */
@@ -65,7 +126,7 @@ export function configGetBool(db: DB, key: string): boolean {
 export function configAll(db: DB): Array<ConfigSpec & { value: string; is_default: boolean }> {
   return CONFIG_REGISTRY.map((c) => {
     const raw = rawValue(db, c.key);
-    return { ...c, value: raw === "" ? c.def : raw, is_default: raw === "" };
+    return { ...c, value: displayValue(c.key, raw === "" ? c.def : raw), is_default: raw === "" };
   });
 }
 
@@ -89,9 +150,10 @@ export function configSet(db: DB, key: string, value: string): { key: string; va
   );
   db.run(
     "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
-    [`${key}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, nowIso(), "cli", "config.set", "config", key, v]
+    [`${key}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`, nowIso(), "cli", "config.set", "config", key, spec.secret ? REDACTED : v]
   );
-  return { key, value: v };
+  if (spec.secret) redactSecretEvents(db); // scrub any pre-#150 plaintext history too
+  return { key, value: displayValue(key, v) };
 }
 
 /** Drop the override — back to the registry default. */
@@ -99,5 +161,6 @@ export function configReset(db: DB, key: string): { key: string; value: string }
   const spec = BY_KEY.get(key);
   if (!spec) throw new Error(`unknown config key: ${key}`);
   db.run("DELETE FROM config WHERE key=?", [key]);
+  if (spec.secret) redactSecretEvents(db);
   return { key, value: spec.def };
 }

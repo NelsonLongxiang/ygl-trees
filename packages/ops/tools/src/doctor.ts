@@ -13,7 +13,7 @@ import { getPgOrm } from "../../../core/database/src/orm";
 import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
-import { CONFIG_REGISTRY } from "./config";
+import { CONFIG_REGISTRY, countSecretEvents, redactSecretEvents } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
 import { resolveProject, projectSessionKey, projectCount, sessionId } from "../../../core/database/src/selection";
@@ -366,12 +366,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       checks.push({ name: `config_invalid:${row.key}`, status: "fail", detail: `${row.key}='${row.value}' is not a valid number` });
     }
   }
+  // #150: config.set events written before secrets were redacted still hold
+  // the plaintext credential — warn (the config check stays one row).
+  const secretEvents = countSecretEvents(db);
   if (configIssues === 0) {
     checks.push({
       name: "config",
-      status: "pass",
-      detail: configRows.length === 0 ? "no overrides (all defaults)" : `${configRows.length} override(s), all valid`,
+      status: secretEvents ? "warn" : "pass",
+      detail: secretEvents
+        ? `${secretEvents} historical config.set event(s) hold a plaintext secret (decision_model_llm_token) — doctor --fix redacts them; prefer AI_GATEWAY_API_KEY over config for credentials`
+        : configRows.length === 0 ? "no overrides (all defaults)" : `${configRows.length} override(s), all valid`,
     });
+  } else if (secretEvents) {
+    checks.push({ name: "config_secret_events", status: "warn", detail: `${secretEvents} historical config.set event(s) hold a plaintext secret — doctor --fix redacts them` });
   }
 
   // ── 7. Stale lock check ──
@@ -610,6 +617,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         } catch { /* best-effort per event */ }
       }
       if (marked) fixes.push(`write_integrity: ${marked} ${spec.label} phantom event(s) marked reconciled (audit trail kept)`);
+    }
+    // #150: redact plaintext secrets left in config.set events (event row kept)
+    {
+      const n = redactSecretEvents(db);
+      if (n) fixes.push(`config: ${n} historical secret value(s) in config.set events redacted (audit rows kept)`);
     }
     if (fixes.length) {
       for (const f of fixes) ok(ctx, `  fixed: ${f}`);
