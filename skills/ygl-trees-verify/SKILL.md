@@ -8,7 +8,7 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
@@ -41,8 +41,10 @@ ygl-trees verify submit --title "报销规范 v1" --text ./规范.md
 # → material_id（正文+附件各带 sha256 冻结；同内容重跑幂等返回同一 id）
 ygl-trees verify submit --title t --text - --attach ./样本.csv      # 附件走 blob 仓 {sha256} 引用
 
-ygl-trees verify prepare <material-id>          # rc=0 仅当 ready；P1/P2 阻断、灰带进 open
-ygl-trees verify prepare <material-id> --draft  # 无损试跑：照构造但**不冻结** spec 版本
+ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite>
+                                                # rc=0 仅当 ready；P1/P2 阻断、灰带进 open
+ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --draft
+                                                # 无损试跑：照构造但**不冻结** spec 版本
 ygl-trees verify trace <spec-id>                # 构造追溯：清单/判据↔检查器表/盲审与红队结论（只读）
 
 ygl-trees verify run <spec-id> --db snapshot.sqlite   # FAIL 也是 rc=0，看 overall/summary
@@ -172,8 +174,9 @@ ygl-trees verify list --unarchived                   # 找漏归档的 run
 ## 5. 封包 + 签名（认表不认报文）
 
 ```bash
-ygl-trees verify signature init            # 生成工作区密钥表（seed 在 keys/ 下，文件权限自检）
-ygl-trees verify signature <sealed-binary> [--expect-key <hex|file>]
+# 可信密钥表由发布负责人维护（运维资产，CLI 不生成）：--keys <file> > $YGL_VERIFY_KEYS >
+# $YGL_HOME/verify/keys/signing-keys.json；格式与轮换见 docs/verify-signing.md
+ygl-trees verify signature <sealed-binary> [--keys <file>] [--expect-key <hex|file>]
 ygl-trees verify register <sealed-binary>  # footer 链 → registrations/ + binaries/
 ```
 
@@ -239,7 +242,7 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 |---|---|
 | `prepare` rc=1 但没说错在哪 | 看 `--json` 的 `open[]`/`blocking[]`；P1/P2 阻断会点名字段 |
 | `run` 报 `no such table` | 快照库不对/没建表——`--db` 要给**真快照**不是主库 |
-| 报告 `overall=ERROR` 且 agent 检查器全错 | 网关凭证没配：`AI_GATEWAY_API_KEY` / `config decision_model_llm_token` / `~/.vercel.ai-gateway.env` |
+| 报告 `overall=ERROR` 且 agent 检查器全错 | 网关凭证没配：环境变量 `AI_GATEWAY_API_KEY` 或 `~/.vercel.ai-gateway.env`（config 键 `decision_model_llm_token` 也会被读，但不推荐存凭证，见 eval-gates §5） |
 | 归档两次不同字节 | 报告里有非确定性字段（时间/路径）——先跑 `self-check` 的归档环 |
 | `verify archive verify` 失败 | 先看是 footer 链、文件树哈希还是报告哈希断；`--json` 给逐环 |
 | WebUI 上传 403 | 上传门没开（非回环地址），显式设 `YGL_VERIFY_ALLOW_UPLOAD=1` 或走 CLI `--attach` |

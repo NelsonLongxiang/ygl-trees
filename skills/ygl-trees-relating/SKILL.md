@@ -6,7 +6,7 @@ description: >-
   节点↔artifact/spec/design（产出）。rel 词汇表与方向语义；防止"两条平行流水线"反模式。
   触发词：关联、挂接、rel、evidenced-by、decided-by、tracked-by、关联织物、
   relation fabric、cross-linking、研究资产挂节点。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,methodology,relations,fabric
 ---
 
@@ -28,7 +28,7 @@ tags: ygl-trees,methodology,relations,fabric
 |---|---|---|
 | `evidenced-by` | 节点的实现/成立有据可查 | node → evidence / kb |
 | `decided-by` | 节点由某个决策（claim/design）裁定 | node → claim / design artifact |
-| `tracked-by` | 节点的进展由任务跟踪 | node → task artifact |
+| `tracked-by` | 节点的进展由任务跟踪 | node → task（`task:<id>`；`task add --node` 会自动挂） |
 | `derived-from` | 节点从某知识/报告衍生 | node → kb / report artifact |
 | `executes` | 节点的能力由该 SOP 承接执行（毕业协议） | node → source(tags=sop) |
 | `related` | 兜底弱关联（能起更specific的rel就别用） | 任意 |
@@ -42,7 +42,7 @@ ygl-trees rel add node:<key> artifact:<id|title> --rel tracked-by
 ygl-trees rel list --src node:<key>       # 双向过滤 + 对端显示名
 ```
 
-八类引用：`node claim evidence source query kb artifact skill`（node 裸 key 在当前树解析）。
+九类引用：`node claim evidence source query kb artifact task skill`（node 裸 key 在当前树解析）。
 404→rc1、坏类型→rc2、幂等 duplicate→rc0。
 
 ## 4. 何时挂（决策树）
@@ -55,5 +55,5 @@ ygl-trees rel list --src node:<key>       # 双向过滤 + 对端显示名
 
 ## 5. 消费面
 
-WebUI 节点详情面板 related 区（React 与内嵌 dashboard 都有）；`rel list` CLI；未解锁节点挂上
+WebUI（React 客户端，`webui serve`）节点详情面板 related 区；`rel list` CLI；未解锁节点挂上
 evidenced-by 后，检阅者能直接看到"它还差什么证据"。

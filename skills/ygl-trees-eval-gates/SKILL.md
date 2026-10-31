@@ -7,7 +7,7 @@ description: >-
   AI Gateway）。三态映射 P≥0.7 通过 / P≤0.4 未通过 / 灰带 pending。离线安全：无凭证回落 pending。
   触发词：决策模型、布尔判定、多选、评分、evaluation、P(true)、灰带、gray band、pending、
   eval gate、语义门槛、quest 条件、AI 判定、jev、gateway、choice、score。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,eval,gate,decision-model,choice,score
 ---
 
@@ -23,16 +23,16 @@ value 写判定问题（与上下文字面对齐，模型严格按字面读、�
 
 ```bash
 # 布尔：P(true) 三态
-ygl-trees node cond gate-node --name quest_done --kind quest --op eval \
+ygl-trees node cond add gate-node --name quest_done --kind quest --op eval \
            --value "前置任务已完成且上下文满足门槛吗"
 
 # 多选一：期望答案的概率走同一三态（0.26.0）
-ygl-trees node cond gate-node --name team_pick --kind quest --op eval-choice \
+ygl-trees node cond add gate-node --name team_pick --kind quest --op eval-choice \
            --value "该派哪个团队处理" \
            --options "proc=采购:ERP与供应商, ops=物流:账单核对" --answer proc
 
 # 等级评分：score∈[0,N-1] 概率加权均值，±1 灰带（0.26.0）
-ygl-trees node cond gate-node --name maturity --kind quest --op eval-score \
+ygl-trees node cond add gate-node --name maturity --kind quest --op eval-score \
            --value "实现成熟度如何" \
            --levels "原型:仅演示, 可用:有测试, 成熟:有用户" --min-score 2
 
@@ -69,12 +69,16 @@ claim（text+status+confidence）、evidence（quote 截 120 字）、kb/source�
 **快照回显（0.83）**：`node can <key> --eval` 的输出把本次吃到的 attachments 打回来——`--json` 的
 `eval_attachments[]` + 人类视图 `attachments ×N:` 逐条；P 值依据可复现，不必翻库。
 
-## 5. 凭证与端点（优先级：config > 环境变量/文件 > 默认网关）
+## 5. 凭证与端点（解析优先级：config > 环境变量 > 文件 > 默认网关）
 
-- **config 优先**：`ygl-trees config set decision_model_llm_token <t>` 与
-  `config set decision_model_llm_api_base <url>`（api_base 给主机名自动补
+- **推荐放凭证的地方**：环境变量 `AI_GATEWAY_API_KEY`，或 `~/.vercel.ai-gateway.env`
+  （`token=...`，vck_ 前缀，文件权限收紧到本人）。凭证由用户自己配置，**不写进命令行参数**
+  （会进 shell 历史）。
+- **不推荐** `config set decision_model_llm_token`：它把凭证存进工作区数据库的 config 表，
+  会随 `db export` 备份、`db sync pg` 镜像一起外流。已经这样存过的，用 `config reset
+  decision_model_llm_token` 删掉，改用环境变量。
+- 端点：`config set decision_model_llm_api_base <url>`（不含凭证；给主机名自动补
   `/v4/ai/evaluation-model`，也可给完整端点——代理/自托管网关用它接管）
-- 回落：环境变量 `AI_GATEWAY_API_KEY` → `~/.vercel.ai-gateway.env`（`token=...`，vck_ 前缀）
 - **离线安全**：无 token/网络失败 → 该条件 pending（`no evaluator configured`）、rc=0——
   评估器是增强不是依赖，别把 pending 当失败重试
 - `YGL_EVAL_OFFLINE=1` 强制离线（测试/demo 确定性；优先于 config 的 eval.offline）
