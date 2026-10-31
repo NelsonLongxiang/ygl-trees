@@ -168,7 +168,8 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
 ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec → report
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
   submit/prepare meta gate: [--meta-repo <dir> | --require-meta | --no-meta(记 meta.bypass)]  #81 可发现性
-  prepare <material-id> [--draft]      extract → blind self-review → freeze spec (rc=0 only when ready)
+  prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--draft]
+                                       extract → blind self-review → freeze spec (rc=0 only when ready)
   tree prepare <material-id> [--pinned <node>=<sha256>]  freeze recursive tree spec (A1: cycles/empty/depth/operator checks);材料文本必须是纯 JSON 树对象（勿 markdown 包裹）
   tree run <tree-spec-id> [--db <path>|--db <node>=<path>]  post-order run; leaves real run+archive (--no-archive skips)
   tree report <tree-run-id> | tree trace <tree-spec-id>
@@ -209,9 +210,13 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   promote <noteId> [--name]  turn a note into a reusable skill
 
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
+  add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] [--force] -- <command>   options before --
+  list | run <jobId|title> | tick | enable <id> | disable <id> | logs
+
 ${paint(C.bold, "patrol", color)}       boundary assertions + disposition queue (S1|S2|S3)
-  add <title> -- <command> [--every <min>] [--at "YYYY-MM-DD HH:MM"]
-  list | run [--name <check>] | tick | enable <id> | disable <id> | logs
+  add <name> --sql "SELECT …" [--severity S1|S2|S3] [--desc ".."]   violating rows = findings
+  list | rm <name> | run [--name <check>] | findings [--status <status>]
+  ack|fp|fix <finding-id> [--note ".."]   disposition (fp = allowlist lane)
 
 ${paint(C.bold, "tree / node", color)}   tech-tree node model
   tree new <name> [--project p]      create a tree (nodes live in it)

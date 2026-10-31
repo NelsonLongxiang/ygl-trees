@@ -236,22 +236,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           : path.join(process.cwd(), ".agents", "skills");
       }
 
-      // Find source skills directory (probe upward from cwd, same as repoRoot)
-      let skillsDir: string | null = null;
-      for (let dir = process.cwd(), i = 0; i < 6; i++, dir = path.dirname(dir)) {
-        const candidate = path.join(dir, "skills");
-        if (fs.existsSync(candidate)) {
-          const entries = fs.readdirSync(candidate).filter((e: string) =>
-            fs.existsSync(path.join(candidate, e, "SKILL.md"))
-          );
-          if (entries.length > 0) {
-            skillsDir = candidate;
-            break;
+      // Find source skills directory: probe upward from cwd (a repo checkout),
+      // then from this module (#148: the npm package ships skills/ next to
+      // dist/, so an installed CLI links its own skills from any cwd).
+      const probe = (start: string): string | null => {
+        for (let dir = start, i = 0; i < 6; i++, dir = path.dirname(dir)) {
+          const candidate = path.join(dir, "skills");
+          if (fs.existsSync(candidate)) {
+            const entries = fs.readdirSync(candidate).filter((e: string) =>
+              fs.existsSync(path.join(candidate, e, "SKILL.md"))
+            );
+            if (entries.length > 0) return candidate;
           }
         }
-      }
+        return null;
+      };
+      const skillsDir = probe(process.cwd()) ?? probe(__dirname);
       if (!skillsDir) {
-        bad(ctx, `no skills/ directory found (probed upward from ${process.cwd()})`);
+        bad(ctx, `no skills/ directory found (probed upward from ${process.cwd()} and the installed package)`);
         return 1;
       }
 
