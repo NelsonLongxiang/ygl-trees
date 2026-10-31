@@ -40,7 +40,7 @@ import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../..
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
-import { appendRegistry, ARCHIVE_WITH, buildArchive, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
+import { appendRegistry, ARCHIVE_WITH, buildArchive, foldOverall, foldSummary, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
 import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
@@ -419,21 +419,13 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
         const childNodes = nodes.filter((x) => (n.children ?? []).includes(x.node_id));
         const vu = childNodes.map((c) => ({
           id: c.node_id, role: "assert" as const,
-          // NEUTRALIZED is tree-only; fold sees ERROR so it can never look PASS.
-          verdict: c.verdict === "NEUTRALIZED" ? "ERROR" : c.verdict,
+          // Tree-only states remain in the tree envelope; ordinary VUs use the archive fold.
+          verdict: ["PASS", "FAIL", "NEEDS-MATERIAL"].includes(c.verdict) ? c.verdict : "ERROR",
           severity: "S3" as const, source_clause: "tree child " + c.node_id,
           checker_type: "command" as const,
         }));
-        const hasFail = vu.some((v) => v.verdict === "FAIL");
-        const hasErr = vu.some((v) => v.verdict === "ERROR");
-        const hasPass = vu.some((v) => v.verdict === "PASS");
-        const overall = hasFail ? "FAIL" : hasErr ? "ERROR" : hasPass ? "PASS" : "NEEDS-MATERIAL";
-        const summary = {
-          pass: vu.filter((v) => v.verdict === "PASS").length,
-          fail: vu.filter((v) => v.verdict === "FAIL").length,
-          needs_material: vu.filter((v) => v.verdict === "NEEDS-MATERIAL").length,
-          error: vu.filter((v) => v.verdict === "ERROR").length,
-        };
+        const summary = foldSummary(vu);
+        const overall = foldOverall(summary);
         const gRunId = "run_" + short(sha256(spec.tree_spec_id + "|" + n.id + "|" + Date.now().toString(36) + Math.random().toString(36)));
         const gReport: any = {
           contract_version: "1.2", run_id: gRunId, spec_id: gSpecId, started: now, finished: now,
