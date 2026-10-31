@@ -265,7 +265,7 @@ echo "── 5j. 0.82.1 预测生命周期护栏（真实用户报告：link 抢
 # 预测 claim 挂证据不再自动晋升 —— 退出跟踪表的唯一路径是显式 resolve
 # #72: deadline computed at run time (today + 30 days) — the prediction stays pending forever
 DEMO_DL=$(date -d "+30 days" "+%Y-%m-%d" 2>/dev/null || date -v+30d "+%Y-%m-%d" 2>/dev/null || echo "2099-12-31")
-PRED=$($Y research claim add "[预测·7天] ${DEMO_DL} 前 demo 判据树≥1" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
+PRED=$($Y research claim add "[预测·7天] ${DEMO_DL} 前 树≥1——demo 预测生命周期护栏" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
 DEVSRC=$($Y research source list --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s)[0].id)})")
 DEV=$($Y research evidence add "$DEVSRC" --quote "demo evidence for prediction guard" --json -p techtree | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.row?r.row.id:r.id)})")
 PL1=$(YGL_EVAL_OFFLINE=1 $Y research claim link "$PRED" "$DEV" --stance supports --json 2>&1)

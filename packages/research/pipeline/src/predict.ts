@@ -70,51 +70,36 @@ export async function loadStateSource(src: string, fetchImpl: typeof fetch = fet
   } catch { return null; }
 }
 
-/** Locally measurable criterion matchers. Null → manual.
- *  Precedence: 树/kb workspace counts (local truth) → any `key≥N` whose key
- *  exists in the optional --state counter map (external truth, 0.79.1). */
+/** Complete key≥integer clauses, optionally joined by a uniform 或/且 operator.
+ * Workspace 树/kb take precedence over exact/shallowest-suffix --state counters.
+ * Any prose, fraction or unmeasurable clause keeps the whole criterion manual. */
 export function measureCriterion(crit: string, db: any, state?: Record<string, number> | null): Measure {
+  const operators = [...crit.matchAll(/\s+(或|且)\s+/g)].map(m => m[1]);
+  if (new Set(operators).size > 1) return null;
+  const metrics = crit.trim().split(/\s+(?:或|且)\s+/).map(term =>
+    term.match(/^([\w\u4e00-\u9fa5][\w\u4e00-\u9fa5.-]*)\s*≥\s*(\d+)$/));
+  if (metrics.some(m => !m || !Number.isSafeInteger(+m[2]))) return null;
   const parts: string[] = [];
   const hits: boolean[] = [];
-  const tree = crit.match(/树\s*≥\s*(\d+)/);
-  if (tree) {
-    const n = db.get("SELECT COUNT(*) c FROM trees").c;
-    parts.push(`trees=${n}/${tree[1]}`);
-    hits.push(n >= +tree[1]);
-  }
-  const kb = crit.match(/kb\s*≥\s*(\d+)/);
-  if (kb) {
-    const n = db.get("SELECT COUNT(*) c FROM kb_notes").c;
-    parts.push(`kb=${n}/${kb[1]}`);
-    hits.push(n >= +kb[1]);
-  }
-  if (state) {
-    const seen = new Set<string>();
-    for (const m of crit.matchAll(/([\w\u4e00-\u9fa5][\w\u4e00-\u9fa5.-]*)\s*≥\s*(\d+)/g)) {
-      const key = m[1], need = +m[2];
-      if (key === "树" || key === "kb" || seen.has(key)) continue;
-      // 0.79.1: suffix match — a bare criterion key (`y_imported`) binds to a
-      // nested flattened state key (`counts.y_imported`) so users don't have
-      // to know the state file's shape. Exact match wins; else the SHALLOWEST
-      // `.*.<key>` (fewest dots) keeps resolution deterministic.
-      let stateKey: string | null = key in state ? key : null;
-      if (!stateKey) {
-        const cands = Object.keys(state).filter((sk) => sk.endsWith("." + key) && Number.isFinite(state[sk]));
-        if (cands.length) {
-          cands.sort((a, b) => (a.split(".").length - b.split(".").length) || a.localeCompare(b));
-          stateKey = cands[0];
-        }
+  for (const m of metrics) {
+    const key = m![1], need = +m![2];
+    if (key === "树" || key === "kb") {
+      const n = db.get(key === "树" ? "SELECT COUNT(*) c FROM trees" : "SELECT COUNT(*) c FROM kb_notes").c;
+      parts.push((key === "树" ? "trees" : "kb") + "=" + n + "/" + need);
+      hits.push(n >= need);
+    } else {
+      let stateKey: string | null = state && Object.hasOwn(state, key) ? key : null;
+      if (!stateKey && state) {
+        const candidates = Object.keys(state).filter(sk => sk.endsWith("." + key) && Number.isFinite(state[sk]));
+        candidates.sort((a, b) => (a.split(".").length - b.split(".").length) || a.localeCompare(b));
+        stateKey = candidates[0] ?? null;
       }
-      if (!stateKey || !Number.isFinite(state[stateKey])) continue;
-      seen.add(key);
-      parts.push(`${key}=${state[stateKey]}/${need}${stateKey !== key ? ` (${stateKey})` : ""}`);
+      if (!state || !stateKey || !Number.isFinite(state[stateKey])) return null;
+      parts.push(key + "=" + state[stateKey] + "/" + need + (stateKey !== key ? " (" + stateKey + ")" : ""));
       hits.push(state[stateKey] >= need);
     }
   }
-  if (!parts.length) return null;
-  const hasOr = crit.includes(" 或 ");
-  const hit = hasOr ? hits.some(Boolean) : hits.every(Boolean);
-  return { actual: parts.join(" · "), hit };
+  return { actual: parts.join(" · "), hit: operators[0] === "或" ? hits.some(Boolean) : hits.every(Boolean) };
 }
 
 /** npm version count since a date — registry probe with a hard 3s timeout,
@@ -160,8 +145,9 @@ export async function auditPredictions(inp: AuditInput): Promise<PredictionAudit
     const resolved = c.status === "supported" || c.status === "refuted";
     let measure = measureCriterion(criterion, inp.db, inp.state);
     // npm version criterion → registry probe (opt-out for offline/tests)
-    if (!measure && /npm 再发\s*≥\s*(\d+)\s*个版本/.test(criterion)) {
-      const need = +criterion.match(/npm 再发\s*≥\s*(\d+)/)![1];
+    const npmMetric = criterion.match(/^npm 再发\s*≥\s*(\d+)\s*个版本$/);
+    if (!measure && npmMetric && Number.isSafeInteger(+npmMetric[1])) {
+      const need = +npmMetric[1];
       const base = c.text.match(/基线\s*\S*?@?(\d{4}-\d{2}-\d{2})/);
       const since = base ? base[1] : (c.created || today).slice(0, 10);
       if (inp.npmProbe !== false) {

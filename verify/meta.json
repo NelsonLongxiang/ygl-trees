@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "358062102be7f547b2e8985aa0b0c7aa1901873fda422ab78d1c8fc09dabdee8",
+      "sha256": "82f4a5978e358649d74b163e661e5485e3d3ab84490d7dbf2bda6bd8f71d855a",
       "role": "test"
     },
     {
@@ -1077,6 +1077,14 @@
       "reason": "#135: one goldenSpecs definition shared by goldenReport and actual goldenArgv",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-30T19:47:07.250Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "358062102be7f547b2e8985aa0b0c7aa1901873fda422ab78d1c8fc09dabdee8",
+      "new_sha256": "82f4a5978e358649d74b163e661e5485e3d3ab84490d7dbf2bda6bd8f71d855a",
+      "reason": "#139: lifecycle demo uses a complete workspace metric; keep pending/nonresolved assertion unchanged",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-10-31T02:40:25.708Z"
     }
   ],
   "kind": "engine",
