@@ -25,6 +25,10 @@ HTTP MCP snapshots its startup environment and derives a separate child environm
 
 Tree group reports use ordinary four-value VUs: tree-only `STALE`, `INFRA_BLOCKED` and `NEUTRALIZED` project to `ERROR`. Their summary and overall share the archive verifier’s existing `foldSummary`/`foldOverall` implementation. The tree envelope retains its original five-value verdict, leaf `report_verdict` is unchanged, and business FAIL keeps its precedence. Old report/archive bytes are never rewritten; inconsistent historical archives still fail verification.
 
+## Verifier CLI list counts
+
+`verify list` counts every report for each spec while reading the latest report without removing it from the in-memory list. `last_run` and `last_overall` keep the existing finished-time ordering and stable file-order tie behavior; no-report rows return zero runs and empty latest fields. Listing does not rewrite spec/report bytes. The CLI count fix does not change the HTTP paging/index contract.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
