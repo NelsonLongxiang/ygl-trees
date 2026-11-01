@@ -22,7 +22,7 @@ version: 1.0.0
 **问题**：预测发出去就忘，永远不知道准不准。
 **模式**：到期 ≤3 天 ALERT；硬判=人工 resolve，不提前不拖后。
 - 断言格式 `[预测·N天] <日期> 前 observable 事件`（判据必须可观测可计数）。
-- `predict audit --due` 巡检（job 到期提醒）；`predict list --all` 看全表（0.90 起 outcome/brier/settler 投影）。
+- `research predict audit --due` 巡检（job 到期提醒）；`research predict list --all` 看全表（0.90 起 outcome/brier/settler 投影）。
 - 结算 note 三段式：`outcome=1|0, brier=0.xx, settler=<席位>`——校准曲线 SQL 直出。
 - **人审铁律**：机器不代结算。模型 eval 门过 ≠ 解锁（事实性走证据，语义性才用 eval 门）。
 

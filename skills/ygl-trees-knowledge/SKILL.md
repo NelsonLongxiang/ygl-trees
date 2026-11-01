@@ -6,7 +6,7 @@ description: >-
   技能命中。让研究报告沉淀为可被下次任务自动命中的技能。
   触发词：知识库、knowledge、kb、笔记、note、批量导入、import、search、检索、promote、
   技能、skill、复用、agent match。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,knowledge,kb,skill,reuse
 ---
 
@@ -30,9 +30,12 @@ ygl-trees kb link <a> <b> --rel related
 ## 2. 检索（中文原生）
 
 ```bash
-ygl-trees kb rm <id>
-db obsidian [dir]（导出为 Obsidian vault）（删除笔记）
-kb search（--eval 语义重排：决策模型逐条评估相关性） "闭包表 索引"
+ygl-trees kb search "闭包表 索引"            # 中文分词检索（标题加权）
+ygl-trees kb search "闭包表 索引" --eval     # 语义重排：决策模型逐条评估相关性（无凭证回落原序）
+ygl-trees kb list
+ygl-trees kb show <id>
+ygl-trees kb rm <id>                         # 删除笔记
+ygl-trees db obsidian [dir]                  # 导出为 Obsidian vault
 ```
 
 排序语义：命中 token 数降序 → **标题含 token 优先** → bm25。写查询词时把最独特的关键词

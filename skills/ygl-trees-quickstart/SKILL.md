@@ -10,7 +10,7 @@ description: >-
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle、
   MCP、mcp、read、write、verify、doctor、domain、action、工具、tool。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -96,10 +96,14 @@ MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排�
 ## 1. 冷启动三步
 
 ```bash
-node dist/apps/cli/src/bin.js db init           # 建工作区（$YGL_HOME，默认 ~/.ygl-trees）
-node dist/apps/cli/src/bin.js project new <name> -q "<研究问题>"
-node dist/apps/cli/src/bin.js agent brief       # 我在哪、有什么、下一步做什么（从这里开始）
+npm i -g ygl-trees                              # 或免安装：npx ygl-trees <group> <action>
+ygl-trees db init                               # 建工作区（$YGL_HOME，默认 ~/.ygl-trees）
+ygl-trees project new <name> -q "<研究问题>"
+ygl-trees agent brief                           # 我在哪、有什么、下一步做什么（从这里开始）
 ```
+
+在本仓库源码里开发时，先 `pnpm build`，再用 `node dist/bundle/bin.cjs …`（发布产物）或
+`node dist/apps/cli/src/bin.js …`（tsc 开发树）代替 `ygl-trees`。
 
 MCP 等价：`write {domain:"project", action:"new", name:"...", question:"..."}` → `read {domain:"agent", action:"brief"}`
 
@@ -117,7 +121,10 @@ ygl-trees skill link              # 连接到 ./.agents/skills/（DSH/Claude 等
 ygl-trees skill link --global    # 连接到 ~/.agents/skills/（全局）
 ```
 
-## 2a. v2 新命令（0.72+）
+`skill link` 从当前目录向上找 `skills/`：在仓库检出里运行；从 npm 安装时，技能随包在
+`$(npm root -g)/ygl-trees/skills/`，先 `cd` 到包目录再 `skill link --global`。
+
+## 2a2. v2 新命令（0.72+）
 
 ```bash
 ygl-trees agent ask "<问题>"       # 自然语言路由（projects/search/tree/health/...）
@@ -135,13 +142,13 @@ ygl-trees llms --json              # 结构化 JSON
 ## 2b. 运维命令速查
 
 ```bash
-ygl-trees doctor           # 10 项健康检查（含锁 pid 存活、幻影写入对账）
+ygl-trees doctor           # 健康检查（0.118.0 共 16 项，含锁 pid 存活、幻影写入对账；--json 看全部项名）
 ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁 + 幻影事件标记 reconciled；活 holder 不动）
 ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 回显其命令行并拒绝，--force 强清）
 ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
 ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
 ygl-trees webui serve --help   # 只打印用法不启服务（0.79.1 短路）
-ygl-trees webui export --out snap.json  # 服务形态快照（0.88：HTML 仪表盘退役，React 唯一前端）
+ygl-trees webui export --out snap.json  # 服务形态 JSON 快照（0.88：HTML 仪表盘退役，React 唯一前端）
 ```
 
 PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——非整数值会**点名 table.column rowid=N** 而非迁移时才爆。
@@ -156,7 +163,7 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 - `research claim link <cid> <sid> --by-source`：来源下全部证据一次挂齐；误传来源 id 会列出其证据 id
 - `research source add --query` 引用不存在 → 整体拒绝 rc=1 零落地（0.83 半写防护）
 - `--help` 任意深度打组帮助 rc=0（如 `kb add --help`）；job 子命令无锁启动（`ygl-trees …` 型任务命令不再与 runner 死锁）
-- 到期巡检范式：`job add "到期巡检" --every 1440 -- ygl-trees node cond --due --days 30`
+- 到期巡检范式：`job add "到期巡检" --every 1440 -- ygl-trees node cond --due --days 30`（选项都在 `--` 之前）
 
 ## 2c. DB 锁行为（0.68 → 0.79.1）
 
@@ -169,7 +176,7 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 ## 3. 健康检查与任务
 
 ```bash
-ygl-trees doctor                     # 10 项健康检查（schema/索引/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入→warn）
+ygl-trees doctor                     # 16 项健康检查（schema/索引/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入/技能版本…）
 ygl-trees task add "<标题>"           # 建任务（todo 起步）
 ygl-trees task add "验证 X" --node <tree>/<key>   # 建任务并挂树节点（tracked-by，0.81）
 ygl-trees task list                  # 按状态分组
@@ -185,7 +192,7 @@ ygl-trees rel add node:<key> artifact:<id> --rel tracked-by
 ygl-trees rel list --src node:<key>  # 双向过滤 + 对端显示名
 ```
 
-八类引用：`node claim evidence source query kb artifact skill`。
+九类引用：`node claim evidence source query kb artifact task skill`。
 详细方法论见 `ygl-trees-relating` 技能。
 
 ## 5. 用户插件（业务域扩展位）
@@ -204,7 +211,7 @@ ygl-trees plugin remove <name>
 
 ```bash
 ygl-trees webui serve --port 8642   # React 客户端（xyflow 树 + 时间轴 + 产出渲染）
-ygl-trees webui export --out d.html # 零依赖单文件导出（离线可开）
+ygl-trees webui export --out d.json # 服务形态 JSON 快照（不是可直接打开的 HTML；可视化走 webui serve）
 ```
 
 构建 React 客户端：`pnpm --filter @ygl/web build`。设计系统：仓库根 `DESIGN.md`。
@@ -215,17 +222,28 @@ ygl-trees webui export --out d.html # 零依赖单文件导出（离线可开）
 ygl-trees db export <file.sql>          # 全部数据表 + 行数摘要
 ygl-trees db sync pg <url>              # 可刷新 PK-only 镜像
 ygl-trees db migrate pg <url> [--fresh] # 一次性完整保真迁移
-ygl-trees job add <title> -- "<cmd>" --every 60   # cron 每分钟跑 job tick
-ygl-trees job add "闸门探针" -- "node probe.mjs" --every 30   # 树节奏化监控：任意命令皆可（0.79.1 实证）
+ygl-trees job add <title> --every 60 -- <cmd>      # 选项写在 -- 之前；cron 每分钟跑 job tick
+ygl-trees job add "闸门探针" --every 30 -- node probe.mjs   # 树节奏化监控：任意命令皆可（0.79.1 实证）
 ```
 
-`db init` 仅创建 SQLite 工作区；PG `YGL_DB_URL` + init 在 home 写前 rc2 拒绝；`--backend` 未实现、未知 init 参数拒绝。PG 从独立 SQLite 源显式 migrate 后直连，不在 PG home 运行 init。禁止双后端同写：SQLite 默认；B8 首批允许在**显式迁移好的 PG 库**上执行 `kb add` / `project new`，`kb list/show` 与 `project list/show` 是最小读回面。凭证仅经 `YGL_DB_URL` 环境变量（由用户配置，不放 argv），并提供 `YGL_SESSION` 或 `DSH_SESSION_ID`。使用独立 `YGL_HOME`，业务写不创建 SQLite 文件。首次连接会校验/记录 PG `meta.backend_binding` 并发布本地无凭证绑定指针；目标冲突、PG 不可达、会话缺失一律拒绝，不回退 SQLite。批2还包括 `research source/evidence/claim add/list/show`（既有 file/batch 语义原样）与 session-only `project use`（返回 prior、发事件、归档拒选、--global 拒绝）。项目读取按 flag→env→session→唯一项目，不读全局最近项目；多项目缺选择 rc2。`YGL_PG_URL` 仅给 sync/migrate 出口，不是业务入口别名。claims 两后端原本均无全文检索，本批不新增；批3开放query add/attach/list、claim link/unlink/resolve/unresolve、source/evidence rm、kb link/import；预测不自动结算/人工锁/updated/recalculated镜像原语义，resolve命令不是agent仲裁授权。删除默认保护，force只删精确锥；import先预检再整批事务。PG缺所需列点名拒绝，不自动ALTER；最大ts仲裁组NULL seq歧义拒绝，不猜顺序。query attach成功/重复在SQLite和PG均为单JSON（query/source、重复duplicate:true），rc0，人类面保持原文字。其他未列mutation、project rm/restore/archive/global与verify-on-PG仍拒绝/明确skip，verify保持SQLite快照链。
+**PostgreSQL 直连（B8，详见 `docs/pg-compat.md`）要点：**
+
+- `db init` 只建 SQLite 工作区；设了 PG `YGL_DB_URL` 时 init 在写 home 前 rc2 拒绝；`--backend` 未实现，未知 init 参数拒绝。
+- 路径：从独立 SQLite 源显式 `db migrate pg` 后再直连；不在 PG home 里跑 init。禁止双后端同写，SQLite 默认。
+- 凭证只经 `YGL_DB_URL` 环境变量（用户自己配，不放 argv）；必须有 `YGL_SESSION` 或 `DSH_SESSION_ID`；用独立 `YGL_HOME`，业务写不建 SQLite 文件。`YGL_PG_URL` 只给 sync/migrate 出口，不是业务入口别名。
+- 首次连接校验/记录 PG `meta.backend_binding` 并写本地无凭证绑定指针；目标冲突、PG 不可达、会话缺失一律拒绝，不回退 SQLite。
+- 已开放的写读面：
+  - 批1：`kb add` / `project new`；读回 `kb list/show`、`project list/show`。
+  - 批2：`research source/evidence/claim add/list/show`（file/batch 语义原样）；session-only `project use`（返回 prior、发事件、归档拒选、`--global` 拒绝）。
+  - 批3：`research query add/attach/list`、`research claim link/unlink/resolve/unresolve`、`research source/evidence rm`、`kb link/import`。
+- 语义保持：项目读取 flag→env→session→唯一项目（不读全局最近项目，多项目缺选择 rc2）；claims 两后端均无全文检索；预测不自动结算；`research claim resolve` 不是 agent 仲裁授权；删除默认保护，`--force` 只删精确锥；import 先预检再整批事务；`research query attach` 成功/重复在两后端都是单 JSON（重复带 `duplicate:true`，rc0）。
+- 拒绝而不猜：PG 缺所需列点名拒绝（不自动 ALTER）；最大 ts 仲裁组 NULL seq 歧义拒绝；其他未列 mutation、`project rm/restore/archive/global` 与 verify-on-PG 一律拒绝/明确 skip（verify 保持 SQLite 快照链）。
 
 ## 8. 性能基准
 
 ```bash
 pnpm bench               # 7 席（startup/写入/检索/索引），结果 tmp/bench-results.json
-pnpm build:bundle        # tsdown 单文件 bundle（~323KB，10% 启动提速）
+pnpm build:bundle        # tsdown 单文件 bundle（dist/bundle/bin.cjs，0.118.0 约 0.9MB；体积受 pnpm ratchet 棘轮约束）
 ```
 
 ## 9. 临时文件铁律
@@ -244,7 +262,7 @@ ygl-trees config reset eval.pass_threshold
 
 本技能讲"怎么动"；**"什么时候动"看 `ygl-trees-lifecycle` 技能**——事件→动作触发表
 （树侧何时 unlock/add/link、研究侧何时写 source/evidence/claim/kb/task）、节奏纪律
-（改结构后必 `node index`+`validate`、解锁后必挂证据、会话收口前必 `agent brief`+`doctor`）、
+（加删节点/删边/改条件后 `node index`+`validate`、解锁后必挂证据、开场 `agent brief`、收口 `doctor`）、
 以及漂移反模式。开场先 `agent brief`，收口前 `doctor`。
 
 ## 10c. 冻结契约五项（0.55 定契）
@@ -257,12 +275,12 @@ ygl-trees config reset eval.pass_threshold
 | ④ --json 通道 | 成功+失败都可整体 `JSON.parse` | contract 5 |
 | ⑤ flag 校验 | 裸 flag / 枚举非法 → rc=2，不落库 | contract 6 |
 
-`pnpm contract:audit` 84 项机械化断言以上全部。
+`pnpm contract:audit` 机械化断言以上全部（项数以 README 收口记录为准）。
 
 ## 11. 常见坑
 
-- 数据库打不开报 "database is locked"：可能残留 `<db>.lock` 目录
+- 数据库打不开报 "database is locked"：可能残留 `<db>.ygllock`（`ygl-trees db unlock` 清理，`doctor --fix` 也会清死 pid 锁）
 - `job --force` 必须在 `--` 之前（之后都算命令内容）
 - 测试工作区：`YGL_HOME=<dir>` 指到临时位置
 - Windows 下 `.cmd` shim 需 shell 解析（plugin install 已处理）
-- CLI 入口是 `dist/apps/cli/src/bin.js`（自执行，rc 契约在此）；`dist/bundle/bin.cjs` 是 bundle 版（更快）
+- CLI 入口：安装后就是 `ygl-trees`（指向发布产物 `dist/bundle/bin.cjs`）；仓库开发树另有 `dist/apps/cli/src/bin.js`（tsc 产物，rc 契约同源）
