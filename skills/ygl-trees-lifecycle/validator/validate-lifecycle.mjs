@@ -3,7 +3,7 @@
 // 把技能 §1/§2 触发表、§3 节奏纪律、§5 反模式编码为可执行检查。
 // 快照隔离读检（#65，1.2.0）：默认先把 YGL_HOME 整体复制到抛弃式临时目录，所有 CLI 调用
 // （含 node validate 的闭包索引重建与 cmd.run 事件）只写副本——被检工作区零写入。
-// --no-snapshot 显式退回直检模式（会向被检工作区写 cmd.run 事件，仅诊断用）。
+// --no-snapshot 显式退回直检模式（会向被检工作区写 cmd.run 事件，且 node validate 会重建其索引，仅诊断用）。
 // 数据全部经官方 CLI --json 读取，不直接开 SQLite。会话隔离：子进程固定 YGL_SESSION=lcv-validator。
 
 import { spawnSync } from "node:child_process";
@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const TOOL = "ygl-trees-lifecycle-validator";
 
 // ---------- 规则表（findings 的语义全部指向技能章节） ----------
@@ -26,8 +26,8 @@ const RULES = {
         fix: "research claim link <cid> <eid> --stance supports|refutes" },
   L5: { sev: "warn",  title: "状态在正文里", anti: "§5-5 状态写进正文，机器读不到",
         fix: "机器状态落库：node unlock / claim resolve --as supported|refuted|contested" },
-  L6: { sev: "error", title: "脏索引", anti: "§5-3 结构改了不重建（can/ready 按旧闭包回答）",
-        fix: "node index && node validate（本工具第一时间读 tree list 捕获，读命令可能自愈）" },
+  L6: { sev: "error", title: "脏索引", anti: "§5-3 结构改了不收尾（拓扑序/tier 过期，doctor index_freshness 常驻 warn）",
+        fix: "node index && node validate（本工具第一时间读 tree list 捕获；node validate 会重建索引）" },
   L7: { sev: "error", title: "结构破损", anti: "§5-3（环/悬空边）",
         fix: "按 node validate 的 issues 修：先加新边再删旧边，两次索引之间不跨会话" },
   L8: { sev: "info",  title: "行动项未闭环", anti: "§3 收口纪律（task todo/doing 未 done）",
@@ -44,17 +44,26 @@ let opt = { home: process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees"),
             cli: process.env.YGL_CLI || "ygl-trees", json: false, strict: false, quiet: false, rules: null, noSnapshot: false };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
-  if (a === "--home") opt.home = argv[++i];
-  else if (a === "--cli") opt.cli = argv[++i];
+  if (a === "--home") opt.home = needValue(a, argv[++i]);
+  else if (a === "--cli") opt.cli = needValue(a, argv[++i]);
   else if (a === "--json") opt.json = true;
   else if (a === "--strict") opt.strict = true;
   else if (a === "--quiet") opt.quiet = true;
   else if (a === "--no-snapshot") opt.noSnapshot = true;
   else if (a === "--rule") {
-    const parts = (argv[++i] || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const parts = needValue(a, argv[++i]).split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    const unknown = parts.filter(r => !Object.hasOwn(RULES, r));
+    if (!parts.length || unknown.length) {
+      console.error("usage error: unknown rule id " + (unknown.join(",") || "(empty)") + " — known: " + Object.keys(RULES).join(","));
+      process.exit(2);
+    }
     opt.rules = new Set([...(opt.rules || []), ...parts]);
   } else if (a === "-h" || a === "--help") { usage(); process.exit(0); }
   else { console.error("usage error: unknown arg " + a); process.exit(2); }
+}
+function needValue(flag, v) {
+  if (v === undefined || v.startsWith("--")) { console.error("usage error: " + flag + " needs a value"); process.exit(2); }
+  return v;
 }
 function usage() {
   console.log(TOOL + " " + VERSION + " — ygl-trees lifecycle 纪律巡检（快照隔离读检）");
@@ -135,7 +144,7 @@ const staleReported = new Set();
 for (const t of trees) {
   if (Number(t.dirty) > 0) {
     add("L6", "tree:" + t.name,
-      "tree list 报 dirty=" + t.dirty + "（" + t.nodes + " 节点/" + t.edges + " 边），闭包索引过期");
+      "tree list 报 dirty=" + t.dirty + "（" + t.nodes + " 节点/" + t.edges + " 边），派生索引（拓扑序/tier）过期");
     staleReported.add(t.name);
   }
 }
@@ -157,7 +166,7 @@ for (const t of trees) {
       const slot = nodesByKey[t.name + "/" + n.key];
       if (slot) slot.payload = n.payload || "";
       if (ne.parsed.index && ne.parsed.index.dirty === true && !staleReported.has(t.name)) {
-        add("L6", "tree:" + t.name, "node export 报 index.dirty=true（tree list 未及捕获，后续读已自愈一部分信号）");
+        add("L6", "tree:" + t.name, "node export 报 index.dirty=true（tree list 未及捕获）");
         staleReported.add(t.name);
         break; // 每树报一次即可
       }
@@ -286,13 +295,13 @@ for (const t of tasksById.values()) {
   if (t.status === "todo" || t.status === "doing") add("L8", "task:" + t.id, "status=" + t.status + "：" + JSON.stringify((t.title || "").slice(0, 50)));
 }
 
-// doctor 收口（放最后：读命令可能自愈部分状态，我们的 L6 信号早已落袋）
+// doctor 收口（放最后：node validate 已重建索引，我们的 L6 信号早已落袋）
 {
   const g = ygl(["doctor", "--json"]);
   if (g.parseable && Array.isArray(g.parsed)) {
     for (const c of g.parsed) {
       if (c.status === "warn") add("L10", "doctor:" + c.name, c.detail || "", { doctor_status: "warn" });
-      else if (c.status === "fail") { findings.push({ rule: "L10", severity: "error", title: RULES.L10.title + "（fail）", anti_pattern: RULES.L10.anti, target: "doctor:" + c.name, detail: c.detail || "", fix: RULES.L10.fix, doctor_status: "fail" }); }
+      else if (c.status === "fail") add("L10", "doctor:" + c.name, c.detail || "", { doctor_status: "fail", severity: "error", title: RULES.L10.title + "（fail）" });
     }
   } else instrumentErrors.push({ op: "doctor", raw: g.raw.slice(0, 200) });
 }

@@ -10,13 +10,17 @@
 node validate-lifecycle.mjs                          # 巡检默认工作区（$YGL_HOME 或 ~/.ygl-trees）
 node validate-lifecycle.mjs --home <dir>             # 指定工作区
 node validate-lifecycle.mjs --json                   # 机器读：单个 JSON 对象（findings + summary）
-node validate-lifecycle.mjs --rule L1,L6             # 只跑部分规则
+node validate-lifecycle.mjs --rule L1,L6             # 只跑部分规则（未知规则号 rc=2）
 node validate-lifecycle.mjs --strict                 # info 级发现也算失败
+node validate-lifecycle.mjs --quiet                  # 只打最后一行 RESULT
+node validate-lifecycle.mjs --no-snapshot            # 直检（诊断用：会写被检工作区，见下）
 node validate-lifecycle.mjs --cli <cmd> --help       # 换 CLI 入口 / 看全部用法
 ```
 
-零依赖，Node >= 18，Windows/Linux 通用。只读：数据全部经官方 CLI `--json` 读通道
-获取，不直接打开 SQLite，不写任何状态。
+零依赖，Node >= 18，Windows/macOS/Linux 通用。数据全部经官方 CLI `--json` 读通道获取，
+不直接打开 SQLite。默认先把整个工作区复制到系统临时目录的抛弃式快照（`lcv-snap-*`，
+退出即删）再检查，被检工作区零写入；`--no-snapshot` 直检时会写 `cmd.run` 事件，且
+`node validate` 会重建被检工作区的派生索引。
 
 ## 退出码
 
@@ -24,7 +28,7 @@ node validate-lifecycle.mjs --cli <cmd> --help       # 换 CLI 入口 / 看全�
 |---|---|
 | 0 | 干净（`--strict` 下仍允许 info 级） |
 | 1 | 存在 error/warn 级发现（`--strict` 下含 info） |
-| 2 | 无法执行检查（CLI 缺失、工作区不存在或未初始化） |
+| 2 | 无法执行检查（CLI 缺失、工作区不存在或未初始化）或用法错误（未知参数/未知规则号/缺参数值） |
 
 ## 规则表（每条发现都反查技能章节）
 
@@ -35,17 +39,19 @@ node validate-lifecycle.mjs --cli <cmd> --help       # 换 CLI 入口 / 看全�
 | L3 | warn | evidence/claim/kb 未被任何节点挂接（含"被 claim 引用但没挂树"变体） | §5-6 两条流水线 |
 | L4 | warn | 断言 sup=ref=0（0 证据链） | §5-2 姊妹形态 |
 | L5 | warn | payload/断言正文含完成性表述，机器状态却是 locked/unverified | §5-5 状态在正文里 |
-| L6 | error | 闭包索引脏（`tree list .dirty` / `node export .index.dirty`） | §5-3 改结构不重建 |
+| L6 | error | 派生索引脏（`tree list .dirty` / `node export .index.dirty`） | §5-3 结构改了不收尾 |
 | L7 | error | `node validate` 的环/悬空边 issues 透传 | §5-3 |
 | L8 | info | task 停在 todo/doing（收口纪律） | §3 |
 | L9 | info | claim 已有证据链但 unverified（待人工仲裁） | §2 |
-| L10 | warn/error | `doctor` 的 warn/fail 项透传 | §3 收口必 doctor |
+| L10 | warn/error | `doctor` 的 warn/fail 项透传（受 `--rule` 过滤） | §3 收口必 doctor |
 
 ## 采集顺序契约（为什么 tree list 必须第一条）
 
-CLI 的 node 族读命令会自愈脏索引：本工具自己跑完一轮，`tree list .dirty` 就归零。
-所以 L6 的唯一可靠观测点是**进程内第一条命令**读 `tree list`；连续两轮巡检，第二轮
-L6 大概率静音，这是自愈语义，不是漏报。修法照旧：改完结构同轮 `node index && node validate`。
+本工具对每棵树都跑 `node validate`，而 `node validate` 会重建派生索引——跑完一轮，
+快照里的 `tree list .dirty` 就归零（`node list/export/can/ready` 这类纯读命令不会）。
+所以 L6 的唯一可靠观测点是**进程内第一条命令**读 `tree list`。默认快照模式下被检工作区
+不受影响，连续巡检结果一致；`--no-snapshot` 直检时第一轮之后 L6 会静音（索引已被重建）。
+修法照旧：改完结构同轮 `node index && node validate`。
 
 ## 保证与边界
 
