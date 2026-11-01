@@ -134,7 +134,12 @@ describe("verify 服务面：读投影", () => {
   });
 
   it("报告清单按 finished 倒序，归档数来自侧车而非猜测", async () => {
-    const rows = await firstReportPage({ home } as any);
+    // #154: read through the served route, which awaits the list watcher. On macOS
+    // FSEvents can deliver beforeAll's fixture writes after readiness; a direct
+    // index read in that window sees a pending record and throws by design.
+    const res = await fetch(`${base}/api/verify/reports`);
+    expect(res.status).toBe(200);
+    const rows: Awaited<ReturnType<typeof firstReportPage>> = (await res.json()).items;
     expect(rows.map((r) => r.run_id)).toEqual(["run_b", "run_a"]);
     expect(rows.find((r) => r.run_id === "run_a")).toMatchObject({ overall: "PASS", archived: 1, mode: "sealed" });
     expect(rows.find((r) => r.run_id === "run_b")).toMatchObject({ overall: "NEEDS-MATERIAL", archived: 0 });
