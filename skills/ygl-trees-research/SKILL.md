@@ -54,6 +54,7 @@ ygl-trees research source add --adjudication "会话内裁决：三条件已逐�
 ```bash
 ygl-trees research evidence add <sourceId> --quote "原文片段" --locator "§2"
 ygl-trees research evidence add <sourceId> --file quotes.md         # 长摘录免转义
+ygl-trees research evidence add <sourceId> --quote "明确的改写或翻译" --unverified  # 显式未核引文并留痕
 ygl-trees research source add --batch sources.jsonl -p <项目>        # #83 批量：每行一个 JSON 对象（整批拒：坏行点名行号 rc2、文件缺失 rc1、重复计 duplicate）
 ygl-trees research claim add --batch claims.jsonl -p <项目>          # 行={text, confidence?}；confidence 同 CLI 形（A|B|C 或 0.92/85%）
 ygl-trees research evidence add --batch evidence.jsonl -p <项目>     # 行={source_id, quote, note?, locator?}
@@ -69,6 +70,9 @@ ygl-trees research claim evaluate <claimId>    # 模型置信度评估（0.84：
 ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（0.84：校准预测 ≥60% 判据的测量面）
 ```
 
+- 原文已存储时，新增引文必须在 `sources.content` 中出现：两边仅折叠连续空白（含换行）并 trim，再精确子串匹配；不做 NFKC、大小写或语义匹配。失败 rc=1、单 JSON error 点名 source id、零证据/影子/新增事件写入。转述不是已核引文；翻译或改写必须显式 `--unverified`，返回 `quote_verified:false`，新增 `evidence.add` 事件记 `unverified:true`。`--force` 不绕过引文检查。
+- 匹配成功的新增回执含 `quote_verified:true`；原文为空允许写入但为 false，不自动抓取。批量逐行同规则，任一不符整批回滚并点名物理行号，成功 rows 分别带该字段；全局 `--unverified` 显式绕过本次批量，false 不绕过。
+- 已存在证据保持幂等且不追溯重验：重复回执只读创建事件里已有 `quote_verified`（旧事件未知为 false），不重新检查后改的来源、不改存量；本次显式绕过始终回 false。
 - 有支持有反对 → `contested`；仲裁后新证据链接会重新推导
 - **预测断言（`[预测·…]` 前缀）挂证据不自动晋升**（0.82.1）：挂证据 ≠ 仲裁，状态保持 unverified 直到显式 resolve / 到期回测。预测用 `--confidence 0.8` 登记数值概率，`--channel` 登记结算通道。`research predict list --all --json` 输出 `p` 和引擎计算的 `brier_calc`；旧 `brier` 仍为备注手写值，差值大于 0.005 时 `brier_mismatch:true`，人类表用 `≠` 标记。结算者不再手算 Brier。
 predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `research claim unresolve <cid>` 归位（幂等 duplicate:true）

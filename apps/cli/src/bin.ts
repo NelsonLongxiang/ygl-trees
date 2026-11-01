@@ -148,7 +148,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
              source add --file <json> | --batch <file.jsonl>   #83：单对象入参 / 整批拒批量（重复按 duplicate 计数）
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
-  evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
+  evidence add <sourceId> --quote "..." | --file <path> [--note --locator] [--unverified]
              evidence add --batch <file.jsonl>   #83 全批拒批量（行={source_id,quote,note?,locator?}）
   evidence list | show <id> | assess <id>
   evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)

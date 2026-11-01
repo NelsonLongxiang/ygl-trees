@@ -145,8 +145,8 @@ async function runBatch(
       results = (await writes.claimAddBatch(ds, project.id, rows as any, force, channel)).results;
     } else {
       const force = flags.force === true;
-      const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? "") }));
-      results = (await writes.evidenceAddBatch(ds, project.id, rows, force)).results;
+      const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? ""), __line: r.__line }));
+      results = (await writes.evidenceAddBatch(ds, project.id, rows, force, flags.unverified === true || flags.unverified === "true")).results;
     }
     const added = results.filter((r: any) => !r.dup).length;
     const dups = results.length - added;
@@ -164,6 +164,7 @@ async function runBatch(
           line: parsed.rows[i].__line, id: r.row.id, title: r.row.title ?? "",
           text: kind === "claim" ? r.row.text : undefined,
           quote: kind === "evidence" ? String(r.row.quote).slice(0, 50) : undefined,
+          quote_verified: kind === "evidence" ? r.row.quote_verified : undefined,
           duplicate: !!r.dup,
         })),
       }, null, 2));
@@ -762,7 +763,10 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     }
 
     if (subAction === "add") {
-      // #83 余项①：evidence add --batch <file.jsonl>（行={source_id,quote,note?,locator?}）。
+      const bypass = args.flags.unverified;
+      if (bypass !== undefined && ![true, false, "true", "false"].includes(bypass)) { bad(ctx, "--unverified is a boolean flag"); return 2; }
+      const unverified = bypass === true || bypass === "true";
+      // Batch and single writes use the same exact quote check.
       if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "evidence");
       const sourceId = rest[1];
       // Report ⑤: --file reads the quote from disk — long multi-line excerpts
@@ -787,7 +791,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       if (!quote) quote = readBody();
       if (!sourceId || !quote) {
-        bad(ctx, "usage: research evidence add <sourceId> --quote \"...\" | --file <path> [--note ..] [--locator ..]");
+        bad(ctx, "usage: research evidence add <sourceId> --quote \"...\" | --file <path> [--note ..] [--locator ..] [--unverified]");
         return 2;
       }
       {
@@ -801,7 +805,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       const locator = String(args.flags.locator || "");
       return runWrite(
         env,
-        (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force),
+        (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force, unverified),
         (r) => `evidence added: ${r.id}  ${clip(quote, 50)}  · project ${project.name}`
       );
     }

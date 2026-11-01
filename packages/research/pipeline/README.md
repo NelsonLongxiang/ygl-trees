@@ -23,7 +23,13 @@ Import from `@ygl/research-pipeline` when you need research pipeline: query/sour
 
 Query upserts/attachments, claim mutations and protected removals use the same transaction manager as binding checks and events. Claim recomputation is shared: prediction preservation, arbitration lock, updated/recalculated and the duplicate-unresolve edge retain SQLite behavior. PG native event ties use monotonic seq; ambiguous historical NULL seq refuses and rolls back. Evidence fences precede claim row locks; removal locks affected claim ids in sorted order and removes only its exact reference cone. No eval call or automatic live arbitration is added. Command-required missing columns receive safe identifier-only diagnostics, never automatic schema changes.
 
-Query attach uses one JSON receipt in both backends: `{query, source}`, with `duplicate: true` on repetition and rc0. Human success/duplicate lines remain unchanged without --json. The golden regression explicitly records the two repaired SQLite outputs against the legacy bytes; every other command stays byte-identical.
+Query attach uses one JSON receipt in both backends: `{query, source}`, with `duplicate: true` on repetition and rc0. Human success/duplicate lines remain unchanged without --json. The golden regression explicitly records the two repaired SQLite outputs against the legacy bytes; every other command stays byte-identical except the explicitly asserted additive evidence verification receipt described below.
+
+## Stored quote verification
+
+New evidence quotes are checked against stored nonempty source content with whitespace collapse/trim and exact, case-sensitive substring matching; no NFKC, fuzzy matching or fetch. Mismatch returns a source-named rc1 error and the transaction writes nothing. Successful matching receipts add `quote_verified:true`; empty original content is allowed but false. Explicit `--unverified` permits deliberate paraphrase/translation, returns false and records the bypass in the new `evidence.add` payload. `--force` never bypasses checking. SQLite and PG share this rule, including whole-batch rollback with physical JSONL line numbers.
+
+Existing evidence is not retroactively checked: duplicate receipts preserve prior creation-event verification when known (legacy unknown=false), and do not rewrite evidence or append a second creation event. Quote verification is an add receipt, not a newly persisted column. The SQLite golden fixture uses actual literal quote content and permits exactly the additive `quote_verified` field; all other output bytes remain compared to the pinned baseline.
 
 ## Prediction audit metrics
 

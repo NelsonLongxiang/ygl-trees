@@ -260,29 +260,56 @@ function mapSource(s: Source): Record<string, any> {
 
 // ================================================================ evidence
 
-/** #83 单事务体：evidenceAdd 与 evidenceAddBatch 共用。 */
-async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: string, quote: string, note: string, locator: string, force: boolean): Promise<WriteResult> {
+/** Layout whitespace is ignored; all other characters remain exact. */
+function verifyQuote(content: string | null | undefined, quote: string, sourceId: string, unverified: boolean): boolean {
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+  const original = normalize(content || "");
+  if (unverified || !original) return false;
+  const fragment = normalize(quote);
+  if (!fragment || !original.includes(fragment)) throw new PgCapabilityError("quote does not occur in stored source content: " + sourceId + "; use a literal quote or explicitly --unverified for paraphrase/translation");
+  return true;
+}
+
+
+async function previousQuoteVerification(mgr: EntityManager, evidenceId: string, bypass: boolean): Promise<boolean> {
+  if (bypass) return false;
+  const ph = ormDialect(mgr) === "postgres" ? "$1" : "?";
+  const rows = await mgr.query("SELECT payload FROM events WHERE kind='evidence.add' AND entity_id=" + ph + " ORDER BY ts DESC,id DESC LIMIT 1", [evidenceId]);
+  try { return JSON.parse(rows[0]?.payload || "null")?.quote_verified === true; } catch { return false; }
+}
+
+function evidenceReceipt(e: Record<string, any>, quote_verified: boolean): Record<string, any> {
+  return { id: e.id, project_id: e.project_id, source_id: e.source_id, quote: e.quote, note: e.note, locator: e.locator, content_hash: e.content_hash, created: e.created, quote_verified };
+}
+
+/** Single transaction body shared by individual and all-or-nothing batch writes. */
+async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: string, quote: string, note: string, locator: string, force: boolean, unverified: boolean): Promise<WriteResult> {
   const hash = contentHash(quote, force);
   if (ormDialect(mgr) === "postgres") {
     await assertPgWriteTarget(mgr);
     await assertPgProjectWritable(mgr, projectId);
     await assertPgSearch(mgr, "evidence");
-    const source = await mgr.query("SELECT id,project_id FROM sources WHERE id=$1 FOR SHARE", [sourceId]);
+    await requirePgColumns(mgr, { sources: ["id", "project_id", "content"] });
+    const source = await mgr.query("SELECT id,project_id,content FROM sources WHERE id=$1 FOR SHARE", [sourceId]);
     if (!source.length || source[0].project_id !== projectId) throw new PgWriteError("source not found in selected project: " + sourceId);
-    const r = await insertOrFetch({
+    const existing = await mgr.query("SELECT * FROM evidence WHERE source_id=$1 AND content_hash=$2", [sourceId, hash]);
+    if (existing.length) return { row: evidenceReceipt(existing[0], await previousQuoteVerification(mgr, existing[0].id, unverified)), dup: true };
+    const quote_verified = verifyQuote(source[0].content, quote, sourceId, unverified);
+    const result = await insertOrFetch({
       table: "evidence", cols: ["id", "project_id", "source_id", "quote", "note", "locator", "content_hash", "created", "ngram"],
       values: [shortId(["ev", sourceId, quote], 10), projectId, sourceId, quote, note, locator, hash, nowIso(), ngram(quote)],
       conflictCols: ["source_id", "content_hash"],
     }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
-    if (!r.row) throw new Error("evidence upsert returned no row");
-    if (!r.duplicate) await logEvent(mgr, "evidence.add", "evidence", r.row.id, quote.slice(0, 60));
-    const e = r.row;
-    return { row: { id: e.id, project_id: e.project_id, source_id: e.source_id, quote: e.quote, note: e.note, locator: e.locator, content_hash: e.content_hash, created: e.created }, dup: r.duplicate };
+    if (!result.row) throw new Error("evidence upsert returned no row");
+    const e = result.row;
+    if (!result.duplicate) await logEvent(mgr, "evidence.add", "evidence", e.id, { source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
+    return { row: evidenceReceipt(e, result.duplicate ? await previousQuoteVerification(mgr, e.id, unverified) : quote_verified), dup: result.duplicate };
   }
   const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
   if (!src) throw new Error("source not found: " + sourceId);
   const ex = await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
-  if (ex) return { row: mapEvidence(ex), dup: true };
+  if (ex) return { row: { ...mapEvidence(ex), quote_verified: await previousQuoteVerification(mgr, ex.id, unverified) }, dup: true };
+  const quote_verified = verifyQuote(src.content, quote, sourceId, unverified);
   const e = new Evidence();
   e.id = shortId(["ev", sourceId, quote], 10);
   e.projectId = projectId;
@@ -294,8 +321,8 @@ async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: 
   e.created = nowIso();
   await mgr.save(e);
   await ftsShadow(mgr, "INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [e.id, quote, ngram(quote)]);
-  await logEvent(mgr, "evidence.add", "evidence", e.id, quote.slice(0, 60));
-  return { row: mapEvidence(e), dup: false };
+  await logEvent(mgr, "evidence.add", "evidence", e.id, { source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
+  return { row: { ...mapEvidence(e), quote_verified }, dup: false };
 }
 
 export async function evidenceAdd(
@@ -305,21 +332,28 @@ export async function evidenceAdd(
   quote: string,
   note = "",
   locator = "",
-  force = false
+  force = false,
+  unverified = false
 ): Promise<WriteResult> {
-  return runTx(ds, async (mgr) => evidenceAddCore(mgr, projectId, sourceId, quote, note, locator, force));
+  return runTx(ds, mgr => evidenceAddCore(mgr, projectId, sourceId, quote, note, locator, force, unverified));
 }
 
-/** #83：--batch jsonl 全批拒（同 source/claim 语义；source 不存在属运行时错误→整批回滚 rc1）。 */
 export async function evidenceAddBatch(
   ds: DataSource,
   projectId: string,
-  rows: { source_id: string; quote: string; note?: string; locator?: string }[],
-  force = false
+  rows: { source_id: string; quote: string; note?: string; locator?: string; __line?: number }[],
+  force = false,
+  unverified = false
 ): Promise<{ results: WriteResult[] }> {
-  return runTx(ds, async (mgr) => {
+  return runTx(ds, async mgr => {
     const results: WriteResult[] = [];
-    for (const r of rows) results.push(await evidenceAddCore(mgr, projectId, r.source_id, r.quote, r.note || "", r.locator || "", force));
+    for (const [index, r] of rows.entries()) {
+      try { results.push(await evidenceAddCore(mgr, projectId, r.source_id, r.quote, r.note || "", r.locator || "", force, unverified)); }
+      catch (error: any) {
+        const message = ormDialect(mgr) === "postgres" && !(error instanceof PgCapabilityError) ? "PG operation failed" : error?.message || String(error);
+        throw new PgCapabilityError("line " + (r.__line ?? index + 1) + ": " + message);
+      }
+    }
     return { results };
   });
 }

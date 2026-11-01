@@ -76,7 +76,7 @@ describe.skipIf(!adminUrl)("B8 batch 2 real PG CLI (official migration)", () => 
     await client.query("UPDATE projects SET status='active' WHERE name='beta'");
   });
   it("source/evidence/claim true CLI chain writes+reads; only source/evidence have generated retrieval",async()=>{
-    const s=json(cli(["research","source","add","--title","材料","--url","https://example.test/s","--content","searchable 中文","--json"]));sourceId=s.id;
+    const s=json(cli(["research","source","add","--title","材料","--url","https://example.test/s","--content","searchable quote 中文; race-evidence; batch-evidence; okay-batch; abort-batch; quote-file 中文; forced-quote","--json"]));sourceId=s.id;
     const e=json(cli(["research","evidence","add",sourceId,"--quote","searchable quote 中文","--json"]));evidenceId=e.id;
     const c=json(cli(["research","claim","add","claim 中文","--channel","manual","--json"]));claimId=c.id;
     for(const [kind,id] of [["source",sourceId],["evidence",evidenceId],["claim",claimId]]){
@@ -176,6 +176,29 @@ describe.skipIf(!adminUrl)("B8 batch 2 real PG CLI (official migration)", () => 
     try{const r=cli(["project","use","beta","--json"]);expect(r.rc).toBe(1);expect((await client.query("SELECT value FROM meta WHERE key='current_project@b8-a'")).rows[0].value).toBe("alpha");}
     finally{await client.query("DROP TRIGGER b8_use_abort ON events");await client.query("DROP FUNCTION b8_use_abort()");}
   });
+  it("#160 PG quote mismatch is named and atomic, whitespace matches are verified", async () => {
+    const source=json(cli(["research","source","add","--title","quote validation","--url","session://quote-160-pg","--content","verified original\n  fragment; first batch literal; last batch literal","--json"]));
+    const count=async()=>Number((await client.query("SELECT COUNT(*)::int AS n FROM evidence")).rows[0].n);
+    const before=await count();
+    const bad=cli(["research","evidence","add",source.id,"--quote","absent PG quote","--json"]);
+    expect(bad.rc,bad.text).toBe(1);expect(Object.keys(JSON.parse(bad.out))).toEqual(["error"]);expect(JSON.parse(bad.out).error).toContain(source.id);expect(await count()).toBe(before);
+    const matched=json(cli(["research","evidence","add",source.id,"--quote","original fragment","--json"]));expect(matched.quote_verified).toBe(true);
+    const again=json(cli(["research","evidence","add",source.id,"--quote","original fragment","--json"]));expect(again).toMatchObject({id:matched.id,duplicate:true,quote_verified:true});
+    const mismatch=batch("evidence",[{source_id:source.id,quote:"first batch literal"},{source_id:source.id,quote:"absent batch PG phrase"}]);
+    expect(mismatch.rc,mismatch.text).toBe(1);expect(JSON.parse(mismatch.out).error).toContain("line 2");expect(JSON.parse(mismatch.out).error).toContain(source.id);expect(await count()).toBe(before+1);
+    const force=cli(["research","evidence","add",source.id,"--quote","still absent","--force","--json"]);expect(force.rc).toBe(1);expect(await count()).toBe(before+1);
+    const ok=json(batch("evidence",[{source_id:source.id,quote:"first batch literal"},{source_id:source.id,quote:"last batch literal"}]));expect(ok.rows.every((r:any)=>r.quote_verified===true)).toBe(true);
+  });
+  it("#160 PG unstored originals stay unchecked and explicit bypass is audited", async () => {
+    const empty=json(cli(["research","source","add","--title","unstored quote original","--url","session://quote-empty-160","--json"]));
+    expect(json(cli(["research","evidence","add",empty.id,"--quote","unstored literal","--json"])).quote_verified).toBe(false);
+    const source=json(cli(["research","source","add","--title","bypass source","--url","session://quote-bypass-160","--content","literal original","--json"]));
+    const bypass=json(cli(["research","evidence","add",source.id,"--quote","deliberate paraphrase","--unverified","--json"]));expect(bypass.quote_verified).toBe(false);
+    const event=(await client.query("SELECT payload FROM events WHERE kind='evidence.add' AND entity_id=$1",[bypass.id])).rows;expect(event).toHaveLength(1);expect(JSON.parse(event[0].payload)).toMatchObject({source_id:source.id,unverified:true,quote_verified:false});
+    const rows=json(batch("evidence",[{source_id:source.id,quote:"batch deliberate paraphrase"}],["--unverified"])).rows;expect(rows[0].quote_verified).toBe(false);
+    const forbidden=batch("evidence",[{source_id:source.id,quote:"no bypass here"}],["--unverified=false"]);expect(forbidden.rc).toBe(1);expect(JSON.parse(forbidden.out).error).toContain(source.id);
+  });
+
   it("PG doctor passes applicable items and explicitly skips verify-on-PG",()=>{
     const checks=json(cli(["doctor","--json"]));expect(checks.filter((r:any)=>r.status==="fail")).toEqual([]);expect(checks.find((r:any)=>r.name==="verify_on_pg").status).toBe("skip");
   });
