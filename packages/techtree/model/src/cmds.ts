@@ -407,8 +407,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         bad(ctx, "usage: node add <key> [--name ..] [--tier n] [--cost n] [--kind tech|skill|..] [--tags ..]");
         return 2;
       }
-      // Contract ⑤ (#148): `node add k --title T` used to rc 0 and store nothing
-      // for --title — an unknown flag is a usage error, never silently dropped.
+      // Contract ⑤ (#148): unknown flags are usage errors
       {
         const known = new Set(["name", "kind", "tier", "cost", "tags", "payload", "cost-unit", "cost_unit",
           "t", "tree", "json", "no-color", "color", "quiet", "home", "db", "p", "project", "debug"]);
@@ -1203,7 +1202,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   // unknown subaction = usage ERROR (rc 2) — the frozen exit-code contract.
   if (action) {
     bad(ctx, `unknown ${env.group} subcommand: ${action}`);
-    // Contract ④: in --json mode stdout carries only the {"error"} object.
+    // Contract ④
     if (ctx.json) return 2;
   }
   out(

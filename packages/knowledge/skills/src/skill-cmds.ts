@@ -236,9 +236,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           : path.join(process.cwd(), ".agents", "skills");
       }
 
-      // Find source skills directory: probe upward from cwd (a repo checkout),
-      // then from this module (#148: the npm package ships skills/ next to
-      // dist/, so an installed CLI links its own skills from any cwd).
+      // skills/: cwd checkout first, then the installed package (#148)
       const probe = (start: string): string | null => {
         for (let dir = start, i = 0; i < 6; i++, dir = path.dirname(dir)) {
           const candidate = path.join(dir, "skills");

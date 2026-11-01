@@ -724,8 +724,7 @@ ${cl.text}
       out(ctx, paint(C.dim, DB_USAGE, ctx.color));
       return 0;
     default:
-      // Contract ④: --json failures are one parseable {"error"} object on
-      // stdout; the usage line is human help, never on the machine channel.
+      // Contract ④: usage text only outside --json
       bad(ctx, `unknown db action: ${action}`);
       if (!ctx.json) out(ctx, paint(C.dim, DB_USAGE, ctx.color));
       return 2;

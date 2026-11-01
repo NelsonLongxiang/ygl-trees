@@ -1030,8 +1030,7 @@ if (subAction === "show") {
         bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance supports|refutes] [--by-source] [--verbose]");
         return 2;
       }
-      // #148: auto_promote=false has two causes — a `[预测·…]` claim, or a claim
-      // a human already arbitrated (resolve locks it). Name the one that applies.
+      // #148: name why auto_promote is off
       const lockedReason = async (claimId: string): Promise<string> => {
         const c = await readOne(env, "SELECT text FROM claims WHERE id=?", [claimId]);
         return String(c?.text ?? "").startsWith("[预测·") ? "prediction claim" : "arbitrated claim";
@@ -1690,7 +1689,7 @@ if (subAction === "show") {
   // unknown subaction = usage ERROR (rc 2) — the frozen exit-code contract.
   if (action) {
     bad(ctx, `unknown research subcommand: ${action}`);
-    // Contract ④: in --json mode stdout carries only the {"error"} object.
+    // Contract ④
     if (ctx.json) return 2;
   }
   out(
