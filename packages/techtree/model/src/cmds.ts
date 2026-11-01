@@ -409,8 +409,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       // Contract ⑤ (#148): unknown flags are usage errors
       {
-        const known = new Set(["name", "kind", "tier", "cost", "tags", "payload", "cost-unit", "cost_unit",
-          "t", "tree", "json", "no-color", "color", "quiet", "home", "db", "p", "project", "debug"]);
+        const known = new Set("name kind tier cost tags payload cost-unit cost_unit t tree json no-color color quiet home db p project debug".split(" "));
         const unknown = Object.keys(args.flags || {}).filter((f) => !known.has(f));
         if (unknown.length) {
           bad(ctx, `unknown flag for 'node add': --${unknown.join(" --")} — display name is --name`);
