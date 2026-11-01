@@ -13,7 +13,7 @@ import { getPgOrm } from "../../../core/database/src/orm";
 import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
-import { CONFIG_REGISTRY } from "./config";
+import { CONFIG_REGISTRY, countSecretEvents, redactSecretEvents } from "./config";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
 import { resolveProject, projectSessionKey, projectCount, sessionId } from "../../../core/database/src/selection";
@@ -366,11 +366,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       checks.push({ name: `config_invalid:${row.key}`, status: "fail", detail: `${row.key}='${row.value}' is not a valid number` });
     }
   }
-  if (configIssues === 0) {
+  // #150: pre-fix config.set events may still hold a plaintext secret
+  const secretEvents = countSecretEvents(db);
+  if (configIssues === 0 || secretEvents) {
     checks.push({
       name: "config",
-      status: "pass",
-      detail: configRows.length === 0 ? "no overrides (all defaults)" : `${configRows.length} override(s), all valid`,
+      status: secretEvents ? "warn" : "pass",
+      detail: secretEvents
+        ? `${secretEvents} config.set event(s) hold a plaintext secret — doctor --fix redacts them`
+        : configRows.length === 0 ? "no overrides (all defaults)" : `${configRows.length} override(s), all valid`,
     });
   }
 
@@ -611,6 +615,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       if (marked) fixes.push(`write_integrity: ${marked} ${spec.label} phantom event(s) marked reconciled (audit trail kept)`);
     }
+    const nSecret = redactSecretEvents(db); // #150
+    if (nSecret) fixes.push(`config: ${nSecret} secret value(s) in config.set events redacted`);
     if (fixes.length) {
       for (const f of fixes) ok(ctx, `  fixed: ${f}`);
     } else {

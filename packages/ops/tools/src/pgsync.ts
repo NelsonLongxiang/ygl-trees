@@ -17,6 +17,7 @@
  */
 import type { DB } from "../../../core/database/src/db";
 import { ngram } from "../../../core/text/src/text";
+import { exportableRows } from "./config";
 
 /** Mirror targets, FK-dependency-safe order (same list as `db export`). */
 export const MIRROR_TABLES = [
@@ -50,8 +51,8 @@ export interface SyncResult {
 }
 
 /** Copy one table (batched, 500/insert) into an open PG client. */
-async function copyTable(client: any, db: DB, t: string): Promise<number> {
-  const rows = db.all(`SELECT * FROM ${t}`);
+async function copyTable(client: any, db: DB, t: string, keepSecretConfig = false): Promise<number> {
+  const rows = exportableRows(db, t, keepSecretConfig);
   if (rows.length) {
     const baseCols = Object.keys(rows[0]);
     const cols = NGRAM_INPUT[t] ? [...baseCols, "ngram"] : baseCols;
@@ -413,7 +414,7 @@ export async function migrateToPg(db: DB, url: string, fresh = false): Promise<M
 
       const result: Array<{ table: string; rows: number }> = [];
       for (const t of MIRROR_TABLES) {
-        const rows = await copyTable(client, db, t);
+        const rows = await copyTable(client, db, t, true);
         // verify per-table count inside the same transaction
         const n = (await client.query(`SELECT count(*)::int n FROM "${t}"`)).rows[0].n;
         if (n !== rows) throw new Error(`count mismatch on ${t}: copied ${rows}, found ${n}`);

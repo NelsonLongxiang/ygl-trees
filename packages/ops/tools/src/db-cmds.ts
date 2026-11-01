@@ -5,6 +5,7 @@ import { redactPgUrl } from "../../../core/database/src/asyncdb";
 import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
 import { clearLockDir, dbPath, pidAlive, takeoverLockDir } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg } from "./pgsync";
+import { exportableRows } from "./config";
 
 
 /**
@@ -573,7 +574,7 @@ ${cl.text}
           counts.push(`${t}:skipped`);
           continue;
         }
-        const rows = db.all(`SELECT * FROM ${t}`);
+        const rows = exportableRows(db, t);
         for (const r of rows) {
           const cols = Object.keys(r);
           const vals = cols.map((c) => sqlLit(r[c])).join(",");

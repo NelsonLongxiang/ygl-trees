@@ -2,7 +2,7 @@
  *  meta = runtime state the tool writes; config = what the user tunes. */
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C, ack } from "../../../core/text/src/fmt";
-import { configAll, configGet, configReset, configSet } from "./config";
+import { configAll, configGet, configReset, configSet, displayValue } from "./config";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
   const { ctx, db } = env;
@@ -30,7 +30,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       try {
-        ack(ctx, { key: rest[0], value: configGet(db, rest[0]) }, `${rest[0]} = ${configGet(db, rest[0])}`);
+        const shown = displayValue(rest[0], configGet(db, rest[0])); // #150: secrets masked
+        ack(ctx, { key: rest[0], value: shown }, `${rest[0]} = ${shown}`);
         return 0;
       } catch (e: any) {
         bad(ctx, e?.message || String(e));
