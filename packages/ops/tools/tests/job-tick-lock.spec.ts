@@ -10,8 +10,8 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { once } from "node:events";
 import { resolve } from "node:path";
 
 const REPO = resolve(__dirname, "../../../..");
@@ -28,10 +28,11 @@ function run(args: string[]) {
 }
 
 beforeAll(() => {
-  HOME = mkdtempSync(resolve(tmpdir(), "ygl-joblock-"));
+  mkdirSync(resolve(REPO, "tmp"), { recursive: true });
+  HOME = mkdtempSync(resolve(REPO, "tmp/ygl-joblock-"));
   run(["db", "init"]);
 });
-afterAll(() => rmSync(HOME, { recursive: true, force: true }));
+afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
 describe("job run/tick 不再长持写锁（GitHub issue #6 ②）", () => {
   it("a slow job run does not block ordinary CLI commands", async () => {
@@ -45,6 +46,7 @@ describe("job run/tick 不再长持写锁（GitHub issue #6 ②）", () => {
       env: { ...process.env, YGL_HOME: HOME, YGL_EVAL_OFFLINE: "1" },
       stdio: "ignore",
     });
+    const closed = once(child, "close");
     try {
       // give the runner time to boot and enter execSync
       await new Promise((r) => setTimeout(r, 400));
@@ -58,6 +60,7 @@ describe("job run/tick 不再长持写锁（GitHub issue #6 ②）", () => {
       expect(elapsed).toBeLessThan(8000);
     } finally {
       child.kill();
+      await closed;
     }
   }, 60_000);
 });

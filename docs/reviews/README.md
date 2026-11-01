@@ -46,6 +46,7 @@
 | `harness2-dual-validation-plan.md`（方案） | harness2 双线验证（两席共识） | 需求侧不可或缺；外强于内；P1a 方差探针 + evaluator 协议先行；红线=单一裁判权 |
 | `REVIEW-0.84.0.md` | 0.84 版本评审 | 判定落账与校准读出 |
 | `REVIEW-webui-0.89.1.md` | WebUI 0.89.1 评审 | 视觉 token 与三视图骨架 |
+| `verify-list-perf-156.md`（开发诊断） | Windows 列表计时与串行性能段 | 两版同配置trace与九组pair、fs等待观测；官方G1差异具体干扰源未定，不冒充独立评审或发版验收 |
 
 ## 与 plan 的关系
 
