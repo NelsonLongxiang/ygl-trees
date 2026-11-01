@@ -160,7 +160,7 @@
     },
     {
       "path": "scripts/ratchet.mjs",
-      "sha256": "06325f06c0c2eea6b19f0329d17553cccf966a87629764194e45acb7c3207eaa",
+      "sha256": "d48c1b0757cc314c771b2029e40a1f13e8da196f046fa06c82830141b649def0",
       "role": "gate"
     },
     {
@@ -217,6 +217,11 @@
       "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
       "sha256": "053e3425baa6ba166b9559eac4bf4a34af4ca3e4651b43d38e20c361abcebba0",
       "role": "gate"
+    },
+    {
+      "path": "tsdown.config.mjs",
+      "sha256": "f14ffa1acf6833e1c491a19271377d195fe8087fed3e76e04532206f00b46873",
+      "role": "build"
     },
     {
       "path": "vitest.config.ts",
@@ -1106,6 +1111,22 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "nelson",
       "at": "2026-10-31T17:59:14.095Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "06325f06c0c2eea6b19f0329d17553cccf966a87629764194e45acb7c3207eaa",
+      "new_sha256": "d48c1b0757cc314c771b2029e40a1f13e8da196f046fa06c82830141b649def0",
+      "reason": "#158: count every shipped bundle file, keeping baseline values and tolerance unchanged",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-11-01T16:22:14.680Z"
+    },
+    {
+      "path": "tsdown.config.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "f14ffa1acf6833e1c491a19271377d195fe8087fed3e76e04532206f00b46873",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-11-01T16:22:14.745Z"
     }
   ],
   "kind": "engine",

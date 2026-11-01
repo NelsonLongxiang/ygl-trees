@@ -31,6 +31,12 @@ Query attach uses one JSON receipt in both backends: `{query, source}`, with `du
 
 Subject-qualified prose such as `adoption 树 ≥4/6 叶节点解锁`, fractions, decimal thresholds, extra requirements or unknown clauses return `null` and project as `manual`; no workspace count is substituted for their intended subject. The registry probe likewise requires the complete `npm 再发≥N个版本` criterion. Audit leaves stored claim text/status/updated unchanged and never arbitrates or unlocks. Existing resolved predictions remain resolved in the projection.
 
+## Prediction scores
+
+`research predict list` adds `p`, `brier_calc` and `brier_mismatch`; the existing `brier` remains note-derived. Numeric confidence follows the existing decimal/percentage convention, while evidence grades A/B/C have no probability. Binary outcomes use `(p - outcome)^2`; ND/open rows never receive a computed score. A note/calculation discrepancy strictly greater than 0.005 is marked `≠` in the human list.
+
+`research predict score [--all] [--channel <c>] --json` returns channel rows with `settled`, `nd`, `open`, `no_p`, `hit_rate`, and `brier_mean`. Default scope is the selected project; `--all` spans the workspace as list already does. `settled` counts every 1/0 outcome, but means use only the subset with numeric P. `no_p` counts missing probability regardless of status and can overlap ND/open/settled counts. Both means are null for an empty eligible subset. Computed scores, not handwritten notes, feed aggregates; claim/evidence records are never rewritten. Prediction commands preserve audit matching and claim calibration; the scoring projection is read-only.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history

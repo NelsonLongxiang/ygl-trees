@@ -9,8 +9,8 @@
 
 ```bash
 pnpm install
-pnpm build          # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单文件发布产物）
-node dist/bundle/bin.cjs db init     # 发布产物（bin 字段指向它；比 tsc 树快 ~8%）
+pnpm build          # tsc -> dist/ + tsdown -> dist/bundle/（入口 + 压缩的按需分块）
+node dist/bundle/bin.cjs db init     # bin 入口；必须连同整个 dist/bundle/ 一起交付
 # 开发树：node dist/apps/cli/src/bin.js   二者同代码，demo/bench 优先测发布产物
 ```
 
@@ -349,7 +349,7 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 62 条真库用例（七份 spec）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 62 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1440 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1459 例，含 skip；基准机口径待 manifest diff 统一——见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

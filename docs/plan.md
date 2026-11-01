@@ -1,5 +1,10 @@
 # ygl-trees 开发计划
 
+## 在途实现 · #158（未发版）
+
+预测 P/Brier 计算和频道评分保持只读，ND/open/no_p 不进入均值分母。为解决验收中定位的 eager TypeORM 启动与体积门盲区，CLI 路由/ORM 改按需加载，运行时压缩保留类/函数名，`dist/bundle/` 的全部分块随包交付，字节门统计完整目录且不提高旧基线或容差；旧基线 method 戳暂保留为历史来源，不声称新旧读数同尺，仅证明整目录≤旧上限蕴含入口≤旧上限。本次不执行 --write；未来重烘须显式归因。压缩产物不附 sourcemap，栈行列属于压缩文件，保留版本与栈后用相同版本的非压缩开发树复现。定向及整链、tarball 隔离安装结果记入独立 PR，未合并前不作为发布完成。#157 与本单均改 README 计数行，后合者按合并后测试配置重测，不照抄单支数字。
+
+
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
 > **评审记录 · 0.84.0（2026-10-17，current_project 全局选中态 v2：源码实证 + 行动计划）**：0.84.0（`3c943c7`）修掉 REVIEW 四 P1 后，评审转向跨会话选择态——用户 v2 复核把根因钉到「会话级概念、机器级实现」。**撤回一条**：kb 不是读侧漏洞（`kb_notes` 无 `project_id`，db.ts:161-173；`kbList/kbSearch` 不收项目参数），kb 是刻意跨项目知识池，上轮「`kb list --project` 被静默忽略」作废。**但顺挖出真缺陷**：`packages/core/text/src/flagcheck.ts:15-23` 的 `rejectBare` 只查裸旗标，未知旗标全仓仅 `packages/techtree/model/src/cmds.ts:832-836` 一处 allowlist；实测 `kb add --project foo` 与 `kb add --bogus x` 均 rc=0 落库，`tree new tA --project nosuch` rc=0 且 `project_id=null`（`techtree/model/src/cmds.ts:106-108` 的 `proj?.id || ""` 静默落空）。

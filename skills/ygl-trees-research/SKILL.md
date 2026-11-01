@@ -70,8 +70,9 @@ ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（
 ```
 
 - 有支持有反对 → `contested`；仲裁后新证据链接会重新推导
-- **预测断言（`[预测·…]` 前缀）挂证据不自动晋升**（0.82.1）：挂证据 ≠ 仲裁，状态保持 unverified 直到显式 resolve / 到期回测——predict list（结算投影：outcome/channel/brier）
+- **预测断言（`[预测·…]` 前缀）挂证据不自动晋升**（0.82.1）：挂证据 ≠ 仲裁，状态保持 unverified 直到显式 resolve / 到期回测。预测用 `--confidence 0.8` 登记数值概率，`--channel` 登记结算通道。`research predict list --all --json` 输出 `p` 和引擎计算的 `brier_calc`；旧 `brier` 仍为备注手写值，差值大于 0.005 时 `brier_mismatch:true`，人类表用 `≠` 标记。结算者不再手算 Brier。
 predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `research claim unresolve <cid>` 归位（幂等 duplicate:true）
+- `research predict score --all --json` 按 channel 汇总，`--channel <c>` 精确过滤。默认仅当前项目，`--all` 跨工作区，与 list 一致。`settled` 计 1/0 终态，`nd`/`open` 分别计不可决/未结算，缺数值概率另计 `no_p`（可能与状态计数重叠）。两项均值只用有 P 的 1/0 行：ND、open、no_p 均不进分母，空分母返回 null，不用 0 冒充。数值置信度沿既有 0–1 / 0–100（可带%）语义归一，A/B/C 档位没有 P。
 - **判定史可对账（0.84）**：link 自动评估与手动 evaluate 都落 `claim.eval` 事件（mode: auto-on-link|manual）；`calibration` 按"每断言最新评估胜出"汇总模型档位 vs 人工仲裁档位——巡检"决策模型置信度"预测时先跑它，别手工数事件
 - 全部命令幂等：同内容重跑返回已存在行（`duplicate: true`，rc=0）
 
