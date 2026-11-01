@@ -17,9 +17,10 @@
 import { DataSource, EntityManager } from "typeorm";
 import { Claim, Evidence, Query, QuerySource, Source } from "./entities";
 import { Event } from "../../../core/database/src/entities";
-import { contentHash, ngram, nowIso, sha1, shortId } from "../../../core/text/src/text";
+import { contentHash, ngram, nowIso, parseFrontmatter, sha1, shortId } from "../../../core/text/src/text";
 import { ormDialect } from "../../../core/database/src/orm";
 import { insertOrFetch } from "../../../core/database/src/upsert";
+import { deriveL1 } from "./reads";
 import { pgTargetHash, PgCapabilityError, requirePgColumns } from "../../../core/database/src/pg-workspace";
 import { currentSelectionVia, eventActor } from "../../../core/database/src/selection";
 // 0.91a (Cordis review direct-032bf3b4): static import — the old
@@ -1037,6 +1038,7 @@ export async function skillUpsertIn(
   );
   const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
   const s = rows[0];
+  await mgr.query("DELETE FROM relations WHERE src_type='skill' AND src_id=? AND rel='promoted-with'", [o.name]);
   // FTS shadow refresh in the SAME transaction (delete+reinsert, Store-era discipline)
   await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [s.id]);
   await ftsShadow(mgr, `INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
@@ -1053,11 +1055,47 @@ export async function skillUpsert(
   return runTx(ds, (mgr) => skillUpsertIn(mgr, o));
 }
 
+/** Admit a note and snapshot its real support links with the skill in one transaction. */
+export async function kbPromote(ds: DataSource, ref: string, options: { name?: string; force?: boolean } = {}): Promise<Record<string, any>> {
+  if (ormDialect(ds) !== "sqlite") throw new PgCapabilityError("kb promote is unavailable in PG mode");
+  return runTx(ds, async mgr => {
+    const note = (await mgr.query("SELECT * FROM kb_notes WHERE id=? OR title=? LIMIT 1", [ref, ref]))[0];
+    if (!note) throw new Error("kb note not found: " + ref);
+    const { meta, body } = parseFrontmatter(note.body || "");
+    const missing = ["cue", "lesson", "evidence"].filter(key => !String(meta[key] || "").trim());
+    const refs = await mgr.query(
+      `SELECT DISTINCT r.type, r.id FROM (
+         SELECT dst_type AS type,dst_id AS id FROM relations WHERE src_type='kb' AND src_id=?
+         UNION SELECT src_type AS type,src_id AS id FROM relations WHERE dst_type='kb' AND dst_id=?
+       ) r WHERE (r.type='evidence' AND EXISTS(SELECT 1 FROM evidence e WHERE e.id=r.id))
+          OR (r.type='claim' AND EXISTS(SELECT 1 FROM claims c WHERE c.id=r.id))
+       ORDER BY r.type,r.id`,
+      [note.id, note.id]
+    ) as { type: string; id: string }[];
+    const forced = options.force === true;
+    if (missing.length && !refs.length && !forced) {
+      throw new Error("kb promote refused; missing: " + missing.join(", ") + "; no rel to real evidence/claim. Add nonempty cue/lesson/evidence frontmatter or link real evidence with rel. Do not fill fields with placeholder text just to pass this gate.");
+    }
+    const name = options.name || note.title;
+    const skill = await skillUpsertIn(mgr, { name, description: deriveL1(body, note.title), body: note.body, tags: note.tags, origin: "kb:" + note.id });
+    for (const support of refs) {
+      await mgr.query(
+        `INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created)
+         VALUES(?,'skill',?,?,?,'promoted-with',1,?)`,
+        [shortId(["promotion", name, support.type, support.id], 10), name, support.type, support.id, nowIso()]
+      );
+    }
+    await logEvent(mgr, "kb.promote", "kb_note", note.id, { name, forced, support_refs: refs });
+    return { ...skill, support_refs: refs };
+  });
+}
+
 export async function skillDel(ds: DataSource, name: string): Promise<void> {
   return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT id FROM skills WHERE name=?`, [name])) as any[];
     if (!rows.length) throw new Error(`skill not found: ${name}`);
     await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [rows[0].id]);
+    await mgr.query("DELETE FROM relations WHERE src_type='skill' AND src_id=? AND rel='promoted-with'", [name]);
     await mgr.query(`DELETE FROM skills WHERE id=?`, [rows[0].id]);
   });
 }

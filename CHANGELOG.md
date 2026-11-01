@@ -2,6 +2,7 @@
 
 - Refs #158：预测列表新增数值 P、引擎 Brier 与备注差异标记，按 channel 汇总命中率/平均 Brier；ND、未结算、缺概率行不进入评分分母，旧备注 brier 字段语义保留。
 - #158 验收配套：业务路由/ORM 按需加载、运行时分块压缩并保留类名，不附 sourcemap（栈行列属于压缩产物，按相同版本的非压缩开发树复现）；整个 `dist/bundle/` 随包交付。体积棘轮从仅入口修正为全运行时目录统计，原基线数值、容差不改，嵌套隐藏大分块反例必须红。完整验收和隔离安装以 PR 对应源码快照的回执为准，未发版。
+- Refs #159：kb promote 只收完整 cue/lesson/evidence 或真实 evidence/claim 关联；拒绝单 JSON、零技能写入，--force 显式绕过并留 forced:true。skill show 增 support_refs 供复核提升时依据，add/import 仍宽松。
 
 ## 0.118.0
 

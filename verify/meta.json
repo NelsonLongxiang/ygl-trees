@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "82f4a5978e358649d74b163e661e5485e3d3ab84490d7dbf2bda6bd8f71d855a",
+      "sha256": "c8aaae5051fd2d104ccef35832fcd8b9d43d1f3b95dd9c6524771c6a60d03859",
       "role": "test"
     },
     {
@@ -1127,6 +1127,14 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "dev-ec4ce7f8",
       "at": "2026-11-01T16:22:14.745Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "82f4a5978e358649d74b163e661e5485e3d3ab84490d7dbf2bda6bd8f71d855a",
+      "new_sha256": "c8aaae5051fd2d104ccef35832fcd8b9d43d1f3b95dd9c6524771c6a60d03859",
+      "reason": "#159: link the ingested report to its actual fixture evidence before promoting",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-11-01T17:52:00.886Z"
     }
   ],
   "kind": "engine",
