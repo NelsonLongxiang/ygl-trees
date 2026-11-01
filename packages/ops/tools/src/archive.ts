@@ -417,7 +417,7 @@ export interface ArchiveVerifyResult {
   manifest?: ArchiveManifest;
 }
 
-function foldSummary(vu: Array<{ role?: string; verdict?: string }>): Record<string, number> {
+export function foldSummary(vu: Array<{ role?: string; verdict?: string }>): Record<string, number> {
   const summary = { pass: 0, fail: 0, needs_material: 0, error: 0 };
   for (const v of vu) {
     if (v.role === "source") continue;
@@ -429,7 +429,7 @@ function foldSummary(vu: Array<{ role?: string; verdict?: string }>): Record<str
   return summary;
 }
 
-function foldOverall(summary: Record<string, number>): string {
+export function foldOverall(summary: Record<string, number>): string {
   if (summary.fail > 0) return "FAIL";
   if (summary.needs_material > 0) return "NEEDS-MATERIAL";
   if (summary.error > 0) return "ERROR";
