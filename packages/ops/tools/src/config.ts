@@ -22,7 +22,7 @@ export const CONFIG_REGISTRY: ConfigSpec[] = [
   { key: "eval.pass_threshold", def: "0.7", type: "number", note: "P(true) ≥ 此值判定通过（决策模型门槛）" },
   { key: "eval.fail_threshold", def: "0.4", type: "number", note: "P(true) ≤ 此值判定未通过；两值之间为灰带 pending" },
   { key: "eval.offline", def: "false", type: "boolean", note: "强制决策模型离线（等价 YGL_EVAL_OFFLINE=1，环境变量优先）" },
-  { key: "decision_model_llm_token", def: "", type: "string", secret: true, note: "决策模型凭证（机密：只显示末 4 位、不进事件/导出）——优先于 AI_GATEWAY_API_KEY 与 ~/.vercel.ai-gateway.env；推荐用环境变量；空=回落" },
+  { key: "decision_model_llm_token", def: "", type: "string", secret: true, note: "决策模型凭证（机密）——优先于 AI_GATEWAY_API_KEY 与 ~/.vercel.ai-gateway.env；空=回落" },
   { key: "decision_model_llm_api_base", def: "", type: "string", note: "决策模型端点——优先于默认 Vercel Gateway；给主机名自动补 /v4/ai/evaluation-model，空=默认" },
   { key: "fetch.timeout_ms", def: "15000", type: "number", note: "source fetch 超时（毫秒）" },
   { key: "fetch.user_agent", def: "ygl-trees/0.15 (+local research cli)", type: "string", note: "source fetch 的 User-Agent" },
@@ -44,7 +44,7 @@ export function isSecretKey(key: string): boolean {
   return BY_KEY.get(key)?.secret === true;
 }
 
-/** Only the last 4 chars of a long secret survive. */
+// Only the last 4 chars of a long secret survive.
 export function maskSecret(v: string): string {
   if (!v) return "";
   return v.length > 12 ? `••••${v.slice(-4)}` : "••••";
@@ -54,30 +54,21 @@ export function displayValue(key: string, v: string): string {
   return isSecretKey(key) ? maskSecret(v) : v;
 }
 
-function secretEventWhere(): { where: string; params: string[] } {
-  const keys = CONFIG_REGISTRY.filter((c) => c.secret).map((c) => c.key);
-  return {
-    where: `kind='config.set' AND entity_id IN (${keys.map(() => "?").join(",")}) AND payload != ?`,
-    params: [...keys, REDACTED],
-  };
-}
+const SECRET_KEYS = CONFIG_REGISTRY.filter((c) => c.secret).map((c) => c.key);
+const SECRET_WHERE = `kind='config.set' AND payload != ? AND entity_id IN (${SECRET_KEYS.map(() => "?").join(",")})`;
 
 export function countSecretEvents(db: DB): number {
-  const { where, params } = secretEventWhere();
-  return Number((db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM events WHERE ${where}`, params))?.n ?? 0);
+  return Number(db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM events WHERE ${SECRET_WHERE}`, [REDACTED, ...SECRET_KEYS])?.n ?? 0);
 }
 
-/** Keep the audit row (who/when/which key), drop the value. */
+// Keep the audit row (who/when/which key), drop the value.
 export function redactSecretEvents(db: DB): number {
   const n = countSecretEvents(db);
-  if (n) {
-    const { where, params } = secretEventWhere();
-    db.run(`UPDATE events SET payload=? WHERE ${where}`, [REDACTED, ...params]);
-  }
+  if (n) db.run(`UPDATE events SET payload=? WHERE ${SECRET_WHERE}`, [REDACTED, REDACTED, ...SECRET_KEYS]);
   return n;
 }
 
-/** Rows leaving the workspace: secret config dropped (migrate keeps it), events redacted. */
+// Rows leaving the workspace: secret config dropped (migrate keeps it), events redacted.
 export function exportableRows(db: DB, table: string, keepSecretConfig = false): any[] {
   const rows = db.all(`SELECT * FROM ${table}`) as any[];
   if (table === "config" && !keepSecretConfig) return rows.filter((r) => !isSecretKey(String(r.key)));
