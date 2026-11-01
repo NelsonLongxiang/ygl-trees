@@ -1171,9 +1171,7 @@ if (subAction === "show") {
             console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(duplicate ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
           } else if (r.auto_promote === false) {
             const reason = await lockedReason(rest[1]);
-            ok(ctx, reason === "prediction claim"
-              ? `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`
-              : `linked; ${reason} stays ${r.status} — auto-promote skipped (re-derive from evidence: research claim unresolve ${rest[1]})`);
+            ok(ctx, `linked; ${reason} stays ${r.status} — auto-promote skipped (${reason === "prediction claim" ? "arbitration: claim resolve / deadline audit" : "re-derive: research claim unresolve " + rest[1]})`);
           } else {
             ok(ctx, `linked; claim status now: ${r.status}`);
           }

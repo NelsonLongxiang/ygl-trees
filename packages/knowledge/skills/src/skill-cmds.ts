@@ -251,7 +251,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       const skillsDir = probe(process.cwd()) ?? probe(__dirname);
       if (!skillsDir) {
-        bad(ctx, `no skills/ directory found (probed upward from ${process.cwd()} and the installed package)`);
+        bad(ctx, `no skills/ directory found (probed from ${process.cwd()} and the package)`);
         return 1;
       }
 

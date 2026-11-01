@@ -413,7 +413,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           "t", "tree", "json", "no-color", "color", "quiet", "home", "db", "p", "project", "debug"]);
         const unknown = Object.keys(args.flags || {}).filter((f) => !known.has(f));
         if (unknown.length) {
-          bad(ctx, `unknown flag${unknown.length > 1 ? "s" : ""} for 'node add': ${unknown.map((f) => `--${f}`).join(" ")} — display name is --name`);
+          bad(ctx, `unknown flag for 'node add': --${unknown.join(" --")} — display name is --name`);
           return 2;
         }
       }
