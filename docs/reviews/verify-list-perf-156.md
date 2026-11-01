@@ -10,10 +10,10 @@ kind: 参考
 
 ## 结论与边界
 
-- 已确认：该 HTTP 读路径没有版本差异，也没有由 `Date.now()` 驱动的 TTL、过期重建或 watcher 重挂；所谓“5s 间隔”只 mock 时钟，不真的等待五秒。
+- 已确认：基线 f57f3ca 与旧候选 e154772 的 HTTP 读路径没有版本差异，也没有由 `Date.now()` 驱动的 TTL、过期重建或 watcher 重挂；所谓“5s 间隔”只 mock 时钟，不真的等待五秒。
 - 已观察：相同版本、相同配置下，`specRows` 的异步文件读取时间会大幅波动。一个候选请求 295.12ms，其中 index/SQLite 9.63ms、event-loop idle 191.20ms、GC 0ms；瓶颈位于异步文件读取/宿主调度边界，不是一次可见的索引重建。
 - 未确认：导致官方候选 G1 连续失败的具体外部干扰源。尚不能归因于杀毒、索引器、libuv 池、特定新增测试泄漏或产品回退。局部对照没有复现官方失败签名，不能替代 G1。
-- 因此本次交付为工单规定的测试确定性修复及可复核诊断，不声称修复已定位的产品 bug。Windows 三连 G1、macOS 复核及第7条根因证据是否充分，仍由相应席在 PR/新候选上核验。
+- 第一版 df9a470 仅含测试确定性修复。后续独立 Windows 复验即使隔离仍三连红，已证实该修复不够；产品补丁现将 specRows 的20个串行目录读改为每批16目录、最多32文件读取并发。它直接修复已定位的 I/O 延迟放大机制，不声称查明历史两版 G1 时段差异的具体外部来源。Windows 三连 G1 与 macOS 复核仍须在新头实测。
 
 ## 官方证据（发版席来源）
 
@@ -26,7 +26,7 @@ kind: 参考
 
 A3 晚于候选三次，不是同一时间窗口的同步配对。另读候选第三轮原始日志：warm 42.53ms 通过，最后的 5s 用例失败；这不是所有 warm 请求都超过 200ms。原始记录见 [issue #156](https://github.com/NelsonLongxiang/ygl-trees/issues/156)、[官方口径更正](https://github.com/NelsonLongxiang/ygl-trees/issues/156#issuecomment-6555630887)。
 
-## 可执行路径核对
+## 修复前的可执行路径核对
 
 `handleVerifyApi(GET /api/verify/specs)` → `specRows(env)` → `readListIndex(env.home, ...)` → 一次 spec 目录枚举 → 20 个目录顺序循环，各目录 `Promise.all` 两次 JSON 读取。
 
@@ -87,8 +87,30 @@ candidate last 在“不重解析报告”的功能用例中读 specs 达295.12m
 - 默认配置排除这一个perf文件；新的perf配置 `fileParallelism:false,maxWorkers:1`。主段仍可并行。
 - `pnpm test:unit` 顺序执行主段与perf段，G1通过原有`pnpm test`自动覆盖，不需要修改offline-gate。
 - 所有计时路径每次取5样本中位数；warm/三轮时钟前移阈值仍200ms，冷HTTP非阻塞阈值仍500ms，无skip/todo。输出原始5值与median，持续慢的多数样本仍失败。
-- README计数为主段1430 + 独立perf10；默认readme计数工具仍测主段。
-- 顺带修复工单记录的job-tick-lock清理：注册child close promise、finally kill后await close、Windows删除有限重试；scratch改为仓内tmp。未改产品代码。
+- README计数更新为主段1432 + 独立perf10（新增2条确定性I/O回归）；默认readme计数工具仍测主段。
+- 顺带修复工单记录的job-tick-lock清理：注册child close promise、finally kill后await close、Windows删除有限重试；scratch改为仓内tmp。产品补丁范围见下一节。
+
+## 独立复验后的产品修复（2026-11-01 18:21 +08 起）
+
+[验证席的独立 Windows 三轮](https://github.com/NelsonLongxiang/ygl-trees/pull/157#issuecomment-6556604259) 直接否证“只拆测试足够”：旧头 df9a470 的隔离中位数 warm 369/422/277ms、5s 233/224/398ms，其他端点约4–5ms。该机器具体文件系统/AV归因仍未证实，但隔离后持续慢已被实测，不能继续只靠测试调度。
+
+产品机制是 specRows 在20个目录上逐个 await，即使每目录两读并行，慢文件系统的往返延迟仍累积20次。新实现按16目录一批Promise.all，最多32读在途；20目录只需两批。先排序、Promise.all按输入次序返回，保留坏spec过滤、缺prepare默认值、index counts/latest投影；不加缓存/TTL，不改变新鲜度。
+
+新增 verify-list-spec-io.spec.ts 用显式deferred Promise阻塞每次读取：旧代码断言“首批32读”得到2而红；补丁后35目录精确形成32/32/6读三批、峰值32，逆序完成仍输出字典顺序。另一用例验证非法目录/坏JSON/缺文件/default/count/latest语义。旧红1/2、新绿2/2；连同现有HTTP用例17/17通过。
+
+首次补丁perf测得warm64.26ms，5s179.57/76.36/96.49ms，全部10个业务断言通过，但20k文件清理钩子超过60秒，整轮rc1，如实保留。改用异步rm并await，以与创建同样120秒预算完成清理；仅改变fixture清理，不抬200/500ms业务断言。完整链重验结果见PR最新回执。
+
+
+受控延迟模型进一步验证同一产品源码的串行放大机制（不是G1，不是AV复现）：把同样的20目录与40文件读取置于两版源函数中，每种延迟各5次，输出逐字段完全一致。
+
+| 每次readFile请求延迟 | 旧串行中位数ms | 新32读有界并发中位数ms |
+|---|---:|---:|
+| 0ms（立即resolve） | 0.41 | 0.35 |
+| 5ms | 310.27 | 30.61 |
+| 10ms | 312.13 | 30.54 |
+| 15ms | 417.30 | 46.62 |
+
+每种实现各40读/次，峰值由2变32；Windows定时器分辨率/调度使请求5ms与10ms延迟均可能量化到约15ms，故不把请求值冒充实际磁盘时延。此模型只证明“相同单次延迟经20轮串行会超200ms、两批并发避免累加”，不证明历史官方G1时段差异的外部原因。脚本与原始数据位于仓内tmp/issue156-latency-model.cjs与tmp/issue156-latency-model.json。
 
 ## 原始证据与复现
 
