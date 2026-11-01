@@ -7,7 +7,7 @@ description: >-
   （produce outline/section/report/export）。
   触发词：研究、调研、evidence、证据、claim、断言、来源、source、引文、仲裁、resolve、
   报告、report、文献、抓取、fetch。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,research,evidence,claim,report
 ---
 
@@ -71,7 +71,7 @@ ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（
 
 - 有支持有反对 → `contested`；仲裁后新证据链接会重新推导
 - **预测断言（`[预测·…]` 前缀）挂证据不自动晋升**（0.82.1）：挂证据 ≠ 仲裁，状态保持 unverified 直到显式 resolve / 到期回测——predict list（结算投影：outcome/channel/brier）
-predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `claim unresolve` 归位（幂等 duplicate:true）
+predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `research claim unresolve <cid>` 归位（幂等 duplicate:true）
 - **判定史可对账（0.84）**：link 自动评估与手动 evaluate 都落 `claim.eval` 事件（mode: auto-on-link|manual）；`calibration` 按"每断言最新评估胜出"汇总模型档位 vs 人工仲裁档位——巡检"决策模型置信度"预测时先跑它，别手工数事件
 - 全部命令幂等：同内容重跑返回已存在行（`duplicate: true`，rc=0）
 

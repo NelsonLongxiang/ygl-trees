@@ -7,14 +7,15 @@ description: >-
   （node unlock/export/import）。
   触发词：科技树、技能树、依赖图、DAG、tech tree、skill tree、解锁、unlock、前置、
   prerequisite、拓扑、闭包、closure、互斥、节点、node。
-version: 0.116.0
+version: 0.118.0
 tags: ygl-trees,techtree,dag,unlock,gate
 ---
 
 # 科技树节点模型
 
-`node_edges` 邻接表是唯一事实源；`node_closure`（祖先/后代闭包）与 `node_index`（拓扑序）
-是派生索引——`node index` 重建，遇到必检环直接报错。
+`node_edges` 邻接表是唯一事实源；`node_closure`（祖先/后代闭包）每次写入都在同一事务里重算
+（写入时环守卫靠它），`node_index`（拓扑序/tier）是派生索引——`node add/unlink/rm/move/cond`
+会把它标脏，`node index`（或 `node validate`）重建；`tree list` 的 dirty 列看状态。
 
 > **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
 
@@ -89,5 +90,5 @@ round-trip 语义等价有 demo 断言守护；同名树默认拒绝（防覆盖
 
 ## 4. Agent 姿势
 
-改结构后必跑 `node index` + `node validate`（`agent brief` 也会提示脏索引）；
+改结构后跑 `node index` + `node validate`（`doctor` 的 `index_freshness` 会提示脏索引）；
 解锁判定用 `can` 而不是自己遍历 parents——mode 组合语义（AND/OR/XOR/NOT）在 canUnlock 里。

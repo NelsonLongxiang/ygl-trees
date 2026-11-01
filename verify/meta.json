@@ -184,6 +184,11 @@
       "role": "gate"
     },
     {
+      "path": "scripts/skills-audit.mjs",
+      "sha256": "c07c4c2d1cd733aeaa700333bd9ef4295712218b76678edc3f37fbe2ce849e8c",
+      "role": "gate"
+    },
+    {
       "path": "scripts/stage-web-dist.mjs",
       "sha256": "64a5e1067bc27612fd0aae2c7c9e9e6e8b1aadaf7a53aaa1c36ca1e73623d380",
       "role": "build"
@@ -210,7 +215,7 @@
     },
     {
       "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
-      "sha256": "4649d19df3c286bfb30d14be17b67c286ffe2ba2fc9a2175fd7932d7d8d760a7",
+      "sha256": "053e3425baa6ba166b9559eac4bf4a34af4ca3e4651b43d38e20c361abcebba0",
       "role": "gate"
     },
     {
@@ -1085,6 +1090,22 @@
       "reason": "#139: lifecycle demo uses a complete workspace metric; keep pending/nonresolved assertion unchanged",
       "actor": "dev-ec4ce7f8",
       "at": "2026-10-31T02:40:25.708Z"
+    },
+    {
+      "path": "skills/ygl-trees-lifecycle/validator/validate-lifecycle.mjs",
+      "old_sha256": "4649d19df3c286bfb30d14be17b67c286ffe2ba2fc9a2175fd7932d7d8d760a7",
+      "new_sha256": "053e3425baa6ba166b9559eac4bf4a34af4ca3e4651b43d38e20c361abcebba0",
+      "reason": "#147: --rule rejects unknown ids (rc 2), L10 fail honours --rule, value-less flags rc 2, L6 wording matches engine index model; 1.3.0",
+      "actor": "Claude-OPS-5.5",
+      "at": "2026-10-31T17:59:09.362Z"
+    },
+    {
+      "path": "scripts/skills-audit.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "c07c4c2d1cd733aeaa700333bd9ef4295712218b76678edc3f37fbe2ce849e8c",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "nelson",
+      "at": "2026-10-31T17:59:14.095Z"
     }
   ],
   "kind": "engine",

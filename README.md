@@ -360,8 +360,9 @@ pnpm pack:repro    # 可复现打包：mtime/owner/顺序/gzip 全固定，同�
 ygl-trees --version    # 打印版本号
 ygl-trees llms          # 结构化能力清单（LLM 参考一次性获取全部命令面）
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2
+pnpm skills:audit   # 技能真值门禁：skills/*/SKILL.md 里的命令字面量逐条实跑，CLI 拒收命令形状即红（pnpm test 末段）
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
-ygl-trees doctor   # 工作区健康检查 10 项（--fix 一键安全修复）（schema/索引/FTS/重复/孤儿/config/锁存活/eval 信封/插件 profile/幻影写入）
+ygl-trees doctor   # 工作区健康检查 16 项（--fix 一键安全修复）（schema/索引/选择/巡检队列/FTS/驱动/重复/孤儿/关联孤儿/config/锁存活/eval 信封/插件 profile/幻影写入/更新提示/技能版本）
 ygl-trees db unlock    # 清残留 .ygllock：查 pid 存活，死 pid 直接清；活 holder（回显其命令行）拒绝并说明，--force 才强清
 ygl-trees node timeline <tree>   # 单树成长时间线（add/link/unlock 事件倒序）
 ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）
