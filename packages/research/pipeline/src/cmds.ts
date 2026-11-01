@@ -1027,9 +1027,14 @@ if (subAction === "show") {
     }
     if (subAction === "link") {
       if (!rest[1] || !rest[2]) {
-        bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance refutes] [--by-source] [--verbose]");
+        bad(ctx, "usage: research claim link <claimId> <evidenceId> [--stance supports|refutes] [--by-source] [--verbose]");
         return 2;
       }
+      // #148: name why auto_promote is off
+      const lockedReason = async (claimId: string): Promise<string> => {
+        const c = await readOne(env, "SELECT text FROM claims WHERE id=?", [claimId]);
+        return String(c?.text ?? "").startsWith("[预测·") ? "prediction claim" : "arbitrated claim";
+      };
       const stanceRaw = String(args.flags.stance || "supports");
       // P1-2 fix: --stance must be exactly supports|refutes; a bad value must
       // NOT silently rewrite claim status (cold-user report: nonsense → unverified).
@@ -1124,7 +1129,7 @@ if (subAction === "show") {
               if (linked > 0 && !ctx.json && (status !== statusBefore || autoPromote === false)) {
                 const why = status !== statusBefore
                   ? `status changed: ${statusBefore || "∅"} → ${status}`
-                  : `prediction claim stays ${status} — auto-promote skipped`;
+                  : `${await lockedReason(rest[1])} stays ${status} — auto-promote skipped`;
                 out(ctx, paint(C.dim, `  [状态] ${why}`, ctx.color));
               }
             }
@@ -1165,7 +1170,8 @@ if (subAction === "show") {
           if (ctx.json) {
             console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(duplicate ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
           } else if (r.auto_promote === false) {
-            ok(ctx, `linked; prediction claim stays ${r.status} — auto-promote skipped (arbitration: claim resolve / deadline audit)`);
+            const reason = await lockedReason(rest[1]);
+            ok(ctx, `linked; ${reason} stays ${r.status} — auto-promote skipped (${reason === "prediction claim" ? "arbitration: claim resolve / deadline audit" : "re-derive: research claim unresolve " + rest[1]})`);
           } else {
             ok(ctx, `linked; claim status now: ${r.status}`);
           }
@@ -1681,12 +1687,14 @@ if (subAction === "show") {
   // unknown subaction = usage ERROR (rc 2) — the frozen exit-code contract.
   if (action) {
     bad(ctx, `unknown research subcommand: ${action}`);
+    // Contract ④
+    if (ctx.json) return 2;
   }
   out(
     ctx,
     paint(
       C.dim,
-      "  research: query add|list · source add|list|search|show|rm · evidence add|list · claim add|link|list · predict audit",
+      "  research: query add|attach|list · source add|fetch|list|search|show|rm · evidence add|list|show|assess|rm · claim add|link|unlink|resolve|unresolve|evaluate|calibration|list|show · predict list|audit",
       ctx.color
     )
   );

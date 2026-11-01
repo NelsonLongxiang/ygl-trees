@@ -721,13 +721,18 @@ ${cl.text}
         });
     }
     case "":
-      out(ctx, paint(C.dim, "  db: init | stats | path | export [--lean] | sync pg <url> | migrate pg <url> [--fresh] | dups | reset | sql \"<sql>\"", ctx.color));
+      out(ctx, paint(C.dim, DB_USAGE, ctx.color));
       return 0;
     default:
-      out(ctx, paint(C.red, `  unknown db action: ${action}`, ctx.color));
+      // Contract ④: usage text only outside --json
+      bad(ctx, `unknown db action: ${action}`);
+      if (!ctx.json) out(ctx, paint(C.dim, DB_USAGE, ctx.color));
       return 2;
   }
 }
+
+const DB_USAGE =
+  "  db: init | stats | path | unlock | snapshot | export <file.sql> [--lean] | export-markdown | obsidian [dir] | time-travel <date> | timeline | workspace list | sync pg <url> | migrate pg <url> [--fresh] | dups | reset | sql \"<sql>\"";
 
 function sqlLit(v: any): string {
   if (v === null || v === undefined) return "NULL";
