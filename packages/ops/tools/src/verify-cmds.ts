@@ -1883,7 +1883,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           const spec = readJson<VerifySpec>(join(p.specs, d, "spec.json"));
           const prep = existsSync(join(p.specs, d, "prepare.json")) ? readJson<any>(join(p.specs, d, "prepare.json")) : {};
           const reports = existsSync(p.reports) ? readdirSync(p.reports).filter((f) => f.endsWith(".json")).map((f) => readJson<VerifyReport>(join(p.reports, f))).filter((r) => r.spec_id === spec.spec_id) : [];
-          const last = reports.sort((a, b) => String(a.finished).localeCompare(String(b.finished))).pop();
+          const last = reports.sort((a, b) => String(a.finished).localeCompare(String(b.finished))).at(-1);
           return { spec_id: spec.spec_id, version: spec.spec_version, title: spec.title, units: spec.vu.length, material: prep.material_id ?? "", runs: reports.length, last_overall: last?.overall ?? "", last_run: last?.run_id ?? "" };
         });
       if (ctx.json) {
