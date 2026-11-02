@@ -11,6 +11,10 @@ Operational tools: config registry, PG sync/migrate, db/job/agent/config CLI han
 
 Import from `@ygl/ops-tools` when you need operational tools: config registry, pg sync/migrate, db/job/agent/config cli handlers.
 
+## Agent brief selection
+
+`agent brief -p <project>` and `--project <project>` use the same resolved selection for admission and payload construction. Explicit selection overrides environment/session pointers without changing them; missing projects return rc1. The multi-project strict gate remains rc2. `buildBrief(env)` keeps its ungated default for dashboard callers.
+
 ## MCP routing and request environment
 
 MCP write maps kb add to `--title` plus exactly one body/file source, rel attach to `rel add node:<ref> <typed-target> --rel <type>`, and node-cond to explicit op/value and the existing condition flags. Node can/ready/node-unlock forward a named `context`; can/ready accept the CLI state string. No new lock/path/unlock-enforcement behavior is added.
