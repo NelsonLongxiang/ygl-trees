@@ -1,5 +1,6 @@
 ## Unreleased
 
+- #160 审计兼容：新 `evidence.add` 的 TEXT payload 为 JSON 对象（payload_version:1、evidence_id/source_id、quote摘要、quote_verified、unverified）；历史quote字符串原样保留，重复历史回执为未核。读取者需先区分JSON对象/旧字符串，不得假设payload可直接substring；通用feed/export原样透传文本。引文不匹配使用专用QuoteMismatchError，SQLite/PG均给安全的来源诊断，不混作PG能力错误。
 - Refs #160：新增证据仅折叠空白后对照已存来源原文，错引文 rc1 零写入，回执 quote_verified 区分已核/未核；--unverified 显式绕过并留痕，单条/批量/PG 同规则，存量证据不追溯重验。
 
 - Refs #158：预测列表新增数值 P、引擎 Brier 与备注差异标记，按 channel 汇总命中率/平均 Brier；ND、未结算、缺概率行不进入评分分母，旧备注 brier 字段语义保留。

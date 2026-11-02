@@ -260,13 +260,18 @@ function mapSource(s: Source): Record<string, any> {
 
 // ================================================================ evidence
 
+/** A stored-source quotation mismatch, not a backend capability failure. */
+export class QuoteMismatchError extends Error {
+  constructor(message: string) { super(message); this.name = "QuoteMismatchError"; }
+}
+
 /** Layout whitespace is ignored; all other characters remain exact. */
 function verifyQuote(content: string | null | undefined, quote: string, sourceId: string, unverified: boolean): boolean {
   const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
   const original = normalize(content || "");
   if (unverified || !original) return false;
   const fragment = normalize(quote);
-  if (!fragment || !original.includes(fragment)) throw new PgCapabilityError("quote does not occur in stored source content: " + sourceId + "; use a literal quote or explicitly --unverified for paraphrase/translation");
+  if (!fragment || !original.includes(fragment)) throw new QuoteMismatchError("quote does not occur in stored source content: " + sourceId + "; use a literal quote or explicitly --unverified for paraphrase/translation");
   return true;
 }
 
@@ -302,7 +307,7 @@ async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: 
     }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
     if (!result.row) throw new Error("evidence upsert returned no row");
     const e = result.row;
-    if (!result.duplicate) await logEvent(mgr, "evidence.add", "evidence", e.id, { source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
+    if (!result.duplicate) await logEvent(mgr, "evidence.add", "evidence", e.id, { payload_version: 1, evidence_id: e.id, source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
     return { row: evidenceReceipt(e, result.duplicate ? await previousQuoteVerification(mgr, e.id, unverified) : quote_verified), dup: result.duplicate };
   }
   const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
@@ -321,7 +326,7 @@ async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: 
   e.created = nowIso();
   await mgr.save(e);
   await ftsShadow(mgr, "INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [e.id, quote, ngram(quote)]);
-  await logEvent(mgr, "evidence.add", "evidence", e.id, { source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
+  await logEvent(mgr, "evidence.add", "evidence", e.id, { payload_version: 1, evidence_id: e.id, source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
   return { row: { ...mapEvidence(e), quote_verified }, dup: false };
 }
 
@@ -350,7 +355,8 @@ export async function evidenceAddBatch(
     for (const [index, r] of rows.entries()) {
       try { results.push(await evidenceAddCore(mgr, projectId, r.source_id, r.quote, r.note || "", r.locator || "", force, unverified)); }
       catch (error: any) {
-        const message = ormDialect(mgr) === "postgres" && !(error instanceof PgCapabilityError) ? "PG operation failed" : error?.message || String(error);
+        const message = ormDialect(mgr) === "postgres" && !(error instanceof PgCapabilityError) && !(error instanceof QuoteMismatchError) ? "PG operation failed" : error?.message || String(error);
+        if (error instanceof QuoteMismatchError) throw new QuoteMismatchError("line " + (r.__line ?? index + 1) + ": " + message);
         throw new PgCapabilityError("line " + (r.__line ?? index + 1) + ": " + message);
       }
     }

@@ -203,7 +203,7 @@ async function mutationNotFound(env: Env, table: "claims" | "evidence" | "source
   return kind + " not found: " + id + (owner ? "  (it belongs to project '" + owner.name + "' — use -p " + owner.name + ")" : "");
 }
 function writeOrm(env: Env) { return env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path); }
-function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) ? pgFailure() : e?.message || String(e); }
+function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) && !(e instanceof writes.QuoteMismatchError) ? pgFailure() : e?.message || String(e); }
 
 function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
