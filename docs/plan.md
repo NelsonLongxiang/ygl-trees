@@ -2,7 +2,7 @@
 
 ## 在途 · #168 构建配置隔离（未发版）
 
-独立于四层已评审堆栈，基于固定c553f8d，不进入0.119.0。旧tsdown命令在真实临时clone中加载并执行父目录decoy，负控实测红；修复在共享build:bundle:only显式--no-config，不改变现有单文件/未压缩策略。G1在env -i内检查构建命令已禁配置发现并记录none，合成clone回归执行真实检查表达式。decoy前后输出目录全部路径/SHA逐一相同且父配置未执行，六条定向回归通过。README1435+新增1=1436，最终完整链独立计数核准；tooling须同提交重登记package.json/offline-gate.sh。Refs #168，不提前关闭。
+独立于四层已评审堆栈，基于固定c553f8d，不进入0.119.0。旧tsdown命令在真实临时clone中加载并执行父目录decoy，负控实测红；修复在共享build:bundle:only显式--no-config，不改变现有单文件/未压缩策略。G1在env -i内检查构建命令已禁配置发现并记录none，合成clone回归执行真实检查表达式。decoy前后输出目录全部路径/SHA逐一相同且父配置未执行，六条定向回归通过。README1435+新增1=1436，最终完整链独立计数核准；offline-gate.sh已同提交重登记；package.json在本base并非tooling，误加登记及Z锚已另提交撤销，保留既有账本。监督席direct-5395c2a1确认并修正文，package enrollment另起议题，against-git现rc0。Refs #168，不提前关闭。
 
 ## 在途 · #170 MCP 测试生命周期（未发版）
 
