@@ -244,11 +244,14 @@ gitee release create -R NelsonLongXiang/ygl-trees --tag v0.39.0   --name "v0.39.
 ## 四、发布面构成
 
 ```
-bin        dist/bundle/bin.cjs     ← tsdown 单文件（cordis + 全部 packages 已内联）
+bin        dist/bundle/bin.cjs     ← tsdown 压缩入口
+runtime    dist/bundle/            ← 入口及全部按需分块一并交付，保留类/函数名
 files      dist/ ygl.bundle.json README.md docs/ skills/ examples/ LICENSE
 externals  better-sqlite3 · typeorm · reflect-metadata · pg
            @deepseek-ai/dsh-atomic-write（native/可选，不进 bundle）
 ```
+
+运行时目录由 `tsdown.config.mjs` 压缩，类/函数名保留。发布包不带 sourcemap：异常栈中的行列指向压缩产物，不能当作 TypeScript 源码行号；排障须保存完整版本与栈，并在相同源码版本的非压缩 tsc 开发树复现。版本/帮助命令先于业务路由及 ORM 加载；真实命令继续走相同处理器。`bundle_bytes` 统计整个 `dist/bundle/`，包括嵌套分块，不只入口；方法迁移按监督席 direct-6154a043 在 Windows 以 `--write --reason` 明确归因重锁：bundle旧入口938774B→全目录676368B（不同尺），cold407→82ms，web1401456B不变；bundle/web的2%和cold的30%容差保持不变，不允许macOS测量覆盖Windows签名基线。`pack:check` 必须从 tarball 隔离安装运行，不能以本机入口能运行代替分块交付验证。
 
 **关键纪律**：根 `package.json` 的 `dependencies` 是**发布面**（消费者安装什么），
 `packages/*/*/package.json` 是**依赖图真相**（workspace 内部谁依赖谁）。两者并存，

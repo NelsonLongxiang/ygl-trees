@@ -21,7 +21,7 @@ version: 0.118.0
    - **现状层**：解决到哪一步（判据=发布史/代码事实）；
    - **机制层**：为什么这条路走得通/走不通（判据=架构决策链）。
 4. **建树**：`tree new <repo>-intent`。标准节点骨架：t1 问题定义 → t2 路线选择（各候选路线一节点，走通的 unlock、否决的挂 excludes）→ t3 已交付能力 → t4 当前边界 → t5 下一步（**未来节点用真实条件锁定**：`node cond add <key> --name <cond> --op eval --value "<判定问题>"` 挂「作者会做 X 吗」，或 `--op telemetry` 挂发布节奏）。挂树用 rel：`rel add node:<tree>/<key> claim:<id> --rel decided-by`。
-5. **预测落账**：对 t5 出 `[预测·N天]` 断言（`research claim add` 带文本格式）+ 标记节点（time-capsule 树）。到期 `research predict audit` 回测——研究质量由命中率度量。
+5. **预测落账**：对 t5 出 `[预测·N天]` 断言（`research claim add` 带文本格式、数值 `--confidence 0.8` 与 `--channel`）+ 标记节点（time-capsule 树）。到期 `research predict audit` 取证，resolve 仍是人工仲裁。`research predict list --all --json` 的 `brier_calc` 由引擎计算，结算者不再手算；原 `brier` 备注值只作对账。研究质量用 `research predict score --all --json` 按 channel 读取 `hit_rate` / `brier_mean`，可加 `--channel <c>` 精确过滤：ND、未结算和缺概率行不进评分分母，空分母是 null 不是 0。
 
 ## 反模式
 

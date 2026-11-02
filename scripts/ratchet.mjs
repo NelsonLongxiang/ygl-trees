@@ -5,7 +5,7 @@
  * 背景：测量一旦存在，就只能往好的方向走。任何一次「这次先慢一点/大一点」的放行，
  * 都会变成下一次比较的基准。所以这里把三条可机械测量的指标钉在 ratchet-baseline.json：
  *
- *   bundle_bytes    发布产物 dist/bundle/bin.cjs 的字节数（确定值，容差 2%）
+ *   bundle_bytes    发布目录 dist/bundle/ 全部文件字节数（确定值，容差 2%）
  *   web_dist_bytes  dist/apps/web/dist 的字节数合计（确定值，容差 2%）
  *   cold_start_ms   `--version` 冷启动最小值（预热 2 次不计 + 7 次取最小；超容差延迟复测一次；容差 30%，只看大滑坡）
  *
@@ -23,7 +23,8 @@ import { spawnSync } from "node:child_process";
 
 const ROOT = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const BASELINE = join(ROOT, "ratchet-baseline.json");
-const BIN = join(ROOT, "dist/bundle/bin.cjs");
+const BUNDLE = join(ROOT, "dist/bundle");
+const BIN = join(BUNDLE, "bin.cjs");
 const WEB = join(ROOT, "dist/apps/web/dist");
 
 const args = process.argv.slice(2);
@@ -73,7 +74,7 @@ function coldStartMs() {
 }
 
 const METRICS = [
-  { key: "bundle_bytes", label: "bundle (dist/bundle/bin.cjs)", measure: () => statSync(BIN).size, toleranceRel: 0.02, method: "stat-size-of-dist-bundle" },
+  { key: "bundle_bytes", label: "bundle payload (dist/bundle)", measure: () => dirBytes(BUNDLE), toleranceRel: 0.02, method: "sum-file-sizes-recursive" },
   { key: "web_dist_bytes", label: "web dist (dist/apps/web/dist)", measure: () => dirBytes(WEB), toleranceRel: 0.02, method: "sum-file-sizes-recursive" },
   {
     key: "cold_start_ms",

@@ -133,7 +133,10 @@ export class Store {
   }
 
   skillGet(name: string): Row | null {
-    return this.db.get("SELECT * FROM skills WHERE name=? OR id=?", [name, name]);
+    const skill = this.db.get("SELECT * FROM skills WHERE name=? OR id=?", [name, name]);
+    if (!skill) return null;
+    const support_refs = this.db.all("SELECT DISTINCT dst_type AS type,dst_id AS id FROM relations WHERE src_type='skill' AND src_id=? AND rel='promoted-with' ORDER BY dst_type,dst_id", [skill.name]);
+    return { ...skill, support_refs };
   }
 
   /** L1 match: full-text search over skills, used by agents to pick a skill. */
@@ -448,7 +451,7 @@ function str(v: any): string {
 
 /**
  * Derive an L1 description (what + when) from a note body, for kb promote.
- * Exported: the kb promote command composes it with the TypeORM skillUpsert.
+ * Used by the transactional promotion service after admission.
  */
 export function deriveL1(body: string, title: string): string {
   const lines = body

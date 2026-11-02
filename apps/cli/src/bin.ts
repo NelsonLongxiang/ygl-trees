@@ -18,7 +18,6 @@ import { bootApp, type BootedApp } from "./profile-boot";
 import { StartupError, reportStartupFailure } from "./startup-diagnostics";
 import { createProcessShutdown } from "./process-shutdown";
 import { runPluginCommand } from "./plugin";
-import { DOMAIN_MODULES } from "./domain-barrel";
 import { maybeNag, maybeRefresh } from "../../../packages/ops/tools/src/update-check";
 import Schema from "@deepseek-ai/schemastery";
 
@@ -149,7 +148,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
              source add --file <json> | --batch <file.jsonl>   #83：单对象入参 / 整批拒批量（重复按 duplicate 计数）
   source fetch <url>          fetch page, extract title/meta/text (zero side-effect on failure)
   source list | search "<q>" | show <id> | rm <id>
-  evidence add <sourceId> --quote "..." | --file <path> [--note --locator]
+  evidence add <sourceId> --quote "..." | --file <path> [--note --locator] [--unverified]
              evidence add --batch <file.jsonl>   #83 全批拒批量（行={source_id,quote,note?,locator?}）
   evidence list | show <id> | assess <id>
   evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)
@@ -163,7 +162,8 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   claim evaluate <claimId>    decision-model confidence from linked evidence (persisted)
   claim calibration [--all]   model-vs-human grade gap readout (校准预测判据)
   claim list | show <id>
-  predict list [--all]        settlement projection: outcome 未结算/1/0/ND + channel + 结算三段式 note（brier/settler）
+  predict list [--all] [--due]   P / Brier / settlement; ≠ marks note drift
+  predict score [--all] [--channel <c>]   channel scores; ND/open/no_p excluded
 
 ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec → report
   submit --title <t> --text <file|->   freeze material (text + attachments w/ sha256)
@@ -532,7 +532,7 @@ export async function main(argv: string[]): Promise<number> {
       bad(ctx, "PG business commands require YGL_SESSION or DSH_SESSION_ID for session isolation"); return 2;
     }
     try {
-      const { getPgOrm, closeOrm } = require("../../../packages/core/database/src/orm");
+      const { getPgOrm, closeOrm } = await import("../../../packages/core/database/src/orm");
       try {
         const ds = await getPgOrm(pgUrl);
         if (PG_RESEARCH && action === "query") {
@@ -679,7 +679,7 @@ export async function main(argv: string[]): Promise<number> {
   const store = booted.store;
   // B1 (PG plan): async read facade — research cmds switch here first; the
   // legacy sync store stays for db-cmds/webui until their own small batch.
-  const { AsyncResearchStore } = require("../../../packages/research/pipeline/src/async-store");
+  const { AsyncResearchStore } = await import("../../../packages/research/pipeline/src/async-store");
   const pluginCommands = booted.pluginCommands;
   const loadedPlugins = booted.loadedPlugins;
   // #53: first native-driver open of an OLD workspace converts DELETE→WAL.
@@ -756,7 +756,7 @@ export async function main(argv: string[]): Promise<number> {
   /** Async commands (e.g. source fetch) return a promise; main must keep the
    *  db open until it settles — hence the awaited dispatch below.
    *  Domain routing: each group maps to its owning domain module. */
-  // Domain routing: static barrel (bundle-traceable) — see domain-barrel.ts
+  // Load the literal domain barrel only for real commands; bundlers still trace every route.
   const dispatch = async (): Promise<number> => {
     const t0 = Date.now();
     // R10.3: one run id per CLI invocation — same-process events carry it in
@@ -788,6 +788,7 @@ export async function main(argv: string[]): Promise<number> {
       } catch { /* telemetry best-effort */ }
       return afterCommand(code);
     }
+    const { DOMAIN_MODULES } = await import("./domain-barrel");
     const mod = DOMAIN_MODULES[group];
     if (!mod) {
       // Help guidance: suggest closest match for unknown commands
@@ -883,7 +884,7 @@ export async function main(argv: string[]): Promise<number> {
     .finally(async () => {
       if (pgUrl) {
         await env.asyncStore.close();
-        await require("../../../packages/core/database/src/orm").closeOrm();
+        await (await import("../../../packages/core/database/src/orm")).closeOrm();
       }
       // Cordis lifecycle (0.76): Services' stop() hooks clean resources.
       // This fork has no ctx.dispose() — we call Service.stop() explicitly.
@@ -946,6 +947,8 @@ export function generateLlmsManifest(): string {
       ["research claim unresolve <cid>", "reset to unverified (undo link auto-promote)"],
       ["research claim evaluate <cid>", "decision model confidence (0-5 → A/B/C/D), persisted as claim.eval"],
       ["research claim calibration [--all]", "model-vs-human grade gap (校准预测判据 ≥60%)"],
+      ["research predict list [--all] [--due]", "P / Brier + settlement-note drift"],
+      ["research predict score [--all] [--channel <c>]", "channel hit rate / mean Brier"],
       ["research evidence assess <eid>", "decision model quality assessment"],
       ["research evidence rm <eid> [--force]", "delete evidence (refuse if linked)"],
       ["research claim unlink <cid> <eid>", "remove one claim-evidence link"],
