@@ -6,7 +6,7 @@
 
 ## 在途 · #159（未发版）
 
-知识提升准入放在事务化写服务：完整非空 cue/lesson/evidence，或真实 evidence/claim 双向 rel，二选一；否则 rc1 单错误、零技能写入。强制绕过与技能/FTS/提升时 support_refs 快照同事务留痕。复用 relations 表，无 schema 变更；kb add/import 仍宽松，只有准入 frontmatter 在 import 中保留。#157/#161 与本单 README 计数行均需以后合后的实际测试配置重测。本单显式依赖 PR #161 的已验证运行时预算修复，独立 PR 以 fix/158-predict-score 为基线，仅展示 #159 差异，组合后完整链重测；不复用父单验收冒充本单通过。使用 Refs #159，不自动关闭，发版后另按工单复验。
+知识提升准入放在事务化写服务：完整非空 cue/lesson/evidence，或真实 evidence/claim 双向 rel，二选一；否则 rc1 单错误、零技能写入。强制绕过与技能/FTS/提升时 support_refs 快照同事务留痕。评审P2修复：普通skillUpsertIn不删promoted-with，删除仅放kbPromote事务内重新插入前；同名add/import保留历史支持快照。P3收敛为仅按id选笔记。负控旧码对add/import保留与重名标题拒绝三例均红，修后16/16通过，含重新提升失败恢复既有skill/FTS/support快照。README预计1454+16=1470，另perf10，最终全链计数核对。复用 relations 表，无 schema 变更；kb add/import 仍宽松，只有准入 frontmatter 在 import 中保留。#157/#161 与本单 README 计数行均需以后合后的实际测试配置重测。本单显式依赖 PR #161 的已验证运行时预算修复，独立 PR 以 fix/158-predict-score 为基线，仅展示 #159 差异，组合后完整链重测；不复用父单验收冒充本单通过。使用 Refs #159，不自动关闭，发版后另按工单复验。
 
 ## 在途 · #170 MCP 测试生命周期（未发版）
 

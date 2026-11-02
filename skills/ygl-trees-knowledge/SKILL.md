@@ -53,7 +53,8 @@ ygl-trees agent match "我要做 X 任务"           # Agent 靠 L1 命中技能
 
 - 准入条件二选一：笔记 frontmatter 的 `cue`（适用场景）、`lesson`（做法）、`evidence`（实测依据）均非空；或笔记经 `rel` 与真实 evidence/claim 关联（任一方向）。否则 rc=1、单 JSON error、零技能写入。补真实材料，禁止用 placeholder/占位文本填字段凑过门；引擎不做语义质量打分。
 - `kb add/import` 仍宽松；import 保留准入 frontmatter，缺字段只在 promote 时拒绝。`--force` 仅显式绕过并留痕，不把未核依据伪装成已核。
-- `skill show --json` 的 `support_refs:[{type,id}]` 展示提升时真实关联的 evidence/claim ID 快照；纯文本 frontmatter 或无关联的强制提升返回空数组，不从散文编造 ID。后改笔记关联不追改技能依据，重新 promote 才更新；同名 `skill add/import` 覆盖内容会清空旧 `support_refs`，删除技能也会清理其依据；原 `origin:kb:<id>` 与正文保留。
+- `kb promote` 只按唯一 noteId 选择，标题不是选择器（重名标题也拒绝）。
+- `skill show --json` 的 `support_refs:[{type,id}]` 展示提升时真实关联的 evidence/claim ID 快照；纯文本 frontmatter 或无关联的强制提升返回空数组，不从散文编造 ID。后改笔记关联不追改技能依据，重新 promote 才更新；同名 `skill add/import` 覆盖内容保留提升时 `support_refs` 快照，只有重新提升才替换；删除技能清理其依据；原 `origin:kb:<id>` 与正文保留。
 - L1 description 常驻上下文（做什么+何时触发+同义词），L2 body 激活才加载
 - 好的 L1 决定命中率：写清触发词；promote 的自动提炼已含来源标注
 - `skill import <SKILL.md>` 可直接导入带 frontmatter 的技能文件
