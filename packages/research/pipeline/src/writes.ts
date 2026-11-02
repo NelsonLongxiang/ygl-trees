@@ -1072,7 +1072,6 @@ export async function skillUpsertIn(
   );
   const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
   const s = rows[0];
-  await mgr.query("DELETE FROM relations WHERE src_type='skill' AND src_id=? AND rel='promoted-with'", [o.name]);
   // FTS shadow refresh in the SAME transaction (delete+reinsert, Store-era discipline)
   await ftsShadow(mgr, `DELETE FROM skills_fts WHERE id=?`, [s.id]);
   await ftsShadow(mgr, `INSERT INTO skills_fts(id,name,description,tags,ngram) VALUES(?,?,?,?,?)`, [
@@ -1093,7 +1092,7 @@ export async function skillUpsert(
 export async function kbPromote(ds: DataSource, ref: string, options: { name?: string; force?: boolean } = {}): Promise<Record<string, any>> {
   if (ormDialect(ds) !== "sqlite") throw new PgCapabilityError("kb promote is unavailable in PG mode");
   return runTx(ds, async mgr => {
-    const note = (await mgr.query("SELECT * FROM kb_notes WHERE id=? OR title=? LIMIT 1", [ref, ref]))[0];
+    const note = (await mgr.query("SELECT * FROM kb_notes WHERE id=?", [ref]))[0];
     if (!note) throw new Error("kb note not found: " + ref);
     const { meta, body } = parseFrontmatter(note.body || "");
     const missing = ["cue", "lesson", "evidence"].filter(key => !String(meta[key] || "").trim());
@@ -1112,6 +1111,7 @@ export async function kbPromote(ds: DataSource, ref: string, options: { name?: s
     }
     const name = options.name || note.title;
     const skill = await skillUpsertIn(mgr, { name, description: deriveL1(body, note.title), body: note.body, tags: note.tags, origin: "kb:" + note.id });
+    await mgr.query("DELETE FROM relations WHERE src_type='skill' AND src_id=? AND rel='promoted-with'", [name]);
     for (const support of refs) {
       await mgr.query(
         `INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created)

@@ -91,13 +91,49 @@ describe("#159 promotion admission", () => {
     cli(["skill", "add", "--name", "reused-skill", "--description", "new independent skill", "--body", "unrelated workflow"]);
     expect(cli(["skill", "show", "reused-skill"]).support_refs).toEqual([]);
   });
-  it.each(["add", "import"])("same-name skill %s invalidates previous promotion support", (action) => {
+  it.each(["add", "import"])("same-name skill %s preserves previous promotion support", (action) => {
     const id = note("overwrite-" + action), name = "overwrite-" + action;
     cli(["rel", "add", "kb:" + id, "evidence:" + evidence]); cli(["kb", "promote", id, "--name", name]);
     expect(cli(["skill", "show", name]).support_refs).toEqual([{ type: "evidence", id: evidence }]);
     if (action === "add") cli(["skill", "add", "--name", name, "--description", "new content", "--body", "independent replacement"]);
     else { const file = join(home, name + ".md"); writeFileSync(file, "---\nname: " + name + "\ndescription: independent replacement\n---\nNew instructions."); cli(["skill", "import", file]); }
-    expect(cli(["skill", "show", name]).support_refs).toEqual([]);
+    expect(cli(["skill", "show", name]).support_refs).toEqual([{ type: "evidence", id: evidence }]);
+  });
+  it("requires a note id even when duplicate titles have different support", () => {
+    const first = note("ambiguous-title", "First reusable note."), second = note("ambiguous-title", "Second reusable note.");
+    expect(first).not.toBe(second);
+    cli(["rel", "add", "kb:" + first, "claim:" + claim]);
+    cli(["rel", "add", "kb:" + second, "evidence:" + evidence]);
+    expect(cli(["kb", "promote", "ambiguous-title", "--name", "ambiguous-skill"], 1).error).toContain("note not found");
+    expect(cli(["skill", "show", "ambiguous-skill"], 1).error).toContain("not found");
+    cli(["kb", "promote", second, "--name", "selected-id-skill"]);
+    expect(cli(["skill", "show", "selected-id-skill"])).toMatchObject({ origin: "kb:" + second, support_refs: [{ type: "evidence", id: evidence }] });
+  });
+  it("a note id wins even when another note title equals that id", () => {
+    const target = note("id-target", "Target note."), other = note("other-note", "Other note.");
+    const db = new DatabaseSync(join(home, "ygl-trees.db"));
+    try { db.prepare("UPDATE kb_notes SET title=? WHERE id=?").run(target, other); } finally { db.close(); }
+    cli(["rel", "add", "kb:" + target, "claim:" + claim]);
+    cli(["kb", "promote", target, "--name", "id-collision-skill"]);
+    expect(cli(["skill", "show", "id-collision-skill"])).toMatchObject({ origin: "kb:" + target, support_refs: [{ type: "claim", id: claim }] });
+  });
+  it("failed re-promotion restores prior skill, FTS and support snapshot", () => {
+    const id = note("replace-rollback", "Original instructions."), name = "replace-rollback-skill";
+    cli(["rel", "add", "kb:" + id, "evidence:" + evidence]);
+    cli(["kb", "promote", id, "--name", name]);
+    const before = cli(["skill", "show", name]);
+    const shadow = sql("SELECT name,description,tags,ngram FROM skills_fts WHERE name=?", [name]);
+    const db = new DatabaseSync(join(home, "ygl-trees.db"));
+    try {
+      db.prepare("DELETE FROM relations WHERE src_type='kb' AND src_id=?").run(id);
+      db.prepare("UPDATE kb_notes SET body=? WHERE id=?").run("Replacement instructions.", id);
+      db.exec("CREATE TRIGGER abort_replace_159 BEFORE INSERT ON events WHEN NEW.kind='kb.promote' BEGIN SELECT RAISE(ABORT,'replacement rejected'); END;");
+    } finally { db.close(); }
+    cli(["rel", "add", "kb:" + id, "claim:" + claim]);
+    try { expect(cli(["kb", "promote", id, "--name", name], 1).error).toContain("replacement rejected"); }
+    finally { const db = new DatabaseSync(join(home, "ygl-trees.db")); try { db.exec("DROP TRIGGER abort_replace_159"); } finally { db.close(); } }
+    expect(cli(["skill", "show", name])).toEqual(before);
+    expect(sql("SELECT name,description,tags,ngram FROM skills_fts WHERE name=?", [name])).toEqual(shadow);
   });
   it("event failure rolls skill and search shadow back together", () => {
     const id = note("rollback", '---\ncue: test failure\nlesson: roll back the whole operation\nevidence: isolated fixture transaction\n---\nRollback proof.');
