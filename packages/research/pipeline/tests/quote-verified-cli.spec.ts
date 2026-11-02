@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 const ROOT = resolve(__dirname, "../../../.."), BIN = join(ROOT, "dist/bundle/bin.cjs");
@@ -74,6 +74,18 @@ describe("#160 evidence quote verification",()=>{
   const first=cli(["research","evidence","add",src.id,"--quote","legacy phrase"]);
   const db=new DatabaseSync(join(home,"ygl-trees.db"));try{db.prepare("UPDATE events SET payload=? WHERE kind='evidence.add' AND entity_id=?").run("legacy plain payload",first.id);db.prepare("UPDATE sources SET content=? WHERE id=?").run("changed source",src.id);}finally{db.close();}
   expect(cli(["research","evidence","add",src.id,"--quote","legacy phrase"])).toMatchObject({id:first.id,duplicate:true,quote_verified:false});
+ });
+ it("generic event feed and SQL export preserve legacy strings and versioned audit JSON",()=>{
+  const src=cli(["research","source","add","--title","mixed event source","--url","session://mixed-event","--content","legacy retained and new retained"]);
+  const legacy=cli(["research","evidence","add",src.id,"--quote","legacy retained"]);
+  const db=new DatabaseSync(join(home,"ygl-trees.db"));try{db.prepare("UPDATE events SET payload=? WHERE kind='evidence.add' AND entity_id=?").run("legacy plain payload",legacy.id);}finally{db.close();}
+  const fresh=cli(["research","evidence","add",src.id,"--quote","new retained"]);
+  const rows=dbRows("SELECT entity_id,payload FROM events WHERE kind='evidence.add' AND entity_id IN (?,?)",[legacy.id,fresh.id]);
+  expect(rows.find((r:any)=>r.entity_id===legacy.id)?.payload).toBe("legacy plain payload");
+  expect(JSON.parse(String(rows.find((r:any)=>r.entity_id===fresh.id)?.payload))).toMatchObject({payload_version:1,evidence_id:fresh.id,source_id:src.id,quote_verified:true,unverified:false});
+  const feed=cli(["agent","log","--limit","100"]);expect(feed).toBeInstanceOf(Array);
+  const file=join(home,"mixed-events.sql");cli(["db","export",file]);const dump=readFileSync(file,"utf8");
+  expect(dump).toContain("legacy plain payload");expect(dump).toContain('"payload_version":1');expect(dump).toContain('"evidence_id":"'+fresh.id+'"');
  });
  it("rejects value-bearing bypass options as usage errors",()=>{
   for(const flags of [["--unverified=maybe"],["--unverified", "no"]])expect(cli(["research","evidence","add",source,"--quote","absent",...flags],2).error).toContain("--unverified");

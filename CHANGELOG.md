@@ -1,10 +1,12 @@
 ## Unreleased
 
+- #160 审计兼容：新 `evidence.add` 的 TEXT payload 为 JSON 对象（payload_version:1、evidence_id/source_id、quote摘要、quote_verified、unverified）；历史quote字符串原样保留，重复历史回执为未核。读取者需先区分JSON对象/旧字符串，不得假设payload可直接substring；通用feed/export原样透传文本。引文不匹配使用专用QuoteMismatchError，SQLite/PG均给安全的来源诊断，不混作PG能力错误。
 - Refs #160：新增证据仅折叠空白后对照已存来源原文，错引文 rc1 零写入，回执 quote_verified 区分已核/未核；--unverified 显式绕过并留痕，单条/批量/PG 同规则，存量证据不追溯重验。
 
 - Refs #158：预测列表新增数值 P、引擎 Brier 与备注差异标记，按 channel 汇总命中率/平均 Brier；ND、未结算、缺概率行不进入评分分母，旧备注 brier 字段语义保留。
-- #158 验收配套：业务路由/ORM 按需加载、运行时分块压缩并保留类名，不附 sourcemap（栈行列属于压缩产物，按相同版本的非压缩开发树复现）；整个 `dist/bundle/` 随包交付。体积棘轮从仅入口修正为全运行时目录统计，原基线数值、容差不改，嵌套隐藏大分块反例必须红。完整验收和隔离安装以 PR 对应源码快照的回执为准，未发版。
-- Refs #159：kb promote 只收完整 cue/lesson/evidence 或真实 evidence/claim 关联；拒绝单 JSON、零技能写入，--force 显式绕过并留 forced:true。skill show 增 support_refs 供复核提升时依据，add/import 仍宽松。
+- #158 验收配套：业务路由/ORM 按需加载、运行时分块压缩并保留类名，不附 sourcemap（栈行列属于压缩产物，按相同版本的非压缩开发树复现）；整个 `dist/bundle/` 随包交付。体积棘轮从仅入口修正为全运行时目录统计；按监督席 direct-6154a043 在 Windows 签名重锁为实测 676368B（此前938774B仅入口，不同尺），cold 407→82ms 来自按需加载；web1401456B持平，2%/30%容差不变，嵌套隐藏大分块反例必须红。完整验收和隔离安装以 PR 对应源码快照的回执为准，未发版。
+- Refs #170：发布 bundle 的 MCP 交错夹具等待服务端接收屏障，清理前停止请求并等待其 CLI 子进程与父服务的 close；请求超时仍为 15 秒，不修改产品服务端或发布产物。
+- Refs #159：kb promote 只收完整 cue/lesson/evidence 或真实 evidence/claim 关联；拒绝单 JSON、零技能写入，--force 显式绕过并留 forced:true。skill show 增 support_refs 供复核提升时依据，add/import 仍宽松且保留同名技能的提升依据快照；只有重新 promote 才在同事务替换快照。promote 只接受唯一 noteId，不按可能重名的 title 查找。
 
 ## 0.118.0
 
