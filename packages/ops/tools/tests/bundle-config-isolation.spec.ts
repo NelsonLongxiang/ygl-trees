@@ -21,6 +21,8 @@ describe("#168 bundle configuration boundary", () => {
       run("git", ["clone", "--quiet", "--shared", ROOT, repo], ROOT);
       // Exercise the working script, including a not-yet-committed repair, against cloned source.
       writeFileSync(join(repo, "package.json"), readFileSync(join(ROOT, "package.json")));
+      const config = readFileSync(join(ROOT, "tsdown.config.mjs"), "utf8");
+      writeFileSync(join(repo, "tsdown.config.mjs"), config);
       symlinkSync(join(ROOT, "node_modules"), join(repo, "node_modules"), process.platform === "win32" ? "junction" : "dir");
       const build = () => run(process.execPath, [join(ROOT, "scripts/run-sh.mjs"), "pnpm build:bundle:only"], repo);
       const firstLog = build(), first = bytes(join(repo, "dist/bundle"));
@@ -30,8 +32,17 @@ describe("#168 bundle configuration boundary", () => {
       expect(secondLog).not.toContain(join(base, "tsdown.config.mjs"));
       expect(existsSync(join(base, "decoy-loaded"))).toBe(false);
       expect(second).toEqual(first);
-      expect(firstLog).not.toMatch(/config file:/);
-      expect(secondLog).not.toMatch(/config file:/);
+      const configLine = (log: string) => log.split(/\r?\n/).filter(line => line.includes("config file:"));
+      expect(configLine(firstLog)).toHaveLength(1);
+      expect(configLine(secondLog)).toHaveLength(1);
+      expect(configLine(firstLog)[0].replaceAll("\\", "/")).toContain(repo.replaceAll("\\", "/") + "/tsdown.config.mjs");
+      expect(configLine(secondLog)[0].replaceAll("\\", "/")).toContain(repo.replaceAll("\\", "/") + "/tsdown.config.mjs");
+      const minifiedSize = readFileSync(join(repo, "dist/bundle/bin.cjs")).length;
+      writeFileSync(join(repo, "tsdown.config.mjs"), config.replace("minify: true", "minify: false"));
+      build();
+      expect(bytes(join(repo, "dist/bundle"))).not.toEqual(first);
+      expect(readFileSync(join(repo, "dist/bundle/bin.cjs")).length).toBeGreaterThan(minifiedSize);
+      expect(existsSync(join(base, "decoy-loaded"))).toBe(false);
     } finally { rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
   }, 180000);
 });

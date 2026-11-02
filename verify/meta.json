@@ -130,7 +130,7 @@
     },
     {
       "path": "scripts/offline-gate.sh",
-      "sha256": "ddef4828def7bf37262cfde5f53653b36fadf643ef5cda8607f83382c9c40779",
+      "sha256": "3e63ff9ffca30ba55768cdc146abd25509492e85c8fcf40caec3d694b8f97808",
       "role": "gate"
     },
     {
@@ -1172,6 +1172,14 @@
       "reason": "Refs #168 verify and report no-config policy in clean G1 environment",
       "actor": "session-ec4ce7f8/gpt-6.1-sol",
       "at": "2026-11-02T19:27:07.704Z"
+    },
+    {
+      "path": "scripts/offline-gate.sh",
+      "old_sha256": "ddef4828def7bf37262cfde5f53653b36fadf643ef5cda8607f83382c9c40779",
+      "new_sha256": "3e63ff9ffca30ba55768cdc146abd25509492e85c8fcf40caec3d694b8f97808",
+      "reason": "Refs #168 review: accept explicitly pinned repository config and report owned realpath",
+      "actor": "session-ec4ce7f8/gpt-6.1-sol",
+      "at": "2026-11-02T20:04:16.398Z"
     }
   ],
   "kind": "engine",

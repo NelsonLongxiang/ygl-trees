@@ -58,7 +58,7 @@ git config core.sshCommand "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax
 bash scripts/offline-gate.sh          # 干净克隆 + env -i 无凭证 install + pnpm test，rc≠0 即阻断
 ```
 
-Bundle入口显式传`tsdown --no-config`，不发现父目录或仓内隐式配置；需要配置的后续改动须显式固定仓内文件，不能恢复自动搜索。G1在干净环境检查该构建策略并输出`offline-gate: tsdown config: none (--no-config)`，缺少固定策略即拒绝，不可用外层配置读数充当候选制品验收。
+Bundle入口显式传`tsdown --config ./tsdown.config.mjs`，保留仓内minify/keepNames，不发现父目录配置。G1在干净环境校验构建命令固定该相对路径，并检查配置realpath位于本仓根（缺失或symlink指向仓外即拒绝），输出`offline-gate: tsdown config: <绝对路径>`。不可用外层配置读数或忽略仓内压缩配置的产物充当候选制品验收。
 
 G1 在分配前创建仓内 `tmp/`；目录创建或 `mktemp` 失败、结果为空或不在预期临时路径内时立即退出，不开始 clone 或注册删除 trap。只有已校验且存在的本轮工作目录才会在退出时清理。
 

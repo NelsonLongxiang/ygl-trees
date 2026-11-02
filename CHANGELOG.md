@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Refs #168：bundle命令显式禁用tsdown配置自动发现，不读取父目录配置；G1校验该策略并记录配置none。父目录可执行decoy回归保证未加载且输出全目录逐字节一致，未改压缩策略或ratchet基线。
+- Refs #168：bundle命令显式指定本仓tsdown.config.mjs，不读取父目录配置；G1校验文件真实路径属于本仓并记录该绝对路径。父目录可执行decoy回归保证未加载且输出全目录逐字节一致，未改压缩策略或ratchet基线。
 
 - #160 审计兼容：新 `evidence.add` 的 TEXT payload 为 JSON 对象（payload_version:1、evidence_id/source_id、quote摘要、quote_verified、unverified）；历史quote字符串原样保留，重复历史回执为未核。读取者需先区分JSON对象/旧字符串，不得假设payload可直接substring；通用feed/export原样透传文本。引文不匹配使用专用QuoteMismatchError，SQLite/PG均给安全的来源诊断，不混作PG能力错误。
 - Refs #160：新增证据仅折叠空白后对照已存来源原文，错引文 rc1 零写入，回执 quote_verified 区分已核/未核；--unverified 显式绕过并留痕，单条/批量/PG 同规则，存量证据不追溯重验。

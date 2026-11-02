@@ -2,7 +2,7 @@
 
 ## 在途 · #168 构建配置隔离（未发版）
 
-独立于四层已评审堆栈，基于固定c553f8d，不进入0.119.0。旧tsdown命令在真实临时clone中加载并执行父目录decoy，负控实测红；修复在共享build:bundle:only显式--no-config，不改变现有单文件/未压缩策略。G1在env -i内检查构建命令已禁配置发现并记录none，合成clone回归执行真实检查表达式。decoy前后输出目录全部路径/SHA逐一相同且父配置未执行，六条定向回归通过。README1435+新增1=1436，最终完整链独立计数核准；offline-gate.sh已同提交重登记；package.json在本base并非tooling，误加登记及Z锚已另提交撤销，保留既有账本。监督席direct-5395c2a1确认并修正文，package enrollment另起议题，against-git现rc0。Refs #168，不提前关闭。
+PR173从c553f8d独立起支，首轮--no-config虽隔离父配置但与已评审#161的仓内压缩配置冲突，故按评审direct-fc81720c普通merge冻结fc2f65d到本支（不改四评审头，不进0.119.0）。现build:bundle:only显式--config ./tsdown.config.mjs，沿用#161 minify/keepNames及原82ms/676368B基线，不重写。G1在env -i内校验realpath属本仓并打印配置绝对路径。保留真实clone父decoy字节同/未执行反例，新增仓内minify切换有效正控，以及G1本仓/缺失/仓外symlink三场景，8/8定向通过。README1501+新增1+G1新增2=1504，完整链待实测。offline-gate同提交重登记；package此前未登记，误加Z锚已显式撤销，监督席确认后单独enrollment另议，不改既有账本。仅在0.119发布和四层依序合并后才可落本PR；Refs#168不提前关单。
 ## 在途 · #166（未发版）
 
 agent brief使用入口已解析项目构造载荷，短/长旗标优先于env/session，不改选择指针，未知项目rc1、多项目未选rc2；node list接受CLI已消费的全局home/db且保留未知旗标rc2，隔离真实bundle覆盖前后放置。Refs #148保留原七项验收不扩写。旧master与本修复ABBA冷启动均超过原408ms上限，因此复用已有#158运行时优化，接在PR #165后组合重验并加入官方stack，不放宽棘轮基线或容差。仅本单代码/测试/文档为新delta，无schema/PG支持面/生产作业变更，不自合、不发版、不关单。
