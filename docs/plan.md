@@ -4,6 +4,11 @@
 
 预测 P/Brier 计算和频道评分保持只读，ND/open/no_p 不进入均值分母。为解决验收中定位的 eager TypeORM 启动与体积门盲区，CLI 路由/ORM 改按需加载，运行时压缩保留类/函数名，`dist/bundle/` 的全部分块随包交付，字节门统计完整目录且不提高旧基线或容差；旧基线 method 戳暂保留为历史来源，不声称新旧读数同尺，仅证明整目录≤旧上限蕴含入口≤旧上限。本轮针对 cdb5a49 仅按该树原脚本测量入口字节与 cold_start，不执行 --write、不改 baseline 或容差；#161 才改为完整目录口径。监督席指令另将 #161 压缩/全目录方法迁移安排在其Windows正式验证后，以同一提交完整日志实测再明确签名重烘；不得在 macOS 写。压缩产物不附 sourcemap，栈行列属于压缩文件，保留版本与栈后用相同版本的非压缩开发树复现。定向及整链、tarball 隔离安装结果记入独立 PR，未合并前不作为发布完成。#157 与本单均改 README 计数行，merge-forward实测：并行段1451（1344 passed+107 skipped）+ 串行perf 10条另计。README计数锚取1451，perf在同一`pnpm test:unit`中串行另跑10。首轮cdb merge链读数=1451，旧README1459致59/60；改为1451后的完整链已通过主段、perf、demo与contract，但README串行计数尚未完成即为独占A/B测量而停止，不能声明README或完整链通过。详见unit-count-baseline。
 
+## 在途 · #170 MCP 测试生命周期（未发版）
+
+候选 10b68dc 的 G1 第二轮出现请求超时和清理 EPERM，三轮 rc 为 0/1/0，不能放行。Windows 原码在真实默认套件负载下定向 30/30 通过，另 10 次完整默认套件全部 rc0、MCP 均通过；没有复现原始 15 秒停顿。异步诊断观察到请求处理最大 12.745ms、spawn 返回最大 12.534ms、heartbeat 超出 1000ms 周期最大 16.598ms，未记录请求上下文内同步 fs/spawnSync。原失败没有逐请求 trace，故主机停顿只是当前工作判断，不是已证明根因。
+
+本次仅修测试：accepted IPC 屏障证明交错已进入服务端；销毁测试请求后停止服务接收并终止其拥有的 CLI，等待所有 CLI close，再等待父服务 close 后清目录。保留业务请求 15000ms、不改运行时和基线。新增三条清理回归，其中旧的先杀父再清理顺序已实测红；真实持有文件子进程的回归通过。修复后 Windows 30/30 负载重复通过，背景完整默认套件 1326 passed / 109 skipped = 1435（164文件通过/9跳过）；README计数取1435。Windows pnpm test全链rc0：主段1435、串行perf10、demo128、contract152/152、README60/60（独立串行计数1435）、skills289/0，ratchet入口938774B/web1401456B held、cold397ms tightened（基线未写）。meta45/0drift及against-git审计rc0。macOS完整链仍待评审席独立回执。
 
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
