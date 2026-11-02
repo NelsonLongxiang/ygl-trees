@@ -2,7 +2,7 @@
 
 ## 在途实现 · #158（未发版）
 
-预测 P/Brier 计算和频道评分保持只读，ND/open/no_p 不进入均值分母。为解决验收中定位的 eager TypeORM 启动与体积门盲区，CLI 路由/ORM 改按需加载，运行时压缩保留类/函数名，`dist/bundle/` 的全部分块随包交付，字节门统计完整目录且不提高旧基线或容差；旧基线 method 戳暂保留为历史来源，不声称新旧读数同尺，仅证明整目录≤旧上限蕴含入口≤旧上限。本轮针对 cdb5a49 仅按该树原脚本测量入口字节与 cold_start，不执行 --write、不改 baseline 或容差；#161 才改为完整目录口径。监督席指令另将 #161 压缩/全目录方法迁移安排在其Windows正式验证后，以同一提交完整日志实测再明确签名重烘；不得在 macOS 写。压缩产物不附 sourcemap，栈行列属于压缩文件，保留版本与栈后用相同版本的非压缩开发树复现。定向及整链、tarball 隔离安装结果记入独立 PR，未合并前不作为发布完成。#157 与本单均改 README 计数行，merge-forward实测：并行段1451（1344 passed+107 skipped）+ 串行perf 10条另计。README计数锚取1451，perf在同一`pnpm test:unit`中串行另跑10。首轮cdb merge链读数=1451，旧README1459致59/60；改为1451后的完整链已通过主段、perf、demo与contract，但README串行计数尚未完成即为独占A/B测量而停止，不能声明README或完整链通过。详见unit-count-baseline。
+预测 P/Brier 与频道评分保持只读，ND/open/no_p不进入均值分母。PR161按普通merge并入固定master c553f8d，保留#170夹具和基线历史，不进入0.119.0发布。运行时按需加载与压缩保留类名；完整dist/bundle随包交付。按监督席direct-6154a043在Windows签名重锁：旧938774B为入口口径，新676368B为全目录口径，不声称同尺；cold407→82ms由惰性加载改善，web1401456B持平，容差2%/30%不变。归因已写ratchet-baseline.json的_attribution和方法戳；不得在macOS重写。保留无sourcemap的诊断限制。merge后README暂按原1451+新增#170三例=1454，另串行perf10，最终须全链独立计数实测核准。旧cdb-only验收与本PR的新全目录基线不混用；本PR仍Draft，完整验证待本轮回执。
 
 ## 在途 · #170 MCP 测试生命周期（未发版）
 
