@@ -49,10 +49,14 @@ export async function specRows(env:Env):Promise<SpecRow[]>{
   const root=join(env.home,"verify","specs");let dirs;
   try{dirs=(await readdir(root,{withFileTypes:true})).filter(d=>d.isDirectory()&&id.test(d.name));}catch(e:any){if(e.code==="ENOENT")return [];throw e;}
   const rows:SpecRow[]=[];
-  for(const d of dirs.sort((a,b)=>a.name.localeCompare(b.name))){
-    const [s,prep]=await Promise.all([json(join(root,d.name,"spec.json")),json(join(root,d.name,"prepare.json"))]);if(!s)continue;
-    const n=counts.get(s.spec_id);
-    rows.push({spec_id:String(s.spec_id),spec_version:Number(s.spec_version??0),title:String(s.title??""),domain:String(s.domain??""),created:String(s.created??""),units:Array.isArray(s.vu)?s.vu.length:0,verdict:String(prep?.verdict??""),rounds:Number(prep?.rounds??0),material:String(prep?.material_id??""),runs:n?.runs||0,last_overall:n?.last?.overall||"",last_run:n?.last?.run_id||""});
+  dirs.sort((a,b)=>a.name.localeCompare(b.name));
+  // At most 32 reads in flight; Promise.all preserves directory order.
+  for(let i=0;i<dirs.length;i+=16){
+    const batch=await Promise.all(dirs.slice(i,i+16).map(d=>Promise.all([json(join(root,d.name,"spec.json")),json(join(root,d.name,"prepare.json"))])));
+    for(const [s,prep] of batch){
+      if(!s)continue;const n=counts.get(s.spec_id);
+      rows.push({spec_id:String(s.spec_id),spec_version:Number(s.spec_version??0),title:String(s.title??""),domain:String(s.domain??""),created:String(s.created??""),units:Array.isArray(s.vu)?s.vu.length:0,verdict:String(prep?.verdict??""),rounds:Number(prep?.rounds??0),material:String(prep?.material_id??""),runs:n?.runs||0,last_overall:n?.last?.overall||"",last_run:n?.last?.run_id||""});
+    }
   }
   return rows;
 }
