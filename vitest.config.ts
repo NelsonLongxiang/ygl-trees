@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * vitest 5 不再读 package.json 的 "vitest" 键——本文件是唯一被读的配置位（0.92.1 教训：
+ * vitest 5 不再读 package.json 的 "vitest" 键——本文件是默认配置入口（0.92.1 教训：
  * tmp/ 下外来 *.test.cjs 一度被默认 glob 收进门禁，57 文件假失败）。
  * include 只收 packages/apps 的测试树；tmp/ 是脚本暂存区，永远不进门禁。
  */
@@ -15,6 +15,8 @@ export default defineConfig({
       "node_modules",
       "dist",
       "tmp",
+      // #156: run wall-clock budgets separately via vitest.perf.config.ts.
+      "packages/ops/tools/tests/verify-list-performance.spec.ts",
     ],
     env: {
       YGL_TEST: "1",

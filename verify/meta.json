@@ -225,7 +225,12 @@
     },
     {
       "path": "vitest.config.ts",
-      "sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
+      "sha256": "e48bd335178561eeb6477f9f0cc6b96059c763d8deaa201d25a3c43de3d0915d",
+      "role": "test"
+    },
+    {
+      "path": "vitest.perf.config.ts",
+      "sha256": "bff59d88ec8ce56d7d3cadc0c09ac8ccd931145ec3773266a1c6853d1cbc32b6",
       "role": "test"
     }
   ],
@@ -1111,6 +1116,30 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "nelson",
       "at": "2026-10-31T17:59:14.095Z"
+    },
+    {
+      "path": "vitest.config.ts",
+      "old_sha256": "5b0b5a74b4fcac0527267415c290eeb607b7bc2ee62bb9954e6af5d9d1f26e1b",
+      "new_sha256": "4473290fa7256ab56352eb18afc5b8b0324709ba570b9a45cb1bb8417ce0095d",
+      "reason": "#156: exclude the wall-clock perf spec from the parallel pass; it runs in vitest.perf.config.ts",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-11-01T08:31:14.065Z"
+    },
+    {
+      "path": "vitest.config.ts",
+      "old_sha256": "4473290fa7256ab56352eb18afc5b8b0324709ba570b9a45cb1bb8417ce0095d",
+      "new_sha256": "e48bd335178561eeb6477f9f0cc6b96059c763d8deaa201d25a3c43de3d0915d",
+      "reason": "#156: default parallel config excludes the dedicated serial perf pass",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-11-01T09:06:33.276Z"
+    },
+    {
+      "path": "vitest.perf.config.ts",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "bff59d88ec8ce56d7d3cadc0c09ac8ccd931145ec3773266a1c6853d1cbc32b6",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "dev-ec4ce7f8",
+      "at": "2026-11-01T09:11:16.966Z"
     },
     {
       "path": "scripts/ratchet.mjs",
