@@ -32,10 +32,11 @@ describe('#136 G1 scratch allocation safety',()=>{
   try{
    mkdirSync(join(repo,'scripts'),{recursive:true});writeFileSync(join(repo,'scripts/offline-gate.sh'),readFileSync(join(ROOT,'scripts/offline-gate.sh')));
    const git=(args:string[])=>{const r=spawnSync('git',['-c','user.name=fixture','-c','user.email=fixture@example.invalid',...args],{cwd:repo,encoding:'utf8',timeout:10000});expect(r.error).toBeUndefined();expect(r.signal).toBeNull();expect(r.status,r.stdout+r.stderr).toBe(0);};
-   git(['init','-q']);git(['add','scripts/offline-gate.sh']);git(['commit','-qm','synthetic gate fixture']);expect(existsSync(join(repo,'tmp'))).toBe(false);
-   const chain='env() { echo install-test >> "$G1_TRACE"; return 0; }; export -f env; bash "$G1_REPO/scripts/offline-gate.sh"';
+   writeFileSync(join(repo,'package.json'),JSON.stringify({scripts:{'build:bundle:only':'tsdown --no-config apps/cli/src/bin.ts'}}));
+   git(['init','-q']);git(['add','scripts/offline-gate.sh','package.json']);git(['commit','-qm','synthetic gate fixture']);expect(existsSync(join(repo,'tmp'))).toBe(false);
+   const chain='env() { echo install-test >> "$G1_TRACE"; local cmd="${*: -1}"; if [[ "$cmd" == node* ]]; then command bash -c "${cmd% && pnpm test}"; else return 0; fi; }; export -f env; bash "$G1_REPO/scripts/offline-gate.sh"';
    const r=spawnSync(process.execPath,[join(ROOT,'scripts/run-sh.mjs'),chain],{cwd:ROOT,env:{...process.env,G1_REPO:repo.replaceAll('\\','/'),G1_TRACE:trace},encoding:'utf8',timeout:15000});
-   expect(r.error).toBeUndefined();expect(r.signal).toBeNull();expect(r.status,r.stdout+r.stderr).toBe(0);expect(r.stdout).toContain('clean under env -i');expect(readFileSync(trace,'utf8').trim().split(/\r?\n/)).toHaveLength(2);
+   expect(r.error).toBeUndefined();expect(r.signal).toBeNull();expect(r.status,r.stdout+r.stderr).toBe(0);expect(r.stdout).toContain('clean under env -i');expect(r.stdout).toContain('tsdown config: none (--no-config)');expect(readFileSync(trace,'utf8').trim().split(/\r?\n/)).toHaveLength(2);
    expect(existsSync(join(repo,'tmp'))).toBe(true);expect(require('node:fs').readdirSync(join(repo,'tmp'))).toEqual([]);
   }finally{rmSync(base,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });

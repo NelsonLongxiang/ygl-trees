@@ -59,6 +59,11 @@
       "role": "gate"
     },
     {
+      "path": "package.json",
+      "sha256": "ad38a9f6334abe4c13ba61c12e6e7f4e76eac0fb488aa178ce334ca3fee311ff",
+      "role": "build"
+    },
+    {
       "path": "packages/verify/core/corpus/freeze.mjs",
       "sha256": "057fc10809e4b2f8300f609af24c730fd5b818244304151f67ac9a3639d7c79e",
       "role": "gate"
@@ -130,7 +135,7 @@
     },
     {
       "path": "scripts/offline-gate.sh",
-      "sha256": "67a89124876ecec107e25d8e2b982aa3b34081bb24097f595c4c027229a9f8b5",
+      "sha256": "ddef4828def7bf37262cfde5f53653b36fadf643ef5cda8607f83382c9c40779",
       "role": "gate"
     },
     {
@@ -1135,6 +1140,22 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "dev-ec4ce7f8",
       "at": "2026-11-01T09:11:16.966Z"
+    },
+    {
+      "path": "package.json",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "ad38a9f6334abe4c13ba61c12e6e7f4e76eac0fb488aa178ce334ca3fee311ff",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "ygl-dev (dev seat)",
+      "at": "2026-11-02T19:27:07.648Z"
+    },
+    {
+      "path": "scripts/offline-gate.sh",
+      "old_sha256": "67a89124876ecec107e25d8e2b982aa3b34081bb24097f595c4c027229a9f8b5",
+      "new_sha256": "ddef4828def7bf37262cfde5f53653b36fadf643ef5cda8607f83382c9c40779",
+      "reason": "Refs #168 verify and report no-config policy in clean G1 environment",
+      "actor": "session-ec4ce7f8/gpt-6.1-sol",
+      "at": "2026-11-02T19:27:07.704Z"
     }
   ],
   "kind": "engine",
