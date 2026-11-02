@@ -1,5 +1,11 @@
 # ygl-trees 开发计划
 
+## 在途 · #170 MCP 测试生命周期（未发版）
+
+候选 10b68dc 的 G1 第二轮出现请求超时和清理 EPERM，三轮 rc 为 0/1/0，不能放行。Windows 原码在真实默认套件负载下定向 30/30 通过，另 10 次完整默认套件全部 rc0、MCP 均通过；没有复现原始 15 秒停顿。异步诊断观察到请求处理最大 12.745ms、spawn 返回最大 12.534ms、heartbeat 超出 1000ms 周期最大 16.598ms，未记录请求上下文内同步 fs/spawnSync。原失败没有逐请求 trace，故主机停顿只是当前工作判断，不是已证明根因。
+
+本次仅修测试：accepted IPC 屏障证明交错已进入服务端；销毁测试请求后停止服务接收并终止其拥有的 CLI，等待所有 CLI close，再等待父服务 close 后清目录。保留业务请求 15000ms、不改运行时和基线。新增三条清理回归，其中旧的先杀父再清理顺序已实测红；真实持有文件子进程的回归通过。修复后 Windows 30/30 负载重复通过，背景完整默认套件 1326 passed / 109 skipped = 1435（164文件通过/9跳过）；README计数取1435。Windows pnpm test全链rc0：主段1435、串行perf10、demo128、contract152/152、README60/60（独立串行计数1435）、skills289/0，ratchet入口938774B/web1401456B held、cold397ms tightened（基线未写）。meta45/0drift及against-git审计rc0。macOS完整链仍待评审席独立回执。
+
 日期：2026-10-15 ｜ 规格：[spec.md](spec.md) ｜ 调研：[research.md](research.md) ｜ 规模标记：S ≤ 半会话 / M ≈ 一会话 / L > 一会话
 
 > **评审记录 · 0.84.0（2026-10-17，current_project 全局选中态 v2：源码实证 + 行动计划）**：0.84.0（`3c943c7`）修掉 REVIEW 四 P1 后，评审转向跨会话选择态——用户 v2 复核把根因钉到「会话级概念、机器级实现」。**撤回一条**：kb 不是读侧漏洞（`kb_notes` 无 `project_id`，db.ts:161-173；`kbList/kbSearch` 不收项目参数），kb 是刻意跨项目知识池，上轮「`kb list --project` 被静默忽略」作废。**但顺挖出真缺陷**：`packages/core/text/src/flagcheck.ts:15-23` 的 `rejectBare` 只查裸旗标，未知旗标全仓仅 `packages/techtree/model/src/cmds.ts:832-836` 一处 allowlist；实测 `kb add --project foo` 与 `kb add --bogus x` 均 rc=0 落库，`tree new tA --project nosuch` rc=0 且 `project_id=null`（`techtree/model/src/cmds.ts:106-108` 的 `proj?.id || ""` 静默落空）。

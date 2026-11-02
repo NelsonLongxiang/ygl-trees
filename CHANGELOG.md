@@ -1,3 +1,7 @@
+## Unreleased
+
+- Refs #170：发布 bundle 的 MCP 交错夹具等待服务端接收屏障，清理前停止请求并等待其 CLI 子进程与父服务的 close；请求超时仍为 15 秒，不修改产品服务端或发布产物。
+
 ## 0.118.0
 
 - #129：/api/verify 列表响应形状变更（裸数组 → {items,total,next_cursor}）——对外可见 HTTP 面，本版 minor 据此；前端已同步。#130 持久 spec 索引（#125 首批+后续）。
