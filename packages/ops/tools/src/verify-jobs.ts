@@ -144,7 +144,7 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
     // as_of 是「材料/快照的时点」，由调用方钉（P5 冻版责任在构造方）；HTTP 给可选入口，
     // 不给就按本次请求时刻——与 CLI --as-of 同语义，不做服务端猜测；可解析性由 normalizeAsOf 双侧统一。
     asOf: { kind: "snapshot", value: asOf },
-    engineVersion: "0.1.0",
+    engineVersion: env.version,
     corpusVersion: CORPUS_VERSION,
     knownMaterialHashes: knownMaterialHashes(env, materialId),
   });
@@ -221,7 +221,7 @@ export async function runViaHttp(env: Env, input: unknown, deps: JobsDeps): Prom
   }
   let report: VerifyReport;
   try {
-    report = await runVerify(spec, { runner: new SqliteRunner(copy.path), commandAllowlist: deps.commandAllowlist, mode: "open" });
+    report = await runVerify(spec, { runner: new SqliteRunner(copy.path), commandAllowlist: deps.commandAllowlist, mode: "open", engineVersion: env.version });
   } catch (e: any) {
     // 引擎的契约钉版 / R13 / N2 / S2 都是硬拒绝：这是 spec 的问题，不是请求格式的问题。
     return fail(422, `run rejected: ${e?.message || e}`);

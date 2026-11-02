@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Refs #171（第2项）：CLI及HTTP的verify prepare/run和树叶执行将实际运行版本（与tree G8相同的env.version来源）写入新spec/报告/归档，不再把应用版本记成0.1.0；旧冻结件和报告不回写，底层独立verify-core包默认版本仍为其自身0.1.0。
+
 - Refs #170：发布 bundle 的 MCP 交错夹具等待服务端接收屏障，清理前停止请求并等待其 CLI 子进程与父服务的 close；请求超时仍为 15 秒，不修改产品服务端或发布产物。
 
 ## 0.118.0

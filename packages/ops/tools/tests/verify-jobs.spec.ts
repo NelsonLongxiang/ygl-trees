@@ -69,7 +69,7 @@ beforeAll(async () => {
   fs.mkdirSync(home, { recursive: true });
   const db = new DB(path.join(dir, "unit.db"));
   const store = new Store(db);
-  const env = { home, db, store } as any;
+  const env = { home, db, store, version: "9.8.7-http-fixture" } as any;
   testEnv = env;
 
   const draft = createMaterialDraft(env, { title: "作业面材料", text: "账单金额不得为负。\n" });
@@ -156,6 +156,7 @@ describe("verify jobs — prepare", () => {
     // spec_id 是确定性派生（spec_<sha12(material_id)>）
     expect(specId).toBe(`spec_${createHash("sha256").update(materialId).digest("hex").slice(0, 12)}`);
     const specDir = path.join(home, "verify", "specs", specId);
+    expect(JSON.parse(fs.readFileSync(path.join(specDir, "spec.json"), "utf8")).verifier.engine_version).toBe(testEnv.version);
     for (const f of ["spec.json", "prepare.json", "trace.json"]) {
       expect(fs.existsSync(path.join(specDir, f))).toBe(true);
     }
@@ -274,6 +275,7 @@ describe("verify jobs — run", () => {
     expect(fs.existsSync(r.json.report_path)).toBe(true);
     const report = JSON.parse(fs.readFileSync(r.json.report_path, "utf8"));
     expect(report.data_source.kind).toBe("sqlite-snapshot");
+    expect(report.verifier.engine_version).toBe(testEnv.version);
     expect(String(report.data_source.source)).toMatch(/^blob:[0-9a-f]{12}$/);
     // 归档默认必做：侧车在 archives/<run_id>.json
     expect(r.json.archive).not.toBeNull();

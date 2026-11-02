@@ -52,7 +52,7 @@ export interface Env {
   dbFile?: string;
   /** Validated PG target, never a credential source from argv. */
   pgUrl?: string;
-  /** CLI version (diagnostics surface; update-hint/doctor only) */
+  /** Running application version for diagnostics and verifier provenance. */
   version?: string;
 }
 
