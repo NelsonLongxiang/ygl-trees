@@ -54,7 +54,7 @@ describe.skipIf(!adminUrl)("B8 batch 3 C removal CLI (official migration)", () =
     if (dir) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const json=(r:ReturnType<typeof cli>)=>{expect(r.rc,r.text).toBe(0);return JSON.parse(r.out);};let i=0;
-  function fixture(){const key="removal-"+(++i);const s=json(cli(["research","source","add","--title",key,"--url","session://"+key,"--content","searchable","--json"])).id;const e=json(cli(["research","evidence","add",s,"--quote",key,"--json"])).id;const c=json(cli(["research","claim","add",key,"--json"])).id;json(cli(["research","claim","link",c,e,"--json"]));return{s,e,c};}
+  function fixture(){const key="removal-"+(++i);const s=json(cli(["research","source","add","--title",key,"--url","session://"+key,"--content","searchable "+key,"--json"])).id;const e=json(cli(["research","evidence","add",s,"--quote",key,"--json"])).id;const c=json(cli(["research","claim","add",key,"--json"])).id;json(cli(["research","claim","link",c,e,"--json"]));return{s,e,c};}
   it("default protects referenced evidence/source and force removes only the exact cone",async()=>{
     json(cli(["project","new","removal-project","--json"]));const a=fixture(),b=fixture();
     const e=cli(["research","evidence","rm",a.e,"--json"]);expect(e.rc).toBe(1);expect(e.text).toContain("linked to 1 claim");

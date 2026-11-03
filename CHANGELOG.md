@@ -2,7 +2,37 @@
 
 - Refs #171（第2项）：CLI及HTTP的verify prepare/run和树叶执行将实际运行版本（与tree G8相同的env.version来源）写入新spec/报告/归档，不再把应用版本记成0.1.0；旧冻结件和报告不回写，底层独立verify-core包默认版本仍为其自身0.1.0。
 
+- Refs #168：bundle命令显式指定本仓tsdown.config.mjs，不读取父目录配置；G1校验文件真实路径属于本仓并记录该绝对路径。父目录可执行decoy回归保证未加载且输出全目录逐字节一致，未改压缩策略或ratchet基线。
+
+- #160 审计兼容：新 `evidence.add` 的 TEXT payload 为 JSON 对象（payload_version:1、evidence_id/source_id、quote摘要、quote_verified、unverified）；历史quote字符串原样保留，重复历史回执为未核。读取者需先区分JSON对象/旧字符串，不得假设payload可直接substring；通用feed/export原样透传文本。引文不匹配使用专用QuoteMismatchError，SQLite/PG均给安全的来源诊断，不混作PG能力错误。
+- Refs #160：新增证据仅折叠空白后对照已存来源原文，错引文 rc1 零写入，回执 quote_verified 区分已核/未核；--unverified 显式绕过并留痕，单条/批量/PG 同规则，存量证据不追溯重验。
+
+- Refs #158：预测列表新增数值 P、引擎 Brier 与备注差异标记，按 channel 汇总命中率/平均 Brier；ND、未结算、缺概率行不进入评分分母，旧备注 brier 字段语义保留。
+- #158 验收配套：业务路由/ORM 按需加载、运行时分块压缩并保留类名，不附 sourcemap（栈行列属于压缩产物，按相同版本的非压缩开发树复现）；整个 `dist/bundle/` 随包交付。体积棘轮从仅入口修正为全运行时目录统计；按监督席 direct-6154a043 在 Windows 签名重锁为实测 676368B（此前938774B仅入口，不同尺），cold 407→82ms 来自按需加载；web1401456B持平，2%/30%容差不变，嵌套隐藏大分块反例必须红。完整验收和隔离安装以 PR 对应源码快照的回执为准，未发版。
 - Refs #170：发布 bundle 的 MCP 交错夹具等待服务端接收屏障，清理前停止请求并等待其 CLI 子进程与父服务的 close；请求超时仍为 15 秒，不修改产品服务端或发布产物。
+- Refs #159：kb promote 只收完整 cue/lesson/evidence 或真实 evidence/claim 关联；拒绝单 JSON、零技能写入，--force 显式绕过并留 forced:true。skill show 增 support_refs 供复核提升时依据，add/import 仍宽松且保留同名技能的提升依据快照；只有重新 promote 才在同事务替换快照。promote 只接受唯一 noteId，不按可能重名的 title 查找。
+
+## 0.119.0
+
+用户可见行为变化：
+
+- #142：predict audit 自由文本判据改判 manual，仅完整显式指标（key≥N）参与测量（Refs #139）。
+- #145：组报告折叠优先级 FAIL > NEEDS-MATERIAL > ERROR > PASS；STALE/INFRA 走归档语义（Refs #140）。
+- #152：node add 未知参数 rc=2；db/node 未知动作 --json 单对象 {"error"}；help/usage 漂移修正；skill link 从 npm 安装可用（Refs #148）。
+- #153：密钥类 config get/list 打码，不进 events 与 db export（Refs #150）。
+- #157：/api/verify/specs 按每批 16 目录有界并行读取 spec 摘要（Refs #156）。
+
+其余：
+
+- #146：verify list 报告计数少一修正（Refs #141）。
+- #151：技能文档命令字面量与 0.118 CLI 对齐 + skills:audit 门（Refs #147/#149）。
+- #137：offline-gate 新克隆 tmp 安全（Refs #136）。
+- #138：golden spec 单一来源 goldenSpecs（Refs #135）。
+- #155：verify-web 报告清单经服务路由读取（Refs #154，test-only）。
+- #172：MCP 夹具接收屏障与子进程静默清理（Refs #170，test-only）。
+- #169：发版机 ratchet 重锁：cold 314→407ms、bundle 920401→938774B 入口口径，A/B 归因。
+
+评审 PASS（#90 评论 6581404802，候选 c553f8d，tree 1ad6ac85faefb0674004813647d74304ce1ceca6）。
 
 ## 0.118.0
 

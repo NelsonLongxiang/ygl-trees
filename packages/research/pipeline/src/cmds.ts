@@ -11,6 +11,7 @@ import { getOrm, getPgOrm } from "../../../core/database/src/orm";
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
 import * as writes from "./writes";
+import { run as runPredictions } from "./predict-cmds";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
 // direct-032bf3b4 (require-in-catch silently dies under ESM hosts).
@@ -144,8 +145,8 @@ async function runBatch(
       results = (await writes.claimAddBatch(ds, project.id, rows as any, force, channel)).results;
     } else {
       const force = flags.force === true;
-      const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? "") }));
-      results = (await writes.evidenceAddBatch(ds, project.id, rows, force)).results;
+      const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? ""), __line: r.__line }));
+      results = (await writes.evidenceAddBatch(ds, project.id, rows, force, flags.unverified === true || flags.unverified === "true")).results;
     }
     const added = results.filter((r: any) => !r.dup).length;
     const dups = results.length - added;
@@ -163,6 +164,7 @@ async function runBatch(
           line: parsed.rows[i].__line, id: r.row.id, title: r.row.title ?? "",
           text: kind === "claim" ? r.row.text : undefined,
           quote: kind === "evidence" ? String(r.row.quote).slice(0, 50) : undefined,
+          quote_verified: kind === "evidence" ? r.row.quote_verified : undefined,
           duplicate: !!r.dup,
         })),
       }, null, 2));
@@ -201,7 +203,7 @@ async function mutationNotFound(env: Env, table: "claims" | "evidence" | "source
   return kind + " not found: " + id + (owner ? "  (it belongs to project '" + owner.name + "' — use -p " + owner.name + ")" : "");
 }
 function writeOrm(env: Env) { return env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path); }
-function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) ? pgFailure() : e?.message || String(e); }
+function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) && !(e instanceof writes.QuoteMismatchError) ? pgFailure() : e?.message || String(e); }
 
 function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
@@ -241,13 +243,13 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   const subAction = rest[0];
 
   // -- project resolution (R16: flag > env > session > global; strict gate) --
-  // R16.3 exemption: `claim calibration --all` and `predict list --all` are
+  // R16.3 exemption: `claim calibration --all` and `predict list|score --all` are
   // workspace-scoped (project may be null) — the strict gate must not block
   // the research subcommands that legitimately span projects.
   // predict audit --all stays project-scoped (0.85 review ruling).
   const workspaceWide =
     args.flags.all === true &&
-    (subAction === "calibration" || (sub === "predict" && subAction === "list"));
+    (subAction === "calibration" || (sub === "predict" && (subAction === "list" || subAction === "score")));
   let project: any;
   const explicitProject = args.flags.p ?? args.flags.project ? String(args.flags.p ?? args.flags.project) : undefined;
   const sel = env.pgUrl ? { ...await env.asyncStore.pgProjectSelection(explicitProject), id: "" } : resolveProject(store.db, explicitProject);
@@ -761,7 +763,10 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     }
 
     if (subAction === "add") {
-      // #83 余项①：evidence add --batch <file.jsonl>（行={source_id,quote,note?,locator?}）。
+      const bypass = args.flags.unverified;
+      if (bypass !== undefined && ![true, false, "true", "false"].includes(bypass)) { bad(ctx, "--unverified is a boolean flag"); return 2; }
+      const unverified = bypass === true || bypass === "true";
+      // Batch and single writes use the same exact quote check.
       if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "evidence");
       const sourceId = rest[1];
       // Report ⑤: --file reads the quote from disk — long multi-line excerpts
@@ -786,7 +791,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       if (!quote) quote = readBody();
       if (!sourceId || !quote) {
-        bad(ctx, "usage: research evidence add <sourceId> --quote \"...\" | --file <path> [--note ..] [--locator ..]");
+        bad(ctx, "usage: research evidence add <sourceId> --quote \"...\" | --file <path> [--note ..] [--locator ..] [--unverified]");
         return 2;
       }
       {
@@ -800,7 +805,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       const locator = String(args.flags.locator || "");
       return runWrite(
         env,
-        (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force),
+        (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force, unverified),
         (r) => `evidence added: ${r.id}  ${clip(quote, 50)}  · project ${project.name}`
       );
     }
@@ -1531,157 +1536,7 @@ if (subAction === "show") {
   // pred-val/backtest-pipeline: deadline audit of `[预测·N天]` claims.
   // Measures locally-measurable criteria, reports hit/miss/pending/manual —
   // never auto-resolves (arbitration stays human, frozen contract).
-  if (sub === "predict") {
-    // F6 (0.110.0): predict is the one command family whose flags are part of
-    // the audit workflow — a silently-ignored `--due` reads as "nothing is due"
-    // and silently-ignored typos read as success. Same strict-flag discipline
-    // as `verify submit` (unknown flag → rc=2, single JSON error object).
-    const PREDICT_GLOBAL = new Set([
-      "json", "color", "no-color", "quiet", "home", "db", "project", "p", "global", "force", "verbose",
-    ]);
-    const rejectPredictFlags = (subAction: string, allowed: string[]): boolean => {
-      const unknown = Object.keys(args.flags ?? {}).filter((k) => !allowed.includes(k) && !PREDICT_GLOBAL.has(k));
-      if (!unknown.length) return false;
-      bad(ctx, `unknown flag${unknown.length > 1 ? "s" : ""} for research predict ${subAction}: ${unknown.map((k) => `--${k}`).join(" ")}`);
-      return true;
-    };
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const daysLeftOf = (deadline: string): number | null => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return null;
-      // days_left = floor((deadline - as_of) / 86400s), both parsed at UTC midnight
-      return Math.floor((Date.parse(`${deadline}T00:00:00Z`) - Date.parse(`${todayIso}T00:00:00Z`)) / 86_400_000);
-    };
-    // 0.90 (direct-ce7e561b ②): settlement projection — every [预测·] claim
-    // with outcome (未结算/1/0/ND), parsed settlement note tail
-    // (`outcome=1|0, brier=…, settler=…`) and registered channel. The
-    // calibration curve becomes SQL-direct: no re-parsing of prose.
-    if (subAction === "list") {
-      if (rejectPredictFlags("list", ["all", "due"])) return 2;
-      // --all (gate-exempted above) = workspace scan, matching calibration
-      // --all semantics; without it, single-project view (settled hidden).
-      const ws = args.flags.all === true;
-      const claims = (
-        ws
-          ? store.db.all(
-              `SELECT c.id, c.text, c.status, c.created, c.channel FROM claims c
-                WHERE c.text LIKE '[预测·%' ORDER BY c.created`
-            )
-          : store.db.all(
-              `SELECT c.id, c.text, c.status, c.created, c.channel FROM claims c
-                WHERE c.project_id=? AND c.text LIKE '[预测·%' ORDER BY c.created`,
-              [project.id]
-            )
-      ) as any[];
-      if (!claims.length) {
-        if (ctx.json) console.log("[]");
-        else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color));
-        return 0;
-      }
-      // settlement notes: latest tail-segment match per claim wins
-      const evRows = store.db.all(
-        `SELECT ce.claim_id, e.note, e.created FROM claim_evidence ce
-           JOIN evidence e ON e.id=ce.evidence_id ORDER BY e.created`
-      ) as any[];
-      const settled = new Map<string, { brier: string; settler: string }>();
-      for (const r of evRows) {
-        const m = /outcome=(1|0), brier=([\d.]+), settler=([^\s]+)\s*$/.exec(r.note || "");
-        if (m) settled.set(r.claim_id, { brier: m[2], settler: m[3] });
-      }
-      const { parsePrediction } = require("./predict");
-      const outcomeOf = (s: string): string =>
-        s === "supported" ? "1" : s === "refuted" ? "0" : s === "contested" ? "ND" : "未结算";
-      let rows = claims.map((c: any) => {
-        const { horizon, deadline } = parsePrediction(c.text, c.created);
-        const st = settled.get(c.id);
-        const daysLeft = daysLeftOf(deadline);
-        return {
-          claim_id: c.id, text: c.text, horizon, deadline, status: c.status,
-          outcome: outcomeOf(c.status), brier: st?.brier ?? null, settler: st?.settler ?? null,
-          channel: c.channel || "", created: c.created,
-          // F6: machine-readable due projection — `deadline <= today` is the
-          // settlement-due predicate, days_left lets callers sort urgency.
-          due: daysLeft !== null && daysLeft <= 0,
-          days_left: daysLeft,
-        };
-      });
-      const dueOnly = args.flags.due === true;
-      if (dueOnly) rows = rows.filter((r: any) => r.due);
-      if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
-        return 0;
-      }
-      const visible = args.flags.all ? rows : rows.filter((r: any) => r.outcome === "未结算");
-      head(ctx, `predict list — ${ws ? "workspace" : project.name} (${visible.length}/${rows.length}${dueOnly ? " · due" : rows.length !== visible.length ? " · 已结案隐藏 (--all)" : ""})`);
-      table(ctx, visible, ["claim", "deadline", "days", "outcome", "brier", "settler", "channel"], ["claim_id", "deadline", "days_left", "outcome", "brier", "settler", "channel"]);
-      const noChannel = rows.filter((r: any) => r.outcome === "未结算" && !r.channel);
-      if (noChannel.length) {
-        out(ctx, paint(C.yellow, `  ⚠ ${noChannel.length} 条未结算预测未登记 channel（claim add --channel github-issues|review-rounds|…）——结算时可能通道错配`, ctx.color));
-      }
-      return 0;
-    }
-    if (subAction === "audit") {
-      if (rejectPredictFlags("audit", ["offline", "state", "all", "due"])) return 2;
-      const claims = store.db.all(
-        "SELECT id, text, status, created FROM claims WHERE project_id=? AND text LIKE '[预测·%' ORDER BY created",
-        [project.id]
-      ) as any[];
-      if (!claims.length) {
-        if (ctx.json) console.log("[]");
-        else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color));
-        return 0;
-      }
-      const { auditPredictions, loadStateSource } = require("./predict");
-      return (async () => {
-        // 0.79.1 --state bridge: external counter map (JSON file or URL, e.g.
-        // DSH API counts) turns state-referencing criteria auto-measurable.
-        let state: Record<string, number> | null = null;
-        if (args.flags.state) {
-          state = await loadStateSource(String(args.flags.state));
-          if (!state && !ctx.json) {
-            out(ctx, paint(C.yellow, `  ⚠ --state ${args.flags.state} 加载失败（文件/URL 不可读或非 JSON）——相关判据回落 manual`, ctx.color));
-          }
-        }
-        const audited = await auditPredictions({ claims, db: store.db, npmProbe: args.flags.offline !== true, state });
-        // F6: three-bucket settlement calendar. due = deadline reached (or no
-        // deadline recorded → unknown, stays future), near = ≤30 days out,
-        // future = everything else. `--due` is the cron/日报 view.
-        const rows = audited.map((r: any) => {
-          const d = daysLeftOf(String(r.deadline ?? ""));
-          const bucket = d === null ? "future" : d <= 0 ? "due" : d <= 30 ? "near" : "future";
-          return { ...r, bucket, days_left: d };
-        });
-        const dueN = rows.filter((r: any) => r.bucket === "due").length;
-        const nearN = rows.filter((r: any) => r.bucket === "near").length;
-        const futureN = rows.filter((r: any) => r.bucket === "future").length;
-        const resolvedN = rows.filter((r: any) => r.verdict === "resolved").length;
-        const visible = args.flags.due
-          ? rows.filter((r: any) => r.bucket === "due")
-          : args.flags.all ? rows : rows.filter((r: any) => r.verdict !== "resolved");
-        if (ctx.json) {
-          // --due is a filter on the JSON face too; without it JSON keeps the
-          // historical full projection (--all only shaped the human table).
-          console.log(JSON.stringify(args.flags.due ? visible : rows, null, 2));
-        } else if (!visible.length) {
-          out(ctx, paint(C.dim, `  全部 ${rows.length} 条预测已结案（resolved）——--all 查看终态表`, ctx.color));
-        } else {
-          head(ctx, `prediction audit — ${project.name} (${visible.length}/${rows.length} · due ${dueN} / near ${nearN} / future ${futureN}${resolvedN && !args.flags.all && !args.flags.due ? ` · ${resolvedN} resolved 隐藏 (--all)` : ""})`);
-          table(ctx, visible, ["claim", "horizon", "deadline", "判据", "实测", "判定", "days"], [
-            "claim_id", "horizon", "deadline", "criterion", "actual", "verdict", "days_left",
-          ]);
-          const actionable = visible.filter((r: any) => r.verdict === "hit" || r.verdict === "miss");
-          for (const r of actionable) {
-            out(ctx, paint(C.dim, `  → research claim resolve ${r.claim_id} --as ${r.verdict === "hit" ? "supported" : "refuted"}   # ${r.deadline} 已到`, ctx.color));
-          }
-          for (const r of visible.filter((x: any) => x.verdict === "manual")) {
-            out(ctx, paint(C.dim, `  · ${r.claim_id}: ${r.hint}`, ctx.color));
-          }
-        }
-        return 0;
-      })();
-    }
-    bad(ctx, "usage: research predict list [--all] [--due] · research predict audit [--offline] [--state <file|url>] [--all] [--due]");
-    return 2;
-  }
+  if (sub === "predict") return runPredictions(env, project, args, subAction);
 
   // 0.91.0 (cold-run friction log): bare group = usage display (rc 0);
   // unknown subaction = usage ERROR (rc 2) — the frozen exit-code contract.
@@ -1694,7 +1549,7 @@ if (subAction === "show") {
     ctx,
     paint(
       C.dim,
-      "  research: query add|attach|list · source add|fetch|list|search|show|rm · evidence add|list|show|assess|rm · claim add|link|unlink|resolve|unresolve|evaluate|calibration|list|show · predict list|audit",
+      "  research: query add|attach|list · source add|fetch|list|search|show|rm · evidence add|list|show|assess|rm · claim add|link|unlink|resolve|unresolve|evaluate|calibration|list|show · predict list|score|audit",
       ctx.color
     )
   );
@@ -1710,7 +1565,7 @@ const READ_ONLY: Record<string, Set<string>> = {
   source: new Set(["list", "search", "show", ""]),
   evidence: new Set(["list", "show", ""]),
   claim: new Set(["list", "show", "calibration", ""]),
-  predict: new Set(["list", "audit", ""]),
+  predict: new Set(["list", "score", "audit", ""]),
 };
 function isWriteSub(sub: string, subAction: string): boolean {
   const ro = READ_ONLY[sub];

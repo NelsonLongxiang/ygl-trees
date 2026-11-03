@@ -158,6 +158,7 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 - **0.85 会话选择分辨率（根治）**：`project use`/`tree use` 写**会话键**（`current_project@<sid>`，sid=YGL_SESSION||DSH_SESSION_ID）——每个 Agent 会话独立选择，互不踩踏；优先级 flag > env（YGL_PROJECT/YGL_TREE）> 会话键 > 全局键。多项目未选择时 `research`/`produce`/`agent brief` fail-closed（rc=2 点名出路），单项目自动命中；`project show --json` 带 `selection_source`，`tree show` 报来源+统计
 - **0.83 并发钉住（写命令内联）**：写命令直接钉住目标：`research * --project <p>`、`produce/task * --project <p>`、`node * --tree <t>`（`node import --tree` 是目标树名，非选择器）；写回执带 `· project <名>` 回显落点
 - `tree use` / `project use` 落 `tree.use` / `project.use` 事件（`YGL_SESSION` 会话标识）
+- `agent brief -p <项目>` / `--project <项目>` 的载荷与 `selection_source=flag` 使用同一显式选择，优先于 env/session；不改项目选择指针，未知项目 rc1。
 - `agent brief` 的 `selection_changed`：最近 10 分钟选择变更；跨会话变更置顶提示带 `-t`/`-p`
 - `kb add` 回执自检（`verified:true`）+ 工作区回显（防写错 home 的"丢笔记"事故）
 - `research claim link <cid> <sid> --by-source`：来源下全部证据一次挂齐；误传来源 id 会列出其证据 id

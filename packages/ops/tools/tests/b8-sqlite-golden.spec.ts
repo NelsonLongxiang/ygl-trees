@@ -25,8 +25,8 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
     ["kb","add","--title","Human","--body","human output"],
     ["project","new","human-project","-q","human output"],
     ["project","use","golden-project","--json"],
-    ["research","source","add","--title","Golden source","--url","https://example.test/golden","--content","golden 中文","--json"],
-    ["research","source","add","--title","Golden source","--url","https://example.test/golden","--content","golden 中文","--json"],
+    ["research","source","add","--title","Golden source","--url","https://example.test/golden","--content","Golden quote 中文; File quote 中文; Batch quote","--json"],
+    ["research","source","add","--title","Golden source","--url","https://example.test/golden","--content","Golden quote 中文; File quote 中文; Batch quote","--json"],
     ["research","source","show","$source","--json"], ["research","source","list","--json"],
     ["research","evidence","add","$source","--quote","Golden quote 中文","--json"],
     ["research","evidence","add","$source","--quote","Golden quote 中文","--json"],
@@ -103,7 +103,15 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
     let attachCount=0;
     for(let i=0;i<actual.length;i++){
       const row=actual[i], old=prior[i];
-      if(row.args[0]==="research"&&row.args[1]==="query"&&row.args[2]==="attach"){
+      if (row.args[0] === "research" && row.args[1] === "evidence" && row.args[2] === "add" && row.rc === 0 && row.args.includes("--json")) {
+        const current = JSON.parse(row.out), legacy = JSON.parse(old.out);
+        if (row.args.includes("--batch")) {
+          expect(current.rows.length).toBe(legacy.rows.length);
+          for (const receipt of current.rows) { expect(receipt.quote_verified).toBe(true); delete receipt.quote_verified; }
+        } else { expect(current.quote_verified).toBe(true); delete current.quote_verified; }
+        expect(JSON.stringify(current, null, 2) + String.fromCharCode(10)).toBe(old.out);
+        expect({ ...row, out: undefined }).toEqual({ ...old, out: undefined });
+      } else if(row.args[0]==="research"&&row.args[1]==="query"&&row.args[2]==="attach"){
         // #114 deliberately repairs exactly these two old non-JSON outputs; no other field is normalized.
         const duplicate=attachCount++>0;
         const fixed=JSON.stringify({query:row.args[3],source:row.args[4],...(duplicate?{duplicate:true}:{})},null,2)+String.fromCharCode(10);

@@ -41,6 +41,9 @@ describe.skipIf(!HAS_BIN)("--json success paths (#50)", () => {
     expect(Object.keys(link.j).sort()).toEqual(["a", "b", "rel"]);
     expect(link.j.a).toMatchObject({ id: a.j.id });
 
+    const evidenceSource = run(["research", "source", "add", "--title", "实际运行记录", "--url", "session://json-promote"]);
+    const evidence = run(["research", "evidence", "add", evidenceSource.j.id, "--quote", "JSON 成功回执在隔离工作区实测通过"]);
+    expect(run(["rel", "add", "kb:" + a.j.id, "evidence:" + evidence.j.id, "--rel", "evidenced-by"]).rc).toBe(0);
     const promote = run(["kb", "promote", a.j.id, "--name", "甲技能"]);
     expect(promote.rc).toBe(0);
     expect(promote.j).toMatchObject({ name: "甲技能", origin: `kb:${a.j.id}` });

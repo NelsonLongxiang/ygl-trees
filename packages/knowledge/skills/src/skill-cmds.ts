@@ -307,7 +307,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 0;
       }
       head(ctx, `SKILL ${s.name}  v${s.version}`);
-      show(ctx, { id: s.id, enabled: s.enabled, tags: s.tags || "-", origin: s.origin || "-", hits: s.hits });
+      show(ctx, { id: s.id, enabled: s.enabled, tags: s.tags || "-", origin: s.origin || "-", hits: s.hits, support_refs: JSON.stringify(s.support_refs || []) });
       out(ctx, paint(C.bold, "\n  [L1] description — what + when to trigger", ctx.color));
       out(ctx, wrap(s.description || "(empty)"));
       out(ctx, paint(C.bold, "\n  [L2] body — loaded when activated", ctx.color));

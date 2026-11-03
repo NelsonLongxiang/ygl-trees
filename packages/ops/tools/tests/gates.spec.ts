@@ -51,6 +51,27 @@ describe("#96 G4 commit-claims", () => {
 });
 
 describe("#96 G6 ratchet attribution", () => {
+  it.each([[30, 0], [230, 1]])("counts every bundle file, including %i-byte nested chunks", (chunkBytes, expectedRc) => {
+    mkdirSync(join(REPO, "tmp"), { recursive: true });
+    const root = mkdtempSync(join(REPO, "tmp/ratchet-payload-"));
+    try {
+      for (const dir of ["scripts", "dist/bundle/nested", "dist/apps/web/dist"]) mkdirSync(join(root, dir), { recursive: true });
+      writeFileSync(join(root, "scripts/ratchet.mjs"), readFileSync(join(REPO, "scripts/ratchet.mjs")));
+      const entry = 'console.log("fixture-version");';
+      writeFileSync(join(root, "dist/bundle/bin.cjs"), entry);
+      writeFileSync(join(root, "dist/bundle/nested/payload.cjs"), "x".repeat(chunkBytes));
+      writeFileSync(join(root, "dist/apps/web/dist/index.html"), "x");
+      const baseline = JSON.stringify({ version: 1, metrics: { bundle_bytes: { value: 200 }, web_dist_bytes: { value: 1 }, cold_start_ms: { value: 10000 } } });
+      writeFileSync(join(root, "ratchet-baseline.json"), baseline);
+      const r = run([join(root, "scripts/ratchet.mjs"), "--json"], { cwd: root });
+      expect(r.error).toBeUndefined(); expect(r.signal).toBeNull();
+      expect(r.status, r.stdout + r.stderr).toBe(expectedRc);
+      const report = JSON.parse(r.stdout.slice(r.stdout.indexOf("{")));
+      expect(report.report.find((m: any) => m.metric === "bundle_bytes").value).toBe(Buffer.byteLength(entry) + chunkBytes);
+      expect(readFileSync(join(root, "ratchet-baseline.json"), "utf8")).toBe(baseline);
+    } finally { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+  });
+
   it("--write without --reason → rc2", () => {
     const r = run(["scripts/ratchet.mjs", "--write"]);
     expect(r.status).toBe(2);

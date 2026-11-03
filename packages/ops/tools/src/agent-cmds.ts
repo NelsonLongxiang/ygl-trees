@@ -40,10 +40,8 @@ export function commentSlug(value: string): string {
   return String(value ?? "").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 24);
 }
 
-export function buildBrief(env: Env): any {
+export function buildBrief(env: Env, sel = resolveProject(env.store.db)): any {
   const { store } = env;
-  // R16.1: resolved selection (flag > env > session > global), annotated.
-  const sel = resolveProject(store.db);
   const cur = sel.name || null;
   const stats = store.stats();
   const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
@@ -307,7 +305,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         );
         return 2;
       }
-      const payload = buildBrief(env);
+      if (gate.name && !gate.id) {
+        bad(ctx, `project not found: ${gate.name}`);
+        return 1;
+      }
+      const payload = buildBrief(env, gate);
       const cur = payload.current_project;
       const stats = payload.counts;
       const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));

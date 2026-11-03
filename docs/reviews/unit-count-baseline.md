@@ -6,6 +6,10 @@ kind: 参考
 
 # unit 计数门基准（C：先查清差集）
 
+## #156 merge-forward 实测口径（2026-11-02，Windows）
+
+`vitest.config.ts` 默认并行段（含 bundle 在场）：168 passed / 7 skipped files (175)，1344 passed + 107 skipped = **1451 total**。`vitest.perf.config.ts` 串行专用perf套件另为 1 file / 10 passed / 0 skipped；该perf spec从默认include显式exclude，README单位数锚仍取1451，`pnpm test:unit` 总执行合计为1461。README行写主并行1451并注明perf另串行10，以免将同一spec重复计或漏报。来源：`tmp/cli-stack161-cdb-full.log`，完整链README锚实测README1459≠Vitest1451，因此该次pnpm test rc1，需修正后重验。
+
 ## 基准环境（A①）
 
 README 的 `vitest N 例` 以**含 bundle（docker 无）与 rust 工具链的离线机**为基准（发布机同款）：
