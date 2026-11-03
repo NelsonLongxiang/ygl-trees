@@ -638,10 +638,10 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
     }
 
     if (sub === "index") {
-      return runTreeWrite((ds) => treeWrites.rebuildIndex(ds, tid), (r): number => {
+      return runTreeWrite((ds) => treeWrites.rebuildIndex(ds, tid), async (r): Promise<number> => {
         ack(ctx, { nodes: r.nodes, closure_rows: r.closureRows }, `index rebuilt: ${r.nodes} nodes, closure ${r.closureRows} rows`);
         if (!ctx.json) {
-          const st = db.get("SELECT tiers FROM node_index WHERE tree_id=?", [tid]);
+          const st = env.pgUrl ? await trees.queryOne("SELECT tiers FROM node_index WHERE tree_id=?", [tid]) : db.get("SELECT tiers FROM node_index WHERE tree_id=?", [tid]);
           if (st?.tiers) {
             const tiers = JSON.parse(st.tiers);
             out(ctx, paint(C.dim, `  tiers: ${Object.keys(tiers).map((t) => `t${t}(${tiers[t].length})`).join(" ")}`, ctx.color));
@@ -1105,7 +1105,16 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
     }
 
     if (sub === "validate") {
-      const issues = await trees.validate(tid);
+      let issues: string[];
+      if (env.pgUrl) {
+        // #176 W1-T2: validate refreshes the derived index, so on PG it runs as a locked transaction.
+        try {
+          issues = await treeWrites.validateTree(await getPgOrm(env.pgUrl), tid);
+        } catch (e: any) {
+          bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure());
+          return 1;
+        }
+      } else issues = await trees.validate(tid);
       if (ctx.json) {
         console.log(JSON.stringify({ issues }, null, 2));
         return issues.length ? 1 : 0;

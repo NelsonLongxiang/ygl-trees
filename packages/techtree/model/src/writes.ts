@@ -52,6 +52,14 @@ export function isPgMgr(mgr: EntityManager): boolean {
   return (mgr as any).connection?.options?.type === "postgres";
 }
 
+/** PG: serialise structural writes per tree (closure rebuild deletes and re-inserts the whole tree).
+ *  SQLite already has a single writer, so this is a no-op there. */
+export async function lockTree(mgr: EntityManager, ...treeIds: string[]): Promise<void> {
+  if (!isPgMgr(mgr)) return;
+  // Fixed order: two moves between the same pair of trees must not deadlock.
+  for (const id of [...new Set(treeIds)].sort()) await mgr.query(`SELECT pg_advisory_xact_lock(hashtext(?))`, ["ygl-trees:tree:" + id]);
+}
+
 /** `?` → `$1..$n`, skipping single-quoted literals, double-quoted identifiers and comments. */
 export function pgPlaceholders(sql: string): string {
   let out = "";
@@ -166,7 +174,9 @@ export async function buildIndex(
   mgr: EntityManager,
   treeId: string
 ): Promise<{ topo: string[]; tiers: Record<string, string[]>; inDegree: Record<string, number> }> {
-  const nodes = (await mgr.query(`SELECT id,key,tier FROM nodes WHERE tree_id=?`, [treeId])) as any[];
+  // SQLite returns rowid (insertion) order; PG has no rowid, so it asks for creation order explicitly
+  // (pg-compat-drift #10: same-millisecond creations may tie-break differently; counts and gates do not change).
+  const nodes = (await mgr.query(isPgMgr(mgr) ? `SELECT id,key,tier FROM nodes WHERE tree_id=? ORDER BY created, id` : `SELECT id,key,tier FROM nodes WHERE tree_id=?`, [treeId])) as any[];
   const requiredParents = new Map<string, string[]>();
   for (const n of nodes) requiredParents.set(n.id, []);
   const edges = (await mgr.query(
@@ -306,7 +316,8 @@ export async function nodeDel(ds: DataSource, treeId: string, keyOrId: string): 
   return runTx(ds, async (mgr) => {
     const rows = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!rows.length) throw new Error(`node not found: ${keyOrId}`);
-    await mgr.query(`DELETE FROM nodes_fts WHERE id=?`, [rows[0].id]);
+    await lockTree(mgr, treeId);
+    if (!isPgMgr(mgr)) await mgr.query(`DELETE FROM nodes_fts WHERE id=?`, [rows[0].id]);
     await mgr.query(`DELETE FROM nodes WHERE id=?`, [rows[0].id]); // FK cascades edges/closure/conds/state
     await markDirty(mgr, treeId);
     await logEvent(mgr, "node.delete", rows[0].id, { tree: treeId, key: keyOrId }, "warn");
@@ -351,6 +362,10 @@ export async function nodeMove(
   toTree: string
 ): Promise<NodeMoveResult> {
   return runTx(ds, async (mgr) => {
+    if (isPgMgr(mgr)) {
+      const target = (await mgr.query(`SELECT id FROM trees WHERE name=? OR id=?`, [toTree, toTree])) as any[];
+      await lockTree(mgr, fromTreeId, ...(target.length ? [String(target[0].id)] : []));
+    }
     const rows = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [fromTreeId, keyOrId, keyOrId])) as any[];
     if (!rows.length) {
       // Retry of an already-applied move (external review #1): the first call
@@ -368,7 +383,9 @@ export async function nodeMove(
           // source tree) — a fake no-op plus a phantom event. A real move logs
           // node.move{from,to}; a prior retry logs node.move.noop{from,to}.
           const evs = (await mgr.query(
-            `SELECT payload FROM events WHERE entity_id=? AND kind IN ('node.move','node.move.noop') ORDER BY rowid DESC LIMIT 20`,
+            isPgMgr(mgr)
+              ? `SELECT payload FROM events WHERE entity_id=? AND kind IN ('node.move','node.move.noop') ORDER BY seq DESC NULLS LAST, ts DESC LIMIT 20`
+              : `SELECT payload FROM events WHERE entity_id=? AND kind IN ('node.move','node.move.noop') ORDER BY rowid DESC LIMIT 20`,
             [there[0].id]
           )) as any[];
           const proven = evs.some((e) => {
@@ -390,7 +407,7 @@ export async function nodeMove(
             key: there[0].key,
           });
           return {
-            row: there[0],
+            row: withoutSearchCols(there[0]),
             moved: false,
             duplicate: true,
             from_tree: fromName,
@@ -409,7 +426,7 @@ export async function nodeMove(
     if (!toRows.length) throw new Error(`tree not found: ${toTree}`);
     const toTreeId = toRows[0].id;
     if (toTreeId === fromTreeId) {
-      return { row: node, moved: false, from_tree: fromName, to_tree: toRows[0].name, state_rows: 0, closure_rows: 0 };
+      return { row: withoutSearchCols(node), moved: false, from_tree: fromName, to_tree: toRows[0].name, state_rows: 0, closure_rows: 0 };
     }
     const edgeCount = (await mgr.query(`SELECT COUNT(*) AS n FROM node_edges WHERE tree_id=? AND (parent_id=? OR child_id=?)`, [fromTreeId, node.id, node.id])) as any[];
     const n = Number(edgeCount[0]?.n ?? 0);
@@ -442,7 +459,7 @@ export async function nodeMove(
     });
     const after = (await mgr.query(`SELECT * FROM nodes WHERE id=?`, [node.id])) as any[];
     return {
-      row: after[0],
+      row: withoutSearchCols(after[0]),
       moved: true,
       from_tree: fromName,
       to_tree: toRows[0].name,
@@ -469,6 +486,7 @@ export async function link(
   } = {}
 ): Promise<Record<string, any>> {
   return runTx(ds, async (mgr) => {
+    await lockTree(mgr, treeId);
     const p = (await mgr.query(`SELECT id,key FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, parentKey, parentKey])) as any[];
     if (!p.length) throw new Error(`parent not found: ${parentKey}`);
     const c = (await mgr.query(`SELECT id,key FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, childKey, childKey])) as any[];
@@ -517,6 +535,7 @@ export async function link(
 
 export async function unlink(ds: DataSource, treeId: string, parentKey: string, childKey: string, rel = "prereq"): Promise<void> {
   return runTx(ds, async (mgr) => {
+    await lockTree(mgr, treeId);
     const p = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, parentKey, parentKey])) as any[];
     const c = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, childKey, childKey])) as any[];
     if (!p.length || !c.length) throw new Error("node not found");
@@ -665,9 +684,55 @@ export async function stateSet(
 
 export async function rebuildIndex(ds: DataSource, treeId: string): Promise<{ nodes: number; closureRows: number }> {
   return runTx(ds, async (mgr) => {
+    await lockTree(mgr, treeId);
     const closureRows = await rebuildClosure(mgr, treeId);
     const built = await buildIndex(mgr, treeId);
     return { nodes: built.topo.length, closureRows };
+  });
+}
+
+/**
+ * #176 W1-T2: `node validate` on PG. Same checks, order and messages as TreeStore.validate. Like the SQLite
+ * path it rebuilds the derived index first (validate has always refreshed tiers/topo), so it runs as a
+ * transactional write under the tree lock.
+ */
+export async function validateTree(ds: DataSource, treeId: string): Promise<string[]> {
+  return runTx(ds, async (mgr) => {
+    await lockTree(mgr, treeId);
+    const issues: string[] = [];
+    try {
+      await buildIndex(mgr, treeId);
+    } catch (e: any) {
+      issues.push(`cycle: ${e.message}`);
+    }
+    const nodeKeys = ((await mgr.query(`SELECT key FROM nodes WHERE tree_id=?`, [treeId])) as any[]).map((n) => String(n.key));
+    const gateEdges = (await mgr.query(
+      `SELECT p.key AS parent, c.key AS child, e.rel
+         FROM node_edges e
+         JOIN nodes p ON p.id = e.parent_id
+         JOIN nodes c ON c.id = e.child_id
+        WHERE e.tree_id = ? AND e.rel IN ('prereq','unlock')`,
+      [treeId]
+    )) as any[];
+    const cyc = gatingCycle(nodeKeys, gateEdges.map((e) => ({ parent: String(e.parent), child: String(e.child), rel: String(e.rel) })));
+    if (cyc) issues.push(`cycle(gating edges): ${cyc}`);
+    const orphanEdges = (await mgr.query(
+      `SELECT e.id FROM node_edges e
+        WHERE e.tree_id=? AND NOT EXISTS(SELECT 1 FROM nodes n WHERE n.id=e.parent_id)
+           OR e.tree_id=? AND NOT EXISTS(SELECT 1 FROM nodes n WHERE n.id=e.child_id)`,
+      [treeId, treeId]
+    )) as any[];
+    if (orphanEdges.length) issues.push(`${orphanEdges.length} edge(s) referencing missing nodes`);
+    const selfLoops = (await mgr.query(`SELECT id FROM node_edges WHERE tree_id=? AND parent_id=child_id`, [treeId])) as any[];
+    if (selfLoops.length) issues.push(`${selfLoops.length} self-loop(s)`);
+    const st = ((await mgr.query(`SELECT dirty FROM node_index WHERE tree_id=?`, [treeId])) as any[])[0];
+    if (!st || Number(st.dirty)) issues.push("index is dirty; run: ygl-trees node index");
+    const noCondValue = (await mgr.query(
+      "SELECT id,name FROM node_conditions c WHERE c.node_id IN (SELECT id FROM nodes WHERE tree_id=?) AND c.required=1 AND c.value='' AND c.kind<>'flag' AND c.op NOT IN ('eval','eval-choice','eval-score')",
+      [treeId]
+    )) as any[];
+    if (noCondValue.length) issues.push(`${noCondValue.length} required condition(s) without a threshold`);
+    return issues;
   });
 }
 

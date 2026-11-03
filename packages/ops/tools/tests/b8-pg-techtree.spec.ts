@@ -92,12 +92,49 @@ describe.skipIf(!adminUrl)("#176 W1-T1 techtree on PG (golden vs SQLite)", () =>
     expect(both(["node", "show", "missing"]).rc).toBe(1);
   }, 180000);
 
-  it("commands outside T1 stay refused on PG with rc 2 and name the open faces", () => {
-    const r = cli("pg", ["node", "link", "a", "B", "--json"]);
+  it("T2 structure: link / duplicate link / cycle refusal / index / validate / unlink / move / rm match SQLite", () => {
+    both(["tree", "new", "w1-other"]);
+    both(["tree", "use", "w1-tree"]);
+    expect(both(["node", "link", "a", "B"]).rc).toBe(0);
+    expect(both(["node", "link", "a", "B", "--mode", "OR"]).json).toMatchObject({ duplicate: true, mode: "OR" });
+    both(["node", "link", "B", "_c"]);
+    expect(both(["node", "link", "_c", "a"]).rc).toBe(1);
+    expect(both(["node", "index"]).json).toMatchObject({ nodes: 4 });
+    expect(both(["node", "validate"]).json).toEqual({ issues: [] });
+    both(["node", "list"]);
+    both(["node", "show", "B"]);
+    both(["node", "unlink", "a", "B"]);
+    expect(both(["node", "move", "a2", "--to", "w1-other"]).json).toMatchObject({ moved: true, to_tree: "w1-other" });
+    expect(both(["node", "move", "a2", "--to", "w1-other"]).json).toMatchObject({ moved: false, duplicate: true });
+    both(["node", "rm", "_c"]);
+    both(["node", "list"]);
+  }, 240000);
+
+  it("commands outside T1/T2 stay refused on PG with rc 2 and name the open faces", () => {
+    const r = cli("pg", ["node", "unlock", "a", "--json"]);
     expect(r.rc).toBe(2);
-    expect(JSON.parse(r.out).error).toMatch(/tree new\/list\/show\/use \| node add\/list\/show/);
+    expect(JSON.parse(r.out).error).toMatch(/tree new\/list\/show\/use \| node add\/list\/show\/link\/unlink\/rm\/move\/index\/validate/);
     expect(cli("pg", ["tree", "use", "w1-tree", "--global", "--json"]).rc).toBe(2);
   });
+
+  it("concurrent links into one tree serialise on the tree lock: no errors, closure stays valid", async () => {
+    for (const k of ["p0", "p1", "p2", "p3", "p4", "p5"]) expect(cli("pg", ["node", "add", k, "--json"]).rc).toBe(0);
+    const run = (a: string, b: string) => new Promise<number | null>((ok) => {
+      const p = spawn(process.execPath, [BIN, "node", "link", a, b, "--json"], { cwd: ROOT, env: { ...cleanEnv(), YGL_HOME: pgHome, YGL_DB_URL: target, YGL_SESSION: "b8-tree", YGL_NO_UPDATE_CHECK: "1" } });
+      p.on("close", ok);
+    });
+    const rcs = await Promise.all([run("p0", "p1"), run("p1", "p2"), run("p2", "p3"), run("p3", "p4"), run("p4", "p5")]);
+    expect(rcs).toEqual([0, 0, 0, 0, 0]);
+    const v = cli("pg", ["node", "validate", "--json"]);
+    expect(v.rc, v.text).toBe(0);
+    expect(JSON.parse(v.out)).toEqual({ issues: [] });
+    const { Client } = require("pg");
+    const c = new Client({ connectionString: target }); await c.connect();
+    try {
+      const n = await c.query("SELECT count(*)::int AS n FROM node_closure cl JOIN nodes a ON a.id=cl.ancestor WHERE a.key='p0' AND cl.depth>0");
+      expect(n.rows[0].n).toBe(5); // p0 reaches p1..p5 once the chain is complete
+    } finally { await c.end(); }
+  }, 180000);
 
   it("concurrent node add of one key yields exactly one row", async () => {
     const run = () => new Promise<number | null>((ok) => {

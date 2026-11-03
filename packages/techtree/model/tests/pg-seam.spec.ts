@@ -37,18 +37,18 @@ describe.skipIf(!existsSync(BIN))("#176 W1-T1 PG boot gate for techtree (unreach
       return { rc: r.status, out: r.stdout || "", text: (r.stdout || "") + (r.stderr || "") };
     } finally { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
   };
-  it.each([["tree", "list"], ["tree", "new", "x"], ["node", "add", "k"], ["node", "list"], ["node", "show", "k"]])(
+  it.each([["tree", "list"], ["tree", "new", "x"], ["node", "add", "k"], ["node", "list"], ["node", "show", "k"], ["node", "link", "a", "b"], ["node", "unlink", "a", "b"], ["node", "rm", "a"], ["node", "move", "a", "--to", "t"], ["node", "index"], ["node", "validate"]])(
     "opened face %s %s reaches PG (rc 1 masked failure, not the rc 2 refusal)", (...args) => {
       const r = run(args);
       expect(r.rc, r.text).toBe(1);
       expect(JSON.parse(r.out).error).not.toMatch(/needs the SQLite workspace face/);
       expect(r.text).not.toMatch(/127\.0\.0\.1:1/);
     }, 60_000);
-  it.each([["node", "link", "a", "b"], ["node", "index"], ["node", "unlock", "a"], ["node", "search", "q"]])(
+  it.each([["node", "unlock", "a"], ["node", "search", "q"], ["node", "cond", "a"], ["node", "ready"], ["node", "export"]])(
     "face outside T1 %s %s is refused with rc 2", (...args) => {
       const r = run(args);
       expect(r.rc).toBe(2);
-      expect(JSON.parse(r.out).error).toMatch(/tree new\/list\/show\/use \| node add\/list\/show/);
+      expect(JSON.parse(r.out).error).toMatch(/tree new\/list\/show\/use \| node add\/list\/show\/link\/unlink\/rm\/move\/index\/validate/);
     }, 60_000);
   it("tree use --global is a usage error on PG before any connection", () => {
     expect(run(["tree", "use", "x", "--global"]).rc).toBe(2);
