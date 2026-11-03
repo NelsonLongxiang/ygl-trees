@@ -6,6 +6,7 @@ import { resolve, join } from "node:path";
 const ROOT = resolve(__dirname, "../../../..");
 const baseline = process.env.B8_SQLITE_BASELINE_BIN || "";
 it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle", () => {
+  mkdirSync(join(ROOT, "tmp"), { recursive: true }); // fresh clones (G1) have no tmp/ yet
   const dir = mkdtempSync(join(ROOT, "tmp/b8-golden-"));
   const home = join(dir, "home");
   const hook = join(dir, "clock.cjs");
