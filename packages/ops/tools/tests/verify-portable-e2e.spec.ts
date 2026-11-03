@@ -89,6 +89,28 @@ describe.skipIf(!HAS_BIN)("#171 portable bundle — end-to-end run + archive in 
       const verify = cli(["verify", "archive", "verify", String(archive.j.path ?? archive.j.filename)], homeB);
       expect(verify.rc, verify.out).toBe(0);
       expect(verify.j.ok).toBe(true);
+
+      // 回装保留了版本游标：B 家对同一 material 再 prepare 默认接 v17（不是从 v1 重来）
+      const anchor = { quote: "快照里至少有一个项目。", locator: "material.txt#L1" };
+      const candFile = join(root, "re-cand.json");
+      writeFileSync(candFile, JSON.stringify({ candidates: [{
+        source_clause: "快照里至少有一个项目。",
+        anchor,
+        checker: { type: "count", sql: "SELECT COUNT(*) AS n FROM projects", op: ">=", value: 1 },
+      }] }));
+      const revFile = join(root, "re-rev.json");
+      writeFileSync(revFile, JSON.stringify({ reviews: [{
+        source_clause: "快照里至少有一个项目。",
+        findings: [
+          { question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+          { question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+          { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
+        ],
+      }] }));
+      const rePrepare = cli(["verify", "prepare", materialId, "--candidates", candFile, "--reviews", revFile, "--db", snapPath], homeB);
+      expect(rePrepare.rc, rePrepare.out).toBe(0);
+      expect(rePrepare.j.verdict).toBe("ready");
+      expect(rePrepare.j.spec_version).toBe(17);
     } finally {
       rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
