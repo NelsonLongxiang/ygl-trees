@@ -10,6 +10,28 @@
 - Refs #170：发布 bundle 的 MCP 交错夹具等待服务端接收屏障，清理前停止请求并等待其 CLI 子进程与父服务的 close；请求超时仍为 15 秒，不修改产品服务端或发布产物。
 - Refs #159：kb promote 只收完整 cue/lesson/evidence 或真实 evidence/claim 关联；拒绝单 JSON、零技能写入，--force 显式绕过并留 forced:true。skill show 增 support_refs 供复核提升时依据，add/import 仍宽松且保留同名技能的提升依据快照；只有重新 promote 才在同事务替换快照。promote 只接受唯一 noteId，不按可能重名的 title 查找。
 
+## 0.119.0
+
+用户可见行为变化：
+
+- #142：predict audit 自由文本判据改判 manual，仅完整显式指标（key≥N）参与测量（Refs #139）。
+- #145：组报告折叠优先级 FAIL > NEEDS-MATERIAL > ERROR > PASS；STALE/INFRA 走归档语义（Refs #140）。
+- #152：node add 未知参数 rc=2；db/node 未知动作 --json 单对象 {"error"}；help/usage 漂移修正；skill link 从 npm 安装可用（Refs #148）。
+- #153：密钥类 config get/list 打码，不进 events 与 db export（Refs #150）。
+- #157：/api/verify/specs 按每批 16 目录有界并行读取 spec 摘要（Refs #156）。
+
+其余：
+
+- #146：verify list 报告计数少一修正（Refs #141）。
+- #151：技能文档命令字面量与 0.118 CLI 对齐 + skills:audit 门（Refs #147/#149）。
+- #137：offline-gate 新克隆 tmp 安全（Refs #136）。
+- #138：golden spec 单一来源 goldenSpecs（Refs #135）。
+- #155：verify-web 报告清单经服务路由读取（Refs #154，test-only）。
+- #172：MCP 夹具接收屏障与子进程静默清理（Refs #170，test-only）。
+- #169：发版机 ratchet 重锁：cold 314→407ms、bundle 920401→938774B 入口口径，A/B 归因。
+
+评审 PASS（#90 评论 6581404802，候选 c553f8d，tree 1ad6ac85faefb0674004813647d74304ce1ceca6）。
+
 ## 0.118.0
 
 - #129：/api/verify 列表响应形状变更（裸数组 → {items,total,next_cursor}）——对外可见 HTTP 面，本版 minor 据此；前端已同步。#130 持久 spec 索引（#125 首批+后续）。
