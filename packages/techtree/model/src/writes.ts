@@ -40,6 +40,15 @@ export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promi
   return result;
 }
 
+/**
+ * True for errors the tree write service throws itself (`new Error("cycle rejected: …")` and the like): plain Error
+ * instances without a `code`. Their messages carry only tree/node identifiers, so they may be shown on PG too.
+ * Driver/ORM/socket errors (QueryFailedError, pg DatabaseError, ECONNREFUSED …) are not, and stay masked.
+ */
+export function isDomainError(e: unknown): boolean {
+  return e instanceof Error && e.constructor === Error && (e as any).code === undefined;
+}
+
 /** PG nodes carry search columns SQLite keeps in nodes_fts; drop them so both dialects return the same row shape. */
 export function withoutSearchCols<T extends Record<string, any> | undefined>(row: T): T {
   if (!row) return row;

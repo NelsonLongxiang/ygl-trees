@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { pgPlaceholders, withoutSearchCols } from "../src/writes";
+import { isDomainError, pgPlaceholders, withoutSearchCols } from "../src/writes";
 
 describe("#176 W1-T1 pgPlaceholders", () => {
   it.each([
@@ -17,6 +17,19 @@ describe("#176 W1-T1 pgPlaceholders", () => {
     ["SELECT 1", "SELECT 1"],
   ])("%j", (input, expected) => {
     expect(pgPlaceholders(input)).toBe(expected);
+  });
+});
+
+describe("#176 W1-T2 isDomainError (what PG may show verbatim)", () => {
+  it("passes the service's own refusals and masks driver, ORM and socket errors", () => {
+    expect(isDomainError(new Error("cycle rejected: a already reaches c"))).toBe(true);
+    expect(isDomainError(new Error("parent not found: x"))).toBe(true);
+    const sock = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" });
+    expect(isDomainError(sock)).toBe(false);
+    class QueryFailedError extends Error {}
+    expect(isDomainError(new QueryFailedError("duplicate key value violates unique constraint"))).toBe(false);
+    expect(isDomainError(Object.assign(new Error("x"), { code: "23505" }))).toBe(false);
+    expect(isDomainError("boom")).toBe(false);
   });
 });
 

@@ -68,8 +68,9 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       .then(print)
       .catch(async (e: any): Promise<number> => {
         const msg = e?.message || String(e);
-        const known = /^(node|parent|child|tree) not found: |^no tree selected/.test(msg);
-        bad(ctx, env.pgUrl && !known && !(e instanceof PgCapabilityError) ? pgFailure() : await enrichNodeNotFound(msg));
+        // #176 W1-T2: on PG only driver/ORM errors are masked; the service's own refusals (cycle, self-loop,
+        // enum, not found) are identifier-only and must read the same as on SQLite.
+        bad(ctx, env.pgUrl && !treeWrites.isDomainError(e) && !(e instanceof PgCapabilityError) ? pgFailure() : await enrichNodeNotFound(msg));
         return 1;
       });
   }
