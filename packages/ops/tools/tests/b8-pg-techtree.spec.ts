@@ -26,6 +26,8 @@ function cli(backend: "pg" | "sqlite", args: string[]) {
     : { ...cleanEnv(), YGL_HOME: sqliteHome, YGL_DB_URL: "", YGL_SESSION: "b8-tree", YGL_NO_UPDATE_CHECK: "1" };
   const r = spawnSync(process.execPath, [BIN, ...args], { cwd: ROOT, encoding: "utf8", timeout: 30000, env });
   const text = (r.stdout || "") + (r.stderr || "");
+  // A killed child means the CLI printed its answer but never exited: an open PG handle, not a slow machine.
+  expect(r.signal, `${backend} ${args.join(" ")}: process did not exit (open connection?) — ${text.slice(0, 200)}`).toBeNull();
   if (backend === "pg") expect(text).not.toContain(new URL(adminUrl).password);
   return { rc: r.status, out: r.stdout || "", text };
 }

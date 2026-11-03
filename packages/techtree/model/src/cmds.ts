@@ -33,8 +33,17 @@ import { clip, nowIso, shortId } from "../../../core/text/src/text";
 import { emitEvent } from "../../../core/text/src/eventbus";
 
 export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
+  const trees = new AsyncTreeStore(env.db);
+  try {
+    return await runWith(env, trees, action, rest, args);
+  } finally {
+    // #176 W1-T1: the PG store owns a client connection; an open one keeps the CLI process alive.
+    await trees.close();
+  }
+}
+
+async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: string[], args: any): Promise<number> {
   const { ctx, db } = env;
-  const trees = new AsyncTreeStore(db);
 
   // 0.83 (user report ①): --tree long alias alongside -t — pointer-hijack
   // pinning needs an ergonomic, self-documenting form. EXCEPTION: `node

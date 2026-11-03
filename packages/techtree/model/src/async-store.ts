@@ -24,6 +24,11 @@ export class AsyncTreeStore {
     this.adb = getAsyncDb(db);
   }
 
+  /** Release the PG connection (no-op on SQLite). The CLI process cannot exit while it is open. */
+  async close(): Promise<void> {
+    if (this.adb.dialect === "pg") await (this.adb as import("../../../core/database/src/asyncdb").PgAsyncDb).close();
+  }
+
   /** #176 W1-T1: PG business mode (YGL_DB_URL) — the PG branches below return the SQLite row shapes. */
   get pg(): boolean {
     return this.adb.dialect === "pg";
