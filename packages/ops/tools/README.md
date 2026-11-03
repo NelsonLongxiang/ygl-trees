@@ -43,6 +43,12 @@ CLI and HTTP prepare/run, and newly executed tree leaves, pass the running appli
 
 CLI prepare accepts `--candidates-author <id>` and `--reviews-author <id>`; a flag without its value is rc2 before workspace I/O. Without flags, authors use `YGL_SESSION`, then `DSH_SESSION_ID`, then `cli`. HTTP prepare accepts `candidates_author` and `reviews_author` (source `body`); omitted values use the serve session identity, or `http` when unavailable (source `http`). Both paths include authors in their JSON response, prepare record and frozen trace. Equal author ids add a non-blocking `P3a` diagnostic; self-reported ids are provenance, not authenticated proof of reviewer independence.
 
+## Measurement producer provenance
+
+`verify run` and `verify tree run` accept `--provenance <file.json>`; HTTP run accepts the same object as `provenance`. Supply `probe_sha256`, `platform`, `runtime`, `package_manager` (including version), and a non-secret role/session `identity`. No host credentials or environment variables are collected. Fields are caller assertions, not authenticated evidence.
+
+Reports and archives retain the normalized `data_source.producer` and a `data_source.provenance` comparison. The first integrity-valid measured report for the same frozen spec version is the stable baseline; subsequent changes, including omission after a measured baseline, remain `changed` until the original producer is restored or a new spec version is prepared. Tree leaves project changed provenance to `STALE`, which propagates to ancestors; intrinsic VU verdicts are retained. Existing histories without any producer keep their legacy shape. No historical report bytes are rewritten.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history

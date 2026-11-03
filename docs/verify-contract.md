@@ -297,6 +297,8 @@ verify list --unarchived                                            # 跑过但�
 
 **`--db` 语义（r15 P1-1）**：在 `verify` 组里 `--db <file>` 一律指**业务库快照**（run/prepare 的取数对象），工作区库固定是 `$YGL_HOME/ygl-trees.db`——verify 命令不会打开业务库做 ygl schema 迁移，也不写它；`run` 先复制快照再读，`data_source.sha256` 记的是**原始字节**。这是「证据可复核」的前提：任何会改写源库的路径都不该出现在验证链上。
 
+**测量来源（#171 建议 3）**：`verify run` 与 `verify tree run` 可给 `--provenance <json文件>`，HTTP run 请求体用 `provenance` 对象。必填字符串为 `probe_sha256`（64 hex，可带 `sha256:`）、`platform`、`runtime`、`package_manager`（含版本）和非敏感 `identity`（角色/会话标识）。字段闭集，不收额外 token/环境字段；不读取主机凭证。这是调用方自报，不证明身份真实。报告 `data_source.producer` 保留归一内容，`data_source.provenance` 给出 `first/same/changed` 与基线 run/hash；基线是同 spec_id/spec_version 的第一份完整性有效且带来源的报告。连续用新来源运行不会自动消除 `changed`；曾给来源后省略也算变化。tree 将 changed 叶映射为 STALE 并向父传播，保留原 report_verdict，归档包含来源字段并参与 payload 哈希。历史上从未给来源时保留旧形状，不回写历史报告。
+
 **`--no-archive`**：`run` 默认归档（契约 §7），`--no-archive` 跳过；归档失败不改写报告、但 rc=1（过程错误）。
 
 **未知旗标**：verify 组每个动作有旗标白名单，未知旗标一律 rc=2 并点名（`unknown flag for verify run: --attachment`）——构造期静默比报错危险。
