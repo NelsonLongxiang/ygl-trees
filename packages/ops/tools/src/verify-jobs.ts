@@ -127,6 +127,14 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   if (!pat.ok) return fail(422, pat.problem);
   const draft = body.draft === true;
   const requested = Number(body.spec_version);
+  // #171 第4项：构造面留痕（HTTP 面与 CLI 同口径）——候选/评审各自的作者身份。
+  // 显式请求体字段记 source:"body"；缺省用 serve 会话身份（YGL_SESSION/DSH_SESSION_ID），记 source:"http"。
+  const httpAuthor = (raw: unknown): { id: string; source: string } => {
+    if (raw !== undefined && raw !== null && String(raw).trim() !== "") return { id: String(raw).trim(), source: "body" };
+    const session = String(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim();
+    return { id: session || "http", source: "http" };
+  };
+  const authors = { candidates: httpAuthor(body.candidates_author), reviews: httpAuthor(body.reviews_author) };
   const res = await prepareSpec(text, {
     runner: fileRunner(candidates),
     reviewer: fileReviewer(reviews),
@@ -148,6 +156,13 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
     corpusVersion: CORPUS_VERSION,
     knownMaterialHashes: knownMaterialHashes(env, materialId),
   });
+  // 同一作者既出候选又出评审时留一条诊断（与 CLI 面同一句话，不阻塞）
+  if (authors.candidates.id === authors.reviews.id) {
+    res.diagnostics.push({
+      stage: "P3a",
+      message: `candidates and reviews share the same author (${authors.candidates.id}) — independent review is not enforced by the engine; recorded in trace.authors (not blocked)`,
+    });
+  }
   const ready = res.verdict === "ready" && !!res.spec;
   let record: string | null = null;
   if (!draft) {
@@ -162,6 +177,7 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
       diagnostics: res.diagnostics,
       materials_sha256: res.materials_sha256,
       clause_scope: clauseScopeOf(pat, res.coverage),
+      authors,
     }, created);
     record = relative(dir, recordPath).split(sep).join("/");
     if (ready && res.spec) {
@@ -170,6 +186,7 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
         material_id: materialId,
         spec_id: res.spec.spec_id,
         spec_version: res.spec.spec_version,
+        authors,
         units: res.spec.vu.map((v) => ({ id: v.id, title: v.title, source_clause: v.source_clause, severity: v.severity, checker: v.checker.type, expected_from: v.expected_from })),
         rejected: res.rejected,
       });

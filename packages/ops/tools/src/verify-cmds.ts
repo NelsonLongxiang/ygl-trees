@@ -1082,6 +1082,11 @@ const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-2
  */
 export function preflightUsage(action: string, rest: string[], args: any): string | null {
   if (action !== "prepare") return null;
+  // #171 第4项（#188 评审 P3）：裸 --candidates-author / --reviews-author 会被记成作者 "true"，
+  // 属用法错误，按 #175 的规矩在门禁之前就 rc=2。
+  for (const flagName of ["candidates-author", "reviews-author"]) {
+    if (args.flags[flagName] === true) return `--${flagName} needs a value (a bare flag would be recorded as the literal "true")`;
+  }
   const materialId = rest[0];
   const candidatesPath = String(args.flags.candidates || "");
   const reviewsPath = String(args.flags.reviews || "");
