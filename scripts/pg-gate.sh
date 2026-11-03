@@ -26,6 +26,12 @@ done
 docker exec "$CONTAINER_ID" pg_isready -U postgres >/dev/null 2>&1 || { echo "✗ postgres not ready in 30s"; exit 1; }
 PG_PORT=$(docker port "$CONTAINER_ID" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')
 [ -n "$PG_PORT" ] || { echo "✗ missing loopback PG port"; exit 1; }
+# G7 runs the CLI from dist/. On 11-03 a dist left over from another branch made the gate report false refusals
+# (68/7 "needs the SQLite workspace face"), so build the checked-out head every time, once PG is ready. There is
+# no fingerprint file: anything written into dist/ ships in the npm package and would break reproducible packing.
+mkdir -p tmp
+echo "pg-gate: building $(git rev-parse --short HEAD 2>/dev/null || echo '?') before the gate"
+pnpm build > tmp/pg-gate-build.log 2>&1 || { echo "✗ pnpm build failed — G7 refuses to run against a stale dist/ (tail of tmp/pg-gate-build.log):"; tail -20 tmp/pg-gate-build.log; exit 1; }
 export YGL_PG_URL="postgres://postgres:$PG_PW@127.0.0.1:$PG_PORT/ygl"
 export B8_TEST_PG_ADMIN_URL="postgres://postgres:$PG_PW@127.0.0.1:$PG_PORT/postgres"
 node scripts/dual-backend-matrix.mjs --b8-pg-only || exit $?
