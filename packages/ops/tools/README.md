@@ -37,6 +37,8 @@ Tree group reports use ordinary four-value VUs: tree-only `STALE`, `INFRA_BLOCKE
 
 CLI and HTTP prepare/run, and newly executed tree leaves, pass the running application `env.version` to the verifier, matching tree G8. A frozen spec records its preparing engine while each new report records its executing engine; running a legacy spec does not rewrite its original version or earlier reports. Archives retain and verify the report version. The standalone verify-core library and deterministic corpus keep their own0.1.0 default; an embedding application should inject its version. This change does not migrate frozen specs, add provenance flags, change as_of or enforce reviewer independence.
 
+`verify prepare` (CLI `--as-of`, HTTP `as_of`) requires an explicit as_of unless it is a draft (#171). Without one the CLI returns rc 2 and HTTP returns 400, before any I/O. as_of is the moment the snapshot describes, not the freeze time, so the same material prepared later or on another machine freezes the same spec.
+
 ## Prepare author trace
 
 CLI prepare accepts `--candidates-author <id>` and `--reviews-author <id>`; a flag without its value is rc2 before workspace I/O. Without flags, authors use `YGL_SESSION`, then `DSH_SESSION_ID`, then `cli`. HTTP prepare accepts `candidates_author` and `reviews_author` (source `body`); omitted values use the serve session identity, or `http` when unavailable (source `http`). Both paths include authors in their JSON response, prepare record and frozen trace. Equal author ids add a non-blocking `P3a` diagnostic; self-reported ids are provenance, not authenticated proof of reviewer independence.

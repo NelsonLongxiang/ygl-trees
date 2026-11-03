@@ -108,7 +108,7 @@ describe.skipIf(!HAS_BIN)("#171 portable bundle — end-to-end run + archive in 
           { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
         ],
       }] }));
-      const rePrepare = cli(["verify", "prepare", materialId, "--candidates", candFile, "--reviews", revFile, "--db", snapPath], homeB);
+      const rePrepare = cli(["verify", "prepare", materialId, "--candidates", candFile, "--reviews", revFile, "--db", snapPath, "--as-of", "2026-11-01T00:00:00.000Z"], homeB);
       expect(rePrepare.rc, rePrepare.out).toBe(0);
       expect(rePrepare.j.verdict).toBe("ready");
       expect(rePrepare.j.spec_version).toBe(17);

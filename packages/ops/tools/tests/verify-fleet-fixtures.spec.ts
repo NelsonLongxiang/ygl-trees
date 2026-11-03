@@ -191,7 +191,7 @@ describe.skipIf(!HAS_BIN)("#34 fleet consumer fixtures via the CLI (release gate
 
   it("prepare.json records the clause scope it was judged by (structured)", () => {
     const f = fx("review/prs");
-    const prep = jrun(["verify", "prepare", f.material_id, "--candidates", join(f.dir, "candidates.json"), "--reviews", join(f.dir, "reviews.json"), "--db", f.db, "--no-meta", "--json"]);
+    const prep = jrun(["verify", "prepare", f.material_id, "--candidates", join(f.dir, "candidates.json"), "--reviews", join(f.dir, "reviews.json"), "--db", f.db, "--no-meta", "--as-of", "2026-11-01T00:00:00.000Z", "--json"]);
     expect(prep.j.verdict).toBe("ready");
     const record = JSON.parse(readFileSync(join(HOME, "verify", prep.j.record), "utf8"));
     expect(record.clause_scope).toEqual({ pattern: "^([A-Z]+[0-9]+) ", declared: false, enforced: true, clauses: 7 });
