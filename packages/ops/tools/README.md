@@ -33,6 +33,10 @@ Tree group reports use ordinary four-value VUs: tree-only `STALE`, `INFRA_BLOCKE
 
 `verify list` counts every report for each spec while reading the latest report without removing it from the in-memory list. `last_run` and `last_overall` keep the existing finished-time ordering and stable file-order tie behavior; no-report rows return zero runs and empty latest fields. Listing does not rewrite spec/report bytes. The CLI count fix does not change the HTTP paging/index contract.
 
+## Verifier engine provenance
+
+CLI and HTTP prepare/run, and newly executed tree leaves, pass the running application `env.version` to the verifier, matching tree G8. A frozen spec records its preparing engine while each new report records its executing engine; running a legacy spec does not rewrite its original version or earlier reports. Archives retain and verify the report version. The standalone verify-core library and deterministic corpus keep their own0.1.0 default; an embedding application should inject its version. This change does not migrate frozen specs, add provenance flags, change as_of or enforce reviewer independence.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history

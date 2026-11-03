@@ -410,7 +410,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
         const gSpec = {
           contract_version: "1.2", spec_id: gSpecId, spec_version: 1, title: "tree group " + n.id,
           domain: "tree", created: now, runtime_min: "",
-          verifier: { engine_version: String((env as any).version || "0.114.19"), corpus_version: "1.2" },
+          verifier: { engine_version: String(env.version ?? "unknown"), corpus_version: "1.2" },
           as_of: { kind: "snapshot", value: "1970-01-01T00:00:00.000Z" },
           vu: [], attachments: [], sealed: { review: false },
         };
@@ -550,7 +550,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     if (!dbFile) throw new Error("leaf " + n.id + ": no --db binding (pass --db <path> or --db " + n.id + "=<path>)");
     const snap = getSnapshot(dbFile);
     const runner = new SqliteRunner(snap.path);
-    const report = await runVerify(leafSpec, { runner, mode: "open" });
+    const report = await runVerify(leafSpec, { runner, mode: "open", engineVersion: env.version });
     // Q8：叶 data_source 投影（kind+id 恒比；声明 sha256 时才比 sha）。
     // 缺陷②（总工席 direct-085b7275）：id = 被验快照身份（snap.source），不是树内
     // 节点坐标——node.id 与 target.id（快照身份）必 mismatch 导致全叶 STALE 沿父链。
@@ -1503,7 +1503,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         specVersion: args.flags["spec-version"] ? Number(args.flags["spec-version"]) : prevVersion + 1,
         // as_of 由调用方（= 这里）给：默认冻结时刻；--as-of 可显式钉快照时点
         asOf: { kind: "snapshot", value: asOf },
-        engineVersion: "0.1.0",
+        engineVersion: env.version,
         corpusVersion: CORPUS_VERSION,
         knownMaterialHashes: knownMaterialHashes(env, materialId),
       }).then((res): number => {
@@ -1618,7 +1618,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const runner = new SqliteRunner(snap.path);
       const fileScans: FileScanRecord[] = [];
-      return runVerify(spec, { runner, submissionDir: submission, mode: "open", onFileScan: (r) => fileScans.push(r) })
+      return runVerify(spec, { runner, submissionDir: submission, mode: "open", engineVersion: env.version, onFileScan: (r) => fileScans.push(r) })
         .then((report): number => {
           const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
           withSource.payload_sha256 = payloadHash(withSource);

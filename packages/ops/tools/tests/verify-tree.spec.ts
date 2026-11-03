@@ -240,6 +240,11 @@ describe("A1 tree run (runtime first cut)", () => {
     expect(r1.j.nodes.find((n: any) => n.node_id === "root").verdict).toBe("FAIL");
     expect(r1.j.nodes.filter((n: any) => n.kind === "leaf").every((n: any) => n.report_id)).toBe(true);
     expect(existsSync(r1.j.report_path)).toBe(true);
+    const actualVersion = run(["--version"]).out.trim();
+    for (const n of r1.j.nodes.filter((n: any) => n.kind === "leaf")) {
+      const report = JSON.parse(readFileSync(join(HOME, "verify", "reports", n.report_id + ".json"), "utf8"));
+      expect(report.verifier.engine_version).toBe(actualVersion);
+    }
     const rootNode = r1.j.nodes.find((n: any) => n.node_id === "root");
     expect(rootNode.archive_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     const av = run(["verify", "archive", "verify", rootNode.archive_path]);

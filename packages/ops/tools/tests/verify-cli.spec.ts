@@ -679,6 +679,26 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(obj.record).toBe(["specs", obj.spec_id, "prepare.json"].join("/"));
     const dir = join(home, "verify", "specs", obj.spec_id);
     for (const f of ["prepare.json", "spec.json", "trace.json"]) expect(existsSync(join(dir, f))).toBe(true);
+    const actualVersion = run(["--version"]).out;
+    const frozen = JSON.parse(readFileSync(join(dir, "spec.json"), "utf8"));
+    expect(frozen.verifier.engine_version).toBe(actualVersion);
+    const executed = run(["verify", "run", obj.spec_id, "--db", dbFile, "--json"]);
+    expect(executed.rc).toBe(0);
+    const receipt = JSON.parse(executed.out);
+    const report = JSON.parse(readFileSync(receipt.report_path, "utf8"));
+    expect(report.verifier.engine_version).toBe(actualVersion);
+    expect(report.payload_sha256).toBe(payloadHash(report));
+    expect(run(["verify", "archive", "verify", receipt.archive.path, "--json"]).rc).toBe(0);
+    // Replaying a legacy spec records this runner, without rewriting its frozen origin.
+    frozen.verifier.engine_version = "0.1.0";
+    const legacyBytes = JSON.stringify(frozen);
+    writeFileSync(join(dir, "spec.json"), legacyBytes);
+    const replay = run(["verify", "run", obj.spec_id, "--db", dbFile, "--json"]);
+    expect(replay.rc).toBe(0);
+    const replayReport = JSON.parse(readFileSync(JSON.parse(replay.out).report_path, "utf8"));
+    expect(replayReport.verifier.engine_version).toBe(actualVersion);
+    expect(replayReport.overall).toBe(report.overall);
+    expect(readFileSync(join(dir, "spec.json"), "utf8")).toBe(legacyBytes);
     // 反向：旧版嵌套形状（r23 P2 的错例）永不 ready
     const nested = join(home, "rev-nested.json");
     writeFileSync(nested, JSON.stringify({ reviews: [[

@@ -1,5 +1,9 @@
 # ygl-trees 开发计划
 
+## 在途 · #171 第2项 引擎版本来源（未发版）
+
+独立分支基于c553f8d，不改五个已评审头、不进0.119.0。应用prepare/run显式注入env.version，与tree G8相同来源；覆盖CLI、HTTP与树叶新报告，并移除组报告过时fallback。底层独立verify-core包自身version为0.1.0，保留其确定语料/直接库调用默认值，不冒称根CLI版本；修复的是应用入口漏传/写死版本。旧spec/报告保持原字节，新执行报告记录当前引擎；无schema/as_of/import/provenance/独立性范围扩展。原码版本断言4红/84绿，修后88/88通过，CLI归档哈希仍可验，补旧0.1.0 spec复跑不回写断言。README测试数量未增加（增强现有用例），完整链与pack待本轮实测。Refs #171，只完成第2项不提前关整单。
+
 ## 在途 · #168 构建配置隔离（未发版）
 
 PR173从c553f8d独立起支，首轮--no-config虽隔离父配置但与已评审#161的仓内压缩配置冲突，故按评审direct-fc81720c普通merge冻结fc2f65d到本支（不改四评审头，不进0.119.0）。现build:bundle:only显式--config ./tsdown.config.mjs，沿用#161 minify/keepNames及原82ms/676368B基线，不重写。G1在env -i内校验realpath属本仓并打印配置绝对路径。保留真实clone父decoy字节同/未执行反例，新增仓内minify切换有效正控，以及G1本仓/缺失/仓外symlink三场景，8/8定向通过。README1501+新增1+G1新增2=1504，完整链待实测。offline-gate同提交重登记；package此前未登记，误加Z锚已显式撤销，监督席确认后单独enrollment另议，不改既有账本。仅在0.119发布和四层依序合并后才可落本PR；Refs#168不提前关单。

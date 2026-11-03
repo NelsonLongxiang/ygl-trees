@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Refs #171（第2项）：CLI及HTTP的verify prepare/run和树叶执行将实际运行版本（与tree G8相同的env.version来源）写入新spec/报告/归档，不再把应用版本记成0.1.0；旧冻结件和报告不回写，底层独立verify-core包默认版本仍为其自身0.1.0。
+
 - Refs #168：bundle命令显式指定本仓tsdown.config.mjs，不读取父目录配置；G1校验文件真实路径属于本仓并记录该绝对路径。父目录可执行decoy回归保证未加载且输出全目录逐字节一致，未改压缩策略或ratchet基线。
 
 - #160 审计兼容：新 `evidence.add` 的 TEXT payload 为 JSON 对象（payload_version:1、evidence_id/source_id、quote摘要、quote_verified、unverified）；历史quote字符串原样保留，重复历史回执为未核。读取者需先区分JSON对象/旧字符串，不得假设payload可直接substring；通用feed/export原样透传文本。引文不匹配使用专用QuoteMismatchError，SQLite/PG均给安全的来源诊断，不混作PG能力错误。
