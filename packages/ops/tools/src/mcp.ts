@@ -335,13 +335,14 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           b: { type: "string", description: "submit: material text file path | prepare: candidates file | run: snapshot db path" },
           c: { type: "string", description: "prepare: reviews file" },
           db: { type: "string", description: "prepare: snapshot db path (required)" },
+          as_of: { type: "string", description: "prepare: ISO-8601 moment the snapshot describes (required; #171 — no default to the freeze time)" },
         },
         required: ["action", "a"],
       },
       execute: async (a) => {
         switch (String(a.action)) {
           case "submit": return runCli(["verify", "submit", "--title", String(a.a), "--text", String(a.b ?? a.a)]);
-          case "prepare": return runCli(["verify", "prepare", String(a.a), ...opt("--candidates", a.b), ...opt("--reviews", a.c), ...opt("--db", a.db)]);
+          case "prepare": return runCli(["verify", "prepare", String(a.a), ...opt("--candidates", a.b), ...opt("--reviews", a.c), ...opt("--db", a.db), ...opt("--as-of", a.as_of)]);
           case "run": return runCli(["verify", "run", String(a.a), ...opt("--db", a.b)]);
           case "report": return runCli(["verify", "report", String(a.a)]);
           case "archive": return runCli(["verify", "archive", "verify", String(a.a)]);

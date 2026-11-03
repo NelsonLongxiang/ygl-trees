@@ -205,7 +205,7 @@
     },
     {
       "path": "scripts/verify-run.mjs",
-      "sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
+      "sha256": "252f8e3e3f74d344e69724fb1d88ec642406f53feb469a26c6345acbae945c0e",
       "role": "test"
     },
     {
@@ -1212,6 +1212,14 @@
       "reason": "#176 W5a: structural parity (types/NOT NULL/DEFAULT/PK/FK/UNIQUE/indexes) + DIALECT_EXCEPTIONS + mutation selftest",
       "actor": "supervisor seat (Claude-OPS-5.5)",
       "at": "2026-11-03T07:59:53.983Z"
+    },
+    {
+      "path": "scripts/verify-run.mjs",
+      "old_sha256": "2bcc4556fd592c8b10390347eb4880413300976f0d17f29d19d9853f188ec697",
+      "new_sha256": "252f8e3e3f74d344e69724fb1d88ec642406f53feb469a26c6345acbae945c0e",
+      "reason": "#171 suggestion 4: verify-run requires --as-of before any I/O (prepare no longer defaults to the freeze time)",
+      "actor": "supervisor seat (Claude-OPS-5.5)",
+      "at": "2026-11-03T13:13:03.614Z"
     }
   ],
   "kind": "engine",

@@ -1050,7 +1050,7 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
   run: ["db", "submission", "no-archive"],
   tree: ["pinned", "no-archive", "target"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
@@ -1070,7 +1070,20 @@ const ACTION_FLAGS: Record<string, string[]> = {
 };
 
 /** `verify prepare` 的用法串：命令体内校验与 bin 层前置校验共用，避免两处措辞漂移。 */
-const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> --as-of <ISO-8601> [--spec-version N] [--draft (as_of optional)] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+/**
+ * #171 建议 4：非 --draft 的 prepare 必须显式给 as_of。默认取「冻结此刻」会让同一份材料换时间、换机器重新
+ * prepare 时冻出不同的 spec（版本白涨、跨机器对不上）。as_of 是快照所描述的时刻（如被验提交的时间），只有
+ * 调用方知道。--draft 不冻结任何东西，仍可省略。CLI rc=2 与 HTTP 400 共用这一句。
+ */
+export const AS_OF_REQUIRED = "as_of is required: pass the moment the snapshot describes (e.g. the verified commit's time) as --as-of <ISO-8601> (HTTP: as_of). It no longer defaults to the freeze time (#171), so re-preparing the same material later or on another machine freezes the same spec. --draft may omit it.";
+
+/** 非 draft 且没给 as_of（undefined / null / 空串）时返回提示，否则 null。裸 --as-of（true）交给 normalizeAsOf 报类型错。 */
+export function asOfMissing(raw: unknown, draft: boolean): string | null {
+  if (draft) return null;
+  return raw === undefined || raw === null || raw === "" ? AS_OF_REQUIRED : null;
+}
+
 /** `--as-of` 的用法提示（r22 ②）：CLI rc=2 与 HTTP 400 共用同一句。 */
 const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-20T09:00:00+08:00)";
 
@@ -1082,11 +1095,18 @@ const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-2
  */
 export function preflightUsage(action: string, rest: string[], args: any): string | null {
   if (action !== "prepare") return null;
+  // #171 第4项（#188 评审 P3）：裸 --candidates-author / --reviews-author 会被记成作者 "true"，
+  // 属用法错误，按 #175 的规矩在门禁之前就 rc=2。
+  for (const flagName of ["candidates-author", "reviews-author"]) {
+    if (args.flags[flagName] === true) return `--${flagName} needs a value (a bare flag would be recorded as the literal "true")`;
+  }
   const materialId = rest[0];
   const candidatesPath = String(args.flags.candidates || "");
   const reviewsPath = String(args.flags.reviews || "");
   const dbPath = lastDbFlag(args.flags.db);
   if (!materialId || !candidatesPath || !reviewsPath || !dbPath) return USAGE_PREPARE;
+  const missing = asOfMissing(args.flags["as-of"], args.flags.draft === true);
+  if (missing) return missing;
   try {
     normalizeAsOf(args.flags["as-of"], new Date().toISOString());
   } catch (e: any) {
@@ -1460,6 +1480,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
       // 放在最前面：旗标错误是用法错误，不该先做 material/db 的 I/O 再说。
+      {
+        const missing = asOfMissing(args.flags["as-of"], args.flags.draft === true);
+        if (missing) { bad(ctx, missing); return 2; }
+      }
       let asOf: string;
       try {
         asOf = normalizeAsOf(args.flags["as-of"], new Date().toISOString());
@@ -1515,6 +1539,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const prevVersion = latestVersionOf(env, materialId);
       // ③ --draft：干跑——跑完整 P0–P5，但不落盘（不写 spec/prepare/trace，不消耗 spec_version）
       const draft = args.flags.draft === true;
+      // #171 第4项：构造面留痕——候选与评审各自的作者身份。引擎不强制独立性（纪律在各仓
+      // AGENTS.md），但必须记录：两者相同时给一条诊断，让「同一会话既写候选又写评审」在
+      // 报告链里可见。身份来源优先级：显式旗标 > 会话 env > 默认 "cli"。
+      const authorOf = (flagName: string): { id: string; source: string } => {
+        const explicit = args.flags[flagName];
+        if (explicit !== undefined && String(explicit).trim() !== "") return { id: String(explicit).trim(), source: "flag" };
+        const session = String(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim();
+        return session ? { id: session, source: "env" } : { id: "cli", source: "default" };
+      };
+      const authors = { candidates: authorOf("candidates-author"), reviews: authorOf("reviews-author") };
       return prepareSpec(text, {
         runner: fileRunner(candidatesFile.candidates ?? []),
         reviewer: fileReviewer(reviewsFile.reviews ?? []),
@@ -1536,6 +1570,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         knownMaterialHashes: knownMaterialHashes(env, materialId),
       }).then((res): number => {
         if (metaWarning) res.diagnostics.push({ stage: "META", message: metaWarning });
+        // #171 第4项：同一作者既出候选又出评审时留一条诊断（不阻塞，但进 prepare.json 与 --json）。
+        if (authors.candidates.id === authors.reviews.id) {
+          res.diagnostics.push({
+            stage: "P3a",
+            message: `candidates and reviews share the same author (${authors.candidates.id}) — independent review is not enforced by the engine; recorded in trace.authors (not blocked)`,
+          });
+        }
         // #25a: persist bypass provenance with the frozen spec (not for --draft,
         // which writes nothing). specDir is deterministic from res.spec.spec_id.
         if (gate.bypass && !draft && res.spec?.spec_id) {
@@ -1564,6 +1605,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             rejected_detail: res.rejected,
             materials_sha256: res.materials_sha256,
             diagnostics: res.diagnostics,
+            authors,
             ...(res.coverage ? { coverage: res.coverage } : {}),
             ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
@@ -1589,6 +1631,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           diagnostics: res.diagnostics,
           materials_sha256: res.materials_sha256,
           clause_scope: clauseScopeOf(patOpt, res.coverage),
+          authors,
         }, created);
         if (ready && res.spec) {
           writeJson(join(dir, "spec.json"), res.spec);
@@ -1596,6 +1639,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             material_id: materialId,
             spec_id: res.spec.spec_id,
             spec_version: res.spec.spec_version,
+            // #171 第4项：构造面作者留痕（候选/评审各自的身份与来源）
+            authors,
             units: res.spec.vu.map((v) => ({ id: v.id, title: v.title, source_clause: v.source_clause, severity: v.severity, checker: v.checker.type, expected_from: v.expected_from })),
             rejected: res.rejected,
           });
@@ -1603,7 +1648,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, ...(res.coverage ? { coverage: res.coverage } : {}), ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {

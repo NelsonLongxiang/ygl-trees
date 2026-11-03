@@ -10,7 +10,7 @@
  *
  * 用法：
  *   node scripts/verify-run.mjs --material <file> --candidates <json> --db <snapshot.sqlite> \
- *        [--reviews <json>] [--title <t>] [--domain <d>] [--as-of <iso>] [--no-archive] [--json]
+ *        --as-of <iso> [--reviews <json>] [--title <t>] [--domain <d>] [--no-archive] [--json]
  *
  * 退出码：0 = 流水线跑完（含 FAIL）；1 = 过程错误（submit/prepare 未 ready/运行失败）；2 = 用法错误。
  */
@@ -36,7 +36,7 @@ const JSON_OUT = has("json");
 const USAGE = `verify-run — make submission → prepare → run (rc 只表达过程错误)
 
   node scripts/verify-run.mjs --material <file> --candidates <json> --db <snapshot.sqlite>
-       [--reviews <json>] [--title <t>] [--domain <d>] [--as-of <iso>] [--no-archive] [--json]
+       --as-of <iso> [--reviews <json>] [--title <t>] [--domain <d>] [--no-archive] [--json]
 
   --material   提交材料正文（唯一人工产出）
   --candidates 构造候选（prepare 的输入；机械形态，见 docs/verify-contract.md §1.6）
@@ -66,6 +66,8 @@ function fail(code, message) {
 }
 
 if (!MATERIAL || !CANDIDATES || !DB) fail("usage", "missing --material/--candidates/--db (use --help)");
+// #171 建议 4：prepare 不再默认冻结时刻——这里先于任何 I/O 要求 --as-of（快照所描述的时刻）。
+if (!AS_OF) fail("usage", "missing --as-of <ISO-8601>: the moment the snapshot describes (prepare no longer defaults to the freeze time, #171)");
 for (const [name, p] of [["material", MATERIAL], ["candidates", CANDIDATES], ["db", DB], ...(REVIEWS ? [["reviews", REVIEWS]] : [])]) {
   if (!existsSync(resolve(p))) fail("usage", `--${name} not found: ${p}`);
 }
