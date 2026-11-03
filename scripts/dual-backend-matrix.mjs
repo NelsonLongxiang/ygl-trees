@@ -168,15 +168,23 @@ const strict = args.includes("--strict");
 const json = args.includes("--json");
 const pgUrl = process.env.YGL_PG_URL || process.env.YGL_DB_URL || "";
 
+// Every step's full stdout/stderr lands in LOG_DIR (kept after the run). On 11-03 a strict run reported
+// "✗ unit (1464.4s)" with nothing else, so the failing case could not be named.
+const LOG_DIR = join(ROOT, "tmp", "dual-backend-matrix-" + new Date().toISOString().replace(/[:.]/g, "-"));
+mkdirSync(LOG_DIR, { recursive: true });
 function sh(cmd, argv, opts = {}) {
   const t0 = Date.now();
   const r = spawnSync(cmd, argv, {
     cwd: ROOT,
     encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
     timeout: opts.timeoutMs ?? 30 * 60_000,
     env: { ...process.env, YGL_DB_URL: "", ...(opts.env || {}) },
   });
-  return { status: r.status ?? -1, out: (r.stdout || "") + (r.stderr || ""), ms: Date.now() - t0 };
+  const out = (r.stdout || "") + (r.stderr || "");
+  const log = join(LOG_DIR, `${opts.leg || "step"}-${opts.name || cmd}.log`);
+  writeFileSync(log, `$ ${cmd} ${argv.join(" ")}\nstatus=${r.status} signal=${r.signal ?? ""} error=${r.error ? r.error.code || r.error.message : ""}\n\n${out}`);
+  return { status: r.status ?? -1, out, ms: Date.now() - t0, log, signal: r.signal ?? null, error: r.error ? String(r.error.code || r.error.message) : null };
 }
 
 const legs = [];
@@ -194,10 +202,10 @@ const home = mkdtempSync(join(tmpdir(), "ygl-b6-"));
   ];
   const results = [];
   for (const [name, cmd, opts] of steps) {
-    const r = sh(cmd[0], cmd.slice(1), opts);
+    const r = sh(cmd[0], cmd.slice(1), { ...opts, leg: "sqlite", name });
     const expected = opts.expectedRc ?? 0;
     const untouched = !opts.noFilesUnder || !existsSync(opts.noFilesUnder);
-    results.push({ step: name, status: r.status === expected && untouched ? "pass" : "fail", ms: r.ms, tail: r.out.slice(-200) });
+    results.push({ step: name, status: r.status === expected && untouched ? "pass" : "fail", ms: r.ms, rc: r.status, signal: r.signal, error: r.error, log: r.log, tail: r.out.slice(-4000) });
   }
   legs.push({ backend: "sqlite", status: results.every((r) => r.status === "pass") ? "pass" : "fail", steps: results });
 }
@@ -227,10 +235,10 @@ if (!pgUrl) {
   ];
   const results = [];
   for (const [name, cmd, opts] of steps) {
-    const r = sh(cmd[0], cmd.slice(1), opts);
+    const r = sh(cmd[0], cmd.slice(1), { ...opts, leg: "pg", name });
     const expected = opts.expectedRc ?? 0;
     const untouched = !opts.noFilesUnder || !existsSync(opts.noFilesUnder);
-    results.push({ step: name, status: r.status === expected && untouched ? "pass" : "fail", ms: r.ms, tail: r.out.slice(-200) });
+    results.push({ step: name, status: r.status === expected && untouched ? "pass" : "fail", ms: r.ms, rc: r.status, signal: r.signal, error: r.error, log: r.log, tail: r.out.slice(-4000) });
   }
   legs.push({ backend: "pg", status: results.every((r) => r.status === "pass") ? "pass" : "fail", steps: results });
 }
@@ -249,11 +257,18 @@ if (json) {
   console.log(`dual-backend matrix${strict ? " (strict)" : ""}:`);
   for (const leg of legs) {
     console.log(`  [${leg.backend}] ${leg.status}${leg.reason ? " — " + leg.reason : ""}`);
-    for (const s of leg.steps) console.log(`    ${s.status === "pass" ? "✓" : "✗"} ${s.step} (${(s.ms / 1000).toFixed(1)}s)`);
+    for (const s of leg.steps) {
+      console.log(`    ${s.status === "pass" ? "✓" : "✗"} ${s.step} (${(s.ms / 1000).toFixed(1)}s)`);
+      if (s.status !== "pass") {
+        console.log(`      rc=${s.rc} signal=${s.signal ?? ""}${s.error ? " error=" + s.error : ""} · full log: ${relative(ROOT, s.log)}`);
+        for (const line of s.tail.split("\n").slice(-30)) console.log("      | " + line);
+      }
+    }
   }
   if (!strict && pgLeg.status === "skipped") {
     console.log("  note: PG leg skipped — run with YGL_PG_URL and --strict for the release gate");
   }
+  console.log(`  step logs: ${relative(ROOT, LOG_DIR)}`);
   console.log(overallOk ? "dual-backend matrix: PASS" : "dual-backend matrix: FAIL");
 }
 process.exit(overallOk ? 0 : 1);

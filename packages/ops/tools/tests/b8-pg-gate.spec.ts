@@ -13,6 +13,14 @@ describe("#124 B8 release gate wiring",()=>{
   expect(s.indexOf("node scripts/dual-backend-matrix.mjs")).toBeGreaterThan(0);
   expect(s.indexOf("node scripts/dual-backend-matrix.mjs --b8-pg-only")).toBeLessThan(s.indexOf("node scripts/dual-backend-matrix.mjs --strict"));
  });
+ it("matrix keeps every step's full output on disk and prints the tail of a failing step",()=>{
+  const m=readFileSync(resolve(root,"scripts/dual-backend-matrix.mjs"),"utf8");
+  expect(m).toMatch(/const LOG_DIR = join\(ROOT, "tmp", "dual-backend-matrix-"/);
+  expect(m).toMatch(/writeFileSync\(log, /);
+  expect(m.match(/sh\(cmd\[0\], cmd\.slice\(1\), \{ \.\.\.opts, leg: "(sqlite|pg)", name \}\)/g)?.length).toBe(2);
+  expect(m).toMatch(/full log: \$\{relative\(ROOT, s\.log\)\}/);
+  expect(m).toMatch(/s\.tail\.split\("\\n"\)\.slice\(-30\)/);
+ });
  it("G7 builds the checked-out head after PG is ready and before any suite runs (no stale dist)",()=>{
   const g=readFileSync(resolve(root,"scripts/pg-gate.sh"),"utf8");
   const ready=g.lastIndexOf("pg_isready"),build=g.indexOf("pnpm build >"),b8=g.indexOf("dual-backend-matrix.mjs --b8-pg-only");

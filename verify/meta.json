@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "5057d535535acc62bf7b8c006ef5a05f35b94647a811b48e96637cee2e262ab0",
+      "sha256": "c3b2f12d927f72d1dfcf49f4bf33ea7ef39eecf983c92d40320cf29227773450",
       "role": "gate"
     },
     {
@@ -1212,6 +1212,14 @@
       "reason": "G7 builds the checked-out head after PG is ready (stale dist made 11-03 G7 report false refusals)",
       "actor": "supervisor seat (Claude-OPS-5.5)",
       "at": "2026-11-03T11:44:21.546Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "5057d535535acc62bf7b8c006ef5a05f35b94647a811b48e96637cee2e262ab0",
+      "new_sha256": "c3b2f12d927f72d1dfcf49f4bf33ea7ef39eecf983c92d40320cf29227773450",
+      "reason": "matrix keeps each step's full output under tmp/dual-backend-matrix-<ts>/ and prints rc/signal + last 30 lines on failure (11-03 strict run said only '✗ unit')",
+      "actor": "supervisor seat (Claude-OPS-5.5)",
+      "at": "2026-11-03T12:15:30.897Z"
     }
   ],
   "kind": "engine",
