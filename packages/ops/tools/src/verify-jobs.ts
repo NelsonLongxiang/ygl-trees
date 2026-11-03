@@ -50,6 +50,7 @@ import {
   writeJson,
 } from "./verify-cmds";
 import { retainSnapshot } from "./archive";
+import { attachProducer, parseProducer, producerBaseline } from "./verify-provenance";
 import { verifyPaths } from "./verify-web";
 import { blobPath, hasBlob } from "./blob-store";
 
@@ -216,6 +217,9 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
 
 export async function runViaHttp(env: Env, input: unknown, deps: JobsDeps): Promise<HttpResult> {
   const body = (input ?? {}) as Record<string, unknown>;
+  let producer: ReturnType<typeof parseProducer>;
+  try { producer = parseProducer(body.provenance); }
+  catch (error: any) { return fail(400, error.message); }
   const specId = String(body.spec_id ?? "");
   if (!ID_RE.test(specId)) return fail(400, "spec_id must match ^[A-Za-z0-9_-]{1,128}$");
   if (body.submission_dir !== undefined || body.submission !== undefined) {
@@ -251,6 +255,7 @@ export async function runViaHttp(env: Env, input: unknown, deps: JobsDeps): Prom
     ...report,
     data_source: { kind: "sqlite-snapshot", sha256: copy.sha256, source: `blob:${snap.sha256.slice(0, 12)}`, captured_at: new Date().toISOString() },
   } as VerifyReport;
+  attachProducer(withSource, producer, producerBaseline(verifyPaths(env).reports, String(spec.spec_id), report.verifier.spec_version));
   withSource.payload_sha256 = payloadHash(withSource);
   const reportPath = join(verifyPaths(env).reports, `${report.run_id}.json`);
   writeJson(reportPath, withSource);
@@ -272,6 +277,7 @@ export async function runViaHttp(env: Env, input: unknown, deps: JobsDeps): Prom
       overall: report.overall,
       summary: report.summary,
       report_path: reportPath,
+      ...(withSource.data_source?.provenance ? { data_source: withSource.data_source } : {}),
       archive: archived ?? null,
       archive_error: archiveError || undefined,
     },

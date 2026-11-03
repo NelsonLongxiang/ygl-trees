@@ -1,0 +1,72 @@
+import { expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+const ROOT = resolve(__dirname, "../../../..");
+const BIN = join(ROOT, "dist/bundle/bin.cjs");
+it.skipIf(!existsSync(BIN))("CLI provenance remains visible in reports/archives and changed tree leaves never PASS", () => {
+  const home = mkdtempSync(join(ROOT, "tmp/producer-cli-"));
+  const cli = (args: string[]) => {
+    const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { cwd: home, encoding: "utf8", timeout: 60000,
+      env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_PG_URL: "", YGL_SESSION: "producer-test" } });
+    expect(r.error, r.stderr).toBeUndefined();
+    return { rc: r.status, json: JSON.parse(r.stdout), text: r.stdout + r.stderr };
+  };
+  try {
+    expect(cli(["db", "init"]).rc).toBe(0);
+    const caseDir = join(ROOT, "packages/verify/core/corpus/cases/sql-find-violation");
+    const spec = JSON.parse(readFileSync(join(caseDir, "spec.json"), "utf8"));
+    spec.spec_id = "spec_producer"; spec.spec_version = 16;
+    const specDir = join(home, "verify/specs", spec.spec_id);
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(join(specDir, "spec.json"), JSON.stringify(spec));
+    writeFileSync(join(specDir, "prepare.json"), JSON.stringify({ material_id: "mat_producer" }));
+    const materialDir = join(home, "verify/materials/mat_producer");
+    mkdirSync(materialDir, { recursive: true });
+    writeFileSync(join(materialDir, "material.txt"), "producer fixture");
+    writeFileSync(join(materialDir, "material.json"), JSON.stringify({ material_id: "mat_producer", text_path: "material.txt", files: [] }));
+    const producer = { probe_sha256: "a".repeat(64), platform: "test-platform", runtime: "test-runtime", package_manager: "test-manager", identity: "test-role" };
+    const provenance = join(home, "producer.json");
+    writeFileSync(provenance, JSON.stringify(producer));
+    const db = join(home, "snapshot.sqlite");
+    const { DatabaseSync } = require("node:sqlite"); const database = new DatabaseSync(db);
+    database.exec(readFileSync(join(caseDir, "db.sql"), "utf8"));
+    database.exec("UPDATE freight_invoice SET amount=expect_amount"); database.close();
+    const first = cli(["verify", "run", spec.spec_id, "--db", db, "--provenance", provenance]);
+    expect(first.rc, first.text).toBe(0);
+    expect(first.json.overall).toBe("PASS");
+    expect(first.json.data_source.provenance.status).toBe("first");
+    const frozen = readFileSync(first.json.report_path);
+    const second = cli(["verify", "run", spec.spec_id, "--db", db, "--provenance", provenance]);
+    expect(second.json.data_source.provenance.status).toBe("same");
+    writeFileSync(provenance, JSON.stringify({ ...producer, probe_sha256: "b".repeat(64) }));
+    const changed = cli(["verify", "run", spec.spec_id, "--db", db, "--provenance", provenance]);
+    expect(changed.rc, changed.text).toBe(0);
+    expect(changed.json.data_source.provenance).toMatchObject({ status: "changed", baseline_run_id: first.json.run_id });
+    expect(cli(["verify", "archive", "verify", changed.json.archive.path]).json.ok).toBe(true);
+    const material = join(home, "tree.json");
+    writeFileSync(material, JSON.stringify({ tree_spec_version: 1, root: "root", nodes: [{ id: "root", kind: "group", aggregate: "all_pass", children: ["leaf"] }, { id: "leaf", kind: "leaf", spec_id: spec.spec_id }] }));
+    const submitted = cli(["verify", "submit", "--title", "producer tree", "--text", material, "--meta-repo", ROOT]);
+    expect(submitted.rc, submitted.text).toBe(0);
+    const prepared = cli(["verify", "tree", "prepare", submitted.json.material_id]);
+    expect(prepared.rc, prepared.text).toBe(0);
+    const tree = cli(["verify", "tree", "run", prepared.json.tree_spec_id, "--db", db, "--provenance", provenance]);
+    expect(tree.rc, tree.text).toBe(0);
+    expect(tree.json.verdict).toBe("STALE");
+    expect(tree.json.nodes.find((n: any) => n.node_id === "leaf")).toMatchObject({ verdict: "STALE", report_verdict: "PASS" });
+    const again = cli(["verify", "run", spec.spec_id, "--db", db, "--provenance", provenance]);
+    expect(again.json.data_source.provenance.status).toBe("changed");
+    const pinned = cli(["verify", "tree", "prepare", submitted.json.material_id, "--pinned", "leaf=" + changed.json.archive.archive_sha256]);
+    expect(pinned.rc, pinned.text).toBe(0);
+    const pinnedRun = cli(["verify", "tree", "run", pinned.json.tree_spec_id]);
+    expect(pinnedRun.rc, pinnedRun.text).toBe(0);
+    expect(pinnedRun.json.verdict).toBe("STALE");
+    const missing = cli(["verify", "run", spec.spec_id, "--db", db]);
+    expect(missing.json.data_source.provenance.status).toBe("changed");
+    expect(readFileSync(first.json.report_path)).toEqual(frozen);
+    writeFileSync(provenance, "{");
+    expect(cli(["verify", "run", "missing", "--db", db, "--provenance", provenance]).rc).toBe(2);
+    expect(cli(["verify", "run", "missing", "--db", db, "--provenance"]).rc).toBe(2);
+  } finally { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+}, 120000);

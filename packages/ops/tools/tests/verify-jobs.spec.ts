@@ -324,6 +324,23 @@ describe("verify jobs — run", () => {
     expect(fs.existsSync(path.join(home, "verify", "archives", `${r.json.run_id}.json`))).toBe(true);
   }, 60_000);
 
+  it("HTTP run validates provenance before I/O and persists producer drift", async () => {
+    const endpoint = `${base}/api/verify/run`;
+    const bad = await post(endpoint, { spec_id: "missing", provenance: {} });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toContain("provenance");
+    const provenance = { probe_sha256: "a".repeat(64), platform: "test-platform", runtime: "test-runtime", package_manager: "test-manager", identity: "test-role" };
+    const first = await post(endpoint, { spec_id: specId, snapshot_sha256: snapshotSha, provenance });
+    expect(first.status).toBe(200);
+    expect(first.json.data_source.provenance.status).toBe("first");
+    const changed = await post(endpoint, { spec_id: specId, snapshot_sha256: snapshotSha, provenance: { ...provenance, probe_sha256: "b".repeat(64) } });
+    expect(changed.status).toBe(200);
+    expect(changed.json.data_source.provenance).toMatchObject({ status: "changed", baseline_run_id: first.json.run_id });
+    const saved = JSON.parse(fs.readFileSync(changed.json.report_path, "utf8"));
+    expect(saved.data_source.producer.probe_sha256).toBe("sha256:" + "b".repeat(64));
+    expect(saved.data_source.provenance.status).toBe("changed");
+  }, 60_000);
+
   it("no_archive=true → 不产归档", async () => {
     const before = fs.readdirSync(path.join(home, "verify", "archives")).length;
     const r = await post(`${base}/api/verify/run`, { spec_id: specId, snapshot_sha256: snapshotSha, no_archive: true });
