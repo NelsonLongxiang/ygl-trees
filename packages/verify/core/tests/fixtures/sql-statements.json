@@ -77,5 +77,52 @@
       "sql": "SELECT 1;\u000b\f\r\n\t ",
       "clean": "SELECT 1"
     }
+  ],
+  "_note_leading_ws": "#162 P4: leading code point check shared by TS leadingNonAsciiWs and Rust leading_non_ascii_ws, applied after the ASCII trim. ws = reported code point, null = not non-ASCII whitespace (query falls through to the SELECT/WITH check).",
+  "leading_ws": [
+    {
+      "sql": "\u00A0SELECT 1",
+      "ws": "U+00A0"
+    },
+    {
+      "sql": "\uFEFFSELECT 1",
+      "ws": "U+FEFF"
+    },
+    {
+      "sql": "\u0085SELECT 1",
+      "ws": "U+0085"
+    },
+    {
+      "sql": "\u3000SELECT 1",
+      "ws": "U+3000"
+    },
+    {
+      "sql": "\u2003SELECT 1",
+      "ws": "U+2003"
+    },
+    {
+      "sql": "\u200ASELECT 1",
+      "ws": "U+200A"
+    },
+    {
+      "sql": "\u2028SELECT 1",
+      "ws": "U+2028"
+    },
+    {
+      "sql": "\u200BSELECT 1",
+      "ws": null
+    },
+    {
+      "sql": "SELECT 1",
+      "ws": null
+    },
+    {
+      "sql": "xSELECT 1",
+      "ws": null
+    },
+    {
+      "sql": "",
+      "ws": null
+    }
   ]
 }
