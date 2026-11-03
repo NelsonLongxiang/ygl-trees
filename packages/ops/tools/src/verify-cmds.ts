@@ -1070,7 +1070,20 @@ const ACTION_FLAGS: Record<string, string[]> = {
 };
 
 /** `verify prepare` 的用法串：命令体内校验与 bin 层前置校验共用，避免两处措辞漂移。 */
-const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> --as-of <ISO-8601> [--spec-version N] [--draft (as_of optional)] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+/**
+ * #171 建议 4：非 --draft 的 prepare 必须显式给 as_of。默认取「冻结此刻」会让同一份材料换时间、换机器重新
+ * prepare 时冻出不同的 spec（版本白涨、跨机器对不上）。as_of 是快照所描述的时刻（如被验提交的时间），只有
+ * 调用方知道。--draft 不冻结任何东西，仍可省略。CLI rc=2 与 HTTP 400 共用这一句。
+ */
+export const AS_OF_REQUIRED = "as_of is required: pass the moment the snapshot describes (e.g. the verified commit's time) as --as-of <ISO-8601> (HTTP: as_of). It no longer defaults to the freeze time (#171), so re-preparing the same material later or on another machine freezes the same spec. --draft may omit it.";
+
+/** 非 draft 且没给 as_of（undefined / null / 空串）时返回提示，否则 null。裸 --as-of（true）交给 normalizeAsOf 报类型错。 */
+export function asOfMissing(raw: unknown, draft: boolean): string | null {
+  if (draft) return null;
+  return raw === undefined || raw === null || raw === "" ? AS_OF_REQUIRED : null;
+}
+
 /** `--as-of` 的用法提示（r22 ②）：CLI rc=2 与 HTTP 400 共用同一句。 */
 const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-20T09:00:00+08:00)";
 
@@ -1092,6 +1105,8 @@ export function preflightUsage(action: string, rest: string[], args: any): strin
   const reviewsPath = String(args.flags.reviews || "");
   const dbPath = lastDbFlag(args.flags.db);
   if (!materialId || !candidatesPath || !reviewsPath || !dbPath) return USAGE_PREPARE;
+  const missing = asOfMissing(args.flags["as-of"], args.flags.draft === true);
+  if (missing) return missing;
   try {
     normalizeAsOf(args.flags["as-of"], new Date().toISOString());
   } catch (e: any) {
@@ -1465,6 +1480,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
       // 放在最前面：旗标错误是用法错误，不该先做 material/db 的 I/O 再说。
+      {
+        const missing = asOfMissing(args.flags["as-of"], args.flags.draft === true);
+        if (missing) { bad(ctx, missing); return 2; }
+      }
       let asOf: string;
       try {
         asOf = normalizeAsOf(args.flags["as-of"], new Date().toISOString());

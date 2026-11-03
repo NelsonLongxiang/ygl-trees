@@ -37,6 +37,7 @@ import {
   materialClausePattern,
   minimalRedTeam,
   normalizeAsOf,
+  asOfMissing,
   writePrepareRecord,
   probeOf,
   probeOfDb,
@@ -95,6 +96,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   if (!ID_RE.test(materialId)) return fail(400, "material_id must match ^[A-Za-z0-9_-]{1,128}$");
   // as_of 双侧同校验（r22 ②，顺序 0.102.4）：**先于任何 I/O** —— 缺材料 + 非法 as_of 必须报 400
   // as_of 而不是 404 material（CLI 侧同理，旗标错误不该先读盘再报成运行错误）。
+  const missingAsOf = asOfMissing(body.as_of, body.draft === true);
+  if (missingAsOf) return fail(400, missingAsOf);
   let asOf: string;
   try {
     asOf = normalizeAsOf(body.as_of, new Date().toISOString());

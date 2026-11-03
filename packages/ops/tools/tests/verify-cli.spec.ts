@@ -22,6 +22,8 @@ const BIN = join(REPO, "dist/bundle/bin.cjs");
 const hasBundle = existsSync(BIN);
 const home = hasBundle ? mkdtempSync(join(tmpdir(), "ygl-verify-cli-")) : "";
 
+/** #171 建议 4：非 draft 的 prepare 必须显式给 --as-of（快照所描述的时刻）。 */
+const AS_OF = "2026-11-01T00:00:00.000Z";
 function run(args: string[], env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
     cwd: home,
@@ -66,6 +68,21 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(r.rc).toBe(2);
     const obj = JSON.parse(r.out) as { error: string };
     expect(obj.error).toMatch(/usage: verify prepare/);
+  });
+
+  it("#171 建议 4：非 draft 的 prepare 缺 --as-of → rc2，先于工作区与文件 I/O；--draft 可省略", () => {
+    const emptyHome = mkdtempSync(join(REPO, "tmp/as-of-usage-"));
+    try {
+      const base = ["verify", "prepare", "mat_missing", "--candidates", "missing-c.json", "--reviews", "missing-r.json", "--db", "missing.sqlite"];
+      const r = run([...base, "--json"], { YGL_HOME: emptyHome, YGL_DB_URL: "", YGL_PG_URL: "" });
+      expect(r.rc, r.out + r.err).toBe(2);
+      expect(JSON.parse(r.out).error).toMatch(/as_of is required/);
+      expect(existsSync(join(emptyHome, "ygl-trees.db"))).toBe(false);
+      const draft = run([...base, "--draft", "--json"], { YGL_HOME: emptyHome, YGL_DB_URL: "", YGL_PG_URL: "" });
+      expect(JSON.parse(draft.out).error ?? "").not.toMatch(/as_of is required/);
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
   });
 
   it("bare author flags are rc2 before workspace or file I/O", () => {
@@ -627,7 +644,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
       { vu_id: "V1", question: "not-vacuous", verdict: "ok", reason: "空表会被判 NM", anchor },
     ]] }), "utf8");
     const specsBefore = existsSync(join(home, "verify", "specs")) ? readdirSync(join(home, "verify", "specs")).length : 0;
-    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--draft", "--json"]);
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--as-of", AS_OF, "--draft", "--json"]);
     // ready 与否都可能（红队/自审），关键是 rc 与「什么都没写」
     expect([0, 1]).toContain(r.rc);
     const obj = JSON.parse(r.out) as { draft: boolean; rejected: number; rejected_detail: any[] };
@@ -674,7 +691,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     const sentinel = join(specDir, "prepare.json");
     writeFileSync(sentinel, JSON.stringify({ material_id: materialId, verdict: "ready", frozen: true }), "utf8");
     const before = createHash("sha256").update(readFileSync(sentinel)).digest("hex");
-    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--json"]);
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--as-of", AS_OF, "--json"]);
     expect(r.rc).toBe(1);
     const obj = JSON.parse(r.out) as { verdict: string };
     expect(obj.verdict).not.toBe("ready");
@@ -715,7 +732,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
         { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
       ],
     }] }), "utf8");
-    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--json"]);
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--as-of", AS_OF, "--json"]);
     expect(r.rc).toBe(0);
     const obj = JSON.parse(r.out) as { verdict: string; record: string; spec_id: string };
     expect(obj.verdict).toBe("ready");
@@ -750,7 +767,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
       { vu_id: "V1", question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
       { vu_id: "V1", question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
     ]] }), "utf8");
-    const bad = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", nested, "--db", dbFile, "--json"]);
+    const bad = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", nested, "--db", dbFile, "--as-of", AS_OF, "--json"]);
     expect(bad.rc).toBe(1);
     expect((JSON.parse(bad.out) as { verdict: string }).verdict).not.toBe("ready");
   }, 60_000);
@@ -785,7 +802,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
         { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
       ],
     }] }), "utf8");
-    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--json"]);
+    const r = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--as-of", AS_OF, "--json"]);
     const obj = JSON.parse(r.out) as { verdict: string; diagnostics?: unknown };
     // 修复前：P2 报 'column "tags" is not in notes' 永不 ready
     expect(JSON.stringify(obj)).not.toMatch(/is not in notes/);
@@ -832,7 +849,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     }] }), "utf8");
 
     // 同一作者 → 一条 P3a 诊断（不阻塞），authors 原样落进 trace.json
-    const same = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile,
+    const same = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--as-of", AS_OF,
       "--candidates-author", "seat-a", "--reviews-author", "seat-a", "--json"]);
     expect(same.rc).toBe(0);
     const sameObj = JSON.parse(same.out) as { spec_id: string; verdict: string; diagnostics: { stage: string; message: string }[]; authors: any };
@@ -843,7 +860,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(trace.authors).toEqual({ candidates: { id: "seat-a", source: "flag" }, reviews: { id: "seat-a", source: "flag" } });
 
     // 不同作者 → 没有该诊断
-    const diff = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile,
+    const diff = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile, "--as-of", AS_OF,
       "--candidates-author", "seat-a", "--reviews-author", "seat-b", "--json"]);
     expect(diff.rc).toBe(0);
     const diffObj = JSON.parse(diff.out) as { diagnostics: { stage: string }[]; authors: any };
