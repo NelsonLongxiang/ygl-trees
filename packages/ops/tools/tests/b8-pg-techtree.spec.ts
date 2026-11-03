@@ -31,11 +31,15 @@ function cli(backend: "pg" | "sqlite", args: string[]) {
   if (backend === "pg") expect(text).not.toContain(new URL(adminUrl).password);
   return { rc: r.status, out: r.stdout || "", text };
 }
-/** Timestamps differ between runs; everything else must match byte for byte. */
+/** Timestamps and generated ids differ between runs — shortId() mixes in Date.now() and Math.random(), so two
+ *  SQLite runs differ too. Everything else (keys, names, numbers and their types, order, flags) must match exactly. */
 const TIME_KEYS = new Set(["created", "updated", "built_at", "unlocked_at", "ts"]);
+const ID_KEYS = new Set(["id", "tree_id", "node_id", "parent_id", "child_id", "project_id"]);
 function normalise(v: any): any {
   if (Array.isArray(v)) return v.map(normalise);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, TIME_KEYS.has(k) && x ? "<time>" : normalise(x)]));
+  if (v && typeof v === "object") {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, TIME_KEYS.has(k) && x ? "<time>" : ID_KEYS.has(k) && x ? "<id>" : normalise(x)]));
+  }
   return v;
 }
 function both(args: string[]): { rc: number | null; json: any } {
