@@ -26,6 +26,16 @@ export function trimSqlWs(s: string): string {
   return s.slice(a, b);
 }
 
+/**
+ * 开头是非 ASCII 空白时返回其码位（如 "U+00A0"），否则 null——只用于给出准确报错（#162 P4），不改变拒收结论。
+ * 字符集显式列出（U+0085/00A0/1680/2000–200A/2028/2029/202F/205F/3000/FEFF），与 Rust leading_non_ascii_ws 同集。
+ */
+const NON_ASCII_WS = /^[\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/;
+export function leadingNonAsciiWs(s: string): string | null {
+  if (!NON_ASCII_WS.test(s)) return null;
+  return `U+${s.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
 export function singleStatement(sql: string): string | null {
   let i = 0;
   const n = sql.length;
@@ -82,6 +92,10 @@ export class SqliteRunner implements QueryRunner {
 
   query(sql: string): Row[] {
     const trimmed = trimSqlWs(sql);
+    const ws = leadingNonAsciiWs(trimmed);
+    if (ws !== null) {
+      throw new Error(`SQL starts with non-ASCII whitespace ${ws}; only ASCII whitespace (tab, LF, VT, FF, CR, space) is trimmed`);
+    }
     if (!/^(select|with)\b/i.test(trimmed)) {
       throw new Error(`only SELECT/WITH allowed (read-only contract): ${trimmed.slice(0, 40)}`);
     }
