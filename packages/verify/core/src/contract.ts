@@ -405,13 +405,29 @@ export interface VuResultNonFact extends VuResultBase {
 
 export type VuResult = VuResultSource | VuResultFact | VuResultNonFact;
 
+/** Caller-supplied measurement provenance, not authenticated identity. */
+export interface MeasurementProducer {
+  probe_sha256: string;
+  platform: string;
+  runtime: string;
+  package_manager: string;
+  identity: string;
+}
+
+export interface ProducerComparison {
+  status: "first" | "same" | "changed";
+  baseline_run_id?: string;
+  baseline_sha256?: string;
+  producer_sha256?: string;
+}
+
 export interface VerifyReport {
   contract_version: string;
   run_id: string;
   /** 产出该报告的 spec（run 期从 spec 复制；导出的报告必须自描述） */
   spec_id?: string;
   /** 数据来源（A 裁定：报告记快照来源 + sha256；纯语料跑无此键） */
-  data_source?: { kind: string; sha256: string; source?: string; captured_at: string };
+  data_source?: { kind: string; sha256: string; source?: string; captured_at: string; producer?: MeasurementProducer; provenance?: ProducerComparison };
   started: string;
   finished: string;
   verifier: {

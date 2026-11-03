@@ -43,6 +43,7 @@ import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, foldOverall, foldSummary, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
 import { buildPortable, importPortable, portableToText } from "./verify-portable";
+import { attachProducer, loadProducerFile, producerBaseline } from "./verify-provenance";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
 import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
@@ -349,6 +350,9 @@ export function aggregateTreeVerdict(op: string, verdicts: string[]): string {
  *  skipMaterials + registry 登记）；v1.2 五态（STALE）与 JCS digest 待 Q10 返工。 */
 async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<number> {
   const p = paths(env);
+  let producer: ReturnType<typeof loadProducerFile>;
+  try { producer = loadProducerFile(args.flags.provenance); }
+  catch (error: any) { bad(ctx, error.message); return error.code ? 1 : 2; }
   // G1/G2（Q8/Q9）：target 投影 = {kind, id, sha256?}；kind+id 恒比，声明 sha 时才比。
   // 缺被比字段 → fail-closed stale。声明 target 的叶失配 → 该叶 STALE 沿父链传播。
   // Q12-B：本轮开始时间——pinned 归档 created 必须早于此值（同轮自引用拒绝）。
@@ -511,8 +515,8 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       const rep = readArchiveReport(entryPath);
       // Q9（语义主体在 pinned）：pinned report 的 target/spec_version 也要与冻结面比对；
       // 缺被比字段 fail-closed 判 stale。
-      let pinnedStale = false;
-      const pinnedReasons: string[] = [];
+      let pinnedStale = rep.data_source?.provenance?.status === "changed";
+      const pinnedReasons: string[] = pinnedStale ? ["pinned measurement producer changed from baseline"] : [];
       if (target) {
         const pds: any = (rep as any).data_source ?? {};
         if (!pds.kind || !pds.id) {
@@ -561,6 +565,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       sha256: snap.sha256,
     };
     const withSource = { ...report, data_source: { ...dsProjection, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
+    attachProducer(withSource, producer, producerBaseline(p.reports, String(leafSpec.spec_id), report.verifier.spec_version));
     withSource.payload_sha256 = payloadHash(withSource);
     writeJson(join(p.reports, report.run_id + ".json"), withSource);
     let archived: { archive_sha256: string; path: string } | null = null;
@@ -570,8 +575,8 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     // G1/G2 + Q9：引用失配判定（沿父链传播，阻 PASS）——
     // ① target 投影失配（Q8）；② 子 spec_version 相对 tree 冻结版本漂移（Q9 选项 D）。
     // 无 data_source 的叶（file/command）不参与 target 比较（Q8 (b) 仍适用）。
-    let stale = false;
-    const staleReasons: string[] = [];
+    let stale = withSource.data_source?.provenance?.status === "changed";
+    const staleReasons: string[] = stale ? ["measurement producer changed from baseline"] : [];
     if (target) {
       const kindOk = dsProjection.kind === target.kind;
       const idOk = dsProjection.id === target.id;
@@ -598,7 +603,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       verdict: treeVerdict,
       report_verdict: report.overall, // 叶原四值保留（v1.2 §2.4）
       stale, ...(staleReasons.length ? { stale_reason: staleReasons.join("; ") } : {}),
-      data_source: dsProjection,
+      data_source: withSource.data_source,
     });
     return treeVerdict;
   };
@@ -1051,8 +1056,8 @@ const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db"
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
-  run: ["db", "submission", "no-archive"],
-  tree: ["pinned", "no-archive", "target"],
+  run: ["db", "submission", "no-archive", "provenance"],
+  tree: ["pinned", "no-archive", "target", "provenance"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
@@ -1094,6 +1099,7 @@ const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-2
  * 这里只做不碰 I/O 的旗标校验，供 bin 在门禁之前调用；返回 null 表示旗标面合法。
  */
 export function preflightUsage(action: string, rest: string[], args: any): string | null {
+  if ((action === "run" || (action === "tree" && rest[0] === "run")) && args.flags.provenance !== undefined && (typeof args.flags.provenance !== "string" || !args.flags.provenance.trim())) return "--provenance needs a JSON file path";
   if (action !== "prepare") return null;
   // #171 第4项（#188 评审 P3）：裸 --candidates-author / --reviews-author 会被记成作者 "true"，
   // 属用法错误，按 #175 的规矩在门禁之前就 rc=2。
@@ -1664,6 +1670,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     case "run": {
+      let producer: ReturnType<typeof loadProducerFile>;
+      try { producer = loadProducerFile(args.flags.provenance); }
+      catch (error: any) { bad(ctx, error.message); return error.code ? 1 : 2; }
       const specId = rest[0];
       const dbPath = lastDbFlag(args.flags.db);
       if (!specId || !dbPath) {
@@ -1694,6 +1703,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return runVerify(spec, { runner, submissionDir: submission, mode: "open", engineVersion: env.version, onFileScan: (r) => fileScans.push(r) })
         .then((report): number => {
           const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
+          attachProducer(withSource, producer, producerBaseline(p.reports, String(spec.spec_id), report.verifier.spec_version));
           withSource.payload_sha256 = payloadHash(withSource);
           const file = join(p.reports, `${report.run_id}.json`);
           writeJson(file, withSource);
@@ -1723,6 +1733,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               overall: report.overall,
               summary: report.summary,
               report_path: file,
+              ...(withSource.data_source?.provenance ? { data_source: withSource.data_source } : {}),
               archive: archived ?? null,
               archive_error: archiveError || undefined,
               submission_scan: scanFile
@@ -1733,6 +1744,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             out(ctx, `  ${report.overall === "PASS" ? paint(C.green, "PASS", ctx.color) : report.overall === "FAIL" ? paint(C.red, "FAIL", ctx.color) : paint(C.yellow, report.overall, ctx.color)}  ${report.run_id}`);
             out(ctx, paint(C.dim, `  ${scopeLine(report)}`, ctx.color));
             out(ctx, `  pass ${report.summary.pass} · fail ${report.summary.fail} · needs-material ${report.summary.needs_material} · error ${report.summary.error}`);
+            if (withSource.data_source?.provenance) out(ctx, `  measurement producer: ${withSource.data_source.provenance.status} (baseline ${withSource.data_source.provenance.baseline_run_id ?? "this run"})`);
             const titles = new Map(spec.vu.map((u) => [u.id, u.title]));
             for (const v of report.vu) {
               const mark = v.verdict === "PASS" ? paint(C.green, "✓", ctx.color) : v.verdict === "FAIL" ? paint(C.red, "✗", ctx.color) : paint(C.yellow, "…", ctx.color);
