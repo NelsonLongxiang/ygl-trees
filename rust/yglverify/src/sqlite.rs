@@ -42,6 +42,14 @@ pub fn trim_sql_ws(s: &str) -> &str {
     s.trim_matches(is_sql_ws)
 }
 
+/// 开头是非 ASCII 空白时返回其码位（如 "U+00A0"），否则 None——只用于给出准确报错（#162 P4），不改变拒收结论。
+/// 字符集显式列出，与 TS `leadingNonAsciiWs` 同集。
+pub fn leading_non_ascii_ws(s: &str) -> Option<String> {
+    let c = s.chars().next()?;
+    let hit = matches!(c, '\u{0085}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}');
+    if hit { Some(format!("U+{:04X}", c as u32)) } else { None }
+}
+
 pub fn single_statement(sql: &str) -> Option<&str> {
     let b = sql.as_bytes();
     let n = b.len();
@@ -117,6 +125,11 @@ impl SqliteRunner {
 
     pub fn query(&self, sql: &str) -> Result<Vec<Row>, String> {
         let trimmed = trim_sql_ws(sql);
+        if let Some(ws) = leading_non_ascii_ws(trimmed) {
+            return Err(format!(
+                "SQL starts with non-ASCII whitespace {ws}; only ASCII whitespace (tab, LF, VT, FF, CR, space) is trimmed"
+            ));
+        }
         let lower = trimmed.to_ascii_lowercase();
         if !(lower.starts_with("select") || lower.starts_with("with")) {
             return Err(format!(
