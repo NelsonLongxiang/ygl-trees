@@ -162,6 +162,30 @@ describe("verify jobs — prepare", () => {
     }
   }, 60_000);
 
+  it("HTTP prepare records explicit and serve-session authors with same-author diagnostics", async () => {
+    const request = { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha };
+    const endpoint = `${base}/api/verify/prepare`;
+    const same = await post(endpoint, { ...request, candidates_author: "http-seat-a", reviews_author: "http-seat-a" });
+    expect(same.status).toBe(200);
+    expect(same.json.verdict).toBe("ready");
+    const expected = { candidates: { id: "http-seat-a", source: "body" }, reviews: { id: "http-seat-a", source: "body" } };
+    expect(same.json.authors).toEqual(expected);
+    expect(same.json.diagnostics).toContainEqual({ stage: "P3a", message: expect.stringContaining("share the same author (http-seat-a)") });
+    const specDir = path.join(home, "verify", "specs", same.json.spec_id);
+    for (const file of ["prepare.json", "trace.json"]) {
+      expect(JSON.parse(fs.readFileSync(path.join(specDir, file), "utf8")).authors).toEqual(expected);
+    }
+    const different = await post(endpoint, { ...request, candidates_author: "http-seat-a", reviews_author: "http-seat-b", draft: true });
+    expect(different.status).toBe(200);
+    expect(different.json.authors.reviews).toEqual({ id: "http-seat-b", source: "body" });
+    expect(different.json.diagnostics.some((d: { stage: string }) => d.stage === "P3a")).toBe(false);
+    const fallback = await post(endpoint, { ...request, draft: true });
+    expect(fallback.status).toBe(200);
+    const session = String(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim() || "http";
+    expect(fallback.json.authors).toEqual({ candidates: { id: session, source: "http" }, reviews: { id: session, source: "http" } });
+    expect(fallback.json.diagnostics).toContainEqual({ stage: "P3a", message: expect.stringContaining("share the same author") });
+  }, 60_000);
+
   it("draft=true → 200 但绝不落盘", async () => {
     const fresh = createMaterialDraft({ home } as any, { title: "草稿", text: "另一条材料的原文。\n" });
     const freshId = String((fresh as any).material_id);

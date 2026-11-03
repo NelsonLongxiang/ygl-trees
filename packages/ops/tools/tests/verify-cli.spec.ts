@@ -68,6 +68,20 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(obj.error).toMatch(/usage: verify prepare/);
   });
 
+  it("bare author flags are rc2 before workspace or file I/O", () => {
+    const emptyHome = mkdtempSync(join(REPO, "tmp/author-usage-"));
+    try {
+      for (const flag of ["--candidates-author", "--reviews-author"]) {
+        const r = run(["verify", "prepare", "mat_missing", "--candidates", "missing-c.json", "--reviews", "missing-r.json", "--db", "missing.sqlite", flag, "--json"], { YGL_HOME: emptyHome, YGL_DB_URL: "", YGL_PG_URL: "" });
+        expect(r.rc, r.out + r.err).toBe(2);
+        expect(JSON.parse(r.out).error).toContain(`${flag} needs a value`);
+      }
+      expect(existsSync(join(emptyHome, "ygl-trees.db"))).toBe(false);
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
   it("prepare --as-of 不可解析 → rc=2（用法错误，r22 ②）", () => {
     // 旗标校验先于 I/O：material/db 都不存在也应报用法错误而不是运行错误
     const r = run(["verify", "prepare", "mat_deadbeef0000", "--candidates", "c.json", "--reviews", "r.json", "--db", "s.sqlite", "--as-of", "not-a-time", "--json"]);
@@ -784,6 +798,58 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(r.rc).toBe(2);
     expect((JSON.parse(r.out) as { error: string }).error).toMatch(/unknown/i);
   });
+
+  it("#171 第4项：trace.authors 记录候选/评审作者，同一作者时给 P3a 诊断", () => {
+    expect(run(["db", "init"]).rc).toBe(0);
+    const text = join(home, "authors-material.txt");
+    writeFileSync(text, "账单金额不得为负。\n", "utf8");
+    const sub = run(["verify", "submit", "--title", "au", "--text", text, "--json"]);
+    expect(sub.rc).toBe(0);
+    const materialId = (JSON.parse(sub.out) as { material_id: string }).material_id;
+
+    const dbFile = join(home, "authors.sqlite");
+    const db = new DatabaseSync(dbFile);
+    db.exec("CREATE TABLE bills (id TEXT PRIMARY KEY, amount_cents INTEGER)");
+    db.exec("INSERT INTO bills VALUES ('b1', -5)");
+    db.close();
+
+    const clause = "账单金额不得为负。";
+    const anchor = { quote: clause, locator: "material.txt#L1" };
+    const candidates = join(home, "au-cand.json");
+    writeFileSync(candidates, JSON.stringify({ candidates: [{
+      source_clause: clause,
+      anchor,
+      checker: { type: "sql", fail_when: "rows==0", predicate: { from: "bills", select: ["id"], where: { op: "and", conditions: [{ col: "amount_cents", op: "<", value: 0 }] } } },
+    }] }), "utf8");
+    const reviews = join(home, "au-rev.json");
+    writeFileSync(reviews, JSON.stringify({ reviews: [{
+      source_clause: clause,
+      findings: [
+        { question: "faithful", verdict: "ok", reason: "逐字对应", anchor },
+        { question: "decidable", verdict: "ok", reason: "有机械判据", anchor },
+        { question: "not-vacuous", verdict: "ok", reason: "空表判 FAIL", anchor },
+      ],
+    }] }), "utf8");
+
+    // 同一作者 → 一条 P3a 诊断（不阻塞），authors 原样落进 trace.json
+    const same = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile,
+      "--candidates-author", "seat-a", "--reviews-author", "seat-a", "--json"]);
+    expect(same.rc).toBe(0);
+    const sameObj = JSON.parse(same.out) as { spec_id: string; verdict: string; diagnostics: { stage: string; message: string }[]; authors: any };
+    expect(sameObj.verdict).toBe("ready");
+    expect(sameObj.authors).toEqual({ candidates: { id: "seat-a", source: "flag" }, reviews: { id: "seat-a", source: "flag" } });
+    expect(sameObj.diagnostics.some((d) => d.stage === "P3a" && /share the same author/.test(d.message))).toBe(true);
+    const trace = JSON.parse(readFileSync(join(home, "verify", "specs", sameObj.spec_id, "trace.json"), "utf8"));
+    expect(trace.authors).toEqual({ candidates: { id: "seat-a", source: "flag" }, reviews: { id: "seat-a", source: "flag" } });
+
+    // 不同作者 → 没有该诊断
+    const diff = run(["verify", "prepare", materialId, "--candidates", candidates, "--reviews", reviews, "--db", dbFile,
+      "--candidates-author", "seat-a", "--reviews-author", "seat-b", "--json"]);
+    expect(diff.rc).toBe(0);
+    const diffObj = JSON.parse(diff.out) as { diagnostics: { stage: string }[]; authors: any };
+    expect(diffObj.diagnostics.some((d) => d.stage === "P3a")).toBe(false);
+    expect(diffObj.authors.reviews.id).toBe("seat-b");
+  }, 120_000);
 });
 
 describe.skipIf(!hasBundle)("verify 封包链（register → import → archive --with binary）", () => {
