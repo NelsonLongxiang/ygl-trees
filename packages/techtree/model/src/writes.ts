@@ -25,6 +25,12 @@ export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promi
   const pending: YglEvent[] = [];
   const result = await ds.transaction(async (mgr) => {
     (mgr as any).__yglPendingEvents = pending;
+    // #176 W1-T1: the tree write service is written with SQLite `?` placeholders; on PG the
+    // transaction-scoped manager translates them to `$n` so both dialects share one statement text.
+    if (isPgMgr(mgr)) {
+      const raw = mgr.query.bind(mgr);
+      (mgr as any).query = (sql: string, params?: any[]) => raw(pgPlaceholders(sql), params);
+    }
     return fn(mgr);
   });
   // 0.91a review (direct-55b4ca85): never block the write path (see research runTx)
@@ -32,6 +38,41 @@ export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promi
     for (const ev of pending) emitEvent(ev);
   } catch { /* bus subscribers are best-effort — write already committed */ }
   return result;
+}
+
+/** PG nodes carry search columns SQLite keeps in nodes_fts; drop them so both dialects return the same row shape. */
+export function withoutSearchCols<T extends Record<string, any> | undefined>(row: T): T {
+  if (!row) return row;
+  const { ngram: _n, ngram_tsv: _t, ...rest } = row as any;
+  return rest as T;
+}
+
+/** True when the manager talks to PostgreSQL (W1-T1 dialect seam). */
+export function isPgMgr(mgr: EntityManager): boolean {
+  return (mgr as any).connection?.options?.type === "postgres";
+}
+
+/** `?` → `$1..$n`, skipping single-quoted literals, double-quoted identifiers and comments. */
+export function pgPlaceholders(sql: string): string {
+  let out = "";
+  let n = 0;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    if (c === "'" || c === '"') {
+      const end = sql.indexOf(c, i + 1);
+      const stop = end < 0 ? sql.length : end + 1;
+      out += sql.slice(i, stop);
+      i = stop - 1;
+    } else if (c === "-" && sql[i + 1] === "-") {
+      const end = sql.indexOf("\n", i);
+      const stop = end < 0 ? sql.length : end;
+      out += sql.slice(i, stop);
+      i = stop - 1;
+    } else if (c === "?") {
+      out += "$" + ++n;
+    } else out += c;
+  }
+  return out;
 }
 
 async function markDirty(mgr: EntityManager, treeId: string): Promise<void> {
@@ -196,9 +237,19 @@ export async function treeCreate(ds: DataSource, name: string, projectId = "", n
   return runTx(ds, async (mgr) => {
     // Idempotency (frozen contract): an existing tree name is selected, not a
     // UNIQUE-constraint crash — `tree new <same>` is how a caller switches.
+    const id = shortId(["tree", name], 10);
+    if (isPgMgr(mgr)) {
+      // PG: concurrent `tree new <same>` must yield one row (B4 rule) — insert-or-nothing, then read.
+      const ins = (await mgr.query(`INSERT INTO trees(id,project_id,name,note,created) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING RETURNING id`, [id, projectId || null, name, note, nowIso()])) as any[];
+      if (!ins.length) {
+        const existing = (await mgr.query(`SELECT * FROM trees WHERE name=?`, [name])) as any[];
+        return { ...existing[0], duplicate: true };
+      }
+      await markDirty(mgr, id);
+      return ((await mgr.query(`SELECT * FROM trees WHERE id=?`, [id])) as any[])[0];
+    }
     const existing = (await mgr.query(`SELECT * FROM trees WHERE name=?`, [name])) as any[];
     if (existing.length) return { ...existing[0], duplicate: true };
-    const id = shortId(["tree", name], 10);
     await mgr.query(`INSERT INTO trees(id,project_id,name,note,created) VALUES(?,?,?,?,?)`, [
       id,
       projectId || null,
@@ -218,10 +269,21 @@ export async function nodeAdd(
   o: { key: string; name?: string; kind?: string; tier?: number; cost?: number; cost_unit?: string; payload?: string; tags?: string }
 ): Promise<{ row: Record<string, any>; created: boolean }> {
   return runTx(ds, async (mgr) => {
-    const ex = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND key=?`, [treeId, o.key])) as any[];
-    if (ex.length) return { row: ex[0], created: false };
     const id = shortId(["node", treeId, o.key], 10);
     const name = o.name || o.key;
+    if (isPgMgr(mgr)) {
+      // PG: no nodes_fts shadow — the search input rides in nodes.ngram (generated tsvector + GIN).
+      const ins = (await mgr.query(
+        `INSERT INTO nodes(id,tree_id,key,name,kind,tier,cost,cost_unit,payload,tags,created,ngram) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING RETURNING id`,
+        [id, treeId, o.key, name, o.kind || "tech", o.tier ?? 0, o.cost ?? 0, o.cost_unit || "", o.payload || "", o.tags || "", nowIso(), ngram(`${o.key} ${name} ${o.tags || ""}`)]
+      )) as any[];
+      if (!ins.length) return { row: withoutSearchCols(((await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND key=?`, [treeId, o.key])) as any[])[0]), created: false };
+      await markDirty(mgr, treeId);
+      await logEvent(mgr, "node.add", id, { tree: treeId, key: o.key, name, kind: o.kind || "tech", tier: o.tier ?? 0 });
+      return { row: withoutSearchCols(((await mgr.query(`SELECT * FROM nodes WHERE id=?`, [id])) as any[])[0]), created: true };
+    }
+    const ex = (await mgr.query(`SELECT * FROM nodes WHERE tree_id=? AND key=?`, [treeId, o.key])) as any[];
+    if (ex.length) return { row: ex[0], created: false };
     await mgr.query(
       `INSERT INTO nodes(id,tree_id,key,name,kind,tier,cost,cost_unit,payload,tags,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
       [id, treeId, o.key, name, o.kind || "tech", o.tier ?? 0, o.cost ?? 0, o.cost_unit || "", o.payload || "", o.tags || "", nowIso()]

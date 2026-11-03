@@ -508,13 +508,15 @@ export async function main(argv: string[]): Promise<number> {
   // verify self-check is corpus-driven and does not initialize a PG or SQLite business workspace.
   const PG_DB_ACTIONS = new Set(["stats", "path", "upgrade"]);
   const PG_RESEARCH = group === "research" && ((["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "")) || (action === "query" && ["add", "attach", "list"].includes(args._[2] || "")) || (action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) || (["source", "evidence"].includes(action || "") && args._[2] === "rm"));
-  const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
+  // #176 W1-T1: techtree on PG — tree new/list/show/use, node add/list/show (bare `node` = list).
+  const PG_TECHTREE = (group === "tree" && ["new", "list", "show", "use"].includes(action || "")) || (group === "node" && (action === undefined || ["add", "list", "show"].includes(action)));
+  const PG_BUSINESS = PG_RESEARCH || PG_TECHTREE || (group === "kb" && ["add", "list", "show", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
   const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | tree new/list/show/use | node add/list/show | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
@@ -528,6 +530,7 @@ export async function main(argv: string[]): Promise<number> {
   } catch { bad(ctx, "workspace backend binding conflicts with configured target; use the bound PG target or a separate YGL_HOME (no SQLite fallback)"); return 2; }
   if (pgUrl && PG_BUSINESS) {
     if (group === "project" && action === "use" && args.flags.global !== undefined) { bad(ctx, "PG project use does not support --global; selection is session-scoped"); return 2; }
+    if (group === "tree" && action === "use" && args.flags.global !== undefined) { bad(ctx, "PG tree use does not support --global; selection is session-scoped"); return 2; }
     if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) {
       bad(ctx, "PG business commands require YGL_SESSION or DSH_SESSION_ID for session isolation"); return 2;
     }
@@ -552,7 +555,10 @@ export async function main(argv: string[]): Promise<number> {
         if (PG_RESEARCH && action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) {
           await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "updated", "channel"], evidence: ["id", "project_id", "source_id"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
         }
-        if ((PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
+        if (PG_TECHTREE) {
+          await requirePgColumns(ds, { trees: ["id", "project_id", "name", "note", "created"], nodes: ["id", "tree_id", "key", "name", "kind", "tier", "cost", "cost_unit", "payload", "tags", "created", "ngram"], node_edges: ["tree_id", "parent_id", "child_id", "rel", "mode", "required"], node_state: ["tree_id", "node_id", "context", "status", "updated"], node_index: ["tree_id", "built_at", "dirty"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+        }
+        if ((PG_TECHTREE && ((group === "tree" && ["new", "use"].includes(action || "")) || (group === "node" && action === "add"))) || (PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
           await bindPgWorkspace(ds, home, pgUrl, appVersion());
         } else {
           // Read commands do not create/update metadata or workspace files.

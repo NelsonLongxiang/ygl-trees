@@ -13,10 +13,24 @@ describe("#124 B8 release gate wiring",()=>{
   expect(s.indexOf("node scripts/dual-backend-matrix.mjs")).toBeGreaterThan(0);
   expect(s.indexOf("node scripts/dual-backend-matrix.mjs --b8-pg-only")).toBeLessThan(s.indexOf("node scripts/dual-backend-matrix.mjs --strict"));
  });
+ it("matrix keeps every step's full output on disk and prints the tail of a failing step",()=>{
+  const m=readFileSync(resolve(root,"scripts/dual-backend-matrix.mjs"),"utf8");
+  expect(m).toMatch(/const LOG_DIR = join\(ROOT, "tmp", "dual-backend-matrix-"/);
+  expect(m).toMatch(/writeFileSync\(log, /);
+  expect(m.match(/sh\(cmd\[0\], cmd\.slice\(1\), \{ \.\.\.opts, leg: "(sqlite|pg)", name \}\)/g)?.length).toBe(2);
+  expect(m).toMatch(/full log: \$\{relative\(ROOT, s\.log\)\}/);
+  expect(m).toMatch(/s\.tail\.split\("\\n"\)\.slice\(-30\)/);
+ });
+ it("G7 builds the checked-out head after PG is ready and before any suite runs (no stale dist)",()=>{
+  const g=readFileSync(resolve(root,"scripts/pg-gate.sh"),"utf8");
+  const ready=g.lastIndexOf("pg_isready"),build=g.indexOf("pnpm build >"),b8=g.indexOf("dual-backend-matrix.mjs --b8-pg-only");
+  expect(ready).toBeGreaterThan(-1);expect(build).toBeGreaterThan(ready);expect(b8).toBeGreaterThan(build);
+  expect(g).toMatch(/pnpm build > tmp\/pg-gate-build\.log 2>&1 \|\| \{[^}]*exit 1; \}/);
+ });
  it("release documentation requires actual B8 passed/skipped counts",()=>{
   const s=readFileSync(resolve(root,"docs/release.md"),"utf8");expect(s).toContain("b8_pg");expect(s).toContain("0 skipped");
  });
- it("discovers all real PG spec files without including its own gate regression",async()=>{const {pgSpecs}=await loadGate();const specs=pgSpecs();expect(specs).toHaveLength(8);expect(specs).toContain("packages/ops/tools/tests/b8-pg-upgrade.spec.ts");expect(specs.every((s:string)=>!s.endsWith("/b8-pg-gate.spec.ts"))).toBe(true);});
+ it("discovers all real PG spec files without including its own gate regression",async()=>{const {pgSpecs}=await loadGate();const specs=pgSpecs();expect(specs).toHaveLength(9);expect(specs).toContain("packages/ops/tools/tests/b8-pg-upgrade.spec.ts");expect(specs).toContain("packages/ops/tools/tests/b8-pg-techtree.spec.ts");expect(specs.every((s:string)=>!s.endsWith("/b8-pg-gate.spec.ts"))).toBe(true);});
  it("counting rejects skips, failures, missing suites and empty real-PG reports",async()=>{
   const {countPgReport}=await loadGate();const spec="packages/x/tests/b8-pg-x.spec.ts";const row=(status:string)=>({name:root+"/"+spec,assertionResults:[{status,ancestorTitles:["real PG"]}]});
   expect(countPgReport({success:true,testResults:[row("passed")]},[spec])).toMatchObject({passed:1,skipped:0});
