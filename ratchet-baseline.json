@@ -3,7 +3,7 @@
   "node": "v24.12.0",
   "platform": "win32",
   "measured_at": "2026-11-03T07:22:33.077Z",
-  "_attribution": "direct-8681e1d1: #171 第1项 portable 冻结件回装（新增 verify-portable 模块与 verify import 命令），bundle 676368→696206B",
+  "_attribution": "direct-8681e1d1: #171 第1项 portable 冻结件回装（新增 verify-portable 模块与 verify import 命令）。bundle 676368→696206B 归因拆分：本 PR 实占 +13,444B（verify-cmds 分块 260,594→273,713），其余约 +6.4KB 为 #179–#182 在 2% 容差内的累积漂移（master d0135bd macOS 同方法实测 682,762B）。cold_start_ms 不随本 PR 调整（模块按需分块，bin.cjs 仅 +325B，冷启动路径不受影响）。",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
@@ -19,9 +19,9 @@
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 108,
+      "value": 82,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-11-03T07:22:33.076Z",
+      "measured_at": "2026-11-02T17:02:48.822Z",
       "method": "warm2-min7-retry-once"
     }
   }
