@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { SqliteRunner, singleStatement, trimSqlWs } from "../src/sqlite-runner";
+import { SqliteRunner, leadingNonAsciiWs, singleStatement, trimSqlWs } from "../src/sqlite-runner";
 
-const vectors = JSON.parse(readFileSync(join(__dirname, "fixtures/sql-statements.json"), "utf8")).vectors as { sql: string; clean: string | null }[];
+const fixture = JSON.parse(readFileSync(join(__dirname, "fixtures/sql-statements.json"), "utf8"));
+const vectors = fixture.vectors as { sql: string; clean: string | null }[];
+const leadingWs = fixture.leading_ws as { sql: string; ws: string | null }[];
 
 describe("#162 single-statement contract", () => {
   it.each(vectors)("singleStatement(%j)", (v) => {
@@ -30,5 +32,22 @@ describe("#162 single-statement contract", () => {
       runner.close();
     }
     expect(hash()).toBe(before);
+  });
+
+  it.each(leadingWs)("leadingNonAsciiWs(%j)", (v) => {
+    expect(leadingNonAsciiWs(trimSqlWs(v.sql))).toBe(v.ws);
+  });
+
+  it("names the code point when SQL starts with non-ASCII whitespace (#162 P4)", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "verify-nbsp-")), "synthetic.sqlite");
+    new DatabaseSync(file).close();
+    const runner = new SqliteRunner(file);
+    try {
+      expect(() => runner.query("\u00A0SELECT 1")).toThrow(/non-ASCII whitespace U\+00A0/);
+      expect(() => runner.query(" \uFEFFSELECT 1")).toThrow(/non-ASCII whitespace U\+FEFF/);
+      expect(() => runner.query("DELETE FROM t")).toThrow(/only SELECT\/WITH allowed/);
+    } finally {
+      runner.close();
+    }
   });
 });
