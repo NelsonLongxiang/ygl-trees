@@ -33,6 +33,15 @@ fn value_of(raw: ValueRef<'_>) -> Value {
 /// 单语句判定（#162）：只把引号、标识符与注释之外的分号当语句分隔符，
 /// 与 TS `singleStatement`（packages/verify/core/src/sqlite-runner.ts）同算法、同向量。
 /// 返回去掉末尾分隔符后的语句；顶层分号之后还有非空白内容则返回 None。
+/// SQL 空白：只认 ASCII 0x09–0x0D 与空格，与 TS `SQL_WS` 同集（#162 增补：不用 char::is_whitespace，避免 U+FEFF/U+0085 两端判定相反）。
+pub fn is_sql_ws(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\x0b' | '\x0c' | '\r' | ' ')
+}
+
+pub fn trim_sql_ws(s: &str) -> &str {
+    s.trim_matches(is_sql_ws)
+}
+
 pub fn single_statement(sql: &str) -> Option<&str> {
     let b = sql.as_bytes();
     let n = b.len();
@@ -74,10 +83,10 @@ pub fn single_statement(sql: &str) -> Option<&str> {
                 };
             }
             b';' => {
-                return if sql[i + 1..].chars().any(|ch| !ch.is_whitespace()) {
+                return if !trim_sql_ws(&sql[i + 1..]).is_empty() {
                     None
                 } else {
-                    Some(sql[..i].trim_end())
+                    Some(trim_sql_ws(&sql[..i]))
                 };
             }
             _ => i += 1,
@@ -107,7 +116,7 @@ impl SqliteRunner {
     }
 
     pub fn query(&self, sql: &str) -> Result<Vec<Row>, String> {
-        let trimmed = sql.trim();
+        let trimmed = trim_sql_ws(sql);
         let lower = trimmed.to_ascii_lowercase();
         if !(lower.starts_with("select") || lower.starts_with("with")) {
             return Err(format!(

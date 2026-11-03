@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { SqliteRunner, singleStatement } from "../src/sqlite-runner";
+import { SqliteRunner, singleStatement, trimSqlWs } from "../src/sqlite-runner";
 
 const vectors = JSON.parse(readFileSync(join(__dirname, "fixtures/sql-statements.json"), "utf8")).vectors as { sql: string; clean: string | null }[];
 
 describe("#162 single-statement contract", () => {
   it.each(vectors)("singleStatement(%j)", (v) => {
-    expect(singleStatement(v.sql.trim())).toBe(v.clean);
+    expect(singleStatement(trimSqlWs(v.sql))).toBe(v.clean);
   });
 
   it("runs a SELECT whose string literal contains a semicolon, without touching the snapshot", () => {

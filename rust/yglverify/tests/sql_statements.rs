@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::Value;
-use yglverify::sqlite::single_statement;
+use yglverify::sqlite::{single_statement, trim_sql_ws};
 
 #[test]
 fn single_statement_matches_ts_vectors() {
@@ -15,7 +15,7 @@ fn single_statement_matches_ts_vectors() {
     let vectors = doc["vectors"].as_array().expect("vectors array");
     assert!(vectors.len() >= 10, "expected >=10 vectors, got {}", vectors.len());
     for v in vectors {
-        let sql = v["sql"].as_str().unwrap().trim();
+        let sql = trim_sql_ws(v["sql"].as_str().unwrap());
         let want = v["clean"].as_str();
         assert_eq!(single_statement(sql), want, "sql: {sql:?}");
     }

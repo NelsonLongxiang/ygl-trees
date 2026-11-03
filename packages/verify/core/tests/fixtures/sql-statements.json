@@ -1,20 +1,81 @@
 {
   "_note": "#162 single-statement vectors shared by the TS SqliteRunner and the Rust sqlite.rs runner. clean = statement handed to prepare; null = rejected as multi-statement.",
   "vectors": [
-    { "sql": "SELECT 1", "clean": "SELECT 1" },
-    { "sql": "SELECT 1;", "clean": "SELECT 1" },
-    { "sql": "SELECT 1 ;  \n", "clean": "SELECT 1" },
-    { "sql": "SELECT 1; SELECT 2", "clean": null },
-    { "sql": "SELECT 1;;", "clean": null },
-    { "sql": "SELECT 1; -- trailing comment", "clean": null },
-    { "sql": "SELECT present FROM facts WHERE needle='--color: #123456;' AND present=1", "clean": "SELECT present FROM facts WHERE needle='--color: #123456;' AND present=1" },
-    { "sql": "SELECT 'it''s; fine' AS x;", "clean": "SELECT 'it''s; fine' AS x" },
-    { "sql": "SELECT \"a;b\" FROM t", "clean": "SELECT \"a;b\" FROM t" },
-    { "sql": "SELECT `a;b` FROM t", "clean": "SELECT `a;b` FROM t" },
-    { "sql": "SELECT [a;b] FROM t", "clean": "SELECT [a;b] FROM t" },
-    { "sql": "SELECT 1 -- note; not a separator\nFROM t", "clean": "SELECT 1 -- note; not a separator\nFROM t" },
-    { "sql": "SELECT 1 /* a; b */ FROM t", "clean": "SELECT 1 /* a; b */ FROM t" },
-    { "sql": "SELECT 'x;' AS a; DROP TABLE t", "clean": null },
-    { "sql": "WITH q AS (SELECT ';' AS s) SELECT s FROM q", "clean": "WITH q AS (SELECT ';' AS s) SELECT s FROM q" }
+    {
+      "sql": "SELECT 1",
+      "clean": "SELECT 1"
+    },
+    {
+      "sql": "SELECT 1;",
+      "clean": "SELECT 1"
+    },
+    {
+      "sql": "SELECT 1 ;  \n",
+      "clean": "SELECT 1"
+    },
+    {
+      "sql": "SELECT 1; SELECT 2",
+      "clean": null
+    },
+    {
+      "sql": "SELECT 1;;",
+      "clean": null
+    },
+    {
+      "sql": "SELECT 1; -- trailing comment",
+      "clean": null
+    },
+    {
+      "sql": "SELECT present FROM facts WHERE needle='--color: #123456;' AND present=1",
+      "clean": "SELECT present FROM facts WHERE needle='--color: #123456;' AND present=1"
+    },
+    {
+      "sql": "SELECT 'it''s; fine' AS x;",
+      "clean": "SELECT 'it''s; fine' AS x"
+    },
+    {
+      "sql": "SELECT \"a;b\" FROM t",
+      "clean": "SELECT \"a;b\" FROM t"
+    },
+    {
+      "sql": "SELECT `a;b` FROM t",
+      "clean": "SELECT `a;b` FROM t"
+    },
+    {
+      "sql": "SELECT [a;b] FROM t",
+      "clean": "SELECT [a;b] FROM t"
+    },
+    {
+      "sql": "SELECT 1 -- note; not a separator\nFROM t",
+      "clean": "SELECT 1 -- note; not a separator\nFROM t"
+    },
+    {
+      "sql": "SELECT 1 /* a; b */ FROM t",
+      "clean": "SELECT 1 /* a; b */ FROM t"
+    },
+    {
+      "sql": "SELECT 'x;' AS a; DROP TABLE t",
+      "clean": null
+    },
+    {
+      "sql": "WITH q AS (SELECT ';' AS s) SELECT s FROM q",
+      "clean": "WITH q AS (SELECT ';' AS s) SELECT s FROM q"
+    },
+    {
+      "sql": "SELECT 1;\uFEFF",
+      "clean": null
+    },
+    {
+      "sql": "SELECT 1;\u0085",
+      "clean": null
+    },
+    {
+      "sql": "SELECT 1;\u00A0",
+      "clean": null
+    },
+    {
+      "sql": "SELECT 1;\u000b\f\r\n\t ",
+      "clean": "SELECT 1"
+    }
   ]
 }
