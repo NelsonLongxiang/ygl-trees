@@ -18,6 +18,8 @@ import { createMaterialDraft, verifyPaths } from "../src/verify-web";
 import { putBlob } from "../src/blob-store";
 
 const REPO = path.resolve(__dirname, "../../../..");
+/** #171 建议 4：非 draft 的 prepare 必须显式给 as_of（快照所描述的时刻）。 */
+const AS_OF = "2026-11-01T00:00:00.000Z";
 
 let dir: string;
 let home: string;
@@ -124,7 +126,7 @@ const reviews = [
 
 describe("verify jobs — 开关", () => {
   it("默认关闭：serve 没给 --enable-verify-jobs 时 POST → 403（嵌入方不该默默获得执行面）", async () => {
-    const r = await post(`${lockedBase}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha });
+    const r = await post(`${lockedBase}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: AS_OF });
     expect(r.status).toBe(403);
     expect(String(r.json.error)).toContain("--enable-verify-jobs");
   });
@@ -148,7 +150,7 @@ describe("verify jobs — 开关", () => {
 
 describe("verify jobs — prepare", () => {
   it("材料 + 快照 blob + agent 构造产物 → 200 ready，spec/prepare/trace 落盘", async () => {
-    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha });
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: AS_OF });
     expect(r.status).toBe(200);
     expect(r.json.verdict).toBe("ready");
     expect(r.json.written).toBe(true);
@@ -160,6 +162,30 @@ describe("verify jobs — prepare", () => {
     for (const f of ["spec.json", "prepare.json", "trace.json"]) {
       expect(fs.existsSync(path.join(specDir, f))).toBe(true);
     }
+  }, 60_000);
+
+  it("HTTP prepare records explicit and serve-session authors with same-author diagnostics", async () => {
+    const request = { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: AS_OF };
+    const endpoint = `${base}/api/verify/prepare`;
+    const same = await post(endpoint, { ...request, candidates_author: "http-seat-a", reviews_author: "http-seat-a" });
+    expect(same.status).toBe(200);
+    expect(same.json.verdict).toBe("ready");
+    const expected = { candidates: { id: "http-seat-a", source: "body" }, reviews: { id: "http-seat-a", source: "body" } };
+    expect(same.json.authors).toEqual(expected);
+    expect(same.json.diagnostics).toContainEqual({ stage: "P3a", message: expect.stringContaining("share the same author (http-seat-a)") });
+    const specDir = path.join(home, "verify", "specs", same.json.spec_id);
+    for (const file of ["prepare.json", "trace.json"]) {
+      expect(JSON.parse(fs.readFileSync(path.join(specDir, file), "utf8")).authors).toEqual(expected);
+    }
+    const different = await post(endpoint, { ...request, candidates_author: "http-seat-a", reviews_author: "http-seat-b", draft: true });
+    expect(different.status).toBe(200);
+    expect(different.json.authors.reviews).toEqual({ id: "http-seat-b", source: "body" });
+    expect(different.json.diagnostics.some((d: { stage: string }) => d.stage === "P3a")).toBe(false);
+    const fallback = await post(endpoint, { ...request, draft: true });
+    expect(fallback.status).toBe(200);
+    const session = String(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim() || "http";
+    expect(fallback.json.authors).toEqual({ candidates: { id: session, source: "http" }, reviews: { id: session, source: "http" } });
+    expect(fallback.json.diagnostics).toContainEqual({ stage: "P3a", message: expect.stringContaining("share the same author") });
   }, 60_000);
 
   it("draft=true → 200 但绝不落盘", async () => {
@@ -186,7 +212,7 @@ describe("verify jobs — prepare", () => {
     // 同材料、同快照，但把 where 指向 schema 里不存在的列 → P2 列校验打回，不 ready
     const bad = JSON.parse(JSON.stringify(candidates));
     bad[0].checker.predicate.where.conditions[0].col = "amount_cents_missing";
-    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates: bad, reviews, snapshot_sha256: snapshotSha });
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates: bad, reviews, snapshot_sha256: snapshotSha, as_of: AS_OF });
     expect(r.status).toBe(200);
     expect(r.json.verdict).not.toBe("ready");
     expect(r.json.written).toBe(false);
@@ -197,13 +223,29 @@ describe("verify jobs — prepare", () => {
     expect(fs.readdirSync(path.join(specDir, "attempts")).length).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
-  it("as_of 由调用方钉（P5 责任在构造方），缺省用请求时刻", async () => {
+  it("as_of 由调用方钉（P5 责任在构造方），原样冻结进 spec", async () => {
     const asOf = "2026-01-02T03:04:05.000Z";
     const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, as_of: asOf });
     expect(r.status).toBe(200);
     expect(r.json.verdict).toBe("ready");
     const spec = JSON.parse(fs.readFileSync(path.join(home, "verify", "specs", specId, "spec.json"), "utf8"));
     expect(spec.as_of.value).toBe(asOf);
+  }, 60_000);
+
+  it("#171 建议 4：非 draft 缺 as_of → 400 且不落盘；draft 缺 as_of 仍可（不冻结）", async () => {
+    const specDir = path.join(home, "verify", "specs", specId);
+    const attemptsDir = path.join(specDir, "attempts");
+    const attemptsBefore = fs.existsSync(attemptsDir) ? fs.readdirSync(attemptsDir).length : 0;
+    const before = createHash("sha256").update(fs.readFileSync(path.join(specDir, "spec.json"))).digest("hex");
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha });
+    expect(r.status).toBe(400);
+    expect(String(r.json.error)).toMatch(/as_of is required/);
+    expect(createHash("sha256").update(fs.readFileSync(path.join(specDir, "spec.json"))).digest("hex")).toBe(before);
+    expect(fs.existsSync(attemptsDir) ? fs.readdirSync(attemptsDir).length : 0).toBe(attemptsBefore);
+    const missingMaterial = await post(`${base}/api/verify/prepare`, { material_id: "mat_missing0000", candidates, reviews, snapshot_sha256: snapshotSha });
+    expect(missingMaterial.status).toBe(400); // usage before I/O: the missing as_of wins over the 404
+    const draft = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: snapshotSha, draft: true });
+    expect(draft.status).toBe(200);
   }, 60_000);
 
   it("as_of 不可解析 → 400 且不落盘（r22 ②：CLI rc=2 / HTTP 400 同一校验）", async () => {
@@ -244,23 +286,23 @@ describe("verify jobs — prepare", () => {
   }, 60_000);
 
   it("快照只能按内容寻址：不存在的 sha → 404 且错误里点名上传入口", async () => {
-    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: "a".repeat(64) });
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, as_of: AS_OF, snapshot_sha256: "a".repeat(64) });
     expect(r.status).toBe(404);
     expect(String(r.json.error)).toContain("/api/verify/blob");
   });
 
   it("sha 不是 64 位小写 hex → 400", async () => {
-    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, snapshot_sha256: "../etc/passwd" });
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, candidates, reviews, as_of: AS_OF, snapshot_sha256: "../etc/passwd" });
     expect(r.status).toBe(400);
   });
 
   it("材料不存在 → 404", async () => {
-    const r = await post(`${base}/api/verify/prepare`, { material_id: "mat_missing", candidates, reviews, snapshot_sha256: snapshotSha });
+    const r = await post(`${base}/api/verify/prepare`, { material_id: "mat_missing", candidates, reviews, snapshot_sha256: snapshotSha, as_of: AS_OF });
     expect(r.status).toBe(404);
   });
 
   it("缺构造产物 → 400（服务端不发明候选）", async () => {
-    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, snapshot_sha256: snapshotSha });
+    const r = await post(`${base}/api/verify/prepare`, { material_id: materialId, snapshot_sha256: snapshotSha, as_of: AS_OF });
     expect(r.status).toBe(400);
     expect(String(r.json.error)).toContain("candidates");
   });
