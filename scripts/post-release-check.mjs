@@ -11,7 +11,7 @@
  * 用法：node scripts/post-release-check.mjs <version>   # 例 0.116.0
  */
 import { spawnSync } from "node:child_process";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join, resolve } from "node:path";
 
@@ -53,6 +53,27 @@ function tail(logFile, n = 400) {
     const s = readFileSync(logFile, "utf8");
     return s.length > n ? "…" + s.slice(-n) : s;
   } catch { return ""; }
+}
+
+/**
+ * 失败现场的轻量快照（#178）：失败是间歇的，必须把「当时的树长什么样」留下来——
+ * 尤其是 dist/bundle 清单（skills-audit 的 rc=2 只在 bin.cjs 缺失时出现）与临时目录状态。
+ * 纯 fs 读取，不跑子进程，失败也不影响主记录。
+ */
+function diagnostics() {
+  const diag = { at: new Date().toISOString(), platform: process.platform, arch: process.arch, node: process.version, work: WORK, work_exists: existsSync(WORK) };
+  const tagDir = join(WORK, "tag");
+  diag.tag_exists = existsSync(tagDir);
+  try { diag.tag_head = readFileSync(join(tagDir, ".git", "HEAD"), "utf8").trim(); } catch (e) { diag.tag_head = `unreadable (${e.code})`; }
+  const bundleDir = join(tagDir, "dist", "bundle");
+  try {
+    diag.dist_bundle = readdirSync(bundleDir).map((f) => { try { return `${f}:${statSync(join(bundleDir, f)).size}`; } catch { return f; } });
+  } catch (e) { diag.dist_bundle = `MISSING (${e.code})`; }
+  diag.node_modules_bin = existsSync(join(tagDir, "node_modules", ".bin"));
+  try {
+    diag.logs = readdirSync(LOGS).map((f) => `${f}:${statSync(join(LOGS, f)).size}`);
+  } catch (e) { diag.logs = `unreadable (${e.code})`; }
+  return diag;
 }
 
 const steps = [];
@@ -120,6 +141,14 @@ try {
   });
 } finally {
   const failed = steps.filter((s) => s.status === "fail").length;
+  // #178: 失败时把现场一并留下（dist/bundle 清单、tag 头、日志清单），下次复现可直接归因。
+  let diagFile = null;
+  if (failed) {
+    try {
+      diagFile = join(WORK, "diagnostics.json");
+      writeFileSync(diagFile, JSON.stringify(diagnostics(), null, 2));
+    } catch { diagFile = null; }
+  }
   const record = {
     gate: "G8",
     version,
@@ -129,10 +158,12 @@ try {
     // #178: 成功时工作目录会被删掉，日志路径仅作当次定位；失败时整目录保留供取证。
     work_dir: failed ? WORK : null,
     logs_dir: failed ? LOGS : null,
+    diagnostics: diagFile,
   };
   console.log(JSON.stringify(record, null, 2));
   if (failed) {
     console.error(`\nG8: ${failed} step(s) failed — full stdout/stderr kept at ${LOGS}`);
+    if (diagFile) console.error(`G8: failure snapshot at ${diagFile}`);
     process.exit(1);
   }
   rmSync(WORK, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

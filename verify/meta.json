@@ -150,7 +150,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "735521c5396f8826eb76772cbd0573b2ff737a0dbc3f31004c42044c97d9a74f",
+      "sha256": "432047a194c604d314aca17126a3e13ec4364fea00f400cfd8798daf12973cf1",
       "role": "gate"
     },
     {
@@ -1188,6 +1188,14 @@
       "reason": "Refs #178: G8 captures full per-step stdout/stderr to log files and keeps the work dir on failure (replaces the 150-char truncation that hid the failing line)",
       "actor": "dsh/ec4ce7f8",
       "at": "2026-11-03T03:37:26.521Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "735521c5396f8826eb76772cbd0573b2ff737a0dbc3f31004c42044c97d9a74f",
+      "new_sha256": "432047a194c604d314aca17126a3e13ec4364fea00f400cfd8798daf12973cf1",
+      "reason": "Refs #178: add a failure-time diagnostics snapshot (dist/bundle inventory, tag HEAD, log sizes) written next to the kept work dir",
+      "actor": "dsh/ec4ce7f8",
+      "at": "2026-11-03T04:42:08.376Z"
     }
   ],
   "kind": "engine",
