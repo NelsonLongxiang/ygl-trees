@@ -294,7 +294,7 @@ CJK 检索是个坑：FTS5 默认 `unicode61` 会把整句中文当成一个 tok
 
 - **写入幂等**：`claim / evidence / query / kb / job` 的写命令按内容 hash 判重，重复执行返回已存在行（`! duplicate, kept existing`），Agent 重试不产生脏数据；`--force` 显式保留重复（job 用标题序号后缀）
 - **完整备份**：`db export <file>` 覆盖全部数据表（含七张科技树表）并输出逐表行数摘要；dump 自带 `PRAGMA foreign_keys` 开关，可直接重放恢复。`--lean` 跳过闭包/拓扑等派生表数据
-- **PostgreSQL 镜像/迁移**：`db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
+- **PostgreSQL 镜像/迁移**：`db sync pg <url>` 把整库单向全量镜像到 PG（可刷新，供 SQL 工具/团队分析）；`db migrate pg <url> [--fresh]` 一次性完整保真迁移（FK/UNIQUE/索引约束齐全，目标库可独立持有）。两者都不做双后端同写，中文检索在 PG 侧用 tsvector+GIN 等价召回（详见 docs/pg-compat.md）。已迁移的 PG 库随版本升级走 `YGL_DB_URL=… ygl-trees db upgrade`（事务化、幂等；PG 业务命令遇到版本不符会 rc1 拒绝并提示它）。url 可走环境变量 `YGL_PG_URL`；`pg` 为可选依赖，不用 PG 则零影响
 - **TypeORM 查询层**（0.8.0 起，研究域试点 `project show`）：实体是 schema v8 的类型化快照（`synchronize` 永久 false，迁移权威仍在 user_version 轨道；FTS5/PRAGMA 路径保持裸 SQL）。依赖 typeorm + better-sqlite3 + reflect-metadata
 - **重复可见**：`db dups` 列出同内容多行（含迁移前存量重复）
 - **自动迁移**：v2 老库首次打开自动升级 schema v3（补 content_hash 列 + 回填 + 唯一索引），无人工介入
@@ -346,10 +346,10 @@ SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 
 
 SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN` 时计入 1 条环境跳过；发布必跑 G7 会从固定 npm `ygl-trees@0.117.1`（tarball/bundle 均验 SHA-256）设置基线并执行，报告 `b8_sqlite_golden: 1 passed, 0 skipped`。缺基线、哈希不符或 skip 都失败，默认 unit 的 skip 不算黄金验证通过。
 
-PG 测试分开计数：B8 的 64 条真库用例（七份 spec）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 64 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
+PG 测试分开计数：B8 的 72 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1 加了 4 条科技树 golden）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 72 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1552 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1603 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

@@ -65,6 +65,21 @@ export async function requirePgColumns(db: { query(sql: string, params?: any[]):
   if (missing.length) throw new PgCapabilityError("PG schema missing required columns: " + missing.join(", ") + "; no changes made. Use a compatible explicitly migrated target; do not overwrite an existing database with --fresh.");
 }
 
+/**
+ * #176 W5b: a PG business command runs only against a PG schema at exactly this engine's SCHEMA_VERSION.
+ * Older → the operator runs `db upgrade`; newer → this engine is too old. Never auto-upgrade on a business command.
+ */
+export async function requirePgSchemaVersion(db: { query(sql: string, params?: any[]): Promise<any> }, expected: number): Promise<void> {
+  const ledger = await db.query("SELECT 1 AS hit FROM information_schema.tables WHERE table_schema=current_schema() AND table_name='schema_migrations'");
+  if (!ledger.length) throw new PgCapabilityError("PG target has no ygl-trees schema_migrations ledger; no changes made. Create it with db migrate pg from a SQLite workspace.");
+  const rows = await db.query("SELECT MAX(version) AS version FROM schema_migrations WHERE backend IN ('pg','postgres')");
+  const raw = rows[0]?.version;
+  const v = raw === null || raw === undefined ? null : Number(raw);
+  if (v === expected) return;
+  if (v !== null && v > expected) throw new PgCapabilityError(`PG schema is v${v}, newer than this engine (v${expected}); no changes made. Upgrade ygl-trees.`);
+  throw new PgCapabilityError(`PG schema is v${v ?? "unknown"}, this engine expects v${expected}; no changes made. Run: ygl-trees db upgrade (with the same YGL_DB_URL).`);
+}
+
 export function pgFailure(): string {
   // Driver messages/SQL/parameters may contain raw URLs or credentials: do not echo them.
   return "PG operation failed (connection/schema/transaction); check the configured target and migrated schema; no SQLite fallback";

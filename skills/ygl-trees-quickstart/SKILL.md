@@ -233,10 +233,12 @@ ygl-trees job add "闸门探针" --every 30 -- node probe.mjs   # 树节奏化�
 - 路径：从独立 SQLite 源显式 `db migrate pg` 后再直连；不在 PG home 里跑 init。禁止双后端同写，SQLite 默认。
 - 凭证只经 `YGL_DB_URL` 环境变量（用户自己配，不放 argv）；必须有 `YGL_SESSION` 或 `DSH_SESSION_ID`；用独立 `YGL_HOME`，业务写不建 SQLite 文件。`YGL_PG_URL` 只给 sync/migrate 出口，不是业务入口别名。
 - 首次连接校验/记录 PG `meta.backend_binding` 并写本地无凭证绑定指针；目标冲突、PG 不可达、会话缺失一律拒绝，不回退 SQLite。
+- 升级 ygl-trees 后若 PG 业务命令 rc1 报 `PG schema is vN, this engine expects vM`：在同一个 `YGL_DB_URL` 下跑 `ygl-trees db upgrade`（事务化、幂等，重跑回 `duplicate: true`；不收参数）。报「newer than this engine」则是引擎太旧，升级 ygl-trees，别动库。`doctor` 的 `pg_indexes` 点名缺失索引时同样跑 `db upgrade`。
 - 已开放的写读面：
   - 批1：`kb add` / `project new`；读回 `kb list/show`、`project list/show`。
   - 批2：`research source/evidence/claim add/list/show`（file/batch 语义原样）；session-only `project use`（返回 prior、发事件、归档拒选、`--global` 拒绝）。
   - 批3：`research query add/attach/list`、`research claim link/unlink/resolve/unresolve`、`research source/evidence rm`、`kb link/import`。
+  - #176 W1-T1（科技树第一片）：`tree new/list/show/use`、`node add/list/show`；输出与 SQLite 逐字段一致（键序按二进制、计数是数字）；`tree use` 只写会话选择，`--global` rc2；`node link/index/unlock/search` 等其余树命令仍 rc2 拒绝。
 - 语义保持：项目读取 flag→env→session→唯一项目（不读全局最近项目，多项目缺选择 rc2）；claims 两后端均无全文检索；预测不自动结算；`research claim resolve` 不是 agent 仲裁授权；删除默认保护，`--force` 只删精确锥；import 先预检再整批事务；`research query attach` 成功/重复在两后端都是单 JSON（重复带 `duplicate:true`，rc0）。
 - 拒绝而不猜：PG 缺所需列点名拒绝（不自动 ALTER）；最大 ts 仲裁组 NULL seq 歧义拒绝；其他未列 mutation、`project rm/restore/archive/global` 与 verify-on-PG 一律拒绝/明确 skip（verify 保持 SQLite 快照链）。
 

@@ -87,7 +87,7 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 | 生成列 STORED 在旧 PG（<12）不可用 | 低 | 运行时探测 server_version_num，旧版自动降级为 ngram-only（LIKE 仍可查） |
 | tsvector 与 ngram 的召回差异（simple 词典停用词） | 中 | simple 词典基本不停用 CJK bigram；实测中英文 token 命中一致；如现差异可改手工 tsvector 拼接 |
 | 全量同步/迁移在数据增长后变慢 | 低 | 已预留增量方案（updated 游标）；量级触发再实施 |
-| 手写 MIGRATE_DDL 与源 schema 漂移 | 中 | 迁移期列集守卫强制中止（已实测拦截路径存在）；每次 schema 版本变更须跑一次迁移验证 |
+| 手写 MIGRATE_DDL 与源 schema 漂移 | 中 | 两道防线：① 迁移期列集守卫强制中止（已实测拦截路径存在）；② CI 结构门禁 `scripts/schema-parity.mjs`（contract-audit 每次跑，#176 W5a）逐表比对列集、类型类、NOT NULL、DEFAULT、主键、外键（含 ON DELETE）、唯一约束与普通索引，方言上不可能一致的差异须登记在 `DIALECT_EXCEPTIONS` 并写理由（当前 1 条：`events.seq` 的序列默认值）。W5a 上线时抓到并补上了 PG 缺失的 `idx_events_kind_entity`。注意：已迁移的 PG 库没有升级轨，补的索引只对新迁移生效，升级轨见 #176 W5b |
 | optionalDependencies 在 pnpm install 默认装上 pg | 低 | 接受（体积小、无传递依赖） |
 
 ## 7. 建议与下一步
@@ -100,7 +100,15 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 
 业务入口使用 `YGL_DB_URL`，目标须已用官方 `db migrate pg` 显式迁移；`YGL_PG_URL` 是 `db sync pg` / `db migrate pg` 的出口 URL，不会启用 PG 业务模式，也不自动作为 `YGL_DB_URL` 别名。凭证由用户配置环境变量，不放 `--db` 或命令历史。使用独立 `YGL_HOME`；存在 SQLite 文件或已有 PG 绑定目标不一致时拒绝并点名本地冲突文件，不回落、不双写。`db init` 仅用于 SQLite；设置 PG `YGL_DB_URL` 时在工作区写入前 rc2 拒绝，不支持 `--backend pg`（或任何 `--backend`），未知 init 参数也拒绝。PG 需从独立 SQLite 源工作区执行显式 `db migrate pg`，再选中迁移后的 PG 目标；本修复不实现 PG init，不改写或删除已有文件。
 
-可用面：`kb add/list/show`、`project new/use/list/show`、`research source/evidence/claim add/list/show`（包括各类型已支持的 file/batch 入口）。批量全部行先校验、单事务写入，中段失败整批回滚；`source add --query` 对既有 query 的挂接同 PG 事务。批3补充 `research query add/attach/list`、`claim link/unlink/resolve/unresolve`、`source/evidence rm` 和 `kb link/import`。其他未列命令（含 query done、eval、fetch、新搜索、project archive/restore/rm/global、其他域、verify-on-PG）仍拒绝。
+**PG 升级轨（#176 W5b）**：SQLite 开库时自动升级 `PRAGMA user_version`；PG 改为显式 `ygl-trees db upgrade`（目标取自 `YGL_DB_URL`，不收参数）。
+- **版本门**：PG 业务命令先读 `schema_migrations` 里 postgres 的最高版本，必须**恰好等于**本引擎的 `SCHEMA_VERSION`。旧于它：rc1，提示跑 `db upgrade`；新于它：rc1，提示升级 ygl-trees。两种情况都不写库、不写绑定，业务命令从不自动升级。
+- **基线**：PG 业务面从 v12（0.119.0）开始，`PG_BASELINE_VERSION = 12`；更早的 PG 库不在升级轨上，需重新 `db migrate pg` 到新库。
+- **步骤**：`PG_UPGRADES` 每个高于基线的 `SCHEMA_VERSION` 恰好一条，按版本顺序执行，每条写入台账；`pg-upgrade.spec` 强制「升 SCHEMA_VERSION 就必须同时加 PG 步骤」。
+- **索引收敛**：最后重跑一遍 `MIGRATE_INDEXES`（全是 `IF NOT EXISTS`），所以只加索引、不升版本的变更（如 W5a 的 `idx_events_kind_entity`）也能到达已迁移的库；`doctor` 的 `pg_indexes` 项会点名缺失索引。
+- **原子性**：全程一个事务，加 `pg_advisory_xact_lock` 锁，任一步失败整体回滚；重跑幂等（`duplicate: true`）。目标库的 `backend_binding` 若属于别的目标则拒绝。错误信息只含标识符，不回显驱动消息与凭证。
+- **回放验收**：`b8-pg-upgrade.spec.ts`（G7 真 PG）从冻结的 0.119.0 基线 `fixtures/pg-baseline-v12.sql` 升级到当前版本，目录结构（列/约束/索引）必须与全新 `db migrate pg` 逐项相同。
+
+可用面：`kb add/list/show`、`project new/use/list/show`、`research source/evidence/claim add/list/show`（包括各类型已支持的 file/batch 入口）。批量全部行先校验、单事务写入，中段失败整批回滚；`source add --query` 对既有 query 的挂接同 PG 事务。批3补充 `research query add/attach/list`、`claim link/unlink/resolve/unresolve`、`source/evidence rm` 和 `kb link/import`。#176 W1-T1 补充科技树第一片：`tree new/list/show/use`、`node add/list/show`。写路径与 SQLite 共用同一套语句，事务内的 PG 管理器把 `?` 翻成 `$n`；`tree new`/`node add` 在 PG 上用 `INSERT … ON CONFLICT DO NOTHING`，并发同名只落一行；节点检索输入写进 `nodes.ngram`（PG 没有 `nodes_fts`），读回时去掉 `ngram`/`ngram_tsv`，行形与 SQLite 相同；键序用 `COLLATE "C"` 对齐 SQLite 的二进制序，计数转 `::int`。树选择只写会话键 `current_tree@<session>`，`tree use --global` rc2。其他未列命令（含 query done、eval、fetch、新搜索、project archive/restore/rm/global、其他域、verify-on-PG）仍拒绝。
 
 项目解析只读优先级：显式 `-p/--project` → `YGL_PROJECT` → 当前 session 选择 → 唯一项目；多项目无选择 rc2，指定不存在项目 rc1。不会读取全局最近项目作 fallback。读命令不写选择或文件；`project use` 仅更新本 session 并发事件，返回替换前 prior，archived 拒选，`--global` 拒绝。
 
