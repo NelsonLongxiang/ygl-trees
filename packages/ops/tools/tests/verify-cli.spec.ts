@@ -71,6 +71,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
   });
 
   it("#171 建议 4：非 draft 的 prepare 缺 --as-of → rc2，先于工作区与文件 I/O；--draft 可省略", () => {
+    mkdirSync(join(REPO, "tmp"), { recursive: true }); // fresh clones (G1) have no tmp/ yet
     const emptyHome = mkdtempSync(join(REPO, "tmp/as-of-usage-"));
     try {
       const base = ["verify", "prepare", "mat_missing", "--candidates", "missing-c.json", "--reviews", "missing-r.json", "--db", "missing.sqlite"];
@@ -86,6 +87,7 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
   });
 
   it("bare author flags are rc2 before workspace or file I/O", () => {
+    mkdirSync(join(REPO, "tmp"), { recursive: true }); // fresh clones (G1) have no tmp/ yet
     const emptyHome = mkdtempSync(join(REPO, "tmp/author-usage-"));
     try {
       for (const flag of ["--candidates-author", "--reviews-author"]) {
