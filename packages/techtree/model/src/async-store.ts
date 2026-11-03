@@ -33,19 +33,24 @@ export async function materializeTree(adb: AsyncDb, treeId: string): Promise<DB>
     const st = mem.db.prepare(`INSERT INTO ${table}(${cols.map((c) => `"${c}"`).join(",")}) VALUES(${cols.map(() => "?").join(",")})`);
     for (const r of rows) st.run(cols.map((c) => (r as Row)[c] ?? null));
   };
-  await copy("trees", "id=?", [treeId]);
-  await copy("nodes", "tree_id=?", [treeId], " ORDER BY created, id");
-  await copy("node_edges", "tree_id=?", [treeId], " ORDER BY created, id");
-  await copy("node_closure", "tree_id=?", [treeId]);
-  await copy("node_conditions", "node_id IN (SELECT id FROM nodes WHERE tree_id=?)", [treeId], " ORDER BY created, id");
-  await copy("node_state", "tree_id=?", [treeId]);
-  await copy("node_index", "tree_id=?", [treeId]);
-  const kinds = new Set<string>();
-  for (const c of mem.all("SELECT value FROM node_conditions WHERE op='telemetry'") as Row[]) {
-    const m = /^([A-Za-z0-9_.\/-]+)/.exec(String(c.value).trim());
-    if (m) kinds.add(m[1]);
+  try {
+    await copy("trees", "id=?", [treeId]);
+    await copy("nodes", "tree_id=?", [treeId], " ORDER BY created, id");
+    await copy("node_edges", "tree_id=?", [treeId], " ORDER BY created, id");
+    await copy("node_closure", "tree_id=?", [treeId]);
+    await copy("node_conditions", "node_id IN (SELECT id FROM nodes WHERE tree_id=?)", [treeId], " ORDER BY created, id");
+    await copy("node_state", "tree_id=?", [treeId]);
+    await copy("node_index", "tree_id=?", [treeId]);
+    const kinds = new Set<string>();
+    for (const c of mem.all("SELECT value FROM node_conditions WHERE op='telemetry'") as Row[]) {
+      const m = /^([A-Za-z0-9_.\/-]+)/.exec(String(c.value).trim());
+      if (m) kinds.add(m[1]);
+    }
+    if (kinds.size) await copy("events", `kind IN (${[...kinds].map(() => "?").join(",")})`, [...kinds], " ORDER BY ts, id");
+  } catch (e) {
+    mem.close(); // a failed copy must not leak the in-memory handle
+    throw e;
   }
-  if (kinds.size) await copy("events", `kind IN (${[...kinds].map(() => "?").join(",")})`, [...kinds], " ORDER BY ts, id");
   return mem;
 }
 

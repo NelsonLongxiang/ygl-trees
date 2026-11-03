@@ -673,14 +673,22 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       const stateFor = (k: string): Record<string, any> =>
         perKeyBags ? (perKeyBags[k] && typeof perKeyBags[k] === "object" && !Array.isArray(perKeyBags[k]) ? perKeyBags[k] : {}) : sharedState;
       const ctxName = flagStr("context", "default");
-      // eval-family config read once per run (R8 credential priority:
-      // config decision_model_llm_* first, then env AI_GATEWAY_API_KEY)
-      const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
-      const cfgToken = configGet(env.db, "decision_model_llm_token").trim();
-      const token = offline ? "" : cfgToken || evalToken();
-      const endpoint = configGet(env.db, "decision_model_llm_api_base").trim() || DEFAULT_ENDPOINT;
-      const passT = configGetNumber(env.db, "eval.pass_threshold");
-      const failT = configGetNumber(env.db, "eval.fail_threshold");
+      // eval-family config read once per run, and only when a node has eval conditions (R8 credential priority:
+      // config decision_model_llm_* first, then env AI_GATEWAY_API_KEY). It lives on the SQLite face: #176 W1-T3
+      // refuses --eval on PG, so a plain `node can` on PG must never touch it.
+      let evalCfg: { token: string; endpoint: string; passT: number; failT: number } | null = null;
+      const loadEvalCfg = () => {
+        if (evalCfg) return evalCfg;
+        const offline = !!process.env.YGL_EVAL_OFFLINE || configGetBool(env.db, "eval.offline");
+        const cfgToken = configGet(env.db, "decision_model_llm_token").trim();
+        evalCfg = {
+          token: offline ? "" : cfgToken || evalToken(),
+          endpoint: configGet(env.db, "decision_model_llm_api_base").trim() || DEFAULT_ENDPOINT,
+          passT: configGetNumber(env.db, "eval.pass_threshold"),
+          failT: configGetNumber(env.db, "eval.fail_threshold"),
+        };
+        return evalCfg;
+      };
       /** Judge one node: canUnlock (+ eval gates when --eval). Never throws —
        *  hard failures come back as {key, error}. */
       const judgeOne = async (k: string): Promise<any> => {
@@ -695,6 +703,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
           ? (await trees.condList(tid, k)).filter((c: any) => /^eval(-choice|-score)?$/.test(String(c.op)))
           : [];
         if (!evalConds.length) return r;
+        const { token, endpoint, passT, failT } = loadEvalCfg();
         // R8: decision-model evaluation for op=eval conditions.
         // Offline-safe: no token / network failure → pending (rc=0).
         const contextPkg = await trees.evalContext(tid, k, state, ctxName);
