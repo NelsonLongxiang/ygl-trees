@@ -38,7 +38,9 @@ describe("measurement producer provenance", () => {
     expect(missing.data_source?.producer).toBeUndefined();
   });
   it("selects an integrity-valid baseline for the same spec version without rewriting report bytes", () => {
-    const dir = mkdtempSync(join(resolve(__dirname, "../../../.."), "tmp/producer-unit-"));
+    const scratch = join(resolve(__dirname, "../../../.."), "tmp");
+    mkdirSync(scratch, { recursive: true });
+    const dir = mkdtempSync(join(scratch, "producer-unit-"));
     try {
       mkdirSync(join(dir, "reports")); const reports = join(dir, "reports");
       const baseline = report(); attachProducer(baseline, parseProducer(producer)); baseline.payload_sha256 = payloadHash(baseline);

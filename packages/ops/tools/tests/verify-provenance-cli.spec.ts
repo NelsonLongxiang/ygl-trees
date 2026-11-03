@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(__dirname, "../../../..");
 const BIN = join(ROOT, "dist/bundle/bin.cjs");
 it.skipIf(!existsSync(BIN))("CLI provenance remains visible in reports/archives and changed tree leaves never PASS", () => {
+  mkdirSync(join(ROOT, "tmp"), { recursive: true });
   const home = mkdtempSync(join(ROOT, "tmp/producer-cli-"));
   const cli = (args: string[]) => {
     const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { cwd: home, encoding: "utf8", timeout: 60000,
