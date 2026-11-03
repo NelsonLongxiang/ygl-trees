@@ -18,6 +18,7 @@
 - 结构化 schema 对账门（#185，Refs #176 W5a）：SQLite `SCHEMA_SQL` 与 PG `MIGRATE_DDL`/`MIGRATE_INDEXES` 逐表比对类型类、NOT NULL、DEFAULT、主键、外键、唯一约束与索引；方言差异须登记 `DIALECT_EXCEPTIONS`；抓到并补上 PG 缺失的 `idx_events_kind_entity`。
 - G7 `pg-gate.sh` 在 PG 就绪后自动 `pnpm build` 当前头；`dual-backend-matrix` 每步全量日志落 `tmp/dual-backend-matrix-<ts>/` 并在失败时打印尾部（#189，Refs #178）。
 - G8 `post-release-check` 分步全量日志、失败诊断快照、净化 env 跑 tag 克隆（#181，Refs #178）。
+- 三处测试在仓内 `tmp/` 建临时目录前先递归创建 `tmp/`（全新克隆的 G1 曾 ENOENT；#193，test-only）。
 
 - Refs #162：verify 的 SQLite 单语句判定只把引号（'…' / "…" / `…` / […]）与注释（-- / /* */）之外的分号当语句分隔符；字符串里含分号的合法 SELECT 不再被误判为多语句 ERROR，真正的多语句仍拒绝。TS SqliteRunner 与 Rust yglverify 同算法，共享 tests/fixtures/sql-statements.json 向量。 增补：分隔符后的空白与首尾裁剪两端统一只认 ASCII 0x09–0x0D 与空格（不用 JS \s 或 Unicode White_Space），U+FEFF/U+0085/U+00A0 两侧同判，并补 4 条向量。
 
