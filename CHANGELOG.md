@@ -1,5 +1,24 @@
 ## Unreleased
 
+## 0.120.0
+
+用户可见行为变化：
+
+- **`verify prepare` 必须显式给 `as_of`（非 draft）**（#190，Refs #171 建议 4）：CLI `--as-of <ISO-8601>` / HTTP `as_of`，缺失 → CLI rc=2 / HTTP 400，先于任何 I/O、不落盘、不消耗版本。原先默认取「冻结此刻」，同一材料换时间或换机器重新 prepare 会冻出不同 spec。`--draft` / `draft:true` 仍可省略。`pnpm verify:run` 也要求 `--as-of`；MCP `ygl_verify` 的 prepare 新增 `as_of` 字段。舰队验证器均已显式传 `--as-of`。
+- **PG 业务工作区：schema 版本门 + `db upgrade`**（#186，Refs #176 W5b）：PG 业务命令先比对 `schema_migrations` 与引擎 `SCHEMA_VERSION`，旧于引擎 → rc1 提示 `db upgrade`，新于引擎 → rc1 提示升级 ygl-trees，均不写库。新命令 `YGL_DB_URL=… ygl-trees db upgrade`：单事务 + advisory 锁，按版本步骤升级并收敛 `MIGRATE_INDEXES`（如补 `idx_events_kind_entity`），重跑 `duplicate:true`。`doctor` 新增 `pg_indexes`。
+- **PG 上开放科技树命令**（#187 W1-T1、#191 W1-T2，Refs #176）：`tree new/list/show/use`、`node add/list/show/link/unlink/rm/move/index/validate` 在 PG 业务模式下可用，JSON 输出与 SQLite 一致（真 PG golden 对比）。结构写入取树级 advisory 锁；`tree use --global` 在 PG 上 rc2；其余树命令仍 rc2 拒绝。行为漂移登记 `pg-compat-drift` #10（同毫秒创建节点的 topo/tier 数组并列顺序）。
+- **verify 冻结件可跨机器回装**（#183，Refs #171 建议 1）：`verify export --portable` 导出含 spec/prepare/material/附件的自含件，`verify import <file>` 按原 `spec_id`/`spec_version`/`as_of` 回装，内容哈希不符拒绝，重复导入 rc0 `duplicate:true`。
+- **报告记录测量来源**（#192，Refs #171 建议 3）：`verify run` / `tree run` 接受 `--provenance <json>`（HTTP `provenance`），报告写 `data_source.producer` 与与基线的比较（first/same/changed）。来源变化时 tree 叶子判 STALE（暂行口径：同 spec 版本首份有效测量报告为基线，出新版本即显式 rebaseline，属主可改判）。
+- **构造面作者留痕**（#188，Refs #171 建议 5）：prepare 在 prepare.json / trace.json / `--json` 记录候选与评审作者（`--candidates-author` / `--reviews-author`，HTTP `candidates_author` / `reviews_author`），同作者给 P3a 诊断（不阻塞）；裸作者旗标 rc2。
+- verify SQL 以非 ASCII 空白（U+00A0/U+FEFF/U+3000…）开头时报错点名码位，不再误报「only SELECT/WITH」（#184，Refs #162）。
+- `verify prepare` 的 `--as-of` 用法错误与非法时间在任何 DB/材料 I/O 之前就 rc=2（#180，Refs #175）。
+
+其余：
+
+- 结构化 schema 对账门（#185，Refs #176 W5a）：SQLite `SCHEMA_SQL` 与 PG `MIGRATE_DDL`/`MIGRATE_INDEXES` 逐表比对类型类、NOT NULL、DEFAULT、主键、外键、唯一约束与索引；方言差异须登记 `DIALECT_EXCEPTIONS`；抓到并补上 PG 缺失的 `idx_events_kind_entity`。
+- G7 `pg-gate.sh` 在 PG 就绪后自动 `pnpm build` 当前头；`dual-backend-matrix` 每步全量日志落 `tmp/dual-backend-matrix-<ts>/` 并在失败时打印尾部（#189，Refs #178）。
+- G8 `post-release-check` 分步全量日志、失败诊断快照、净化 env 跑 tag 克隆（#181，Refs #178）。
+
 - Refs #162：verify 的 SQLite 单语句判定只把引号（'…' / "…" / `…` / […]）与注释（-- / /* */）之外的分号当语句分隔符；字符串里含分号的合法 SELECT 不再被误判为多语句 ERROR，真正的多语句仍拒绝。TS SqliteRunner 与 Rust yglverify 同算法，共享 tests/fixtures/sql-statements.json 向量。 增补：分隔符后的空白与首尾裁剪两端统一只认 ASCII 0x09–0x0D 与空格（不用 JS \s 或 Unicode White_Space），U+FEFF/U+0085/U+00A0 两侧同判，并补 4 条向量。
 
 - Refs #171（第2项）：CLI及HTTP的verify prepare/run和树叶执行将实际运行版本（与tree G8相同的env.version来源）写入新spec/报告/归档，不再把应用版本记成0.1.0；旧冻结件和报告不回写，底层独立verify-core包默认版本仍为其自身0.1.0。
