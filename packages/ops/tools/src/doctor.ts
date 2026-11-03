@@ -21,6 +21,7 @@ import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
 import { dirname, join } from "node:path";
 import { orphanRelations } from "./rels";
+import { migrateIndexNames } from "./pgsync";
 import { updateHintFromCache } from "./update-check";
 
 interface Check {
@@ -94,7 +95,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           await ds.query("SELECT 1");
           checks.push({ name: "pg_connectivity", status: "pass", detail: "connected" });
           const migration = await ds.query("SELECT MAX(version) AS version FROM schema_migrations WHERE backend IN ('pg','postgres')");
-          checks.push({ name: "schema_version", status: Number(migration[0]?.version) === SCHEMA_VERSION ? "pass" : "fail", detail: "PG schema migration version " + migration[0]?.version + " (expected " + SCHEMA_VERSION + ")" });
+          checks.push({ name: "schema_version", status: Number(migration[0]?.version) === SCHEMA_VERSION ? "pass" : "fail", detail: "PG schema migration version " + migration[0]?.version + " (expected " + SCHEMA_VERSION + ")" + (Number(migration[0]?.version) < SCHEMA_VERSION ? "; run db upgrade" : "") });
+          // #176 W5b: indexes declared in MIGRATE_INDEXES must exist; db upgrade converges them.
+          const present = new Set((await ds.query("SELECT indexname FROM pg_indexes WHERE schemaname=current_schema()")).map((r: any) => String(r.indexname)));
+          const missingIdx = migrateIndexNames().filter((n) => !present.has(n));
+          checks.push({ name: "pg_indexes", status: missingIdx.length ? "fail" : "pass", detail: missingIdx.length ? "missing: " + missingIdx.join(", ") + "; run db upgrade" : migrateIndexNames().length + " declared indexes present" });
           const binding = await ds.query("SELECT value FROM meta WHERE key=$1", ["backend_binding"]);
           const b = JSON.parse(binding[0]?.value || "null");
           checks.push({ name: "backend_binding", status: b?.mode === "pg" && b.url_hash === pgTargetHash(pgUrl) ? "pass" : "fail", detail: "PG database binding matches workspace target" });
@@ -141,7 +146,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       } else {
         head(ctx, "doctor — PG direct mode");
         for (const c of checks) out(ctx, (c.status === "pass" ? "  ✓ " : c.status === "warn" ? "  · " : "  ✗ ") + c.name + ": " + c.detail);
-        out(ctx, paint(C.dim, "  PG 直连面：db stats | db path | doctor | webui；写/维护面需 SQLite 工作区（去掉 YGL_DB_URL）", ctx.color));
+        out(ctx, paint(C.dim, "  PG 直连面：db stats | db path | db upgrade | doctor | webui；写/维护面需 SQLite 工作区（去掉 YGL_DB_URL）", ctx.color));
       }
       return failed ? 1 : 0;
     })();
