@@ -13,6 +13,12 @@ describe("#124 B8 release gate wiring",()=>{
   expect(s.indexOf("node scripts/dual-backend-matrix.mjs")).toBeGreaterThan(0);
   expect(s.indexOf("node scripts/dual-backend-matrix.mjs --b8-pg-only")).toBeLessThan(s.indexOf("node scripts/dual-backend-matrix.mjs --strict"));
  });
+ it("G7 builds the checked-out head after PG is ready and before any suite runs (no stale dist)",()=>{
+  const g=readFileSync(resolve(root,"scripts/pg-gate.sh"),"utf8");
+  const ready=g.lastIndexOf("pg_isready"),build=g.indexOf("pnpm build >"),b8=g.indexOf("dual-backend-matrix.mjs --b8-pg-only");
+  expect(ready).toBeGreaterThan(-1);expect(build).toBeGreaterThan(ready);expect(b8).toBeGreaterThan(build);
+  expect(g).toMatch(/pnpm build > tmp\/pg-gate-build\.log 2>&1 \|\| \{[^}]*exit 1; \}/);
+ });
  it("release documentation requires actual B8 passed/skipped counts",()=>{
   const s=readFileSync(resolve(root,"docs/release.md"),"utf8");expect(s).toContain("b8_pg");expect(s).toContain("0 skipped");
  });

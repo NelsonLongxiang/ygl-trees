@@ -145,7 +145,7 @@
     },
     {
       "path": "scripts/pg-gate.sh",
-      "sha256": "7e8a8010e636b7ed9c3ce3e2b428ea8d71cf9b0e419a16b309cc9009c4d38a9d",
+      "sha256": "725a92e3f816d1a1baa1334bd534ed93a1ff9d2c2614e3907399eb4ab210f5d0",
       "role": "gate"
     },
     {
@@ -1204,6 +1204,14 @@
       "reason": "Refs #178: run the tag clone with a sanitized env (strip caller toolchain npm_/pnpm_/YGL_ keys) and record which keys were dropped",
       "actor": "dsh/ec4ce7f8",
       "at": "2026-11-03T05:52:18.572Z"
+    },
+    {
+      "path": "scripts/pg-gate.sh",
+      "old_sha256": "7e8a8010e636b7ed9c3ce3e2b428ea8d71cf9b0e419a16b309cc9009c4d38a9d",
+      "new_sha256": "725a92e3f816d1a1baa1334bd534ed93a1ff9d2c2614e3907399eb4ab210f5d0",
+      "reason": "G7 builds the checked-out head after PG is ready (stale dist made 11-03 G7 report false refusals)",
+      "actor": "supervisor seat (Claude-OPS-5.5)",
+      "at": "2026-11-03T11:44:21.546Z"
     }
   ],
   "kind": "engine",
