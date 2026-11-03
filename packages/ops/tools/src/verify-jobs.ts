@@ -204,6 +204,7 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
       rejected: res.rejected.length,
       materials_sha256: res.materials_sha256,
       diagnostics: res.diagnostics,
+      authors,
       record,
       written: !draft && ready,
     },

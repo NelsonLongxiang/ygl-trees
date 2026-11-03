@@ -68,6 +68,20 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(obj.error).toMatch(/usage: verify prepare/);
   });
 
+  it("bare author flags are rc2 before workspace or file I/O", () => {
+    const emptyHome = mkdtempSync(join(REPO, "tmp/author-usage-"));
+    try {
+      for (const flag of ["--candidates-author", "--reviews-author"]) {
+        const r = run(["verify", "prepare", "mat_missing", "--candidates", "missing-c.json", "--reviews", "missing-r.json", "--db", "missing.sqlite", flag, "--json"], { YGL_HOME: emptyHome, YGL_DB_URL: "", YGL_PG_URL: "" });
+        expect(r.rc, r.out + r.err).toBe(2);
+        expect(JSON.parse(r.out).error).toContain(`${flag} needs a value`);
+      }
+      expect(existsSync(join(emptyHome, "ygl-trees.db"))).toBe(false);
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
   it("prepare --as-of 不可解析 → rc=2（用法错误，r22 ②）", () => {
     // 旗标校验先于 I/O：material/db 都不存在也应报用法错误而不是运行错误
     const r = run(["verify", "prepare", "mat_deadbeef0000", "--candidates", "c.json", "--reviews", "r.json", "--db", "s.sqlite", "--as-of", "not-a-time", "--json"]);
