@@ -302,6 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id);
 CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_proj   ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts        ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_events_kind_entity ON events(kind, entity_id, ts);  -- #176 W5a: parity with SCHEMA_SQL (found by the structural gate)
 CREATE INDEX IF NOT EXISTS idx_jobs_enabled     ON jobs(enabled);
 CREATE INDEX IF NOT EXISTS idx_patrol_status    ON patrol_findings(status);
 CREATE INDEX IF NOT EXISTS idx_nodes_tree       ON nodes(tree_id);

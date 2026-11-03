@@ -87,7 +87,7 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 | 生成列 STORED 在旧 PG（<12）不可用 | 低 | 运行时探测 server_version_num，旧版自动降级为 ngram-only（LIKE 仍可查） |
 | tsvector 与 ngram 的召回差异（simple 词典停用词） | 中 | simple 词典基本不停用 CJK bigram；实测中英文 token 命中一致；如现差异可改手工 tsvector 拼接 |
 | 全量同步/迁移在数据增长后变慢 | 低 | 已预留增量方案（updated 游标）；量级触发再实施 |
-| 手写 MIGRATE_DDL 与源 schema 漂移 | 中 | 迁移期列集守卫强制中止（已实测拦截路径存在）；每次 schema 版本变更须跑一次迁移验证 |
+| 手写 MIGRATE_DDL 与源 schema 漂移 | 中 | 两道防线：① 迁移期列集守卫强制中止（已实测拦截路径存在）；② CI 结构门禁 `scripts/schema-parity.mjs`（contract-audit 每次跑，#176 W5a）逐表比对列集、类型类、NOT NULL、DEFAULT、主键、外键（含 ON DELETE）、唯一约束与普通索引，方言上不可能一致的差异须登记在 `DIALECT_EXCEPTIONS` 并写理由（当前 1 条：`events.seq` 的序列默认值）。W5a 上线时抓到并补上了 PG 缺失的 `idx_events_kind_entity`。注意：已迁移的 PG 库没有升级轨，补的索引只对新迁移生效，升级轨见 #176 W5b |
 | optionalDependencies 在 pnpm install 默认装上 pg | 低 | 接受（体积小、无传递依赖） |
 
 ## 7. 建议与下一步

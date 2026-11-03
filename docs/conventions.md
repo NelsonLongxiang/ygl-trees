@@ -17,7 +17,7 @@
 | 5 | db export dataTables | packages/ops/tools/src/db-cmds.ts | 漏了 = 备份静默丢数据（`query_sources` 事故） |
 | 6 | MIRROR_TABLES | packages/ops/tools/src/pgsync.ts | 漏了 = PG 镜像丢数据；可检索表还要加 NGRAM_INPUT 映射 |
 | 7 | stats() | packages/research/pipeline/src/reads.ts | `db stats` / `agent brief` 的口径；漏了 = 计数审计失真 |
-| 8 | MIGRATE_DDL | packages/ops/tools/src/pgsync.ts | 手写全保真 DDL（FK/UNIQUE/索引）；**漂移守卫**会在迁移期拦截漏改，但别依赖它兜底 |
+| 8 | MIGRATE_DDL | packages/ops/tools/src/pgsync.ts | 手写全保真 DDL（FK/UNIQUE/索引，索引在 `MIGRATE_INDEXES`）；`scripts/schema-parity.mjs` 在 CI 里逐表比对列集与结构（类型/NOT NULL/DEFAULT/主键/外键/唯一/索引），漏改即红；方言差异只能登记进 `DIALECT_EXCEPTIONS` 并写理由 |
 | 9 | TypeORM 实体 | packages/research/pipeline/src/entities.ts + packages/core/database/src/entities.ts | schema 的类型化快照，**与 SCHEMA_SQL 同 commit 改**；`synchronize` 永久 false |
 | ✓ | 验收面 | examples/demo.sh | 新行为要有断言；跨库操作加计数审计（对照 `db stats --json`） |
 
