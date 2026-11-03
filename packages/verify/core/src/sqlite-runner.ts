@@ -12,6 +12,41 @@ import { openDatabaseSync } from "./sqlite-bindings";
 
 import { extractTables, type QueryRunner, type Row } from "./engine";
 
+/**
+ * 单语句判定（#162）：只把引号、标识符与注释之外的分号当语句分隔符。
+ * 返回去掉末尾分隔符后的语句；顶层分号之后若还有非空白内容则返回 null。
+ * 未闭合的引号/注释原样交给 SQLite，由 prepare 报错。Rust 端 sqlite.rs 同算法。
+ */
+export function singleStatement(sql: string): string | null {
+  let i = 0;
+  const n = sql.length;
+  while (i < n) {
+    const c = sql[i];
+    if (c === "'" || c === '"' || c === "`") {
+      i++;
+      while (i < n) {
+        if (sql[i] === c) {
+          if (sql[i + 1] === c) i += 2; // doubled quote = escaped quote
+          else break;
+        } else i++;
+      }
+      i++;
+    } else if (c === "[") {
+      const end = sql.indexOf("]", i + 1);
+      i = end < 0 ? n : end + 1;
+    } else if (c === "-" && sql[i + 1] === "-") {
+      const end = sql.indexOf("\n", i + 2);
+      i = end < 0 ? n : end + 1;
+    } else if (c === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      i = end < 0 ? n : end + 2;
+    } else if (c === ";") {
+      return /\S/.test(sql.slice(i + 1)) ? null : sql.slice(0, i).trimEnd();
+    } else i++;
+  }
+  return sql;
+}
+
 export interface SqliteRunnerOptions {
   /** 打开后立即执行的只读设置（如 PRAGMA query_only） */
   queryOnly?: boolean;
@@ -41,10 +76,11 @@ export class SqliteRunner implements QueryRunner {
     if (!/^(select|with)\b/i.test(trimmed)) {
       throw new Error(`only SELECT/WITH allowed (read-only contract): ${trimmed.slice(0, 40)}`);
     }
-    if (/;\s*\S/.test(trimmed)) {
+    const clean = singleStatement(trimmed);
+    if (clean === null) {
       throw new Error("multi-statement SQL rejected (single statement contract)");
     }
-    const stmt = this.db.prepare(trimmed.replace(/;\s*$/, ""));
+    const stmt = this.db.prepare(clean);
     const rows = stmt.all() as Row[];
     return rows;
   }
