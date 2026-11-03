@@ -18,7 +18,8 @@ import { Env } from "../../../core/database/src/types";
 import { AsyncTreeStore } from "./async-store";
 import { ok, bad, out, head, table, show, paint, C, ack, warn } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
-import { getOrm } from "../../../core/database/src/orm";
+import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { currentSelectionVia, resolveProject, selectionChangeWarning, sessionId } from "../../../core/database/src/selection";
 import * as treeWrites from "./writes";
 import {
@@ -51,12 +52,15 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   const flagBool = (k: string) => args.flags[k] === true || args.flags[k] === "true" || args.flags[k] === "1";
 
   /** tree-domain write through the transactional service (async command). */
-  function runTreeWrite<T>(fn: (ds: any) => Promise<T>, print: (r: T) => number): Promise<number> {
-    return getOrm(env.db.path)
+  function runTreeWrite<T>(fn: (ds: any) => Promise<T>, print: (r: T) => number | Promise<number>): Promise<number> {
+    // #176 W1-T1: PG business mode writes through the PG ORM; driver errors stay masked (pgFailure).
+    return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
       .then(fn)
       .then(print)
       .catch(async (e: any): Promise<number> => {
-        bad(ctx, await enrichNodeNotFound(e?.message || String(e)));
+        const msg = e?.message || String(e);
+        const known = /^(node|parent|child|tree) not found: |^no tree selected/.test(msg);
+        bad(ctx, env.pgUrl && !known && !(e instanceof PgCapabilityError) ? pgFailure() : await enrichNodeNotFound(msg));
         return 1;
       });
   }
@@ -65,6 +69,14 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
    *  session flipping current_tree/current_project becomes observable
    *  (agent brief surfaces it; db timeline shows the history). Session
    *  identity comes from YGL_SESSION (agents that care can set it). */
+  /** PG twin of logSelectionEvent: same row, written through the async store; telemetry never blocks. */
+  async function pgLogSelection(kind: "tree.use" | "project.use", name: string): Promise<void> {
+    try {
+      const ev = await trees.logSelection(kind, name);
+      emitEvent({ kind, entity: kind === "tree.use" ? "tree" : "project", entityId: name, payload: ev.payload, ts: ev.ts });
+    } catch { /* telemetry only */ }
+  }
+
   function logSelectionEvent(database: any, kind: "tree.use" | "project.use", name: string): void {
     try {
       const evTs = new Date().toISOString();
@@ -125,7 +137,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       const pid = flagStr("project");
       let proj: any = null;
       if (pid) {
-        proj = db.get("SELECT id, name FROM projects WHERE name=?", [pid]);
+        proj = env.pgUrl ? await trees.projectByName(pid) : db.get("SELECT id, name FROM projects WHERE name=?", [pid]);
         // R16.5: an unknown --project used to silently fall through to a
         // workspace-level tree (proj?.id || "") — name it instead.
         if (!proj) {
@@ -133,10 +145,15 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 2;
         }
       }
-      return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), (t): number => {
+      return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), async (t): Promise<number> => {
         // R16.2: session-scoped selection — global pointer untouched.
-        db.metaSet(`current_tree@${sessionId()}`, t.name);
-        logSelectionEvent(db, "tree.use", t.name);
+        if (env.pgUrl) {
+          await trees.metaSet(`current_tree@${sessionId()}`, t.name);
+          await pgLogSelection("tree.use", t.name);
+        } else {
+          db.metaSet(`current_tree@${sessionId()}`, t.name);
+          logSelectionEvent(db, "tree.use", t.name);
+        }
         ack(
           ctx,
           t,
@@ -167,7 +184,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         bad(ctx, `tree not found: ${selT.name || name || "(none selected)"}`);
         return 1;
       }
-      const stats = db.get(
+      const stats = env.pgUrl ? await trees.treeStats(t.id) : db.get(
         `SELECT (SELECT COUNT(*) FROM nodes n WHERE n.tree_id=?) AS nodes,
                 (SELECT COUNT(*) FROM node_edges e WHERE e.tree_id=?) AS edges,
                 (SELECT COUNT(*) FROM node_state s WHERE s.tree_id=? AND s.status='unlocked') AS unlocked`,
@@ -199,8 +216,9 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       // as current is suspicious (parallel session / stale pointer) — WARN,
       // don't block; the tree itself is still readable.
       if (t.project_id) {
-        const owner = db.get("SELECT name FROM projects WHERE id=?", [t.project_id]);
-        const projSel = resolveProject(db, flagStr("project"));
+        const ownerName = env.pgUrl ? await trees.projectNameById(t.project_id) : null;
+        const owner = env.pgUrl ? (ownerName === null ? null : { name: ownerName }) : db.get("SELECT name FROM projects WHERE id=?", [t.project_id]);
+        const projSel = env.pgUrl ? await trees.pgProjectSelection(flagStr("project") || undefined) : resolveProject(db, flagStr("project"));
         if (owner && projSel.id && projSel.id !== t.project_id) {
           warn(
             ctx,
@@ -211,9 +229,15 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       // R16.2: session key by default; --global opts into the migration fallback.
       const scope = args.flags.global === true || args.flags.global === "true" ? "global" : "session";
       const sid = sessionId();
-      const treeCount = Number((db.get("SELECT COUNT(*) AS n FROM trees") as any)?.n ?? 0);
-      db.metaSet(scope === "global" ? "current_tree" : `current_tree@${sid}`, name);
-      logSelectionEvent(db, "tree.use", name);
+      const treeCount = env.pgUrl ? await trees.treeCount() : Number((db.get("SELECT COUNT(*) AS n FROM trees") as any)?.n ?? 0);
+      if (env.pgUrl) {
+        if (scope === "global") { bad(ctx, "PG tree use does not support --global; selection is session-scoped"); return 2; }
+        await trees.metaSet(`current_tree@${sid}`, name);
+        await pgLogSelection("tree.use", name);
+      } else {
+        db.metaSet(scope === "global" ? "current_tree" : `current_tree@${sid}`, name);
+        logSelectionEvent(db, "tree.use", name);
+      }
       // 0.114.22 (K3 #K3-3): the tree side gets the same shared-bucket signal as
       // `project use` — a bare shell writes `current_tree@default`, which every
       // other session-less agent then follows.
@@ -367,21 +391,21 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     // Keys and tree names never contain '/', so the first slash unambiguously
     // splits when the head names an existing tree. Cross-tree link refs are
     // refused (edges stay single-tree); a qualified ref overrides -t.
-    const unqualify = (s: string): { ref: string; treeName?: string } => {
+    const unqualify = async (s: string): Promise<{ ref: string; treeName?: string }> => {
       let ref = String(s ?? "");
       if (ref.startsWith("node:")) ref = ref.slice(5);
       const i = ref.indexOf("/");
       if (i > 0) {
         const head = ref.slice(0, i);
-        const t = db.get("SELECT name FROM trees WHERE name=? OR id=?", [head, head]) as any;
+        const t = (await trees.treeByName(head)) as any;
         if (t) return { ref: ref.slice(i + 1), treeName: t.name };
       }
       return { ref };
     };
     if (rest[0] !== undefined) {
-      const q = unqualify(rest[0]);
+      const q = await unqualify(rest[0]);
       if (q.treeName && q.treeName !== tree.name) {
-        const t2 = db.get("SELECT * FROM trees WHERE name=?", [q.treeName]) as any;
+        const t2 = (await trees.treeByName(q.treeName)) as any;
         if (!t2) { bad(ctx, `tree not found: ${q.treeName}`); return 1; }
         tree = t2; tid = t2.id; rest[0] = q.ref;
       } else if (q.ref !== rest[0]) {
@@ -389,7 +413,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
     }
     if (sub === "link" && rest[1] !== undefined) {
-      const q2 = unqualify(rest[1]);
+      const q2 = await unqualify(rest[1]);
       if (q2.treeName && q2.treeName !== tree.name) {
         bad(ctx, `cross-tree link refused: '${rest[1]}' lives in tree '${q2.treeName}' but the parent is in '${tree.name}' — edges stay single-tree`);
         return 2;
@@ -429,7 +453,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         tags: flagStr("tags"),
       };
       return runTreeWrite((ds) => treeWrites.nodeAdd(ds, tid, spec), (r): number => {
-        const warning = selectionChangeWarning(env.db, "tree", (currentSelectionVia() || "none") as any);
+        const warning = env.pgUrl ? undefined : selectionChangeWarning(env.db, "tree", (currentSelectionVia() || "none") as any);
         if (warning) {
           process.stderr.write(`  note: ${warning}\n`);
           if (ctx.json) {
