@@ -30,6 +30,62 @@ fn value_of(raw: ValueRef<'_>) -> Value {
 }
 
 /// 取首列（TS `Object.values(row)[0]`）。
+/// 单语句判定（#162）：只把引号、标识符与注释之外的分号当语句分隔符，
+/// 与 TS `singleStatement`（packages/verify/core/src/sqlite-runner.ts）同算法、同向量。
+/// 返回去掉末尾分隔符后的语句；顶层分号之后还有非空白内容则返回 None。
+pub fn single_statement(sql: &str) -> Option<&str> {
+    let b = sql.as_bytes();
+    let n = b.len();
+    let mut i = 0;
+    while i < n {
+        let c = b[i];
+        match c {
+            b'\'' | b'"' | b'`' => {
+                i += 1;
+                while i < n {
+                    if b[i] == c {
+                        if i + 1 < n && b[i + 1] == c {
+                            i += 2;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                i += 1;
+            }
+            b'[' => {
+                i = match sql[i + 1..].find(']') {
+                    Some(off) => i + 1 + off + 1,
+                    None => n,
+                };
+            }
+            b'-' if i + 1 < n && b[i + 1] == b'-' => {
+                i = match sql[i + 2..].find('\n') {
+                    Some(off) => i + 2 + off + 1,
+                    None => n,
+                };
+            }
+            b'/' if i + 1 < n && b[i + 1] == b'*' => {
+                i = match sql[i + 2..].find("*/") {
+                    Some(off) => i + 2 + off + 2,
+                    None => n,
+                };
+            }
+            b';' => {
+                return if sql[i + 1..].chars().any(|ch| !ch.is_whitespace()) {
+                    None
+                } else {
+                    Some(sql[..i].trim_end())
+                };
+            }
+            _ => i += 1,
+        }
+    }
+    Some(sql)
+}
+
 pub fn first_value(row: &Row) -> Option<&Value> {
     row.first().map(|(_, v)| v)
 }
@@ -59,13 +115,8 @@ impl SqliteRunner {
                 &trimmed.chars().take(40).collect::<String>()
             ));
         }
-        let mut semis = trimmed.match_indices(';');
-        if let Some((idx, _)) = semis.next() {
-            if trimmed[idx + 1..].trim().chars().any(|c| !c.is_whitespace()) {
-                return Err("multi-statement SQL rejected (single statement contract)".into());
-            }
-        }
-        let clean = trimmed.trim_end_matches(|c: char| c == ';' || c.is_whitespace());
+        let clean = single_statement(trimmed)
+            .ok_or_else(|| "multi-statement SQL rejected (single statement contract)".to_string())?;
         let mut stmt = self.conn.prepare(clean).map_err(|e| format!("prepare failed: {e}"))?;
         let names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
         let mut rows = stmt.query([]).map_err(|e| format!("query failed: {e}"))?;

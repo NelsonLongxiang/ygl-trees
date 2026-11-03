@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Refs #162：verify 的 SQLite 单语句判定只把引号（'…' / "…" / `…` / […]）与注释（-- / /* */）之外的分号当语句分隔符；字符串里含分号的合法 SELECT 不再被误判为多语句 ERROR，真正的多语句仍拒绝。TS SqliteRunner 与 Rust yglverify 同算法，共享 tests/fixtures/sql-statements.json 向量。
+
 - Refs #171（第2项）：CLI及HTTP的verify prepare/run和树叶执行将实际运行版本（与tree G8相同的env.version来源）写入新spec/报告/归档，不再把应用版本记成0.1.0；旧冻结件和报告不回写，底层独立verify-core包默认版本仍为其自身0.1.0。
 
 - Refs #168：bundle命令显式指定本仓tsdown.config.mjs，不读取父目录配置；G1校验文件真实路径属于本仓并记录该绝对路径。父目录可执行decoy回归保证未加载且输出全目录逐字节一致，未改压缩策略或ratchet基线。
