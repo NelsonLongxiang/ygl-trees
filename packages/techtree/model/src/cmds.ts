@@ -537,7 +537,8 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         return runTreeWrite(
           (ds) => treeWrites.condRemove(ds, tid, cKey!, name),
           (r): number => {
-            ok(ctx, `condition removed: ${cKey} · ${name}  (was ${r.required ? "必检" : "可选"}/${r.effect})`);
+            // --json write receipt (#176 W1-T3 golden on #194 caught the bare text here): the removed row + node key
+            ack(ctx, { node: cKey, ...r }, `condition removed: ${cKey} · ${name}  (was ${r.required ? "必检" : "可选"}/${r.effect})`);
             return 0;
           }
         );
