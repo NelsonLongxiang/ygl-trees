@@ -238,7 +238,7 @@ ygl-trees job add "闸门探针" --every 30 -- node probe.mjs   # 树节奏化�
   - 批1：`kb add` / `project new`；读回 `kb list/show`、`project list/show`。
   - 批2：`research source/evidence/claim add/list/show`（file/batch 语义原样）；session-only `project use`（返回 prior、发事件、归档拒选、`--global` 拒绝）。
   - 批3：`research query add/attach/list`、`research claim link/unlink/resolve/unresolve`、`research source/evidence rm`、`kb link/import`。
-  - #176 W1-T1（科技树第一片）：`tree new/list/show/use`、`node add/list/show`；输出与 SQLite 逐字段一致（键序按二进制、计数是数字）；`tree use` 只写会话选择，`--global` rc2；`node link/index/unlock/search` 等其余树命令仍 rc2 拒绝。
+  - #176 W1-T1（科技树第一片）：`tree new/list/show/use`、`node add/list/show`；输出与 SQLite 逐字段一致（键序按二进制、计数是数字）；`tree use` 只写会话选择，`--global` rc2；W1-T2 加上 `node link/unlink/rm/move/index/validate`（PG 上结构写取树级锁；`validate` 会刷新派生索引）；`node cond/unlock/lock/can/ready/path/search/export/import` 等其余树命令仍 rc2 拒绝。
 - 语义保持：项目读取 flag→env→session→唯一项目（不读全局最近项目，多项目缺选择 rc2）；claims 两后端均无全文检索；预测不自动结算；`research claim resolve` 不是 agent 仲裁授权；删除默认保护，`--force` 只删精确锥；import 先预检再整批事务；`research query attach` 成功/重复在两后端都是单 JSON（重复带 `duplicate:true`，rc0）。
 - 拒绝而不猜：PG 缺所需列点名拒绝（不自动 ALTER）；最大 ts 仲裁组 NULL seq 歧义拒绝；其他未列 mutation、`project rm/restore/archive/global` 与 verify-on-PG 一律拒绝/明确 skip（verify 保持 SQLite 快照链）。
 

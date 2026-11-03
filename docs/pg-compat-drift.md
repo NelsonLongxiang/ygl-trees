@@ -28,6 +28,7 @@ kind: 参考
 | 7 | 2026-10-25 | `datetime('now', '-N days')` | SQLite 相对时间函数 | PG 无此写法（`now() - interval`） | cutoff 在 JS 计算后作参数传入（`WHERE ts >= ?`） | 已修（#77②） |
 | 8 | 2026-10-25 | `rowid` 排序 | SQLite 隐式 rowid | PG 无 rowid（需显式序列列） | `events` 用 `ts DESC`（有索引，等价排序） | 已修（#77②） |
 | 9 | 2026-10-25 | 同步委托面 | 委托层直接调同步 `Store`/`TreeStore`（SQLite 同步 API） | PG 驱动全异步——同步调用无法到达 | `AsyncDb.dialect` 标记；非 sqlite 方言调用同步委托 **fail-closed 抛错**（`assertSyncDelegationAllowed`） | 已修（#77③） |
+| 10 | 2026-11-03 | 科技树 `buildIndex` 节点读取顺序（`node index` / `node validate` 产出的 topo_order、tiers 数组顺序） | 无 `ORDER BY`，返回 rowid（插入）顺序 | 无 rowid；显式 `ORDER BY created, id` | 计数、门槛、解锁判定与 tier 值两端一致；仅当多个节点在**同一毫秒**创建时，数组内并列项的先后可能不同。SQLite 侧不改（避免改动既有输出），golden 用例只用跨进程逐个创建的节点（无同毫秒并列） | 已登记（#176 W1-T2） |
 
 ## 纪律
 
