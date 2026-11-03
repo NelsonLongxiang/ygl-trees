@@ -1067,6 +1067,32 @@ const ACTION_FLAGS: Record<string, string[]> = {
   signature: ["keys", "expect-key"],
 };
 
+/** `verify prepare` 的用法串：命令体内校验与 bin 层前置校验共用，避免两处措辞漂移。 */
+const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+/** `--as-of` 的用法提示（r22 ②）：CLI rc=2 与 HTTP 400 共用同一句。 */
+const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-20T09:00:00+08:00)";
+
+/**
+ * 纯旗标面用法校验（#175）：`--as-of` 这类旗标错误必须在任何 store/db/material/blob I/O
+ * 之前判成 rc=2。bin 层的工作区 db 门禁（缺库 rc=1）与 bootApp 开库都早于命令分发，
+ * 所以缺库或库打不开时，命令体内的校验根本轮不到——把用法错误降级成了运行错误。
+ * 这里只做不碰 I/O 的旗标校验，供 bin 在门禁之前调用；返回 null 表示旗标面合法。
+ */
+export function preflightUsage(action: string, rest: string[], args: any): string | null {
+  if (action !== "prepare") return null;
+  const materialId = rest[0];
+  const candidatesPath = String(args.flags.candidates || "");
+  const reviewsPath = String(args.flags.reviews || "");
+  const dbPath = lastDbFlag(args.flags.db);
+  if (!materialId || !candidatesPath || !reviewsPath || !dbPath) return USAGE_PREPARE;
+  try {
+    normalizeAsOf(args.flags["as-of"], new Date().toISOString());
+  } catch (e: any) {
+    return `${e.message} ${AS_OF_USAGE_HINT}`;
+  }
+  return null;
+}
+
 /** 密钥表：--keys > $YGL_VERIFY_KEYS > $YGL_HOME/verify/keys/signing-keys.json；都没有返回 null。 */
 function loadKeyTable(env: Env, args: any): SigningKeyTable | null {
   const explicit = args.flags.keys ? String(args.flags.keys) : process.env.YGL_VERIFY_KEYS;
@@ -1427,7 +1453,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const reviewsPath = String(args.flags.reviews || "");
       const dbPath = lastDbFlag(args.flags.db);
       if (!materialId || !candidatesPath || !reviewsPath || !dbPath) {
-        bad(ctx, "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> [--spec-version N] [--draft] [--as-of <ISO-8601>] [--meta-repo <verifier-root> | --require-meta | --no-meta]");
+        bad(ctx, USAGE_PREPARE);
         return 2;
       }
       // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
@@ -1436,7 +1462,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       try {
         asOf = normalizeAsOf(args.flags["as-of"], new Date().toISOString());
       } catch (e: any) {
-        bad(ctx, `${e.message} (--as-of expects an ISO-8601 timestamp, e.g. 2026-10-20T09:00:00+08:00)`);
+        bad(ctx, `${e.message} ${AS_OF_USAGE_HINT}`);
         return 2;
       }
       let material: MaterialRecord;

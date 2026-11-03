@@ -561,6 +561,14 @@ export async function main(argv: string[]): Promise<number> {
       } catch (e) { await closeOrm(); throw e; }
     } catch (e: any) { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; }
   }
+  // #175: 用法错误（rc=2）必须先于工作区 db 门禁与开库——缺库或库打不开时，
+  // 命令体内的旗标校验根本轮不到，--as-of 这类用法错误会被降级成 rc=1 运行错误。
+  // 这里只跑不碰 I/O 的旗标面校验（不读 material/candidates、不碰 db）。
+  if (group === "verify" && action) {
+    const { preflightUsage } = await import("../../../packages/ops/tools/src/verify-cmds");
+    const usageProblem = preflightUsage(action, args._.slice(2), args);
+    if (usageProblem) { bad(ctx, usageProblem); return 2; }
+  }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
