@@ -150,7 +150,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "432047a194c604d314aca17126a3e13ec4364fea00f400cfd8798daf12973cf1",
+      "sha256": "1f6839a6ae9c31c93563496751494f8a4eb9c8880e58b22ca4b23a2e89a8d278",
       "role": "gate"
     },
     {
@@ -1196,6 +1196,14 @@
       "reason": "Refs #178: add a failure-time diagnostics snapshot (dist/bundle inventory, tag HEAD, log sizes) written next to the kept work dir",
       "actor": "dsh/ec4ce7f8",
       "at": "2026-11-03T04:42:08.376Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "432047a194c604d314aca17126a3e13ec4364fea00f400cfd8798daf12973cf1",
+      "new_sha256": "1f6839a6ae9c31c93563496751494f8a4eb9c8880e58b22ca4b23a2e89a8d278",
+      "reason": "Refs #178: run the tag clone with a sanitized env (strip caller toolchain npm_/pnpm_/YGL_ keys) and record which keys were dropped",
+      "actor": "dsh/ec4ce7f8",
+      "at": "2026-11-03T05:52:18.572Z"
     }
   ],
   "kind": "engine",

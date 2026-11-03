@@ -47,6 +47,23 @@ function run(cmd, args, { cwd, env, logName, timeout = 45 * 60_000 } = {}) {
   }
 }
 
+/**
+ * 克隆内跑 pnpm/git 用的**净化环境**（#178）：G8 常在 pnpm/宿主工具的 lifecycle 环境里被调用，
+ * process.env 会带上 npm_lifecycle_event=dsh、npm_package_json=<别的仓>、PNPM_SCRIPT_SRC_DIR、
+ * npm_config_user_agent 之类，以及宿主的 YGL_SESSION——它们会漏进被验证仓库的构建与测试，
+ * 让「干净机器上能过」的链在这里红。这里只去掉属于**调用方工具链**的键，保留 PATH/HOME/TEMP 等。
+ */
+const droppedEnv = new Set();
+function cloneEnv() {
+  const drop = /^(npm_|pnpm_|PNPM_|YGL_|INIT_CWD$)/i;
+  const e = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (drop.test(k)) droppedEnv.add(k);
+    else e[k] = v;
+  }
+  return e;
+}
+
 /** 失败时把日志尾部带回记录里（仅作摘要，完整日志在 logFile）。 */
 function tail(logFile, n = 400) {
   try {
@@ -122,10 +139,10 @@ try {
     const c = run("git", ["clone", "-q", "-b", `v${version}`, "https://github.com/NelsonLongxiang/ygl-trees.git", tagDir], { env: process.env, logName: "git-clone.log" });
     rec(c.logFile);
     must("tag clone", c);
-    const i = run("pnpm", ["install", "--frozen-lockfile"], { cwd: tagDir, env: process.env, logName: "tag-install.log" });
+    const i = run("pnpm", ["install", "--frozen-lockfile"], { cwd: tagDir, env: cloneEnv(), logName: "tag-install.log" });
     rec(i.logFile);
     must("tag install", i);
-    const t = run("pnpm", ["test"], { cwd: tagDir, env: process.env, logName: "tag-test.log" });
+    const t = run("pnpm", ["test"], { cwd: tagDir, env: cloneEnv(), logName: "tag-test.log" });
     rec(t.logFile); // 失败时这条才是要看的日志
     must("tag pnpm test", t);
     return `tag clone pnpm test rc0 (log: tag-test.log, ${t.bytes} bytes)`;
@@ -159,6 +176,8 @@ try {
     work_dir: failed ? WORK : null,
     logs_dir: failed ? LOGS : null,
     diagnostics: diagFile,
+    // #178: 克隆内跑 pnpm 前被摘掉的调用方工具链键（可核对环境是否干净）
+    env_dropped: [...droppedEnv].sort(),
   };
   console.log(JSON.stringify(record, null, 2));
   if (failed) {
