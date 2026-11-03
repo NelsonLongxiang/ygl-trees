@@ -77,6 +77,36 @@ describe.skipIf(!hasBundle)("verify 命令面（发布产物）", () => {
     expect(obj.error).toMatch(/ISO-8601/);
   });
 
+  it("#175 无工作区 db 时 prepare --as-of 不可解析仍是 rc=2（用法错误先于 I/O）", () => {
+    // 缺库时旧实现先撞 bin 层的 "no database at ..."（rc=1），把用法错误降级成运行错误。
+    const emptyHome = mkdtempSync(join(tmpdir(), "ygl-verify-cli-nodb-"));
+    try {
+      const r = run(["verify", "prepare", "mat_deadbeef0000", "--candidates", "c.json", "--reviews", "r.json", "--db", "s.sqlite", "--as-of", "not-a-time", "--json"], { YGL_HOME: emptyHome });
+      expect(r.rc).toBe(2);
+      const obj = JSON.parse(r.out) as { error: string };
+      expect(obj.error).toMatch(/as_of/);
+      expect(obj.error).toMatch(/ISO-8601/);
+      expect(obj.error).not.toMatch(/no database/);
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it("#175 库打不开时 prepare --as-of 不可解析仍是 rc=2（开库错误不抢占用法错误）", () => {
+    // 库文件在但打不开（旧实现 bootApp 先报 "cannot open database ..." rc=1）。
+    const brokenHome = mkdtempSync(join(tmpdir(), "ygl-verify-cli-brokendb-"));
+    try {
+      writeFileSync(join(brokenHome, "ygl-trees.db"), "this is not a sqlite database");
+      const r = run(["verify", "prepare", "mat_deadbeef0000", "--candidates", "c.json", "--reviews", "r.json", "--db", "s.sqlite", "--as-of", "not-a-time", "--json"], { YGL_HOME: brokenHome });
+      expect(r.rc).toBe(2);
+      const obj = JSON.parse(r.out) as { error: string };
+      expect(obj.error).toMatch(/as_of/);
+      expect(obj.error).not.toMatch(/cannot open database/);
+    } finally {
+      rmSync(brokenHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
   it("run 未知 spec → rc=1（运行错误，不是用法错误）", () => {
     const db = join(home, "snap.sqlite");
     const d = new DatabaseSync(db);
