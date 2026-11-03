@@ -367,7 +367,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
   if (env.group === "node" && action === "ready" && args?.flags?.all === true) {
     const state = parseState(args);
     const ctxName = flagStr("context", "default");
-    const all = db.all("SELECT id, name FROM trees ORDER BY created") as any[];
+    const all = (await trees.query("SELECT id, name FROM trees ORDER BY created")) as any[];
     const per: any[] = [];
     for (const t of all) {
       const rows = await trees.ready(t.id, ctxName, state);

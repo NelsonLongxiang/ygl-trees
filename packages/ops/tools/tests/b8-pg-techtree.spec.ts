@@ -110,6 +110,28 @@ describe.skipIf(!adminUrl)("#176 W1-T1 techtree on PG (golden vs SQLite)", () =>
     both(["node", "list"]);
   }, 240000);
 
+  it("T3 state and queries: cond / can / unlock / lock / ready / path / graph reads match SQLite", () => {
+    both(["tree", "use", "w1-tree"]);
+    both(["node", "link", "a", "B"]);
+    both(["node", "cond", "add", "B", "--name", "lvl", "--op", ">=", "--value", "2"]);
+    both(["node", "cond", "add", "B", "--name", "promo", "--op", ">=", "--value", "1", "--optional", "--effect", "cost_mul", "--weight", "0.5"]);
+    expect(both(["node", "can", "B"]).json).toMatchObject({ ok: false });
+    both(["node", "unlock", "a"]);
+    expect(both(["node", "can", "B", "--state", "lvl=2"]).json).toMatchObject({ ok: true, cost_multiplier: 1 });
+    expect(both(["node", "can", "B", "--state", "lvl=2,promo=1"]).json).toMatchObject({ ok: true, cost_multiplier: 0.5 });
+    both(["node", "ready"]);
+    both(["node", "ready", "--state", "lvl=2"]);
+    both(["node", "path", "B"]);
+    both(["node", "ancestors", "B"]);
+    both(["node", "descendants", "a"]);
+    both(["node", "parents", "B"]);
+    both(["node", "children", "a"]);
+    both(["node", "cond", "B"]);
+    both(["node", "cond", "rm", "B", "--name", "promo"]);
+    both(["node", "lock", "a"]);
+    both(["node", "ready", "--all"]);
+  }, 300000);
+
   it("commands outside T1/T2 stay refused on PG with rc 2 and name the open faces", () => {
     const r = cli("pg", ["node", "unlock", "a", "--json"]);
     expect(r.rc).toBe(2);

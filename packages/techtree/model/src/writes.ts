@@ -592,6 +592,7 @@ export async function condAdd(
   }
 ): Promise<Record<string, any>> {
   return runTx(ds, async (mgr) => {
+    await lockTree(mgr, treeId); // #176 W1-T3: check-then-insert on node_conditions must not race on PG
     const n = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!n.length) throw new Error(`node not found: ${keyOrId}`);
     const kind = o.kind || "flag";
@@ -650,6 +651,7 @@ export async function condRemove(
   name: string
 ): Promise<Record<string, any>> {
   return runTx(ds, async (mgr) => {
+    await lockTree(mgr, treeId); // #176 W1-T3: check-then-insert on node_conditions must not race on PG
     const n = (await mgr.query(`SELECT id FROM nodes WHERE tree_id=? AND (key=? OR id=?)`, [treeId, keyOrId, keyOrId])) as any[];
     if (!n.length) throw new Error(`node not found: ${keyOrId}`);
     const existing = (await mgr.query(`SELECT * FROM node_conditions WHERE node_id=? AND name=?`, [n[0].id, name])) as any[];

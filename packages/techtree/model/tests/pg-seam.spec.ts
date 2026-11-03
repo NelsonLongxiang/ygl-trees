@@ -50,19 +50,26 @@ describe.skipIf(!existsSync(BIN))("#176 W1-T1 PG boot gate for techtree (unreach
       return { rc: r.status, out: r.stdout || "", text: (r.stdout || "") + (r.stderr || "") };
     } finally { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
   };
-  it.each([["tree", "list"], ["tree", "new", "x"], ["node", "add", "k"], ["node", "list"], ["node", "show", "k"], ["node", "link", "a", "b"], ["node", "unlink", "a", "b"], ["node", "rm", "a"], ["node", "move", "a", "--to", "t"], ["node", "index"], ["node", "validate"]])(
+  it.each([["tree", "list"], ["tree", "new", "x"], ["node", "add", "k"], ["node", "list"], ["node", "show", "k"], ["node", "link", "a", "b"], ["node", "unlink", "a", "b"], ["node", "rm", "a"], ["node", "move", "a", "--to", "t"], ["node", "index"], ["node", "validate"], ["node", "cond", "a"], ["node", "cond", "add", "a", "--name", "n"], ["node", "unlock", "a"], ["node", "lock", "a"], ["node", "can", "a"], ["node", "ready"], ["node", "ready", "--all"], ["node", "path", "a"], ["node", "parents", "a"], ["node", "children", "a"], ["node", "ancestors", "a"], ["node", "descendants", "a"]])(
     "opened face %s %s reaches PG (rc 1 masked failure, not the rc 2 refusal)", (...args) => {
       const r = run(args);
       expect(r.rc, r.text).toBe(1);
       expect(JSON.parse(r.out).error).not.toMatch(/needs the SQLite workspace face/);
       expect(r.text).not.toMatch(/127\.0\.0\.1:1/);
     }, 60_000);
-  it.each([["node", "unlock", "a"], ["node", "search", "q"], ["node", "cond", "a"], ["node", "ready"], ["node", "export"]])(
+  it.each([["node", "search", "q"], ["node", "export"], ["node", "import", "--file", "x.json"]])(
     "face outside T1 %s %s is refused with rc 2", (...args) => {
       const r = run(args);
       expect(r.rc).toBe(2);
-      expect(JSON.parse(r.out).error).toMatch(/tree new\/list\/show\/use \| node add\/list\/show\/link\/unlink\/rm\/move\/index\/validate/);
+      expect(JSON.parse(r.out).error).toMatch(/node add\/list\/show\/link\/unlink\/rm\/move\/index\/validate\/cond\/unlock\/lock\/can\/ready\/path/);
     }, 60_000);
+  it.each([["node", "can", "a", "--eval"], ["node", "ready", "--eval"], ["node", "cond", "--due"]])(
+    "%s %s %s: decision-model and cross-tree sweeps stay rc2 on PG before any connection", (...args) => {
+      const r = run(args);
+      expect(r.rc, r.text).toBe(2);
+      expect(JSON.parse(r.out).error).toMatch(/PG mode: node (--eval|cond --due)/);
+    }, 60_000);
+
   it("tree use --global is a usage error on PG before any connection", () => {
     expect(run(["tree", "use", "x", "--global"]).rc).toBe(2);
   }, 60_000);
