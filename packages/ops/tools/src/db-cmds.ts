@@ -3,8 +3,9 @@ import * as fs from "node:fs";
 import { Env, lastFlagOf } from "../../../core/database/src/types";
 import { redactPgUrl } from "../../../core/database/src/asyncdb";
 import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
-import { clearLockDir, dbPath, pidAlive, takeoverLockDir } from "../../../core/database/src/db";
-import { syncToPg, migrateToPg } from "./pgsync";
+import { clearLockDir, dbPath, pidAlive, takeoverLockDir, SCHEMA_VERSION } from "../../../core/database/src/db";
+import { syncToPg, migrateToPg, upgradePgSchema, PgUpgradeError } from "./pgsync";
+import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { exportableRows } from "./config";
 
 
@@ -694,6 +695,43 @@ ${cl.text}
           return 1;
         });
     }
+    case "upgrade": {
+      // #176 W5b: the PG upgrade track. SQLite workspaces upgrade themselves on open.
+      if (!pgMode) {
+        bad(ctx, "db upgrade applies the PG upgrade track: set YGL_DB_URL to the migrated PG target (SQLite workspaces upgrade automatically on open)");
+        return 2;
+      }
+      if (rest.length) {
+        bad(ctx, "usage: db upgrade   (target from YGL_DB_URL; no arguments)");
+        return 2;
+      }
+      const url = String(process.env.YGL_DB_URL || "");
+      let pg: any;
+      try { pg = require("pg"); } catch { bad(ctx, "pg driver not installed — run: pnpm add pg (optional dependency)"); return 1; }
+      return (async (): Promise<number> => {
+        const client = new pg.Client({ connectionString: url });
+        try {
+          await client.connect();
+          // A bound database must belong to this target: refuse to upgrade someone else's binding.
+          const meta = await client.query("SELECT 1 AS hit FROM information_schema.tables WHERE table_schema=current_schema() AND table_name='meta'");
+          if (meta.rows.length) {
+            const b = await client.query("SELECT value FROM meta WHERE key=$1", ["backend_binding"]);
+            const binding = JSON.parse(b.rows[0]?.value || "null");
+            if (binding && (binding.mode !== "pg" || binding.url_hash !== pgTargetHash(url))) throw new PgUpgradeError("PG database backend_binding belongs to a different target; no changes made");
+          }
+          const r = await upgradePgSchema(client, SCHEMA_VERSION);
+          if (ctx.json) console.log(JSON.stringify(r));
+          else if (r.duplicate) ok(ctx, `PG schema already at v${r.to}; nothing to do`);
+          else ok(ctx, `PG schema v${r.from} → v${r.to}: ${r.steps.length} step(s), ${r.indexes_created.length} index(es) created${r.indexes_created.length ? " (" + r.indexes_created.join(", ") + ")" : ""}`);
+          return 0;
+        } catch (e: any) {
+          bad(ctx, e instanceof PgUpgradeError ? `upgrade refused: ${e.message}` : `upgrade failed: ${pgFailure()}`);
+          return 1;
+        } finally {
+          await client.end().catch(() => undefined);
+        }
+      })();
+    }
     case "migrate": {
       if (rest[0] !== "pg") {
         bad(ctx, "usage: db migrate pg <url> [--fresh]   (url or env YGL_PG_URL)");
@@ -733,7 +771,7 @@ ${cl.text}
 }
 
 const DB_USAGE =
-  "  db: init | stats | path | unlock | snapshot | export <file.sql> [--lean] | export-markdown | obsidian [dir] | time-travel <date> | timeline | workspace list | sync pg <url> | migrate pg <url> [--fresh] | dups | reset | sql \"<sql>\"";
+  "  db: init | stats | path | unlock | snapshot | export <file.sql> [--lean] | export-markdown | obsidian [dir] | time-travel <date> | timeline | workspace list | sync pg <url> | migrate pg <url> [--fresh] | upgrade (PG: YGL_DB_URL) | dups | reset | sql \"<sql>\"";
 
 function sqlLit(v: any): string {
   if (v === null || v === undefined) return "NULL";

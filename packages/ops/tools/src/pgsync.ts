@@ -474,3 +474,79 @@ function preflightTypeCheck(db: DB): Array<{ table: string; column: string; rowi
   }
   return issues;
 }
+
+// ================================================================ upgrade track (#176 W5b)
+// A migrated PG database stays the workspace's write backend, so it must follow schema changes.
+// SQLite upgrades itself on open (PRAGMA user_version); PG gets an explicit `db upgrade`:
+//  - version steps: one PG_UPGRADES entry per SCHEMA_VERSION above the baseline, applied in order;
+//  - index convergence: MIGRATE_INDEXES is all CREATE INDEX IF NOT EXISTS, re-run every time, so an
+//    index added to MIGRATE_INDEXES (W5a: idx_events_kind_entity) also reaches already-migrated targets.
+// Everything runs in one transaction under an advisory lock and lands in schema_migrations.
+
+/** PG business mode shipped at v12: every migrated PG database starts there. Older ones are re-migrated. */
+export const PG_BASELINE_VERSION = 12;
+
+export interface PgUpgradeStep { version: number; note: string; sql: string }
+
+/** Ordered PG steps for SCHEMA_VERSION > PG_BASELINE_VERSION. A SCHEMA_VERSION bump must add its step here (pg-upgrade.spec enforces it). */
+export const PG_UPGRADES: PgUpgradeStep[] = [];
+
+/** Index names declared in MIGRATE_INDEXES, in order. */
+export function migrateIndexNames(): string[] {
+  return [...MIGRATE_INDEXES.matchAll(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/gi)].map((m) => m[1]);
+}
+
+export interface PgQuery { query(sql: string, params?: any[]): Promise<{ rows: any[] }> }
+
+/** Highest PG ledger version, or null when the target has no ygl-trees schema_migrations table. */
+export async function pgSchemaVersion(client: PgQuery): Promise<number | null> {
+  const t = await client.query("SELECT 1 AS hit FROM information_schema.tables WHERE table_schema=current_schema() AND table_name='schema_migrations'");
+  if (!t.rows.length) return null;
+  const r = await client.query("SELECT MAX(version) AS version FROM schema_migrations WHERE backend IN ('pg','postgres')");
+  const v = r.rows[0]?.version;
+  return v === null || v === undefined ? null : Number(v);
+}
+
+export async function missingPgIndexes(client: PgQuery): Promise<string[]> {
+  const r = await client.query("SELECT indexname FROM pg_indexes WHERE schemaname=current_schema()");
+  const have = new Set(r.rows.map((x: any) => String(x.indexname)));
+  return migrateIndexNames().filter((n) => !have.has(n));
+}
+
+export class PgUpgradeError extends Error {}
+
+export interface PgUpgradeResult { from: number; to: number; steps: number[]; indexes_created: string[]; duplicate: boolean }
+
+/** Applies the upgrade track inside the caller's connection. Throws PgUpgradeError (identifier-only messages) on refusal. */
+export async function upgradePgSchema(client: PgQuery, target: number, steps: PgUpgradeStep[] = PG_UPGRADES): Promise<PgUpgradeResult> {
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('ygl-trees:pg-schema-upgrade'))");
+    const from = await pgSchemaVersion(client);
+    if (from === null) throw new PgUpgradeError("target has no ygl-trees schema_migrations ledger; create it with db migrate pg from a SQLite workspace");
+    if (from > target) throw new PgUpgradeError(`PG schema v${from} is newer than this engine (v${target}); upgrade ygl-trees instead`);
+    if (from < PG_BASELINE_VERSION) throw new PgUpgradeError(`PG schema v${from} predates the PG upgrade baseline v${PG_BASELINE_VERSION}; re-migrate into a new database with db migrate pg`);
+    const pending = steps.filter((s) => s.version > from && s.version <= target).sort((a, b) => a.version - b.version);
+    for (let v = from + 1; v <= target; v++) {
+      if (!pending.some((s) => s.version === v)) throw new PgUpgradeError(`no PG upgrade step for v${v}; this engine cannot upgrade PG from v${from} to v${target}`);
+    }
+    const before = await missingPgIndexes(client);
+    for (const s of pending) {
+      await client.query(s.sql);
+      await client.query(
+        `INSERT INTO schema_migrations(backend,version,applied_at,note) VALUES('postgres',$1,$2,$3)
+         ON CONFLICT (backend,version) DO NOTHING`,
+        [s.version, new Date().toISOString(), `pg upgrade: ${s.note}`]
+      );
+    }
+    await client.query(MIGRATE_INDEXES);
+    const after = await missingPgIndexes(client);
+    if (after.length) throw new PgUpgradeError(`indexes still missing after upgrade: ${after.join(", ")}`);
+    await client.query("COMMIT");
+    const created = before.filter((n) => !after.includes(n));
+    return { from, to: target, steps: pending.map((s) => s.version), indexes_created: created, duplicate: pending.length === 0 && created.length === 0 };
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  }
+}

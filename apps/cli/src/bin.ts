@@ -7,7 +7,7 @@
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import { dbPath } from "../../../packages/core/database/src/db";
+import { dbPath, SCHEMA_VERSION } from "../../../packages/core/database/src/db";
 import { Ctx, bad, out, paint, C } from "../../../packages/core/text/src/fmt";
 import { Args, parse, str, num, bool, Env, lastFlagOf } from "../../../packages/core/database/src/types";
 import { apply as DatabasePlugin } from "../../../packages/core/database/src/plugin";
@@ -506,7 +506,7 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
   // verify self-check is corpus-driven and does not initialize a PG or SQLite business workspace.
-  const PG_DB_ACTIONS = new Set(["stats", "path"]);
+  const PG_DB_ACTIONS = new Set(["stats", "path", "upgrade"]);
   const PG_RESEARCH = group === "research" && ((["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "")) || (action === "query" && ["add", "attach", "list"].includes(args._[2] || "")) || (action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) || (["source", "evidence"].includes(action || "") && args._[2] === "rm"));
   const PG_BUSINESS = PG_RESEARCH || (group === "kb" && ["add", "list", "show", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
@@ -514,12 +514,12 @@ export async function main(argv: string[]): Promise<number> {
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
   }
-  const { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns } = require("../../../packages/core/database/src/pg-workspace");
+  const { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns, requirePgSchemaVersion } = require("../../../packages/core/database/src/pg-workspace");
   if (pgUrl && PG_BUSINESS && require("node:fs").existsSync(dbPath(home))) { bad(ctx, `conflicting targets: SQLite file ${dbPath(home)} present in the selected PG workspace; use a separate YGL_HOME (no SQLite fallback)`); return 2; }
   try {
     if (pgUrl || require("node:fs").existsSync(require("node:path").join(home, "pg-binding.json"))) {
@@ -535,6 +535,8 @@ export async function main(argv: string[]): Promise<number> {
       const { getPgOrm, closeOrm } = await import("../../../packages/core/database/src/orm");
       try {
         const ds = await getPgOrm(pgUrl);
+        // #176 W5b: schema version first, before any capability probe or binding write.
+        await requirePgSchemaVersion(ds, SCHEMA_VERSION);
         if (PG_RESEARCH && action === "query") {
           await requirePgColumns(ds, { queries: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], query_sources: ["query_id", "source_id", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
         }
