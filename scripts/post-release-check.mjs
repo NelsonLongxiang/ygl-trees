@@ -5,10 +5,13 @@
  * 面上三件：①bootstrap（npm 装的 bin db init）②tag 克隆里 pnpm test ③verify meta .
  * 结果（JSON）贴进发布记录 / 对应 issue。
  *
+ * #178：每一步的**完整** stdout/stderr 落盘（不再只留末尾 150 字符），失败时保留工作目录
+ * 与全部日志并把路径打进记录——G8 在 Windows 发版机失败过两次且失败行被截断，无法定根因。
+ *
  * 用法：node scripts/post-release-check.mjs <version>   # 例 0.116.0
  */
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join, resolve } from "node:path";
 
@@ -21,52 +24,117 @@ const REPO = resolve(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-
 // #98 复核（macOS）：工作目录**出仓**（os.tmpdir）——仓内会让 npm 向上找到仓库根的
 // workspace package.json（同名 ygl-trees + workspace: 依赖）而崩溃。
 const WORK = mkdtempSync(join(os.tmpdir(), "ygl-post-release-"));
+const LOGS = join(WORK, "logs");
+mkdirSync(LOGS, { recursive: true });
 // #98: 平台分流——win 用 .cmd 垫片经 shell，非 win 直接可执行（npm/pnpm 带 shebang）。
 const isWin = process.platform === "win32";
-const sh = (cmd, args, opts = {}) =>
-  isWin
-    ? spawnSync("cmd", ["/c", cmd, ...args], { encoding: "utf8", timeout: 45 * 60_000, ...opts })
-    : spawnSync(cmd, args, { encoding: "utf8", timeout: 45 * 60_000, ...opts });
+
+/**
+ * 跑一条命令，**把 stdout+stderr 原样写进日志文件**（stdio 直连 fd，不经内存缓冲），
+ * 因此不受 spawnSync maxBuffer 限制，也不会丢行。返回 rc 与日志路径/字节数。
+ */
+function run(cmd, args, { cwd, env, logName, timeout = 45 * 60_000 } = {}) {
+  const logFile = join(LOGS, logName);
+  const fd = openSync(logFile, "a");
+  try {
+    const r = isWin
+      ? spawnSync("cmd", ["/c", cmd, ...args], { cwd, env, stdio: ["ignore", fd, fd], timeout })
+      : spawnSync(cmd, args, { cwd, env, stdio: ["ignore", fd, fd], timeout });
+    const bytes = (() => { try { return statSync(logFile).size; } catch { return 0; } })();
+    return { status: r.status, signal: r.signal, error: r.error, logFile, bytes };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** 失败时把日志尾部带回记录里（仅作摘要，完整日志在 logFile）。 */
+function tail(logFile, n = 400) {
+  try {
+    const s = readFileSync(logFile, "utf8");
+    return s.length > n ? "…" + s.slice(-n) : s;
+  } catch { return ""; }
+}
+
 const steps = [];
 const step = (name, fn) => {
   const t0 = Date.now();
-  try { const detail = fn(); steps.push({ step: name, status: "pass", ms: Date.now() - t0, detail: detail || "" }); }
-  catch (e) { steps.push({ step: name, status: "fail", ms: Date.now() - t0, detail: String(e?.message || e).slice(0, 300) }); }
+  const logs = [];
+  const rec = (logFile) => { if (logFile) logs.push(logFile); };
+  try {
+    const detail = fn(rec);
+    steps.push({ step: name, status: "pass", ms: Date.now() - t0, detail: detail || "", logs });
+  } catch (e) {
+    const detail = String(e?.message || e);
+    steps.push({ step: name, status: "fail", ms: Date.now() - t0, detail, logs, tail: logs.length ? tail(logs[logs.length - 1]) : "" });
+  }
 };
+
+/** 命令失败就抛，消息里点名 rc + 日志路径（不再截断 stdout）。 */
+function must(label, r, extra = "") {
+  if (r.status !== 0) {
+    const why = r.error ? `${r.error.message}` : `rc=${r.status}${r.signal ? ` signal=${r.signal}` : ""}`;
+    throw new Error(`${label} ${why}${extra ? " " + extra : ""} — log: ${r.logFile}`);
+  }
+  return r;
+}
+
+console.error(`[G8] version=${version} work=${WORK}`);
 
 try {
   mkdirSync(join(WORK, "npm-install"), { recursive: true });
   // 再兜一层：该目录写最小 package.json（私有、无依赖），npm 不会向上继承任何 workspace
   writeFileSync(join(WORK, "npm-install", "package.json"), JSON.stringify({ name: "post-release-probe", version: "0.0.0", private: true }, null, 2));
-  step("npm-bootstrap", () => {
-    const r = sh("npm", ["install", `ygl-trees@${version}`, "--no-fund", "--no-audit"], { cwd: join(WORK, "npm-install") });
-    if (r.status !== 0) throw new Error("npm install rc=" + r.status + " " + String(r.stderr || "").slice(0, 150));
-    const bin = join(WORK, "npm-install", "node_modules", ".bin", "ygl-trees");
+
+  step("npm-bootstrap", (rec) => {
+    const inst = run("npm", ["install", `ygl-trees@${version}`, "--no-fund", "--no-audit"], { cwd: join(WORK, "npm-install"), env: process.env, logName: "npm-install.log" });
+    rec(inst.logFile); // #178: 先记账再判 rc——失败的命令也要留下日志路径
+    must("npm install", inst);
     const home = join(WORK, "home");
-    const b = sh(process.execPath, [join(WORK, "npm-install", "node_modules", "ygl-trees", "dist", "bundle", "bin.cjs"), "db", "init"], { env: { ...process.env, YGL_HOME: home } });
-    if (b.status !== 0) throw new Error("db init rc=" + b.status);
-    return "npm install + db init rc0";
+    const b = run(process.execPath, [join(WORK, "npm-install", "node_modules", "ygl-trees", "dist", "bundle", "bin.cjs"), "db", "init"], { env: { ...process.env, YGL_HOME: home }, logName: "db-init.log" });
+    rec(b.logFile);
+    must("db init", b);
+    return `npm install + db init rc0 (logs: npm-install.log, db-init.log)`;
   });
-  step("tag-clone-test", () => {
-    const r = sh("git", ["clone", "-q", "-b", `v${version}`, "https://github.com/NelsonLongxiang/ygl-trees.git", join(WORK, "tag")]);
-    if (r.status !== 0) throw new Error("tag clone rc=" + r.status);
-    const i = sh("pnpm", ["install", "--frozen-lockfile"], { cwd: join(WORK, "tag") });
-    if (i.status !== 0) throw new Error("tag install rc=" + i.status);
-    const t = sh("pnpm", ["test"], { cwd: join(WORK, "tag") });
-    if (t.status !== 0) throw new Error("tag pnpm test rc=" + t.status + " " + String(t.stdout || "").slice(-150));
-    return "tag clone pnpm test rc0";
+
+  step("tag-clone-test", (rec) => {
+    const tagDir = join(WORK, "tag");
+    const c = run("git", ["clone", "-q", "-b", `v${version}`, "https://github.com/NelsonLongxiang/ygl-trees.git", tagDir], { env: process.env, logName: "git-clone.log" });
+    rec(c.logFile);
+    must("tag clone", c);
+    const i = run("pnpm", ["install", "--frozen-lockfile"], { cwd: tagDir, env: process.env, logName: "tag-install.log" });
+    rec(i.logFile);
+    must("tag install", i);
+    const t = run("pnpm", ["test"], { cwd: tagDir, env: process.env, logName: "tag-test.log" });
+    rec(t.logFile); // 失败时这条才是要看的日志
+    must("tag pnpm test", t);
+    return `tag clone pnpm test rc0 (log: tag-test.log, ${t.bytes} bytes)`;
   });
-  step("verify-meta", () => {
+
+  step("verify-meta", (rec) => {
     // #98 复核更正：真跑 CLI 面 `verify meta <tag-root>`（此前跑的是 meta-tooling --audit——面不对）
     const tagRoot = join(WORK, "tag");
-    const m = sh(process.execPath, [join(tagRoot, "dist", "bundle", "bin.cjs"), "verify", "meta", tagRoot], { cwd: tagRoot });
-    if (m.status !== 0) throw new Error("verify meta rc=" + m.status + " " + String(m.stdout || m.stderr || "").slice(0, 150));
+    const m = run(process.execPath, [join(tagRoot, "dist", "bundle", "bin.cjs"), "verify", "meta", tagRoot], { cwd: tagRoot, env: process.env, logName: "verify-meta.log" });
+    rec(m.logFile);
+    must("verify meta", m);
     return "CLI verify meta <tag-root> rc0";
   });
 } finally {
   const failed = steps.filter((s) => s.status === "fail").length;
-  const record = { gate: "G8", version, steps, rc: failed ? 1 : 0, at: new Date().toISOString() };
+  const record = {
+    gate: "G8",
+    version,
+    steps,
+    rc: failed ? 1 : 0,
+    at: new Date().toISOString(),
+    // #178: 成功时工作目录会被删掉，日志路径仅作当次定位；失败时整目录保留供取证。
+    work_dir: failed ? WORK : null,
+    logs_dir: failed ? LOGS : null,
+  };
   console.log(JSON.stringify(record, null, 2));
+  if (failed) {
+    console.error(`\nG8: ${failed} step(s) failed — full stdout/stderr kept at ${LOGS}`);
+    process.exit(1);
+  }
   rmSync(WORK, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  process.exit(failed ? 1 : 0);
+  process.exit(0);
 }

@@ -150,7 +150,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "7a8377a25243a927e720075655430494003ed75b755f81ea3fc6962b3a6189da",
+      "sha256": "735521c5396f8826eb76772cbd0573b2ff737a0dbc3f31004c42044c97d9a74f",
       "role": "gate"
     },
     {
@@ -1180,6 +1180,14 @@
       "reason": "Refs #168 review: accept explicitly pinned repository config and report owned realpath",
       "actor": "session-ec4ce7f8/gpt-6.1-sol",
       "at": "2026-11-02T20:04:16.398Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "7a8377a25243a927e720075655430494003ed75b755f81ea3fc6962b3a6189da",
+      "new_sha256": "735521c5396f8826eb76772cbd0573b2ff737a0dbc3f31004c42044c97d9a74f",
+      "reason": "Refs #178: G8 captures full per-step stdout/stderr to log files and keeps the work dir on failure (replaces the 150-char truncation that hid the failing line)",
+      "actor": "dsh/ec4ce7f8",
+      "at": "2026-11-03T03:37:26.521Z"
     }
   ],
   "kind": "engine",
