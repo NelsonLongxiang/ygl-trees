@@ -42,6 +42,7 @@ import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, foldOverall, foldSummary, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
+import { buildPortable, importPortable, portableToText } from "./verify-portable";
 import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binary";
 import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
@@ -1056,7 +1057,8 @@ const ACTION_FLAGS: Record<string, string[]> = {
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
   trace: [],
-  export: ["out"],
+  export: ["out", "portable"],
+  import: [],
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
@@ -2527,7 +2529,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "export": {
       const specId = rest[0];
       if (!specId) {
-        bad(ctx, "usage: verify export <spec-id> [--out <file>]");
+        bad(ctx, "usage: verify export <spec-id> [--out <file>] [--portable]");
         return 2;
       }
       const src = join(specDir(env, specId), "spec.json");
@@ -2536,10 +2538,48 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       const spec = readJson<VerifySpec>(src);
+      // #171 第1项：默认仍是裸 spec（向后兼容）；--portable 才出可回装的完整件。
+      if (args.flags.portable) {
+        let bundle;
+        try {
+          bundle = buildPortable(env, specId);
+        } catch (e: any) {
+          bad(ctx, e?.message || String(e));
+          return e?.code === 2 ? 2 : 1;
+        }
+        const target = args.flags.out ? String(args.flags.out) : join(process.cwd(), `${specId}.yglverify.json`);
+        writeFileSync(target, portableToText(bundle));
+        if (ctx.json) {
+          console.log(JSON.stringify({ spec_id: bundle.spec_id, version: bundle.spec_version, material_id: bundle.material_id, path: target, sha256: sha256(readFileSync(target)), digest: bundle.digest, entries: bundle.entries.length, portable: true }));
+        } else {
+          out(ctx, `  ✓ exported portable ${bundle.spec_id} v${bundle.spec_version} (${bundle.entries.length} entries, material ${bundle.material_id}) → ${target}`);
+        }
+        return 0;
+      }
       const target = args.flags.out ? String(args.flags.out) : join(process.cwd(), `${specId}.yglverify.json`);
       writeJson(target, spec);
       if (ctx.json) console.log(JSON.stringify({ spec_id: spec.spec_id, version: spec.spec_version, path: target, sha256: sha256(readFileSync(target)) }));
       else out(ctx, `  ✓ exported ${spec.spec_id} v${spec.spec_version} → ${target}`);
+      return 0;
+    }
+
+    case "import": {
+      // #171 第1项：只接 --portable 导出件；旧裸 spec 一律拒绝并指路重导（不虚构恢复）。
+      const file = rest[0];
+      if (!file) {
+        bad(ctx, "usage: verify import <file.yglverify.json>");
+        return 2;
+      }
+      const res = importPortable(env, file);
+      if (res.rc !== 0) {
+        bad(ctx, res.error || "import failed");
+        return res.rc;
+      }
+      if (ctx.json) {
+        console.log(JSON.stringify({ spec_id: res.spec_id, version: res.spec_version, material_id: res.material_id, ...(res.duplicate ? { duplicate: true } : {}) }));
+      } else {
+        out(ctx, `  ✓ imported ${res.spec_id} v${res.spec_version} (material ${res.material_id})${res.duplicate ? " — duplicate, nothing changed" : ""}`);
+      }
       return 0;
     }
 
@@ -2548,7 +2588,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `unknown verify action: ${action}`);
         return 2;
       }
-      out(ctx, "usage: verify submit|prepare|run|graduate|register|list|report|report import|trace|export|archive|archive verify|self-check");
+      out(ctx, "usage: verify submit|prepare|run|graduate|register|list|report|report import|trace|export|import|archive|archive verify|self-check");
       return 0;
     }
   }
