@@ -17,6 +17,15 @@ import { extractTables, type QueryRunner, type Row } from "./engine";
  * 返回去掉末尾分隔符后的语句；顶层分号之后若还有非空白内容则返回 null。
  * 未闭合的引号/注释原样交给 SQLite，由 prepare 报错。Rust 端 sqlite.rs 同算法。
  */
+/** SQL 空白：只认 ASCII 0x09–0x0D 与空格（与 Rust is_sql_ws 同集）；不用 JS \s 或 Unicode White_Space，两端才能逐字同判（#162 增补）。 */
+const SQL_WS = /[\t\n\v\f\r ]/;
+export function trimSqlWs(s: string): string {
+  let a = 0, b = s.length;
+  while (a < b && SQL_WS.test(s[a])) a++;
+  while (b > a && SQL_WS.test(s[b - 1])) b--;
+  return s.slice(a, b);
+}
+
 export function singleStatement(sql: string): string | null {
   let i = 0;
   const n = sql.length;
@@ -41,7 +50,7 @@ export function singleStatement(sql: string): string | null {
       const end = sql.indexOf("*/", i + 2);
       i = end < 0 ? n : end + 2;
     } else if (c === ";") {
-      return /\S/.test(sql.slice(i + 1)) ? null : sql.slice(0, i).trimEnd();
+      return trimSqlWs(sql.slice(i + 1)) !== "" ? null : trimSqlWs(sql.slice(0, i));
     } else i++;
   }
   return sql;
@@ -72,7 +81,7 @@ export class SqliteRunner implements QueryRunner {
   }
 
   query(sql: string): Row[] {
-    const trimmed = sql.trim();
+    const trimmed = trimSqlWs(sql);
     if (!/^(select|with)\b/i.test(trimmed)) {
       throw new Error(`only SELECT/WITH allowed (read-only contract): ${trimmed.slice(0, 40)}`);
     }

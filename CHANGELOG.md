@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Refs #162：verify 的 SQLite 单语句判定只把引号（'…' / "…" / `…` / […]）与注释（-- / /* */）之外的分号当语句分隔符；字符串里含分号的合法 SELECT 不再被误判为多语句 ERROR，真正的多语句仍拒绝。TS SqliteRunner 与 Rust yglverify 同算法，共享 tests/fixtures/sql-statements.json 向量。
+- Refs #162：verify 的 SQLite 单语句判定只把引号（'…' / "…" / `…` / […]）与注释（-- / /* */）之外的分号当语句分隔符；字符串里含分号的合法 SELECT 不再被误判为多语句 ERROR，真正的多语句仍拒绝。TS SqliteRunner 与 Rust yglverify 同算法，共享 tests/fixtures/sql-statements.json 向量。 增补：分隔符后的空白与首尾裁剪两端统一只认 ASCII 0x09–0x0D 与空格（不用 JS \s 或 Unicode White_Space），U+FEFF/U+0085/U+00A0 两侧同判，并补 4 条向量。
 
 - Refs #171（第2项）：CLI及HTTP的verify prepare/run和树叶执行将实际运行版本（与tree G8相同的env.version来源）写入新spec/报告/归档，不再把应用版本记成0.1.0；旧冻结件和报告不回写，底层独立verify-core包默认版本仍为其自身0.1.0。
 
