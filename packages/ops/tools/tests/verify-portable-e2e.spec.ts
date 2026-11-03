@@ -96,7 +96,8 @@ describe.skipIf(!HAS_BIN)("#171 portable bundle — end-to-end run + archive in 
       writeFileSync(candFile, JSON.stringify({ candidates: [{
         source_clause: "快照里至少有一个项目。",
         anchor,
-        checker: { type: "count", sql: "SELECT COUNT(*) AS n FROM projects", op: ">=", value: 1 },
+        // P2 只收 predicate 形式（count sql 形式被拒）；空表 0 行 → fail_when rows==0 判 FAIL，非空洞
+        checker: { type: "sql", fail_when: "rows==0", predicate: { from: "projects", select: ["id"] } },
       }] }));
       const revFile = join(root, "re-rev.json");
       writeFileSync(revFile, JSON.stringify({ reviews: [{
