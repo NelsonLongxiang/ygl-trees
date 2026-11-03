@@ -31,5 +31,5 @@ run_clean() {
 echo "offline-gate: env -i install --frozen-lockfile"
 run_clean "pnpm install --frozen-lockfile" || { echo "✗ offline install failed (G1)"; exit 1; }
 echo "offline-gate: env -i pnpm test (full chain)"
-run_clean "pnpm test" || { echo "✗ offline pnpm test failed (G1)"; exit 1; }
+run_clean "node -e 'const fs = require(\"node:fs\"), path = require(\"node:path\"); const root = fs.realpathSync(\".\"), config = fs.realpathSync(\"./tsdown.config.mjs\"); const script = require(\"./package.json\").scripts[\"build:bundle:only\"]; if (!script.startsWith(\"tsdown --config ./tsdown.config.mjs \") || path.relative(root, config) !== \"tsdown.config.mjs\") throw new Error(\"G1 requires repository-owned tsdown config\"); console.log(\"offline-gate: tsdown config: \" + config)' && pnpm test" || { echo "✗ offline pnpm test failed (G1)"; exit 1; }
 echo "✓ offline-gate: $REF clean under env -i (G1)"

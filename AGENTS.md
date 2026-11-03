@@ -41,7 +41,7 @@ tmp/              临时脚本与数据（gitignored）
 
 ```bash
 pnpm install              # pnpm workspace（vendor/* + packages/*/* + apps/*）
-pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/bin.cjs（单文件发布产物）
+pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/（压缩入口与按需分块）
 pnpm test:unit            # vitest 单测
 pnpm test                 # 四段制：build + unit + demo（跑 bundle 发布产物）+ contract:audit（0.84 起构建先行：单测依赖发布产物）
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
@@ -55,7 +55,7 @@ pnpm contract:audit       # 契约体检（145 项）：幂等 / duplicate / 坏
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 
-**入口**：发布产物 = `dist/bundle/bin.cjs`（tsdown 单文件，bin 字段指向它）；开发路径 = `dist/apps/cli/src/bin.js`（tsc 树）。demo/bench 优先测发布产物。
+**入口**：`bin` 指向 `dist/bundle/bin.cjs`；整个 `dist/bundle/`（入口及按需分块）必须一起交付，不能只复制入口。tsdown 压缩保留类/函数名，版本与帮助路径不加载 TypeORM。开发路径 = `dist/apps/cli/src/bin.js`（tsc 树）。demo/bench 优先测发布产物；bundle 字节棘轮统计整个运行时目录，基线数值与容差不因拆块放宽。
 
 **测试纪律**：提交前 `pnpm test` 全绿（严格校验退出码——管道 grep 会掩盖 demo 失败，0.30 教训）。demo 断言数以运行时实测为准（README 收口记录，不在此硬编码——0.84 评审教训）。新功能必须有 demo 断言或单测；改命令面后 `pnpm readme:verify` 与 `pnpm skills:audit` 也要绿。
 

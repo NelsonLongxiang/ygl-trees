@@ -992,12 +992,10 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     }
 
     if (sub === "list" || sub === undefined) {
-      // Contract ⑤ extension (user report: `node list --tree X` silently
-      // swallowed the unknown flag and listed the CURRENT tree). node list
-      // takes exactly -t/--tree <tree> / --json — any other flag is a typo
-      // worth an explicit rc=2 instead of silent misdirection.
+      // Workspace selectors are consumed by CLI boot but remain in args.flags.
+      // Keep typo rejection without refusing documented global options.
       for (const f of Object.keys(args.flags || {})) {
-        if (!["t", "tree", "json", "no-color"].includes(f)) {
+        if (!["t", "tree", "json", "no-color", "home", "db"].includes(f)) {
           bad(ctx, `unknown flag --${f} for 'node list' — tree selection is '-t|--tree <tree>' (positional <tree> also works)`);
           return 2;
         }

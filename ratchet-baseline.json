@@ -2,26 +2,26 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-11-02T09:27:49.618Z",
-  "_attribution": "supervisor 2026-11-02 direct-beaaef4f: release-box cold_start drift, A/B f57f3ca 411-415ms vs cdb5a49 410-414ms same window",
+  "measured_at": "2026-11-02T17:02:48.822Z",
+  "_attribution": "supervisor 2026-11-03 direct-6154a043 PR161: c553f8d merge-forward; minified full runtime directory method replaces entry-only 938774B; lock measured directory and lazy cold start on Windows, unchanged tolerances",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 938774,
+      "value": 676368,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-02T09:27:45.590Z",
-      "method": "stat-size-of-dist-bundle"
+      "measured_at": "2026-11-02T17:02:48.051Z",
+      "method": "sum-file-sizes-recursive"
     },
     "web_dist_bytes": {
       "value": 1401456,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-02T09:27:45.591Z",
+      "measured_at": "2026-11-02T17:02:48.052Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 407,
+      "value": 82,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-11-02T09:27:49.617Z",
+      "measured_at": "2026-11-02T17:02:48.822Z",
       "method": "warm2-min7-retry-once"
     }
   }

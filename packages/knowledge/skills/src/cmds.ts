@@ -9,7 +9,6 @@ import { emitEvent } from "../../../core/text/src/eventbus";
 import { getOrm, getPgOrm } from "../../../core/database/src/orm";
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import * as writes from "../../../research/pipeline/src/writes";
-import { deriveL1 } from "../../../research/pipeline/src/reads";
 import { configGet, configGetNumber } from "../../../ops/tools/src/config";
 import { rejectBare } from "../../../core/text/src/flagcheck";
 
@@ -241,29 +240,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "promote": {
       if (!rest[0]) {
-        bad(ctx, "usage: kb promote <noteId> [--name <skill>]");
+        bad(ctx, "usage: kb promote <noteId> [--name <skill>] [--force]");
         return 2;
       }
-      const note = store.kbGet(rest[0]);
-      if (!note) {
-        bad(ctx, `kb note not found: ${rest[0]}`);
-        return 1;
-      }
-      const name = args.flags.name ? String(args.flags.name) : note.title;
       return getOrm(env.db.path)
-        .then((ds) =>
-          writes.skillUpsert(ds, {
-            name,
-            description: deriveL1(note.body || "", note.title),
-            body: note.body,
-            tags: note.tags,
-            origin: `kb:${note.id}`,
-          })
-        )
+        .then(ds => writes.kbPromote(ds, rest[0], { name: args.flags.name ? String(args.flags.name) : undefined, force }))
         .then((s): number => {
           ack(
             ctx,
-            { name: s.name, description: s.description, origin: `kb:${note.id}` },
+            { name: s.name, description: s.description, origin: s.origin },
             `promoted to skill: ${s.name}`
           );
           if (!ctx.json) out(ctx, paint(C.dim, `  L1: ${clip(String(s.description), 100)}`, ctx.color));
@@ -326,7 +311,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const title = meta.title || meta.name || heading || path.basename(f, ".md");
         return {
           title,
-          body,
+          body: ["cue", "lesson", "evidence"].some(key => Object.hasOwn(meta, key)) ? raw : body,
           tags: meta.tags || String(args.flags.tags || ""),
           source_url: meta.url || "",
           confidence: meta.confidence || "B",
