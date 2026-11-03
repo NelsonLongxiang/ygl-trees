@@ -41,7 +41,7 @@ ygl-trees verify submit --title "报销规范 v1" --text ./规范.md
 # → material_id（正文+附件各带 sha256 冻结；同内容重跑幂等返回同一 id）
 ygl-trees verify submit --title t --text - --attach ./样本.csv      # 附件走 blob 仓 {sha256} 引用
 
-ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite>
+ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --as-of <ISO-8601>
                                                 # rc=0 仅当 ready；P1/P2 阻断、灰带进 open
 ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --draft
                                                 # 无损试跑：照构造但**不冻结** spec 版本
