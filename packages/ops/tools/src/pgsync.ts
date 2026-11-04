@@ -25,6 +25,7 @@ export const MIRROR_TABLES = [
   "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
   "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
   "relations", "jobs", "runs", "events", "schema_migrations", "patrol_checks", "patrol_findings",
+  "verifier_instances", "verifier_runs",
 ];
 
 /** Base tables whose FTS ngram we recompute — input functions MUST mirror
@@ -294,6 +295,17 @@ CREATE TABLE patrol_findings (     -- v12/0.93-T2: disposition queue
   row_key text NOT NULL, detail text NOT NULL DEFAULT '', severity text NOT NULL DEFAULT 'S2',
   status text NOT NULL DEFAULT 'open', first_seen text NOT NULL, last_seen text NOT NULL,
   resolved text, note text NOT NULL DEFAULT '', UNIQUE(check_id, row_key));
+CREATE TABLE verifier_instances (  -- v13/#206
+  id text PRIMARY KEY, identity_sha256 text NOT NULL, kind text NOT NULL DEFAULT 'pack',
+  pack text NOT NULL, pack_version text NOT NULL, binding text NOT NULL, owner text NOT NULL,
+  schedule text NOT NULL DEFAULT '', state text NOT NULL DEFAULT 'active', note text NOT NULL DEFAULT '',
+  created text NOT NULL, updated text NOT NULL, UNIQUE(identity_sha256));
+CREATE TABLE verifier_runs (       -- v13/#206
+  id text PRIMARY KEY,
+  instance_id text NOT NULL REFERENCES verifier_instances(id) ON DELETE CASCADE,
+  verdict text NOT NULL, judged_at text NOT NULL, target_sha text NOT NULL DEFAULT '',
+  payload_sha256 text NOT NULL DEFAULT '', archive_sha256 text NOT NULL DEFAULT '',
+  executor text NOT NULL DEFAULT '', engine_version text NOT NULL DEFAULT '', created text NOT NULL);
 `;
 
 const MIGRATE_INDEXES = `
@@ -316,6 +328,8 @@ CREATE INDEX IF NOT EXISTS idx_cond_node        ON node_conditions(node_id);
 CREATE INDEX IF NOT EXISTS idx_cond_req         ON node_conditions(node_id, required);
 CREATE INDEX IF NOT EXISTS idx_state_ctx        ON node_state(tree_id, context);
 CREATE INDEX IF NOT EXISTS idx_state_status     ON node_state(tree_id, context, status);
+CREATE INDEX IF NOT EXISTS idx_verifier_instances_owner ON verifier_instances(owner, state);  -- v13/#206
+CREATE INDEX IF NOT EXISTS idx_verifier_runs_instance ON verifier_runs(instance_id, judged_at);  -- v13/#206
 `;
 
 export interface MigrateResult {
@@ -489,7 +503,21 @@ export const PG_BASELINE_VERSION = 12;
 export interface PgUpgradeStep { version: number; note: string; sql: string }
 
 /** Ordered PG steps for SCHEMA_VERSION > PG_BASELINE_VERSION. A SCHEMA_VERSION bump must add its step here (pg-upgrade.spec enforces it). */
-export const PG_UPGRADES: PgUpgradeStep[] = [];
+export const PG_UPGRADES: PgUpgradeStep[] = [
+  // v13 (#206): verifier registry — additive tables; their indexes converge through MIGRATE_INDEXES.
+  { version: 13, note: "v13: verifier_instances/verifier_runs (verifier registry, #206)", sql: migrateTableDdl(["verifier_instances", "verifier_runs"]) },
+];
+
+/** CREATE TABLE IF NOT EXISTS statements for the named tables, taken from MIGRATE_DDL — the one PG DDL text, so an
+ *  upgrade step can never drift from what a fresh migrate creates. Throws when a name is missing. */
+export function migrateTableDdl(tables: string[]): string {
+  const stmts = MIGRATE_DDL.split(/;\s*\n/).map((x) => x.trim()).filter(Boolean);
+  return tables.map((t) => {
+    const hit = stmts.find((x) => new RegExp(`^CREATE TABLE ${t} \\(`).test(x));
+    if (!hit) throw new Error(`migrateTableDdl: ${t} not found in MIGRATE_DDL`);
+    return hit.replace(/^CREATE TABLE /, "CREATE TABLE IF NOT EXISTS ") + ";";
+  }).join("\n");
+}
 
 /** Index names declared in MIGRATE_INDEXES, in order. */
 export function migrateIndexNames(): string[] {

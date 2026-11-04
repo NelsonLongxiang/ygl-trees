@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 /** #51: ONE SQLite driver for every write path. The wasm driver's Node VFS
  *  implements its own lock protocol that native SQLite (better-sqlite3, used
@@ -436,6 +436,39 @@ CREATE TABLE IF NOT EXISTS patrol_findings (
 );
 CREATE INDEX IF NOT EXISTS idx_patrol_findings_status ON patrol_findings(status);
 
+-- ---------------------------------------------------------------- verifier registry (v13, #206)
+-- docs/reviews/verifier-scale-plan.md: an instance is a binding row; identity_sha256 = sha256 of the JCS
+-- form of {pack, version, target, rev, params} (owner/schedule are outside it). Runs are append-only.
+CREATE TABLE IF NOT EXISTS verifier_instances (
+  id              TEXT PRIMARY KEY,
+  identity_sha256 TEXT NOT NULL,
+  kind            TEXT NOT NULL DEFAULT 'pack',
+  pack            TEXT NOT NULL,
+  pack_version    TEXT NOT NULL,
+  binding         TEXT NOT NULL,
+  owner           TEXT NOT NULL,
+  schedule        TEXT NOT NULL DEFAULT '',
+  state           TEXT NOT NULL DEFAULT 'active',
+  note            TEXT NOT NULL DEFAULT '',
+  created         TEXT NOT NULL,
+  updated         TEXT NOT NULL,
+  UNIQUE(identity_sha256)
+);
+CREATE INDEX IF NOT EXISTS idx_verifier_instances_owner ON verifier_instances(owner, state);
+CREATE TABLE IF NOT EXISTS verifier_runs (
+  id             TEXT PRIMARY KEY,
+  instance_id    TEXT NOT NULL REFERENCES verifier_instances(id) ON DELETE CASCADE,
+  verdict        TEXT NOT NULL,
+  judged_at      TEXT NOT NULL,
+  target_sha     TEXT NOT NULL DEFAULT '',
+  payload_sha256 TEXT NOT NULL DEFAULT '',
+  archive_sha256 TEXT NOT NULL DEFAULT '',
+  executor       TEXT NOT NULL DEFAULT '',
+  engine_version TEXT NOT NULL DEFAULT '',
+  created        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_verifier_runs_instance ON verifier_runs(instance_id, judged_at);
+
 
 CREATE INDEX IF NOT EXISTS idx_sources_project  ON sources(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id);
@@ -747,13 +780,14 @@ export class DB {
       if ((v > 0 && v < 10) || (v === 0 && tablesPreExist)) this.upgrade9to10();
       if ((v > 0 && v < 11) || (v === 0 && tablesPreExist)) this.upgrade10to11();
       if ((v > 0 && v < 12) || (v === 0 && tablesPreExist)) this.upgrade11to12();
+      if ((v > 0 && v < 13) || (v === 0 && tablesPreExist)) this.upgrade12to13();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
       // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
       // applied version; replay-safe)
       this.db.run(
         `INSERT OR IGNORE INTO schema_migrations(backend,version,applied_at,note) VALUES('sqlite',?,?,?)`,
-        [SCHEMA_VERSION, nowIso(), 'v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
+        [SCHEMA_VERSION, nowIso(), 'v13: verifier_instances/verifier_runs (verifier registry, #206) · v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
       );
     }
     // Q3 (r29) hot-path index for the arbitration lookup. Existing workspaces
@@ -788,6 +822,12 @@ export class DB {
    *  kept for ledger symmetry with the other steps. */
   private upgrade11to12(): void {
     /* SCHEMA_SQL exec below creates patrol_checks/patrol_findings */
+  }
+
+  /** v12 -> v13 (#206): verifier registry — pure additive CREATE TABLE IF NOT
+   *  EXISTS (both tables live in SCHEMA_SQL); no-op guard kept for ledger symmetry. */
+  private upgrade12to13(): void {
+    /* SCHEMA_SQL exec below creates verifier_instances/verifier_runs */
   }
 
   /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine

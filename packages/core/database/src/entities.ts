@@ -99,4 +99,82 @@ export class PatrolFinding {
   note!: string;
 }
 
-export const CORE_ENTITIES = [Event, PatrolCheck, PatrolFinding];
+/** v13 (#206): verifier instance — a binding (pack@version x target x params) kept as a row.
+ *  identity_sha256 is content-addressed; owner/schedule are mutable and outside the identity. */
+@Entity({ name: "verifier_instances" })
+export class VerifierInstance {
+  @PrimaryColumn({ name: "id", type: "text" })
+  id!: string;
+
+  @Column({ name: "identity_sha256", type: "text" })
+  identitySha256!: string;
+
+  /** pack | legacy-repo (S1 bridge) */
+  @Column({ name: "kind", type: "text", default: "pack" })
+  kind!: string;
+
+  @Column({ name: "pack", type: "text" })
+  pack!: string;
+
+  @Column({ name: "pack_version", type: "text" })
+  packVersion!: string;
+
+  /** JCS JSON {target, rev, params} */
+  @Column({ name: "binding", type: "text" })
+  binding!: string;
+
+  @Column({ name: "owner", type: "text" })
+  owner!: string;
+
+  @Column({ name: "schedule", type: "text", default: "" })
+  schedule!: string;
+
+  /** draft | active | retired */
+  @Column({ name: "state", type: "text", default: "active" })
+  state!: string;
+
+  @Column({ name: "note", type: "text", default: "" })
+  note!: string;
+
+  @Column({ name: "created", type: "text" })
+  created!: string;
+
+  @Column({ name: "updated", type: "text" })
+  updated!: string;
+}
+
+/** v13 (#206): verifier run — evidence pointing at an engine report and archive (append-only). */
+@Entity({ name: "verifier_runs" })
+export class VerifierRun {
+  @PrimaryColumn({ name: "id", type: "text" })
+  id!: string;
+
+  @Column({ name: "instance_id", type: "text" })
+  instanceId!: string;
+
+  @Column({ name: "verdict", type: "text" })
+  verdict!: string;
+
+  @Column({ name: "judged_at", type: "text" })
+  judgedAt!: string;
+
+  @Column({ name: "target_sha", type: "text", default: "" })
+  targetSha!: string;
+
+  @Column({ name: "payload_sha256", type: "text", default: "" })
+  payloadSha256!: string;
+
+  @Column({ name: "archive_sha256", type: "text", default: "" })
+  archiveSha256!: string;
+
+  @Column({ name: "executor", type: "text", default: "" })
+  executor!: string;
+
+  @Column({ name: "engine_version", type: "text", default: "" })
+  engineVersion!: string;
+
+  @Column({ name: "created", type: "text" })
+  created!: string;
+}
+
+export const CORE_ENTITIES = [Event, PatrolCheck, PatrolFinding, VerifierInstance, VerifierRun];

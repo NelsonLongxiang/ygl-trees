@@ -183,6 +183,9 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   export <spec-id> --portable [--out <f>]  self-contained frozen bundle; content-hash checked on import
   import <file.yglverify.json>        restore spec_id/spec_version/as_of; repeat → rc0 duplicate:true, conflicting bytes → rc1
   report import <report.json>          import a sealed-run report (payload/binary/version checks)
+  instance create --pack <ygl-v-name>@<semver> --target <kind>:<ref> --owner <who> [--rev <r>] [--param k=v]... [--schedule manual|on-push|every:<N>m] [--draft]
+                                       register a verifier instance (registry row, content-addressed id; same binding → rc0 duplicate:true)
+  instance list [--owner] [--state] [--pack] | instance show <id> | instance retire <id> --reason <r>
   archive <run-id|spec-id> [--snapshot <db>]         take-away archive; --snapshot feeds cross-impl runs
   archive verify <file>                              re-verify an archive's full hash chain
   self-check [--corpus <dir>] [--no-cases]           recursive gate: vectors → digest → shapes → cases → archives
@@ -1082,6 +1085,8 @@ export function generateLlmsManifest(): string {
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],
       ["verify probe --matrix [--target <sealed>] [--only <probe>]", "16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)"],
       ["verify lint-candidates <file> [--text <material>] [--reviews <file>]", "shape + clause-coverage + review-pairing check without consuming spec_version"],
+      ["verify instance create --pack <ygl-v-name>@<semver> --target <kind>:<ref> --owner <who>", "register a verifier instance as a registry row; id is content-addressed, same binding → rc0 duplicate:true (#206)"],
+      ["verify instance list | show <id> | retire <id> --reason <r>", "registry reads with last run; retire keeps the row readable"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [
       ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],

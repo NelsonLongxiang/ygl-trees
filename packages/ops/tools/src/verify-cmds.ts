@@ -48,6 +48,7 @@ import { binaryKey, readSealedBinary, verifySealSignature } from "./sealed-binar
 import { attachJobTarget, checkEligibility, GraduationError, graduationPath, jobCommand, patrolEligibility, shellSafePath, writeGraduation } from "./graduate";
 import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
+import { INSTANCE_FLAGS, instancePreflight, runInstance } from "./verify-instance";
 
 const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees", "tree-reports"] as const;
 
@@ -1064,6 +1065,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   trace: [],
   export: ["out", "portable"],
   import: [],
+  instance: INSTANCE_FLAGS,
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
@@ -1099,6 +1101,12 @@ const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-2
  * 这里只做不碰 I/O 的旗标校验，供 bin 在门禁之前调用；返回 null 表示旗标面合法。
  */
 export function preflightUsage(action: string, rest: string[], args: any): string | null {
+  if (action === "instance") {
+    // #206: unknown flags are a usage error too, and must be refused before the DB gate like the rest
+    const unknown = Object.keys(args.flags ?? {}).filter((k) => !INSTANCE_FLAGS.includes(k) && !GLOBAL_FLAGS.has(k));
+    if (unknown.length) return `unknown flag${unknown.length > 1 ? "s" : ""} for verify instance: ${unknown.map((k) => `--${k}`).join(" ")}`;
+    return instancePreflight(rest, args.flags ?? {});
+  }
   if ((action === "run" || (action === "tree" && rest[0] === "run")) && args.flags.provenance !== undefined && (typeof args.flags.provenance !== "string" || !args.flags.provenance.trim())) return "--provenance needs a JSON file path";
   if (action !== "prepare") return null;
   // #171 第4项（#188 评审 P3）：裸 --candidates-author / --reviews-author 会被记成作者 "true"，
@@ -1179,6 +1187,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   }
 
   switch (action) {
+    case "instance":
+      // #206 (verifier scale S0): registry entry point — its own module, see verify-instance.ts
+      return runInstance(env, rest, args);
+
     case "tree": {
       const sub = rest[0];
       if (sub === "run") {

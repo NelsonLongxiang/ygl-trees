@@ -315,6 +315,24 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 - 历史摘要：记录与 JSON 带 `history {reports_same_version, non_pass, last_non_pass}`——资格只看最近 N 份（历史 FAIL 不否决），但审计者能看到它曾失败。
 - 来源可执行性：报告 `data_source.source` 是 `blob:<sha12>` 时**不能当 `--db`**——`--schedule` 会拒绝登记，需要 `--db <file>` 显式指定常驻库。
 
+## 7c. 验证器登记表（verify instance，#206 · 规模化 S0）
+
+验证器实例 = 登记表里的一行（包@版本 × 被验对象 × 参数），**不是一个 git 仓库**；新建验证器走这里，不手搭目录。
+方案见 `docs/reviews/verifier-scale-plan.md`（包 / 实例 / 运行三分）。
+
+```bash
+ygl-trees verify instance create --pack ygl-v-core-aggregate@1.0.0 --target git:owner/repo --rev origin/master --owner <who> [--param k=v] [--schedule on-push] [--draft]
+ygl-trees verify instance list --owner <who> --state active
+ygl-trees verify instance show <instance-id>
+ygl-trees verify instance retire <instance-id> --reason "superseded by 2.0.0"
+```
+
+- **身份按内容寻址**：`identity_sha256` = sha256(JCS{pack, version, target, rev, params})，`id` = `vi_` + 前 24 位。同一绑定再建 → rc0 `duplicate:true`（参数顺序无关）；`--owner` / `--schedule` 不进身份，换了就原地更新，`updated` 点名。
+- 包名硬性 `ygl-v-` 前缀（可带 `@scope/`），版本必须完整 semver；target 写成 `<kind>:<ref>`（如 `git:owner/repo`、`sqlite:<path>`）。
+- `show` / `list` 带 `last_run_id` / `last_verdict` / `last_judged_at`（来自运行记录；还没跑过为 null）。
+- 退役不删行：`retire` 后仍可读；重复退役 `duplicate:true`。
+- 用法错误一律 rc2 单 JSON，先于开库（子命令不读的旗标也算，如 `create --state`）；**PG 模式下 S0 不开放**（rc2），PG 随 S2 落地。
+
 ## 8. 常见坑
 
 | 现象 | 原因/处理 |

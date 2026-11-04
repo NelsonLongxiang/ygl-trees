@@ -137,6 +137,8 @@ export class AsyncResearchStore {
       events: await t("events"),
       node_edges: await t("node_edges"),
       node_conditions: await t("node_conditions"),
+      verifier_instances: await t("verifier_instances"),
+      verifier_runs: await t("verifier_runs"),
     };
   }
 
