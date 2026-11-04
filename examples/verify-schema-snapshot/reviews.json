@@ -1,0 +1,28 @@
+{
+  "reviews": [
+    {
+      "source_clause": "S1 The evidence snapshot must contain an orders table with an amount column.",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "The filter selects exactly the table and column named in the material.",
+          "anchor": {
+            "quote": "S1 The evidence snapshot must contain an orders table with an amount column.",
+            "locator": "material.md#S1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "Count of the matching metadata row is mechanically comparable to one."
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "An empty metadata table or missing amount column yields zero and FAIL."
+        }
+      ]
+    }
+  ]
+}

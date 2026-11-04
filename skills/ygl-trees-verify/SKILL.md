@@ -102,6 +102,57 @@ ygl-trees db snapshot                          # 快照产物（sha256+脱敏来
 **常见 tree 报错**：`same-round self-reference`（Q12-B）/ `cross-workspace`（Q13-A）→ rc2；
 `G8: tree spec pins …`（版本不符）→ rc2；`pinned target mismatch` / `spec_version drift` → 该叶 STALE。
 
+## 2d. 验证器仓库布局与多验证器组织
+
+一个**验证器**是一个独立 git 仓库（舰队惯例 `~/workspace/<名>-verifier`），只放材料、构造输入、探针与编排，不放被验对象。
+规则来源：硬规则 = `docs/validator-charter.md` §4.4（R1–R6，`verify meta` 机械检查）；目录惯例 = 舰队各仓现行一致形态。
+
+```text
+<名>-verifier/
+├── AGENTS.md                    【R1 硬】仓库根必须有
+├── package.json                 引擎 = npm 精确钉版的 ygl-trees（不 vendor/fork 引擎：R6⑦）
+├── verify/
+│   ├── meta.json                【R2 硬】唯一索引：meta_index_version、specs、orchestration[]、tooling[]（v3 加 kind）
+│   ├── registration.json        编排/工具登记表（人工维护、随 commit 评审）；门禁脚本据此算 sha256 写 meta.json
+│   ├── specs/*.yglverify.json   现行冻结 spec 的导出件（重冻后再导出，不手改）
+│   └── orchestration/           【R3/R5a 硬】所有驱动验证的脚本只能在此，逐条登记 sha256 + replaced_by + sunset
+├── specs/
+│   ├── index.json               叶名 → 标题/领域
+│   └── <叶名>/                  material.md（逐条带条目号的判据）+ candidates.json + reviews.json
+├── tree.json                    仓内递归结构（组节点 + 叶节点）
+├── tools/                       构造面与索引门禁脚本（登记为 tooling[]，不得产出验证判定）
+├── tests/fixtures/good/         selfcheck 的已知良好夹具
+├── ledger/  collected/  outbox/ 入账：结论变了才提交（冻结 spec、节点报告、归档 zip 与 zip_sha256）
+├── work/results/latest.json     对外结果（gitignored），契约 ygl-verifier-latest/1
+└── state/home/                  本仓 YGL_HOME（gitignored）——不碰个人 ~/.ygl-trees
+```
+
+**硬规则要点**（`verify meta` 判，FAIL = submit/prepare 拒收）：
+- **R3**：已跟踪的可执行文件（`.mjs/.js/.cjs/.sh/.ps1/.py/.ts/.mts/.cts`）必须属于以下之一：gitignored 的 `tmp/`（探索区唯一白名单）、依赖根（`node_modules/`、`vendor/`）、`orchestration[]`、`tooling[]`，或 `verify/meta.json` 的 `source_roots[]` 声明的**具名产品源码子目录**（只能是具名子目录，禁 `.`、空串、绝对路径、`..`；仓库**根级**文件不受任何 source_root 覆盖，仍要逐个登记）。有真实产品源码的仓库用 `source_roots[]` 声明源码根，不要把源码逐文件登记或挪进编排目录。列有 spec 的仓库里，**`tooling[]` 文件不得驱动 verify run/prepare/submit/archive**——驱动验证的代码只能登记在 `orchestration[]`。
+- **R5a**：`orchestration[]` 每条的 `replaced_by` 必须是 charter §4.7 第二列的 CLI 原语之一，`sunset` 为完整 semver（尚未交付的原语暂记远值，如 99.0.0）。
+- **R6（只对 v3 索引执行）**：v3 必须声明 `kind`；验证器仓库属 **consumer** 档——引擎钉版不低于契约下限、仓内不 vendor 引擎、**`orchestration[]` 也不得再驱动 verify**（须改用引擎原语）。现行舰队仓都是 v2 索引，R6 不执行，编排登记后仍可调用 verify；升 v3 前先完成迁移。
+- 改了登记过的文件：先刷新索引（或按仓内门禁脚本重登记），再提交。判红归属：**tooling 文件**正文与登记 sha256 不符 → R3（`registered tooling sha256 mismatch`）；**orchestration 文件**正文与登记不符 → R5a；手改索引导致形状或谱系不符 → R2。
+
+```bash
+ygl-trees verify meta .                  # 本仓 R1–R6 准入自检（仓库根执行；YGL_HOME 指向 state/home）
+ygl-trees verify lint-candidates specs/<叶名>/candidates.json --text specs/<叶名>/material.md --reviews specs/<叶名>/reviews.json
+```
+
+### 多验证器：两层组合
+
+**① 仓内多叶子**（一个领域内拆多份 spec）：
+- 每份判据一个 `specs/<叶名>/`，一份材料冻结成一个 spec；`tree.json` 把叶子组织成树，组节点复用同一份 aggregate spec。
+- **同一份 spec 可挂多个节点**，用 `params` 区分绑定（如同一 `unit` 叶分别跑默认检出与 CRLF 检出）：规格 × 绑定 = 节点。
+- 注意两种树不是同一格式：仓内 `tree.json`（`id`/`children`/`spec`/`params`，由仓内编排后序聚合）≠ 引擎 `verify tree` 材料（`nodes[]`/`kind`/`op`/`root`，见 §2c）。迁到引擎树前，两者不可混写。
+
+**② 跨仓（舰队）**：
+- 每个工作会话持有**自己的**验证器仓；仓与仓之间只通过 `work/results/latest.json` 交换结论，不互相读内部文件。
+- 契约 `ygl-verifier-latest/1`：`{contract, verifier, repo, goal, target{repo,rev,sha}, overall, root_run_id, judged_at, archive, result_file, selfcheck{cases,pass,base}, checked_at?}`；`goal` 必须一句话写明目标，`checked_at` 只用于目标未变的比对轮次。
+- 聚合仓（如 ygl-fleet-verifier）用 `fleet.json` 列成员（id、verifier、owner、latest 的相对路径），用**一份 member spec 挂所有成员**，逐成员判：报到、根结论 PASS、时效、根归档自校验、自检、目标、测的是被验分支当前提交、引擎钉版、元验证。根 = 全舰队合取。
+- 引擎 `verify tree` **不跨 workspace**（`cross-workspace` → rc2），跨仓引入外部报告的原语（import-report）仍是 unshipped；所以跨仓聚合目前由聚合仓的编排读 latest.json 完成，并用 `verify archive verify` 校验成员根归档。
+
+**新建一个验证器的最小清单**：AGENTS.md → `package.json` 钉引擎 → `verify/meta.json` + `verify/registration.json` → `specs/<叶名>/` 三件 → 编排进 `verify/orchestration/` 并登记 → 好夹具与 selfcheck → `ygl-trees verify meta .` PASS → 每轮写 `latest.json` → 交聚合仓登记到 `fleet.json`。
+
 ## 3. 检查器七型与 witnesses
 
 | 类型 | 判据 | witness 看点 |
