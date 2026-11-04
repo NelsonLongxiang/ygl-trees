@@ -34,6 +34,9 @@ describe("#108 计数门（无开关 + 负例必红）", () => {
     expect(block).toMatch(/UNIT_RC=\$\?/);
     expect(block).toMatch(/\$UNIT_RC" != "0"/);
     expect(block).toMatch(/grep -E '\^\[\[:space:\]\]\*FAIL\[\[:space:\]\]'/);
+    // #216 ⑤：日志按轮唯一（时间戳 + $$），不是固定文件名
+    expect(block).toMatch(/UNIT_LOG="tmp\/readme-count-vitest-\$\(date -u [^)]*\)-\$\$\.log"/);
+    expect(block).not.toContain('UNIT_LOG="tmp/readme-count-vitest.log"');
   });
 
   it("release 路径不依赖任何关闸变量", () => {

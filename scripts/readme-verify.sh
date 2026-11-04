@@ -116,8 +116,9 @@ if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   # #216：总数从 "Tests … (N)" 汇总行取，不管里面有没有 failed——旧正则要求 "Tests <N> passed"，
   # 内嵌这一轮只要有一条用例失败就取空，报成「计数漂移」而原因被 /dev/null 吞掉。现在保留整份输出，
   # 读本轮退出码；失败就点名 rc、汇总行与失败用例，计数门照样判红。
+  # 每轮一个日志（时间戳 + 本进程号）：同一检出并发跑也不会截断/覆盖另一轮的诊断（#216 ⑤）。
   mkdir -p tmp
-  UNIT_LOG="tmp/readme-count-vitest.log"
+  UNIT_LOG="tmp/readme-count-vitest-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
   node node_modules/vitest/vitest.mjs run --maxWorkers=1 > "$UNIT_LOG" 2>&1
   UNIT_RC=$?
   SUMMARY=$(sed 's/\x1b\[[0-9;]*m//g' "$UNIT_LOG" | grep -E '^[[:space:]]*Tests[[:space:]]' | tail -1)
