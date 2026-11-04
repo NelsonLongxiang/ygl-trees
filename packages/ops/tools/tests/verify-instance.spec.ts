@@ -5,9 +5,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { instanceIdentity, instancePreflight, parseCreate } from "../src/verify-instance";
+import { instanceIdentity, instancePreflight, legacyTarget, parseCreate, parseLatest } from "../src/verify-instance";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
 
 const ROOT = resolve(__dirname, "../../../..");
@@ -58,6 +58,48 @@ describe("instance identity and flag parsing", () => {
     expect(instancePreflight(["show"], {})).toMatch(/usage: verify instance/);
     expect(instancePreflight(["retire", "vi_x"], {})).toMatch(/--reason/);
     expect(instancePreflight(["nope"], {})).toMatch(/usage: verify instance/);
+  });
+});
+
+/** #207 (S1): one `ygl-verifier-latest/1` document as fleet repos write it today. */
+const latest = (over: Record<string, any> = {}) => ({
+  contract: "ygl-verifier-latest/1", verifier: "ygl-webui-verifier", repo: "/w/ygl-webui-verifier",
+  target: { repo: "/w/ygl-trees", rev: "origin/master", sha: "2e53f79678674811b3022595a69eec25ae3b9c45" },
+  overall: "PASS", root_run_id: "run_a285616ca1443ea2", judged_at: "2026-11-04T17:03:54+08:00",
+  archive: "ledger/run_a285616ca1443ea2/x.yglverify.zip", result_file: "work/results/x.json", ...over,
+});
+
+describe("legacy latest.json bridge (#207)", () => {
+  it("maps every target spelling onto <kind>:<ref>, preferring a GitHub upstream over a path", () => {
+    const origin = (dir: string) => (dir === "/w/ygl-trees" ? "git@github.com:NelsonLongxiang/ygl-trees.git" : "");
+    expect(legacyTarget({ repo: "/w/ygl-trees" }, "", origin)).toBe("git:NelsonLongxiang/ygl-trees");
+    expect(legacyTarget({ repo: "../ygl-trees" }, "/w/ygl-design-verifier", origin)).toBe("git:NelsonLongxiang/ygl-trees");
+    expect(legacyTarget({ repo: "../ygl-trees", repo_url: "https://github.com/O/R.git" })).toBe("git:O/R");
+    expect(legacyTarget({ repo: "NelsonLongxiang/workbench-market" })).toBe("git:NelsonLongxiang/workbench-market");
+    expect(legacyTarget({ repo: "https://github.com/O/R/" })).toBe("git:O/R");
+    expect(legacyTarget({ repo: "/srv/no-remote" }, "", origin)).toBe("path:/srv/no-remote");
+    expect(legacyTarget({ repo: "C:\\work\\ygl-trees" })).toBe("path:C:/work/ygl-trees");
+    expect(legacyTarget({ repo: "some-label" })).toBe("ref:some-label");
+  });
+
+  it("parseLatest names every problem and normalizes the rest", () => {
+    const p = parseLatest(latest(), "/elsewhere") as any;
+    expect(p).toMatchObject({ verifier: "ygl-webui-verifier", binding: { target: "path:/w/ygl-trees", rev: "origin/master", params: {} },
+      run: { id: "run_a285616ca1443ea2", verdict: "PASS", judged_at: "2026-11-04T09:03:54.000Z", target_sha: "2e53f79678674811b3022595a69eec25ae3b9c45" } });
+    expect(p.archive).toBe(resolve("/w/ygl-webui-verifier", "ledger/run_a285616ca1443ea2/x.yglverify.zip"));
+    expect((parseLatest(latest({ repo: "" }), "/latest/dir") as any).result_file).toBe(resolve("/latest/dir", "work/results/x.json"));
+    const bad = parseLatest({ contract: "x", target: { rev: "m" }, overall: "OK", root_run_id: "r1", judged_at: "yesterday" }) as string[];
+    expect(bad).toHaveLength(7);
+    for (const re of [/contract/, /verifier missing/, /target\.repo/, /target\.sha/, /overall must be one of/, /root_run_id/, /judged_at/]) expect(bad.some((x) => re.test(x)), String(re)).toBe(true);
+    // judged_at is strict ISO with an explicit zone: nothing Date.parse would guess at or roll over (#212 review).
+    for (const judged_at of ["0", "11/04/2026", "11-04-2026", "2026-11-04", "2026-11-04T10:00:00", "2026-02-30T00:00:00Z", "2026-11-04T25:00:00Z", "", 1793796415721])
+      expect(parseLatest(latest({ judged_at })), String(judged_at)).toEqual([expect.stringMatching(/^judged_at /)]);
+    expect((parseLatest(latest({ judged_at: "2026-11-04T17:03:54.5+0800" })) as any).run.judged_at).toBe("2026-11-04T09:03:54.500Z");
+    expect(parseLatest([])).toEqual(["document is not a JSON object"]);
+    expect(instancePreflight(["import-latest", "f.json"], {})).toMatch(/--owner/);
+    expect(instancePreflight(["import-latest"], { owner: "o" })).toMatch(/<latest\.json>/);
+    expect(instancePreflight(["import-latest", "f.json"], { owner: "o" })).toBeNull();
+    expect(instancePreflight(["import-latest", "f.json"], { owner: "o", schedule: "on-push" })).toMatch(/--schedule does not apply to verify instance import-latest/);
   });
 });
 
@@ -117,7 +159,7 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     expect(draft.json.state).toBe("draft");
     expect(cli(["verify", "instance", "list", "--state", "draft"]).json.map((r: any) => r.id)).toEqual([draft.json.id]);
     expect(cli(["verify", "instance", "list", "--owner", "lab"]).json).toHaveLength(1);
-    expect(cli(["verify", "instance", "show", draft.json.id]).json).toMatchObject({ id: draft.json.id, state: "draft" });
+    expect(cli(["verify", "instance", "show", draft.json.id]).json).toMatchObject({ id: draft.json.id, state: "draft", runs: [] });
     expect(cli(["verify", "instance", "show", "vi_nope"]).rc).toBe(1);
     const retired = cli(["verify", "instance", "retire", draft.json.id, "--reason", "superseded"]);
     expect(retired.json).toMatchObject({ state: "retired", note: "superseded" });
@@ -130,7 +172,7 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     mkdirSync(join(ROOT, "tmp"), { recursive: true });
     const empty = mkdtempSync(join(ROOT, "tmp/instance-empty-"));
     try {
-      for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"], ["create", ...PACK, "--owner", "o", "--state", "retired"]]) {
+      for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"], ["create", ...PACK, "--owner", "o", "--state", "retired"], ["import-latest", "latest.json"]]) {
         const r = spawnSync(process.execPath, [BIN, "verify", "instance", ...args, "--json"], { encoding: "utf8", timeout: 60000,
           env: { ...process.env, YGL_HOME: empty, YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1" } });
         expect(r.status, args.join(" ") + r.stdout).toBe(2);
@@ -154,5 +196,42 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     expect(cli(["db", "export", dump]).rc).toBe(0);
     const text = require("node:fs").readFileSync(dump, "utf8");
     expect(text.match(/^INSERT OR REPLACE INTO verifier_instances\(/gm)?.length).toBe(stats.verifier_instances);
+  });
+
+  it("import-latest registers a legacy-repo instance, records the run once, and refuses a run id another instance owns", () => {
+    const dir = join(home, "legacy");
+    mkdirSync(join(dir, "work/results"), { recursive: true });
+    writeFileSync(join(dir, "work/results/x.json"), "{\"overall\":\"PASS\"}");
+    const file = join(dir, "work/results/latest.json");
+    writeFileSync(file, JSON.stringify(latest({ repo: dir, target: { repo: "NelsonLongxiang/ygl-trees", rev: "origin/master", sha: "abc123" } })));
+    const first = cli(["verify", "instance", "import-latest", file, "--owner", "webui-seat"]);
+    expect(first.rc, first.text).toBe(0);
+    expect(first.json).toMatchObject({ instance_created: true, archive_ok: false,
+      instance: { kind: "legacy-repo", pack: "ygl-webui-verifier", pack_version: "legacy", owner: "webui-seat", state: "active",
+        binding: { target: "git:NelsonLongxiang/ygl-trees", rev: "origin/master", params: {} }, last_run_id: "run_a285616ca1443ea2", last_verdict: "PASS" },
+      run: { id: "run_a285616ca1443ea2", verdict: "PASS", target_sha: "abc123", archive_sha256: "", executor: `legacy-repo:${dir}` } });
+    expect(first.json.run.payload_sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(first.json.duplicate).toBeUndefined();
+    const again = cli(["verify", "instance", "import-latest", file, "--owner", "webui-seat"]);
+    expect(again.json).toMatchObject({ instance_created: false, duplicate: true, instance: { id: first.json.instance.id } });
+    const next = join(dir, "next.json");
+    writeFileSync(next, JSON.stringify(latest({ repo: dir, root_run_id: "run_bbbbbbbbbbbbbbbb", overall: "FAIL", judged_at: "2026-11-05T00:00:00Z",
+      target: { repo: "NelsonLongxiang/ygl-trees", rev: "origin/master", sha: "def456" } })));
+    expect(cli(["verify", "instance", "import-latest", next, "--owner", "webui-seat"]).json).toMatchObject({ instance_created: false, instance: { last_run_id: "run_bbbbbbbbbbbbbbbb", last_verdict: "FAIL" } });
+    expect(cli(["verify", "instance", "show", first.json.instance.id]).json.runs.map((r: any) => [r.id, r.verdict])).toEqual([["run_bbbbbbbbbbbbbbbb", "FAIL"], ["run_a285616ca1443ea2", "PASS"]]);
+    const stolen = join(dir, "stolen.json");
+    writeFileSync(stolen, JSON.stringify(latest({ verifier: "other-verifier", target: { repo: "NelsonLongxiang/ygl-trees", rev: "origin/master", sha: "abc123" } })));
+    const clash = cli(["verify", "instance", "import-latest", stolen, "--owner", "x"]);
+    expect(clash.rc).toBe(1);
+    expect(clash.json.error).toMatch(/already recorded for verifier instance vi_/);
+    const badFile = join(dir, "bad.json");
+    writeFileSync(badFile, JSON.stringify({ contract: "ygl-verifier-latest/1" }));
+    const before = cli(["db", "stats"]).json;
+    const bad = cli(["verify", "instance", "import-latest", badFile, "--owner", "x"]);
+    expect(bad.rc).toBe(1);
+    expect(bad.json.error).toMatch(/verifier missing; target missing/);
+    expect(cli(["verify", "instance", "import-latest", join(dir, "nope.json"), "--owner", "x"]).rc).toBe(1);
+    expect(cli(["db", "stats"]).json).toMatchObject({ verifier_instances: before.verifier_instances, verifier_runs: before.verifier_runs });
+    expect(before.verifier_runs).toBe(2);
   });
 });

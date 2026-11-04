@@ -1337,6 +1337,56 @@ export async function verifierInstanceCreate(
   });
 }
 
+/** One evidence row for an instance (run ids are the engine report's run_id). */
+export interface VerifierRunInput {
+  id: string;
+  verdict: string;
+  judged_at: string;
+  target_sha: string;
+  payload_sha256: string;
+  archive_sha256: string;
+  executor: string;
+  engine_version: string;
+}
+
+/** #207 (S1 bridge): register-or-reuse the instance and append one run, in one transaction.
+ *  Same run id on the same instance → `run_dup: true`, nothing written; the same run id already
+ *  recorded under another instance is refused (a run is evidence for exactly one binding). */
+export async function verifierRunRecord(
+  ds: DataSource,
+  instance: VerifierInstanceInput,
+  run: VerifierRunInput
+): Promise<{ instance: Record<string, any>; instance_created: boolean; run: Record<string, any>; run_dup: boolean }> {
+  return runTx(ds, async (mgr) => {
+    let inst = ((await mgr.query(`SELECT * FROM verifier_instances WHERE identity_sha256=?`, [instance.identity_sha256])) as any[])[0];
+    let created = false;
+    const now = nowIso();
+    if (!inst) {
+      await mgr.query(
+        `INSERT INTO verifier_instances(id,identity_sha256,kind,pack,pack_version,binding,owner,schedule,state,note,created,updated)
+         VALUES(?,?,?,?,?,?,?,?,?,'',?,?)`,
+        [instance.id, instance.identity_sha256, instance.kind, instance.pack, instance.pack_version, instance.binding, instance.owner, instance.schedule || "manual", instance.state, now, now]
+      );
+      await logEvent(mgr, "verifier.instance.create", "verifier_instance", instance.id, { pack: `${instance.pack}@${instance.pack_version}`, owner: instance.owner, kind: instance.kind });
+      inst = ((await mgr.query(`SELECT * FROM verifier_instances WHERE id=?`, [instance.id])) as any[])[0];
+      created = true;
+    }
+    const prior = ((await mgr.query(`SELECT * FROM verifier_runs WHERE id=?`, [run.id])) as any[])[0];
+    if (prior) {
+      if (prior.instance_id !== inst.id) throw new Error(`run ${run.id} is already recorded for verifier instance ${prior.instance_id}`);
+      return { instance: inst, instance_created: created, run: prior, run_dup: true };
+    }
+    await mgr.query(
+      `INSERT INTO verifier_runs(id,instance_id,verdict,judged_at,target_sha,payload_sha256,archive_sha256,executor,engine_version,created)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`,
+      [run.id, inst.id, run.verdict, run.judged_at, run.target_sha, run.payload_sha256, run.archive_sha256, run.executor, run.engine_version, now]
+    );
+    await logEvent(mgr, "verifier.run.record", "verifier_run", run.id, { instance: inst.id, verdict: run.verdict });
+    const rows = (await mgr.query(`SELECT * FROM verifier_runs WHERE id=?`, [run.id])) as any[];
+    return { instance: inst, instance_created: created, run: rows[0], run_dup: false };
+  });
+}
+
 /** Retire an instance (it stays readable). Already retired → `dup: true`, reason unchanged. */
 export async function verifierInstanceRetire(ds: DataSource, id: string, reason: string): Promise<WriteResult> {
   return runTx(ds, async (mgr) => {
