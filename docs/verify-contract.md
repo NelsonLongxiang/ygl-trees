@@ -114,6 +114,10 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 - 渲染结果 `rendered.find_sql` / `rendered.scope_sql` 写进报告 evidence，与 witness 对账。
 - `authored:"mechanical"` 的手写 sql 直接 ERROR（机械 spec 只能用 predicate）；手写 sql 形态必须自带 `scope_sql` 或 WHERE。
 
+### Contract 1.2 下的元数据采集替代路径
+
+需要检查 SQLite 列存在性，而 `predicate.from` 不能表达 `pragma_table_info(...)` 时，可先对静止、完整的源快照只读采集，将结果落成独立 evidence SQLite 的普通表，再用现有 count/exists/sql 谓词验证。可运行示例及 PASS/FAIL 归档回归见 [schema snapshot recipe](../examples/verify-schema-snapshot/README.md)。报告的快照 SHA 指采集后的证据库；原源库 SHA 保留在 `collection_source` 中，两者不可混淆。这个替代路径不开放手写 SQL、不执行源 view，不等于 #80 的契约 1.3 扩展已完成。
+
 ## 1.6 prepare 流水线（P0–P5，评审 302cb119 拍板条件）
 
 构造面 = **模型只提议、机器只接受机械形态**。五阶段全在 `packages/verify/core/src/prepare.ts`，每阶段拒绝都进 `rejected[]`（带 `stage` 与原因），不静默丢。
