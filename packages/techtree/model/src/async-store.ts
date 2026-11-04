@@ -15,6 +15,45 @@ import { AsyncDb, SqliteAsyncDb, getAsyncDb, assertSyncDelegationAllowed } from 
 import { TreeStore, Row } from "./reads";
 import { recordSelectionVia, sessionId, type Selection } from "../../../core/database/src/selection";
 
+/**
+ * #176 W1-T3: copy one tree's rows into an in-memory SQLite workspace so the synchronous TreeStore judgement
+ * (canUnlock / ready / pathTo / ancestors / descendants) runs unchanged on PG data — one implementation, no
+ * dialect drift in the gate logic. Rows are read in creation order (`created, id`), the same rule as
+ * pg-compat-drift #10. Only the columns the SQLite schema knows are copied (PG search columns are dropped).
+ * Events are copied only for kinds that `op=telemetry` conditions of this tree count.
+ */
+export async function materializeTree(adb: AsyncDb, treeId: string): Promise<DB> {
+  const mem = new DB(":memory:");
+  mem.run("PRAGMA foreign_keys=OFF");
+  const colsOf = (table: string): string[] => (mem.all(`PRAGMA table_info(${table})`) as Row[]).map((c) => String(c.name));
+  const copy = async (table: string, where: string, params: unknown[], order = ""): Promise<void> => {
+    const cols = colsOf(table);
+    const rows = await adb.all(`SELECT ${cols.map((c) => `"${c}"`).join(",")} FROM ${table} WHERE ${where}${order}`, params);
+    if (!rows.length) return;
+    const st = mem.db.prepare(`INSERT INTO ${table}(${cols.map((c) => `"${c}"`).join(",")}) VALUES(${cols.map(() => "?").join(",")})`);
+    for (const r of rows) st.run(cols.map((c) => (r as Row)[c] ?? null));
+  };
+  try {
+    await copy("trees", "id=?", [treeId]);
+    await copy("nodes", "tree_id=?", [treeId], " ORDER BY created, id");
+    await copy("node_edges", "tree_id=?", [treeId], " ORDER BY created, id");
+    await copy("node_closure", "tree_id=?", [treeId]);
+    await copy("node_conditions", "node_id IN (SELECT id FROM nodes WHERE tree_id=?)", [treeId], " ORDER BY created, id");
+    await copy("node_state", "tree_id=?", [treeId]);
+    await copy("node_index", "tree_id=?", [treeId]);
+    const kinds = new Set<string>();
+    for (const c of mem.all("SELECT value FROM node_conditions WHERE op='telemetry'") as Row[]) {
+      const m = /^([A-Za-z0-9_.\/-]+)/.exec(String(c.value).trim());
+      if (m) kinds.add(m[1]);
+    }
+    if (kinds.size) await copy("events", `kind IN (${[...kinds].map(() => "?").join(",")})`, [...kinds], " ORDER BY ts, id");
+  } catch (e) {
+    mem.close(); // a failed copy must not leak the in-memory handle
+    throw e;
+  }
+  return mem;
+}
+
 export class AsyncTreeStore {
   private readonly sync: TreeStore;
   private readonly adb: AsyncDb;
@@ -228,8 +267,14 @@ export class AsyncTreeStore {
     }
     this.guard(); return this.sync.children(treeId, keyOrId);
   }
-  async ancestors(treeId: string, keyOrId: string, depth?: number): Promise<Row[]> { this.guard(); return this.sync.ancestors(treeId, keyOrId, depth); }
-  async descendants(treeId: string, keyOrId: string): Promise<Row[]> { this.guard(); return this.sync.descendants(treeId, keyOrId); }
+  async ancestors(treeId: string, keyOrId: string, depth?: number): Promise<Row[]> {
+    if (this.pg) return this.onTreeCopy(treeId, (t) => t.ancestors(treeId, keyOrId, depth));
+    this.guard(); return this.sync.ancestors(treeId, keyOrId, depth);
+  }
+  async descendants(treeId: string, keyOrId: string): Promise<Row[]> {
+    if (this.pg) return this.onTreeCopy(treeId, (t) => t.descendants(treeId, keyOrId));
+    this.guard(); return this.sync.descendants(treeId, keyOrId);
+  }
   async condList(treeId: string, keyOrId: string): Promise<Row[]> {
     if (this.pg) {
       const n = await this.nodeGet(treeId, keyOrId);
@@ -243,8 +288,17 @@ export class AsyncTreeStore {
   async evalContext(treeId: string, keyOrId: string, stateBag: Record<string, any>, context?: string): Promise<Row> { this.guard(); return this.sync.evalContext(treeId, keyOrId, stateBag, context); }
   async evalCandidates(treeId: string, context?: string, state?: Record<string, any>): Promise<Row[]> { this.guard(); return this.sync.evalCandidates(treeId, context, state); }
   async nodeSearch(treeId: string, q: string, limit?: number): Promise<Row[]> { this.guard(); return this.sync.nodeSearch(treeId, q, limit); }
-  async pathTo(treeId: string, targetKey: string, context?: string): Promise<{ order: string[]; total_cost: number }> { this.guard(); return this.sync.pathTo(treeId, targetKey, context); }
+  async pathTo(treeId: string, targetKey: string, context?: string): Promise<{ order: string[]; total_cost: number }> {
+    if (this.pg) return this.onTreeCopy(treeId, (t) => t.pathTo(treeId, targetKey, context));
+    this.guard(); return this.sync.pathTo(treeId, targetKey, context);
+  }
   async validate(treeId: string): Promise<string[]> { this.guard(); return this.sync.validate(treeId); }
+
+  /** PG: run a synchronous TreeStore read against an in-memory copy of one tree (see materializeTree). */
+  private async onTreeCopy<T>(treeId: string, fn: (t: TreeStore) => T): Promise<T> {
+    const mem = await materializeTree(this.adb, treeId);
+    try { return fn(new TreeStore(mem)); } finally { mem.close(); }
+  }
 
   async nodeList(treeId: string, context = "default"): Promise<Row[]> {
     if (this.pg) {
@@ -264,10 +318,12 @@ export class AsyncTreeStore {
   }
 
   async canUnlock(treeId: string, keyOrId: string, context?: string, state?: Record<string, any>): Promise<unknown> {
+    if (this.pg) return this.onTreeCopy(treeId, (t) => t.canUnlock(treeId, keyOrId, context, state));
     this.guard(); return this.sync.canUnlock(treeId, keyOrId, context, state);
   }
 
   async ready(treeId: string, context?: string, state?: Record<string, any>): Promise<Row[]> {
+    if (this.pg) return this.onTreeCopy(treeId, (t) => t.ready(treeId, context, state));
     this.guard(); return this.sync.ready(treeId, context, state);
   }
 

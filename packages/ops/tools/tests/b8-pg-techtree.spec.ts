@@ -1,5 +1,5 @@
 /**
- * #176 W1-T1 real PG: tree new/list/show/use and node add/list/show on PG give the same JSON as SQLite.
+ * #176 W1 real PG: the techtree faces opened in T1–T3 give the same JSON on PG as on SQLite.
  * Supply an isolated admin URL: the suite creates/drops its own random database (run by G7).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -110,10 +110,38 @@ describe.skipIf(!adminUrl)("#176 W1-T1 techtree on PG (golden vs SQLite)", () =>
     both(["node", "list"]);
   }, 240000);
 
-  it("commands outside T1/T2 stay refused on PG with rc 2 and name the open faces", () => {
-    const r = cli("pg", ["node", "unlock", "a", "--json"]);
-    expect(r.rc).toBe(2);
-    expect(JSON.parse(r.out).error).toMatch(/tree new\/list\/show\/use \| node add\/list\/show\/link\/unlink\/rm\/move\/index\/validate/);
+  it("T3 state and queries: cond / can / unlock / lock / ready / path / graph reads match SQLite", () => {
+    both(["tree", "use", "w1-tree"]);
+    both(["node", "link", "a", "B"]);
+    both(["node", "cond", "add", "B", "--name", "lvl", "--op", ">=", "--value", "2"]);
+    both(["node", "cond", "add", "B", "--name", "promo", "--op", ">=", "--value", "1", "--optional", "--effect", "cost_mul", "--weight", "0.5"]);
+    expect(both(["node", "can", "B"]).json).toMatchObject({ ok: false });
+    both(["node", "unlock", "a"]);
+    expect(both(["node", "can", "B", "--state", "lvl=2"]).json).toMatchObject({ ok: true, cost_multiplier: 1 });
+    expect(both(["node", "can", "B", "--state", "lvl=2,promo=1"]).json).toMatchObject({ ok: true, cost_multiplier: 0.5 });
+    both(["node", "ready"]);
+    both(["node", "ready", "--state", "lvl=2"]);
+    both(["node", "path", "B"]);
+    both(["node", "ancestors", "B"]);
+    both(["node", "descendants", "a"]);
+    both(["node", "parents", "B"]);
+    both(["node", "children", "a"]);
+    both(["node", "cond", "B"]);
+    both(["node", "cond", "rm", "B", "--name", "promo"]);
+    both(["node", "lock", "a"]);
+    both(["node", "ready", "--all"]);
+  }, 300000);
+
+  it("faces outside T1–T3 stay refused on PG with rc 2: --eval, cond --due, unopened commands, --global", () => {
+    const evalR = cli("pg", ["node", "can", "B", "--eval", "--json"]);
+    expect(evalR.rc).toBe(2);
+    expect(JSON.parse(evalR.out).error).toMatch(/--eval \(decision model\) needs the SQLite workspace face/);
+    const due = cli("pg", ["node", "cond", "--due", "--json"]);
+    expect(due.rc).toBe(2);
+    expect(JSON.parse(due.out).error).toMatch(/cond --due needs the SQLite workspace face/);
+    const other = cli("pg", ["node", "export", "--json"]);
+    expect(other.rc).toBe(2);
+    expect(JSON.parse(other.out).error).toMatch(/node add\/list\/show\/link\/unlink\/rm\/move\/index\/validate\/cond\/unlock\/lock\/can\/ready\/path\/parents\/children\/ancestors\/descendants \(no --eval, no cond --due\)/);
     expect(cli("pg", ["tree", "use", "w1-tree", "--global", "--json"]).rc).toBe(2);
   });
 
