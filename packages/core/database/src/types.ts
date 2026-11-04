@@ -66,7 +66,8 @@ const BOOLEAN_FLAGS = new Set(["json", "no-color", "no-colour", "quiet", "debug"
  * flag silently won). Every other flag keeps last-wins. */
 // 缺陷①（总工席 direct-085b7275，.157 实盘）：--db 必须多值——tree run 分叶绑库
 // （--db <node>=<path> ...）依赖数组形；单值消费方自行取末位（旧覆盖语义的显式化）。
-const MULTI_FLAGS = new Set(["attach", "db"]);
+// #206: `verify instance create --param k=v --param k2=v2` — binding params are an ordered list.
+const MULTI_FLAGS = new Set(["attach", "db", "param"]);
 
 /** #91：MULTI_FLAGS 的重复旗标收集为数组；单值消费方一律经本取值器取**末位**
  *  （= 数组化之前的「后者覆盖前者」语义显式化）。全仓 --db 消费方共用这一个入口。 */

@@ -441,6 +441,8 @@ export class Store {
       nodes: t("nodes"),
       node_edges: t("node_edges"),
       node_conditions: t("node_conditions"),
+      verifier_instances: t("verifier_instances"),
+      verifier_runs: t("verifier_runs"),
     };
   }
 }

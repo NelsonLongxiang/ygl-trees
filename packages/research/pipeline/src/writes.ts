@@ -1282,6 +1282,74 @@ export async function projectCreate(ds: DataSource, name: string, question = "")
   });
 }
 
+// ================================================================ verifier registry (v13, #206)
+
+/** A verifier instance row as the command layer computed it: identity fields are content-addressed
+ *  (the caller derives id + identity_sha256 from pack@version + binding); owner/schedule are mutable. */
+export interface VerifierInstanceInput {
+  id: string;
+  identity_sha256: string;
+  kind: string;
+  pack: string;
+  pack_version: string;
+  binding: string;
+  owner: string;
+  schedule: string;
+  state: string;
+}
+
+/** Register a verifier instance. Same identity again → the existing row with `dup: true`; a different
+ *  owner or schedule on that call updates the row in place (they are not part of the identity) and
+ *  `updated` names the changed fields. The state of an existing row is never changed here. */
+export async function verifierInstanceCreate(
+  ds: DataSource,
+  o: VerifierInstanceInput
+): Promise<WriteResult & { updated: string[] }> {
+  return runTx(ds, async (mgr) => {
+    const ex = (await mgr.query(`SELECT * FROM verifier_instances WHERE identity_sha256=?`, [o.identity_sha256])) as any[];
+    if (ex.length) {
+      const row = ex[0];
+      const updated: string[] = [];
+      if (o.owner && o.owner !== row.owner) updated.push("owner");
+      if (o.schedule && o.schedule !== row.schedule) updated.push("schedule");
+      if (updated.length) {
+        const now = nowIso();
+        await mgr.query(`UPDATE verifier_instances SET owner=?, schedule=?, updated=? WHERE id=?`, [
+          updated.includes("owner") ? o.owner : row.owner,
+          updated.includes("schedule") ? o.schedule : row.schedule,
+          now,
+          row.id,
+        ]);
+        await logEvent(mgr, "verifier.instance.update", "verifier_instance", row.id, { fields: updated });
+      }
+      const fresh = (await mgr.query(`SELECT * FROM verifier_instances WHERE id=?`, [row.id])) as any[];
+      return { row: fresh[0], dup: true, updated };
+    }
+    const now = nowIso();
+    await mgr.query(
+      `INSERT INTO verifier_instances(id,identity_sha256,kind,pack,pack_version,binding,owner,schedule,state,note,created,updated)
+       VALUES(?,?,?,?,?,?,?,?,?,'',?,?)`,
+      [o.id, o.identity_sha256, o.kind, o.pack, o.pack_version, o.binding, o.owner, o.schedule || "manual", o.state, now, now]
+    );
+    await logEvent(mgr, "verifier.instance.create", "verifier_instance", o.id, { pack: `${o.pack}@${o.pack_version}`, owner: o.owner, state: o.state });
+    const rows = (await mgr.query(`SELECT * FROM verifier_instances WHERE id=?`, [o.id])) as any[];
+    return { row: rows[0], dup: false, updated: [] };
+  });
+}
+
+/** Retire an instance (it stays readable). Already retired → `dup: true`, reason unchanged. */
+export async function verifierInstanceRetire(ds: DataSource, id: string, reason: string): Promise<WriteResult> {
+  return runTx(ds, async (mgr) => {
+    const rows = (await mgr.query(`SELECT * FROM verifier_instances WHERE id=?`, [id])) as any[];
+    if (!rows.length) throw new Error(`verifier instance not found: ${id}`);
+    if (rows[0].state === "retired") return { row: rows[0], dup: true };
+    await mgr.query(`UPDATE verifier_instances SET state='retired', note=?, updated=? WHERE id=?`, [reason, nowIso(), id]);
+    await logEvent(mgr, "verifier.instance.retire", "verifier_instance", id, { reason });
+    const fresh = (await mgr.query(`SELECT * FROM verifier_instances WHERE id=?`, [id])) as any[];
+    return { row: fresh[0], dup: false };
+  });
+}
+
 // ================================================================ patrol (v12, 0.93-T2)
 
 /** Register a boundary assertion. `sql` must be a SELECT that returns

@@ -547,6 +547,7 @@ ${cl.text}
         "claims", "claim_evidence", "artifacts", "kb_notes", "kb_links",
         "trees", "nodes", "node_edges", "node_closure", "node_conditions", "node_state", "node_index",
         "relations", "jobs", "runs", "events", "schema_migrations", "patrol_checks", "patrol_findings",
+        "verifier_instances", "verifier_runs",
       ];
       const lines: string[] = [
         "-- ygl-trees full dump",
