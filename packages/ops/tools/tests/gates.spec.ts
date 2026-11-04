@@ -125,6 +125,9 @@ describe("#96 G1/G7/G8 script surfaces", () => {
         expect(g9).toBeGreaterThanOrEqual(0);
         expect(skipExit).toBeGreaterThan(g9);
     expect(t).not.toMatch(/Gitee Go is unavailable/); // stale header removed
+    // git ignores a hook without the exec bit on macOS/Linux (only Windows runs it regardless): track it as 100755.
+    const staged = execSync("git ls-files -s .githooks/pre-push", { cwd: REPO, encoding: "utf8" });
+    if (staged) expect(staged.split(/\s+/)[0]).toBe("100755");
   });
 });
 

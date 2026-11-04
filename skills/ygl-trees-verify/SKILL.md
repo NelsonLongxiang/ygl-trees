@@ -104,7 +104,22 @@ ygl-trees db snapshot                          # 快照产物（sha256+脱敏来
 
 ## 2d. 验证器仓库布局与多验证器组织
 
-一个**验证器**是一个独立 git 仓库（舰队惯例 `~/workspace/<名>-verifier`），只放材料、构造输入、探针与编排，不放被验对象。
+> **新建验证器不再建仓库（#205 / #213，严格）。** 验证器分两层：
+> - **全局规范只在 ygl-trees**（契约、R1–R6、登记规则、生命周期、全局包名单）。项目仓不复制、不改写；不带作用域的 `ygl-v-<名>` 只给全局包（`ygl-v-core-aggregate`、`ygl-v-pr-gate`、`ygl-v-release-audit`），新增全局包走 ygl-trees PR。
+> - **项目判据写成项目包** `@<项目>/ygl-v-<名>`，放在**项目自己仓库**的 `verify/packs/<名>/`（一个项目一个目录，纯数据：清单、判据材料、树、夹具，不带编排），再用登记入口（verify instance create，#210 起提供）登记成实例。target 是 git 仓时作用域必须等于目标仓名——项目验证器只验自己的项目。
+> - S4 之前包还不能从登记表执行：执行暂用 `verify submit` → `verify prepare` → `verify run`（YGL_HOME 用项目仓 `tmp/`），**不为此新建验证器仓库**。
+>
+> 下面的独立仓库布局只描述**现存 legacy 仓**（S1 桥接、S5 收仓的过渡态），用于维护它们，不得照着新建。
+
+```text
+<项目仓>/verify/packs/<名>/      项目包（包名 @<项目>/ygl-v-<名>）
+├── pack.json                    清单 ygl-verifier-pack/1：钉 spec_id@spec_version + sha256、引擎、tags
+├── specs/<叶名>/                material.md + candidates.json + reviews.json
+├── tree.json                    叶子组织
+└── fixtures/good/               已知良好夹具（selfcheck 用）
+```
+
+legacy 验证器仓（现存的，一个独立 git 仓库，舰队惯例 `~/workspace/<名>-verifier`）只放材料、构造输入、探针与编排，不放被验对象。
 规则来源：硬规则 = `docs/validator-charter.md` §4.4（R1–R6，`verify meta` 机械检查）；目录惯例 = 舰队各仓现行一致形态。
 
 ```text
@@ -151,7 +166,9 @@ ygl-trees verify lint-candidates specs/<叶名>/candidates.json --text specs/<�
 - 聚合仓（如 ygl-fleet-verifier）用 `fleet.json` 列成员（id、verifier、owner、latest 的相对路径），用**一份 member spec 挂所有成员**，逐成员判：报到、根结论 PASS、时效、根归档自校验、自检、目标、测的是被验分支当前提交、引擎钉版、元验证。根 = 全舰队合取。
 - 引擎 `verify tree` **不跨 workspace**（`cross-workspace` → rc2），跨仓引入外部报告的原语（import-report）仍是 unshipped；所以跨仓聚合目前由聚合仓的编排读 latest.json 完成，并用 `verify archive verify` 校验成员根归档。
 
-**新建一个验证器的最小清单**：AGENTS.md → `package.json` 钉引擎 → `verify/meta.json` + `verify/registration.json` → `specs/<叶名>/` 三件 → 编排进 `verify/orchestration/` 并登记 → 好夹具与 selfcheck → `ygl-trees verify meta .` PASS → 每轮写 `latest.json` → 交聚合仓登记到 `fleet.json`。
+**新建一个验证器的最小清单（#213 起）**：先定层——通用于所有项目的，提 ygl-trees PR 进全局包名单；否则是项目包 → 在被验项目仓建 `verify/packs/<名>/`（清单 + `specs/<叶名>/` 三件 + 树 + 好夹具）→ 用登记入口 verify instance create 登记（包名 @<项目>/ygl-v-<名>@<semver>，target 写 git:<owner>/<项目>，必填负责人）。**不建新仓库**。
+
+**维护现存 legacy 仓的清单**（只用于已有的仓）：AGENTS.md → `package.json` 钉引擎 → `verify/meta.json` + `verify/registration.json` → `specs/<叶名>/` 三件 → 编排进 `verify/orchestration/` 并登记 → 好夹具与 selfcheck → `ygl-trees verify meta .` PASS → 每轮写 `latest.json` → 交聚合仓登记到 `fleet.json`，并由 S1 的桥（verify instance import-latest）导入登记表。
 
 ## 3. 检查器七型与 witnesses
 
