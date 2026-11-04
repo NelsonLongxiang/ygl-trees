@@ -117,6 +117,7 @@ describe.skipIf(!adminUrl)("#176 W1-T1 techtree on PG (golden vs SQLite)", () =>
     both(["node", "cond", "add", "B", "--name", "promo", "--op", ">=", "--value", "1", "--optional", "--effect", "cost_mul", "--weight", "0.5"]);
     expect(both(["node", "can", "B"]).json).toMatchObject({ ok: false });
     both(["node", "unlock", "a"]);
+    expect(both(["node", "show", "a"]).json.node).toMatchObject({ state: "unlocked", unlocked_at: "<time>" });
     expect(both(["node", "can", "B", "--state", "lvl=2"]).json).toMatchObject({ ok: true, cost_multiplier: 1 });
     expect(both(["node", "can", "B", "--state", "lvl=2,promo=1"]).json).toMatchObject({ ok: true, cost_multiplier: 0.5 });
     both(["node", "ready"]);
@@ -129,6 +130,8 @@ describe.skipIf(!adminUrl)("#176 W1-T1 techtree on PG (golden vs SQLite)", () =>
     both(["node", "cond", "B"]);
     both(["node", "cond", "rm", "B", "--name", "promo"]);
     both(["node", "lock", "a"]);
+    expect(both(["node", "show", "a"]).json.node).toMatchObject({ state: "locked", unlocked_at: null });
+    expect(both(["node", "list"]).json.find((n: any) => n.key === "a")).toMatchObject({ state: "locked", unlocked_at: null });
     both(["node", "ready", "--all"]);
   }, 300000);
 

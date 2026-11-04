@@ -25,6 +25,10 @@ With `YGL_DB_URL` set to a migrated PG target, `tree new/list/show/use` and `nod
 - Structural writes (link/unlink/rm/move/index/validate) take a per-tree `pg_advisory_xact_lock` on PG (`lockTree`; two trees are locked in id order), because the closure rebuild deletes and re-inserts the whole tree. `validateTree` is the PG twin of `TreeStore.validate`: the same checks, order and messages.
 - `AsyncTreeStore` PG branches cast counts to `::int` and order keys with `COLLATE "C"` (SQLite binary order). Tree selection is session-only (`current_tree@<session>`).
 
+## State timestamps
+
+`node show` and `node list` expose `unlocked_at` only when the selected context is currently `unlocked`; missing or locked state yields `null`. The value comes from the current state row, not a historical last-unlock audit. Locking does not invent a new unlock time or rewrite another context. Historical transitions remain in events; no schema or stored timestamp migration is performed. SQLite and PG use the same projection.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history

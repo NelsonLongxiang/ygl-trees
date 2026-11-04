@@ -235,7 +235,7 @@ export class AsyncTreeStore {
   async nodeStateOf(treeId: string, keyOrId: string, context = "default"): Promise<{ state: string; unlocked_at: string | null }> {
     if (this.pg) {
       const r = await this.adb.get(
-        `SELECT st.status AS state, st.updated AS unlocked_at
+        `SELECT st.status AS state, CASE WHEN st.status='unlocked' THEN st.updated ELSE NULL END AS unlocked_at
            FROM nodes n LEFT JOIN node_state st ON st.node_id=n.id AND st.context=?
           WHERE n.tree_id=? AND (n.key=? OR n.id=?)`,
         [context, treeId, keyOrId, keyOrId]) as any;
@@ -308,7 +308,7 @@ export class AsyncTreeStore {
                 (SELECT COUNT(*)::int FROM node_edges e WHERE e.child_id=n.id AND e.required=1) AS req_parents,
                 (SELECT COUNT(*)::int FROM node_edges e WHERE e.parent_id=n.id) AS children,
                 COALESCE(st.status,'locked') AS state,
-                st.updated AS unlocked_at
+                CASE WHEN st.status='unlocked' THEN st.updated ELSE NULL END AS unlocked_at
            FROM nodes n
            LEFT JOIN node_state st ON st.node_id=n.id AND st.context=?
           WHERE n.tree_id=? ORDER BY n.tier, n.key COLLATE "C"`,
