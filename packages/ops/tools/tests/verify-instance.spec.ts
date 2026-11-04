@@ -47,6 +47,13 @@ describe("instance identity and flag parsing", () => {
     ];
     for (const [flags, re] of cases) expect(parseCreate(flags), JSON.stringify(flags)).toMatch(re);
     expect(instancePreflight(["create"], { pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["k=1", "k=1"] })).toBeNull();
+    // Keys that name Object.prototype members are ordinary params (review on 5a365f8).
+    expect(parseCreate({ pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["constructor=value", "tostring=1"] })).toMatchObject({ binding: { params: { constructor: "value", tostring: "1" } } });
+    expect(parseCreate({ pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["constructor=a", "constructor=b"] })).toMatch(/constructor given twice/);
+    // A flag another subcommand reads is refused, never silently dropped (create --state retired used to write active).
+    expect(instancePreflight(["create"], { pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", state: "retired" })).toMatch(/--state does not apply to verify instance create/);
+    expect(instancePreflight(["show", "vi_x"], { reason: "r", owner: "o" })).toMatch(/--reason --owner do not apply/);
+    expect(instancePreflight(["list"], { draft: true })).toMatch(/--draft does not apply/);
     expect(instancePreflight(["list"], { state: "bogus" })).toMatch(/--state must be one of/);
     expect(instancePreflight(["show"], {})).toMatch(/usage: verify instance/);
     expect(instancePreflight(["retire", "vi_x"], {})).toMatch(/--reason/);
@@ -88,6 +95,9 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
   afterAll(() => { if (home) rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
   it("create → same binding is a duplicate (param order ignored); owner/schedule change updates in place", () => {
+    const odd = cli(["verify", "instance", "create", "--pack", "ygl-v-review@1.0.0", "--target", "git:review", "--owner", "review", "--param", "constructor=value"]);
+    expect(odd.rc, odd.text).toBe(0);
+    expect(odd.json.binding.params).toEqual({ constructor: "value" });
     const first = cli(["verify", "instance", "create", ...PACK, "--param", "a=1", "--param", "b=2", "--owner", "supervisor"]);
     expect(first.rc, first.text).toBe(0);
     expect(first.json).toMatchObject({ kind: "pack", pack: "ygl-v-core-aggregate", pack_version: "1.0.0", owner: "supervisor", schedule: "manual", state: "active",
@@ -120,7 +130,7 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     mkdirSync(join(ROOT, "tmp"), { recursive: true });
     const empty = mkdtempSync(join(ROOT, "tmp/instance-empty-"));
     try {
-      for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"]]) {
+      for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"], ["create", ...PACK, "--owner", "o", "--state", "retired"]]) {
         const r = spawnSync(process.execPath, [BIN, "verify", "instance", ...args, "--json"], { encoding: "utf8", timeout: 60000,
           env: { ...process.env, YGL_HOME: empty, YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1" } });
         expect(r.status, args.join(" ") + r.stdout).toBe(2);

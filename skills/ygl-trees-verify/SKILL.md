@@ -263,7 +263,7 @@ ygl-trees verify instance retire <instance-id> --reason "superseded by 2.0.0"
 - 包名硬性 `ygl-v-` 前缀（可带 `@scope/`），版本必须完整 semver；target 写成 `<kind>:<ref>`（如 `git:owner/repo`、`sqlite:<path>`）。
 - `show` / `list` 带 `last_run_id` / `last_verdict` / `last_judged_at`（来自运行记录；还没跑过为 null）。
 - 退役不删行：`retire` 后仍可读；重复退役 `duplicate:true`。
-- 用法错误一律 rc2 单 JSON，先于开库；**PG 模式下 S0 不开放**（rc2），PG 随 S2 落地。
+- 用法错误一律 rc2 单 JSON，先于开库（子命令不读的旗标也算，如 `create --state`）；**PG 模式下 S0 不开放**（rc2），PG 随 S2 落地。
 
 ## 8. 常见坑
 

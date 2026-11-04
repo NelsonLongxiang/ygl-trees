@@ -60,15 +60,17 @@ export function parseCreate(flags: Record<string, any>): string | {
   if (!TARGET_RE.test(target)) return `--target must be <kind>:<ref> (kind lowercase, e.g. git:owner/repo), got: ${target}`;
   if (flags.rev === true) return "--rev needs a value";
   const rev = flag(flags.rev);
-  const params: Record<string, string> = {};
+  // A Map, not an object literal: keys such as `constructor` are legal and must not hit Object.prototype.
+  const seen = new Map<string, string>();
   for (const raw of list(flags.param)) {
     const eq = raw.indexOf("=");
     if (eq <= 0) return `--param must be k=v, got: ${raw}`;
     const k = raw.slice(0, eq), v = raw.slice(eq + 1);
     if (!PARAM_KEY_RE.test(k)) return `--param key must match [a-z][a-z0-9_.-]*, got: ${k}`;
-    if (k in params && params[k] !== v) return `--param ${k} given twice with different values`;
-    params[k] = v;
+    if (seen.has(k) && seen.get(k) !== v) return `--param ${k} given twice with different values`;
+    seen.set(k, v);
   }
+  const params: Record<string, string> = Object.fromEntries(seen);
   if (flags.schedule === true) return "--schedule needs a value";
   const schedule = flag(flags.schedule);
   if (schedule && !SCHEDULE_RE.test(schedule)) return `--schedule must be manual | on-push | every:<N>m, got: ${schedule}`;
@@ -76,9 +78,20 @@ export function parseCreate(flags: Record<string, any>): string | {
   return { pack, version, binding: { target, rev, params }, owner, schedule, state };
 }
 
+/** Which instance flags each subcommand reads; any other instance flag is a usage error, not silently ignored. */
+const SUB_FLAGS: Record<string, string[]> = {
+  create: ["pack", "target", "rev", "param", "owner", "schedule", "draft"],
+  list: ["owner", "state", "pack"],
+  show: [],
+  retire: ["reason"],
+};
+
 /** I/O-free usage check (#175 ordering): bin runs it before the workspace DB gate and open. */
 export function instancePreflight(rest: string[], flags: Record<string, any>): string | null {
   const sub = rest[0];
+  const allowed = Object.hasOwn(SUB_FLAGS, sub) ? SUB_FLAGS[sub] : null;
+  const stray = allowed ? Object.keys(flags).filter((k) => INSTANCE_FLAGS.includes(k) && !allowed.includes(k)) : [];
+  if (stray.length) return `${stray.map((k) => `--${k}`).join(" ")} ${stray.length > 1 ? "do" : "does"} not apply to verify instance ${sub} — ${USAGE_INSTANCE}`;
   if (sub === "create") { const p = parseCreate(flags); return typeof p === "string" ? p : null; }
   if (sub === "list") {
     for (const k of ["owner", "state", "pack"]) {
