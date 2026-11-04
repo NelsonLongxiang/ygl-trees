@@ -56,6 +56,24 @@ describe.skipIf(!HAS_BIN)("0.110.0 checker selection table (help + llms, same so
     for (const p of PITFALLS) expect(r.out).toContain(p);
   });
 
+  it("verify help exposes portable export and identity-preserving import", () => {
+    const r = run(["verify", "--help"]);
+    expect(r.rc).toBe(0);
+    expect(r.out).toContain("export <spec-id> --portable");
+    expect(r.out).toContain("import <file.yglverify.json>");
+    expect(r.out).toContain("content-hash checked");
+    expect(r.out).toContain("spec_id/spec_version/as_of");
+    expect(r.out).toContain("duplicate:true");
+  });
+
+  it("llms lists portable export and import as separate discoverable commands", () => {
+    const r = run(["llms"]);
+    expect(r.rc).toBe(0);
+    expect(r.out).toMatch(/^verify export <spec-id> --portable[^\n]*# self-contained/m);
+    expect(r.out).toMatch(/^verify import <file[.]yglverify[.]json>[^\n]*# content-hash checked/m);
+    expect(r.out).toContain("content-hash checked");
+  });
+
   it("llms advertises the new discoverability commands", () => {
     const r = run(["llms"]);
     expect(r.out).toContain("verify example [--checker <type>]");

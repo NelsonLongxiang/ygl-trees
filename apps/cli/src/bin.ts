@@ -178,7 +178,10 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
                                       freeze eligibility, then make the check recurring (--db retargets the job only)
   register <sealed-binary>            register a sealed build (footer chain → registrations/ + binaries/)
   signature <sealed-binary> [--expect-key <hex|file>]  verify a seal's ed25519 signature (key table, not self-signed)
-  list | report <run-id> | trace <spec-id> | export <spec-id>
+  list | report <run-id> | trace <spec-id>
+  export <spec-id> [--out <f>]         export a bare frozen spec (not a portable bundle)
+  export <spec-id> --portable [--out <f>]  self-contained frozen bundle; content-hash checked on import
+  import <file.yglverify.json>        restore spec_id/spec_version/as_of; repeat → rc0 duplicate:true, conflicting bytes → rc1
   report import <report.json>          import a sealed-run report (payload/binary/version checks)
   archive <run-id|spec-id> [--snapshot <db>]         take-away archive; --snapshot feeds cross-impl runs
   archive verify <file>                              re-verify an archive's full hash chain
@@ -1063,12 +1066,13 @@ export function generateLlmsManifest(): string {
       ["verify tree prepare <material-id> [--pinned <node>=<sha256>]", "freeze recursive tree spec (A1; cycles/empty/depth/operator checks);材料=纯 JSON 树对象（入口容差：kind:agg→group、op→aggregate 别名，冻结面 canonical）"],
       ["verify tree run <tree-spec-id> [--db <path>|--db <node>=<path>] [--provenance <json>]", "post-order recursive run; leaves real run+archive (--no-archive skips)"],
       ["verify tree report <tree-run-id> | trace <tree-spec-id>", "read frozen tree run report / list tree runs"],
-      ["verify export <spec-id> [--portable] [--out <f>] | verify import <f.yglverify.json>", "export a frozen spec (--portable = self-contained bundle: spec + prepare + material + attachments); import re-installs it in a fresh home keeping spec_id/spec_version/as_of (duplicate → rc0 duplicate:true, conflicting bytes → rc1)"],
+      ["verify export <spec-id> --portable [--out <f>]", "self-contained frozen bundle: spec + prepare + material + attachments; content-hash checked on import; omit --portable for a bare spec"],
+      ["verify import <file.yglverify.json>", "content-hash checked restore keeping spec_id/spec_version/as_of; repeat → rc0 duplicate:true, conflicting bytes → rc1"],
       ["verify run <spec-id> --db <snapshot.sqlite> [--provenance <json>]", "run checkers on a snapshot copy → report (rc=0 even on FAIL)"],
       ["verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol]", "freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check (--db retargets the job only); --patrol only when the verified db IS the workspace db"],
       ["verify register <sealed-binary> [--keys <file>]", "register a sealed yglverify build (footer chain + signature → registrations/ + binaries/)"],
       ["verify signature <sealed-binary> [--expect-key <hex|file>]", "verify the seal's ed25519 footer signature against the repository key table"],
-      ["verify list / report <run-id> / trace <spec-id> / export <spec-id>", "catalog, reports, construction trace, .yglverify.json"],
+      ["verify list / report <run-id> / trace <spec-id>", "catalog, reports and construction trace"],
       ["verify report import <report.json>", "import a sealed-run report (payload/binary/spec_version checks)"],
       ["verify archive <run-id|spec-id> [--with …] [--snapshot <db>]", "archive bundle (report+spec+materials; --snapshot for cross-impl runs)"],
       ["verify archive verify <file>", "recompute the full hash chain of an archive bundle"],
