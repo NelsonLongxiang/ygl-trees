@@ -11,13 +11,15 @@
  * transactional services in research/pipeline/src/writes.ts.
  */
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import { bad, head, out, paint, C, table } from "../../../core/text/src/fmt";
 import * as writes from "../../../research/pipeline/src/writes";
 import { jcsCanonical } from "./jcs";
 
-export const USAGE_INSTANCE = "usage: verify instance create|list|show|retire (see ygl-trees verify --help)";
+export const USAGE_INSTANCE = "usage: verify instance create|list|show|retire|import-latest (see ygl-trees verify --help)";
 
 /** Pack names follow verifier-pack-plan §4.1: the `ygl-v-` prefix is a hard rule (scoped form allowed). */
 const PACK_RE = /^(@[a-z0-9][a-z0-9-]*\/)?ygl-v-[a-z0-9][a-z0-9-]*$/;
@@ -26,6 +28,7 @@ const TARGET_RE = /^[a-z][a-z0-9-]{0,31}:\S+$/;
 const PARAM_KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
 const SCHEDULE_RE = /^(manual|on-push|every:[1-9]\d{0,5}m)$/;
 const STATES = ["draft", "active", "retired"];
+const SHOW_RUNS = 20;
 /** Flags `verify instance` accepts (verify-cmds ACTION_FLAGS reads this list — one source). */
 export const INSTANCE_FLAGS = ["pack", "target", "rev", "param", "owner", "schedule", "draft", "state", "reason"];
 
@@ -78,12 +81,92 @@ export function parseCreate(flags: Record<string, any>): string | {
   return { pack, version, binding: { target, rev, params }, owner, schedule, state };
 }
 
+// ---------------------------------------------------------------- #207 S1: legacy-repo bridge
+
+const VERDICTS = ["PASS", "FAIL", "NEEDS-MATERIAL", "ERROR"];
+
+const GITHUB_RE = /^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i;
+const isAbs = (p: string) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p);
+
+/** Legacy verifier repos name their target as a local path, owner/repo or a GitHub URL; the bridge maps them
+ *  onto the `<kind>:<ref>` target form. A GitHub URL wins — target.repo_url first, then the origin of a local
+ *  checkout (`originOf`) — so copies of one verifier on different machines (different checkout paths, same
+ *  upstream) land on the same instance. A path only stays a path when no upstream is known. */
+export function legacyTarget(target: { repo?: unknown; repo_url?: unknown }, base = "", originOf: (dir: string) => string = () => ""): string {
+  const url = typeof target.repo_url === "string" ? target.repo_url.trim() : "";
+  let repo = typeof target.repo === "string" ? target.repo.trim() : "";
+  if (/^\.\.?([\\/]|$)/.test(repo) && isAbs(base)) repo = resolve(base, repo);
+  for (const v of [url, repo]) {
+    const m = GITHUB_RE.exec(v);
+    if (m) return `git:${m[1]}`;
+  }
+  if (/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) return `git:${repo}`;
+  if (isAbs(repo)) {
+    const m = GITHUB_RE.exec(originOf(repo));
+    return m ? `git:${m[1]}` : `path:${repo.replace(/\\/g, "/")}`;
+  }
+  return `ref:${repo}`;
+}
+
+/** origin URL of a local git checkout, read from .git/config (no git spawn); "" when there is none. */
+export function checkoutOrigin(dir: string): string {
+  try {
+    const m = /\[remote "origin"\][^[]*?\burl\s*=\s*(\S+)/.exec(readFileSync(join(dir, ".git", "config"), "utf8"));
+    return m ? m[1] : "";
+  } catch { return ""; }
+}
+
+export interface LegacyLatest {
+  verifier: string;
+  binding: InstanceBinding;
+  run: { id: string; verdict: string; judged_at: string; target_sha: string };
+  archive: string;
+  result_file: string;
+  repo: string;
+}
+
+/** Validate one `ygl-verifier-latest/1` document and normalize it. Returns every problem by name, or the
+ *  fields the registry keeps. Relative paths resolve against the document's own `repo` (the verifier repo),
+ *  else against `dir` (where the latest.json sits). */
+export function parseLatest(doc: any, dir = "", originOf: (dir: string) => string = () => ""): string[] | LegacyLatest {
+  const problems: string[] = [];
+  const str = (v: unknown) => typeof v === "string" && v.trim() !== "";
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["document is not a JSON object"];
+  if (doc.contract !== "ygl-verifier-latest/1") problems.push(`contract must be "ygl-verifier-latest/1" (got ${JSON.stringify(doc.contract ?? null)})`);
+  if (!str(doc.verifier)) problems.push("verifier missing");
+  const t = doc.target;
+  if (!t || typeof t !== "object") problems.push("target missing");
+  else {
+    if (!str(t.repo) && !str(t.repo_url)) problems.push("target.repo missing");
+    if (!str(t.rev)) problems.push("target.rev missing");
+    if (!str(t.sha)) problems.push("target.sha missing");
+  }
+  if (!VERDICTS.includes(doc.overall)) problems.push(`overall must be one of ${VERDICTS.join("|")} (got ${JSON.stringify(doc.overall ?? null)})`);
+  if (!(typeof doc.root_run_id === "string" && /^run_[0-9a-f]{8,}$/.test(doc.root_run_id))) problems.push("root_run_id missing or not run_<hex>");
+  if (!(str(doc.judged_at) && !Number.isNaN(Date.parse(doc.judged_at)))) problems.push("judged_at missing or not an ISO timestamp");
+  if (problems.length) return problems;
+  const repo = str(doc.repo) ? doc.repo.trim() : "";
+  const base = isAbs(repo) ? repo : dir;
+  const at = (v: unknown) => (str(v) ? (isAbs(v as string) || !base ? (v as string) : resolve(base, v as string)) : "");
+  return {
+    verifier: doc.verifier.trim(),
+    binding: { target: legacyTarget(t, base, originOf), rev: t.rev.trim(), params: {} },
+    run: { id: doc.root_run_id, verdict: doc.overall, judged_at: new Date(doc.judged_at).toISOString(), target_sha: t.sha.trim() },
+    archive: at(doc.archive),
+    result_file: at(doc.result_file),
+    repo,
+  };
+}
+
+const fileSha = (p: string): string => (p && existsSync(p) ? createHash("sha256").update(readFileSync(p)).digest("hex") : "");
+
 /** Which instance flags each subcommand reads; any other instance flag is a usage error, not silently ignored. */
 const SUB_FLAGS: Record<string, string[]> = {
   create: ["pack", "target", "rev", "param", "owner", "schedule", "draft"],
   list: ["owner", "state", "pack"],
   show: [],
   retire: ["reason"],
+  "import-latest": ["owner"],
 };
 
 /** I/O-free usage check (#175 ordering): bin runs it before the workspace DB gate and open. */
@@ -104,6 +187,7 @@ export function instancePreflight(rest: string[], flags: Record<string, any>): s
   }
   if (sub === "show") return rest[1] ? null : USAGE_INSTANCE;
   if (sub === "retire") return rest[1] && flag(flags.reason) ? null : `verify instance retire needs <id> and --reason — ${USAGE_INSTANCE}`;
+  if (sub === "import-latest") return rest[1] && flag(flags.owner) ? null : `verify instance import-latest needs <latest.json> and --owner — ${USAGE_INSTANCE}`;
   return USAGE_INSTANCE;
 }
 
@@ -166,10 +250,38 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     const id = rest[1];
     const row = env.store.db.get(`${SELECT_INSTANCE} WHERE i.id=?`, [id]);
     if (!row) { bad(ctx, `verifier instance not found: ${id}`); return 1; }
-    const shown = present(row);
-    if (ctx.json) console.log(JSON.stringify(shown, null, 2));
-    else for (const [k, v] of Object.entries(shown)) out(ctx, `  ${k.padEnd(16)} ${typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "—")}`);
+    // Newest SHOW_RUNS runs (plan D3 keeps K = 20 per instance), so readers never need the DB file.
+    const runs = env.store.db.all(`SELECT id, verdict, judged_at, target_sha, payload_sha256, archive_sha256, executor, engine_version, created
+      FROM verifier_runs WHERE instance_id=? ORDER BY judged_at DESC, id DESC LIMIT ${SHOW_RUNS}`, [id]);
+    const shown = { ...present(row), runs };
+    if (ctx.json) { console.log(JSON.stringify(shown, null, 2)); return 0; }
+    for (const [k, v] of Object.entries(present(row))) out(ctx, `  ${k.padEnd(16)} ${typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "—")}`);
+    out(ctx, `  ${"runs".padEnd(16)} ${runs.length ? "" : "—"}`);
+    for (const r of runs as Array<Record<string, any>>) out(ctx, `    ${r.judged_at}  ${String(r.verdict).padEnd(14)} ${r.id}  ${String(r.target_sha).slice(0, 12)}${r.archive_sha256 ? "" : "  (no archive)"}`);
     return 0;
+  }
+
+  if (sub === "import-latest") {
+    const file = rest[1];
+    let doc: any;
+    try { doc = JSON.parse(readFileSync(file, "utf8")); } catch (e: any) { bad(ctx, `cannot read ${file}: ${e?.code === "ENOENT" ? "no such file" : e?.message || e}`); return 1; }
+    const p = parseLatest(doc, dirname(resolve(file)), checkoutOrigin);
+    if (Array.isArray(p)) { bad(ctx, `${file} does not satisfy ygl-verifier-latest/1: ${p.join("; ")}`); return 1; }
+    const ids = instanceIdentity(p.verifier, "legacy", p.binding);
+    const archiveSha = fileSha(p.archive);
+    return getOrm(env.db.path)
+      .then((ds) => writes.verifierRunRecord(ds,
+        { ...ids, kind: "legacy-repo", pack: p.verifier, pack_version: "legacy", binding: jcsCanonical(p.binding), owner: flag(args.flags.owner), schedule: "", state: "active" },
+        { ...p.run, payload_sha256: fileSha(p.result_file), archive_sha256: archiveSha, executor: `legacy-repo:${p.repo || p.verifier}`, engine_version: "" }))
+      .then((r): number => {
+        const inst = present(env.store.db.get(`${SELECT_INSTANCE} WHERE i.id=?`, [r.instance.id]) ?? r.instance);
+        const payload = { instance: inst, instance_created: r.instance_created, run: r.run, archive_ok: archiveSha !== "", ...(r.run_dup ? { duplicate: true } : {}) };
+        if (ctx.json) console.log(JSON.stringify(payload, null, 2));
+        else if (r.run_dup) out(ctx, paint(C.yellow, `  ⚠ duplicate: run ${r.run.id} already recorded for ${inst.id}`, ctx.color));
+        else out(ctx, `  ✓ ${r.instance_created ? "registered" : "updated"} ${inst.id} (${p.verifier}) ← ${r.run.id} ${r.run.verdict}${archiveSha ? "" : "  [archive not found: archive_ok=false]"}`);
+        return 0;
+      })
+      .catch(fail);
   }
 
   if (sub === "retire") {

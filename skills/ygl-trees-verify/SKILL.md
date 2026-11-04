@@ -261,9 +261,20 @@ ygl-trees verify instance retire <instance-id> --reason "superseded by 2.0.0"
 
 - **身份按内容寻址**：`identity_sha256` = sha256(JCS{pack, version, target, rev, params})，`id` = `vi_` + 前 24 位。同一绑定再建 → rc0 `duplicate:true`（参数顺序无关）；`--owner` / `--schedule` 不进身份，换了就原地更新，`updated` 点名。
 - 包名硬性 `ygl-v-` 前缀（可带 `@scope/`），版本必须完整 semver；target 写成 `<kind>:<ref>`（如 `git:owner/repo`、`sqlite:<path>`）。
-- `show` / `list` 带 `last_run_id` / `last_verdict` / `last_judged_at`（来自运行记录；还没跑过为 null）。
+- `show` / `list` 带 `last_run_id` / `last_verdict` / `last_judged_at`（来自运行记录；还没跑过为 null）；`show` 另带 `runs`：最近 20 轮（新在前）。
 - 退役不删行：`retire` 后仍可读；重复退役 `duplicate:true`。
 - 用法错误一律 rc2 单 JSON，先于开库（子命令不读的旗标也算，如 `create --state`）；**PG 模式下 S0 不开放**（rc2），PG 随 S2 落地。
+
+**旧验证器仓库的桥（#207 · S1）**：已经在跑的仓库式验证器不用改，把它写出的 `latest.json` 导进登记表即可：
+
+```bash
+ygl-trees verify instance import-latest ../ygl-webui-verifier/work/results/latest.json --owner <who>
+```
+
+- 只收 `ygl-verifier-latest/1`：`contract`、`verifier`、`target.repo|repo_url`、`target.rev`、`target.sha`、`overall`（PASS/FAIL/NEEDS-MATERIAL/ERROR）、`root_run_id`（`run_<hex>`）、`judged_at`（ISO）缺一项就 rc1、逐项点名、**不写入**。
+- 实例 `kind: legacy-repo`、`pack` = 验证器名、`pack_version: legacy`；target 先认 GitHub 上游（`repo_url` → 本地检出的 `.git/config` origin），没有上游才落 `path:`，所以不同机器、不同检出路径的同一验证器落到同一实例。
+- 运行 id 就是 `root_run_id`：同一轮再导入 rc0 `duplicate:true`；这个 id 已挂在别的实例下 → rc1。
+- 归档 / 结果文件存在就现算 sha256；找不到时 `archive_ok:false` 照样导入（如实标出，不拒收）。相对路径按 latest.json 里的 `repo` 解析。
 
 ## 8. 常见坑
 

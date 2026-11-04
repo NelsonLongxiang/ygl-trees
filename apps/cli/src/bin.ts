@@ -186,6 +186,8 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   instance create --pack <ygl-v-name>@<semver> --target <kind>:<ref> --owner <who> [--rev <r>] [--param k=v]... [--schedule manual|on-push|every:<N>m] [--draft]
                                        register a verifier instance (registry row, content-addressed id; same binding → rc0 duplicate:true)
   instance list [--owner] [--state] [--pack] | instance show <id> | instance retire <id> --reason <r>
+  instance import-latest <latest.json> --owner <who>
+                                       bridge one legacy-repo run (ygl-verifier-latest/1) into the registry (#207)
   archive <run-id|spec-id> [--snapshot <db>]         take-away archive; --snapshot feeds cross-impl runs
   archive verify <file>                              re-verify an archive's full hash chain
   self-check [--corpus <dir>] [--no-cases]           recursive gate: vectors → digest → shapes → cases → archives
@@ -1087,6 +1089,7 @@ export function generateLlmsManifest(): string {
       ["verify lint-candidates <file> [--text <material>] [--reviews <file>]", "shape + clause-coverage + review-pairing check without consuming spec_version"],
       ["verify instance create --pack <ygl-v-name>@<semver> --target <kind>:<ref> --owner <who>", "register a verifier instance as a registry row; id is content-addressed, same binding → rc0 duplicate:true (#206)"],
       ["verify instance list | show <id> | retire <id> --reason <r>", "registry reads with last run; retire keeps the row readable"],
+      ["verify instance import-latest <latest.json> --owner <who>", "record a legacy verifier repo's latest run (instance kind legacy-repo; same run → duplicate:true) (#207)"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [
       ["patrol add <name> --sql \"SELECT …\" [--severity S1|S2|S3]", "register assertion (violating rows)"],
