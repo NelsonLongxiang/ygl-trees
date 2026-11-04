@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
+import { assertNoPgPassword } from "./fixtures/pg-output-guard";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DB } from "../../../core/database/src/db";
@@ -28,7 +29,7 @@ function cli(backend: "pg" | "sqlite", args: string[]) {
   const text = (r.stdout || "") + (r.stderr || "");
   // A killed child means the CLI printed its answer but never exited: an open PG handle, not a slow machine.
   expect(r.signal, `${backend} ${args.join(" ")}: process did not exit (open connection?) — ${text.slice(0, 200)}`).toBeNull();
-  if (backend === "pg") expect(text).not.toContain(new URL(adminUrl).password);
+  if (backend === "pg") assertNoPgPassword(text, adminUrl);
   return { rc: r.status, out: r.stdout || "", text };
 }
 /** Timestamps and generated ids differ between runs — shortId() mixes in Date.now() and Math.random(), so two
