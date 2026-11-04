@@ -91,6 +91,10 @@ describe("legacy latest.json bridge (#207)", () => {
     const bad = parseLatest({ contract: "x", target: { rev: "m" }, overall: "OK", root_run_id: "r1", judged_at: "yesterday" }) as string[];
     expect(bad).toHaveLength(7);
     for (const re of [/contract/, /verifier missing/, /target\.repo/, /target\.sha/, /overall must be one of/, /root_run_id/, /judged_at/]) expect(bad.some((x) => re.test(x)), String(re)).toBe(true);
+    // judged_at is strict ISO with an explicit zone: nothing Date.parse would guess at or roll over (#212 review).
+    for (const judged_at of ["0", "11/04/2026", "11-04-2026", "2026-11-04", "2026-11-04T10:00:00", "2026-02-30T00:00:00Z", "2026-11-04T25:00:00Z", "", 1793796415721])
+      expect(parseLatest(latest({ judged_at })), String(judged_at)).toEqual([expect.stringMatching(/^judged_at /)]);
+    expect((parseLatest(latest({ judged_at: "2026-11-04T17:03:54.5+0800" })) as any).run.judged_at).toBe("2026-11-04T09:03:54.500Z");
     expect(parseLatest([])).toEqual(["document is not a JSON object"]);
     expect(instancePreflight(["import-latest", "f.json"], {})).toMatch(/--owner/);
     expect(instancePreflight(["import-latest"], { owner: "o" })).toMatch(/<latest\.json>/);
