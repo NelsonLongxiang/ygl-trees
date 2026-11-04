@@ -31,7 +31,28 @@ const SCHEDULE_RE = /^(manual|on-push|every:[1-9]\d{0,5}m)$/;
 const STATES = ["draft", "active", "retired"];
 const SHOW_RUNS = 20;
 /** Flags `verify instance` accepts (verify-cmds ACTION_FLAGS reads this list — one source). */
-export const INSTANCE_FLAGS = ["pack", "target", "rev", "param", "owner", "schedule", "draft", "state", "reason"];
+export const INSTANCE_FLAGS = ["pack", "target", "rev", "param", "owner", "schedule", "draft", "state", "reason", "scope"];
+
+/** #213 G2: unscoped `ygl-v-<name>` is reserved for the global packs (verifier-pack-plan §4). The list lives only
+ *  here, so adding a global pack is a reviewed ygl-trees change; every other pack is `@<project>/ygl-v-<name>`. */
+export const GLOBAL_PACKS = ["ygl-v-core-aggregate", "ygl-v-pr-gate", "ygl-v-release-audit"];
+const SCOPE_RE = /^@([a-z0-9][a-z0-9-]*)\//;
+
+/** Repository name of a git target (`git:owner/repo` or `git:repo`), lowercase; "" for any other kind and for a
+ *  git target that names no repository (`git:/`, `git:////`, `git:o/..`) — callers must refuse those, never skip. */
+function gitRepoName(target: string): string {
+  const m = /^git:(?:.*\/)?([^/]+?)(?:\.git)?\/?$/.exec(target);
+  const name = m ? m[1].toLowerCase() : "";
+  return /^[a-z0-9._-]+$/.test(name) && name !== "." && name !== ".." ? name : "";
+}
+
+/** #213: an instance's tier — `global` for the reserved packs, otherwise its project: the pack's @scope, or for a
+ *  legacy-repo instance the target repository. Derived on read, never stored, so it cannot drift from the name. */
+export function scopeOf(kind: string, pack: string, target: string): string {
+  if (kind === "legacy-repo") return gitRepoName(target) || "unscoped";
+  const m = SCOPE_RE.exec(pack);
+  return m ? m[1] : GLOBAL_PACKS.includes(pack) ? "global" : "unscoped";
+}
 
 export interface InstanceBinding {
   target: string;
@@ -62,6 +83,8 @@ export function parseCreate(flags: Record<string, any>): string | {
   if (!PACK_RE.test(pack)) return `--pack name must start with ygl-v- (scoped: @scope/ygl-v-…), lowercase [a-z0-9-] — got: ${pack}`;
   if (!SEMVER_RE.test(version)) return `--pack version must be MAJOR.MINOR.PATCH, got: ${version}`;
   if (!TARGET_RE.test(target)) return `--target must be <kind>:<ref> (kind lowercase, e.g. git:owner/repo), got: ${target}`;
+  // #213 review on 273f140: an unparseable git target used to skip the P1 scope check (fail-open).
+  if (target.startsWith("git:") && !gitRepoName(target)) return `--target ${target} names no repository: use git:<owner>/<repo> or git:<repo>`;
   if (flags.rev === true) return "--rev needs a value";
   const rev = flag(flags.rev);
   // A Map, not an object literal: keys such as `constructor` are legal and must not hit Object.prototype.
@@ -79,6 +102,11 @@ export function parseCreate(flags: Record<string, any>): string | {
   const schedule = flag(flags.schedule);
   if (schedule && !SCHEDULE_RE.test(schedule)) return `--schedule must be manual | on-push | every:<N>m, got: ${schedule}`;
   const state = flags.draft === true || flags.draft === "true" ? "draft" : "active";
+  // #213 tiers: unscoped names belong to the global packs; a project pack verifies only its own project.
+  const scope = SCOPE_RE.exec(pack)?.[1];
+  if (!scope && !GLOBAL_PACKS.includes(pack)) return `--pack ${pack}: unscoped ygl-v-* names are reserved for the global packs (${GLOBAL_PACKS.join(", ")}); a project pack is @<project>/ygl-v-<name>`;
+  const repo = gitRepoName(target);
+  if (scope && repo && scope !== repo) return `--pack scope @${scope} does not match the target repository ${repo}: a project pack verifies only its own project (use @${repo}/…)`;
   return { pack, version, binding: { target, rev, params }, owner, schedule, state };
 }
 
@@ -167,7 +195,7 @@ const fileSha = (p: string): string => (p && existsSync(p) ? createHash("sha256"
 /** Which instance flags each subcommand reads; any other instance flag is a usage error, not silently ignored. */
 const SUB_FLAGS: Record<string, string[]> = {
   create: ["pack", "target", "rev", "param", "owner", "schedule", "draft"],
-  list: ["owner", "state", "pack"],
+  list: ["owner", "state", "pack", "scope"],
   show: [],
   retire: ["reason"],
   "import-latest": ["owner"],
@@ -181,7 +209,7 @@ export function instancePreflight(rest: string[], flags: Record<string, any>): s
   if (stray.length) return `${stray.map((k) => `--${k}`).join(" ")} ${stray.length > 1 ? "do" : "does"} not apply to verify instance ${sub} — ${USAGE_INSTANCE}`;
   if (sub === "create") { const p = parseCreate(flags); return typeof p === "string" ? p : null; }
   if (sub === "list") {
-    for (const k of ["owner", "state", "pack"]) {
+    for (const k of ["owner", "state", "pack", "scope"]) {
       const v = flags[k];
       if (v === undefined) continue;
       if (typeof v !== "string" || !v.trim()) return `--${k} needs a value`;
@@ -200,7 +228,8 @@ function present(row: any): Record<string, any> {
   let binding: any = row.binding;
   try { binding = JSON.parse(row.binding); } catch { /* keep the stored text */ }
   return {
-    id: row.id, identity_sha256: row.identity_sha256, kind: row.kind, pack: row.pack, pack_version: row.pack_version,
+    id: row.id, identity_sha256: row.identity_sha256, kind: row.kind, scope: scopeOf(row.kind, row.pack, binding?.target ?? ""),
+    pack: row.pack, pack_version: row.pack_version,
     binding, owner: row.owner, schedule: row.schedule, state: row.state, note: row.note, created: row.created, updated: row.updated,
     last_run_id: row.last_run_id ?? null, last_verdict: row.last_verdict ?? null, last_judged_at: row.last_judged_at ?? null,
   };
@@ -242,11 +271,13 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
       if (v === undefined) continue;
       where.push(`${col}=?`); params.push(String(v).trim());
     }
-    const rows = env.store.db.all(`${SELECT_INSTANCE}${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY i.created, i.id`, params).map(present);
+    const scope = args.flags?.scope === undefined ? null : String(args.flags.scope).trim();
+    const rows = env.store.db.all(`${SELECT_INSTANCE}${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY i.created, i.id`, params)
+      .map(present).filter((r: Record<string, any>) => scope === null || r.scope === scope);
     if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
     head(ctx, `Verifier instances (${rows.length})`);
     table(ctx, rows.map((r: Record<string, any>) => ({ ...r, target: r.binding?.target ?? "", pack_ref: `${r.pack}@${r.pack_version}`, last: r.last_verdict ?? "—" })),
-      ["id", "pack", "target", "owner", "state", "last"], ["id", "pack_ref", "target", "owner", "state", "last"]);
+      ["id", "scope", "pack", "target", "owner", "state", "last"], ["id", "scope", "pack_ref", "target", "owner", "state", "last"]);
     return 0;
   }
 
@@ -271,6 +302,8 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     try { doc = JSON.parse(readFileSync(file, "utf8")); } catch (e: any) { bad(ctx, `cannot read ${file}: ${e?.code === "ENOENT" ? "no such file" : e?.message || e}`); return 1; }
     const p = parseLatest(doc, dirname(resolve(file)), checkoutOrigin);
     if (Array.isArray(p)) { bad(ctx, `${file} does not satisfy ygl-verifier-latest/1: ${p.join("; ")}`); return 1; }
+    // #213 P3: a legacy-repo instance is project-level, so its target must resolve to a GitHub project.
+    if (!p.binding.target.startsWith("git:")) { bad(ctx, `${file}: target ${p.binding.target} has no GitHub upstream, so it cannot be attributed to a project — set target.repo_url, or an origin remote on the checkout (#213 P3)`); return 1; }
     const ids = instanceIdentity(p.verifier, "legacy", p.binding);
     const archiveSha = fileSha(p.archive);
     return getOrm(env.db.path)

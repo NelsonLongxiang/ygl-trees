@@ -322,13 +322,17 @@ ygl-trees verify graduate spec_xxx --patrol                   # 仅当被验库 
 
 ```bash
 ygl-trees verify instance create --pack ygl-v-core-aggregate@1.0.0 --target git:owner/repo --rev origin/master --owner <who> [--param k=v] [--schedule on-push] [--draft]
+ygl-trees verify instance create --pack @repo/ygl-v-webui@1.0.0 --target git:owner/repo --rev origin/master --owner <who>   # 项目包：作用域 = 目标仓名
 ygl-trees verify instance list --owner <who> --state active
+ygl-trees verify instance list --scope global
 ygl-trees verify instance show <instance-id>
 ygl-trees verify instance retire <instance-id> --reason "superseded by 2.0.0"
 ```
 
 - **身份按内容寻址**：`identity_sha256` = sha256(JCS{pack, version, target, rev, params})，`id` = `vi_` + 前 24 位。同一绑定再建 → rc0 `duplicate:true`（参数顺序无关）；`--owner` / `--schedule` 不进身份，换了就原地更新，`updated` 点名。
-- 包名硬性 `ygl-v-` 前缀（可带 `@scope/`），版本必须完整 semver；target 写成 `<kind>:<ref>`（如 `git:owner/repo`、`sqlite:<path>`）。
+- 包名硬性 `ygl-v-` 前缀，版本必须完整 semver；target 写成 `<kind>:<ref>`（如 `git:owner/repo`、`sqlite:<path>`）。
+- **两层（#213，严格）**：不带作用域的 `ygl-v-<名>` 只给全局包，名单写死在 ygl-trees 源码里（`ygl-v-core-aggregate`、`ygl-v-pr-gate`、`ygl-v-release-audit`），名单外 rc2；其余一律是项目包 `@<项目>/ygl-v-<名>`，target 是 git 仓时 `<项目>` 必须等于目标仓名（小写），对不上 rc2——项目验证器只验自己的项目。全局包可绑任何目标。
+- 每个实例带 `scope`（`global` 或项目名，从包名推出、不入库）；`verify instance list --scope <项目|global>` 按层筛。
 - `show` / `list` 带 `last_run_id` / `last_verdict` / `last_judged_at`（来自运行记录；还没跑过为 null）；`show` 另带 `runs`：最近 20 轮（新在前）。
 - 退役不删行：`retire` 后仍可读；重复退役 `duplicate:true`。
 - 用法错误一律 rc2 单 JSON，先于开库（子命令不读的旗标也算，如 `create --state`）；**PG 模式下 S0 不开放**（rc2），PG 随 S2 落地。
@@ -342,6 +346,7 @@ ygl-trees verify instance import-latest ../ygl-webui-verifier/work/results/lates
 - 只收 `ygl-verifier-latest/1`：`contract`、`verifier`、`target.repo|repo_url`、`target.rev`、`target.sha`、`overall`（PASS/FAIL/NEEDS-MATERIAL/ERROR）、`root_run_id`（`run_<hex>`）、`judged_at`（ISO）缺一项就 rc1、逐项点名、**不写入**。
 - 实例 `kind: legacy-repo`、`pack` = 验证器名、`pack_version: legacy`；target 先认 GitHub 上游（`repo_url` → 本地检出的 `.git/config` origin），没有上游才落 `path:`，所以不同机器、不同检出路径的同一验证器落到同一实例。
 - 运行 id 就是 `root_run_id`：同一轮再导入 rc0 `duplicate:true`；这个 id 已挂在别的实例下 → rc1。
+- legacy 实例属于项目级，`scope` = 目标仓名；target 归不到 GitHub 项目（落成 `path:`/`ref:`）→ rc1、不写入（#213 P3）。桥是过渡态：S4 包登记落地 30 天后关闭。
 - 归档 / 结果文件存在就现算 sha256；找不到时 `archive_ok:false` 照样导入（如实标出，不拒收）。相对路径按 latest.json 里的 `repo` 解析。
 
 ## 8. 常见坑
