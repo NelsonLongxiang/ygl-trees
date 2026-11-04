@@ -171,6 +171,17 @@ ygl-trees verify list --unarchived                   # 找漏归档的 run
 - 报告**不可变**：归档身份写侧车 `$YGL_HOME/verify/archives/<run_id>.json`，不改报告本体。
 - 边车键：`$YGL_HOME/verify/registrations/<sha256>.json`（register 时写入）。
 
+### 跨机器回装冻结件
+
+`verify export` 默认只导出裸 spec；需要在新工作区继续验证时必须加 `--portable`：
+
+```bash
+ygl-trees verify export <spec-id> --portable --out frozen.yglverify.json
+ygl-trees verify import frozen.yglverify.json
+```
+
+便携件包含冻结 spec、prepare 记录、材料与附件；导入按清单逐项核对内容哈希，保留原 `spec_id`、`spec_version`、`as_of`，不是重新 prepare。重复导入返回 rc0 与 `duplicate:true`；同标识冲突字节 rc1、不覆盖原件；裸 spec 不能替代便携件。CLI 支持这两条命令；本节不声明 MCP 已开放对应路由。完整运行仍需相应业务快照。
+
 ## 5. 封包 + 签名（认表不认报文）
 
 ```bash
