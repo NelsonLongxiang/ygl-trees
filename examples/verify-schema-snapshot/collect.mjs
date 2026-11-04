@@ -30,7 +30,7 @@ export function collectSchema(sourcePath, outputPath) {
   try {
     input.exec("PRAGMA query_only=ON; BEGIN");
     // Fixed read-only queries only. Table names are bound values, never SQL fragments; views are not executed.
-    const tables = input.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name COLLATE BINARY").all();
+    const tables = input.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name COLLATE BINARY").all();
     const tableInfo = input.prepare("SELECT cid,name,type,\"notnull\" AS not_null,dflt_value,pk FROM pragma_table_info(?) ORDER BY cid");
     const columns = tables.flatMap(table => tableInfo.all(table.name).map(column => ({ table_name: table.name, ...column })));
     const userVersion = input.prepare("PRAGMA user_version").get().user_version;

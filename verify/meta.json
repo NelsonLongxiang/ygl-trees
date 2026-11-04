@@ -45,7 +45,7 @@
     },
     {
       "path": "examples/verify-schema-snapshot/collect.mjs",
-      "sha256": "7ab59e84ebb4dd14bd101e874e27dd9e7ac500f71d3a3242017c8eae5f32a30e",
+      "sha256": "b41583d414794a0f55b667d839ffe9560b5c69d5324006712e12970f36af416b",
       "role": "build"
     },
     {
@@ -1249,6 +1249,14 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "dsh/ec4ce7f8",
       "at": "2026-11-04T09:04:53.193Z"
+    },
+    {
+      "path": "examples/verify-schema-snapshot/collect.mjs",
+      "old_sha256": "7ab59e84ebb4dd14bd101e874e27dd9e7ac500f71d3a3242017c8eae5f32a30e",
+      "new_sha256": "b41583d414794a0f55b667d839ffe9560b5c69d5324006712e12970f36af416b",
+      "reason": "Refs #80: treat the sqlite_ prefix literally so legal sqliteXorders metadata is retained; failing negative control recorded",
+      "actor": "dsh/ec4ce7f8",
+      "at": "2026-11-04T12:00:56.352Z"
     }
   ],
   "kind": "engine",

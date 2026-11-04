@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { fork, spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const ROOT = resolve(__dirname, "../../../..");
@@ -26,7 +27,7 @@ function cli(args: string[]) {
 
 describe("schema metadata snapshot recipe (contract 1.2)", () => {
   it("collects into new tables while preserving source bytes and never evaluating views", () => {
-    const input = source("CREATE TABLE orders(id INTEGER PRIMARY KEY, amount INTEGER NOT NULL); CREATE TABLE \"odd'); DROP TABLE orders; --\"(x TEXT); CREATE VIEW broken_view AS SELECT * FROM absent_table; PRAGMA user_version=7");
+    const input = source("CREATE TABLE orders(id INTEGER PRIMARY KEY, amount INTEGER NOT NULL); CREATE TABLE \"odd'); DROP TABLE orders; --\"(x TEXT); CREATE VIEW broken_view AS SELECT * FROM absent_table; CREATE TABLE sqliteXorders(amount INTEGER); PRAGMA user_version=7");
     const before = digest(input), output = join(dir, "evidence.sqlite");
     const r = collect(input, output); expect(r.status, r.stderr).toBe(0);
     expect(digest(input)).toBe(before);
@@ -34,15 +35,49 @@ describe("schema metadata snapshot recipe (contract 1.2)", () => {
     try {
       expect(db.prepare("SELECT * FROM schema_columns WHERE table_name='orders' AND column_name='amount'").get()).toMatchObject({ not_null: 1, declared_type: "INTEGER" });
       expect(db.prepare("SELECT * FROM schema_tables WHERE table_name='broken_view'").get()).toBeUndefined();
+      expect(db.prepare("SELECT table_name FROM schema_tables WHERE table_name='sqliteXorders'").get()).toEqual({ table_name: "sqliteXorders" });
       expect(db.prepare("SELECT source_sha256,user_version FROM collection_source").get()).toEqual({ source_sha256: "sha256:" + before, user_version: 7 });
     } finally { db.close(); }
     expect(JSON.parse(r.stdout)).toMatchObject({ probe_sha256: "sha256:" + digest(join(EXAMPLE, "collect.mjs")) });
   });
-  it("refuses an existing output or the source as output without replacing bytes", () => {
+  it("refuses existing outputs and lets only one concurrent collector own a new output", async () => {
     const input = source(), output = join(dir, "existing.sqlite"); writeFileSync(output, "sentinel"); const before = digest(input);
     expect(collect(input, output).status).toBe(1); expect(readFileSync(output, "utf8")).toBe("sentinel");
     expect(collect(input, input).status).toBe(1); expect(digest(input)).toBe(before);
     for (const suffix of ["-wal", "-shm", "-journal"]) expect(collect(input, input + suffix).stderr).toContain("sidecars");
+    const runner = join(dir, "collector-race.mjs"), shared = join(dir, "shared-evidence.sqlite");
+    writeFileSync(runner,       'import {collectSchema} from ' + JSON.stringify(pathToFileURL(join(EXAMPLE, "collect.mjs")).href) + ';' +
+      'process.once("message",()=>{try{collectSchema(process.argv[2],process.argv[3]);process.exitCode=0;}catch(e){console.error(e.message);process.exitCode=1;}finally{process.disconnect();}});process.send("ready");');
+    const start = () => {
+      const child = fork(runner, [input, shared], { stdio: ["ignore", "ignore", "pipe", "ipc"], execArgv: [], timeout: 30000 });
+      let stderr = ""; child.stderr!.on("data", chunk => { stderr += chunk; });
+      const closed = new Promise<{ code: number | null; signal: string | null; error?: Error }>(resolve => {
+        let error: Error | undefined; child.once("error", e => { error = e; });
+        child.once("close", (code, signal) => resolve({ code, signal, error }));
+      });
+      const ready = new Promise<void>((resolve, reject) => {
+        child.once("message", message => message === "ready" ? resolve() : reject(new Error("unexpected collector readiness")));
+        closed.then(() => reject(new Error("collector closed before release")));
+      });
+      return { child, closed, ready, stderr: () => stderr };
+    };
+    const children = [start(), start()];
+    try {
+      await Promise.all(children.map(c => c.ready));
+      // Both independent processes are alive at the same barrier before either acquires the shared output.
+      children.forEach(c => c.child.send("collect"));
+      const results = await Promise.all(children.map(c => c.closed));
+      results.forEach(r => { expect(r.error).toBeUndefined(); expect(r.signal).toBeNull(); });
+      expect(results.map(r => r.code).sort()).toEqual([0, 1]);
+      expect(children[results.findIndex(r => r.code === 1)].stderr()).toMatch(/output already exists|EEXIST/);
+      const evidence = new DatabaseSync(shared, { readOnly: true });
+      try { expect(evidence.prepare("SELECT source_sha256 FROM collection_source").get()).toEqual({ source_sha256: "sha256:" + before }); }
+      finally { evidence.close(); }
+      expect(digest(input)).toBe(before);
+    } finally {
+      children.forEach(c => { if (c.child.exitCode === null && c.child.signalCode === null) c.child.kill(); });
+      await Promise.all(children.map(c => c.closed));
+    }
   });
   it("refuses nonempty source sidecars and unreadable SQLite without a usable output", () => {
     const input = source(), output = join(dir, "evidence.sqlite"); writeFileSync(input + "-wal", "pending snapshot bytes");
