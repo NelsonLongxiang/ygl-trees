@@ -444,7 +444,9 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 
 ## 八、反馈
 
-用得顺手或踩了坑都欢迎留痕：[Gitee Issues](https://gitee.com/NelsonLongXiang/ygl-trees/issues)——仓库自带**问题反馈**与**功能建议**两套模板（`.github/ISSUE_TEMPLATE/`），报 bug 时带上 `ygl-trees --version` 与 `ygl-trees doctor` 输出最省事。
+用得顺手或踩了坑都欢迎留痕：[GitHub Issues](https://github.com/NelsonLongxiang/ygl-trees/issues)（[Gitee 镜像入口](https://gitee.com/NelsonLongXiang/ygl-trees/issues)）。GitHub 提供**问题反馈**、**功能建议**和[首次使用 / MCP 客户端反馈](https://github.com/NelsonLongxiang/ygl-trees/issues/new?template=adoption_report.md)模板；镜像页面若没有模板，可参考[表单原文](.github/ISSUE_TEMPLATE/adoption_report.md)。
+
+首次尝试未完成、MCP 调用失败也欢迎记录。请带上版本、操作步骤、退出码及脱敏结果；MCP 反馈注明客户端产品 / 版本和真实工具调用，不能以“工具列表出现”替代调用成功。报告 ID、耗时和截图均应来自实际执行，不需提交数据库或真实身份。**Issue 是公开的，请先删去 token、Cookie、凭证配置、私人路径和业务敏感数据。** 提交反馈不自动算作冷用户采用成功，也不自动解锁或结算预测。
 
 ## 九、文档地图
 
