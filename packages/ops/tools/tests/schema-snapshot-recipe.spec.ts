@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fork, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -45,6 +45,14 @@ describe("schema metadata snapshot recipe (contract 1.2)", () => {
     expect(collect(input, output).status).toBe(1); expect(readFileSync(output, "utf8")).toBe("sentinel");
     expect(collect(input, input).status).toBe(1); expect(digest(input)).toBe(before);
     for (const suffix of ["-wal", "-shm", "-journal"]) expect(collect(input, input + suffix).stderr).toContain("sidecars");
+    // Another spelling of the same file is still the sidecar: a symlinked parent, and a case variant where the volume folds case.
+    const link = join(dir, "via-link"); symlinkSync(dir, link, "junction");
+    for (const suffix of ["", "-journal", "-wal"]) {
+      const r = collect(input, join(link, "source.sqlite" + suffix));
+      expect(r.status, suffix).toBe(1); expect(r.stderr).toContain("sidecars");
+    }
+    if (process.platform !== "linux") expect(collect(input, input + "-JOURNAL").stderr).toContain("sidecars");
+    expect(existsSync(input + "-journal")).toBe(false); expect(digest(input)).toBe(before);
     const runner = join(dir, "collector-race.mjs"), shared = join(dir, "shared-evidence.sqlite");
     writeFileSync(runner,       'import {collectSchema} from ' + JSON.stringify(pathToFileURL(join(EXAMPLE, "collect.mjs")).href) + ';' +
       'process.once("message",()=>{try{collectSchema(process.argv[2],process.argv[3]);process.exitCode=0;}catch(e){console.error(e.message);process.exitCode=1;}finally{process.disconnect();}});process.send("ready");');

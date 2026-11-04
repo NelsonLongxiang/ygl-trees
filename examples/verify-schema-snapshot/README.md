@@ -26,7 +26,7 @@ YGL_HOME="$PWD/tmp/schema-example/home" node dist/bundle/bin.cjs db init --json
 YGL_HOME="$PWD/tmp/schema-example/home" node dist/bundle/bin.cjs verify submit --title "Schema metadata example" --text examples/verify-schema-snapshot/material.md --meta-repo "$PWD" --json > tmp/schema-example/submitted.json
 ```
 
-The source fixture must be newly created; the collector refuses an existing evidence output, source-as-output or source-sidecar output. Do not delete arbitrary files to make a repeated example pass: choose a new private directory. Next, derive identifiers and the collection timestamp from actual receipts, not a sample id or the wall clock at prepare time:
+The source fixture must be newly created; the collector refuses an existing evidence output, source-as-output or source-sidecar output. Those last two are compared as real files (parent directory resolved through symlinks, case folded on macOS and Windows), so `/tmp/…` vs `/private/tmp/…` or `-JOURNAL` vs `-journal` cannot slip past. Do not delete arbitrary files to make a repeated example pass: choose a new private directory. Next, derive identifiers and the collection timestamp from actual receipts, not a sample id or the wall clock at prepare time:
 
 ```bash
 MATERIAL_ID=$(node -p 'JSON.parse(require("fs").readFileSync("tmp/schema-example/submitted.json","utf8")).material_id')

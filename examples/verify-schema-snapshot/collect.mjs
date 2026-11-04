@@ -2,8 +2,8 @@
 /** Collect table metadata from a quiescent SQLite snapshot into a separate evidence DB (Node >=24). */
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { closeSync, existsSync, openSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const hash = path => createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -15,11 +15,23 @@ function requireStandalone(path) {
   }
 }
 
+// Compare the file a path names, not its spelling: a symlinked parent (/tmp -> /private/tmp) or a case variant
+// on a case-insensitive volume (default APFS, NTFS) reaches the same file. Folding case on darwin also refuses a
+// few distinct names on case-sensitive APFS; for an output guard that is the safe side.
+const pathKey = path => process.platform === "win32" || process.platform === "darwin" ? path.toLowerCase() : path;
+function realOutput(path) {
+  let dir;
+  try { dir = realpathSync(dirname(path)); } catch { throw new Error("output directory must already exist"); }
+  return join(dir, basename(path));
+}
+
 export function collectSchema(sourcePath, outputPath) {
   const source = resolve(sourcePath), output = resolve(outputPath);
   if (!statSync(source).isFile()) throw new Error("source must be an existing SQLite file");
-  const pathKey = path => process.platform === "win32" ? path.toLowerCase() : path;
-  if (["", "-wal", "-shm", "-journal"].some(suffix => pathKey(output) === pathKey(source + suffix))) {
+  // SQLite names sidecars after the path it opened; cover both the source as spelled (real parent) and its target.
+  const sourceNames = [join(realpathSync(dirname(source)), basename(source)), realpathSync(source)];
+  const outputKey = pathKey(realOutput(output));
+  if (sourceNames.some(name => ["", "-wal", "-shm", "-journal"].some(suffix => outputKey === pathKey(name + suffix)))) {
     throw new Error("output must not be the source or one of its SQLite sidecars");
   }
   if (existsSync(output)) throw new Error("output already exists; choose a new evidence snapshot path");

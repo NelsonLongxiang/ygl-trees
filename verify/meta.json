@@ -45,7 +45,7 @@
     },
     {
       "path": "examples/verify-schema-snapshot/collect.mjs",
-      "sha256": "b41583d414794a0f55b667d839ffe9560b5c69d5324006712e12970f36af416b",
+      "sha256": "8a77b43572fd5cfe0153a163faac2ad682a56164663992171f17e20c55d7600a",
       "role": "build"
     },
     {
@@ -1257,6 +1257,14 @@
       "reason": "Refs #80: treat the sqlite_ prefix literally so legal sqliteXorders metadata is retained; failing negative control recorded",
       "actor": "dsh/ec4ce7f8",
       "at": "2026-11-04T12:00:56.352Z"
+    },
+    {
+      "path": "examples/verify-schema-snapshot/collect.mjs",
+      "old_sha256": "b41583d414794a0f55b667d839ffe9560b5c69d5324006712e12970f36af416b",
+      "new_sha256": "8a77b43572fd5cfe0153a163faac2ad682a56164663992171f17e20c55d7600a",
+      "reason": "Refs #80 review on 87a70f0: compare outputs with the source and its sidecars as real files (symlinked parent, case-folded on darwin/win32), not by path spelling",
+      "actor": "supervisor seat (Claude-OPS-5.5)",
+      "at": "2026-11-04T13:32:23.727Z"
     }
   ],
   "kind": "engine",
