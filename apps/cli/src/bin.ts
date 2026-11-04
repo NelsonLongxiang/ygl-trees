@@ -183,9 +183,10 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   export <spec-id> --portable [--out <f>]  self-contained frozen bundle; content-hash checked on import
   import <file.yglverify.json>        restore spec_id/spec_version/as_of; repeat → rc0 duplicate:true, conflicting bytes → rc1
   report import <report.json>          import a sealed-run report (payload/binary/version checks)
-  instance create --pack <ygl-v-name>@<semver> --target <kind>:<ref> --owner <who> [--rev <r>] [--param k=v]... [--schedule manual|on-push|every:<N>m] [--draft]
-                                       register a verifier instance (registry row, content-addressed id; same binding → rc0 duplicate:true)
-  instance list [--owner] [--state] [--pack] | instance show <id> | instance retire <id> --reason <r>
+  instance create --pack <@project/ygl-v-name>@<semver> --target <kind>:<ref> --owner <who> [--rev <r>] [--param k=v]... [--schedule manual|on-push|every:<N>m] [--draft]
+                                       register a verifier instance (registry row, content-addressed id; same binding → rc0 duplicate:true);
+                                       unscoped ygl-v-* only for global packs, a project pack's scope must match its git target (#213)
+  instance list [--owner] [--state] [--pack] [--scope <project|global>] | instance show <id> | instance retire <id> --reason <r>
   instance import-latest <latest.json> --owner <who>
                                        bridge one legacy-repo run (ygl-verifier-latest/1) into the registry (#207)
   archive <run-id|spec-id> [--snapshot <db>]         take-away archive; --snapshot feeds cross-impl runs
@@ -1087,8 +1088,8 @@ export function generateLlmsManifest(): string {
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],
       ["verify probe --matrix [--target <sealed>] [--only <probe>]", "16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)"],
       ["verify lint-candidates <file> [--text <material>] [--reviews <file>]", "shape + clause-coverage + review-pairing check without consuming spec_version"],
-      ["verify instance create --pack <ygl-v-name>@<semver> --target <kind>:<ref> --owner <who>", "register a verifier instance as a registry row; id is content-addressed, same binding → rc0 duplicate:true (#206)"],
-      ["verify instance list | show <id> | retire <id> --reason <r>", "registry reads with last run; retire keeps the row readable"],
+      ["verify instance create --pack <@project/ygl-v-name>@<semver> --target <kind>:<ref> --owner <who>", "register a verifier instance as a registry row; id is content-addressed, same binding → rc0 duplicate:true (#206); unscoped names only for global packs (#213)"],
+      ["verify instance list [--scope <project|global>] | show <id> | retire <id> --reason <r>", "registry reads with last run and scope; retire keeps the row readable"],
       ["verify instance import-latest <latest.json> --owner <who>", "record a legacy verifier repo's latest run (instance kind legacy-repo; same run → duplicate:true) (#207)"],
     ]],
     ["patrol", "Boundary patrol (0.93)", [

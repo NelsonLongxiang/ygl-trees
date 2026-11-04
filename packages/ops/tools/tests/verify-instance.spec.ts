@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { instanceIdentity, instancePreflight, legacyTarget, parseCreate, parseLatest } from "../src/verify-instance";
+import { GLOBAL_PACKS, instanceIdentity, instancePreflight, legacyTarget, parseCreate, parseLatest, scopeOf } from "../src/verify-instance";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
 
 const ROOT = resolve(__dirname, "../../../..");
@@ -46,9 +46,9 @@ describe("instance identity and flag parsing", () => {
       [{ pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", schedule: "hourly" }, /manual \| on-push \| every/],
     ];
     for (const [flags, re] of cases) expect(parseCreate(flags), JSON.stringify(flags)).toMatch(re);
-    expect(instancePreflight(["create"], { pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["k=1", "k=1"] })).toBeNull();
+    expect(instancePreflight(["create"], { pack: "@x/ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["k=1", "k=1"] })).toBeNull();
     // Keys that name Object.prototype members are ordinary params (review on 5a365f8).
-    expect(parseCreate({ pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["constructor=value", "tostring=1"] })).toMatchObject({ binding: { params: { constructor: "value", tostring: "1" } } });
+    expect(parseCreate({ pack: "@x/ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["constructor=value", "tostring=1"] })).toMatchObject({ binding: { params: { constructor: "value", tostring: "1" } } });
     expect(parseCreate({ pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", param: ["constructor=a", "constructor=b"] })).toMatch(/constructor given twice/);
     // A flag another subcommand reads is refused, never silently dropped (create --state retired used to write active).
     expect(instancePreflight(["create"], { pack: "ygl-v-x@1.0.0", target: "git:x", owner: "o", state: "retired" })).toMatch(/--state does not apply to verify instance create/);
@@ -99,6 +99,22 @@ describe("legacy latest.json bridge (#207)", () => {
   });
 });
 
+describe("scope tiers (#213)", () => {
+  it("unscoped names are reserved for the global packs; a project pack verifies only its own project", () => {
+    const base = { target: "git:o/acme", owner: "o" };
+    expect(parseCreate({ ...base, pack: "ygl-v-foo@1.0.0" })).toMatch(/unscoped ygl-v-\* names are reserved for the global packs/);
+    for (const g of GLOBAL_PACKS) expect(parseCreate({ ...base, pack: `${g}@1.0.0`, target: "git:any/repo" })).toMatchObject({ pack: g });
+    expect(parseCreate({ ...base, pack: "@acme/ygl-v-x@1.0.0", target: "git:owner/other" })).toMatch(/scope @acme does not match the target repository other/);
+    for (const target of ["git:o/acme", "git:Owner/Acme.git", "git:acme", "sqlite:/tmp/snap.db"])
+      expect(parseCreate({ ...base, pack: "@acme/ygl-v-x@1.0.0", target }), target).toMatchObject({ pack: "@acme/ygl-v-x" });
+    expect(scopeOf("pack", "ygl-v-core-aggregate", "git:o/r")).toBe("global");
+    expect(scopeOf("pack", "@acme/ygl-v-x", "sqlite:/x")).toBe("acme");
+    expect(scopeOf("legacy-repo", "ygl-webui-verifier", "git:NelsonLongxiang/ygl-trees")).toBe("ygl-trees");
+    expect(scopeOf("legacy-repo", "v", "path:/srv/x")).toBe("unscoped");
+    expect(instancePreflight(["list"], { scope: true })).toMatch(/--scope needs a value/);
+  });
+});
+
 describe("schema v13", () => {
   it("a v12 workspace gains the registry tables on open", () => {
     mkdirSync(join(ROOT, "tmp"), { recursive: true });
@@ -133,12 +149,12 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
   afterAll(() => { if (home) rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
   it("create → same binding is a duplicate (param order ignored); owner/schedule change updates in place", () => {
-    const odd = cli(["verify", "instance", "create", "--pack", "ygl-v-review@1.0.0", "--target", "git:review", "--owner", "review", "--param", "constructor=value"]);
+    const odd = cli(["verify", "instance", "create", "--pack", "@review/ygl-v-review@1.0.0", "--target", "git:review", "--owner", "review", "--param", "constructor=value"]);
     expect(odd.rc, odd.text).toBe(0);
     expect(odd.json.binding.params).toEqual({ constructor: "value" });
     const first = cli(["verify", "instance", "create", ...PACK, "--param", "a=1", "--param", "b=2", "--owner", "supervisor"]);
     expect(first.rc, first.text).toBe(0);
-    expect(first.json).toMatchObject({ kind: "pack", pack: "ygl-v-core-aggregate", pack_version: "1.0.0", owner: "supervisor", schedule: "manual", state: "active",
+    expect(first.json).toMatchObject({ kind: "pack", scope: "global", pack: "ygl-v-core-aggregate", pack_version: "1.0.0", owner: "supervisor", schedule: "manual", state: "active",
       binding: { target: "git:NelsonLongxiang/ygl-trees", rev: "origin/master", params: { a: "1", b: "2" } }, last_run_id: null, last_verdict: null, last_judged_at: null });
     expect(first.json.duplicate).toBeUndefined();
     for (const k of Object.keys(first.json)) expect(k).toMatch(/^[a-z][a-z0-9_]*$/);
@@ -155,6 +171,9 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     expect(draft.json.state).toBe("draft");
     expect(cli(["verify", "instance", "list", "--state", "draft"]).json.map((r: any) => r.id)).toEqual([draft.json.id]);
     expect(cli(["verify", "instance", "list", "--owner", "lab"]).json).toHaveLength(1);
+    expect(cli(["verify", "instance", "list", "--scope", "review"]).json.map((r: any) => [r.pack, r.scope])).toEqual([["@review/ygl-v-review", "review"]]);
+    expect(cli(["verify", "instance", "list", "--scope", "global"]).json.every((r: any) => r.scope === "global" && r.pack === "ygl-v-core-aggregate")).toBe(true);
+    expect(cli(["verify", "instance", "list", "--scope", "nobody"]).json).toEqual([]);
     expect(cli(["verify", "instance", "show", draft.json.id]).json).toMatchObject({ id: draft.json.id, state: "draft", runs: [] });
     expect(cli(["verify", "instance", "show", "vi_nope"]).rc).toBe(1);
     const retired = cli(["verify", "instance", "retire", draft.json.id, "--reason", "superseded"]);
@@ -168,7 +187,8 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     mkdirSync(join(ROOT, "tmp"), { recursive: true });
     const empty = mkdtempSync(join(ROOT, "tmp/instance-empty-"));
     try {
-      for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"], ["create", ...PACK, "--owner", "o", "--state", "retired"], ["import-latest", "latest.json"]]) {
+      for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"], ["create", ...PACK, "--owner", "o", "--state", "retired"], ["import-latest", "latest.json"],
+        ["create", "--pack", "ygl-v-foo@1.0.0", "--target", "git:x", "--owner", "o"], ["create", "--pack", "@acme/ygl-v-x@1.0.0", "--target", "git:o/other", "--owner", "o"]]) {
         const r = spawnSync(process.execPath, [BIN, "verify", "instance", ...args, "--json"], { encoding: "utf8", timeout: 60000,
           env: { ...process.env, YGL_HOME: empty, YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1" } });
         expect(r.status, args.join(" ") + r.stdout).toBe(2);
@@ -203,7 +223,7 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     const first = cli(["verify", "instance", "import-latest", file, "--owner", "webui-seat"]);
     expect(first.rc, first.text).toBe(0);
     expect(first.json).toMatchObject({ instance_created: true, archive_ok: false,
-      instance: { kind: "legacy-repo", pack: "ygl-webui-verifier", pack_version: "legacy", owner: "webui-seat", state: "active",
+      instance: { kind: "legacy-repo", scope: "ygl-trees", pack: "ygl-webui-verifier", pack_version: "legacy", owner: "webui-seat", state: "active",
         binding: { target: "git:NelsonLongxiang/ygl-trees", rev: "origin/master", params: {} }, last_run_id: "run_a285616ca1443ea2", last_verdict: "PASS" },
       run: { id: "run_a285616ca1443ea2", verdict: "PASS", target_sha: "abc123", archive_sha256: "", executor: `legacy-repo:${dir}` } });
     expect(first.json.run.payload_sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -227,6 +247,12 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     expect(bad.rc).toBe(1);
     expect(bad.json.error).toMatch(/verifier missing; target missing/);
     expect(cli(["verify", "instance", "import-latest", join(dir, "nope.json"), "--owner", "x"]).rc).toBe(1);
+    // #213 P3: a target with no GitHub upstream cannot be attributed to a project.
+    const local = join(dir, "local.json");
+    writeFileSync(local, JSON.stringify(latest({ repo: dir, root_run_id: "run_cccccccccccccccc", target: { repo: join(dir, "no-remote"), rev: "main", sha: "abc" } })));
+    const orphan = cli(["verify", "instance", "import-latest", local, "--owner", "x"]);
+    expect(orphan.rc).toBe(1);
+    expect(orphan.json.error).toMatch(/no GitHub upstream, so it cannot be attributed to a project/);
     expect(cli(["db", "stats"]).json).toMatchObject({ verifier_instances: before.verifier_instances, verifier_runs: before.verifier_runs });
     expect(before.verifier_runs).toBe(2);
   });
