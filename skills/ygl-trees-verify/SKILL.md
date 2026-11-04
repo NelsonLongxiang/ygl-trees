@@ -128,10 +128,10 @@ ygl-trees db snapshot                          # 快照产物（sha256+脱敏来
 ```
 
 **硬规则要点**（`verify meta` 判，FAIL = submit/prepare 拒收）：
-- **R3**：已跟踪的可执行文件（`.mjs/.js/.cjs/.sh/.ps1/.py/.ts/.mts/.cts`）必须属于 `tmp/`、依赖根、`orchestration[]` 或 `tooling[]` 之一；探索区唯一白名单是 gitignored 的 `tmp/`。列有 spec 的仓库里，**`tooling[]` 文件不得驱动 verify run/prepare/submit/archive**——驱动验证的代码只能登记在 `orchestration[]`。
+- **R3**：已跟踪的可执行文件（`.mjs/.js/.cjs/.sh/.ps1/.py/.ts/.mts/.cts`）必须属于以下之一：gitignored 的 `tmp/`（探索区唯一白名单）、依赖根（`node_modules/`、`vendor/`）、`orchestration[]`、`tooling[]`，或 `verify/meta.json` 的 `source_roots[]` 声明的**具名产品源码子目录**（只能是具名子目录，禁 `.`、空串、绝对路径、`..`；仓库**根级**文件不受任何 source_root 覆盖，仍要逐个登记）。有真实产品源码的仓库用 `source_roots[]` 声明源码根，不要把源码逐文件登记或挪进编排目录。列有 spec 的仓库里，**`tooling[]` 文件不得驱动 verify run/prepare/submit/archive**——驱动验证的代码只能登记在 `orchestration[]`。
 - **R5a**：`orchestration[]` 每条的 `replaced_by` 必须是 charter §4.7 第二列的 CLI 原语之一，`sunset` 为完整 semver（尚未交付的原语暂记远值，如 99.0.0）。
 - **R6（只对 v3 索引执行）**：v3 必须声明 `kind`；验证器仓库属 **consumer** 档——引擎钉版不低于契约下限、仓内不 vendor 引擎、**`orchestration[]` 也不得再驱动 verify**（须改用引擎原语）。现行舰队仓都是 v2 索引，R6 不执行，编排登记后仍可调用 verify；升 v3 前先完成迁移。
-- 改了登记过的文件：先刷新索引（或按仓内门禁脚本重登记），再提交；索引 sha256 不符即 R5a/R2 红。
+- 改了登记过的文件：先刷新索引（或按仓内门禁脚本重登记），再提交。判红归属：**tooling 文件**正文与登记 sha256 不符 → R3（`registered tooling sha256 mismatch`）；**orchestration 文件**正文与登记不符 → R5a；手改索引导致形状或谱系不符 → R2。
 
 ```bash
 ygl-trees verify meta .                  # 本仓 R1–R6 准入自检（仓库根执行；YGL_HOME 指向 state/home）
