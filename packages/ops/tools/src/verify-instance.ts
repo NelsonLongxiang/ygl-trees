@@ -37,10 +37,12 @@ export const INSTANCE_FLAGS = ["pack", "target", "rev", "param", "owner", "sched
 export const GLOBAL_PACKS = ["ygl-v-core-aggregate", "ygl-v-pr-gate", "ygl-v-release-audit"];
 const SCOPE_RE = /^@([a-z0-9][a-z0-9-]*)\//;
 
-/** Repository name of a git target (`git:owner/repo` or `git:repo`), lowercase; "" for any other kind. */
+/** Repository name of a git target (`git:owner/repo` or `git:repo`), lowercase; "" for any other kind and for a
+ *  git target that names no repository (`git:/`, `git:////`, `git:o/..`) — callers must refuse those, never skip. */
 function gitRepoName(target: string): string {
   const m = /^git:(?:.*\/)?([^/]+?)(?:\.git)?\/?$/.exec(target);
-  return m ? m[1].toLowerCase() : "";
+  const name = m ? m[1].toLowerCase() : "";
+  return /^[a-z0-9._-]+$/.test(name) && name !== "." && name !== ".." ? name : "";
 }
 
 /** #213: an instance's tier — `global` for the reserved packs, otherwise its project: the pack's @scope, or for a
@@ -80,6 +82,8 @@ export function parseCreate(flags: Record<string, any>): string | {
   if (!PACK_RE.test(pack)) return `--pack name must start with ygl-v- (scoped: @scope/ygl-v-…), lowercase [a-z0-9-] — got: ${pack}`;
   if (!SEMVER_RE.test(version)) return `--pack version must be MAJOR.MINOR.PATCH, got: ${version}`;
   if (!TARGET_RE.test(target)) return `--target must be <kind>:<ref> (kind lowercase, e.g. git:owner/repo), got: ${target}`;
+  // #213 review on 273f140: an unparseable git target used to skip the P1 scope check (fail-open).
+  if (target.startsWith("git:") && !gitRepoName(target)) return `--target ${target} names no repository: use git:<owner>/<repo> or git:<repo>`;
   if (flags.rev === true) return "--rev needs a value";
   const rev = flag(flags.rev);
   // A Map, not an object literal: keys such as `constructor` are legal and must not hit Object.prototype.

@@ -112,6 +112,11 @@ describe("scope tiers (#213)", () => {
     expect(scopeOf("legacy-repo", "ygl-webui-verifier", "git:NelsonLongxiang/ygl-trees")).toBe("ygl-trees");
     expect(scopeOf("legacy-repo", "v", "path:/srv/x")).toBe("unscoped");
     expect(instancePreflight(["list"], { scope: true })).toMatch(/--scope needs a value/);
+    // A git target that names no repository is refused for every pack, never treated as "no scope to check" (review on 273f140).
+    for (const target of ["git:/", "git:////", "git:o/..", "git:./"])
+      for (const pack of ["@acme/ygl-v-x@1.0.0", "ygl-v-core-aggregate@1.0.0"])
+        expect(parseCreate({ ...base, pack, target }), `${pack} ${target}`).toMatch(/names no repository/);
+    expect(parseCreate({ ...base, pack: "@acme/ygl-v-x@1.0.0", target: "git:o/acme/" })).toMatchObject({ pack: "@acme/ygl-v-x" });
   });
 });
 
@@ -188,7 +193,8 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     const empty = mkdtempSync(join(ROOT, "tmp/instance-empty-"));
     try {
       for (const args of [["create", "--target", "git:x", "--owner", "o"], ["create", ...PACK, "--owner", "o", "--bogus", "1"], ["list", "--state", "bogus"], ["retire", "vi_x"], ["create", ...PACK, "--owner", "o", "--state", "retired"], ["import-latest", "latest.json"],
-        ["create", "--pack", "ygl-v-foo@1.0.0", "--target", "git:x", "--owner", "o"], ["create", "--pack", "@acme/ygl-v-x@1.0.0", "--target", "git:o/other", "--owner", "o"]]) {
+        ["create", "--pack", "ygl-v-foo@1.0.0", "--target", "git:x", "--owner", "o"], ["create", "--pack", "@acme/ygl-v-x@1.0.0", "--target", "git:o/other", "--owner", "o"],
+        ["create", "--pack", "@acme/ygl-v-x@1.0.0", "--target", "git:/", "--owner", "o"]]) {
         const r = spawnSync(process.execPath, [BIN, "verify", "instance", ...args, "--json"], { encoding: "utf8", timeout: 60000,
           env: { ...process.env, YGL_HOME: empty, YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1" } });
         expect(r.status, args.join(" ") + r.stdout).toBe(2);
