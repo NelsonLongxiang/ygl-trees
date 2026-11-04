@@ -113,10 +113,21 @@ if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
 
   # ANSI 色码鲁棒化（#88 轮）：vitest 在控制台附属环境（WMI/计划任务派生等）会输出
   # 带 ESC 序列的 "Tests  1062 passed" 行，正则不解色则提取为空 → 假红。
-  ACTUAL=$(node node_modules/vitest/vitest.mjs run --maxWorkers=1 2>/dev/null \
-    | sed 's/\x1b\[[0-9;]*m//g' \
-    | sed -n 's/.*Tests[[:space:]]*[0-9][0-9]* passed.*(\([0-9][0-9]*\)).*/\1/p' | tail -1)
-  if [ -n "$README_NUM" ] && [ -n "$ACTUAL" ] && [ "$README_NUM" = "$ACTUAL" ]; then
+  # #216：总数从 "Tests … (N)" 汇总行取，不管里面有没有 failed——旧正则要求 "Tests <N> passed"，
+  # 内嵌这一轮只要有一条用例失败就取空，报成「计数漂移」而原因被 /dev/null 吞掉。现在保留整份输出，
+  # 读本轮退出码；失败就点名 rc、汇总行与失败用例，计数门照样判红。
+  mkdir -p tmp
+  UNIT_LOG="tmp/readme-count-vitest.log"
+  node node_modules/vitest/vitest.mjs run --maxWorkers=1 > "$UNIT_LOG" 2>&1
+  UNIT_RC=$?
+  SUMMARY=$(sed 's/\x1b\[[0-9;]*m//g' "$UNIT_LOG" | grep -E '^[[:space:]]*Tests[[:space:]]' | tail -1)
+  ACTUAL=$(printf '%s\n' "$SUMMARY" | sed -n 's/.*(\([0-9][0-9]*\)).*/\1/p')
+  if [ "$UNIT_RC" != "0" ]; then
+    echo "  ✗ unit 计数门：内嵌 vitest rc=$UNIT_RC（${SUMMARY# *}）README=$README_NUM vitest=$ACTUAL；失败用例："
+    sed 's/\x1b\[[0-9;]*m//g' "$UNIT_LOG" | grep -E '^[[:space:]]*FAIL[[:space:]]' | head -10 | sed 's/^[[:space:]]*/      /'
+    echo "      完整输出：$UNIT_LOG"
+    F=$((F+1))
+  elif [ -n "$README_NUM" ] && [ -n "$ACTUAL" ] && [ "$README_NUM" = "$ACTUAL" ]; then
     echo "  ✓ unit 计数门锚: README $README_NUM == vitest $ACTUAL"
   else
     echo "  ✗ unit 计数漂移: README=$README_NUM vitest=$ACTUAL（run: pnpm readme:count）"

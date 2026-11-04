@@ -175,7 +175,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "a4314761cca668177de31df2ac9ba7581c6792901ab375cada90b41189ad0c48",
+      "sha256": "271629e4fd2cdc24760844576ea30dea113004d4ca3bd4cd2d82b73046982181",
       "role": "gate"
     },
     {
@@ -1265,6 +1265,14 @@
       "reason": "Refs #80 review on 87a70f0: compare outputs with the source and its sidecars as real files (symlinked parent, case-folded on darwin/win32), not by path spelling",
       "actor": "supervisor seat (Claude-OPS-5.5)",
       "at": "2026-11-04T13:32:23.727Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "a4314761cca668177de31df2ac9ba7581c6792901ab375cada90b41189ad0c48",
+      "new_sha256": "271629e4fd2cdc24760844576ea30dea113004d4ca3bd4cd2d82b73046982181",
+      "reason": "#216: read the unit total from the Tests summary whatever it contains, capture the embedded run's rc and name its failing cases instead of reporting a blank count as drift",
+      "actor": "supervisor seat (Claude-OPS-5.5)",
+      "at": "2026-11-04T14:10:28.841Z"
     }
   ],
   "kind": "engine",
