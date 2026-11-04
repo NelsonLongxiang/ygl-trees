@@ -18,6 +18,7 @@ import { getOrm } from "../../../core/database/src/orm";
 import { bad, head, out, paint, C, table } from "../../../core/text/src/fmt";
 import * as writes from "../../../research/pipeline/src/writes";
 import { jcsCanonical } from "./jcs";
+import { strictIsoTimestamp } from "./as-of";
 
 export const USAGE_INSTANCE = "usage: verify instance create|list|show|retire|import-latest (see ygl-trees verify --help)";
 
@@ -171,7 +172,10 @@ export function parseLatest(doc: any, dir = "", originOf: (dir: string) => strin
   }
   if (!VERDICTS.includes(doc.overall)) problems.push(`overall must be one of ${VERDICTS.join("|")} (got ${JSON.stringify(doc.overall ?? null)})`);
   if (!(typeof doc.root_run_id === "string" && /^run_[0-9a-f]{8,}$/.test(doc.root_run_id))) problems.push("root_run_id missing or not run_<hex>");
-  if (!(str(doc.judged_at) && !Number.isNaN(Date.parse(doc.judged_at)))) problems.push("judged_at missing or not an ISO timestamp");
+  // Strict ISO with an explicit zone (shared with --as-of): Date.parse would take "0" or "11/04/2026" in the local
+  // zone and roll 2026-02-30 into March, writing a time nobody judged at (#212 review).
+  let judgedAt = "";
+  try { judgedAt = strictIsoTimestamp(doc.judged_at, "judged_at"); } catch (e: any) { problems.push(e.message); }
   if (problems.length) return problems;
   const repo = str(doc.repo) ? doc.repo.trim() : "";
   const base = isAbs(repo) ? repo : dir;
@@ -179,7 +183,7 @@ export function parseLatest(doc: any, dir = "", originOf: (dir: string) => strin
   return {
     verifier: doc.verifier.trim(),
     binding: { target: legacyTarget(t, base, originOf), rev: t.rev.trim(), params: {} },
-    run: { id: doc.root_run_id, verdict: doc.overall, judged_at: new Date(doc.judged_at).toISOString(), target_sha: t.sha.trim() },
+    run: { id: doc.root_run_id, verdict: doc.overall, judged_at: judgedAt, target_sha: t.sha.trim() },
     archive: at(doc.archive),
     result_file: at(doc.result_file),
     repo,

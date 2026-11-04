@@ -1,0 +1,37 @@
+{
+  "candidates": [
+    {
+      "source_clause": "S1 The evidence snapshot must contain an orders table with an amount column.",
+      "anchor": {
+        "quote": "S1 The evidence snapshot must contain an orders table with an amount column.",
+        "locator": "material.md#S1"
+      },
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "schema_columns",
+          "select": [
+            "column_name"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "table_name",
+                "op": "=",
+                "value": "orders"
+              },
+              {
+                "col": "column_name",
+                "op": "=",
+                "value": "amount"
+              }
+            ]
+          }
+        },
+        "op": ">=",
+        "value": 1
+      }
+    }
+  ]
+}
