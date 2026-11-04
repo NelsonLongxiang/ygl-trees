@@ -175,7 +175,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "271629e4fd2cdc24760844576ea30dea113004d4ca3bd4cd2d82b73046982181",
+      "sha256": "bca7f3ae3b7d7c89ebb4766497b59ba811aa48d0444b23a50bd9660a03863cc5",
       "role": "gate"
     },
     {
@@ -1273,6 +1273,14 @@
       "reason": "#216: read the unit total from the Tests summary whatever it contains, capture the embedded run's rc and name its failing cases instead of reporting a blank count as drift",
       "actor": "supervisor seat (Claude-OPS-5.5)",
       "at": "2026-11-04T14:10:28.841Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "271629e4fd2cdc24760844576ea30dea113004d4ca3bd4cd2d82b73046982181",
+      "new_sha256": "bca7f3ae3b7d7c89ebb4766497b59ba811aa48d0444b23a50bd9660a03863cc5",
+      "reason": "#216 item 5 (dev-seat review of #217): one kept log per run (UTC timestamp + PID) so concurrent runs in one checkout never overwrite each other's diagnostics",
+      "actor": "supervisor seat (Claude-OPS-5.5)",
+      "at": "2026-11-04T15:58:29.591Z"
     }
   ],
   "kind": "engine",
