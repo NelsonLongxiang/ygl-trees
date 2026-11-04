@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
+import { assertNoPgPassword } from "./fixtures/pg-output-guard";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
@@ -40,7 +41,7 @@ function cli(url: string, home: string, args: string[]) {
     env: { ...cleanEnv(), YGL_HOME: home, YGL_DB_URL: url, YGL_SESSION: "b8-upgrade", YGL_NO_UPDATE_CHECK: "1" },
   });
   const text = (r.stdout || "") + (r.stderr || "");
-  expect(text).not.toContain(new URL(adminUrl).password); // credentials never reach output
+  assertNoPgPassword(text, adminUrl);
   return { rc: r.status, out: r.stdout || "", text };
 }
 /** Structural fingerprint from the catalog: columns, constraints and indexes, names normalised where PG generates them. */
