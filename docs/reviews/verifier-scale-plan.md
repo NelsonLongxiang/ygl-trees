@@ -56,7 +56,7 @@ ygl-v-<名>@<semver>  ──<  id = hash(pack@ver + binding)  ──<  run_id、
 ## 3. 登记表（单一真源）
 
 - **放在哪里**：一个 ygl-trees 工作区，后端为 PG。#176 的 PG 单写后端正好提供多节点共享同一份数据的能力；单机试点阶段可以先用 SQLite，见 §8 D1。
-- **新增四张表**（加表要走九触点，见 conventions §一）：
+- **按期新增四张表**（加表要走九触点，见 conventions §一）：S0 建 `verifier_instances`、`verifier_runs`；`verifier_leases` 随 S2、`verifier_packs` 随 S4 再建，不提前建没人用的表：
   - `verifier_packs`：name、version、manifest_sha256、engine、contract_version、tags（domain/business/mode）、signature、状态。
   - `verifier_instances`：id（内容寻址）、pack_name、pack_version、binding_json、owner、schedule、state、created、updated、last_run_id、last_verdict、last_judged_at。
   - `verifier_runs`：run_id、instance_id、executor、engine_version、target_sha、verdict、payload_sha256、archive_sha256、judged_at。报告和归档的字节仍放在内容寻址的 blob 仓，表里只存指针。
@@ -100,7 +100,7 @@ ygl-v-<名>@<semver>  ──<  id = hash(pack@ver + binding)  ──<  run_id、
 
 | 期 | 交付 | 验收（机器可检查） |
 |---|---|---|
-| **S0 登记表与入口** | 四张表 + `verify instance create/list/show/retire`，以及 `--json` 契约；内容寻址身份 | 同一绑定创建两次 → 第二次 rc0 且 `duplicate:true`；缺 owner/target → rc2；表结构过九触点；`pnpm test` 全绿 |
+| **S0 登记表与入口** | `verifier_instances` + `verifier_runs`（schema v13，SQLite 与 PG 的 DDL / 升级步骤同步落地）+ `verify instance create/list/show/retire`，以及 `--json` 契约；内容寻址身份。按 D1，S0 只在 SQLite 工作区上开放，PG 模式下该命令 rc2 | 同一绑定创建两次 → 第二次 rc0 且 `duplicate:true`；缺 owner/target → rc2；表结构过九触点；`pnpm test` 全绿 |
 | **S1 桥接** | legacy-repo 适配器：现有 `latest.json` → 运行记录；舰队聚合双读对照 | 舰队现有成员全部有实例，登记表上的聚合结论与现有舰队验证器连续 K 轮一致 |
 | **S2 执行者** | 租约 claim/renew/release + `verify run --instance` 自动回交（复用 report import 校验） | 两个节点同时 claim 同一实例 → 只有一个成功；租约过期后另一节点可接；回交报告的 payload_sha256 与本地一致 |
 | **S3 生命周期** | 状态机 + TTL + 保留策略 + 配额 + stale/orphaned 巡检 | 注入「过期草稿 / 无运行实例 / 负责人消失」三种夹具，各自只翻对应状态；超配额时入口 rc1 并点名 |
@@ -109,7 +109,10 @@ ygl-v-<名>@<semver>  ──<  id = hash(pack@ver + binding)  ──<  run_id、
 
 S0–S1 不依赖任何未交付的原语，可以立即开工；S2 起与 SDK-2 的 `tree run`、SDK-4 的 `collect` 并行推进。
 
-## 8. 需要裁定的事项（属主）
+## 8. 裁定事项
+
+> **2026-11-04 监督席裁定**（属主同日授权「继续，由你独立完成」）：D1–D5 均按下表「本席建议」执行；属主可随时推翻，推翻时改本表并同步各期 issue。
+
 
 | # | 事项 | 本席建议 |
 |---|---|---|
