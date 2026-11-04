@@ -27,6 +27,13 @@ describe("#108 计数门（无开关 + 负例必红）", () => {
     expect(mismatch === String(readmeNum)).toBe(false); // 门用的是严格字符串相等
     // 门实现必须是严格相等比较，不许容差
     expect(src).toMatch(/README_NUM" = "\$ACTUAL"/);
+    // #216：总数不依赖 "Tests <N> passed" 形状（有 failed 时旧正则取空）；内嵌一轮的 rc 被读取并点名失败用例
+    const block = src.slice(src.indexOf("unit 计数"), src.indexOf("readme-verify: $((N-F))"));
+    expect(block).not.toMatch(/Tests\[\[:space:\]\]\*\[0-9\]\[0-9\]\* passed/);
+    expect(block).not.toContain("2>/dev/null");
+    expect(block).toMatch(/UNIT_RC=\$\?/);
+    expect(block).toMatch(/\$UNIT_RC" != "0"/);
+    expect(block).toMatch(/grep -E '\^\[\[:space:\]\]\*FAIL\[\[:space:\]\]'/);
   });
 
   it("release 路径不依赖任何关闸变量", () => {
