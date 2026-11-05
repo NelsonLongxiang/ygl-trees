@@ -302,8 +302,9 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     try { doc = JSON.parse(readFileSync(file, "utf8")); } catch (e: any) { bad(ctx, `cannot read ${file}: ${e?.code === "ENOENT" ? "no such file" : e?.message || e}`); return 1; }
     const p = parseLatest(doc, dirname(resolve(file)), checkoutOrigin);
     if (Array.isArray(p)) { bad(ctx, `${file} does not satisfy ygl-verifier-latest/1: ${p.join("; ")}`); return 1; }
-    // #213 P3: a legacy-repo instance is project-level, so its target must resolve to a GitHub project.
-    if (!p.binding.target.startsWith("git:")) { bad(ctx, `${file}: target ${p.binding.target} has no GitHub upstream, so it cannot be attributed to a project — set target.repo_url, or an origin remote on the checkout (#213 P3)`); return 1; }
+    // #213 P3: a legacy-repo instance is project-level, so its target must resolve to a named GitHub project —
+    // a git: target that names no repository (owner/., owner/.., post-merge review of 86e56f3) is refused too.
+    if (scopeOf("legacy-repo", p.verifier, p.binding.target) === "unscoped") { bad(ctx, `${file}: target ${p.binding.target} names no GitHub project, so it cannot be attributed to one — set target.repo_url, or an origin remote on the checkout (#213 P3)`); return 1; }
     const ids = instanceIdentity(p.verifier, "legacy", p.binding);
     const archiveSha = fileSha(p.archive);
     return getOrm(env.db.path)
