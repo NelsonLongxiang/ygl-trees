@@ -4,17 +4,16 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use yglverify::contract::parse_spec;
 use yglverify::engine::{run_verify, VerifyOptions};
 use yglverify::sqlite::SqliteRunner;
 
-fn scratch(tag: &str) -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let dir = std::env::temp_dir().join(format!("yglverify-fileignore-{tag}-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
-    dir
+mod common;
+use common::TempDir;
+
+fn scratch(tag: &str) -> TempDir {
+    TempDir::new("yglverify-fileignore", tag)
 }
 
 fn empty_db(dir: &Path) -> PathBuf {
