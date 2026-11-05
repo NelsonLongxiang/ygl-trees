@@ -2,26 +2,26 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-11-04T12:53:47.580Z",
-  "_attribution": "#206 S0 verifier registry: verifier_instances/verifier_runs + entities + verify instance",
+  "measured_at": "2026-11-05T07:18:35.209Z",
+  "_attribution": "#220 phase-A + reviewed fixes; exact Windows 62aae2e6749bd4d464d9446db5c7daf0cdec305d: signed 736703 -> master b4cda8b tree 744789 (existing drift +8086) -> feature 770169 (phase-A delta +25380); total +33466; web 1401666; #223 diagnostics test-only; original 2%/2%/30% tolerances unchanged",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 736703,
+      "value": 770169,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-04T12:53:46.448Z",
+      "measured_at": "2026-11-05T07:18:34.307Z",
       "method": "sum-file-sizes-recursive"
     },
     "web_dist_bytes": {
-      "value": 1401456,
+      "value": 1401666,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-04T12:53:46.449Z",
+      "measured_at": "2026-11-05T07:18:34.308Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 108,
+      "value": 92,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-11-04T12:53:47.580Z",
+      "measured_at": "2026-11-05T07:18:35.208Z",
       "method": "warm2-min7-retry-once"
     }
   }
