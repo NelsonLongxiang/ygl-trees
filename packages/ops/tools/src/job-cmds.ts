@@ -8,6 +8,33 @@ import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
+import { jobHealth, JobRunRow } from "../../../research/pipeline/src/lifecycle";
+
+const JOB_USAGE = 'usage: job add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--force] -- <command> | ' +
+  "list | show <id|title> | run <id|title> | tick | enable|disable <id> | retire <id|title> --reason <why> | prune-runs [--keep N] [--apply] | logs";
+
+/** Each job's newest runs (newest first), for health. One query, grouped in memory. */
+function runsByJob(env: Env, perJob = 20): Map<string, JobRunRow[]> {
+  const by = new Map<string, JobRunRow[]>();
+  for (const r of env.db.all("SELECT job_id, started, finished, rc, output FROM runs ORDER BY started DESC, id DESC") as any[]) {
+    const list = by.get(r.job_id) ?? [];
+    if (list.length < perJob) list.push(r);
+    by.set(r.job_id, list);
+  }
+  return by;
+}
+
+/** Job rows as `job list --json` / `job show` expose them (#220): the stored row, its command, and derived health. */
+export function jobViews(env: Env): Array<Record<string, any>> {
+  const failing = configGetNumber(env.db, "job.failing_runs");
+  const runs = runsByJob(env);
+  const now = Date.now();
+  return (env.db.all("SELECT * FROM jobs ORDER BY created") as any[]).map((j) => ({
+    id: j.id, title: j.title, command: j.command, every: j.every_minutes, at: j.at, enabled: j.enabled, runs: j.runs,
+    last_run: j.last_run, status: j.status, created: j.created,
+    ...jobHealth(j, runs.get(j.id) ?? [], now, failing),
+  }));
+}
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -37,7 +64,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         command = command.slice(0, tailAt.index).trim();
       }
       if (!title || !command) {
-        bad(ctx, 'usage: job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] -- <command>');
+        bad(ctx, 'usage: job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"|--manual] -- <command>');
+        return 2;
+      }
+      const manual = args.flags.manual === true || args.flags.manual === "true";
+      const allowFrequent = args.flags["allow-frequent"] === true || args.flags["allow-frequent"] === "true";
+      // #220 J4: a job with no schedule never runs on tick. It used to land silently as "manual" (every=0) — the
+      // 0.114.4 misregistration shape — so it now has to be declared.
+      if (manual && (every || at)) {
+        bad(ctx, `--manual means no schedule; drop --every/--at, or drop --manual — ${JOB_USAGE}`);
+        return 2;
+      }
+      if (!every && !at && !manual) {
+        const leftover = /--every\b|--at\b/.test(command) ? " (a schedule-shaped token is still inside the command: move --every/--at before --)" : "";
+        bad(ctx, `job add needs a schedule: --every <min> or --at "YYYY-MM-DD HH:MM", or --manual for a job run only by \`job run\`${leftover}`);
+        return 2;
+      }
+      const floor = configGetNumber(env.db, "job.min_every_minutes");
+      if (every > 0 && floor > 0 && every < floor && !allowFrequent) {
+        bad(ctx, `--every ${every} is below job.min_every_minutes (${floor}); pass --allow-frequent if this cadence is intended`);
         return 2;
       }
       // F1/F3 (0.114.4, fdc757f6 09:25): the tail pull is a compatibility
@@ -78,8 +123,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
-    case "list":
-      table(ctx, store.jobList(), ["id", "title", "every", "at", "on", "runs", "last_run", "status"], [
+    case "list": {
+      const rows = jobViews(env);
+      if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+      table(ctx, rows, ["id", "title", "every", "at", "on", "runs", "last_run", "health"], [
         "id",
         "title",
         "every",
@@ -87,9 +134,53 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         "enabled",
         "runs",
         "last_run",
-        "status",
+        "health",
       ]);
       return 0;
+    }
+    case "show": {
+      if (!rest[0]) { bad(ctx, `job show needs <id|title> — ${JOB_USAGE}`); return 2; }
+      const j = jobViews(env).find((r) => r.id === rest[0] || r.title === rest[0]);
+      if (!j) { bad(ctx, `job not found: ${rest[0]}`); return 1; }
+      const recent = store.db.all("SELECT id, started, finished, rc, substr(output,1,200) AS output FROM runs WHERE job_id=? ORDER BY started DESC, id DESC LIMIT 10", [j.id]);
+      if (ctx.json) { console.log(JSON.stringify({ ...j, recent_runs: recent }, null, 2)); return 0; }
+      for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run"])
+        out(ctx, `  ${k.padEnd(21)} ${j[k] === "" || j[k] === undefined ? "—" : String(j[k])}`);
+      out(ctx, `  recent runs`);
+      for (const r of recent as any[]) out(ctx, `    ${r.started}  rc=${r.rc ?? "…"}  ${String(r.output || "").replace(/\s+/g, " ").slice(0, 100)}`);
+      return 0;
+    }
+    case "retire": {
+      if (!rest[0] || typeof args.flags.reason !== "string" || !args.flags.reason.trim()) {
+        bad(ctx, `job retire needs <id|title> and --reason "<why>" — ${JOB_USAGE}`);
+        return 2;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.jobRetire(ds, rest[0], String(args.flags.reason)))
+        .then((r): number => {
+          if (ctx.json) { console.log(JSON.stringify({ ...r.row, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          writeResult(ctx, r as any, (row) => `job retired: ${row.id}  ${row.title}  (disabled; history kept)`);
+          return 0;
+        })
+        .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
+    }
+    case "prune-runs": {
+      const keepRaw = args.flags.keep;
+      const keep = keepRaw === undefined ? configGetNumber(env.db, "job.keep_runs") : Number(keepRaw);
+      if (!Number.isInteger(keep) || keep < 1) { bad(ctx, `--keep must be a whole number ≥ 1 — ${JOB_USAGE}`); return 2; }
+      const apply = args.flags.apply === true || args.flags.apply === "true";
+      return getOrm(env.db.path)
+        .then((ds) => writes.jobPruneRuns(ds, keep, apply))
+        .then((r): number => {
+          if (ctx.json) { console.log(JSON.stringify({ keep, apply, ...r }, null, 2)); return 0; }
+          const total = r.jobs.reduce((n, j) => n + j.prune, 0);
+          table(ctx, r.jobs, ["id", "title", "total", "prune"], ["id", "title", "total", "prune"]);
+          if (apply) ok(ctx, `deleted ${r.deleted} run row(s) beyond the newest ${keep} per job`);
+          else out(ctx, paint(C.dim, `  dry run: ${total} run row(s) beyond the newest ${keep} per job would be deleted — add --apply to delete`, ctx.color));
+          return 0;
+        })
+        .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
+    }
     case "run": {
       if (!rest[0]) {
         bad(ctx, "usage: job run <jobId|title>");
@@ -153,7 +244,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ]);
       return 0;
     case "":
-      out(ctx, paint(C.dim, "  job: add <title> -- <cmd> | list | run <id> | tick | enable|disable <id> | logs", ctx.color));
+      out(ctx, paint(C.dim, `  ${JOB_USAGE}`, ctx.color));
       return 0;
     default:
       bad(ctx, `unknown job action: ${action}`);
@@ -203,6 +294,12 @@ function execute(env: Env, job: any): void {
   }
   const ms = Date.now() - started;
   store.jobFinish(runId, rc, output);
+  // #220: a one-shot (`at`, no every) job is finished once it has run — disable it so it stops lingering enabled.
+  if (job.at && !(Number(job.every_minutes) > 0)) {
+    const status = rc === 0 ? "done" : "failed";
+    store.db.run("UPDATE jobs SET enabled=0, status=? WHERE id=?", [status, job.id]);
+    store.log("job.settle", "job", job.id, `one-shot ran (${job.at}) → ${status}, disabled`);
+  }
   if (rc === 0) ok(ctx, `${job.title}  ok  ${ms}ms`);
   else bad(ctx, `${job.title}  rc=${rc}  ${output.slice(0, 160)}`);
   store.log("job.run", "job", job.id, `rc=${rc} ${nowIso()}`);

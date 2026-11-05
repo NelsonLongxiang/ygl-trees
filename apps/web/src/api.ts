@@ -315,7 +315,8 @@ export async function submitVerifyMaterial(input: {
   return body as { material_id: string; text_sha256: string; files?: Array<{ path: string; sha256: string; size: number }> };
 }
 
-export type TaskStatus = "todo" | "doing" | "done";
+/** `cancelled` (#220) is closed: the page shows it but never steps it; reopening is the CLI's `task reopen`. */
+export type TaskStatus = "todo" | "doing" | "done" | "cancelled";
 
 /**
  * R12.2 勾销：ask the server to move one task to `to`, the next step after the

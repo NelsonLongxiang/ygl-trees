@@ -29,6 +29,11 @@ export const CONFIG_REGISTRY: ConfigSpec[] = [
   { key: "search.limit", def: "20", type: "number", note: "kb/skill 检索默认返回条数（--limit 覆盖）" },
   { key: "default_confidence", def: "B", type: "string", note: "claim/kb 写入的默认置信度（A|B|C）" },
   { key: "job.stale_minutes", def: "30", type: "number", note: "悬空 run 回收阈值（分钟）" },
+  { key: "job.failing_runs", def: "3", type: "number", note: "连续失败多少次判 failing（#220；doctor job_health 对启用中的 failing job 判 fail）" },
+  { key: "job.min_every_minutes", def: "60", type: "number", note: "job add --every 下限（分钟）；更密需 --allow-frequent，0 = 不设下限（#220）" },
+  { key: "job.keep_runs", def: "50", type: "number", note: "job prune-runs 每个 job 默认保留的最近运行条数（#220）" },
+  { key: "task.stale_doing_days", def: "14", type: "number", note: "doing 停留超过此天数算停滞（task stale / doctor task_hygiene，#220）" },
+  { key: "task.stale_todo_days", def: "30", type: "number", note: "todo 停留超过此天数算挂账（task stale / doctor task_hygiene，#220）" },
   { key: "update_check", def: "true", type: "boolean", note: "CLI 版本更新提示（信息性 nag；false 或 YGL_NO_UPDATE_CHECK=1 关闭，不影响任何 rc）" },
 ];
 

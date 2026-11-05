@@ -10,6 +10,32 @@ import { getOrm } from "../../../core/database/src/orm";
 import { resolveProject, ambiguousProject, projectCount, projectSample, idNotFound } from "../../../core/database/src/selection";
 import * as writes from "../../pipeline/src/writes";
 import { relAdd, RelError } from "../../../ops/tools/src/rels";
+import { configGetNumber } from "../../../ops/tools/src/config";
+import { staleTasks, taskView, TaskView } from "../../pipeline/src/lifecycle";
+
+const TASK_USAGE = 'usage: task add "<title>" [--note ...] [--owner <who>] | list [--status todo|doing|done|cancelled] [--owner <who>] | ' +
+  "todo|doing|done|reopen <id> | cancel <id> --reason <why> | assign <id> <owner> | stale [--doing-days N] [--todo-days N] [--all]";
+
+/** `task stale` (#220): open tasks past their threshold — doing ≥ task.stale_doing_days, todo ≥ task.stale_todo_days. */
+function printStale(env: Env, tasks: TaskView[], args: any, scope: string): number {
+  const { ctx } = env;
+  const days = (flag: string, key: string): number | null => {
+    const v = args.flags[flag];
+    if (v === undefined) return configGetNumber(env.db, key);
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  };
+  const doing = days("doing-days", "task.stale_doing_days"), todo = days("todo-days", "task.stale_todo_days");
+  if (doing === null || todo === null) { bad(ctx, `--doing-days / --todo-days must be whole days ≥ 0 — ${TASK_USAGE}`); return 2; }
+  const rows = staleTasks(tasks, Date.now(), doing, todo);
+  if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+  head(ctx, `Stale tasks — ${scope} (doing ≥ ${doing}d, todo ≥ ${todo}d): ${rows.length}`);
+  table(ctx, rows.map((r) => ({ ...r, age: `${r.age_days}d${r.status_at_source === "created" ? "*" : ""}` })),
+    ["id", "status", "age", "owner", "title"], ["id", "status", "age", "owner", "title"]);
+  if (rows.some((r) => r.status_at_source === "created")) out(ctx, paint(C.dim, "  * age from created: the task predates status stamps (#220)", ctx.color));
+  if (rows.length) out(ctx, paint(C.dim, "  next: finish it (task doing|done), or close it with a reason (task cancel <id> --reason …)", ctx.color));
+  return 0;
+}
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -17,12 +43,29 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   // R12: the `task` command group rides this router — translate its verbs
   // onto the task-* cases (doing/done/todo carry their status in rest[1]).
   if (env.group === "task") {
-    const map: Record<string, string> = { add: "task-add", list: "task-list", doing: "task-status", done: "task-status", todo: "task-status" };
+    const map: Record<string, string> = {
+      add: "task-add", list: "task-list", doing: "task-status", done: "task-status", todo: "task-status", reopen: "task-status",
+      cancel: "task-cancel", assign: "task-assign", stale: "task-stale",
+    };
     if (!action || !map[action]) {
-      bad(ctx, 'usage: task add "<title>" [--note ...] | list [--status todo|doing|done] | todo|doing|done <id>');
+      bad(ctx, TASK_USAGE);
       return 2;
     }
-    if (map[action] === "task-status") rest = [rest[0], action];
+    // usage checks that need no workspace (#175 ordering: rc2 before any DB read)
+    if (action === "cancel" && (!rest[0] || typeof args.flags.reason !== "string" || !args.flags.reason.trim())) {
+      bad(ctx, `task cancel needs <id> and --reason "<why>" — ${TASK_USAGE}`);
+      return 2;
+    }
+    if (action === "assign" && (!rest[0] || !rest[1])) {
+      bad(ctx, `task assign needs <id> <owner> — ${TASK_USAGE}`);
+      return 2;
+    }
+    // `task stale --all` is workspace-wide (like doctor): no project selection needed.
+    if (action === "stale" && args.flags.all === true) {
+      const all = store.db.all("SELECT id, project_id, title, meta, created FROM artifacts WHERE kind='task'").map(taskView);
+      return printStale(env, all, args, "all projects");
+    }
+    if (map[action] === "task-status") rest = [rest[0], action === "reopen" ? "todo" : action];
     action = map[action];
   }
 
@@ -170,16 +213,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 
     // ── task group rides the produce router (`ygl-trees task ...`, R12) ──
     case "task-add": {
-      if (rejectBare(ctx, args.flags, ["note", "node"])) return 2;
+      if (rejectBare(ctx, args.flags, ["note", "node", "owner"])) return 2;
       const title = rest.join(" ");
       if (!title) {
-        bad(ctx, 'usage: task add "<title>" [--note ...] [--node <tree>/<key>]');
+        bad(ctx, 'usage: task add "<title>" [--note ...] [--owner <who>] [--node <tree>/<key>]');
         return 2;
       }
       const note = String(args.flags.note || "");
+      const owner = args.flags.owner !== undefined ? String(args.flags.owner).trim() : "";
       const nodeRef = args.flags.node !== undefined ? String(args.flags.node) : "";
       return getOrm(env.db.path)
-        .then((ds) => writes.taskAdd(ds, pid, title, note))
+        .then((ds) => writes.taskAdd(ds, pid, title, note, owner))
         .then((row): number | Promise<number> => {
           if (!nodeRef) {
             if (ctx.json) console.log(JSON.stringify(row, null, 2));
@@ -203,30 +247,58 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     case "task-list": {
+      if (rejectBare(ctx, args.flags, ["status", "owner"])) return 2;
+      const statusF = args.flags.status !== undefined ? String(args.flags.status) : "";
+      if (statusF && !(writes.TASK_STATUSES as readonly string[]).includes(statusF)) {
+        bad(ctx, `--status must be one of ${writes.TASK_STATUSES.join("|")}, got: ${statusF}`);
+        return 2;
+      }
+      const ownerF = args.flags.owner !== undefined ? String(args.flags.owner) : "";
       const rows = store.db.all(
         "SELECT id, title, meta, created FROM artifacts WHERE project_id=? AND kind='task' ORDER BY created DESC",
         [pid]
-      ).map((r: any) => {
-        let meta: any = {};
-        try { meta = r.meta ? JSON.parse(r.meta) : {}; } catch { /* malformed */ }
-        return { id: r.id, title: r.title, status: meta.status || "todo", created: r.created };
-      });
-      const statusF = String(args.flags.status || "");
-      const filtered = statusF ? rows.filter((r: any) => r.status === statusF) : rows;
+      ).map(taskView)
+        .filter((r: TaskView) => (!statusF || r.status === statusF) && (!ownerF || r.owner === ownerF));
       if (ctx.json) {
-        console.log(JSON.stringify(filtered, null, 2));
+        console.log(JSON.stringify(rows, null, 2));
         return 0;
       }
-      head(ctx, `Tasks (${filtered.length})`);
-      table(ctx, filtered, ["id", "status", "title"], ["id", "status", "title"]);
+      head(ctx, `Tasks (${rows.length})`);
+      table(ctx, rows, ["id", "status", "owner", "title"], ["id", "status", "owner", "title"]);
       return 0;
+    }
+
+    case "task-stale":
+      return printStale(env, store.db.all(
+        "SELECT id, project_id, title, meta, created FROM artifacts WHERE project_id=? AND kind='task'", [pid]).map(taskView), args, `project ${project.name}`);
+
+    case "task-cancel":
+    case "task-assign": {
+      const id = rest[0];
+      const t = store.db.get("SELECT project_id FROM artifacts WHERE id=? AND kind='task'", [id]) as any;
+      if (!t || t.project_id !== pid) {
+        bad(ctx, idNotFound(env.db, "artifacts", id, "task"));
+        return 1;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => action === "task-cancel" ? writes.taskCancel(ds, id, String(args.flags.reason)) : writes.taskAssign(ds, id, rest[1]))
+        .then((r: any): number => {
+          if (ctx.json) console.log(JSON.stringify(r, null, 2));
+          else if (r.duplicate) out(ctx, paint(C.yellow, `  ⚠ duplicate: task ${r.id} already ${action === "task-cancel" ? "cancelled" : `owned by ${r.owner}`}`, ctx.color));
+          else ok(ctx, action === "task-cancel" ? `task ${r.id}: ${r.from} → cancelled (${r.cancel_reason})` : `task ${r.id}: owner ${r.from || "—"} → ${r.owner}`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e?.message || String(e));
+          return 1;
+        });
     }
 
     case "task-status": {
       const id = rest[0];
       const status = rest[1];
       if (!id || !status) {
-        bad(ctx, "usage: task doing|done|todo <taskId>");
+        bad(ctx, "usage: task doing|done|todo|reopen <taskId>");
         return 2;
       }
       {

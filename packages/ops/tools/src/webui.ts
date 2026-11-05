@@ -535,6 +535,12 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             } catch { /* keep todo fallback */ }
             const FORWARD: Record<string, string> = { todo: "doing", doing: "done", done: "done" };
             const requested = String(status);
+            // #220: cancelled is closed — the dashboard cannot step it; reopening is a CLI act (task reopen <id>).
+            if (currentStatus === "cancelled") {
+              res.writeHead(409, { "content-type": "application/json" });
+              res.end(JSON.stringify({ error: `task ${id} is cancelled; reopen it with: ygl-trees task reopen ${id}`, current_status: currentStatus, expected_next: null }));
+              return;
+            }
             if (requested === currentStatus) {
               // #70: TRUE idempotent — same status means no state change, no
               // write, no event. Return the current row as-is.

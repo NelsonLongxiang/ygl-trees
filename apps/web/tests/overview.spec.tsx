@@ -153,10 +153,22 @@ describe("TaskList (R12.2 勾销)", () => {
     expect(text).toContain("待办 2 · 进行中 1 · 已完成 1");
   });
 
+  it("#220: cancelled is shown closed (struck, no step) after done; an unknown status keeps its own name", () => {
+    const more = [...tasks, { id: "e", title: "不做了", status: "cancelled" }, { id: "f", title: "怪状态", status: "weird" }];
+    expect(groupTasks(more).map((t) => t.id)).toEqual(["c", "b", "d", "a", "e", "f"]);
+    const page = renderToStaticMarkup(h(ThemeProvider, null, h(TaskList, { tasks: more })));
+    const words = page.replace(/<[^>]+>/g, " ");
+    expect(words).toContain("已取消");
+    expect(words).toContain("weird");
+    expect(words).toContain("待办 2 · 进行中 1 · 已完成 1 · 已取消 1");
+    expect(page).not.toMatch(/aria-label="[^"]*：(不做了|怪状态)"/);
+  });
+
   it("a step this page wrote shows only over the payload it was written against", () => {
     const seen = [{ id: "b", title: "写报告", status: "todo" }];
     expect(shownStatus("todo", seen, { to: "doing", seen })).toBe("doing");
-    expect(shownStatus("weird", seen)).toBe("todo");
+    // #220: an unknown status is shown as itself, never as 待办
+    expect(shownStatus("weird", seen)).toBe("weird");
   });
 
   it("any newer payload is the server's word — a CLI step back wins over the page's step (review of ee1af12, #66)", () => {
@@ -173,6 +185,9 @@ describe("TaskList (R12.2 勾销)", () => {
     expect(stepTarget("todo")).toBe("doing");
     expect(stepTarget("doing")).toBe("done");
     expect(stepTarget("done")).toBeNull();
+    // #220: cancelled is closed — no step; an unknown status gets no step either
+    expect(stepTarget("cancelled")).toBeNull();
+    expect(stepTarget("weird")).toBeNull();
   });
 
   it("a receipt that moved nothing is not reported as a success (0.114.29 idempotent, review of e879e43)", () => {
