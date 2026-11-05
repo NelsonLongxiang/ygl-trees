@@ -128,7 +128,7 @@ ygl-trees node import --file tree.json --tree copy  # 严格校验、事务导�
 - **Cordis 服务化 + 事件桥真修（0.86）**：evalClaim/assessEvidence/semanticRank 进 `ctx.ops` 服务（域包不再跨包 require 运维实现，eval 网关统一入口）；零消费壳服务（ctx.techtree/ctx.webApp）删除，base bundle 收敛为 database/ops/research/timer；WebUI SSE 改走 Cordis 公共通道 `ctx.on("ygl")`（事件驱动 + 轮询降级）；**事件桥 ESM 静默死亡缺陷根治**——桥原用 require() 包 try/catch，ESM 宿主下 ReferenceError 被静默吞、桥直接死亡，改静态 import 后桥链有了单测防线；kind 专用通道从 11 种硬编码清单改为动态桥接（`ygl:<kind>`），不再静默丢弃清单外事件
 - **研究管线视图 + 视觉 token 单源化（0.92）**：WebUI 管线视图 React 重建（0.88 退役的 HTML 实现正式接替）——断言按状态四列水流（已证实/有争议/未验证/已反驳），claim 卡状态色左沿 + 证据折叠列表（stance 着色 + 引文摘录），渲染验证测试锁面；视觉 identity 单源化——DESIGN.md 为唯一调色板真相源，antd 主题/统计卡/知识图谱（含服务端色板）全走 token，漂移守卫 ×7 解析 DESIGN.md 断言两面一致，改色只能从 DESIGN.md 起改
 
-- **spec-validator 验证器（0.96 → 0.103）**：把「业务规范」变成可执行的验证器——业务专家交一段话+附件，agent 构造判据（`prepare` P0–P5 含盲审与红队），引擎跑七型检查器（sql/sql-pair/count/exists/file/command/agent）出报告，**判定链上没有人工确认**（构造追溯视图只读审计）。契约（`docs/verify-contract.md`）与黄金语料钉 `contract_version 1.1` / `corpus_version 1.1`，TS 引擎与 Rust 单二进制 `yglverify`（`rust/yglverify/`）**整份报告逐字节 parity**（33 例语料机械门）；`--draft` 无损试跑、`file` 检查支持 `ignore` 排除集、归档包（确定性 zip + `archive verify` 全链重算）、`verify self-check`（六环自校验）、封包形态（spec 内嵌 + footer v1 + **ed25519 签名 + 认表不认报文**；发布物应要求 signed 登记）。CLI 命令族：`verify submit/prepare/run/graduate/report/trace/archive/register/signature/self-check`（`graduate` = 资格冻结 + 常驻检查，0.103.0）；WebUI 三视图（0.100.0 起，0.101.0 接附件上传，0.102.0 起作业式 `prepare`/`run` HTTP 端点由 `webui serve --enable-verify-jobs` 打开、默认 403）：材料提交 / 构造追溯 / 报告看板（`/api/verify/*`）
+- **spec-validator 验证器（0.96 → 0.103）**：把「业务规范」变成可执行的验证器——业务专家交一段话+附件，agent 构造判据（`prepare` P0–P5 含盲审与红队），引擎跑七型检查器（sql/sql-pair/count/exists/file/command/agent）出报告，**判定链上没有人工确认**（构造追溯视图只读审计）。契约（`docs/verify-contract.md`）与黄金语料钉 `contract_version 1.1` / `corpus_version 1.1`，TS 引擎与 Rust 单二进制 `yglverify`（`rust/yglverify/`）**整份报告逐字节 parity**（33 例语料机械门）；`--draft` 无损试跑、`file` 检查支持 `ignore` 排除集、归档包（确定性 zip + `archive verify` 全链重算）、`verify self-check`（六环自校验）、封包形态（spec 内嵌 + footer v1 + **ed25519 签名 + 认表不认报文**；发布物应要求 signed 登记）。CLI 命令族：`verify submit/prepare/run/graduate/report/trace/archive/register/signature/self-check/prune`（`graduate` = 资格冻结 + 常驻检查，0.103.0；`prune` = 工作区保留策略，默认只列清单、`--apply` 才删，#222）；WebUI 三视图（0.100.0 起，0.101.0 接附件上传，0.102.0 起作业式 `prepare`/`run` HTTP 端点由 `webui serve --enable-verify-jobs` 打开、默认 403）：材料提交 / 构造追溯 / 报告看板（`/api/verify/*`）
 **退出码**：`0` 成功（含"重复已存在"）、`1` 运行错误（含 404：`query done` / `job enable|disable` / `source rm` 命中不存在的 id）、`2` 用法错误。Agent 可放心按 rc 分支。
 
 ---
@@ -349,11 +349,12 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 75 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1/T2/T3 加了 7 条科技树 golden 与并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 75 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1696 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1721 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
 ygl-trees verify meta .                   # 本仓元验证（R1–R3 + R5a，meta_index_version 2）；contract-audit 12 也跑它
+ygl-trees verify prune                    # 验证工作区保留策略试跑：每个 spec 留最近 10 份、最近 10 次结论翻转两侧、每版首份、被钉住与 60 分钟内的运行，其余连同归档与独占快照列为可删（#222；--apply 才删，--keep-runs-in <文件|目录> 钉住其中出现的 run id；--repo <验证器仓库> 可多个，钉住取自整个仓库任何类型的文件（自检工作副本与历史除外），并清自检历史；不启动工作区、不开任何库，新节点直接可用）
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
 pnpm pack:repro    # 可复现打包：mtime/owner/顺序/gzip 全固定，同一 commit 任意机器 sha256 相同

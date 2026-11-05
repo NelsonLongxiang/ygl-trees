@@ -50,6 +50,7 @@ import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 import { INSTANCE_FLAGS, instancePreflight, runInstance } from "./verify-instance";
 import { AsOfError, normalizeAsOf } from "./as-of";
+import { PRUNE_FLAGS, prunePreflight, runPruneCommand } from "./verify-prune";
 
 const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees", "tree-reports"] as const;
 
@@ -1014,6 +1015,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   export: ["out", "portable"],
   import: [],
   instance: INSTANCE_FLAGS,
+  prune: PRUNE_FLAGS,
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
@@ -1054,6 +1056,13 @@ export function preflightUsage(action: string, rest: string[], args: any): strin
     const unknown = Object.keys(args.flags ?? {}).filter((k) => !INSTANCE_FLAGS.includes(k) && !GLOBAL_FLAGS.has(k));
     if (unknown.length) return `unknown flag${unknown.length > 1 ? "s" : ""} for verify instance: ${unknown.map((k) => `--${k}`).join(" ")}`;
     return instancePreflight(rest, args.flags ?? {});
+  }
+  if (action === "prune") {
+    // #222: a mistyped flag or pin must be refused before anything is read or deleted
+    const unknown = Object.keys(args.flags ?? {}).filter((k) => !PRUNE_FLAGS.includes(k) && !GLOBAL_FLAGS.has(k));
+    if (unknown.length) return `unknown flag${unknown.length > 1 ? "s" : ""} for verify prune: ${unknown.map((k) => `--${k}`).join(" ")}`;
+    if (rest.length) return `verify prune takes no positional arguments (got ${rest.join(" ")})`;
+    return prunePreflight(args.flags ?? {});
   }
   if ((action === "run" || (action === "tree" && rest[0] === "run")) && args.flags.provenance !== undefined && (typeof args.flags.provenance !== "string" || !args.flags.provenance.trim())) return "--provenance needs a JSON file path";
   if (action !== "prepare") return null;
@@ -1124,6 +1133,8 @@ function verifyRoot(env: Env): string {
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx } = env;
+  // #222: prune runs before paths() — a dry run must not even create the missing standard folders
+  if (action === "prune") return runPruneCommand(env.ctx, env.home, rest, args.flags ?? {});
   const p = paths(env);
   // 未知旗标是用法错误（rc=2）：静默吞掉会让 `--attachment` 这种拼写落成 files:[]，
   // 提交物缺附件却一路跑到 PASS 边缘——构造期静默比报错危险得多（验证席回灌 ①）。

@@ -603,6 +603,12 @@ export async function main(argv: string[]): Promise<number> {
     const { preflightUsage } = await import("../../../packages/ops/tools/src/verify-cmds");
     const usageProblem = preflightUsage(action, args._.slice(2), args);
     if (usageProblem) { bad(ctx, usageProblem); return 2; }
+    // #222: prune only reads and deletes verify files — it runs before any workspace boot, so no database (the
+    // workspace's or a verifier repo's) is opened, created or migrated; registry pins come from a read-only open
+    if (action === "prune") {
+      const { runPruneCommand } = await import("../../../packages/ops/tools/src/verify-prune");
+      return runPruneCommand(ctx, home, args._.slice(2), args.flags as Record<string, unknown>);
+    }
   }
   // #220 (review of f509022): task/job usage errors are rc2 before the db too, not rc1 when the db is missing/broken.
   if ((group === "task" || group === "job") && action) {
@@ -1104,6 +1110,7 @@ export function generateLlmsManifest(): string {
       ["verify archive <run-id|spec-id> [--with …] [--snapshot <db>]", "archive bundle (report+spec+materials; --snapshot for cross-impl runs)"],
       ["verify archive verify <file>", "recompute the full hash chain of an archive bundle"],
       ["verify list --unarchived", "runs that exist but were never archived"],
+      ["verify prune [--repo <verifier-repo>]… [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]… [--min-age-minutes M] [--apply]", "retention for reports/archives/snapshots: keeps recent, verdict flips, first of each version, pinned and young runs; --repo cleans verifier repos (pins from work/results + ledger, newest self-check history per case); dry run unless --apply (#222)"],
       ["verify self-check", "recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives"],
       ["verify example [--checker <type>]", "corpus-derived candidates for the seven checker types (null ops included)"],
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],
