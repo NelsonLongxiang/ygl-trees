@@ -84,13 +84,28 @@ export class PgAsyncDb implements AsyncDb {
   }
 }
 
-/** #93-②：PG URL 脱敏——单点助手，所有打印面共用。
- *  剥 userinfo（user:pass@）和查询串里的凭证参数（password/user/sslpassword/
- *  sslkey/sslcert/passfile，大小写不敏感）。凭证不得进 stdout/错误文本/事件/归档（plan §3.5）。 */
-export function redactPgUrl(url: string): string {
-  let u = String(url || "").replace(/\/\/[^@\/]*@/i, "//");
-  u = u.replace(/([?&])(user|password|passfile|sslpassword|sslkey|sslcert)=([^&]*)/gi, (_m, q, k) => q + k + "=***");
-  return u;
+const PG_CREDENTIAL_KEYS = new Set(["user", "password", "passfile", "sslpassword", "sslkey", "sslcert"]);
+
+/** Display a PostgreSQL target without user information or credential values.
+ *  Query keys are decoded by URLSearchParams before matching. Unparseable targets
+ *  produce a placeholder; the original input is never used as diagnostic text. */
+export function redactPgUrl(target: string): string {
+  let url: URL;
+  try {
+    url = new URL(String(target || ""));
+  } catch {
+    return "(invalid PG URL)";
+  }
+  if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") return "(invalid PG URL)";
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  const params = new URLSearchParams();
+  for (const [key, value] of url.searchParams) {
+    params.append(key, PG_CREDENTIAL_KEYS.has(key.toLowerCase()) ? "***" : value);
+  }
+  url.search = params.toString();
+  return url.toString();
 }
 
 /** Factory: create the async adapter for the current workspace DB.
