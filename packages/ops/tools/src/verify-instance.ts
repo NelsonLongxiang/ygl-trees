@@ -46,12 +46,16 @@ function gitRepoName(target: string): string {
   return /^[a-z0-9._-]+$/.test(name) && name !== "." && name !== ".." ? name : "";
 }
 
+/** Scope shown for an instance that names no project. It contains parentheses, which no repository or npm scope
+ *  name can, so it never collides with a real project (a repository may well be called "unscoped": review of 0f9b818). */
+export const NO_SCOPE = "(none)";
+
 /** #213: an instance's tier — `global` for the reserved packs, otherwise its project: the pack's @scope, or for a
  *  legacy-repo instance the target repository. Derived on read, never stored, so it cannot drift from the name. */
 export function scopeOf(kind: string, pack: string, target: string): string {
-  if (kind === "legacy-repo") return gitRepoName(target) || "unscoped";
+  if (kind === "legacy-repo") return gitRepoName(target) || NO_SCOPE;
   const m = SCOPE_RE.exec(pack);
-  return m ? m[1] : GLOBAL_PACKS.includes(pack) ? "global" : "unscoped";
+  return m ? m[1] : GLOBAL_PACKS.includes(pack) ? "global" : NO_SCOPE;
 }
 
 export interface InstanceBinding {
@@ -304,7 +308,7 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     if (Array.isArray(p)) { bad(ctx, `${file} does not satisfy ygl-verifier-latest/1: ${p.join("; ")}`); return 1; }
     // #213 P3: a legacy-repo instance is project-level, so its target must resolve to a named GitHub project —
     // a git: target that names no repository (owner/., owner/.., post-merge review of 86e56f3) is refused too.
-    if (scopeOf("legacy-repo", p.verifier, p.binding.target) === "unscoped") { bad(ctx, `${file}: target ${p.binding.target} names no GitHub project, so it cannot be attributed to one — set target.repo_url, or an origin remote on the checkout (#213 P3)`); return 1; }
+    if (!gitRepoName(p.binding.target)) { bad(ctx, `${file}: target ${p.binding.target} names no GitHub project, so it cannot be attributed to one — set target.repo_url, or an origin remote on the checkout (#213 P3)`); return 1; }
     const ids = instanceIdentity(p.verifier, "legacy", p.binding);
     const archiveSha = fileSha(p.archive);
     return getOrm(env.db.path)

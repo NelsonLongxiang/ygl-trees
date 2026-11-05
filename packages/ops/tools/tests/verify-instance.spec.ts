@@ -115,9 +115,11 @@ describe("scope tiers (#213)", () => {
     expect(scopeOf("pack", "ygl-v-core-aggregate", "git:o/r")).toBe("global");
     expect(scopeOf("pack", "@acme/ygl-v-x", "sqlite:/x")).toBe("acme");
     expect(scopeOf("legacy-repo", "ygl-webui-verifier", "git:NelsonLongxiang/ygl-trees")).toBe("ygl-trees");
-    expect(scopeOf("legacy-repo", "v", "path:/srv/x")).toBe("unscoped");
-    // owner/. and owner/.. normalize to git: targets that name no repository: unscoped, so import-latest refuses them.
-    for (const repo of ["owner/.", "owner/..", "https://github.com/o/.."]) expect(scopeOf("legacy-repo", "v", legacyTarget({ repo })), repo).toBe("unscoped");
+    expect(scopeOf("legacy-repo", "v", "path:/srv/x")).toBe("(none)");
+    // a repository may really be called "unscoped": it is a project like any other (review of 0f9b818)
+    expect(scopeOf("legacy-repo", "v", legacyTarget({ repo: "owner/unscoped" }))).toBe("unscoped");
+    // owner/. and owner/.. normalize to git: targets that name no repository: no scope, so import-latest refuses them.
+    for (const repo of ["owner/.", "owner/..", "https://github.com/o/.."]) expect(scopeOf("legacy-repo", "v", legacyTarget({ repo })), repo).toBe("(none)");
     expect(instancePreflight(["list"], { scope: true })).toMatch(/--scope needs a value/);
     // A git target that names no repository is refused for every pack, never treated as "no scope to check" (review on 273f140).
     for (const target of ["git:/", "git:////", "git:o/..", "git:./"])
@@ -275,5 +277,11 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     }
     expect(cli(["db", "stats"]).json).toMatchObject({ verifier_instances: before.verifier_instances, verifier_runs: before.verifier_runs });
     expect(before.verifier_runs).toBe(2);
+    // positive control (review of 0f9b818): a repository really named "unscoped" is a project and imports
+    const named = join(dir, "named-unscoped.json");
+    writeFileSync(named, JSON.stringify(latest({ repo: dir, root_run_id: "run_eeeeeeeeeeeeeeee", target: { repo: "owner/unscoped", rev: "main", sha: "abc" } })));
+    const ok = cli(["verify", "instance", "import-latest", named, "--owner", "x"]);
+    expect(ok.rc, ok.text).toBe(0);
+    expect(ok.json.instance).toMatchObject({ scope: "unscoped", binding: { target: "git:owner/unscoped" } });
   });
 });
