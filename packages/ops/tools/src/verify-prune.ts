@@ -30,7 +30,7 @@
  * workspace database is never opened.
  */
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Ctx } from "../../../core/database/src/types";
 import { bad, C, head, out, paint, table } from "../../../core/text/src/fmt";
@@ -155,20 +155,33 @@ function addRunTokens(text: string, into: Set<string>): void {
   }
 }
 
+/** A pin source that cannot be read stops the whole prune before anything is deleted: an unread pin could name a
+ *  run that must stay, so "could not read" never means "no pins" (dfcf886 review P1). */
+export class PinSourceError extends Error {}
+const pinFail = (path: string, e: any): never => {
+  throw new PinSourceError(`cannot read pin source ${path}: ${e?.code || e?.message || e} — nothing was deleted; fix the file's permissions or remove it, then rerun`);
+};
+
 /** Scan one file of any type and size for run ids: bytes read as latin1 in chunks (ids inside SQLite ledgers and
- *  zips count), with an overlap so a token split across chunks is still seen. */
+ *  zips count), with an overlap so a token split across chunks is still seen. A file that cannot be opened or read
+ *  throws PinSourceError. */
 export function scanFileForRunIds(file: string, into: Set<string>): void {
   let fd: number;
   try {
     fd = openSync(file, "r");
-  } catch {
-    return;
+  } catch (e) {
+    return pinFail(file, e);
   }
   try {
     const buf = Buffer.alloc(CHUNK);
     let carry = "";
     for (;;) {
-      const n = readSync(fd, buf, 0, CHUNK, null);
+      let n: number;
+      try {
+        n = readSync(fd, buf, 0, CHUNK, null);
+      } catch (e) {
+        return pinFail(file, e);
+      }
       if (n <= 0) break;
       const text = carry + buf.toString("latin1", 0, n);
       addRunTokens(text, into);
@@ -180,7 +193,9 @@ export function scanFileForRunIds(file: string, into: Set<string>): void {
 }
 
 /** Every run id named in the given files and folders (recursively, any file type, symlinks followed once).
- *  `skip` leaves out paths the caller knows are not evidence (the verify root itself, self-check working copies). */
+ *  `skip` leaves out paths the caller knows are not evidence (the verify root itself, self-check working copies).
+ *  Anything in scope that cannot be resolved, listed or read — a broken link, a folder or file without permission —
+ *  throws PinSourceError; only an entry that disappeared between listing and reading (gone, not even a link) is passed. */
 export function pinnedRunIds(paths: string[], into = new Set<string>(), skip: (path: string) => boolean = () => false): Set<string> {
   const seen = new Set<string>();
   const visit = (p: string) => {
@@ -190,14 +205,27 @@ export function pinnedRunIds(paths: string[], into = new Set<string>(), skip: (p
     try {
       real = realpathSync(p);
       st = statSync(real);
-    } catch {
-      return;
+    } catch (e: any) {
+      if (e?.code === "ENOENT") {
+        try {
+          lstatSync(p);
+        } catch {
+          return; // vanished between listing and reading: nothing left to pin from
+        }
+      }
+      return pinFail(p, e);
     }
     if (seen.has(real)) return;
     seen.add(real);
     if (st.isFile()) return scanFileForRunIds(real, into);
     if (!st.isDirectory()) return;
-    for (const name of readdirSync(real)) if (!SKIP_DIRS.has(name)) visit(join(p, name));
+    let entries: string[];
+    try {
+      entries = readdirSync(real);
+    } catch (e) {
+      return pinFail(p, e);
+    }
+    for (const name of entries) if (!SKIP_DIRS.has(name)) visit(join(p, name));
   };
   for (const p of paths) visit(p);
   return into;

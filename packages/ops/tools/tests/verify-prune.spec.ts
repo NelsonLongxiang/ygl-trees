@@ -513,3 +513,55 @@ describe("verify prune — 8fa2844 review (P1-1, P1-2, P2-1, P2-2, P2-3) and cit
     expect(readFileSync(join(h, "ygl-trees.db"), "utf8")).toMatch(/^this is not a sqlite database/);
   });
 });
+
+describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("verify prune — dfcf886 review P1: a pin source that cannot be read stops everything", () => {
+  it("an unreadable --keep-runs-in file or folder, or a broken link in scope, throws before any plan", () => {
+    const h = home();
+    const v = join(h, "verify");
+    series(v, "spec_ur", 1, 4);
+    const pin = join(h, "pins.txt");
+    writeFileSync(pin, rid(2));
+    chmodSync(pin, 0o000);
+    try {
+      expect(() => planPrune(v, opts({ keepLast: 1, keepFlips: 0, pins: [pin] }), [], NOW)).toThrow(/cannot read pin source .*pins\.txt.*nothing was deleted/);
+    } finally {
+      chmodSync(pin, 0o644);
+    }
+    const dir = join(h, "pindir");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "a.json"), rid(2));
+    chmodSync(dir, 0o000);
+    try {
+      expect(() => planPrune(v, opts({ keepLast: 1, keepFlips: 0, pins: [dir] }), [], NOW)).toThrow(/cannot read pin source .*pindir/);
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    symlinkSync(join(h, "gone.sql"), join(dir, "broken.sql"));
+    expect(() => planPrune(v, opts({ keepLast: 1, keepFlips: 0, pins: [dir] }), [], NOW)).toThrow(/cannot read pin source .*broken\.sql/);
+    expect(readdirSync(join(v, "reports"))).toHaveLength(4);
+  });
+
+  it("CLI: an unreadable ledger in the second repo fails the call rc=1 and leaves the first repo untouched", () => {
+    const a = repo();
+    const b = repo();
+    series(a.v, "spec_ma", 1, 8);
+    series(b.v, "spec_mb", 100, 4);
+    for (const r of [a, b]) writeFileSync(join(r.results, "latest.json"), JSON.stringify({ contract: "ygl-verifier-latest/1" }));
+    const ledger = join(b.dir, "ledger", "ledger.sql");
+    writeFileSync(ledger, `INSERT … ${rid(101)} …`);
+    chmodSync(ledger, 0o000);
+    const node = join(ROOT, "tmp", `verify-prune-p1-${process.pid}`);
+    mkdirSync(node, { recursive: true });
+    made.push(node);
+    const before = [...tree(a.dir), ...tree(b.dir)];
+    let r;
+    try {
+      r = spawnSync(process.execPath, [BIN, "verify", "prune", "--repo", a.dir, "--repo", b.dir, "--keep-last", "1", "--apply", "--json"], { cwd: ROOT, encoding: "utf8", env: { ...process.env, YGL_HOME: node, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" } });
+    } finally {
+      chmodSync(ledger, 0o644);
+    }
+    expect(r.status, r.stdout + r.stderr).toBe(1);
+    expect(JSON.parse(r.stdout).error).toMatch(/cannot read pin source .*ledger\.sql/);
+    expect([...tree(a.dir), ...tree(b.dir)]).toEqual(before);
+  });
+});
