@@ -18,6 +18,7 @@ const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
 let ROOT = "";
+let ROOT_BASE = ""; // the mkdtemp folder that holds ROOT; removing only ROOT left it behind
 const SCRIPT = "scripts/verify-driver.sh";
 
 function run(args: string[]) {
@@ -32,7 +33,8 @@ const readIndex = () => JSON.parse(readFileSync(join(ROOT, "verify", "meta.json"
 
 describe.skipIf(!HAS_BIN)("meta-tooling drift repair (0.114.2/0.114.3)", () => {
   beforeAll(() => {
-    ROOT = join(mkdtempSync(join(tmpdir(), "ygl-mtool-root-")), "repo");
+    ROOT_BASE = mkdtempSync(join(tmpdir(), "ygl-mtool-root-"));
+    ROOT = join(ROOT_BASE, "repo");
     mkdirSync(join(ROOT, "scripts"), { recursive: true });
     mkdirSync(join(ROOT, "verify"), { recursive: true });
     writeFileSync(join(ROOT, SCRIPT), "#!/bin/sh\necho verify\n", "utf8");
@@ -43,7 +45,7 @@ describe.skipIf(!HAS_BIN)("meta-tooling drift repair (0.114.2/0.114.3)", () => {
     );
   });
 
-  afterAll(() => rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  afterAll(() => rmSync(ROOT_BASE || ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
   it("drift is red, --reregister records an in-repo audit entry, check goes green (no DB needed)", () => {
     const red = run(["--check"]);

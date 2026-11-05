@@ -24,8 +24,14 @@ const leaked = (db: DB, v: string) =>
 
 describe("#150 store: secret config keys", () => {
   let db: DB;
+  let dir = "";
   beforeAll(() => {
-    db = new DB(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "ygl-150-unit-")), "unit.db"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "ygl-150-unit-"));
+    db = new DB(path.join(dir, "unit.db"));
+  });
+  afterAll(() => {
+    db?.close();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it("set: event payload redacted, receipt masked, raw value still readable internally", () => {

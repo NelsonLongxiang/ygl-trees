@@ -7,9 +7,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
+
+mod common;
+use common::TempDir;
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_yglverify")
@@ -19,11 +21,8 @@ fn cases_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/verify/core/corpus/cases")
 }
 
-fn temp_dir(tag: &str) -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let dir = std::env::temp_dir().join(format!("yglverify-cli-{tag}-{}-{nanos}", std::process::id()));
-    fs::create_dir_all(&dir).expect("temp dir");
-    dir
+fn temp_dir(tag: &str) -> TempDir {
+    TempDir::new("yglverify-cli", tag)
 }
 
 /// 用 rusqlite 建库（与 corpus_parity 同口径；测试自足，不依赖外部 sqlite3）。

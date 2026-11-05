@@ -1,7 +1,7 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import {
   ARCHIVE_FORMAT_VERSION,
@@ -24,9 +24,17 @@ import type { VerifyReport, VerifySpec } from "../../../verify/core/src/contract
 const sha = (s: string): string => require("node:crypto").createHash("sha256").update(s).digest("hex");
 const sha256 = (b: Buffer): string => require("node:crypto").createHash("sha256").update(b).digest("hex");
 
+// every scratch root is removed after the file's tests: verifiers rerun this suite many times a day, and each
+// run used to leave its ygl-archive-* folders in the system temp directory
+const scratchRoots: string[] = [];
 function scratch(): string {
-  return mkdtempSync(join(tmpdir(), "ygl-archive-"));
+  const dir = mkdtempSync(join(tmpdir(), "ygl-archive-"));
+  scratchRoots.push(dir);
+  return dir;
 }
+afterAll(() => {
+  for (const dir of scratchRoots) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 
 /** 最小可归档工作区：materials + specs + reports（与 CLI 落盘布局一致）。 */
 function seedRun(root: string): { runId: string; specId: string } {

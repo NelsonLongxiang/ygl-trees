@@ -230,7 +230,7 @@
     },
     {
       "path": "vitest.config.ts",
-      "sha256": "e48bd335178561eeb6477f9f0cc6b96059c763d8deaa201d25a3c43de3d0915d",
+      "sha256": "c5e2b160548ce5de1e84d4360bec35658cb53627acd78b105aca2b17ffcb03ce",
       "role": "test"
     },
     {
@@ -1297,6 +1297,14 @@
       "reason": "#222 A4: README truth anchors for verify prune (dry run rc0, --keep-last 0 rc2)",
       "actor": "supervisor-seat (Claude-OPS-5.5)",
       "at": "2026-11-05T05:42:37.479Z"
+    },
+    {
+      "path": "vitest.config.ts",
+      "old_sha256": "e48bd335178561eeb6477f9f0cc6b96059c763d8deaa201d25a3c43de3d0915d",
+      "new_sha256": "c5e2b160548ce5de1e84d4360bec35658cb53627acd78b105aca2b17ffcb03ce",
+      "reason": "#227: globalSetup tests/support/tmpdir-guard.ts gives each run its own temp root, removes it after, and fails the run naming any folder a test left behind",
+      "actor": "supervisor-seat (Claude-OPS-5.5)",
+      "at": "2026-11-05T11:58:56.899Z"
     }
   ],
   "kind": "engine",
