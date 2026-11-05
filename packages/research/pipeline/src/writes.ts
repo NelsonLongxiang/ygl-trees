@@ -950,14 +950,18 @@ export async function jobAdd(
 ): Promise<WriteResult> {
   return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM jobs WHERE title=?`, [o.title])) as any[];
-    if (ex.length && !o.force) return { row: ex[0], dup: true };
-    // #220 item 11: `--replaces` retires the old version in the same transaction as the new registration.
+    // #220 item 11: `--replaces` retires the old version in the same transaction as the new registration — also when
+    // the new title already exists (a rerun of the same add), so the replacement is never left half done.
     if (o.replaces) {
       const old = ((await mgr.query(`SELECT * FROM jobs WHERE id=? OR title=? ORDER BY created LIMIT 1`, [o.replaces, o.replaces])) as any[])[0];
       if (!old) throw new Error(`job not found: ${o.replaces}`);
-      await mgr.query(`UPDATE jobs SET enabled=0, status='retired' WHERE id=?`, [old.id]);
-      await logEvent(mgr, "job.retire", "job", old.id, `${old.title}: replaced by ${o.title}`);
+      if (ex.length && old.id === ex[0].id) throw new Error(`--replaces names the job being added (${o.title})`);
+      if (old.status !== "retired") {
+        await mgr.query(`UPDATE jobs SET enabled=0, status='retired' WHERE id=?`, [old.id]);
+        await logEvent(mgr, "job.retire", "job", old.id, `${old.title}: replaced by ${o.title}`);
+      }
     }
+    if (ex.length && !o.force) return { row: ex[0], dup: true };
     let title = o.title;
     if (o.force) {
       let i = 2;
@@ -1093,8 +1097,7 @@ export async function artifactAdd(
 
 // ================================================================ engineering artifacts (spec R12, 0.32)
 
-/** Task states (#220): `cancelled` is a closed state reached only through taskCancel (it needs a reason). */
-export const TASK_STATUSES = ["todo", "doing", "done", "cancelled"] as const;
+export { TASK_STATUSES } from "./lifecycle";
 /** States `task todo|doing|done` (and the WebUI step / MCP advance) may set directly. */
 const TASK_STEPS = ["todo", "doing", "done"];
 
@@ -1124,6 +1127,8 @@ export async function taskSetStatus(ds: DataSource, taskId: string, status: stri
     const from = meta.status || "todo";
     // A cancelled task is closed: it comes back only through an explicit reopen (→ todo), never straight to work.
     if (from === "cancelled" && status !== "todo") throw new Error(`task ${taskId} is cancelled — reopen it first: task reopen ${taskId}`);
+    // Same status again is a no-op (review of f509022): re-stamping status_at would hide a stale task from task stale.
+    if (from === status) return { id: taskId, title: row.title, from, to: status, status_at: meta.status_at || "", duplicate: true };
     const now = nowIso();
     const { done_at: _d, cancel_reason: _c, ...rest } = meta;
     const next = { ...rest, status, status_at: now, ...(status === "done" ? { done_at: now } : {}) };

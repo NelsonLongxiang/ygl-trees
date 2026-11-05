@@ -19,6 +19,9 @@ export interface TaskView {
   created: string;
 }
 
+/** Task states (#220): `cancelled` is a closed state reached only through `task cancel` (it needs a reason). */
+export const TASK_STATUSES = ["todo", "doing", "done", "cancelled"] as const;
+
 /** Open = still somebody's work: todo or doing. done and cancelled are closed. */
 export const OPEN_TASK_STATUSES = ["todo", "doing"];
 
@@ -144,4 +147,32 @@ export function jobFamilies(jobs: Array<{ id: string; title: string; status?: st
     by.set(stem, list);
   }
   return [...by.entries()].filter(([, l]) => l.length > 1).map(([stem, l]) => ({ stem, ids: l.map((j) => j.id), titles: l.map((j) => j.title) }));
+}
+
+// ---------------------------------------------------------------- usage preflight
+
+/**
+ * task/job usage problems that need no workspace (#175 ordering, review of f509022): bin runs this before the DB
+ * gate, so a missing --reason is rc2 even when the database is missing or broken. Handlers keep the same checks.
+ */
+export function taskJobPreflight(group: string, action: string, rest: string[], flags: Record<string, any>): string | null {
+  const str = (v: unknown) => typeof v === "string" && v.trim() !== "";
+  const days = (v: unknown) => v === undefined || /^\d+$/.test(String(v).trim());
+  if (group === "task") {
+    if (action === "cancel" && (!rest[0] || !str(flags.reason))) return 'task cancel needs <id> and --reason "<why>"';
+    if (action === "assign" && (!rest[0] || !rest[1])) return "task assign needs <id> <owner>";
+    if (action === "stale" && (!days(flags["doing-days"]) || !days(flags["todo-days"]))) return "--doing-days / --todo-days must be whole days ≥ 0";
+    if (action === "list" && flags.status !== undefined && !(TASK_STATUSES as readonly string[]).includes(String(flags.status)))
+      return `--status must be one of ${TASK_STATUSES.join("|")}, got: ${String(flags.status)}`;
+  }
+  if (group === "job") {
+    if (action === "retire" && (!rest[0] || !str(flags.reason))) return 'job retire needs <id|title> and --reason "<why>"';
+    if (action === "show" && !rest[0]) return "job show needs <id|title>";
+    if (action === "prune-runs" && flags.keep !== undefined && !(/^\d+$/.test(String(flags.keep).trim()) && Number(flags.keep) >= 1))
+      return "--keep must be a whole number ≥ 1";
+    if (action === "add" && flags.manual === true && (flags.every !== undefined || flags.at !== undefined))
+      return "--manual means no schedule; drop --every/--at, or drop --manual";
+    if (action === "add" && flags.replaces === true) return "--replaces needs <id|title>";
+  }
+  return null;
 }

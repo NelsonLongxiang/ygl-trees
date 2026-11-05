@@ -122,6 +122,20 @@ describe.skipIf(!HAS_BIN)(`task buttons ↔ real webui serve (bundle)${SKIP_WHY 
     expect(stored(id)).toBe("todo");
   });
 
+  it("#220: HTTP cancel needs a reason, closes the task, is idempotent; a step on a cancelled task is a 409", async () => {
+    const id = addTask("真实服务端：取消");
+    const post = (body: unknown) => fetch("api/task", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    expect((await post({ id, status: "cancelled" })).status).toBe(400);
+    const r = await post({ id, status: "cancelled", reason: "被取代" });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ to: "cancelled", cancel_reason: "被取代" });
+    expect(stored(id)).toBe("cancelled");
+    expect(await (await post({ id, status: "cancelled", reason: "again" })).json()).toMatchObject({ idempotent: true });
+    const step = await post({ id, status: "doing" });
+    expect(step.status).toBe(409);
+    expect((await step.json()).error).toMatch(/task reopen/);
+  });
+
   it("a page two steps behind is refused with the server's words, and the task stays done", async () => {
     const id = addTask("真实服务端：页面落后两步");
     cli("task", "done", id, "-p", "p1"); // page still shows 待办 → asks for doing

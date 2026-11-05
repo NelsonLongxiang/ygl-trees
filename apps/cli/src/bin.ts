@@ -604,6 +604,12 @@ export async function main(argv: string[]): Promise<number> {
     const usageProblem = preflightUsage(action, args._.slice(2), args);
     if (usageProblem) { bad(ctx, usageProblem); return 2; }
   }
+  // #220 (review of f509022): task/job usage errors are rc2 before the db too, not rc1 when the db is missing/broken.
+  if ((group === "task" || group === "job") && action) {
+    const { taskJobPreflight } = await import("../../../packages/research/pipeline/src/lifecycle");
+    const usageProblem = taskJobPreflight(group, action, args._.slice(2), args.flags);
+    if (usageProblem) { bad(ctx, usageProblem); return 2; }
+  }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface

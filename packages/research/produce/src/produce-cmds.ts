@@ -315,6 +315,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         .then((ds) => writes.taskSetStatus(ds, id, status))
         .then((r): number => {
           if (ctx.json) console.log(JSON.stringify(r, null, 2));
+          else if ((r as any).duplicate) out(ctx, paint(C.yellow, `  ⚠ duplicate: task ${r.id} is already ${r.to} (nothing changed)`, ctx.color));
           else ok(ctx, `task ${r.id}: ${r.from} → ${r.to}`);
           return 0;
         })

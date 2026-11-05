@@ -8,6 +8,7 @@
   - **版本族在登记时就拦住**：`job add` 的标题与未退役 job 同族（去掉 `-2`、`v2`、`(v9 …)`、「…版」后同名）时 rc2 点名；`--replaces <旧>` 在同一事务里退役旧的（事件 `replaced by <新>`），`--force` 显式保留两份。
   - **连续失败自动暂停**：`job tick` 跑完后，连续失败达到 `job.failing_runs` 的 job 被停用并标 `suspended`（事件 `job.suspend`），不再每轮重跑重红；`job enable` 重新上岗（状态回 pending，旧的失败串不再算 failing，除非新一轮又失败）。
   - **点名最后写者**：`task stale` 每行带 `last_actor`（该任务最新一条事件的会话），没有负责人也能点名；`job show` 同样带 `last_actor`。原始事件写入（`job.run` 等）的 actor 由固定的 `cli` 改为当前会话。
+  - **评审修正（f509022 → 新头）**：`job tick` 只跑真正到期的 job——`--manual` 永不自动跑、未来的 `--at` 到点才跑（以前「从没跑过」的 job 第一次 tick 一律执行，是继承缺陷）；重复设置同一状态（再次 `task doing`）是空操作，不刷新 `status_at`；健康窗口不小于 `job.failing_runs`；`--replaces` 在新标题已存在时也补做退役；`job enable` 拒绝已退役/已完成的 job；task/job 的用法错误在开库前 rc2（坏库也是 rc2）。MCP write 的 task 新增 `cancel`（必须 `reason`）与 `reopen`；HTTP `POST /api/task` 接受 `{"status":"cancelled","reason":"…"}`（缺原因 400，重复取消幂等）。
   - **doctor** 新增两项：`task_hygiene`（warn：停滞 doing/todo、done 无关联、跨项目同名）与 `job_health`（启用中连续失败 ≥ `job.failing_runs`（默认 3）或被 tick 暂停（suspended）判 **fail**；从未运行、逾期、无调度、低于频率下限、跑过仍启用的一次性作业、「版本族」——同一用途的多版本登记——判 warn）。
   - WebUI 任务列表显示「已取消」（划线、无推进按钮），不认识的状态按原名显示，不再冒充「待办」；HTTP 推进已取消任务返回 409 并提示用 `task reopen`。
   - 技能：生命周期技能新增作业触发表（§2b）、每周 `task stale` 节奏与「只开不关」反模式；quickstart 里不存在的 `job rm` 改为 `job retire`。

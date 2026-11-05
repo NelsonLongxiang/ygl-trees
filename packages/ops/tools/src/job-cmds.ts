@@ -32,7 +32,8 @@ export function lastActor(env: Env, entityId: string): string {
 /** Job rows as `job list --json` / `job show` expose them (#220): the stored row, its command, and derived health. */
 export function jobViews(env: Env): Array<Record<string, any>> {
   const failing = configGetNumber(env.db, "job.failing_runs");
-  const runs = runsByJob(env);
+  // the streak can only be counted as far as the window reaches: never narrower than the threshold (review of f509022)
+  const runs = runsByJob(env, Math.max(20, failing + 1));
   const now = Date.now();
   return (env.db.all("SELECT * FROM jobs ORDER BY created") as any[]).map((j) => ({
     id: j.id, title: j.title, command: j.command, every: j.every_minutes, at: j.at, enabled: j.enabled, runs: j.runs,
@@ -261,6 +262,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (!rest[0]) {
         bad(ctx, "usage: job enable <jobId|title>");
         return 2;
+      }
+      // #220: retired is terminal and a one-shot that ran is done — enabling either would run it again while it still
+      // reads retired/done (review of f509022). Register a new job instead.
+      const cur = store.db.get("SELECT title, status FROM jobs WHERE id=? OR title=?", [rest[0], rest[0]]) as any;
+      if (cur && (cur.status === "retired" || cur.status === "done")) {
+        bad(ctx, `job ${cur.title} is ${cur.status} and stays so — register a new job instead (job add …)`);
+        return 1;
       }
       // #220 item 13: enabling re-arms a suspended job — its old failing streak counts again only if a new run fails.
       const r = store.db.run("UPDATE jobs SET enabled=1, status=CASE WHEN status='suspended' THEN 'pending' ELSE status END WHERE id=? OR title=?", [rest[0], rest[0]]);

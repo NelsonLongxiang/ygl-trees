@@ -4,10 +4,11 @@
  * the derivations (pure) and the CLI faces that now expose and maintain them.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
-import { jobFamilies, jobFamilyStem, jobHealth, staleTasks, taskView } from "../../../research/pipeline/src/lifecycle";
+import { jobFamilies, jobFamilyStem, jobHealth, staleTasks, taskJobPreflight, taskView } from "../../../research/pipeline/src/lifecycle";
 
 const ROOT = resolve(__dirname, "../../../..");
 const BIN = join(ROOT, "dist/bundle/bin.cjs");
@@ -61,6 +62,20 @@ describe("lifecycle derivations (#220)", () => {
     expect(jobFamilyStem("序列v3")).toBe("序列");
     const fams = jobFamilies([{ id: "1", title: "npm观测序列" }, { id: "2", title: "npm观测序列 v2" }, { id: "3", title: "npm观测序列 v3", status: "retired" }, { id: "4", title: "solo" }]);
     expect(fams).toEqual([{ stem: "npm观测序列", ids: ["1", "2"], titles: ["npm观测序列", "npm观测序列 v2"] }]);
+  });
+
+  it("taskJobPreflight names usage problems without any I/O (review of f509022)", () => {
+    expect(taskJobPreflight("task", "cancel", ["t1"], {})).toMatch(/--reason/);
+    expect(taskJobPreflight("task", "cancel", ["t1"], { reason: true })).toMatch(/--reason/);
+    expect(taskJobPreflight("task", "cancel", ["t1"], { reason: "why" })).toBeNull();
+    expect(taskJobPreflight("task", "assign", ["t1"], {})).toMatch(/<id> <owner>/);
+    expect(taskJobPreflight("task", "stale", [], { "doing-days": "x" })).toMatch(/whole days/);
+    expect(taskJobPreflight("task", "list", [], { status: "blocked" })).toMatch(/--status must be one of todo\|doing\|done\|cancelled/);
+    expect(taskJobPreflight("job", "retire", ["j"], {})).toMatch(/--reason/);
+    expect(taskJobPreflight("job", "prune-runs", [], { keep: "0" })).toMatch(/--keep/);
+    expect(taskJobPreflight("job", "add", ["t"], { manual: true, every: "60" })).toMatch(/--manual/);
+    expect(taskJobPreflight("job", "show", [], {})).toMatch(/<id\|title>/);
+    expect(taskJobPreflight("job", "list", [], {})).toBeNull();
   });
 });
 
@@ -214,6 +229,79 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     cli(["job", "retire", "flaky", "--reason", "upstream gone"]);
     expect(flaky().health).toBe("retired");
   });
+
+  it("tick runs only due jobs: manual never, a future one-shot not yet (review of f509022)", () => {
+    cli(["job", "add", "later", "--at", "2099-01-01 00:00", "--", node("0")]);
+    cli(["job", "add", "handmade", "--manual", "--", node("0")]);
+    cli(["job", "tick"]);
+    const list = cli(["job", "list"]).json;
+    expect(list.find((j: any) => j.title === "later")).toMatchObject({ runs: 0, enabled: 1, status: "pending", health: "never-ran", next_due: "2099-01-01 00:00" });
+    expect(list.find((j: any) => j.title === "handmade")).toMatchObject({ runs: 0, health: "manual" });
+  });
+
+  it("same status again changes nothing; enable refuses retired and done jobs; --replaces completes on a rerun", () => {
+    const t = cli(["task", "add", "重试同状态"]).json;
+    const first = cli(["task", "doing", t.id]).json;
+    const again = cli(["task", "doing", t.id]).json;
+    expect(again).toMatchObject({ duplicate: true, to: "doing", status_at: first.status_at });
+    expect(cli(["job", "enable", "breaks"]).json.error).toMatch(/retired and stays so/);
+    expect(cli(["job", "enable", "once"]).json.error).toMatch(/done and stays so/);
+    cli(["job", "add", "巡检A", "--every", "1440", "--", "echo a"]);
+    cli(["job", "add", "巡检A v2", "--every", "1440", "--force", "--", "echo b"]);
+    const rerun = cli(["job", "add", "巡检A v2", "--every", "1440", "--replaces", "巡检A", "--", "echo b"]);
+    expect(rerun.rc).toBe(0);
+    expect(rerun.json.duplicate).toBe(true);
+    expect(cli(["job", "list"]).json.find((j: any) => j.title === "巡检A")).toMatchObject({ status: "retired", enabled: 0 });
+  });
+
+  it("the failing streak is counted past 20 when job.failing_runs is higher (review of f509022)", () => {
+    cli(["job", "add", "long-red", "--every", "1440", "--", "echo x"]);
+    const id = cli(["job", "list"]).json.find((j: any) => j.title === "long-red").id;
+    const values = Array.from({ length: 25 }, (_, i) => `('lr-${i}','${id}','${ago(30 - i)}','${ago(30 - i)}',1,'boom')`).join(",");
+    sql(`INSERT INTO runs(id,job_id,started,finished,rc,output) VALUES ${values}`);
+    sql(`UPDATE jobs SET status='failed', runs=25, last_run='${ago(6)}' WHERE id='${id}'`);
+    expect(cli(["config", "set", "job.failing_runs", "25"]).rc).toBe(0);
+    try {
+      expect(cli(["job", "list"]).json.find((j: any) => j.id === id)).toMatchObject({ consecutive_failures: 25, health: "failing" });
+    } finally {
+      cli(["config", "reset", "job.failing_runs"]);
+      cli(["job", "retire", id, "--reason", "test fixture"]);
+    }
+  });
+
+  it("task/job usage errors are rc2 before the database: a broken workspace still answers rc2", () => {
+    const broken = mkdtempSync(join(ROOT, "tmp/lifecycle-broken-"));
+    try {
+      writeFileSync(join(broken, "ygl-trees.db"), "not a sqlite file");
+      for (const args of [["task", "cancel", "t1"], ["task", "assign", "t1"], ["task", "list", "--status", "blocked"], ["job", "retire", "j1"], ["job", "prune-runs", "--keep", "0"]]) {
+        const r = cli(args, { YGL_HOME: broken });
+        expect(r.rc, args.join(" ") + r.text).toBe(2);
+        expect(Object.keys(r.json)).toEqual(["error"]);
+      }
+    } finally { rmSync(broken, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+  });
+
+  it("MCP write: task cancel needs a reason; cancel and reopen go through the CLI (#220 item 2)", async () => {
+    const t = cli(["task", "add", "MCP 取消"]).json;
+    const child = spawn(process.execPath, [BIN, "mcp"], { cwd: ROOT, env: { ...process.env, YGL_HOME: home, YGL_SESSION: "lifecycle-test", YGL_NO_UPDATE_CHECK: "1" } as any });
+    const pending = new Map<number, (r: any) => void>();
+    createInterface({ input: child.stdout! }).on("line", (l) => {
+      try { const m = JSON.parse(l); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); } } catch { /* noise */ }
+    });
+    let next = 1;
+    const send = (method: string, params: unknown = {}) => new Promise<any>((res) => { const id = next++; pending.set(id, res); child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+    try {
+      await send("initialize");
+      const call = (args: any) => send("tools/call", { name: "write", arguments: { domain: "task", ...args } });
+      const missing = await call({ action: "cancel", id: t.id });
+      expect(missing.result?.isError ?? !!missing.error).toBeTruthy();
+      const cancelled = await call({ action: "cancel", id: t.id, reason: "改走别的路" });
+      expect(cancelled.result.isError).toBeFalsy();
+      expect(JSON.parse(cancelled.result.content[0].text)).toMatchObject({ to: "cancelled", cancel_reason: "改走别的路" });
+      const reopened = await call({ action: "reopen", id: t.id });
+      expect(JSON.parse(reopened.result.content[0].text)).toMatchObject({ from: "cancelled", to: "todo" });
+    } finally { child.kill(); }
+  }, 60000);
 
   it("doctor names task hygiene and job warnings (stale, version family, frequent, manual)", () => {
     cli(["job", "add", "npm观测序列", "--every", "1440", "--", "echo a"]);
