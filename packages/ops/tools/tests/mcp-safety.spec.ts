@@ -20,10 +20,18 @@ const SECRET=/passw(?:or)?d|token|secret|api[_-]?key|credential|authorization/i;
 function redact(v:unknown):unknown{if(Array.isArray(v))return v.map(redact);if(v&&typeof v==="object")return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,SECRET.test(k)?"***":redact(x)]));return v;}
 const mask=(v:unknown)=>JSON.stringify(redact(v??{}));
 function redactArgv(argv:string[]){const out:string[]=[];for(let i=0;i<argv.length;i++){const a=argv[i];const kv=/^(-{1,2}[^=]+)=([\s\S]*)$/.exec(a);if(kv&&SECRET.test(kv[1])){out.push(kv[1]+"=***");continue;}out.push(a);if(/^-{1,2}[A-Za-z]/.test(a)&&SECRET.test(a)&&i+1<argv.length){out.push("***");i++;}}return out;}
-const JSON_VALUE=String.raw`"(?:[^"\\]|\\.)*"|\[[^\]]*\]|\{[^}]*\}|[^,}\]\s]+`;
-function redactText(t:string){return t
-  // only secret-named keys are matched, so a non-secret key never swallows a nested object that holds one
-  .replace(new RegExp(String.raw`("(?:[^"\\]|\\.)*(?:${SECRET.source})(?:[^"\\]|\\.)*"\s*:\s*)(?:${JSON_VALUE})`,"gi"),'$1"***"')
+// One JSON value from position i: a string (escapes honoured), a container (depth-aware, strings inside skipped) or a
+// bare scalar. A value cut off by truncation runs to the end of the text, so it is masked rather than left half-open.
+function jsonValueEnd(t:string,i:number){const str=(j:number)=>{j++;while(j<t.length&&t[j]!=='"'){if(t[j]==="\\")j++;j++;}return j;};
+  if(t[i]==='"')return Math.min(str(i)+1,t.length);
+  if(t[i]==="{"||t[i]==="["){let d=0;for(let j=i;j<t.length;j++){const c=t[j];if(c==='"'){j=str(j);continue;}if(c==="{"||c==="[")d++;else if((c==="}"||c==="]")&&--d===0)return j+1;}return t.length;}
+  let j=i;while(j<t.length&&!/[,}\]\s]/.test(t[j]))j++;return j;}
+// Mask the whole value under every secret-named key; only secret-named keys are matched, so a non-secret key never
+// swallows a nested object that holds one.
+function maskJsonSecrets(t:string){const re=new RegExp(String.raw`"(?:[^"\\]|\\.)*(?:${SECRET.source})(?:[^"\\]|\\.)*"\s*:\s*`,"gi");let out="",last=0,m:RegExpExecArray|null;
+  while((m=re.exec(t))){const start=m.index+m[0].length,end=jsonValueEnd(t,start);out+=t.slice(last,start)+'"***"';last=end;re.lastIndex=Math.max(end,start+1);}
+  return out+t.slice(last);}
+function redactText(t:string){return maskJsonSecrets(t)
   .replace(/\b([\w.-]*(?:passw(?:or)?d|token|secret|api[_-]?key|credential)[\w.-]*\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s"',}]+)/gi,"$1***")
   .replace(/\b(Bearer|Basic)\s+[\w~+/.=-]+/gi,"$1 ***")
   .replace(/(\/\/[^/\s:@]+:)[^@\s/]+@/g,"$1***@");}
@@ -54,6 +62,11 @@ describe("#119 MCP argv and request-session safety",()=>{
   expect(argv).toEqual(["kb","add","--token","***","--api-key=***","--title","ok-title","--secret"]);
   const out=redactText(`{"ok":1,"token":"a\\"${S}","note":"keep-me","password":["${S}"],"x":{"secret":{"v":"${S}"}},"n":7} PGPASSWORD=${S} api_key: '${S}' Authorization: Bearer ${S} postgres://u:${S}@h/db`);
   expect(out).not.toContain(S);for(const kept of ['"ok":1','"note":"keep-me"','"n":7',"postgres://u:***@h/db"])expect(out).toContain(kept);
+  // 94ed525 review: a nested container under a secret-named key is masked whole, not up to its first closing bracket
+  for(const nested of [`{"password":{"first":{"n":1},"second":"${S}"},"ok":1}`,`{"token":[[0],"${S}"],"ok":1}`,`{"secret":{"a":"x}]\\\"y","b":["${S}"]},"ok":1}`]){
+   const r=redactText(nested);expect(r,nested).not.toContain(S);expect(r).toContain('"ok":1');}
+  // a value cut off by the output-tail truncation is masked to the end, never left half-open
+  expect(redactText(`{"ok":1,"api_key":{"deep":["${S}`)).toBe(`{"ok":1,"api_key":"***"`);
  });
  it("kb add routes title+body and title+file to successful CLI writes",async()=>{
   const r=await good("write",{domain:"kb",action:"add",name:"MCP body",body:"body text"});expect(r).toMatchObject({title:"MCP body",body:"body text",verified:true});
