@@ -251,7 +251,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       head(ctx, "Database");
       // B7: PG 直连面无 SQLite 文件——dialect/url 代替 file/size。
-      show(ctx, pgMode ? { dialect: "pg", url: redactPgUrl(String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db))).replace(/\/\/[^@]*@/, "//"), ...s } : { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
+      show(ctx, pgMode ? { dialect: "pg", url: redactPgUrl(String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db))), ...s } : { file, size_kb: (fs.statSync(file).size / 1024).toFixed(1), ...s });
       return 0;
     }
     case "export-markdown": {

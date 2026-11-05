@@ -98,6 +98,32 @@ describe.skipIf(!HAS_BIN)("#93 B7 PG boot hardening", () => {
     expect(r.out).not.toContain("s3cretPW");
   });
 
+  it("PG target formatting is consistent across ordinary and refusal output", () => {
+    const secret = "fixture-private-value";
+    const key = [..."PaSsWoRd"].map(c => "%" + c.charCodeAt(0).toString(16)).join("");
+    const targets = [
+      { value: "postgres://fixture-user:" + secret + "@127.0.0.1:1/none?application_name=reader&" + key + "=" + secret, valid: true },
+      { value: "postgres://fixture-user:" + secret + "@[invalid/none?password=" + secret, valid: false },
+    ];
+    for (const target of targets) {
+      for (const json of [true, false]) {
+        for (const [argv, expected] of [
+          [["db", "path"], 0],
+          [["doctor"], 1],
+          [["kb", "ingest", "missing-artifact"], 2],
+        ] as Array<[string[], number]>) {
+          const caseHome = mkdtempSync(join(HOME, "formatting-"));
+          const r = run([...argv, ...(json ? ["--json"] : [])], { YGL_HOME: caseHome, YGL_DB_URL: target.value, YGL_NO_UPDATE_CHECK: "1" });
+          expect(r.rc, argv.join(" ") + (target.valid ? " valid target" : " invalid target")).toBe(target.valid ? expected : 2);
+          expect(r.raw).not.toContain(secret);
+          expect(r.raw).not.toContain("fixture-user");
+          if (json) expect(() => JSON.parse(r.out)).not.toThrow();
+          expect(existsSync(join(caseHome, "ygl-trees.db"))).toBe(false);
+        }
+      }
+    }
+  });
+
   it("#93-② userinfo + query creds both stripped (redactPgUrl unit)", async () => {
     const { redactPgUrl } = await import("../../../core/database/src/asyncdb");
     const out = redactPgUrl("postgres://bob:hunter2@h:5/db?sslpassword=zz&sslkey=k1&SSLCERT=c2&passfile=pf&x=1");
