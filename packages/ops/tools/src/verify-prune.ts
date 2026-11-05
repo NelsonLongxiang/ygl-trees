@@ -16,13 +16,20 @@
  * inside `archives/`, then the sidecar, then the report (an interrupted apply leaves a plain unarchived report that the
  * next prune still sees), and last the retained snapshots no kept run references. Orphan snapshots are counted, never
  * deleted. Every usage check runs before any verify-root I/O (#175 ordering).
+ *
+ * `--repo <verifier-repo>` (repeatable) points prune at verifier repositories that follow the fleet layout
+ * (`state/home/verify`, `work/results/latest.json` with contract ygl-verifier-latest/1, optional `ledger/`), so any
+ * node can clean every verifier it hosts with one command. For each repo the pins come from the repo itself: every
+ * file in `work/results` except the self-check history files, plus `ledger/`. The self-check history
+ * (`work/results/selfcheck-<case>--run_<id>.json`, one per run) keeps its newest file per case; the per-case latest
+ * file and the fixture summary stay. The repo's own workspace database is never opened.
  */
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
-export const PRUNE_FLAGS = ["keep-last", "keep-flips", "keep-runs-in", "min-age-minutes", "apply"];
-export const USAGE_PRUNE = "usage: verify prune [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]... [--min-age-minutes M] [--apply]";
+export const PRUNE_FLAGS = ["keep-last", "keep-flips", "keep-runs-in", "min-age-minutes", "repo", "apply"];
+export const USAGE_PRUNE = "usage: verify prune [--repo <verifier-repo>]... [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]... [--min-age-minutes M] [--apply]";
 export const PRUNE_DEFAULTS = { keepLast: 10, keepFlips: 10, minAgeMinutes: 60 };
 export const KEEP_REASONS = ["recent", "flip", "first", "pinned", "young", "unreadable"] as const;
 export type KeepReason = (typeof KEEP_REASONS)[number];
@@ -32,8 +39,12 @@ export interface PruneOptions {
   keepFlips: number;
   minAgeMinutes: number;
   pins: string[];
+  repos: string[];
   apply: boolean;
 }
+
+/** Self-check history written once per run; the newest per case is kept. */
+const SELFCHECK_HISTORY = /^selfcheck-(.+)--run_[0-9a-f]{12,64}\.json$/;
 
 const RUN_TOKEN = /run_[0-9a-f]{12,64}/g;
 const SHA_TOKEN = /[0-9a-f]{64}/g;
@@ -55,6 +66,12 @@ export function prunePreflight(flags: Record<string, unknown>): string | null {
     if (typeof pin !== "string" || !pin.trim()) return `--keep-runs-in needs a file or folder path — ${USAGE_PRUNE}`;
     if (!existsSync(pin)) return `--keep-runs-in path not found: ${pin} (a missing pin would drop the runs it names)`;
   }
+  for (const repo of list(flags.repo)) {
+    if (typeof repo !== "string" || !repo.trim()) return `--repo needs a verifier repository path — ${USAGE_PRUNE}`;
+    for (const part of [["state", "home", "verify"], ["work", "results", "latest.json"]]) {
+      if (!existsSync(join(repo, ...part))) return `--repo ${repo} is not a verifier repository: ${part.join("/")} is missing`;
+    }
+  }
   return null;
 }
 
@@ -65,6 +82,7 @@ export function parsePruneOptions(flags: Record<string, unknown>): PruneOptions 
     keepFlips: int("keep-flips", PRUNE_DEFAULTS.keepFlips),
     minAgeMinutes: int("min-age-minutes", PRUNE_DEFAULTS.minAgeMinutes),
     pins: list(flags["keep-runs-in"]).map((p) => resolve(String(p))),
+    repos: list(flags.repo).map((p) => resolve(String(p))),
     apply: flags.apply === true,
   };
 }
@@ -85,6 +103,8 @@ export interface PrunePlan {
   reports: { total: number; keep: number; delete: number; unreadable: number };
   kept_by: Record<KeepReason, number>;
   pinned_runs: number;
+  /** Files and folders scanned for pins beyond --keep-runs-in (a repo's results and ledger). */
+  pin_paths: number;
   archives: { sidecars: string[]; zips: string[] };
   snapshots: { total: number; keep: number; delete: string[]; orphan: number; orphan_bytes: number };
   bytes: { reports: number; archives: number; snapshots: number; total: number };
@@ -181,12 +201,12 @@ function sidecarZips(archives: string, runId: string): string[] {
 
 /** Decide what prune keeps and deletes. Reads only; `extraPins` carries run ids from outside the verify root
  *  (the registry's verifier_runs). */
-export function planPrune(root: string, options: PruneOptions, extraPins: Iterable<string> = [], now = Date.now()): PrunePlan {
+export function planPrune(root: string, options: PruneOptions, extraPins: Iterable<string> = [], now = Date.now(), pinPaths: string[] = []): PrunePlan {
   const reportsDir = join(root, "reports");
   const archives = join(root, "archives");
   const snapsDir = join(root, "snapshots");
 
-  const pins = pinnedRunIds(options.pins, new Set(extraPins));
+  const pins = pinnedRunIds([...options.pins, ...pinPaths], new Set(extraPins));
   const keptShas = new Set<string>();
   for (const dir of ["graduations", "tree-reports"]) {
     for (const n of names(join(root, dir)).filter((f) => f.endsWith(".json"))) {
@@ -293,6 +313,7 @@ export function planPrune(root: string, options: PruneOptions, extraPins: Iterab
     reports: { total: all.length + unreadable, keep: all.length + unreadable - doomed.length, delete: doomed.length, unreadable },
     kept_by,
     pinned_runs: pins.size,
+    pin_paths: pinPaths.length,
     archives: { sidecars, zips: [...zips] },
     snapshots: { total: snapFiles.length, keep: snapFiles.length - delSnaps.length - orphan, delete: delSnaps, orphan, orphan_bytes: orphanBytes },
     bytes,
@@ -303,13 +324,13 @@ export function planPrune(root: string, options: PruneOptions, extraPins: Iterab
 }
 
 export interface PruneResult {
-  deleted: { reports: number; sidecars: number; zips: number; snapshots: number };
+  deleted: { reports: number; sidecars: number; zips: number; snapshots: number; selfcheck_history: number };
   failed: string[];
   log: string;
 }
 
 /** Carry out a plan. Reports that appeared after planning are never touched, and the snapshots they name stay. */
-export function applyPrune(plan: PrunePlan, dropFromIndex: (runIds: string[]) => void, now = new Date()): PruneResult {
+export function applyPrune(plan: PrunePlan, dropFromIndex: (runIds: string[]) => void, history?: HistoryPlan, now = new Date()): PruneResult {
   const { root } = plan;
   const reportsDir = join(root, "reports");
   const planned = new Set(plan.delete);
@@ -320,7 +341,7 @@ export function applyPrune(plan: PrunePlan, dropFromIndex: (runIds: string[]) =>
     const rec = readReport(join(reportsDir, n));
     if (rec?.snapshot) keptShas.add(rec.snapshot);
   }
-  const deleted = { reports: 0, sidecars: 0, zips: 0, snapshots: 0 };
+  const deleted = { reports: 0, sidecars: 0, zips: 0, snapshots: 0, selfcheck_history: 0 };
   const failed: string[] = [];
   const rm = (file: string): boolean => {
     try {
@@ -341,13 +362,14 @@ export function applyPrune(plan: PrunePlan, dropFromIndex: (runIds: string[]) =>
     if (stem.length === 64 ? keptShas.has(stem) : keptShort.has(stem)) continue;
     if (rm(f)) deleted.snapshots++;
   }
+  for (const f of history?.delete ?? []) if (rm(f)) deleted.selfcheck_history++;
   dropFromIndex(gone);
   const log = join(root, "prune-log.jsonl");
   appendFileSync(log, JSON.stringify({
     at: now.toISOString(),
     policy: { keep_last: plan.options.keepLast, keep_flips: plan.options.keepFlips, min_age_minutes: plan.options.minAgeMinutes, pins: plan.options.pins },
     deleted,
-    bytes: plan.bytes.total,
+    bytes: plan.bytes.total + (history?.bytes ?? 0),
     specs: plan.specs.filter((s) => s.delete).map(({ spec_id, delete: n, oldest_deleted, newest_deleted }) => ({ spec_id, deleted: n, oldest_deleted, newest_deleted })),
     run_ids_sha256: createHash("sha256").update(gone.slice().sort().join("\n")).digest("hex"),
     failed: failed.length,
@@ -359,7 +381,7 @@ export function applyPrune(plan: PrunePlan, dropFromIndex: (runIds: string[]) =>
 export function planView(plan: PrunePlan) {
   return {
     root: plan.root,
-    policy: { keep_last: plan.options.keepLast, keep_flips: plan.options.keepFlips, min_age_minutes: plan.options.minAgeMinutes, pins: plan.options.pins, pinned_runs: plan.pinned_runs },
+    policy: { keep_last: plan.options.keepLast, keep_flips: plan.options.keepFlips, min_age_minutes: plan.options.minAgeMinutes, pins: plan.options.pins, pin_paths: plan.pin_paths, pinned_runs: plan.pinned_runs },
     reports: plan.reports,
     kept_by: plan.kept_by,
     archives: { sidecars_delete: plan.archives.sidecars.length, zips_delete: plan.archives.zips.length },
@@ -367,4 +389,61 @@ export function planView(plan: PrunePlan) {
     bytes: plan.bytes,
     specs: plan.specs,
   };
+}
+
+export interface RepoTarget {
+  repo: string;
+  /** The repo's verify root, `state/home/verify`. */
+  root: string;
+  /** Pin sources: every `work/results` entry except the self-check history, plus `ledger/`. */
+  pinPaths: string[];
+}
+
+/** The fleet layout of a verifier repository (contract ygl-verifier-latest/1). Throws when latest.json says otherwise. */
+export function repoTarget(repo: string): RepoTarget {
+  const results = join(repo, "work", "results");
+  let contract: unknown;
+  try {
+    contract = JSON.parse(readFileSync(join(results, "latest.json"), "utf8"))?.contract;
+  } catch (e: any) {
+    throw new Error(`${repo}: work/results/latest.json is unreadable (${e?.message || e})`);
+  }
+  if (contract !== "ygl-verifier-latest/1") throw new Error(`${repo}: work/results/latest.json is not ygl-verifier-latest/1 (contract ${JSON.stringify(contract)})`);
+  const pinPaths = names(results).filter((n) => !SELFCHECK_HISTORY.test(n)).map((n) => join(results, n));
+  if (existsSync(join(repo, "ledger"))) pinPaths.push(join(repo, "ledger"));
+  return { repo, root: join(repo, "state", "home", "verify"), pinPaths };
+}
+
+export interface HistoryPlan {
+  total: number;
+  keep: number;
+  delete: string[];
+  bytes: number;
+}
+
+/** Self-check history in `work/results`: keep the newest file of each case, list the rest. */
+export function planSelfcheckHistory(repo: string): HistoryPlan {
+  const results = join(repo, "work", "results");
+  const byCase = new Map<string, Array<{ file: string; mtime: number }>>();
+  for (const n of names(results)) {
+    const m = SELFCHECK_HISTORY.exec(n);
+    if (!m) continue;
+    const file = join(results, n);
+    let mtime: number;
+    try {
+      mtime = statSync(file).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (!byCase.has(m[1])) byCase.set(m[1], []);
+    byCase.get(m[1])!.push({ file, mtime });
+  }
+  const del: string[] = [];
+  let total = 0;
+  for (const files of byCase.values()) {
+    total += files.length;
+    files.sort((a, b) => b.mtime - a.mtime || b.file.localeCompare(a.file));
+    for (const f of files.slice(1)) del.push(f.file);
+  }
+  return { total, keep: total - del.length, delete: del, bytes: del.reduce((n, f) => n + size(f), 0) };
 }

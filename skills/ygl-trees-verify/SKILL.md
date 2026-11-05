@@ -241,19 +241,26 @@ ygl-trees verify list --unarchived                   # 找漏归档的 run
 
 ### 保留策略（#222）：别让验证工作区无限长
 
-每次 `verify run` 都会留下报告、归档 zip 和快照，默认永不清理；高频跑的验证器一个月就能涨到几十 GiB，大头是自检注入用例这类非结论运行。用 `verify prune` 定期收：
+每次 `verify run` 都会留下报告、归档 zip 和快照，默认永不清理；高频跑的验证器一个月就能涨到几十 GiB，大头是自检注入用例这类非结论运行。`verify prune` 是通用解：任何节点装了 ygl-trees 就能用，不需要先 `db init`，也不打开被清理仓库的工作区库。
 
 ```bash
-ygl-trees verify prune                                   # 试跑：只列保留/删除计数与可腾出的字节，不动任何文件
-ygl-trees verify prune --keep-runs-in ./work/results     # 钉住目录里文本文件出现的每个 run id（结果文件、账本）
+ygl-trees verify prune                                   # 本工作区试跑：只列保留/删除计数与可腾出的字节，不动任何文件
+ygl-trees verify prune --repo <verifier-repo>            # 验证器仓库试跑（可写多个 --repo，一次看完本节点所有验证器）
+ygl-trees verify prune --repo <verifier-repo> --apply    # 认可清单后真删；每个仓库在 verify/prune-log.jsonl 追加一行摘要
 ygl-trees verify prune --keep-last 20 --keep-flips 0     # 每个 spec 留最近 20 份，不额外保留结论翻转
-ygl-trees verify prune --keep-runs-in ./pins.txt --apply # 真删；每次在 verify/prune-log.jsonl 追加一行摘要
+ygl-trees verify prune --keep-runs-in <pins-file>        # 额外钉住某个文件/目录内容里出现的每个 run id
 ```
 
 - **保留规则**（任一成立就留）：最近 N 份（`--keep-last`，默认 10）、最近 F 次结论翻转的两侧（`--keep-flips`，默认 10，0 = 不留）、每个 `spec_version` 的首份、被钉住（`--keep-runs-in` 的文件/目录、毕业记录、树报告、登记表 `verifier_runs`）、`--min-age-minutes` 内刚跑完的（默认 60，护住正在跑的探针）、读不懂的报告（永不删）。
 - **删什么**：被删运行的报告、归档侧车、侧车列出且位于 `archives/` 里的 zip（别处的 `--out` 产物不碰；仍被保留运行引用的 zip 不删）、只被它们引用的快照。无主快照只计数不删。
-- **钉住要钉对**：`--keep-runs-in` 扫的是文件内容里的 `run_…`，目录只扫文本扩展名；路径不存在 rc=2（打错路径会让本该钉住的运行被删，所以按用法错误先拒）。自检用例的结果文件别一起钉，否则什么都删不掉。
+- **`--repo` 认的仓库形状**（舰队约定）：`state/home/verify`（被清理的 verify 根）+ `work/results/latest.json`（契约 `ygl-verifier-latest/1`）+ 可选 `ledger/`。钉住来源自动取：`work/results` 里除自检历史外的每个文件（latest.json、各轮结果、每个自检用例的最新结果与汇总）和 `ledger/`。自检历史 `work/results/selfcheck-<用例>--run_<id>.json` 每个用例留最新一份，其余一并列为可删。形状不对 rc=2，`latest.json` 契约不对 rc=1，都在删任何东西之前。
+- **钉住要钉对**：`--keep-runs-in` 扫的是文件内容里的 `run_…`，目录只扫文本扩展名；路径不存在 rc=2（打错路径会让本该钉住的运行被删，所以按用法错误先拒）。
 - 先试跑看清单，再 `--apply`；`--apply` 会同步 `verify list` 索引。
+
+**节点落地三步**（任何机器、任何操作系统同样适用）：
+1. 装上含 `verify prune` 的 ygl-trees 版本，对本节点每个验证器仓库各带一个 `--repo` 试跑一次，看清单；
+2. 节点属主认可后加 `--apply` 清一次存量；
+3. 常驻：每轮编排收尾跑一次 `verify prune --repo . --apply`，或登记成作业 `ygl-trees job add verify-prune --every 1440 -- "ygl-trees verify prune --repo <verifier-repo> --apply"` 再由 `job tick` 驱动。源头上，自检注入用例的 `verify run` 加 `--no-archive`（它们不是结论，latest.json 也不收），归档就不会再按用例数翻倍。
 
 ### 跨机器回装冻结件
 
@@ -369,7 +376,7 @@ ygl-trees verify instance import-latest ../ygl-webui-verifier/work/results/lates
 
 | 现象 | 原因/处理 |
 |---|---|
-| `verify list` 越来越慢 / `$YGL_HOME/verify` 几十 GiB | 报告/归档/快照默认永不清理；先 `verify prune` 试跑看能腾多少，再 `--keep-runs-in <结果目录> --apply`（§4 保留策略） |
+| `verify list` 越来越慢 / `$YGL_HOME/verify` 或验证器仓库 `state/home` 几十 GiB | 报告/归档/快照默认永不清理；先 `verify prune`（验证器仓库用 `--repo <verifier-repo>`）试跑看能腾多少，认可后 `--apply`（§4 保留策略） |
 | `prepare` rc=1 但没说错在哪 | 看 `--json` 的 `open[]`/`blocking[]`；P1/P2 阻断会点名字段 |
 | `run` 报 `no such table` | 快照库不对/没建表——`--db` 要给**真快照**不是主库 |
 | 报告 `overall=ERROR` 且 agent 检查器全错 | 网关凭证没配：环境变量 `AI_GATEWAY_API_KEY` 或 `~/.vercel.ai-gateway.env`（config 键 `decision_model_llm_token` 也会被读，但不推荐存凭证，见 eval-gates §5） |

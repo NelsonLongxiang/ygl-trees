@@ -50,7 +50,7 @@ import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 import { INSTANCE_FLAGS, instancePreflight, runInstance } from "./verify-instance";
 import { AsOfError, normalizeAsOf } from "./as-of";
-import { applyPrune, parsePruneOptions, planPrune, planView, PRUNE_FLAGS, prunePreflight } from "./verify-prune";
+import { applyPrune, parsePruneOptions, planPrune, planSelfcheckHistory, planView, PRUNE_FLAGS, prunePreflight, repoTarget, type HistoryPlan, type PrunePlan } from "./verify-prune";
 import { dropFromListIndex } from "./verify-list-index";
 
 const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees", "tree-reports"] as const;
@@ -1130,7 +1130,9 @@ function expectKeyTable(args: any): SigningKeyTable | null {
 
 const gib = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GiB` : `${(n / 1024 ** 2).toFixed(1)} MiB`);
 
-/** `verify prune`: a dry run unless --apply (#222). Registry run ids are pinned like --keep-runs-in. */
+/** `verify prune`: a dry run unless --apply (#222). Without --repo it prunes this workspace's verify root and pins the
+ *  registry's run ids; with --repo it prunes each verifier repository (pins from its results and ledger, plus its
+ *  self-check history), planning every target before anything is deleted. */
 function runPrune(env: Env, root: string, rest: string[], args: any): number {
   const { ctx } = env;
   const usage = preflightUsage("prune", rest, args);
@@ -1140,40 +1142,63 @@ function runPrune(env: Env, root: string, rest: string[], args: any): number {
   }
   const opts = parsePruneOptions(args.flags ?? {});
   let registry: string[] = [];
-  try {
-    registry = env.store.db.all("SELECT id FROM verifier_runs").map((r: any) => String(r.id));
-  } catch {
-    /* a workspace without the registry table pins nothing from it */
+  if (!opts.repos.length) {
+    try {
+      registry = env.store.db.all("SELECT id FROM verifier_runs").map((r: any) => String(r.id));
+    } catch {
+      /* a workspace without the registry table (or a DB-free boot) pins nothing from it */
+    }
   }
-  let plan;
+  type Target = { repo: string | null; plan: PrunePlan; history: HistoryPlan | null };
+  const targets: Target[] = [];
   try {
-    plan = planPrune(root, opts, registry);
+    if (!opts.repos.length) targets.push({ repo: null, plan: planPrune(root, opts, registry), history: null });
+    for (const repo of opts.repos) {
+      const t = repoTarget(repo);
+      targets.push({ repo, plan: planPrune(t.root, opts, [], Date.now(), t.pinPaths), history: planSelfcheckHistory(repo) });
+    }
   } catch (e: any) {
     bad(ctx, `verify prune: ${e?.message || e}`);
     return 1;
   }
-  const view = planView(plan);
-  const result = opts.apply ? applyPrune(plan, (ids) => dropFromListIndex(root, ids)) : null;
+  const rows = targets.map((t) => {
+    const view = planView(t.plan);
+    const history = t.history ? { total: t.history.total, keep: t.history.keep, delete: t.history.delete.length, bytes: t.history.bytes } : null;
+    const result = opts.apply ? applyPrune(t.plan, (ids) => dropFromListIndex(t.plan.root, ids), t.history ?? undefined) : null;
+    return { repo: t.repo, view, history, result, bytes: view.bytes.total + (history?.bytes ?? 0) };
+  });
+  const failed = rows.some((r) => r.result?.failed.length);
+  const face = (r: (typeof rows)[number]) => ({
+    ...(r.repo ? { repo: r.repo } : {}),
+    ...r.view,
+    ...(r.history ? { selfcheck_history: r.history } : {}),
+    ...(r.result ? { deleted: r.result.deleted, failed: r.result.failed, log: r.result.log } : {}),
+  });
   if (ctx.json) {
-    console.log(JSON.stringify({ apply: opts.apply, ...view, ...(result ? { deleted: result.deleted, failed: result.failed, log: result.log } : {}) }, null, 2));
-    return result?.failed.length ? 1 : 0;
+    const body = opts.repos.length ? { apply: opts.apply, repos: rows.map(face), bytes_total: rows.reduce((n, r) => n + r.bytes, 0) } : { apply: opts.apply, ...face(rows[0]) };
+    console.log(JSON.stringify(body, null, 2));
+    return failed ? 1 : 0;
   }
   head(ctx, opts.apply ? "Verify prune — applied" : "Verify prune — dry run (nothing deleted; pass --apply to delete)");
-  const k = view.kept_by;
-  out(ctx, `  root       ${view.root}`);
-  out(ctx, `  reports    ${view.reports.total} total · keep ${view.reports.keep} · delete ${view.reports.delete}${view.reports.unreadable ? ` · unreadable ${view.reports.unreadable}` : ""}`);
-  out(ctx, `  kept by    recent ${k.recent} · flip ${k.flip} · first ${k.first} · pinned ${k.pinned} (${view.policy.pinned_runs} pinned ids) · young ${k.young}`);
-  out(ctx, `  archives   delete ${view.archives.sidecars_delete} sidecars · ${view.archives.zips_delete} zips`);
-  out(ctx, `  snapshots  ${view.snapshots.total} total · keep ${view.snapshots.keep} · delete ${view.snapshots.delete}${view.snapshots.orphan ? ` · orphan ${view.snapshots.orphan} (${gib(view.snapshots.orphan_bytes)}, kept)` : ""}`);
-  out(ctx, `  ${opts.apply ? "freed" : "frees"}      ${gib(view.bytes.total)} (reports ${gib(view.bytes.reports)} · archives ${gib(view.bytes.archives)} · snapshots ${gib(view.bytes.snapshots)})`);
-  const rows = view.specs.filter((s) => s.delete).slice(0, 20);
-  if (rows.length) table(ctx, rows, ["spec_id", "total", "keep", "delete", "oldest_deleted", "newest_deleted"], []);
-  if (result) {
-    out(ctx, `  deleted    ${result.deleted.reports} reports · ${result.deleted.sidecars} sidecars · ${result.deleted.zips} zips · ${result.deleted.snapshots} snapshots — logged to ${result.log}`);
-    for (const f of result.failed.slice(0, 10)) out(ctx, paint(C.red, `  ✗ ${f}`, ctx.color));
-    if (result.failed.length) return 1;
+  for (const { repo, view, history, result } of rows) {
+    const k = view.kept_by;
+    if (repo) out(ctx, paint(C.bold, `  ${repo}`, ctx.color));
+    out(ctx, `  root       ${view.root}`);
+    out(ctx, `  reports    ${view.reports.total} total · keep ${view.reports.keep} · delete ${view.reports.delete}${view.reports.unreadable ? ` · unreadable ${view.reports.unreadable}` : ""}`);
+    out(ctx, `  kept by    recent ${k.recent} · flip ${k.flip} · first ${k.first} · pinned ${k.pinned} (${view.policy.pinned_runs} pinned ids) · young ${k.young}`);
+    out(ctx, `  archives   delete ${view.archives.sidecars_delete} sidecars · ${view.archives.zips_delete} zips`);
+    out(ctx, `  snapshots  ${view.snapshots.total} total · keep ${view.snapshots.keep} · delete ${view.snapshots.delete}${view.snapshots.orphan ? ` · orphan ${view.snapshots.orphan} (${gib(view.snapshots.orphan_bytes)}, kept)` : ""}`);
+    if (history) out(ctx, `  self-check history  ${history.total} files · keep ${history.keep} (newest per case) · delete ${history.delete} (${gib(history.bytes)})`);
+    out(ctx, `  ${opts.apply ? "freed" : "frees"}      ${gib(view.bytes.total + (history?.bytes ?? 0))} (reports ${gib(view.bytes.reports)} · archives ${gib(view.bytes.archives)} · snapshots ${gib(view.bytes.snapshots)}${history ? ` · self-check history ${gib(history.bytes)}` : ""})`);
+    const specs = view.specs.filter((s) => s.delete).slice(0, repo ? 5 : 20);
+    if (specs.length) table(ctx, specs, ["spec_id", "total", "keep", "delete", "oldest_deleted", "newest_deleted"], []);
+    if (result) {
+      out(ctx, `  deleted    ${result.deleted.reports} reports · ${result.deleted.sidecars} sidecars · ${result.deleted.zips} zips · ${result.deleted.snapshots} snapshots${history ? ` · ${result.deleted.selfcheck_history} self-check history files` : ""} — logged to ${result.log}`);
+      for (const f of result.failed.slice(0, 10)) out(ctx, paint(C.red, `  ✗ ${f}`, ctx.color));
+    }
   }
-  return 0;
+  if (rows.length > 1) out(ctx, `  total ${opts.apply ? "freed" : "frees"} ${gib(rows.reduce((n, r) => n + r.bytes, 0))} across ${rows.length} repositories`);
+  return failed ? 1 : 0;
 }
 
 function verifyRoot(env: Env): string {

@@ -600,7 +600,7 @@ export async function main(argv: string[]): Promise<number> {
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
   // helpers that never touch the workspace db; refusing them on an empty YGL_HOME
   // sends authors the wrong way (they need examples, not a database).
-  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check"); // #93-①: self-check 语料驱动
+  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check" || action === "prune"); // #93-①: self-check 语料驱动；#222: prune 只读写 verify 文件，新节点不必先 db init
   if (VERIFY_DB_FREE) process.env.YGL_DB_NO_CREATE = "1"; // #18: 不静默建库（缺库→:memory:）
   const needInit = !pgUrl && !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE; // B7: PG 模式不要求 SQLite 工作区
   if (needInit && !require("node:fs").existsSync(file)) {
@@ -1083,7 +1083,7 @@ export function generateLlmsManifest(): string {
       ["verify archive <run-id|spec-id> [--with …] [--snapshot <db>]", "archive bundle (report+spec+materials; --snapshot for cross-impl runs)"],
       ["verify archive verify <file>", "recompute the full hash chain of an archive bundle"],
       ["verify list --unarchived", "runs that exist but were never archived"],
-      ["verify prune [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]… [--min-age-minutes M] [--apply]", "retention for reports/archives/snapshots: keeps recent, verdict flips, first of each version, pinned and young runs; dry run unless --apply (#222)"],
+      ["verify prune [--repo <verifier-repo>]… [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]… [--min-age-minutes M] [--apply]", "retention for reports/archives/snapshots: keeps recent, verdict flips, first of each version, pinned and young runs; --repo cleans verifier repos (pins from work/results + ledger, newest self-check history per case); dry run unless --apply (#222)"],
       ["verify self-check", "recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives"],
       ["verify example [--checker <type>]", "corpus-derived candidates for the seven checker types (null ops included)"],
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],

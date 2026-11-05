@@ -6,9 +6,9 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { applyPrune, parsePruneOptions, planPrune, prunePreflight, PRUNE_DEFAULTS, type PruneOptions } from "../src/verify-prune";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
+import { applyPrune, parsePruneOptions, planPrune, planSelfcheckHistory, prunePreflight, PRUNE_DEFAULTS, repoTarget, type PruneOptions } from "../src/verify-prune";
 import { listIndexPath, prepareListIndex } from "../src/verify-list-index";
 // @ts-ignore — existing runtime dependency has no in-repo type declarations.
 import Sqlite from "better-sqlite3";
@@ -24,7 +24,7 @@ afterAll(() => {
 const rid = (n: number) => "run_" + n.toString(16).padStart(16, "0");
 const sha = (n: number) => createHash("sha256").update(String(n)).digest("hex");
 const day = (d: number, h = 0) => new Date(Date.UTC(2026, 9, d, h)).toISOString();
-const opts = (o: Partial<PruneOptions> = {}): PruneOptions => ({ ...PRUNE_DEFAULTS, pins: [], apply: false, ...o });
+const opts = (o: Partial<PruneOptions> = {}): PruneOptions => ({ ...PRUNE_DEFAULTS, pins: [], repos: [], apply: false, ...o });
 
 function home(): string {
   mkdirSync(join(ROOT, "tmp"), { recursive: true });
@@ -81,7 +81,7 @@ describe("verify prune — keep rules", () => {
     expect(plan.snapshots.delete).toHaveLength(4);
     expect(plan.kept_by).toMatchObject({ recent: 10, first: 1, flip: 0, pinned: 0, young: 0, unreadable: 0 });
     const r = applyPrune(plan, () => {});
-    expect(r.deleted).toEqual({ reports: 4, sidecars: 4, zips: 4, snapshots: 4 });
+    expect(r.deleted).toEqual({ reports: 4, sidecars: 4, zips: 4, snapshots: 4, selfcheck_history: 0 });
     expect(readdirSync(join(v, "reports"))).toHaveLength(11);
     for (const id of ids.slice(1, 5)) {
       expect(existsSync(join(v, "reports", `${id}.json`))).toBe(false);
@@ -273,7 +273,10 @@ describe("verify prune — usage and CLI", () => {
       [{ "keep-runs-in": join(ROOT, "tmp", "no-such-pin-file.json") }, /--keep-runs-in path not found/],
     ] as Array<[Record<string, unknown>, RegExp]>) expect(prunePreflight(flags), JSON.stringify(flags)).toMatch(re);
     expect(prunePreflight({ "keep-flips": "0", "min-age-minutes": "0", apply: true })).toBeNull();
-    expect(parsePruneOptions({})).toEqual({ keepLast: 10, keepFlips: 10, minAgeMinutes: 60, pins: [], apply: false });
+    expect(parsePruneOptions({})).toEqual({ keepLast: 10, keepFlips: 10, minAgeMinutes: 60, pins: [], repos: [], apply: false });
+    const notRepo = home();
+    expect(prunePreflight({ repo: notRepo })).toMatch(/is not a verifier repository: state\/home\/verify is missing/);
+    expect(prunePreflight({ repo: true })).toMatch(/--repo needs a verifier repository path/);
   });
 
   it("usage errors are rc=2 with one JSON object, before the verify root is created", () => {
@@ -310,5 +313,93 @@ describe("verify prune — usage and CLI", () => {
     expect(JSON.parse(unarchived.stdout)).toEqual([]);
     const again = JSON.parse(spawnSync(process.execPath, [BIN, "verify", "prune", "--keep-last", "5", "--json"], { cwd: ROOT, encoding: "utf8", env }).stdout);
     expect(again.reports.delete).toBe(0);
+  });
+});
+
+/** A verifier repository in the fleet layout: state/home/verify + work/results (latest.json) + ledger/. */
+function repo(): { dir: string; v: string; results: string } {
+  mkdirSync(join(ROOT, "tmp"), { recursive: true });
+  const dir = mkdtempSync(join(ROOT, "tmp/verify-prune-repo-"));
+  made.push(dir);
+  const v = join(dir, "state", "home", "verify");
+  for (const d of ["reports", "archives", "snapshots"]) mkdirSync(join(v, d), { recursive: true });
+  const results = join(dir, "work", "results");
+  mkdirSync(results, { recursive: true });
+  mkdirSync(join(dir, "ledger"));
+  return { dir, v, results };
+}
+
+describe("verify prune --repo — verifier repositories on any node", () => {
+  it("pins come from results and ledger, never from the self-check history; the history keeps its newest file per case", () => {
+    const { dir, v, results } = repo();
+    const ids = series(v, "spec_r", 1, 14);
+    writeFileSync(join(results, "latest.json"), JSON.stringify({ contract: "ygl-verifier-latest/1", root_run_id: ids[1] }));
+    writeFileSync(join(results, `abc123--${ids[2]}.json`), JSON.stringify({ root_run_id: ids[2] }));
+    writeFileSync(join(dir, "ledger", "round.md"), `registered ${ids[3]}`);
+    writeFileSync(join(results, "selfcheck-case-a.json"), JSON.stringify({ root_run_id: ids[4] }));
+    writeFileSync(join(results, "selfcheck-fixture.json"), JSON.stringify({ cases: 1, pass: 1 }));
+    const old = join(results, `selfcheck-case-a--${ids[5]}.json`);
+    const newer = join(results, `selfcheck-case-a--${ids[6]}.json`);
+    const other = join(results, `selfcheck-case-b--${ids[7]}.json`);
+    for (const [f, t] of [[old, 1], [newer, 2], [other, 3]] as const) {
+      writeFileSync(f, JSON.stringify({ root_run_id: basename(f).slice(-25, -5) }));
+      utimesSync(f, new Date(Date.UTC(2026, 9, t)), new Date(Date.UTC(2026, 9, t)));
+    }
+    const t = repoTarget(dir);
+    expect(t.root).toBe(v);
+    const plan = planPrune(t.root, opts({ keepLast: 1, keepFlips: 0 }), [], NOW, t.pinPaths);
+    const gone = new Set(plan.delete);
+    for (const i of [1, 2, 3, 4]) expect(gone.has(ids[i]), `pinned run ${i}`).toBe(false);
+    for (const i of [5, 6, 7]) expect(gone.has(ids[i]), `history-only run ${i}`).toBe(true);
+    const history = planSelfcheckHistory(dir);
+    expect(history).toMatchObject({ total: 3, keep: 2, delete: [old] });
+    applyPrune(plan, () => {}, history);
+    expect(existsSync(old)).toBe(false);
+    for (const kept of [newer, other, join(results, "selfcheck-case-a.json"), join(results, "selfcheck-fixture.json"), join(results, "latest.json")]) expect(existsSync(kept), kept).toBe(true);
+  });
+
+  it("a repo whose latest.json is not ygl-verifier-latest/1 is refused before anything is planned", () => {
+    const { dir, results } = repo();
+    writeFileSync(join(results, "latest.json"), JSON.stringify({ contract: "something-else" }));
+    expect(() => repoTarget(dir)).toThrow(/not ygl-verifier-latest\/1/);
+  });
+
+  it("CLI: several repos in one call, DB-free on a node without a workspace, dry run untouched, apply logs per repo", () => {
+    const a = repo();
+    const b = repo();
+    series(a.v, "spec_a", 1, 12);
+    series(b.v, "spec_b", 100, 4);
+    for (const r of [a, b]) writeFileSync(join(r.results, "latest.json"), JSON.stringify({ contract: "ygl-verifier-latest/1" }));
+    writeFileSync(join(a.results, `selfcheck-x--${rid(900)}.json`), "{}");
+    writeFileSync(join(a.results, `selfcheck-x--${rid(901)}.json`), "{}");
+    utimesSync(join(a.results, `selfcheck-x--${rid(900)}.json`), new Date(Date.UTC(2026, 9, 1)), new Date(Date.UTC(2026, 9, 1)));
+    const node = join(ROOT, "tmp", `verify-prune-node-${process.pid}`);
+    rmSync(node, { recursive: true, force: true });
+    mkdirSync(node, { recursive: true });
+    made.push(node);
+    const env = { ...process.env, YGL_HOME: node, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" };
+    // two --keep-runs-in files must both pin (a last-wins parse would drop the first and delete its run)
+    const p1 = join(node, "pins-1.txt");
+    const p2 = join(node, "pins-2.txt");
+    writeFileSync(p1, rid(2));
+    writeFileSync(p2, rid(3));
+    const args = ["verify", "prune", "--repo", a.dir, "--repo", b.dir, "--keep-last", "3", "--keep-runs-in", p1, "--keep-runs-in", p2];
+    const before = [...tree(a.dir), ...tree(b.dir)];
+    const dry = spawnSync(process.execPath, [BIN, ...args, "--json"], { cwd: ROOT, encoding: "utf8", env });
+    expect(dry.status, dry.stdout + dry.stderr).toBe(0);
+    const view = JSON.parse(dry.stdout);
+    expect(view.apply).toBe(false);
+    expect(view.repos.map((r: any) => [r.repo, r.reports.delete, r.selfcheck_history.delete])).toEqual([[a.dir, 6, 1], [b.dir, 0, 0]]);
+    expect(view.bytes_total).toBeGreaterThan(0);
+    expect([...tree(a.dir), ...tree(b.dir)]).toEqual(before);
+    expect(existsSync(join(node, "ygl-trees.db"))).toBe(false);
+    const applied = JSON.parse(spawnSync(process.execPath, [BIN, ...args, "--apply", "--json"], { cwd: ROOT, encoding: "utf8", env }).stdout);
+    expect(applied.repos[0]).toMatchObject({ deleted: { reports: 6, selfcheck_history: 1 }, failed: [] });
+    for (const n of [2, 3]) expect(existsSync(join(a.v, "reports", `${rid(n)}.json`)), `pinned ${n}`).toBe(true);
+    expect(readFileSync(join(a.v, "prune-log.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+    expect(existsSync(join(a.results, `selfcheck-x--${rid(901)}.json`))).toBe(true);
+    const bad = spawnSync(process.execPath, [BIN, "verify", "prune", "--repo", join(node, "nope"), "--json"], { cwd: ROOT, encoding: "utf8", env });
+    expect(bad.status).toBe(2);
+    expect(JSON.parse(bad.stdout).error).toMatch(/not a verifier repository/);
   });
 });
