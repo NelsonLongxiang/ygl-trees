@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,9 +9,21 @@ import { join } from "node:path";
  */
 const EXPECTED = new Set(["node-compile-cache", "ygl-verify-snapshots"]);
 const KEYS = ["TMPDIR", "TEMP", "TMP"] as const;
+const STALE_MS = 24 * 60 * 60 * 1000;
 
 export default function setup() {
-  const root = mkdtempSync(join(tmpdir(), "ygl-vitest-"));
+  const base = tmpdir();
+  // 被杀掉的一轮跑不到收尾，整个根会留下；开头删掉一天以前的同类根（并发的其他轮都比这新）。
+  for (const name of readdirSync(base)) {
+    if (!name.startsWith("ygl-vitest-")) continue;
+    const p = join(base, name);
+    try {
+      if (Date.now() - statSync(p).mtimeMs > STALE_MS) rmSync(p, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      /* 并发删除不影响本轮 */
+    }
+  }
+  const root = mkdtempSync(join(base, "ygl-vitest-"));
   const saved = KEYS.map((k) => [k, process.env[k]] as const);
   for (const k of KEYS) process.env[k] = root;
   return () => {
