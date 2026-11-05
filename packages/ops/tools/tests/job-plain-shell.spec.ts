@@ -51,6 +51,7 @@ describe("plain-shell job worker inherits the default selection bucket (#7 ä½™é¡
       "proj-probe",
       "--every",
       "1",
+      "--allow-frequent", // #220: below job.min_every_minutes (60) a fast cadence must be declared
       "--",
       process.execPath,
       BIN,
