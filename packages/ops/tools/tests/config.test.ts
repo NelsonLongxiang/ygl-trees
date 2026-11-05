@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -6,9 +6,14 @@ import { DB } from "../../../core/database/src/db";
 import { CONFIG_REGISTRY, configAll, configGet, configReset, configSet } from "../src/config";
 
 let db: DB;
+let dir = "";
 beforeAll(() => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ygl-unit-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "ygl-unit-"));
   db = new DB(path.join(dir, "unit.db"));
+});
+afterAll(() => {
+  db?.close();
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe("config registry 不变量", () => {

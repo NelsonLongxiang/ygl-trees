@@ -1,11 +1,22 @@
 /** #162: semicolons inside quotes, identifiers and comments are not statement separators. */
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterAll, describe, it, expect } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { SqliteRunner, leadingNonAsciiWs, singleStatement, trimSqlWs } from "../src/sqlite-runner";
+
+// temp folders made here are removed after the file's tests (verifier reruns used to leave them in the system temp)
+const scratchDirs: string[] = [];
+const scratch = (prefix: string): string => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 
 const fixture = JSON.parse(readFileSync(join(__dirname, "fixtures/sql-statements.json"), "utf8"));
 const vectors = fixture.vectors as { sql: string; clean: string | null }[];
@@ -17,7 +28,7 @@ describe("#162 single-statement contract", () => {
   });
 
   it("runs a SELECT whose string literal contains a semicolon, without touching the snapshot", () => {
-    const file = join(mkdtempSync(join(tmpdir(), "verify-semicolon-")), "synthetic.sqlite");
+    const file = join(scratch("verify-semicolon-"), "synthetic.sqlite");
     const seed = new DatabaseSync(file);
     seed.exec("CREATE TABLE facts(needle TEXT, present INTEGER)");
     seed.prepare("INSERT INTO facts VALUES(?,1)").run("--color: #123456;");
@@ -39,7 +50,7 @@ describe("#162 single-statement contract", () => {
   });
 
   it("names the code point when SQL starts with non-ASCII whitespace (#162 P4)", () => {
-    const file = join(mkdtempSync(join(tmpdir(), "verify-nbsp-")), "synthetic.sqlite");
+    const file = join(scratch("verify-nbsp-"), "synthetic.sqlite");
     new DatabaseSync(file).close();
     const runner = new SqliteRunner(file);
     try {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -16,9 +16,16 @@ import {
   readBlob,
 } from "../src/blob-store";
 
+// every blob root is removed after the file's tests (verifier reruns used to leave ygl-blob-* folders behind)
+const roots: string[] = [];
 function root(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "ygl-blob-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ygl-blob-"));
+  roots.push(dir);
+  return dir;
 }
+afterAll(() => {
+  for (const dir of roots) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 
 describe("blob 仓：内容寻址与幂等", () => {
   it("同一内容两次写入落同一个键，第二次幂等不报错", () => {
