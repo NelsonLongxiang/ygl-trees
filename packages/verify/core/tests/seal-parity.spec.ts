@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { canonicalStringify } from "../src/canonical";
 import {
@@ -49,8 +49,14 @@ function readFooter(bytes: Buffer): { footer: Footer; raw: string } {
 }
 
 describe.skipIf(!hasRust)("封包签名跨实现 parity（同种子 → 同签名）", () => {
-  const dir = mkdtempSync(join(tmpdir(), "ygl-seal-parity-"));
-  afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  // 目录在 beforeAll 里建：describe.skipIf 跳过时 vitest 仍执行这个函数体，但不跑钩子（#227）
+  let dir = "";
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "ygl-seal-parity-"));
+  });
+  afterAll(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
 
   it("Rust seal 产出的 footer 签名与 TS signFooter 逐字节一致", () => {
     const specPath = join(REPO, "packages/verify/core/corpus/cases/sql-find-violation/spec.json");
