@@ -241,7 +241,7 @@ ygl-trees verify list --unarchived                   # 找漏归档的 run
 
 ### 保留策略（#222）：别让验证工作区无限长
 
-每次 `verify run` 都会留下报告、归档 zip 和快照，默认永不清理；高频跑的验证器一个月就能涨到几十 GiB，大头是自检注入用例这类非结论运行。`verify prune` 是通用解：任何节点装了 ygl-trees 就能用，不需要先 `db init`，也不打开被清理仓库的工作区库。
+每次 `verify run` 都会留下报告、归档 zip 和快照，默认永不清理；高频跑的验证器一个月就能涨到几十 GiB，大头是自检注入用例这类非结论运行。`verify prune` 是通用解：任何节点装了 ygl-trees 就能用，不需要先 `db init`；它在 CLI 启动工作区之前执行，不打开、不新建、不迁移任何数据库（本工作区的登记表只以只读方式读 run id，库坏了就 rc=1 报错，绝不当成「没有钉住」）。
 
 ```bash
 ygl-trees verify prune                                   # 本工作区试跑：只列保留/删除计数与可腾出的字节，不动任何文件
@@ -251,9 +251,9 @@ ygl-trees verify prune --keep-last 20 --keep-flips 0     # 每个 spec 留最近
 ygl-trees verify prune --keep-runs-in <pins-file>        # 额外钉住某个文件/目录内容里出现的每个 run id
 ```
 
-- **保留规则**（任一成立就留）：最近 N 份（`--keep-last`，默认 10）、最近 F 次结论翻转的两侧（`--keep-flips`，默认 10，0 = 不留）、每个 `spec_version` 的首份、被钉住（`--keep-runs-in` 的文件/目录、毕业记录、树报告、登记表 `verifier_runs`）、`--min-age-minutes` 内刚跑完的（默认 60，护住正在跑的探针）、读不懂的报告（永不删）。
-- **删什么**：被删运行的报告、归档侧车、侧车列出且位于 `archives/` 里的 zip（别处的 `--out` 产物不碰；仍被保留运行引用的 zip 不删）、只被它们引用的快照。无主快照只计数不删。
-- **`--repo` 认的仓库形状**（舰队约定）：`state/home/verify`（被清理的 verify 根）+ `work/results/latest.json`（契约 `ygl-verifier-latest/1`）+ 可选 `ledger/`。钉住来源自动取：`work/results` 里除自检历史外的每个文件（latest.json、各轮结果、每个自检用例的最新结果与汇总）和 `ledger/`。自检历史 `work/results/selfcheck-<用例>--run_<id>.json` 每个用例留最新一份，其余一并列为可删。形状不对 rc=2，`latest.json` 契约不对 rc=1，都在删任何东西之前。
+- **保留规则**（任一成立就留）：最近 N 份（`--keep-last`，默认 10）、最近 F 次结论翻转的两侧（`--keep-flips`，默认 10，0 = 不留）、每个 `spec_version` 的首份、被钉住（`--keep-runs-in` 的文件/目录——任何文件类型都扫，SQL/数据库/zip 里的 run id 也算，粘着更多十六进制的 id 按 16/12 位前缀认、毕业记录、树报告、读不懂的报告里出现的 id、登记表 `verifier_runs`）、**被引用**（保留运行的快照里点名的运行——汇总的子运行——传递地保留）、`--min-age-minutes` 内刚跑完的（默认 60，护住正在跑的探针）、读不懂的报告（永不删）。
+- **删什么**：被删运行的报告、归档侧车、侧车列出的 zip（**真实路径**——解开符号链接/junction 后——必须在 `archives/` 里；任何仍留着的侧车（含读不懂的报告与无主侧车）还列着的 zip 不删）、删完报告后磁盘上已无报告引用的快照（报告删失败时它的快照留着，重跑接着收）。无主快照只计数不删。
+- **`--repo` 认的仓库形状**（舰队约定）：`state/home/verify`（被清理的 verify 根）+ `work/results/latest.json`（契约 `ygl-verifier-latest/1`）+ 可选 `ledger/`。钉住来源是**整个仓库**：`state/`、`.git/`、`node_modules/` 之外的每个文件，任何类型（`ledger.sql`、账本库、`data/` 里的记录、结果、账本 zip 都算）；只排除自检的工作副本（`work/` 下 `selfcheck-*` 目录）和自检历史。自检历史 `work/results/selfcheck-<用例>--run_<id>.json` 每个用例留最新一份，其余一并列为可删。形状不对 rc=2，`latest.json` 契约不对 rc=1，都在删任何东西之前。
 - **钉住要钉对**：`--keep-runs-in` 扫的是文件内容里的 `run_…`，目录只扫文本扩展名；路径不存在 rc=2（打错路径会让本该钉住的运行被删，所以按用法错误先拒）。
 - 先试跑看清单，再 `--apply`；`--apply` 会同步 `verify list` 索引。
 

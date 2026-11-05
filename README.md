@@ -349,12 +349,12 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 75 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1/T2/T3 加了 7 条科技树 golden 与并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 75 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1689 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1695 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
 ygl-trees verify meta .                   # 本仓元验证（R1–R3 + R5a，meta_index_version 2）；contract-audit 12 也跑它
-ygl-trees verify prune                    # 验证工作区保留策略试跑：每个 spec 留最近 10 份、最近 10 次结论翻转两侧、每版首份、被钉住与 60 分钟内的运行，其余连同归档与独占快照列为可删（#222；--apply 才删，--keep-runs-in <文件|目录> 钉住其中出现的 run id；--repo <验证器仓库> 可多个，钉住取自其 work/results 与 ledger，并清自检历史；免开库，新节点直接可用）
+ygl-trees verify prune                    # 验证工作区保留策略试跑：每个 spec 留最近 10 份、最近 10 次结论翻转两侧、每版首份、被钉住与 60 分钟内的运行，其余连同归档与独占快照列为可删（#222；--apply 才删，--keep-runs-in <文件|目录> 钉住其中出现的 run id；--repo <验证器仓库> 可多个，钉住取自整个仓库任何类型的文件（自检工作副本与历史除外），并清自检历史；不启动工作区、不开任何库，新节点直接可用）
 node benchmarks/bench.js --quick   # 缩小规模快速跑
 pnpm pack:check    # 发布就绪门禁：打包 → 隔离安装 → 驱动发布产物跑命令面 + --json 纯净性
 pnpm pack:repro    # 可复现打包：mtime/owner/顺序/gzip 全固定，同一 commit 任意机器 sha256 相同

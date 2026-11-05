@@ -594,13 +594,19 @@ export async function main(argv: string[]): Promise<number> {
     const { preflightUsage } = await import("../../../packages/ops/tools/src/verify-cmds");
     const usageProblem = preflightUsage(action, args._.slice(2), args);
     if (usageProblem) { bad(ctx, usageProblem); return 2; }
+    // #222: prune only reads and deletes verify files — it runs before any workspace boot, so no database (the
+    // workspace's or a verifier repo's) is opened, created or migrated; registry pins come from a read-only open
+    if (action === "prune") {
+      const { runPruneCommand } = await import("../../../packages/ops/tools/src/verify-prune");
+      return runPruneCommand(ctx, home, args._.slice(2), args.flags as Record<string, unknown>);
+    }
   }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
   // helpers that never touch the workspace db; refusing them on an empty YGL_HOME
   // sends authors the wrong way (they need examples, not a database).
-  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check" || action === "prune"); // #93-①: self-check 语料驱动；#222: prune 只读写 verify 文件，新节点不必先 db init
+  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check"); // #93-①: self-check 语料驱动
   if (VERIFY_DB_FREE) process.env.YGL_DB_NO_CREATE = "1"; // #18: 不静默建库（缺库→:memory:）
   const needInit = !pgUrl && !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE; // B7: PG 模式不要求 SQLite 工作区
   if (needInit && !require("node:fs").existsSync(file)) {

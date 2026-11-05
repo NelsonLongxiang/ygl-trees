@@ -6,7 +6,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { applyPrune, parsePruneOptions, planPrune, planSelfcheckHistory, prunePreflight, PRUNE_DEFAULTS, repoTarget, type PruneOptions } from "../src/verify-prune";
 import { listIndexPath, prepareListIndex } from "../src/verify-list-index";
@@ -124,17 +124,16 @@ describe("verify prune — keep rules", () => {
     writeFileSync(pinFile, JSON.stringify({ root_run_id: ids[1] }));
     mkdirSync(join(h, "results", "deep"), { recursive: true });
     writeFileSync(join(h, "results", "deep", "round.json"), `{"root_run_id":"${ids[2]}","tree":["${ids[3]}"]}`);
-    writeFileSync(join(h, "results", "skip.bin"), ids[4]); // not a text extension inside a folder
+    writeFileSync(join(h, "results", "ledger.sql"), Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(`INSERT … '${ids[4]}' …`), Buffer.from([255])])); // any file type counts (8fa2844 review P1-1)
     mkdirSync(join(v, "graduations"));
     writeFileSync(join(v, "graduations", "spec_p.json"), JSON.stringify({ run_ids: [ids[5]] }));
     mkdirSync(join(v, "tree-reports"));
     writeFileSync(join(v, "tree-reports", "tr_x.json"), JSON.stringify({ nodes: [{ run_id: ids[6] }] }));
     const plan = planPrune(v, opts({ keepLast: 1, keepFlips: 0, pins: [pinFile, join(h, "results")] }), [ids[7]], NOW);
     const gone = new Set(plan.delete);
-    for (const i of [1, 2, 3, 5, 6, 7]) expect(gone.has(ids[i]), `pinned run ${i}`).toBe(false);
-    expect(gone.has(ids[4])).toBe(true);
+    for (const i of [1, 2, 3, 4, 5, 6, 7]) expect(gone.has(ids[i]), `pinned run ${i}`).toBe(false);
     expect(gone.has(ids[8])).toBe(true);
-    expect(plan.kept_by.pinned).toBe(6);
+    expect(plan.kept_by.pinned).toBe(7);
   });
 
   it("young: runs that finished within --min-age-minutes stay, so a probe in flight is never cut", () => {
@@ -347,7 +346,7 @@ describe("verify prune --repo — verifier repositories on any node", () => {
     }
     const t = repoTarget(dir);
     expect(t.root).toBe(v);
-    const plan = planPrune(t.root, opts({ keepLast: 1, keepFlips: 0 }), [], NOW, t.pinPaths);
+    const plan = planPrune(t.root, opts({ keepLast: 1, keepFlips: 0 }), [], NOW, t.pinPaths, t.skip);
     const gone = new Set(plan.delete);
     for (const i of [1, 2, 3, 4]) expect(gone.has(ids[i]), `pinned run ${i}`).toBe(false);
     for (const i of [5, 6, 7]) expect(gone.has(ids[i]), `history-only run ${i}`).toBe(true);
@@ -401,5 +400,116 @@ describe("verify prune --repo — verifier repositories on any node", () => {
     const bad = spawnSync(process.execPath, [BIN, "verify", "prune", "--repo", join(node, "nope"), "--json"], { cwd: ROOT, encoding: "utf8", env });
     expect(bad.status).toBe(2);
     expect(JSON.parse(bad.stdout).error).toMatch(/not a verifier repository/);
+  });
+});
+
+describe("verify prune — 8fa2844 review (P1-1, P1-2, P2-1, P2-2, P2-3) and cited runs", () => {
+  it("P1-1: --repo pins from any file anywhere in the repository — SQL and database ledgers, data files, ids glued to hex", () => {
+    const { dir, v, results } = repo();
+    const ids = series(v, "spec_p1", 1, 10);
+    writeFileSync(join(results, "latest.json"), JSON.stringify({ contract: "ygl-verifier-latest/1" }));
+    writeFileSync(join(dir, "ledger", "ledger.sql"), `INSERT INTO evidence VALUES('x','layerfs-real: overall=NEEDS-MATERIAL run_id=${ids[1]} target=abc');`);
+    writeFileSync(join(dir, "ledger", "ygl-trees.db"), Buffer.concat([Buffer.alloc(64, 7), Buffer.from(ids[2]), Buffer.alloc(64, 9)]));
+    mkdirSync(join(dir, "data"));
+    writeFileSync(join(dir, "data", "pr-verifications.json"), JSON.stringify({ note: `baseline ${ids[3]} 148/148` }));
+    writeFileSync(join(dir, "outbox.bin"), Buffer.from(`${ids[4]}deadbeefcafe0123456789`)); // glued to more hex
+    mkdirSync(join(dir, "work", "snap", "selfcheck-x"), { recursive: true });
+    writeFileSync(join(dir, "work", "snap", "selfcheck-x", "snap.sqlite"), ids[5]); // self-check working copy: not a pin
+    const t = repoTarget(dir);
+    const gone = new Set(planPrune(t.root, opts({ keepLast: 1, keepFlips: 0 }), [], NOW, t.pinPaths, t.skip).delete);
+    for (const i of [1, 2, 3, 4]) expect(gone.has(ids[i]), `cited run ${i}`).toBe(false);
+    for (const i of [5, 6, 7, 8]) expect(gone.has(ids[i]), `uncited run ${i}`).toBe(true);
+  });
+
+  it("P1-2: a zip reached through a link or junction that leaves archives/ is never deleted", () => {
+    const h = home();
+    const v = join(h, "verify");
+    addRun(v, 1, "spec_l2", day(1));
+    const outsideDir = join(h, "outside");
+    mkdirSync(outsideDir);
+    const outsideZip = join(outsideDir, "real.yglverify.zip");
+    writeFileSync(outsideZip, "real-target");
+    symlinkSync(outsideDir, join(v, "archives", "bridge"), process.platform === "win32" ? "junction" : "dir");
+    const id2 = addRun(v, 2, "spec_l2", day(2), "PASS", { zip: false });
+    writeFileSync(join(v, "archives", `${id2}.json`), JSON.stringify({ run_id: id2, archives: [{ filename: "real.yglverify.zip", path: join(v, "archives", "bridge", "real.yglverify.zip") }] }));
+    addRun(v, 3, "spec_l2", day(3));
+    const plan = planPrune(v, opts({ keepLast: 1, keepFlips: 0 }), [], NOW);
+    expect(plan.delete).toEqual([id2]);
+    expect(plan.archives.zips).toEqual([]);
+    applyPrune(plan, () => {});
+    expect(existsSync(outsideZip)).toBe(true);
+  });
+
+  it("P2-1: a zip an unreadable report's sidecar lists survives, even when a pruned run lists it too", () => {
+    const v = join(home(), "verify");
+    addRun(v, 1, "spec_u2", day(1));
+    const shared = join(v, "archives", "shared.yglverify.zip");
+    writeFileSync(shared, "zip");
+    const id2 = addRun(v, 2, "spec_u2", day(2), "PASS", { zip: false });
+    writeFileSync(join(v, "archives", `${id2}.json`), JSON.stringify({ run_id: id2, archives: [{ filename: "shared.yglverify.zip", path: shared }] }));
+    addRun(v, 3, "spec_u2", day(3));
+    writeFileSync(join(v, "reports", `${rid(70)}.json`), "{ not json");
+    writeFileSync(join(v, "archives", `${rid(70)}.json`), JSON.stringify({ run_id: rid(70), archives: [{ filename: "shared.yglverify.zip", path: shared }] }));
+    const plan = planPrune(v, opts({ keepLast: 1, keepFlips: 0 }), [], NOW);
+    expect(plan.delete).toEqual([id2]);
+    expect(plan.archives.zips).toEqual([]);
+    applyPrune(plan, () => {});
+    expect(existsSync(shared)).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("P2-2: when a report cannot be deleted its snapshot stays, and a rerun finishes the job", () => {
+    const v = join(home(), "verify");
+    series(v, "spec_e2", 1, 4);
+    const plan = planPrune(v, opts({ keepLast: 1, keepFlips: 0 }), [], NOW);
+    expect(plan.delete).toEqual([rid(2), rid(3)]);
+    chmodSync(join(v, "reports"), 0o555);
+    let r;
+    try {
+      r = applyPrune(plan, () => {});
+    } finally {
+      chmodSync(join(v, "reports"), 0o755);
+    }
+    expect(r.failed.length).toBe(2);
+    expect(r.deleted.reports).toBe(0);
+    for (const n of [2, 3]) expect(existsSync(join(v, "snapshots", `${sha(n)}.sqlite`)), `snapshot ${n}`).toBe(true);
+    const again = applyPrune(planPrune(v, opts({ keepLast: 1, keepFlips: 0 }), [], NOW), () => {});
+    expect(again).toMatchObject({ failed: [], deleted: { reports: 2, snapshots: 2 } });
+  });
+
+  it("cited: a kept run's snapshot keeps the runs it aggregates, transitively", () => {
+    // older runs of each spec, so neither "recent" nor "first" keeps the child and grandchild — only "cited" can
+    const v2 = join(home(), "verify");
+    addRun(v2, 10, "spec_leaf", day(1), "PASS", { ver: 1 });
+    const gc = addRun(v2, 11, "spec_leaf", day(2), "PASS", { ver: 1 });
+    addRun(v2, 12, "spec_leaf", day(9), "PASS", { ver: 1 });
+    addRun(v2, 20, "spec_group", day(1), "PASS", { ver: 1 });
+    const ch = addRun(v2, 21, "spec_group", day(2), "PASS", { ver: 1 });
+    addRun(v2, 22, "spec_group", day(9), "PASS", { ver: 1 });
+    const root = addRun(v2, 30, "spec_root", day(2), "PASS", { ver: 1 });
+    writeFileSync(join(v2, "snapshots", `${sha(30)}.sqlite`), `children run_id ${ch}`);
+    writeFileSync(join(v2, "snapshots", `${sha(21)}.sqlite`), `children run_id ${gc}`);
+    const p2 = planPrune(v2, opts({ keepLast: 1, keepFlips: 0 }), [], NOW);
+    expect(p2.delete).not.toContain(root);
+    expect(p2.delete).not.toContain(ch);
+    expect(p2.delete).not.toContain(gc);
+    expect(p2.kept_by.cited).toBe(2);
+  });
+
+  it("P2-3: prune never boots a workspace — a corrupt workspace DB fails the registry read loudly; --repo never opens one", () => {
+    const h = home();
+    writeFileSync(join(h, "ygl-trees.db"), "this is not a sqlite database at all, just bytes");
+    series(join(h, "verify"), "spec_db", 1, 3);
+    const env = { ...process.env, YGL_HOME: h, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" };
+    const own = spawnSync(process.execPath, [BIN, "verify", "prune", "--json"], { cwd: ROOT, encoding: "utf8", env });
+    expect(own.status, own.stdout + own.stderr).toBe(1);
+    expect(JSON.parse(own.stdout).error).toMatch(/cannot read the registry's run ids .*read-only/);
+    const r = repo();
+    series(r.v, "spec_dr", 1, 3);
+    writeFileSync(join(r.results, "latest.json"), JSON.stringify({ contract: "ygl-verifier-latest/1" }));
+    writeFileSync(join(r.dir, "state", "home", "ygl-trees.db"), "also not a database");
+    const viaRepo = spawnSync(process.execPath, [BIN, "verify", "prune", "--repo", r.dir, "--json"], { cwd: ROOT, encoding: "utf8", env });
+    expect(viaRepo.status, viaRepo.stdout + viaRepo.stderr).toBe(0);
+    expect(JSON.parse(viaRepo.stdout).repos[0].reports.total).toBe(3);
+    expect(readFileSync(join(h, "ygl-trees.db"), "utf8")).toMatch(/^this is not a sqlite database/);
   });
 });
