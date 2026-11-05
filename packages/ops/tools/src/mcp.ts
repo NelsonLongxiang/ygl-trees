@@ -196,6 +196,15 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   task: {
     add: (a) => ["task", "add", String(a.text), ...opt("-p", a.project)],
     advance: (a) => ["task", String(a.to ?? "doing"), String(a.id)],
+    // #220: closing without doing it needs a reason; reopening brings a done/cancelled task back to todo
+    cancel: (a) => {
+      if (!a.id || typeof a.reason !== "string" || !a.reason.trim()) throw usageError("task cancel requires id and a non-empty reason");
+      return ["task", "cancel", String(a.id), "--reason", String(a.reason), ...opt("-p", a.project)];
+    },
+    reopen: (a) => {
+      if (!a.id) throw usageError("task reopen requires id");
+      return ["task", "reopen", String(a.id), ...opt("-p", a.project)];
+    },
   },
   rel: {
     attach: (a) => {
@@ -302,6 +311,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           min_score: { type: "number", description: "eval-score: minimum acceptable level" },
           id: { type: "string", description: "task advance: task id" },
           to: { type: "string", enum: ["doing", "done", "todo"], description: "task advance target" },
+          reason: { type: "string", description: "task cancel: why the task is closed without being done (required)" },
           node: { type: "string", description: "rel attach: node key" },
           type: { type: "string", description: "rel attach: relation type" },
           target: { type: "string", description: "rel attach: typed target such as kb:<id> or evidence:<id>" },

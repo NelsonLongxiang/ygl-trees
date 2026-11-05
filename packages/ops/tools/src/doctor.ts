@@ -13,7 +13,9 @@ import { getPgOrm } from "../../../core/database/src/orm";
 import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
-import { CONFIG_REGISTRY, countSecretEvents, redactSecretEvents } from "./config";
+import { CONFIG_REGISTRY, configGetNumber, countSecretEvents, redactSecretEvents } from "./config";
+import { jobViews } from "./job-cmds";
+import { jobFamilies, staleTasks, taskView } from "../../../research/pipeline/src/lifecycle";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
 import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
 import { resolveProject, projectSessionKey, projectCount, sessionId } from "../../../core/database/src/selection";
@@ -137,7 +139,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       checks.push({ name: "pg_connectivity", status: connected ? "pass" : "fail", detail: connected ? "connected (" + latencyMs + "ms) → " + redacted : "cannot connect: " + errDetail + " (" + redacted + ")" });
       checks.push({ name: "dialect", status: "pass", detail: "pg (B7 PG-direct mode)" });
-      for (const n of ["schema_version", "index_freshness", "fts_sync", "orphans", "relation_orphans", "config", "stale_lock", "eval_envelopes", "plugin_profile", "write_integrity", "update_hint"]) {
+      for (const n of ["schema_version", "index_freshness", "fts_sync", "orphans", "relation_orphans", "config", "stale_lock", "eval_envelopes", "plugin_profile", "write_integrity", "update_hint", "task_hygiene", "job_health"]) {
         checks.push({ name: n, status: "warn" as const, detail: "N/A in PG mode — SQLite workspace check (run without YGL_DB_URL)" });
       }
       const failed = checks.filter((c) => c.status === "fail").length;
@@ -246,6 +248,60 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         checks.push({ name: "patrol_queue", status: "pass", detail: checkCount ? `all clear across ${checkCount} check(s)` : "no patrol checks registered" });
       }
     }
+  }
+
+  // ── 2d. Task hygiene and job health (#220): what a real-workspace audit found doctor blind to (16/16 PASS over
+  // stale doing/todo, unlinked done, failing enabled jobs, unscheduled jobs, version families). Warn, except an
+  // enabled job that keeps failing, which is an outage nobody is watching → fail.
+  {
+    const nowMs = Date.now();
+    const tasks = (db.all("SELECT id, project_id, title, meta, created FROM artifacts WHERE kind='task'") as any[]).map(taskView);
+    const stale = staleTasks(tasks, nowMs, configGetNumber(db, "task.stale_doing_days"), configGetNumber(db, "task.stale_todo_days"));
+    const linked = new Set((db.all("SELECT src_id AS id FROM relations WHERE src_type='task' UNION SELECT dst_id AS id FROM relations WHERE dst_type='task'") as any[]).map((r) => r.id));
+    const doneUnlinked = tasks.filter((t) => t.status === "done" && !linked.has(t.id)).length;
+    const byTitle = new Map<string, Set<string>>();
+    for (const t of tasks) if (t.status !== "cancelled") byTitle.set(t.title, (byTitle.get(t.title) ?? new Set()).add(String(t.project_id)));
+    const crossDup = [...byTitle.values()].filter((s) => s.size > 1).length;
+    const taskIssues = [
+      stale.some((t) => t.status === "doing") && `${stale.filter((t) => t.status === "doing").length} stale doing`,
+      stale.some((t) => t.status === "todo") && `${stale.filter((t) => t.status === "todo").length} stale todo`,
+      doneUnlinked && `${doneUnlinked} done with no relation`,
+      crossDup && `${crossDup} title(s) repeated across projects`,
+    ].filter(Boolean);
+    checks.push({
+      name: "task_hygiene",
+      status: taskIssues.length ? "warn" : "pass",
+      detail: taskIssues.length
+        ? `${tasks.length} task(s): ${taskIssues.join("; ")} — task stale --all; finish it, task cancel <id> --reason …, or rel add the evidence`
+        : `${tasks.length} task(s); nothing stale, every done task linked`,
+    });
+
+    const jobs = jobViews(env);
+    const floor = configGetNumber(db, "job.min_every_minutes");
+    const name = (list: any[]) => list.slice(0, 3).map((j) => j.title).join(", ") + (list.length > 3 ? ` … +${list.length - 3}` : "");
+    const failing = jobs.filter((j) => j.health === "failing");
+    const suspended = jobs.filter((j) => j.health === "suspended");
+    const groups: Array<[string, any[]]> = [
+      ["never ran", jobs.filter((j) => j.health === "never-ran")],
+      ["overdue", jobs.filter((j) => j.health === "overdue")],
+      ["no schedule (manual)", jobs.filter((j) => j.health === "manual")],
+      [`every < ${floor} min`, jobs.filter((j) => Number(j.enabled) && j.status !== "retired" && floor > 0 && Number(j.every) > 0 && Number(j.every) < floor)],
+      ["one-shot still enabled after running", jobs.filter((j) => Number(j.enabled) && j.at && !(Number(j.every) > 0) && j.last_run)],
+    ];
+    const families = jobFamilies(jobs as Array<{ id: string; title: string; status?: string }>);
+    const jobIssues = [
+      failing.length && `${failing.length} enabled job(s) failing: ${name(failing)}`,
+      suspended.length && `${suspended.length} job(s) suspended by tick after a failing streak: ${name(suspended)}`,
+      ...groups.filter(([, l]) => l.length).map(([label, l]) => `${l.length} ${label}: ${name(l)}`),
+      families.length && `${families.length} version famil${families.length > 1 ? "ies" : "y"}: ${families.slice(0, 3).map((f) => `${f.stem} ×${f.ids.length}`).join(", ")}`,
+    ].filter(Boolean);
+    checks.push({
+      name: "job_health",
+      status: failing.length || suspended.length ? "fail" : jobIssues.length ? "warn" : "pass",
+      detail: jobIssues.length
+        ? `${jobs.length} job(s): ${jobIssues.join("; ")} — job show <id>; fix it, or job retire <id> --reason …`
+        : `${jobs.length} job(s); none failing, overdue, unscheduled or duplicated`,
+    });
   }
 
   // ── 3. FTS sync (spot check: sources vs sources_fts) ──

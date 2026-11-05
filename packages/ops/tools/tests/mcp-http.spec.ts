@@ -76,10 +76,16 @@ describe.skipIf(!HAS_BIN)("MCP HTTP transport (StreamableHTTP stateless, taste-m
       stdio: ["ignore", "pipe", "pipe"],
     });
     await new Promise<void>((res, rej) => {
-      const on = (d: Buffer) => { if (d.toString().includes("HTTP server ready")) res(); };
+      // #223: a startup timeout says how long, whether the server is alive, and how much it printed (no content)
+      let bytes = 0;
+      const t0 = Date.now();
+      const on = (d: Buffer) => { bytes += d.length; if (d.toString().includes("HTTP server ready")) res(); };
       (server as any).stdout.on("data", on);
       (server as any).stderr.on("data", on);
-      setTimeout(() => rej(new Error("server start timeout")), 10_000);
+      setTimeout(() => {
+        const s = server as any;
+        rej(new Error(`server start timeout after ${Date.now() - t0}ms — pid=${s?.pid ?? "-"} ${s && s.exitCode === null && s.signalCode === null ? "alive" : `exited code ${s?.exitCode} signal ${s?.signalCode}`}; output ${bytes}B`));
+      }, 10_000);
     });
   }, 30_000);
 

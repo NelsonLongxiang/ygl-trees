@@ -42,7 +42,8 @@ describe("task 状态机 + spec/design（R12）", () => {
     const ds = await getOrm(file);
     const writes = await import("../../pipeline/src/writes");
     const t = await writes.taskAdd(ds, pid, "发布", "等 registry");
-    expect(JSON.parse(db.get("SELECT meta FROM artifacts WHERE id=?", [t.id])!.meta)).toEqual({ status: "todo" });
+    // #220: the envelope also stamps status_at (ISO) when the task enters a status
+    expect(JSON.parse(db.get("SELECT meta FROM artifacts WHERE id=?", [t.id])!.meta)).toEqual({ status: "todo", status_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) });
     const r1 = await writes.taskSetStatus(ds, t.id, "doing");
     expect(r1).toMatchObject({ from: "todo", to: "doing" });
     const r2 = await writes.taskSetStatus(ds, t.id, "done");

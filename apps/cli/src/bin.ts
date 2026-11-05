@@ -205,10 +205,13 @@ ${paint(C.bold, "produce", color)}     outline → section → report · spec/de
   design <title> --body|-f   design artifact (R12) --design-type ui-ux|arch|decision
   list | show <id> | export <id> <file>
 
-${paint(C.bold, "task", color)}          任务清单（todo|doing|done 状态机，R12）
-  add "<title>" [--note ...] create a task (status todo)
-  list [--status todo|doing|done]
-  doing|done <id>            move along the state machine（勾销全程留痕）
+${paint(C.bold, "task", color)}          任务清单（todo|doing|done|cancelled，R12；生命周期 #220）
+  add "<title>" [--note ...] [--owner <who>]   create a task (status todo)
+  list [--status todo|doing|done|cancelled] [--owner <who>]   rows carry owner/status_at/done_at
+  doing|done|todo <id>       move along the state machine（勾销全程留痕；每步记 status_at）
+  cancel <id> --reason <why> close without doing it（取消必须写原因）; reopen <id> → todo
+  assign <id> <owner>        set the task's owner
+  stale [--doing-days N] [--todo-days N] [--all]   open tasks past task.stale_doing_days (14) / task.stale_todo_days (30)
 
 ${paint(C.bold, "kb", color)}          long-term knowledge
   add --title --body|-f [--tags --confidence]
@@ -219,8 +222,14 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   promote <noteId> [--name]  turn a note into a reusable skill
 
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
-  add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] [--force] -- <command>   options before --
-  list | run <jobId|title> | tick | enable <id> | disable <id> | logs
+  add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] -- <command>   options before --
+                             a schedule (or --manual) is required; --every below job.min_every_minutes (60) needs --allow-frequent;
+                             a new version of an existing job needs --replaces (retires the old one) or --force (keeps both)
+  list | show <id|title>     rows carry command + health (ok|failing|never-ran|overdue|manual|done|retired|suspended|disabled); show names the last actor
+  run <jobId|title> | tick | enable <id> | disable <id> | logs   a one-shot (--at) job is done+disabled after it runs;
+                             tick suspends a job after job.failing_runs (3) consecutive failures — job enable re-arms it
+  retire <id|title> --reason <why>   disable + mark retired; rows and run history are kept
+  prune-runs [--keep N] [--apply]    old run rows beyond the newest N per job (default 50); dry run unless --apply
 
 ${paint(C.bold, "patrol", color)}       boundary assertions + disposition queue (S1|S2|S3)
   add <name> --sql "SELECT …" [--severity S1|S2|S3] [--desc ".."]   violating rows = findings
@@ -600,6 +609,12 @@ export async function main(argv: string[]): Promise<number> {
       const { runPruneCommand } = await import("../../../packages/ops/tools/src/verify-prune");
       return runPruneCommand(ctx, home, args._.slice(2), args.flags as Record<string, unknown>);
     }
+  }
+  // #220 (review of f509022): task/job usage errors are rc2 before the db too, not rc1 when the db is missing/broken.
+  if ((group === "task" || group === "job") && action) {
+    const { taskJobPreflight } = await import("../../../packages/research/pipeline/src/lifecycle");
+    const usageProblem = taskJobPreflight(group, action, args._.slice(2), args.flags);
+    if (usageProblem) { bad(ctx, usageProblem); return 2; }
   }
   // plugin management never touches the db (DSH exemplar: launcher-owned
   // mode) — it must work on a fresh workspace before `db init`
@@ -1033,9 +1048,12 @@ export function generateLlmsManifest(): string {
       ["node validate", "cycles, dangling edges, dirty index"],
     ]],
     ["task", "Task state machine", [
-      ["task add \"<title>\"", "create task (todo)"],
-      ["task list [--status]", "list by status"],
+      ["task add \"<title>\" [--owner <who>]", "create task (todo)"],
+      ["task list [--status] [--owner]", "list by status / owner (owner, status_at, done_at)"],
       ["task doing <id> / task done <id> / task todo <id>", "advance or roll back"],
+      ["task cancel <id> --reason <why> / task reopen <id>", "close without doing it (reason required) / back to todo (#220)"],
+      ["task assign <id> <owner>", "set the owner"],
+      ["task stale [--all]", "open tasks past the doing/todo thresholds (#220)"],
     ]],
     ["rel", "Relation fabric (cross-entity linking)", [
       ["rel add <src> <dst> [--rel t]", "link two refs: node:key claim:id kb:id artifact:id ..."],
@@ -1062,15 +1080,18 @@ export function generateLlmsManifest(): string {
       ["db unlock [--force]", "clear stale .ygllock (pid-liveness checked; refuses live holders)"],
       ["db reset", "delete database"],
     ]],
-    ["doctor", "Health check (10 items)", [
+    ["doctor", "Health check (18 items)", [
       ["doctor [--fix]", "diagnose (+ auto-fix: dirty index, dead stale lock, phantom writes)"],
     ]],
     ["config", "User settings", [
       ["config list / get / set / reset", "registry-backed settings"],
     ]],
     ["job", "Batch scheduling", [
-      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"] -- \"<cmd>\"", "create scheduled job"],
+      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"|--manual] [--replaces <old>] -- \"<cmd>\"", "create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force)"],
       ["job tick", "run due jobs (drive with cron)"],
+      ["job list / job show <id|title>", "command + health, consecutive failures, last error, next due (#220)"],
+      ["job retire <id|title> --reason <why>", "disable + mark retired; history kept"],
+      ["job prune-runs [--keep N] [--apply]", "trim old run rows (dry run by default)"],
     ]],
     ["verify", "Spec validator (M13): material → spec → report", [
       ["verify submit --title <t> --text <file|-> [--attach <f>] [--clause-pattern <regex>] [--meta-repo <dir> | --require-meta | --no-meta]", "freeze material (+ its clause pattern, default ^([A-Z]+[0-9]+) ); verifier repos must pass verify meta (default hard since 0.113.0); --meta-repo names a repo outside cwd, --no-meta bypasses, recorded as meta.bypass"],

@@ -349,7 +349,7 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 75 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1/T2/T3 加了 7 条科技树 golden 与并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 75 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1695 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
+pnpm test          # 四段制回归：build + unit (vitest 1719 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（128 条断言）+ contract:audit（152 项）
 pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
@@ -363,7 +363,7 @@ ygl-trees llms          # 结构化能力清单（LLM 参考一次性获取全�
 pnpm contract:audit # 写路径契约体检：写命令跑两次必须 rc=0、重复回执 duplicate、坏引用点名、用法 rc=2
 pnpm skills:audit   # 技能真值门禁：skills/*/SKILL.md 里的命令字面量逐条实跑，CLI 拒收命令形状即红（pnpm test 末段）
 pnpm smoke:bun     # Bun 运行时探针（Windows 当前受阻，见 docs/bun-compat.md）
-ygl-trees doctor   # 工作区健康检查 16 项（--fix 一键安全修复）（schema/索引/选择/巡检队列/FTS/驱动/重复/孤儿/关联孤儿/config/锁存活/eval 信封/插件 profile/幻影写入/更新提示/技能版本）
+ygl-trees doctor   # 工作区健康检查 18 项（--fix 一键安全修复）（schema/索引/选择/巡检队列/任务卫生/job 健康/FTS/驱动/重复/孤儿/关联孤儿/config/锁存活/eval 信封/插件 profile/幻影写入/更新提示/技能版本）
 ygl-trees db unlock    # 清残留 .ygllock：查 pid 存活，死 pid 直接清；活 holder（回显其命令行）拒绝并说明，--force 才强清
 ygl-trees node timeline <tree>   # 单树成长时间线（add/link/unlock 事件倒序）
 ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实时推送，Ctrl+C 停）

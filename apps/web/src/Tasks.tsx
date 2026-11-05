@@ -3,7 +3,9 @@
  * task moves a single step along todo → doing → done through the same writes
  * as `ygl-trees task doing|done` (every step logged as a task.status event).
  * The page only moves forward; stepping back is the CLI's `task todo|doing`.
- * Open work sorts first so the expert sees what is live.
+ * Open work sorts first so the expert sees what is live. A cancelled task is
+ * closed (#220): shown, never stepped. A status this page does not know is
+ * shown as itself — never dressed up as 待办.
  */
 import { useState, type ReactNode } from "react";
 import { Button, message as antdMessage, Popconfirm, Table, Typography } from "antd";
@@ -18,11 +20,16 @@ export const TASK_STATUS: Record<TaskStatus, { color: string; label: string }> =
   todo: { color: C.secondary, label: "待办" },
   doing: { color: C.primary, label: "进行中" },
   done: { color: C.success, label: "已完成" },
+  cancelled: { color: C.secondary, label: "已取消" },
 };
 
-const RANK: Record<TaskStatus, number> = { doing: 0, todo: 1, done: 2 };
-const ORDER: TaskStatus[] = ["todo", "doing", "done"];
-const asStatus = (s: string): TaskStatus => (s in TASK_STATUS ? (s as TaskStatus) : "todo");
+const RANK: Record<TaskStatus, number> = { doing: 0, todo: 1, done: 2, cancelled: 3 };
+const ORDER: TaskStatus[] = ["todo", "doing", "done", "cancelled"];
+const isStatus = (s: string): s is TaskStatus => Object.prototype.hasOwnProperty.call(TASK_STATUS, s);
+/** Label and color for any status string; an unknown one keeps its own name in the neutral tone. */
+export const statusLabel = (s: string): string => (isStatus(s) ? TASK_STATUS[s].label : s);
+const statusColor = (s: string): string => (isStatus(s) ? TASK_STATUS[s].color : C.secondary);
+const closed = (s: string) => s === "done" || s === "cancelled";
 
 const STEP: Partial<Record<TaskStatus, { to: TaskStatus; label: string; icon: ReactNode }>> = {
   todo: { to: "doing", label: "开始", icon: <PlayCircleOutlined /> },
@@ -33,7 +40,7 @@ type Task = { id: string; title: string; status: string };
 
 /** The status a row's button asks the server for (the request body's `status`, #70); null when there is no step. */
 export function stepTarget(status: string): TaskStatus | null {
-  return STEP[asStatus(status)]?.to ?? null;
+  return isStatus(status) ? STEP[status]?.to ?? null : null;
 }
 
 /**
@@ -42,8 +49,8 @@ export function stepTarget(status: string): TaskStatus | null {
  * behind the server, and saying 「待办 → 待办」 would hide it (0.114.29 #70).
  */
 export function stepOutcome(title: string, r: TaskStepReceipt): { changed: boolean; text: string } {
-  const from = TASK_STATUS[asStatus(r.from)].label;
-  const to = TASK_STATUS[asStatus(r.to)].label;
+  const from = statusLabel(r.from);
+  const to = statusLabel(r.to);
   return r.idempotent || r.from === r.to
     ? { changed: false, text: `「${title}」已经是${to}，没有改动——页面落后于服务端，已按服务端状态显示` }
     : { changed: true, text: `「${title}」${from} → ${to}` };
@@ -56,7 +63,7 @@ export const DONE_CONFIRM = { title: "标记为已完成？", description: "总�
 export function groupTasks<T extends { status: string }>(tasks: T[]): T[] {
   return tasks
     .map((t, i) => [t, i] as const)
-    .sort(([a, i], [b, j]) => RANK[asStatus(a.status)] - RANK[asStatus(b.status)] || i - j)
+    .sort(([a, i], [b, j]) => (isStatus(a.status) ? RANK[a.status] : 9) - (isStatus(b.status) ? RANK[b.status] : 9) || i - j)
     .map(([t]) => t);
 }
 
@@ -70,8 +77,8 @@ export type Written = { to: TaskStatus; seen: readonly Task[] };
  * or names the very status we sent: the next click must send what the server
  * holds now (#66).
  */
-export function shownStatus(server: string, tasks: readonly Task[], written?: Written): TaskStatus {
-  return written && written.seen === tasks ? written.to : asStatus(server);
+export function shownStatus(server: string, tasks: readonly Task[], written?: Written): string {
+  return written && written.seen === tasks ? written.to : server;
 }
 
 export function TaskList({ tasks }: { tasks: Task[] }) {
@@ -89,7 +96,7 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
     try {
       const r = await advanceTask(t.id, to);
       // either way r.to is what the server holds now
-      setWritten((w) => ({ ...w, [t.id]: { to: asStatus(r.to), seen: tasks } }));
+      if (isStatus(r.to)) setWritten((w) => ({ ...w, [t.id]: { to: r.to, seen: tasks } }));
       const o = stepOutcome(t.title, r);
       if (o.changed) message.success(o.text);
       else message.info(o.text);
@@ -116,13 +123,13 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
             width: 100,
             filters: ORDER.map((value) => ({ text: TASK_STATUS[value].label, value })),
             onFilter: (value, record) => record.status === value,
-            render: (s: TaskStatus) => <ToneTag color={TASK_STATUS[s].color}>{TASK_STATUS[s].label}</ToneTag>,
+            render: (s: string) => <ToneTag color={statusColor(s)}>{statusLabel(s)}</ToneTag>,
           },
           {
             title: "任务",
             dataIndex: "title",
             render: (t: string, record) => (
-              <Text delete={record.status === "done"} type={record.status === "done" ? "secondary" : undefined}>
+              <Text delete={closed(record.status)} type={closed(record.status) ? "secondary" : undefined}>
                 {t}
               </Text>
             ),
@@ -132,7 +139,7 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
             key: "step",
             width: 96,
             render: (_, record) => {
-              const s = STEP[record.status as TaskStatus];
+              const s = isStatus(record.status) ? STEP[record.status] : undefined;
               if (!s) return null;
               const button = (
                 <Button

@@ -3,6 +3,7 @@
  * Keeps FTS shadow tables in sync so search always matches reality.
  */
 import { DB } from "../../../core/database/src/db";
+import { eventActor } from "../../../core/database/src/selection";
 import { clip, contentHash, ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "../../../core/text/src/text";
 
 export type Row = Record<string, any>;
@@ -11,7 +12,9 @@ export class Store {
   constructor(readonly db: DB) {}
 
   // ================================================================ events
-  log(kind: string, entity = "", entityId = "", payload: any = "", actor = "cli"): void {
+  /** Raw event insert. The actor defaults to the session (#220 item 12), like logEvent: the literal "cli" made every
+   *  job.run / job.settle row anonymous, so "who last touched it" could not name anybody. */
+  log(kind: string, entity = "", entityId = "", payload: any = "", actor = eventActor()): void {
     this.db.run(
       "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
       [shortId([kind, entity], 12), nowIso(), actor, kind, entity, entityId, str(payload)]
@@ -357,18 +360,22 @@ export class Store {
     );
   }
 
+  /** Jobs `tick` should run now (#220 review of f509022). Before, any never-run job was due at once — a --manual job
+   *  and a one-shot set for 2099 both ran on the first tick. Now: recurring jobs are due when never run or when
+   *  `every` has elapsed; a one-shot only once its `at` has passed; a manual job never (only `job run`). Retired,
+   *  suspended and done jobs are never due, whatever `enabled` says. */
   jobDue(): Row[] {
-    const rows = this.db.all("SELECT * FROM jobs WHERE enabled=1");
+    const rows = this.db.all("SELECT * FROM jobs WHERE enabled=1 AND status NOT IN ('retired','suspended','done')");
     const now = Date.now();
     return rows.filter((j: Row) => {
-      if (!j.last_run) return true;
       if (j.every_minutes > 0) {
+        if (!j.last_run) return true;
         const last = Date.parse(j.last_run.replace(" ", "T"));
         return Number.isFinite(last) && now - last >= j.every_minutes * 60_000;
       }
       if (j.at) {
         const t = Date.parse(j.at.replace(" ", "T"));
-        return Number.isFinite(t) && t <= now && !j.last_run;
+        return !j.last_run && Number.isFinite(t) && t <= now;
       }
       return false;
     });

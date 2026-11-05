@@ -8,6 +8,64 @@ import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
+import { jobFamilyStem, jobHealth, JobRunFacts, JobRunRow } from "../../../research/pipeline/src/lifecycle";
+
+const JOB_USAGE = 'usage: job add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] -- <command> | ' +
+  "list | show <id|title> | run <id|title> | tick | enable|disable <id> | retire <id|title> --reason <why> | prune-runs [--keep N] [--apply] | logs";
+
+/**
+ * Whole-history run facts per job (review of f45596b): the failing streak (finished failures after the newest
+ * success), the newest success time and the newest failure's output, aggregated in SQL so no run window can cut them.
+ * "Newest" is the total order every other run view uses — started DESC, then id DESC — so runs that share a
+ * started timestamp are split by id exactly as `job show` lists them (review of 008acc4).
+ */
+const NEWEST_OK = `SELECT r.job_id, r.id, r.started, COALESCE(NULLIF(r.finished,''), r.started) AS last_ok FROM runs r
+  WHERE r.finished != '' AND r.rc = 0 AND r.id = (SELECT r2.id FROM runs r2 WHERE r2.job_id = r.job_id AND r2.finished != '' AND r2.rc = 0
+    ORDER BY r2.started DESC, r2.id DESC LIMIT 1)`;
+
+function runFacts(env: Env): Map<string, JobRunFacts> {
+  const facts = new Map<string, JobRunFacts>();
+  const get = (id: string) => facts.get(id) ?? (facts.set(id, { streak: 0, last_ok: "", last_error: "" }), facts.get(id)!);
+  for (const r of env.db.all(NEWEST_OK) as any[]) get(r.job_id).last_ok = r.last_ok;
+  const streaks = env.db.all(`SELECT r.job_id, count(*) AS n FROM runs r LEFT JOIN (${NEWEST_OK}) o ON o.job_id = r.job_id
+    WHERE r.finished != '' AND r.rc != 0 AND (o.id IS NULL OR r.started > o.started OR (r.started = o.started AND r.id > o.id))
+    GROUP BY r.job_id`) as any[];
+  for (const r of streaks) get(r.job_id).streak = Number(r.n);
+  const errors = env.db.all(`SELECT r.job_id, r.rc, r.output FROM runs r WHERE r.finished != '' AND r.rc != 0 AND r.id = (
+    SELECT r2.id FROM runs r2 WHERE r2.job_id = r.job_id AND r2.finished != '' AND r2.rc != 0 ORDER BY r2.started DESC, r2.id DESC LIMIT 1)`) as any[];
+  for (const r of errors) get(r.job_id).last_error = String(r.output || `rc=${r.rc}`);
+  return facts;
+}
+
+/** Each job's newest runs (newest first), for health. One query, grouped in memory. */
+function runsByJob(env: Env, perJob = 20): Map<string, JobRunRow[]> {
+  const by = new Map<string, JobRunRow[]>();
+  for (const r of env.db.all("SELECT job_id, started, finished, rc, output FROM runs ORDER BY started DESC, id DESC") as any[]) {
+    const list = by.get(r.job_id) ?? [];
+    if (list.length < perJob) list.push(r);
+    by.set(r.job_id, list);
+  }
+  return by;
+}
+
+/** Session that last wrote an event about this row (#220 item 12) — names somebody even when no owner is set. */
+export function lastActor(env: Env, entityId: string): string {
+  return (env.db.get("SELECT actor FROM events WHERE entity_id=? ORDER BY rowid DESC LIMIT 1", [entityId]) as any)?.actor ?? "";
+}
+
+/** Job rows as `job list --json` / `job show` expose them (#220): the stored row, its command, and derived health. */
+export function jobViews(env: Env): Array<Record<string, any>> {
+  const failing = configGetNumber(env.db, "job.failing_runs");
+  // health reads whole-history facts (streak, last_ok, last_error) from SQL; the run window is only a fallback
+  const runs = runsByJob(env, Math.max(20, failing + 1));
+  const facts = runFacts(env);
+  const now = Date.now();
+  return (env.db.all("SELECT * FROM jobs ORDER BY created") as any[]).map((j) => ({
+    id: j.id, title: j.title, command: j.command, every: j.every_minutes, at: j.at, enabled: j.enabled, runs: j.runs,
+    last_run: j.last_run, status: j.status, created: j.created,
+    ...jobHealth(j, runs.get(j.id) ?? [], now, failing, facts.get(j.id) ?? { streak: 0, last_ok: "", last_error: "" }),
+  }));
+}
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -37,7 +95,25 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         command = command.slice(0, tailAt.index).trim();
       }
       if (!title || !command) {
-        bad(ctx, 'usage: job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] -- <command>');
+        bad(ctx, 'usage: job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"|--manual] -- <command>');
+        return 2;
+      }
+      const manual = args.flags.manual === true || args.flags.manual === "true";
+      const allowFrequent = args.flags["allow-frequent"] === true || args.flags["allow-frequent"] === "true";
+      // #220 J4: a job with no schedule never runs on tick. It used to land silently as "manual" (every=0) — the
+      // 0.114.4 misregistration shape — so it now has to be declared.
+      if (manual && (every || at)) {
+        bad(ctx, `--manual means no schedule; drop --every/--at, or drop --manual — ${JOB_USAGE}`);
+        return 2;
+      }
+      if (!every && !at && !manual) {
+        const leftover = /--every\b|--at\b/.test(command) ? " (a schedule-shaped token is still inside the command: move --every/--at before --)" : "";
+        bad(ctx, `job add needs a schedule: --every <min> or --at "YYYY-MM-DD HH:MM", or --manual for a job run only by \`job run\`${leftover}`);
+        return 2;
+      }
+      const floor = configGetNumber(env.db, "job.min_every_minutes");
+      if (every > 0 && floor > 0 && every < floor && !allowFrequent) {
+        bad(ctx, `--every ${every} is below job.min_every_minutes (${floor}); pass --allow-frequent if this cadence is intended`);
         return 2;
       }
       // F1/F3 (0.114.4, fdc757f6 09:25): the tail pull is a compatibility
@@ -53,8 +129,27 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (!ctx.json) console.error(paint(C.yellow, `  ! ${warning}`, ctx.color));
       }
       const force = args.flags.force === true || args.flags.force === "true";
+      if (args.flags.replaces === true) { bad(ctx, `--replaces needs <id|title> — ${JOB_USAGE}`); return 2; }
+      const replaces = args.flags.replaces !== undefined ? String(args.flags.replaces) : "";
+      if (replaces && force) { bad(ctx, `--replaces retires the old job, --force keeps both: pick one — ${JOB_USAGE}`); return 2; }
+      // #220 item 11: an upgrade must not leave the old version running beside the new one ("version family").
+      if (!force) {
+        const stem = jobFamilyStem(title);
+        const kin = (store.db.all("SELECT id, title, status FROM jobs WHERE status != 'retired'") as any[])
+          .filter((j) => j.title !== title && jobFamilyStem(j.title) === stem);
+        if (replaces) {
+          const old = store.db.get("SELECT id, title, status FROM jobs WHERE id=? OR title=?", [replaces, replaces]) as any;
+          if (!old) { bad(ctx, `--replaces: job not found: ${replaces}`); return 1; }
+          if (old.status === "retired") { bad(ctx, `--replaces: job ${old.title} is already retired`); return 1; }
+          const left = kin.filter((j) => j.id !== old.id);
+          if (left.length) { bad(ctx, `job ${title} still shares a family with ${left.map((j) => `${j.title} (${j.id})`).join(", ")} — retire those too, or pass --force to keep them`); return 2; }
+        } else if (kin.length) {
+          bad(ctx, `job ${title} is another version of ${kin.map((j) => `${j.title} (${j.id})`).join(", ")}: pass --replaces <id|title> to retire the old one in the same step, or --force to keep both`);
+          return 2;
+        }
+      }
       return getOrm(env.db.path)
-        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force }))
+        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force, replaces }))
         .then((r): number => {
           if (ctx.json) {
             console.log(
@@ -78,8 +173,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
-    case "list":
-      table(ctx, store.jobList(), ["id", "title", "every", "at", "on", "runs", "last_run", "status"], [
+    case "list": {
+      const rows = jobViews(env);
+      if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+      table(ctx, rows, ["id", "title", "every", "at", "on", "runs", "last_run", "health"], [
         "id",
         "title",
         "every",
@@ -87,9 +184,54 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         "enabled",
         "runs",
         "last_run",
-        "status",
+        "health",
       ]);
       return 0;
+    }
+    case "show": {
+      if (!rest[0]) { bad(ctx, `job show needs <id|title> — ${JOB_USAGE}`); return 2; }
+      const j = jobViews(env).find((r) => r.id === rest[0] || r.title === rest[0]);
+      if (!j) { bad(ctx, `job not found: ${rest[0]}`); return 1; }
+      const recent = store.db.all("SELECT id, started, finished, rc, substr(output,1,200) AS output FROM runs WHERE job_id=? ORDER BY started DESC, id DESC LIMIT 10", [j.id]);
+      const shown: Record<string, any> = { ...j, last_actor: lastActor(env, j.id) };
+      if (ctx.json) { console.log(JSON.stringify({ ...shown, recent_runs: recent }, null, 2)); return 0; }
+      for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run", "last_actor"])
+        out(ctx, `  ${k.padEnd(21)} ${shown[k] === "" || shown[k] === undefined ? "—" : String(shown[k])}`);
+      out(ctx, `  recent runs`);
+      for (const r of recent as any[]) out(ctx, `    ${r.started}  rc=${r.rc ?? "…"}  ${String(r.output || "").replace(/\s+/g, " ").slice(0, 100)}`);
+      return 0;
+    }
+    case "retire": {
+      if (!rest[0] || typeof args.flags.reason !== "string" || !args.flags.reason.trim()) {
+        bad(ctx, `job retire needs <id|title> and --reason "<why>" — ${JOB_USAGE}`);
+        return 2;
+      }
+      return getOrm(env.db.path)
+        .then((ds) => writes.jobRetire(ds, rest[0], String(args.flags.reason)))
+        .then((r): number => {
+          if (ctx.json) { console.log(JSON.stringify({ ...r.row, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          writeResult(ctx, r as any, (row) => `job retired: ${row.id}  ${row.title}  (disabled; history kept)`);
+          return 0;
+        })
+        .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
+    }
+    case "prune-runs": {
+      const keepRaw = args.flags.keep;
+      const keep = keepRaw === undefined ? configGetNumber(env.db, "job.keep_runs") : Number(keepRaw);
+      if (!Number.isInteger(keep) || keep < 1) { bad(ctx, `--keep must be a whole number ≥ 1 — ${JOB_USAGE}`); return 2; }
+      const apply = args.flags.apply === true || args.flags.apply === "true";
+      return getOrm(env.db.path)
+        .then((ds) => writes.jobPruneRuns(ds, keep, apply))
+        .then((r): number => {
+          if (ctx.json) { console.log(JSON.stringify({ keep, apply, ...r }, null, 2)); return 0; }
+          const total = r.jobs.reduce((n, j) => n + j.prune, 0);
+          table(ctx, r.jobs, ["id", "title", "total", "prune"], ["id", "title", "total", "prune"]);
+          if (apply) ok(ctx, `deleted ${r.deleted} run row(s) beyond the newest ${keep} per job`);
+          else out(ctx, paint(C.dim, `  dry run: ${total} run row(s) beyond the newest ${keep} per job would be deleted — add --apply to delete`, ctx.color));
+          return 0;
+        })
+        .catch((e: any): number => { bad(ctx, e?.message || String(e)); return 1; });
+    }
     case "run": {
       if (!rest[0]) {
         bad(ctx, "usage: job run <jobId|title>");
@@ -113,7 +255,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           out(ctx, paint(C.dim, "  nothing due", ctx.color));
           return 0;
         }
-        for (const j of due) execute(env, j);
+        const limit = Math.max(1, configGetNumber(env.db, "job.failing_runs"));
+        for (const j of due) {
+          execute(env, j);
+          // #220 item 13: a failing streak stops itself instead of failing on every tick (an audited job ran 70 times
+          // red). Suspended = disabled + status suspended + event; doctor fails until someone re-enables or retires it.
+          const recent = store.db.all("SELECT rc FROM runs WHERE job_id=? AND finished != '' ORDER BY started DESC, id DESC LIMIT ?", [j.id, limit]) as any[];
+          if (recent.length >= limit && recent.every((r) => r.rc !== 0)) {
+            store.db.run("UPDATE jobs SET enabled=0, status='suspended' WHERE id=?", [j.id]);
+            store.log("job.suspend", "job", j.id, `${limit} consecutive failures — suspended; fix it and job enable, or job retire`);
+            out(ctx, paint(C.yellow, `  ! suspended ${j.title}: ${limit} consecutive failures (job show ${j.id})`, ctx.color));
+          }
+        }
         return 0;
       });
     }
@@ -135,7 +288,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: job enable <jobId|title>");
         return 2;
       }
-      const r = store.db.run("UPDATE jobs SET enabled=1 WHERE id=? OR title=?", [rest[0], rest[0]]);
+      // #220: retired is terminal and a one-shot that ran is done — enabling either would run it again while it still
+      // reads retired/done (review of f509022). Register a new job instead.
+      const cur = store.db.get("SELECT title, status FROM jobs WHERE id=? OR title=?", [rest[0], rest[0]]) as any;
+      if (cur && (cur.status === "retired" || cur.status === "done")) {
+        bad(ctx, `job ${cur.title} is ${cur.status} and stays so — register a new job instead (job add …)`);
+        return 1;
+      }
+      // #220 item 13: enabling re-arms a suspended job — its old failing streak counts again only if a new run fails.
+      const r = store.db.run("UPDATE jobs SET enabled=1, status=CASE WHEN status='suspended' THEN 'pending' ELSE status END WHERE id=? OR title=?", [rest[0], rest[0]]);
       if (!r.changes) {
         bad(ctx, `job not found: ${rest[0]}`);
         return 1;
@@ -153,7 +314,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ]);
       return 0;
     case "":
-      out(ctx, paint(C.dim, "  job: add <title> -- <cmd> | list | run <id> | tick | enable|disable <id> | logs", ctx.color));
+      out(ctx, paint(C.dim, `  ${JOB_USAGE}`, ctx.color));
       return 0;
     default:
       bad(ctx, `unknown job action: ${action}`);
@@ -203,6 +364,12 @@ function execute(env: Env, job: any): void {
   }
   const ms = Date.now() - started;
   store.jobFinish(runId, rc, output);
+  // #220: a one-shot (`at`, no every) job is finished once it has run — disable it so it stops lingering enabled.
+  if (job.at && !(Number(job.every_minutes) > 0)) {
+    const status = rc === 0 ? "done" : "failed";
+    store.db.run("UPDATE jobs SET enabled=0, status=? WHERE id=?", [status, job.id]);
+    store.log("job.settle", "job", job.id, `one-shot ran (${job.at}) → ${status}, disabled`);
+  }
   if (rc === 0) ok(ctx, `${job.title}  ok  ${ms}ms`);
   else bad(ctx, `${job.title}  rc=${rc}  ${output.slice(0, 160)}`);
   store.log("job.run", "job", job.id, `rc=${rc} ${nowIso()}`);

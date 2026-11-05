@@ -946,10 +946,21 @@ export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promi
 
 export async function jobAdd(
   ds: DataSource,
-  o: { title: string; command: string; every?: number; at?: string; force?: boolean }
+  o: { title: string; command: string; every?: number; at?: string; force?: boolean; replaces?: string }
 ): Promise<WriteResult> {
   return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM jobs WHERE title=?`, [o.title])) as any[];
+    // #220 item 11: `--replaces` retires the old version in the same transaction as the new registration — also when
+    // the new title already exists (a rerun of the same add), so the replacement is never left half done.
+    if (o.replaces) {
+      const old = ((await mgr.query(`SELECT * FROM jobs WHERE id=? OR title=? ORDER BY created LIMIT 1`, [o.replaces, o.replaces])) as any[])[0];
+      if (!old) throw new Error(`job not found: ${o.replaces}`);
+      if (ex.length && old.id === ex[0].id) throw new Error(`--replaces names the job being added (${o.title})`);
+      if (old.status !== "retired") {
+        await mgr.query(`UPDATE jobs SET enabled=0, status='retired' WHERE id=?`, [old.id]);
+        await logEvent(mgr, "job.retire", "job", old.id, `${old.title}: replaced by ${o.title}`);
+      }
+    }
     if (ex.length && !o.force) return { row: ex[0], dup: true };
     let title = o.title;
     if (o.force) {
@@ -1000,6 +1011,58 @@ export async function jobRetarget(
   });
 }
 
+// ---------------------------------------------------------------- job lifecycle (#220)
+
+/** Find a job by id or title inside a transaction; throws when missing. */
+async function jobRow(mgr: any, ref: string): Promise<any> {
+  const rows = (await mgr.query(`SELECT * FROM jobs WHERE id=? OR title=? ORDER BY created LIMIT 1`, [ref, ref])) as any[];
+  if (!rows.length) throw new Error(`job not found: ${ref}`);
+  return rows[0];
+}
+
+/** Retire a job: disable it and mark it retired, with the reason in the event log. Rows and run history stay
+ *  (nothing is deleted). Already retired → dup. */
+export async function jobRetire(ds: DataSource, ref: string, reason: string): Promise<WriteResult> {
+  if (!reason.trim()) throw new Error("job retire needs --reason");
+  return runTx(ds, async (mgr) => {
+    const j = await jobRow(mgr, ref);
+    if (j.status === "retired") return { row: j, dup: true };
+    await mgr.query(`UPDATE jobs SET enabled=0, status='retired' WHERE id=?`, [j.id]);
+    await logEvent(mgr, "job.retire", "job", j.id, `${j.title}: ${reason.trim()}`);
+    return { row: { ...j, enabled: 0, status: "retired" }, dup: false };
+  });
+}
+
+/**
+ * Old run rows beyond the newest `keep` per job (#220). Never selects a run in the job's newest failing streak, so
+ * the evidence for a current failure always survives. With `apply` false this only lists; with `apply` true it
+ * deletes exactly the listed rows in one transaction and logs `job.prune-runs`.
+ */
+export async function jobPruneRuns(ds: DataSource, keep: number, apply: boolean): Promise<{ jobs: Array<{ id: string; title: string; total: number; prune: number }>; deleted: number }> {
+  if (!Number.isInteger(keep) || keep < 1) throw new Error("--keep must be a whole number ≥ 1");
+  return runTx(ds, async (mgr) => {
+    const jobs = (await mgr.query(`SELECT id, title FROM jobs ORDER BY created`)) as any[];
+    const out: Array<{ id: string; title: string; total: number; prune: number }> = [];
+    const doomed: string[] = [];
+    for (const j of jobs) {
+      const runs = (await mgr.query(`SELECT id, rc, finished FROM runs WHERE job_id=? ORDER BY started DESC, id DESC`, [j.id])) as any[];
+      let streak = 0;
+      for (const r of runs) { if (r.finished && r.rc === 0) break; streak++; }
+      const protect = Math.max(keep, streak);
+      const prune = runs.slice(protect).map((r) => r.id);
+      if (prune.length) { out.push({ id: j.id, title: j.title, total: runs.length, prune: prune.length }); doomed.push(...prune); }
+    }
+    if (apply && doomed.length) {
+      for (let i = 0; i < doomed.length; i += 500) {
+        const chunk = doomed.slice(i, i + 500);
+        await mgr.query(`DELETE FROM runs WHERE id IN (${chunk.map(() => "?").join(",")})`, chunk);
+      }
+      await logEvent(mgr, "job.prune-runs", "job", "*", `deleted ${doomed.length} run(s) beyond the newest ${keep} per job`);
+    }
+    return { jobs: out, deleted: apply ? doomed.length : 0 };
+  });
+}
+
 // ================================================================ artifacts (versioned appends, batch 2)
 
 export async function artifactAdd(
@@ -1034,26 +1097,73 @@ export async function artifactAdd(
 
 // ================================================================ engineering artifacts (spec R12, 0.32)
 
-const TASK_STATUSES = ["todo", "doing", "done"] as const;
+export { TASK_STATUSES } from "./lifecycle";
+/** States `task todo|doing|done` (and the WebUI step / MCP advance) may set directly. */
+const TASK_STEPS = ["todo", "doing", "done"];
 
-/** Create a task artifact (kind=task, status machine in the meta envelope). */
-export async function taskAdd(ds: DataSource, projectId: string, title: string, note = ""): Promise<Record<string, any>> {
-  const r = await artifactAdd(ds, projectId, "task", title, note, "markdown", JSON.stringify({ status: "todo" }));
+/** Create a task artifact (kind=task). The meta envelope carries status, status_at and an optional owner (#220). */
+export async function taskAdd(ds: DataSource, projectId: string, title: string, note = "", owner = ""): Promise<Record<string, any>> {
+  const meta = { status: "todo", status_at: nowIso(), ...(owner ? { owner } : {}) };
+  const r = await artifactAdd(ds, projectId, "task", title, note, "markdown", JSON.stringify(meta));
   return r.row;
 }
 
-/** Move a task along its state machine (todo|doing|done); logs task.status. */
+/** Read a task row and its meta envelope inside a transaction; throws when missing. */
+async function taskRow(mgr: any, taskId: string): Promise<{ row: any; meta: any }> {
+  const rows = (await mgr.query(`SELECT * FROM artifacts WHERE id=? AND kind='task'`, [taskId])) as any[];
+  if (!rows.length) throw new Error(`task not found: ${taskId}`);
+  let meta: any = {};
+  try { meta = rows[0].meta ? JSON.parse(rows[0].meta) : {}; } catch { /* malformed → reset */ }
+  return { row: rows[0], meta };
+}
+
+/** Move a task along its state machine (todo|doing|done); logs task.status. Every change stamps status_at; done
+ *  stamps done_at; leaving done/cancelled (a reopen) clears done_at and cancel_reason, which describe that state. */
 export async function taskSetStatus(ds: DataSource, taskId: string, status: string): Promise<Record<string, any>> {
-  if (!(TASK_STATUSES as readonly string[]).includes(status)) throw new Error(`status must be one of ${TASK_STATUSES.join("|")}`);
+  if (status === "cancelled") throw new Error("cancelling needs a reason: task cancel <id> --reason \"<why>\"");
+  if (!TASK_STEPS.includes(status)) throw new Error(`status must be one of ${TASK_STEPS.join("|")}`);
   return runTx(ds, async (mgr) => {
-    const rows = (await mgr.query(`SELECT * FROM artifacts WHERE id=? AND kind='task'`, [taskId])) as any[];
-    if (!rows.length) throw new Error(`task not found: ${taskId}`);
-    let meta: any = {};
-    try { meta = rows[0].meta ? JSON.parse(rows[0].meta) : {}; } catch { /* malformed → reset */ }
+    const { row, meta } = await taskRow(mgr, taskId);
     const from = meta.status || "todo";
-    await mgr.query(`UPDATE artifacts SET meta=?, updated=? WHERE id=?`, [JSON.stringify({ ...meta, status }), nowIso(), taskId]);
-    await logEvent(mgr, "task.status", "task", taskId, `${from} → ${status}`, status === "done" ? "info" : "info");
-    return { id: taskId, title: rows[0].title, from, to: status };
+    // A cancelled task is closed: it comes back only through an explicit reopen (→ todo), never straight to work.
+    if (from === "cancelled" && status !== "todo") throw new Error(`task ${taskId} is cancelled — reopen it first: task reopen ${taskId}`);
+    // Same status again is a no-op (review of f509022): re-stamping status_at would hide a stale task from task stale.
+    if (from === status) return { id: taskId, title: row.title, from, to: status, status_at: meta.status_at || "", duplicate: true };
+    const now = nowIso();
+    const { done_at: _d, cancel_reason: _c, ...rest } = meta;
+    const next = { ...rest, status, status_at: now, ...(status === "done" ? { done_at: now } : {}) };
+    await mgr.query(`UPDATE artifacts SET meta=?, updated=? WHERE id=?`, [JSON.stringify(next), now, taskId]);
+    await logEvent(mgr, "task.status", "task", taskId, `${from} → ${status}`, "info");
+    return { id: taskId, title: row.title, from, to: status, status_at: now };
+  });
+}
+
+/** Close a task without doing it (#220): status cancelled with a required reason, instead of a fake done or an
+ *  open todo nobody will touch. Already cancelled → dup (reason unchanged). */
+export async function taskCancel(ds: DataSource, taskId: string, reason: string): Promise<Record<string, any>> {
+  if (!reason.trim()) throw new Error("task cancel needs --reason");
+  return runTx(ds, async (mgr) => {
+    const { row, meta } = await taskRow(mgr, taskId);
+    const from = meta.status || "todo";
+    if (from === "cancelled") return { id: taskId, title: row.title, from, to: "cancelled", cancel_reason: meta.cancel_reason, duplicate: true };
+    const now = nowIso();
+    const { done_at: _d, ...rest } = meta;
+    await mgr.query(`UPDATE artifacts SET meta=?, updated=? WHERE id=?`,
+      [JSON.stringify({ ...rest, status: "cancelled", status_at: now, cancel_reason: reason.trim() }), now, taskId]);
+    await logEvent(mgr, "task.status", "task", taskId, `${from} → cancelled: ${reason.trim()}`, "info");
+    return { id: taskId, title: row.title, from, to: "cancelled", cancel_reason: reason.trim(), status_at: now };
+  });
+}
+
+/** Set (or change) a task's owner (#220 T5). Same owner again → dup. */
+export async function taskAssign(ds: DataSource, taskId: string, owner: string): Promise<Record<string, any>> {
+  if (!owner.trim()) throw new Error("task assign needs an owner");
+  return runTx(ds, async (mgr) => {
+    const { row, meta } = await taskRow(mgr, taskId);
+    if (meta.owner === owner.trim()) return { id: taskId, title: row.title, owner: meta.owner, duplicate: true };
+    await mgr.query(`UPDATE artifacts SET meta=?, updated=? WHERE id=?`, [JSON.stringify({ ...meta, owner: owner.trim() }), nowIso(), taskId]);
+    await logEvent(mgr, "task.assign", "task", taskId, `${meta.owner || "—"} → ${owner.trim()}`, "info");
+    return { id: taskId, title: row.title, from: meta.owner || "", owner: owner.trim() };
   });
 }
 
