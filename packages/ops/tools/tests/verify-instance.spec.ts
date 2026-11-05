@@ -71,7 +71,8 @@ const latest = (over: Record<string, any> = {}) => ({
 
 describe("legacy latest.json bridge (#207)", () => {
   it("maps every target spelling onto <kind>:<ref>, preferring a GitHub upstream over a path", () => {
-    const origin = (dir: string) => (dir === "/w/ygl-trees" ? "git@github.com:NelsonLongxiang/ygl-trees.git" : "");
+    // Compare without the drive and with forward slashes: on Windows resolve("/w/x", "../ygl-trees") is D:\w\ygl-trees.
+    const origin = (dir: string) => (dir.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "") === "/w/ygl-trees" ? "git@github.com:NelsonLongxiang/ygl-trees.git" : "");
     expect(legacyTarget({ repo: "/w/ygl-trees" }, "", origin)).toBe("git:NelsonLongxiang/ygl-trees");
     expect(legacyTarget({ repo: "../ygl-trees" }, "/w/ygl-design-verifier", origin)).toBe("git:NelsonLongxiang/ygl-trees");
     expect(legacyTarget({ repo: "../ygl-trees", repo_url: "https://github.com/O/R.git" })).toBe("git:O/R");
@@ -114,7 +115,11 @@ describe("scope tiers (#213)", () => {
     expect(scopeOf("pack", "ygl-v-core-aggregate", "git:o/r")).toBe("global");
     expect(scopeOf("pack", "@acme/ygl-v-x", "sqlite:/x")).toBe("acme");
     expect(scopeOf("legacy-repo", "ygl-webui-verifier", "git:NelsonLongxiang/ygl-trees")).toBe("ygl-trees");
-    expect(scopeOf("legacy-repo", "v", "path:/srv/x")).toBe("unscoped");
+    expect(scopeOf("legacy-repo", "v", "path:/srv/x")).toBe("(none)");
+    // a repository may really be called "unscoped": it is a project like any other (review of 0f9b818)
+    expect(scopeOf("legacy-repo", "v", legacyTarget({ repo: "owner/unscoped" }))).toBe("unscoped");
+    // owner/. and owner/.. normalize to git: targets that name no repository: no scope, so import-latest refuses them.
+    for (const repo of ["owner/.", "owner/..", "https://github.com/o/.."]) expect(scopeOf("legacy-repo", "v", legacyTarget({ repo })), repo).toBe("(none)");
     expect(instancePreflight(["list"], { scope: true })).toMatch(/--scope needs a value/);
     // A git target that names no repository is refused for every pack, never treated as "no scope to check" (review on 273f140).
     for (const target of ["git:/", "git:////", "git:o/..", "git:./"])
@@ -262,8 +267,21 @@ describe.skipIf(!existsSync(BIN))("verify instance CLI (real bundle)", () => {
     writeFileSync(local, JSON.stringify(latest({ repo: dir, root_run_id: "run_cccccccccccccccc", target: { repo: join(dir, "no-remote"), rev: "main", sha: "abc" } })));
     const orphan = cli(["verify", "instance", "import-latest", local, "--owner", "x"]);
     expect(orphan.rc).toBe(1);
-    expect(orphan.json.error).toMatch(/no GitHub upstream, so it cannot be attributed to a project/);
+    expect(orphan.json.error).toMatch(/names no GitHub project, so it cannot be attributed to one/);
+    for (const repo of ["owner/.", "owner/.."]) {
+      const dotted = join(dir, `dotted-${repo.length}.json`);
+      writeFileSync(dotted, JSON.stringify(latest({ repo: dir, root_run_id: `run_dddddddddddddd${repo.length}0`, target: { repo, rev: "main", sha: "abc" } })));
+      const r = cli(["verify", "instance", "import-latest", dotted, "--owner", "x"]);
+      expect(r.rc, repo).toBe(1);
+      expect(r.json.error).toMatch(/names no GitHub project/);
+    }
     expect(cli(["db", "stats"]).json).toMatchObject({ verifier_instances: before.verifier_instances, verifier_runs: before.verifier_runs });
     expect(before.verifier_runs).toBe(2);
+    // positive control (review of 0f9b818): a repository really named "unscoped" is a project and imports
+    const named = join(dir, "named-unscoped.json");
+    writeFileSync(named, JSON.stringify(latest({ repo: dir, root_run_id: "run_eeeeeeeeeeeeeeee", target: { repo: "owner/unscoped", rev: "main", sha: "abc" } })));
+    const ok = cli(["verify", "instance", "import-latest", named, "--owner", "x"]);
+    expect(ok.rc, ok.text).toBe(0);
+    expect(ok.json.instance).toMatchObject({ scope: "unscoped", binding: { target: "git:owner/unscoped" } });
   });
 });
