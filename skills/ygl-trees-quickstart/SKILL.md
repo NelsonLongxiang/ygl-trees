@@ -53,7 +53,7 @@ MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排�
 | `db init / export / sync / migrate` | 工作区生命周期管理——部署者操作，非 agent 面 |
 | `plugin install / enable / disable` | 代码执行面——插件可跑任意 JS |
 | `config set / reset` | 系统配置变更——影响引擎行为 |
-| `job add / rm / tick` | 调度器管理——可触发任意已注册 job |
+| `job add / retire / tick` | 调度器管理——可触发任意已注册 job（退役不删行；`job show` 看健康） |
 | `patrol add / rm` | 巡检管理——同上 |
 | `webui serve` | 长驻进程——MCP 工具调用是短生命周期 |
 
@@ -142,7 +142,7 @@ ygl-trees llms --json              # 结构化 JSON
 ## 2b. 运维命令速查
 
 ```bash
-ygl-trees doctor           # 健康检查（0.118.0 共 16 项，含锁 pid 存活、幻影写入对账；--json 看全部项名）
+ygl-trees doctor           # 健康检查（共 18 项，含任务卫生 task_hygiene 与作业健康 job_health、锁 pid 存活、幻影写入对账；--json 看全部项名）
 ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁 + 幻影事件标记 reconciled；活 holder 不动）
 ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 回显其命令行并拒绝，--force 强清）
 ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
@@ -177,11 +177,14 @@ PG 迁移预检：`db migrate pg` 前自动逐表扫描 INTEGER 列类型——�
 ## 3. 健康检查与任务
 
 ```bash
-ygl-trees doctor                     # 16 项健康检查（schema/索引/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入/技能版本…）
+ygl-trees doctor                     # 18 项健康检查（schema/索引/任务卫生/作业健康/FTS/重复/孤儿/config/锁存活/eval信封/插件/幻影写入/技能版本…）
 ygl-trees task add "<标题>"           # 建任务（todo 起步）
 ygl-trees task add "验证 X" --node <tree>/<key>   # 建任务并挂树节点（tracked-by，0.81）
 ygl-trees task list                  # 按状态分组
-ygl-trees task done <id>             # 勾销（全程留痕）
+ygl-trees task done <id>             # 勾销（全程留痕；记 done_at）
+ygl-trees task cancel <id> --reason "被取代"   # 不做了就取消（必须写原因；task reopen <id> 捡回）
+ygl-trees task stale --all           # 停滞的 doing / 挂账的 todo（#220）
+ygl-trees job show <id>              # 作业健康：连续失败、最近错误、下次到期
 ```
 
 ## 4. 关联织物（把研究资产挂到树节点）

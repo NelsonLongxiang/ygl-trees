@@ -1,8 +1,13 @@
 /** 0.114.4 F1/F3 (fdc757f6 2026-10-22): a schedule-shaped token left inside the
  *  command string (e.g. `--every 1440 --json` — the suffix token defeats the
- *  end-of-string tail pull) must not register a silent manual job. Warn, do not
- *  reject: the command face is generic and may legitimately own a same-named
- *  flag. The usage line also puts the flags BEFORE the `--` separator. */
+ *  end-of-string tail pull) must not register a silent manual job. The usage
+ *  line also puts the flags BEFORE the `--` separator.
+ *
+ *  #220 (2026-11-05) closes the shape for good: a job with no schedule is refused
+ *  (rc2, nothing written) unless `--manual` declares it — the audited bad row
+ *  0b88263172 (every=0) was exactly this shape. With `--manual` the leftover
+ *  token still only warns: the command may own a same-named flag. Cadences below
+ *  job.min_every_minutes (60) need `--allow-frequent`. */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -39,8 +44,12 @@ describe.skipIf(!HAS_BIN)("job add schedule-shaped token tripwire (0.114.4)", ()
   });
   afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
-  it("suffix token defeats the tail pull → manual registration + JSON diagnostics (warn, rc=0)", () => {
-    const r = run(["job", "add", "suffix-token", "--json", "--", "echo hi --every 5 --json"]);
+  it("suffix token defeats the tail pull → refused unless --manual (#220); with --manual: registration + JSON diagnostics", () => {
+    const refused = run(["job", "add", "suffix-token", "--json", "--", "echo hi --every 5 --json"]);
+    expect(refused.rc).toBe(2);
+    expect(json(refused).error).toMatch(/needs a schedule[\s\S]*schedule-shaped token is still inside the command/);
+    expect(json(run(["job", "list", "--json"])).some((x: any) => x.title === "suffix-token")).toBe(false);
+    const r = run(["job", "add", "suffix-token", "--json", "--manual", "--", "echo hi --every 5 --json"]);
     expect(r.rc).toBe(0);
     const j = json(r);
     expect(j).not.toBeNull();
@@ -52,16 +61,20 @@ describe.skipIf(!HAS_BIN)("job add schedule-shaped token tripwire (0.114.4)", ()
     expect(String(j.diagnostics[0])).toMatch(/--every/);
   });
 
-  it("human face: the tripwire is a stderr warning line, job still registered", () => {
-    const r = run(["job", "add", "suffix-token-human", "--", "echo hi --at 2026-12-01 --json"]);
+  it("human face: refused without --manual; with it the tripwire is a stderr warning line and the job registers", () => {
+    expect(run(["job", "add", "suffix-token-human", "--", "echo hi --at 2026-12-01 --json"]).rc).toBe(2);
+    const r = run(["job", "add", "suffix-token-human", "--manual", "--", "echo hi --at 2026-12-01 --json"]);
     expect(r.rc).toBe(0);
     expect(r.err).toMatch(/schedule 形 token 残留命令串内/);
     expect(r.err).toMatch(/manual\(every=0\)/);
     expect(r.out).toMatch(/job registered/);
   });
 
-  it("flags before `--` take the flag path: real schedule, no warning", () => {
-    const r = run(["job", "add", "leading-flags", "--json", "--every", "5", "--", "echo hi"]);
+  it("flags before `--` take the flag path: real schedule, no warning (every 5 needs --allow-frequent, #220)", () => {
+    const slow = run(["job", "add", "leading-flags", "--json", "--every", "5", "--", "echo hi"]);
+    expect(slow.rc).toBe(2);
+    expect(json(slow).error).toMatch(/below job\.min_every_minutes \(60\)/);
+    const r = run(["job", "add", "leading-flags", "--json", "--every", "5", "--allow-frequent", "--", "echo hi"]);
     expect(r.rc).toBe(0);
     const j = json(r);
     expect(j.every_minutes).toBe(5);
@@ -69,7 +82,8 @@ describe.skipIf(!HAS_BIN)("job add schedule-shaped token tripwire (0.114.4)", ()
   });
 
   it("legacy tail pull is still a compatibility face (clean command, real schedule)", () => {
-    const r = run(["job", "add", "tail-pull", "--json", "--", "echo hi --every 7"]);
+    expect(run(["job", "add", "tail-pull", "--json", "--", "echo hi --every 7"]).rc).toBe(2);
+    const r = run(["job", "add", "tail-pull", "--json", "--allow-frequent", "--", "echo hi --every 7"]);
     expect(r.rc).toBe(0);
     const j = json(r);
     expect(j.every_minutes).toBe(7);

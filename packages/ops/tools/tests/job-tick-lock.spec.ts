@@ -36,7 +36,7 @@ afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retr
 
 describe("job run/tick 不再长持写锁（GitHub issue #6 ②）", () => {
   it("a slow job run does not block ordinary CLI commands", async () => {
-    const added = run(["job", "add", "slow", "--", process.execPath, "-e", "setTimeout(()=>{},2500)"]);
+    const added = run(["job", "add", "slow", "--manual", "--", process.execPath, "-e", "setTimeout(()=>{},2500)"]);
     expect(added.rc).toBe(0);
     const list = JSON.parse(run(["job", "list", "--json"]).stdout) as Array<{ id: string; title: string }>;
     const slow = list.find((j) => j.title === "slow");

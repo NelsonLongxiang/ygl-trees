@@ -59,15 +59,29 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | 需要**可交付结论** | `produce outline` → `section` → `report`（或 `export` 落盘） |
 | 需要**固化需求/设计** | `produce spec`；设计用 `produce design --design-type ui-ux|arch|decision` |
 | 出现**可复用知识**（换任务还有用） | `kb add` / `kb ingest <artifactId>`；成模式再 `kb promote <noteId> --name <skill>` 成 skill |
-| 出现**行动项** | `task add "<title>"` → `task doing <id>` → `task done <id>`（不建 task 的"待办"只活在本轮上下文） |
+| 出现**行动项** | `task add "<title>" --owner <谁>` → `task doing <id>` → `task done <id>`（不建 task 的"待办"只活在本轮上下文；负责人进字段，不写进标题） |
+| 任务**做完了** | `task done <id>` 同轮 `rel add task:<id> <产出/证据>`——done 却没有任何关联，doctor `task_hygiene` 会点名 |
+| 一件事**不做了**（换方案、被取代、放弃） | `task cancel <id> --reason "<为什么>"`——不要硬标 done，也不要留在 todo 挂账；要捡回来用 `task reopen <id>` |
+| 任务**换人** | `task assign <id> <owner>` |
 | 资产与树节点**有关系了** | `rel add node:<key> <type>:<ref> --rel <词>`（词汇表与"何时挂"决策树见 relating 技能） |
+
+## 2b. 事件 → 动作触发表（作业 job，#220）
+
+| 触发事件 | 立刻做 |
+|---|---|
+| 新增周期作业 | `job add <title> --every <min> -- <cmd>`；确实没有调度就显式 `--manual`；每小时以内要 `--allow-frequent`（默认下限 60 分钟） |
+| 作业**升级**（换命令、换版本） | `job add <新> --every <min> --replaces <旧> -- <cmd>`：同一步退役旧的（同族新登记不带 `--replaces` 会被拒，确实要并存才用 `--force`） |
+| doctor `job_health` 报 failing / suspended | `job show <id>` 看 `last_error` → 修命令后 `job enable <id>` 重新上岗，或 `job retire <id> --reason …`；tick 连续失败 3 次会自动暂停（suspended），别让它一直红着 |
+| 一次性作业 | `--at "YYYY-MM-DD HH:MM"`；跑完自动 done + 停用，无需手动收 |
+| 运行记录堆积 | `job prune-runs --keep 50` 先看清单（默认只列不删），确认后加 `--apply` |
 
 ## 3. 节奏纪律（cadence）
 
 | 时机 | 必做 |
 |---|---|
 | **每轮会话开场** | `agent brief`（我在哪、有什么、下一步）→ 有 `next_actions` 就照做 |
-| **每轮会话收口前** | `doctor`（0.118.0 共 16 项检查）；有脏索引/重复/孤儿按其提示修（`doctor --fix` 可安全修脏索引） |
+| **每轮会话收口前** | `doctor`（共 18 项检查，含 `task_hygiene` / `job_health`）；有脏索引/重复/孤儿按其提示修（`doctor --fix` 可安全修脏索引） |
+| **每周**（或巡检时） | `task stale --all`：停滞的 doing（默认 ≥14 天）推进或取消，挂账的 todo（≥30 天）认领或取消；`job list` 里 failing / overdue / manual 逐条有处置 |
 | **加删节点/删边/改条件后**（同一轮内） | `node index` + `node validate`——别把脏索引留给下一轮 |
 | **解锁任何节点后** | 同轮 `rel` 挂依据；否则验尸时无法回答"凭什么解锁" |
 | **claim 状态变化后** | 建议 `produce report` 重生成（报告是状态的投影，不是手写副本） |
@@ -84,7 +98,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 4. **改完索引还干净吗？** 不确定就跑 `node index && node validate`（或看 `tree list` 的 dirty 列）。
 5. **这属于"我在想"还是"已发生"？** 前者写 `--note`/`payload`，后者才 `unlock`/`resolve`/`done`。
 
-## 5. 反模式（漂移的六种长相）
+## 5. 反模式（漂移的七种长相）
 
 1. **心内解锁**：能力做完了但不 `node unlock`，下次会话看树仍以为没做到 → 重复劳动或误判前置。
 2. **裸节点**：`node add` 后从不挂 `evidence`/`claim` → 树退化成一厢情愿的愿望清单。
@@ -93,6 +107,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 4. **先删后建**：重构节点时不保留中间态 → 树出现断裂空洞，漂移期内的判断无法回溯。
 5. **状态在正文里**：把"已完成/已验证"写进 `--note` 而不是 `unlock`/`resolve` → 机器读不到，投影（报告/仪表盘）全失真。
 6. **研究资产不挂树**：evidence/claim/kb 散落在研究侧，树侧只有节点名 → 两条流水线各自演进，`rel` 就是为了防这个。
+7. **只开不关**：task 只增不收（doing 停一个月、todo 挂账、放弃的任务假装 done）；job 只加不退（升级一次多一份、失败了没人看）→ doctor 看起来全绿，清单却早已失真。用 `task cancel` / `job retire` 收口，`task stale` / `job_health` 盯住。
 
 ## 6. 与专职技能的分工
 

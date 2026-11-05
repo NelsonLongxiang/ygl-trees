@@ -507,10 +507,11 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         (async () => {
           try {
             if (overflow) throw new Error("request body too large");
-            const { id, status } = JSON.parse(body || "{}");
-            if (!id || !["todo", "doing", "done"].includes(String(status))) {
+            const { id, status, reason } = JSON.parse(body || "{}");
+            const cancelling = String(status) === "cancelled";
+            if (!id || !["todo", "doing", "done", "cancelled"].includes(String(status)) || (cancelling && !(typeof reason === "string" && reason.trim()))) {
               res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
-              res.end('usage: POST /api/task {"id":"<task id>","status":"todo|doing|done"}');
+              res.end('usage: POST /api/task {"id":"<task id>","status":"todo|doing|done"} or {"id":"<task id>","status":"cancelled","reason":"<why>"}');
               return;
             }
             const row = env.db.get(
@@ -535,6 +536,26 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             } catch { /* keep todo fallback */ }
             const FORWARD: Record<string, string> = { todo: "doing", doing: "done", done: "done" };
             const requested = String(status);
+            // #220 item 2: the HTTP face cancels like the CLI — a reason is required; cancelling twice is idempotent.
+            if (cancelling) {
+              if (currentStatus === "cancelled") {
+                res.writeHead(200, { "content-type": "application/json" });
+                res.end(JSON.stringify({ id: String(id), from: currentStatus, to: currentStatus, idempotent: true }));
+                return;
+              }
+              const ds = await getOrm(env.db.path);
+              const { taskCancel } = await import("../../../research/pipeline/src/writes");
+              const r = await taskCancel(ds, String(id), String(reason));
+              res.writeHead(200, { "content-type": "application/json" });
+              res.end(JSON.stringify(r));
+              return;
+            }
+            // #220: cancelled is closed — the dashboard cannot step it; reopening is a CLI act (task reopen <id>).
+            if (currentStatus === "cancelled") {
+              res.writeHead(409, { "content-type": "application/json" });
+              res.end(JSON.stringify({ error: `task ${id} is cancelled; reopen it with: ygl-trees task reopen ${id}`, current_status: currentStatus, expected_next: null }));
+              return;
+            }
             if (requested === currentStatus) {
               // #70: TRUE idempotent — same status means no state change, no
               // write, no event. Return the current row as-is.
