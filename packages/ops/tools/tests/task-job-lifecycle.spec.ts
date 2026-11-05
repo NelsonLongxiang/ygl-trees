@@ -254,6 +254,23 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(cli(["job", "list"]).json.find((j: any) => j.title === "巡检A")).toMatchObject({ status: "retired", enabled: 0 });
   });
 
+  it("streak and last_ok come from the whole history: one old success, then 30 failures (review of f45596b)", () => {
+    cli(["job", "add", "old-ok", "--every", "1440", "--", "echo x"]);
+    const id = cli(["job", "list"]).json.find((j: any) => j.title === "old-ok").id;
+    const okAt = "2026-10-01T00:00:00.000Z";
+    const fails = Array.from({ length: 30 }, (_, i) => `('oo-${i}','${id}','${ago(30 - i)}','${ago(30 - i)}',1,'fail ${i}')`).join(",");
+    sql(`INSERT INTO runs(id,job_id,started,finished,rc,output) VALUES ('oo-ok','${id}','${okAt}','${okAt}',0,'ok'),${fails}`);
+    sql(`UPDATE jobs SET status='failed', runs=31, last_run='${ago(1)}' WHERE id='${id}'`);
+    expect(cli(["config", "set", "job.failing_runs", "25"]).rc).toBe(0);
+    try {
+      expect(cli(["job", "list"]).json.find((j: any) => j.id === id)).toMatchObject({ consecutive_failures: 30, last_ok: okAt, last_error: "fail 29", health: "failing" });
+      expect(cli(["job", "show", id]).json.recent_runs).toHaveLength(10);
+    } finally {
+      cli(["config", "reset", "job.failing_runs"]);
+      cli(["job", "retire", id, "--reason", "test fixture"]);
+    }
+  });
+
   it("the failing streak is counted past 20 when job.failing_runs is higher (review of f509022)", () => {
     cli(["job", "add", "long-red", "--every", "1440", "--", "echo x"]);
     const id = cli(["job", "list"]).json.find((j: any) => j.title === "long-red").id;

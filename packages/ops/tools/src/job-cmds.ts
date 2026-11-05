@@ -8,10 +8,30 @@ import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
-import { jobFamilyStem, jobHealth, JobRunRow } from "../../../research/pipeline/src/lifecycle";
+import { jobFamilyStem, jobHealth, JobRunFacts, JobRunRow } from "../../../research/pipeline/src/lifecycle";
 
 const JOB_USAGE = 'usage: job add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] -- <command> | ' +
   "list | show <id|title> | run <id|title> | tick | enable|disable <id> | retire <id|title> --reason <why> | prune-runs [--keep N] [--apply] | logs";
+
+/**
+ * Whole-history run facts per job (review of f45596b): the failing streak (finished failures after the newest
+ * success), the newest success time and the newest failure's output, aggregated in SQL so no run window can cut them.
+ */
+function runFacts(env: Env): Map<string, JobRunFacts> {
+  const facts = new Map<string, JobRunFacts>();
+  const get = (id: string) => facts.get(id) ?? (facts.set(id, { streak: 0, last_ok: "", last_error: "" }), facts.get(id)!);
+  const lastOk = env.db.all(`SELECT job_id, max(started) AS ok_started, max(COALESCE(NULLIF(finished,''), started)) AS last_ok
+    FROM runs WHERE finished != '' AND rc = 0 GROUP BY job_id`) as any[];
+  for (const r of lastOk) get(r.job_id).last_ok = r.last_ok;
+  const streaks = env.db.all(`SELECT r.job_id, count(*) AS n FROM runs r
+    LEFT JOIN (SELECT job_id, max(started) AS ok FROM runs WHERE finished != '' AND rc = 0 GROUP BY job_id) o ON o.job_id = r.job_id
+    WHERE r.finished != '' AND r.rc != 0 AND (o.ok IS NULL OR r.started > o.ok) GROUP BY r.job_id`) as any[];
+  for (const r of streaks) get(r.job_id).streak = Number(r.n);
+  const errors = env.db.all(`SELECT r.job_id, r.rc, r.output FROM runs r WHERE r.finished != '' AND r.rc != 0 AND r.id = (
+    SELECT r2.id FROM runs r2 WHERE r2.job_id = r.job_id AND r2.finished != '' AND r2.rc != 0 ORDER BY r2.started DESC, r2.id DESC LIMIT 1)`) as any[];
+  for (const r of errors) get(r.job_id).last_error = String(r.output || `rc=${r.rc}`);
+  return facts;
+}
 
 /** Each job's newest runs (newest first), for health. One query, grouped in memory. */
 function runsByJob(env: Env, perJob = 20): Map<string, JobRunRow[]> {
@@ -32,13 +52,14 @@ export function lastActor(env: Env, entityId: string): string {
 /** Job rows as `job list --json` / `job show` expose them (#220): the stored row, its command, and derived health. */
 export function jobViews(env: Env): Array<Record<string, any>> {
   const failing = configGetNumber(env.db, "job.failing_runs");
-  // the streak can only be counted as far as the window reaches: never narrower than the threshold (review of f509022)
+  // health reads whole-history facts (streak, last_ok, last_error) from SQL; the run window is only a fallback
   const runs = runsByJob(env, Math.max(20, failing + 1));
+  const facts = runFacts(env);
   const now = Date.now();
   return (env.db.all("SELECT * FROM jobs ORDER BY created") as any[]).map((j) => ({
     id: j.id, title: j.title, command: j.command, every: j.every_minutes, at: j.at, enabled: j.enabled, runs: j.runs,
     last_run: j.last_run, status: j.status, created: j.created,
-    ...jobHealth(j, runs.get(j.id) ?? [], now, failing),
+    ...jobHealth(j, runs.get(j.id) ?? [], now, failing, facts.get(j.id) ?? { streak: 0, last_ok: "", last_error: "" }),
   }));
 }
 

@@ -90,21 +90,26 @@ const parseTime = (s: string) => Date.parse(String(s || "").replace(" ", "T"));
  * never-ran, manual or overdue. `job enable` re-arms a suspended job (status pending), so its old streak is not
  * failing again until a new run fails.
  */
-export function jobHealth(job: any, runs: JobRunRow[], nowMs: number, failingRuns = 3): JobHealth {
+/** Whole-history facts for one job, aggregated by the caller in SQL so no run window can truncate them. */
+export interface JobRunFacts { streak: number; last_ok: string; last_error: string }
+
+export function jobHealth(job: any, runs: JobRunRow[], nowMs: number, failingRuns = 3, facts?: JobRunFacts): JobHealth {
   const finished = runs.filter((r) => r.rc !== null && r.rc !== undefined);
   let streak = 0;
   for (const r of finished) { if (r.rc === 0) break; streak++; }
   const ok = finished.find((r) => r.rc === 0);
   const err = finished.find((r) => r.rc !== 0);
+  if (facts) streak = facts.streak;
   const every = Number(job.every_minutes ?? job.every ?? 0);
   const last = parseTime(job.last_run);
   let nextDue = "";
   if (every > 0) nextDue = Number.isFinite(last) ? iso(last + every * 60_000) : "now";
   else if (job.at && !job.last_run) nextDue = job.at;
+  const errText = facts ? facts.last_error : err ? String(err.output || `rc=${err.rc}`) : "";
   const base = {
     consecutive_failures: streak,
-    last_ok: ok ? ok.finished || ok.started : "",
-    last_error: err ? String(err.output || `rc=${err.rc}`).replace(/\s+/g, " ").trim().slice(0, 200) : "",
+    last_ok: facts ? facts.last_ok : ok ? ok.finished || ok.started : "",
+    last_error: errText.replace(/\s+/g, " ").trim().slice(0, 200),
     next_due: nextDue,
   };
   const health = ((): JobHealthState => {
