@@ -271,6 +271,28 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     }
   });
 
+  it("ties on started are split by id exactly as job show orders runs (review of 008acc4)", () => {
+    const at = "2026-11-05T00:00:00.000Z";
+    const mk = (title: string, rows: Array<[string, number | null]>) => {
+      cli(["job", "add", title, "--every", "1440", "--", "echo x"]);
+      const id = cli(["job", "list"]).json.find((j: any) => j.title === title).id;
+      sql(`INSERT INTO runs(id,job_id,started,finished,rc,output) VALUES ${rows.map(([rid, rc]) => `('${title}-${rid}','${id}','${at}','${rc === null ? "" : at}',${rc === null ? "NULL" : rc},'${rid}')`).join(",")}`);
+      sql(`UPDATE jobs SET status='failed', runs=${rows.length}, last_run='${at}' WHERE id='${id}'`);
+      return id;
+    };
+    const pick = (id: string) => cli(["job", "list"]).json.find((j: any) => j.id === id);
+    const tie = mk("tie", [["300-fail", 1], ["200-fail", 1], ["100-fail", 1], ["000-ok", 0]]);
+    expect(cli(["job", "show", tie]).json.recent_runs.map((r: any) => r.output)).toEqual(["300-fail", "200-fail", "100-fail", "000-ok"]);
+    expect(pick(tie)).toMatchObject({ consecutive_failures: 3, health: "failing", last_ok: at, last_error: "300-fail" });
+    const allFail = mk("allfail", [["b", 1], ["a", 1]]);
+    expect(pick(allFail)).toMatchObject({ consecutive_failures: 2, last_ok: "" });
+    const allOk = mk("allok", [["b", 0], ["a", 0]]);
+    expect(pick(allOk)).toMatchObject({ consecutive_failures: 0, last_error: "" });
+    const open = mk("unfinished", [["z", null], ["b", 1], ["a", 0]]); // an unfinished run never counts as a failure
+    expect(pick(open)).toMatchObject({ consecutive_failures: 1 });
+    for (const id of [tie, allFail, allOk, open]) cli(["job", "retire", id, "--reason", "test fixture"]);
+  });
+
   it("the failing streak is counted past 20 when job.failing_runs is higher (review of f509022)", () => {
     cli(["job", "add", "long-red", "--every", "1440", "--", "echo x"]);
     const id = cli(["job", "list"]).json.find((j: any) => j.title === "long-red").id;
