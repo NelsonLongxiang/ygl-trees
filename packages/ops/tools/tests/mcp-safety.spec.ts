@@ -14,9 +14,21 @@ const childInvocations:ChildRec[]=[];let requestSeq=0;const childOutput:string[]
 function boot(args:string[],session="startup"){const r=spawnSync(process.execPath,[BIN,...args,"--json"],{cwd:ROOT,encoding:"utf8",env:{...process.env,YGL_HOME:home,YGL_DB_URL:"",YGL_SESSION:session,YGL_NO_UPDATE_CHECK:"1"},timeout:60000});expect(r.status,r.stdout+r.stderr).toBe(0);return JSON.parse(r.stdout);}
 // #223: a timeout names the request (sequence number, tool, arguments with secrets masked) and every CLI child of this
 // test: argv tail, spawn/error/exit/close offsets, stdout/stderr bytes and whether it was still alive at the timeout
-const mask=(v:unknown)=>JSON.stringify(v??{}).replace(/("[^"]*(?:passw(?:or)?d|token|secret|api[_-]?key|credential)[^"]*"\s*:\s*)"[^"]*"/gi,'$1"***"');
+// Redaction (836c6ee review P2): mask by key before serialising, mask flag/value pairs and --k=v in argv, and pass the
+// child output through the same rules (quoted JSON values with escapes, k=v / k: v, Bearer/Basic, URL credentials).
+const SECRET=/passw(?:or)?d|token|secret|api[_-]?key|credential|authorization/i;
+function redact(v:unknown):unknown{if(Array.isArray(v))return v.map(redact);if(v&&typeof v==="object")return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,SECRET.test(k)?"***":redact(x)]));return v;}
+const mask=(v:unknown)=>JSON.stringify(redact(v??{}));
+function redactArgv(argv:string[]){const out:string[]=[];for(let i=0;i<argv.length;i++){const a=argv[i];const kv=/^(-{1,2}[^=]+)=([\s\S]*)$/.exec(a);if(kv&&SECRET.test(kv[1])){out.push(kv[1]+"=***");continue;}out.push(a);if(/^-{1,2}[A-Za-z]/.test(a)&&SECRET.test(a)&&i+1<argv.length){out.push("***");i++;}}return out;}
+const JSON_VALUE=String.raw`"(?:[^"\\]|\\.)*"|\[[^\]]*\]|\{[^}]*\}|[^,}\]\s]+`;
+function redactText(t:string){return t
+  // only secret-named keys are matched, so a non-secret key never swallows a nested object that holds one
+  .replace(new RegExp(String.raw`("(?:[^"\\]|\\.)*(?:${SECRET.source})(?:[^"\\]|\\.)*"\s*:\s*)(?:${JSON_VALUE})`,"gi"),'$1"***"')
+  .replace(/\b([\w.-]*(?:passw(?:or)?d|token|secret|api[_-]?key|credential)[\w.-]*\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s"',}]+)/gi,"$1***")
+  .replace(/\b(Bearer|Basic)\s+[\w~+/.=-]+/gi,"$1 ***")
+  .replace(/(\/\/[^/\s:@]+:)[^@\s/]+@/g,"$1***@");}
 const at=(t:number|undefined,t0:number)=>t===undefined?"-":`+${t-t0}ms`;
-function timeoutDiag(body:any,seq:number,t0:number){const p=body?.params;return ` after ${Date.now()-t0}ms — request #${seq} ${p?.name??body?.method} ${mask(p?.arguments)}; children: ${childInvocations.map(c=>`[${c.argv.slice(-4).map(a=>/passw(?:or)?d|token|secret|api[_-]?key|credential/i.test(a)?"***":a).join(" ")} pid=${c.child?.pid??"-"} start ${at(c.start,t0)} spawn ${at(c.spawned,t0)} exit ${at(c.exited,t0)}${c.exit?` (${c.exit})`:""} close ${at(c.closed,t0)}${c.error?` error ${c.error}`:""} out ${c.out}B err ${c.err}B ${c.closed!==undefined?"closed":c.child&&c.child.exitCode===null&&c.child.signalCode===null?"ALIVE":"exited, streams open"}]`).join(" ")||"none spawned"}; output tail: ${JSON.stringify(childOutput.join("").slice(-400))}`;}
+function timeoutDiag(body:any,seq:number,t0:number){const p=body?.params;return ` after ${Date.now()-t0}ms — request #${seq} ${p?.name??body?.method} ${mask(p?.arguments)}; children: ${childInvocations.map(c=>`[${redactArgv(c.argv).slice(-4).join(" ")} pid=${c.child?.pid??"-"} start ${at(c.start,t0)} spawn ${at(c.spawned,t0)} exit ${at(c.exited,t0)}${c.exit?` (${c.exit})`:""} close ${at(c.closed,t0)}${c.error?` error ${c.error}`:""} out ${c.out}B err ${c.err}B ${c.closed!==undefined?"closed":c.child&&c.child.exitCode===null&&c.child.signalCode===null?"ALIVE":"exited, streams open"}]`).join(" ")||"none spawned"}; output tail: ${JSON.stringify(redactText(childOutput.join("")).slice(-400))}`;}
 function request(body:unknown,session?:string){return new Promise<any>((resolve,reject)=>{const data=JSON.stringify(body);const t0=Date.now(),seq=++requestSeq;const req=http.request({host:"127.0.0.1",port,path:"/mcp",method:"POST",headers:{"content-type":"application/json",...(session?{"x-ygl-session":session}:{})}},res=>{let out="";res.on("data",d=>out+=d);res.on("end",()=>{try{resolve(JSON.parse(out));}catch(e){reject(e);}});});req.on("error",reject);req.setTimeout(15000,()=>req.destroy(new Error("MCP request timeout"+timeoutDiag(body,seq,t0))));req.end(data);});}
 async function call(tool:string,args:Record<string,unknown>,session?:string){const r=await request({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:tool,arguments:args}},session);expect(r.error,JSON.stringify(r)).toBeUndefined();return r.result;}
 async function good(tool:string,args:Record<string,unknown>,session?:string){const r=await call(tool,args,session);expect(r.isError,JSON.stringify(r)).toBeFalsy();return JSON.parse(r.content[0].text);}
@@ -34,6 +46,15 @@ describe("#119 MCP argv and request-session safety",()=>{
  },120000);
  beforeEach(()=>{environment.YGL_SESSION="startup";writes.length=0;childInvocations.length=0;childOutput.length=0;});
  afterAll(async()=>{if(server){await new Promise<void>(r=>{server.close(()=>r());server.closeAllConnections();});}spawnSpy?.mockRestore();if(oldEnv)process.env=oldEnv;if(oldArgv)process.argv[1]=oldArgv;if(home)rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
+ it("#223 timeout diagnostics mask secrets in arguments, argv and child output, and keep everything else",()=>{
+  const S="SYNTHETIC_ONLY_VALUE_836C";
+  const args=mask({password:`pre"${S}`,api_key:123,token:[S],nested:{db_token:{v:S},list:[{Secret:S}]},key:"ctx-node",tree:"gates",count:2});
+  expect(args).not.toContain(S);expect(args).not.toContain("123");expect(args).toContain('"key":"ctx-node"');expect(args).toContain('"tree":"gates"');expect(args).toContain('"count":2');
+  const argv=redactArgv(["kb","add","--token",S,`--api-key=${S}`,"--title","ok-title","--secret"]);
+  expect(argv).toEqual(["kb","add","--token","***","--api-key=***","--title","ok-title","--secret"]);
+  const out=redactText(`{"ok":1,"token":"a\\"${S}","note":"keep-me","password":["${S}"],"x":{"secret":{"v":"${S}"}},"n":7} PGPASSWORD=${S} api_key: '${S}' Authorization: Bearer ${S} postgres://u:${S}@h/db`);
+  expect(out).not.toContain(S);for(const kept of ['"ok":1','"note":"keep-me"','"n":7',"postgres://u:***@h/db"])expect(out).toContain(kept);
+ });
  it("kb add routes title+body and title+file to successful CLI writes",async()=>{
   const r=await good("write",{domain:"kb",action:"add",name:"MCP body",body:"body text"});expect(r).toMatchObject({title:"MCP body",body:"body text",verified:true});
   const file=join(home,"note.md");writeFileSync(file,"file text");expect(await good("write",{domain:"kb",action:"add",name:"MCP file",file})).toMatchObject({title:"MCP file",body:"file text"});
