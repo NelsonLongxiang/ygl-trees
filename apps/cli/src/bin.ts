@@ -222,10 +222,12 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   promote <noteId> [--name]  turn a note into a reusable skill
 
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
-  add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--force] -- <command>   options before --
-                             a schedule (or --manual) is required; --every below job.min_every_minutes (60) needs --allow-frequent
-  list | show <id|title>     rows carry command + health (ok|failing|never-ran|overdue|manual|done|retired|disabled)
-  run <jobId|title> | tick | enable <id> | disable <id> | logs   a one-shot (--at) job is done+disabled after it runs
+  add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] -- <command>   options before --
+                             a schedule (or --manual) is required; --every below job.min_every_minutes (60) needs --allow-frequent;
+                             a new version of an existing job needs --replaces (retires the old one) or --force (keeps both)
+  list | show <id|title>     rows carry command + health (ok|failing|never-ran|overdue|manual|done|retired|suspended|disabled); show names the last actor
+  run <jobId|title> | tick | enable <id> | disable <id> | logs   a one-shot (--at) job is done+disabled after it runs;
+                             tick suspends a job after job.failing_runs (3) consecutive failures — job enable re-arms it
   retire <id|title> --reason <why>   disable + mark retired; rows and run history are kept
   prune-runs [--keep N] [--apply]    old run rows beyond the newest N per job (default 50); dry run unless --apply
 
@@ -1073,7 +1075,7 @@ export function generateLlmsManifest(): string {
       ["config list / get / set / reset", "registry-backed settings"],
     ]],
     ["job", "Batch scheduling", [
-      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"|--manual] -- \"<cmd>\"", "create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent)"],
+      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"|--manual] [--replaces <old>] -- \"<cmd>\"", "create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force)"],
       ["job tick", "run due jobs (drive with cron)"],
       ["job list / job show <id|title>", "command + health, consecutive failures, last error, next due (#220)"],
       ["job retire <id|title> --reason <why>", "disable + mark retired; history kept"],

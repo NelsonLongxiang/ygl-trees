@@ -946,11 +946,18 @@ export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promi
 
 export async function jobAdd(
   ds: DataSource,
-  o: { title: string; command: string; every?: number; at?: string; force?: boolean }
+  o: { title: string; command: string; every?: number; at?: string; force?: boolean; replaces?: string }
 ): Promise<WriteResult> {
   return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM jobs WHERE title=?`, [o.title])) as any[];
     if (ex.length && !o.force) return { row: ex[0], dup: true };
+    // #220 item 11: `--replaces` retires the old version in the same transaction as the new registration.
+    if (o.replaces) {
+      const old = ((await mgr.query(`SELECT * FROM jobs WHERE id=? OR title=? ORDER BY created LIMIT 1`, [o.replaces, o.replaces])) as any[])[0];
+      if (!old) throw new Error(`job not found: ${o.replaces}`);
+      await mgr.query(`UPDATE jobs SET enabled=0, status='retired' WHERE id=?`, [old.id]);
+      await logEvent(mgr, "job.retire", "job", old.id, `${old.title}: replaced by ${o.title}`);
+    }
     let title = o.title;
     if (o.force) {
       let i = 2;

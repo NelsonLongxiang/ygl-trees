@@ -8,9 +8,9 @@ import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
-import { jobHealth, JobRunRow } from "../../../research/pipeline/src/lifecycle";
+import { jobFamilyStem, jobHealth, JobRunRow } from "../../../research/pipeline/src/lifecycle";
 
-const JOB_USAGE = 'usage: job add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--force] -- <command> | ' +
+const JOB_USAGE = 'usage: job add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] -- <command> | ' +
   "list | show <id|title> | run <id|title> | tick | enable|disable <id> | retire <id|title> --reason <why> | prune-runs [--keep N] [--apply] | logs";
 
 /** Each job's newest runs (newest first), for health. One query, grouped in memory. */
@@ -22,6 +22,11 @@ function runsByJob(env: Env, perJob = 20): Map<string, JobRunRow[]> {
     by.set(r.job_id, list);
   }
   return by;
+}
+
+/** Session that last wrote an event about this row (#220 item 12) — names somebody even when no owner is set. */
+export function lastActor(env: Env, entityId: string): string {
+  return (env.db.get("SELECT actor FROM events WHERE entity_id=? ORDER BY rowid DESC LIMIT 1", [entityId]) as any)?.actor ?? "";
 }
 
 /** Job rows as `job list --json` / `job show` expose them (#220): the stored row, its command, and derived health. */
@@ -98,8 +103,27 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (!ctx.json) console.error(paint(C.yellow, `  ! ${warning}`, ctx.color));
       }
       const force = args.flags.force === true || args.flags.force === "true";
+      if (args.flags.replaces === true) { bad(ctx, `--replaces needs <id|title> — ${JOB_USAGE}`); return 2; }
+      const replaces = args.flags.replaces !== undefined ? String(args.flags.replaces) : "";
+      if (replaces && force) { bad(ctx, `--replaces retires the old job, --force keeps both: pick one — ${JOB_USAGE}`); return 2; }
+      // #220 item 11: an upgrade must not leave the old version running beside the new one ("version family").
+      if (!force) {
+        const stem = jobFamilyStem(title);
+        const kin = (store.db.all("SELECT id, title, status FROM jobs WHERE status != 'retired'") as any[])
+          .filter((j) => j.title !== title && jobFamilyStem(j.title) === stem);
+        if (replaces) {
+          const old = store.db.get("SELECT id, title, status FROM jobs WHERE id=? OR title=?", [replaces, replaces]) as any;
+          if (!old) { bad(ctx, `--replaces: job not found: ${replaces}`); return 1; }
+          if (old.status === "retired") { bad(ctx, `--replaces: job ${old.title} is already retired`); return 1; }
+          const left = kin.filter((j) => j.id !== old.id);
+          if (left.length) { bad(ctx, `job ${title} still shares a family with ${left.map((j) => `${j.title} (${j.id})`).join(", ")} — retire those too, or pass --force to keep them`); return 2; }
+        } else if (kin.length) {
+          bad(ctx, `job ${title} is another version of ${kin.map((j) => `${j.title} (${j.id})`).join(", ")}: pass --replaces <id|title> to retire the old one in the same step, or --force to keep both`);
+          return 2;
+        }
+      }
       return getOrm(env.db.path)
-        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force }))
+        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force, replaces }))
         .then((r): number => {
           if (ctx.json) {
             console.log(
@@ -143,9 +167,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const j = jobViews(env).find((r) => r.id === rest[0] || r.title === rest[0]);
       if (!j) { bad(ctx, `job not found: ${rest[0]}`); return 1; }
       const recent = store.db.all("SELECT id, started, finished, rc, substr(output,1,200) AS output FROM runs WHERE job_id=? ORDER BY started DESC, id DESC LIMIT 10", [j.id]);
-      if (ctx.json) { console.log(JSON.stringify({ ...j, recent_runs: recent }, null, 2)); return 0; }
-      for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run"])
-        out(ctx, `  ${k.padEnd(21)} ${j[k] === "" || j[k] === undefined ? "—" : String(j[k])}`);
+      const shown: Record<string, any> = { ...j, last_actor: lastActor(env, j.id) };
+      if (ctx.json) { console.log(JSON.stringify({ ...shown, recent_runs: recent }, null, 2)); return 0; }
+      for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run", "last_actor"])
+        out(ctx, `  ${k.padEnd(21)} ${shown[k] === "" || shown[k] === undefined ? "—" : String(shown[k])}`);
       out(ctx, `  recent runs`);
       for (const r of recent as any[]) out(ctx, `    ${r.started}  rc=${r.rc ?? "…"}  ${String(r.output || "").replace(/\s+/g, " ").slice(0, 100)}`);
       return 0;
@@ -204,7 +229,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           out(ctx, paint(C.dim, "  nothing due", ctx.color));
           return 0;
         }
-        for (const j of due) execute(env, j);
+        const limit = Math.max(1, configGetNumber(env.db, "job.failing_runs"));
+        for (const j of due) {
+          execute(env, j);
+          // #220 item 13: a failing streak stops itself instead of failing on every tick (an audited job ran 70 times
+          // red). Suspended = disabled + status suspended + event; doctor fails until someone re-enables or retires it.
+          const recent = store.db.all("SELECT rc FROM runs WHERE job_id=? AND finished != '' ORDER BY started DESC, id DESC LIMIT ?", [j.id, limit]) as any[];
+          if (recent.length >= limit && recent.every((r) => r.rc !== 0)) {
+            store.db.run("UPDATE jobs SET enabled=0, status='suspended' WHERE id=?", [j.id]);
+            store.log("job.suspend", "job", j.id, `${limit} consecutive failures — suspended; fix it and job enable, or job retire`);
+            out(ctx, paint(C.yellow, `  ! suspended ${j.title}: ${limit} consecutive failures (job show ${j.id})`, ctx.color));
+          }
+        }
         return 0;
       });
     }
@@ -226,7 +262,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: job enable <jobId|title>");
         return 2;
       }
-      const r = store.db.run("UPDATE jobs SET enabled=1 WHERE id=? OR title=?", [rest[0], rest[0]]);
+      // #220 item 13: enabling re-arms a suspended job — its old failing streak counts again only if a new run fails.
+      const r = store.db.run("UPDATE jobs SET enabled=1, status=CASE WHEN status='suspended' THEN 'pending' ELSE status END WHERE id=? OR title=?", [rest[0], rest[0]]);
       if (!r.changes) {
         bad(ctx, `job not found: ${rest[0]}`);
         return 1;

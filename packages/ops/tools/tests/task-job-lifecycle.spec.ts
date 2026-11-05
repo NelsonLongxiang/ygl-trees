@@ -30,16 +30,19 @@ describe("lifecycle derivations (#220)", () => {
     expect(rows.map((r) => [r.id, r.age_days, r.threshold_days])).toEqual([["t40", 40, 30], ["d20", 20, 14]]);
   });
 
-  it("jobHealth: precedence retired → done → disabled → failing → never-ran → manual → overdue → ok", () => {
+  it("jobHealth: precedence retired → done → suspended → disabled → failing → never-ran → manual → overdue → ok", () => {
     const job = (o: any) => ({ id: "j", title: "j", enabled: 1, runs: 3, every_minutes: 60, at: "", status: "ok", last_run: ago(0), ...o });
     const fail = (n: number) => Array.from({ length: n }, (_, i) => ({ started: ago(i), finished: ago(i), rc: 1, output: `boom ${i}` }));
     const okRun = { started: ago(5), finished: ago(5), rc: 0, output: "" };
     expect(jobHealth(job({ status: "retired" }), fail(5), NOW).health).toBe("retired");
     expect(jobHealth(job({ status: "done", enabled: 0 }), [], NOW).health).toBe("done");
+    expect(jobHealth(job({ status: "suspended", enabled: 0 }), fail(3), NOW).health).toBe("suspended");
     expect(jobHealth(job({ enabled: 0 }), fail(5), NOW)).toMatchObject({ health: "disabled", consecutive_failures: 5, last_error: "boom 0" });
-    expect(jobHealth(job({}), [...fail(3), okRun], NOW)).toMatchObject({ health: "failing", consecutive_failures: 3, last_ok: ago(5) });
-    expect(jobHealth(job({}), [...fail(2), okRun], NOW).health).toBe("ok");
-    expect(jobHealth(job({}), fail(2), NOW, 2).health).toBe("failing");
+    expect(jobHealth(job({ status: "failed" }), [...fail(3), okRun], NOW)).toMatchObject({ health: "failing", consecutive_failures: 3, last_ok: ago(5) });
+    expect(jobHealth(job({ status: "failed" }), [...fail(2), okRun], NOW).health).toBe("ok");
+    expect(jobHealth(job({ status: "failed" }), fail(2), NOW, 2).health).toBe("failing");
+    // re-armed by job enable (status pending): the old streak is not failing until a new run fails
+    expect(jobHealth(job({ status: "pending" }), fail(3), NOW).health).toBe("ok");
     expect(jobHealth(job({ runs: 0, last_run: "" }), [], NOW)).toMatchObject({ health: "never-ran", next_due: "now" });
     expect(jobHealth(job({ runs: 0, last_run: "", every_minutes: 0 }), [], NOW).health).toBe("manual");
     expect(jobHealth(job({ every_minutes: 0, runs: 4 }), [okRun], NOW).health).toBe("manual");
@@ -122,6 +125,8 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(stale.rc).toBe(0);
     expect(ids(stale)).toEqual(expect.arrayContaining([doing.id, todo.id, legacy.id]));
     expect(stale.json.find((t: any) => t.id === legacy.id)).toMatchObject({ status_at_source: "created", threshold_days: 30 });
+    // #220 item 12: no owner, but the session that last touched the task is named
+    expect(stale.json.find((t: any) => t.id === doing.id)).toMatchObject({ owner: "", last_actor: "lifecycle-test" });
     expect(ids(cli(["task", "stale", "--doing-days", "30"]))).not.toContain(doing.id);
     expect(cli(["task", "stale", "--todo-days", "x"]).rc).toBe(2);
     expect(cli(["project", "new", "p2", "-q", "q2"]).rc).toBe(0);
@@ -149,6 +154,7 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(doc.json.find((c: any) => c.name === "job_health")).toMatchObject({ status: "fail", detail: expect.stringMatching(/1 enabled job\(s\) failing: breaks/) });
     const show = cli(["job", "show", "breaks"]).json;
     expect(show.recent_runs).toHaveLength(3);
+    expect(show.last_actor).toBe("lifecycle-test");
     expect(cli(["job", "retire", "breaks"]).rc).toBe(2);
     expect(cli(["job", "retire", "breaks", "--reason", "replaced"]).json).toMatchObject({ status: "retired", enabled: 0 });
     expect(cli(["job", "retire", "breaks", "--reason", "again"]).json.duplicate).toBe(true);
@@ -178,9 +184,40 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(cli(["job", "prune-runs", "--keep", "0"]).rc).toBe(2);
   });
 
+  it("a new version must retire the old one (--replaces) or keep it on purpose (--force)", () => {
+    expect(cli(["job", "add", "树健康巡检", "--every", "1440", "--", "echo a"]).rc).toBe(0);
+    const refused = cli(["job", "add", "树健康巡检 v2", "--every", "1440", "--", "echo b"]);
+    expect(refused.rc).toBe(2);
+    expect(refused.json.error).toMatch(/another version of 树健康巡检[\s\S]*--replaces/);
+    expect(cli(["job", "add", "树健康巡检 v2", "--every", "1440", "--replaces", "x", "--force", "--", "echo b"]).rc).toBe(2);
+    expect(cli(["job", "add", "树健康巡检 v2", "--every", "1440", "--replaces", "nope", "--", "echo b"]).rc).toBe(1);
+    expect(cli(["job", "add", "树健康巡检 v2", "--every", "1440", "--replaces", "树健康巡检", "--", "echo b"]).rc).toBe(0);
+    const jobs = cli(["job", "list"]).json;
+    expect(jobs.find((j: any) => j.title === "树健康巡检")).toMatchObject({ status: "retired", health: "retired", enabled: 0 });
+    expect(jobs.find((j: any) => j.title === "树健康巡检 v2")).toMatchObject({ enabled: 1 });
+    const retired = sql("SELECT payload FROM events WHERE kind='job.retire' ORDER BY rowid DESC LIMIT 1").json[0].payload;
+    expect(retired).toMatch(/replaced by 树健康巡检 v2/);
+  });
+
+  it("tick suspends a job after a failing streak; enable re-arms it; doctor fails while it is suspended", () => {
+    cli(["job", "add", "flaky", "--every", "1440", "--", node("process.exit(4)")]);
+    const due = () => sql("UPDATE jobs SET last_run='' WHERE title='flaky'");
+    const flaky = () => cli(["job", "list"]).json.find((j: any) => j.title === "flaky");
+    for (let i = 0; i < 3; i++) { due(); cli(["job", "tick"]); }
+    expect(flaky()).toMatchObject({ enabled: 0, status: "suspended", health: "suspended", consecutive_failures: 3 });
+    expect(sql("SELECT count(*) AS n FROM events WHERE kind='job.suspend'").json[0].n).toBe(1);
+    expect(cli(["doctor"]).json.find((c: any) => c.name === "job_health")).toMatchObject({ status: "fail", detail: expect.stringMatching(/suspended by tick after a failing streak: flaky/) });
+    expect(cli(["job", "enable", "flaky"]).rc).toBe(0);
+    expect(flaky()).toMatchObject({ enabled: 1, status: "pending", health: "ok" });
+    due(); cli(["job", "tick"]);
+    expect(flaky()).toMatchObject({ enabled: 0, status: "suspended" }); // still broken → stopped again at once
+    cli(["job", "retire", "flaky", "--reason", "upstream gone"]);
+    expect(flaky().health).toBe("retired");
+  });
+
   it("doctor names task hygiene and job warnings (stale, version family, frequent, manual)", () => {
     cli(["job", "add", "npm观测序列", "--every", "1440", "--", "echo a"]);
-    cli(["job", "add", "npm观测序列 v2", "--every", "1440", "--", "echo b"]);
+    cli(["job", "add", "npm观测序列 v2", "--every", "1440", "--force", "--", "echo b"]);
     const checks = cli(["doctor"]).json;
     const task = checks.find((c: any) => c.name === "task_hygiene");
     expect(task.status).toBe("warn");

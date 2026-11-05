@@ -280,6 +280,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     const floor = configGetNumber(db, "job.min_every_minutes");
     const name = (list: any[]) => list.slice(0, 3).map((j) => j.title).join(", ") + (list.length > 3 ? ` … +${list.length - 3}` : "");
     const failing = jobs.filter((j) => j.health === "failing");
+    const suspended = jobs.filter((j) => j.health === "suspended");
     const groups: Array<[string, any[]]> = [
       ["never ran", jobs.filter((j) => j.health === "never-ran")],
       ["overdue", jobs.filter((j) => j.health === "overdue")],
@@ -290,12 +291,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     const families = jobFamilies(jobs as Array<{ id: string; title: string; status?: string }>);
     const jobIssues = [
       failing.length && `${failing.length} enabled job(s) failing: ${name(failing)}`,
+      suspended.length && `${suspended.length} job(s) suspended by tick after a failing streak: ${name(suspended)}`,
       ...groups.filter(([, l]) => l.length).map(([label, l]) => `${l.length} ${label}: ${name(l)}`),
       families.length && `${families.length} version famil${families.length > 1 ? "ies" : "y"}: ${families.slice(0, 3).map((f) => `${f.stem} ×${f.ids.length}`).join(", ")}`,
     ].filter(Boolean);
     checks.push({
       name: "job_health",
-      status: failing.length ? "fail" : jobIssues.length ? "warn" : "pass",
+      status: failing.length || suspended.length ? "fail" : jobIssues.length ? "warn" : "pass",
       detail: jobIssues.length
         ? `${jobs.length} job(s): ${jobIssues.join("; ")} — job show <id>; fix it, or job retire <id> --reason …`
         : `${jobs.length} job(s); none failing, overdue, unscheduled or duplicated`,

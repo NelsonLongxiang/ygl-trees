@@ -27,11 +27,14 @@ function printStale(env: Env, tasks: TaskView[], args: any, scope: string): numb
   };
   const doing = days("doing-days", "task.stale_doing_days"), todo = days("todo-days", "task.stale_todo_days");
   if (doing === null || todo === null) { bad(ctx, `--doing-days / --todo-days must be whole days ≥ 0 — ${TASK_USAGE}`); return 2; }
-  const rows = staleTasks(tasks, Date.now(), doing, todo);
+  // #220 item 12: name somebody even without an owner — the session that last wrote an event on the task.
+  const rows = staleTasks(tasks, Date.now(), doing, todo).map((t) => ({
+    ...t, last_actor: (env.db.get("SELECT actor FROM events WHERE entity_id=? ORDER BY rowid DESC LIMIT 1", [t.id]) as any)?.actor ?? "",
+  }));
   if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
   head(ctx, `Stale tasks — ${scope} (doing ≥ ${doing}d, todo ≥ ${todo}d): ${rows.length}`);
-  table(ctx, rows.map((r) => ({ ...r, age: `${r.age_days}d${r.status_at_source === "created" ? "*" : ""}` })),
-    ["id", "status", "age", "owner", "title"], ["id", "status", "age", "owner", "title"]);
+  table(ctx, rows.map((r) => ({ ...r, age: `${r.age_days}d${r.status_at_source === "created" ? "*" : ""}`, who: r.owner || (r.last_actor ? `(last: ${r.last_actor})` : "—") })),
+    ["id", "status", "age", "who", "title"], ["id", "status", "age", "who", "title"]);
   if (rows.some((r) => r.status_at_source === "created")) out(ctx, paint(C.dim, "  * age from created: the task predates status stamps (#220)", ctx.color));
   if (rows.length) out(ctx, paint(C.dim, "  next: finish it (task doing|done), or close it with a reason (task cancel <id> --reason …)", ctx.color));
   return 0;

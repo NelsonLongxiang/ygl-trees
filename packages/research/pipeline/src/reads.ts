@@ -3,6 +3,7 @@
  * Keeps FTS shadow tables in sync so search always matches reality.
  */
 import { DB } from "../../../core/database/src/db";
+import { eventActor } from "../../../core/database/src/selection";
 import { clip, contentHash, ngram, nowIso, parseFrontmatter, sha1, shortId, splitTags } from "../../../core/text/src/text";
 
 export type Row = Record<string, any>;
@@ -11,7 +12,9 @@ export class Store {
   constructor(readonly db: DB) {}
 
   // ================================================================ events
-  log(kind: string, entity = "", entityId = "", payload: any = "", actor = "cli"): void {
+  /** Raw event insert. The actor defaults to the session (#220 item 12), like logEvent: the literal "cli" made every
+   *  job.run / job.settle row anonymous, so "who last touched it" could not name anybody. */
+  log(kind: string, entity = "", entityId = "", payload: any = "", actor = eventActor()): void {
     this.db.run(
       "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload) VALUES(?,?,?,?,?,?,?)",
       [shortId([kind, entity], 12), nowIso(), actor, kind, entity, entityId, str(payload)]

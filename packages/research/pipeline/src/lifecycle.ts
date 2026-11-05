@@ -64,7 +64,7 @@ export function staleTasks(tasks: TaskView[], nowMs: number, doingDays: number, 
 
 // ---------------------------------------------------------------- jobs
 
-export type JobHealthState = "ok" | "failing" | "never-ran" | "overdue" | "manual" | "done" | "retired" | "disabled";
+export type JobHealthState = "ok" | "failing" | "never-ran" | "overdue" | "manual" | "done" | "retired" | "suspended" | "disabled";
 
 export interface JobRunRow { started: string; finished?: string; rc: number | null; output?: string }
 
@@ -81,9 +81,11 @@ const parseTime = (s: string) => Date.parse(String(s || "").replace(" ", "T"));
 
 /**
  * Health of one job. `runs` is that job's finished runs, newest first. Order of precedence:
- * retired → done (a one-shot that ran) → disabled → failing (≥ failingRuns consecutive rc≠0) → never-ran → manual
- * (no every and no at) → overdue (now − last_run > 3 × every, the plan-D3 SLA) → ok. Only enabled jobs can be
- * failing, never-ran, manual or overdue: a disabled job is reported as disabled, with its last error still shown.
+ * retired → done (a one-shot that ran) → suspended (tick stopped it after a failing streak, #220 item 13) →
+ * disabled → failing (≥ failingRuns consecutive rc≠0 and the job's last run failed) → never-ran → manual (no every
+ * and no at) → overdue (now − last_run > 3 × every, the plan-D3 SLA) → ok. Only enabled jobs can be failing,
+ * never-ran, manual or overdue. `job enable` re-arms a suspended job (status pending), so its old streak is not
+ * failing again until a new run fails.
  */
 export function jobHealth(job: any, runs: JobRunRow[], nowMs: number, failingRuns = 3): JobHealth {
   const finished = runs.filter((r) => r.rc !== null && r.rc !== undefined);
@@ -105,8 +107,9 @@ export function jobHealth(job: any, runs: JobRunRow[], nowMs: number, failingRun
   const health = ((): JobHealthState => {
     if (job.status === "retired") return "retired";
     if (job.status === "done") return "done";
+    if (job.status === "suspended" && !Number(job.enabled)) return "suspended";
     if (!Number(job.enabled)) return "disabled";
-    if (streak >= Math.max(1, failingRuns)) return "failing";
+    if (streak >= Math.max(1, failingRuns) && job.status === "failed") return "failing";
     if (!Number(job.runs) && !job.last_run) return every > 0 || job.at ? "never-ran" : "manual";
     if (every <= 0 && !job.at) return "manual";
     if (every > 0 && Number.isFinite(last) && nowMs - last > 3 * every * 60_000) return "overdue";

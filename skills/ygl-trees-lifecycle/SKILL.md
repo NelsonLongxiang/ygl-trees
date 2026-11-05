@@ -70,8 +70,8 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | 触发事件 | 立刻做 |
 |---|---|
 | 新增周期作业 | `job add <title> --every <min> -- <cmd>`；确实没有调度就显式 `--manual`；每小时以内要 `--allow-frequent`（默认下限 60 分钟） |
-| 作业**升级**（换命令、换版本） | 先 `job add` 新的，同轮 `job retire <旧> --reason "replaced by <新>"`——不要让新旧并存成「版本族」 |
-| doctor `job_health` 报 failing | `job show <id>` 看 `last_error` → 修命令，或 `job retire <id> --reason …`；不要放着每天红 |
+| 作业**升级**（换命令、换版本） | `job add <新> --every <min> --replaces <旧> -- <cmd>`：同一步退役旧的（同族新登记不带 `--replaces` 会被拒，确实要并存才用 `--force`） |
+| doctor `job_health` 报 failing / suspended | `job show <id>` 看 `last_error` → 修命令后 `job enable <id>` 重新上岗，或 `job retire <id> --reason …`；tick 连续失败 3 次会自动暂停（suspended），别让它一直红着 |
 | 一次性作业 | `--at "YYYY-MM-DD HH:MM"`；跑完自动 done + 停用，无需手动收 |
 | 运行记录堆积 | `job prune-runs --keep 50` 先看清单（默认只列不删），确认后加 `--apply` |
 
