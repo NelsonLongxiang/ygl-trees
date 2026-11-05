@@ -24,6 +24,8 @@ export default defineConfig({
     // 测试侧只重试「一个字节都没收到」的连接级失败（见 tests/support/fetch-retry.ts）：
     // 干净检出上满负载跑 72 文件会偶发 ECONNRESET，那是传输抖动而非判据失败。
     setupFiles: ["tests/support/fetch-retry.ts"],
+    // #227：整轮用独立临时根，跑完清点并删除；漏收尾的测试点名判红。
+    globalSetup: ["tests/support/tmpdir-guard.ts"],
     hookTimeout: 60000,
     // bundle 级用例要 spawn 发布产物（dist/bundle/bin.cjs），冷检出上单次 spawn 3–5s，
     // 一条用例串 4–5 次就顶到 20s 上限（实测干净 worktree 上 patrol recurrence 20.8s 超时，
