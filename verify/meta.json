@@ -95,7 +95,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "c3b2f12d927f72d1dfcf49f4bf33ea7ef39eecf983c92d40320cf29227773450",
+      "sha256": "64c350092c58b1554da03fe903788a7f23f703ae6a4fc7c30ec684da8d651494",
       "role": "gate"
     },
     {
@@ -175,7 +175,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "bca7f3ae3b7d7c89ebb4766497b59ba811aa48d0444b23a50bd9660a03863cc5",
+      "sha256": "4c341d7445b3726a3b3ecb5fdabcb2345bf78221efeb7437513a522c08d7bb54",
       "role": "gate"
     },
     {
@@ -1281,6 +1281,22 @@
       "reason": "#216 item 5 (dev-seat review of #217): one kept log per run (UTC timestamp + PID) so concurrent runs in one checkout never overwrite each other's diagnostics",
       "actor": "supervisor seat (Claude-OPS-5.5)",
       "at": "2026-11-04T15:58:29.591Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "c3b2f12d927f72d1dfcf49f4bf33ea7ef39eecf983c92d40320cf29227773450",
+      "new_sha256": "64c350092c58b1554da03fe903788a7f23f703ae6a4fc7c30ec684da8d651494",
+      "reason": "#222 A3: make tmp/b8-sqlite-gate-* only after the baseline verifies, so failing inputs leave no empty folder",
+      "actor": "supervisor-seat (Claude-OPS-5.5)",
+      "at": "2026-11-05T05:42:37.435Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "bca7f3ae3b7d7c89ebb4766497b59ba811aa48d0444b23a50bd9660a03863cc5",
+      "new_sha256": "4c341d7445b3726a3b3ecb5fdabcb2345bf78221efeb7437513a522c08d7bb54",
+      "reason": "#222 A4: README truth anchors for verify prune (dry run rc0, --keep-last 0 rc2)",
+      "actor": "supervisor-seat (Claude-OPS-5.5)",
+      "at": "2026-11-05T05:42:37.479Z"
     }
   ],
   "kind": "engine",

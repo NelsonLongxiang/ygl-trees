@@ -125,8 +125,6 @@ async function sqliteGoldenMain() {
   };
   const source = { head: gitRead("rev-parse", "HEAD"), tree: gitRead("rev-parse", "HEAD^{tree}"), dirty: !!gitRead("status", "--porcelain") };
   const candidateSha = createHash("sha256").update(readFileSync(join(ROOT, "dist/bundle/bin.cjs"))).digest("hex");
-  mkdirSync(join(ROOT, "tmp"), { recursive: true });
-  const dir = mkdtempSync(join(ROOT, "tmp/b8-sqlite-gate-"));
   const arg = process.argv.indexOf("--baseline-tgz");
   let bytes;
   if (arg >= 0) {
@@ -138,6 +136,10 @@ async function sqliteGoldenMain() {
     bytes = Buffer.from(await response.arrayBuffer());
   }
   goldenHash(bytes, SQLITE_BASELINE.tar_sha256);
+  // #222: the folder is made only once the baseline verifies — a missing or corrupt tarball used to leave an empty
+  // tmp/b8-sqlite-gate-* behind on every unit run; a later failure still keeps the folder for inspection
+  mkdirSync(join(ROOT, "tmp"), { recursive: true });
+  const dir = mkdtempSync(join(ROOT, "tmp/b8-sqlite-gate-"));
   const tarball = join(dir, "baseline.tgz");
   writeFileSync(tarball, bytes);
   const unpack = spawnSync("tar", ["-xzf", "baseline.tgz", "package/dist/bundle", "package/package.json"], { cwd: dir, encoding: "utf8", timeout: 60000 });

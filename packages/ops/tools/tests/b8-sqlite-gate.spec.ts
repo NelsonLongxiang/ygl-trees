@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {readFileSync,mkdirSync,mkdtempSync,writeFileSync,rmSync,existsSync} from 'node:fs';
+import {readFileSync,readdirSync,mkdirSync,mkdtempSync,writeFileSync,rmSync,existsSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const loadGate=()=>import(pathToFileURL(resolve(__dirname,'../../../../scripts/dual-backend-matrix.mjs')).href);
@@ -22,7 +22,9 @@ describe('#132 required SQLite golden release gate',()=>{
  });
  it('unavailable and corrupted baseline paths fail rather than producing a skipped green gate',()=>{
   mkdirSync(resolve(root,'tmp'),{recursive:true});const dir=mkdtempSync(resolve(root,'tmp/sqlite-gate-negative-'));
-  try{writeFileSync(resolve(dir,'bad.tgz'),'not a tarball');for(const filename of ['missing.tgz','bad.tgz']){const r=spawnSync(process.execPath,[resolve(root,'scripts/dual-backend-matrix.mjs'),'--b8-sqlite-only','--baseline-tgz',resolve(dir,filename)],{cwd:root,encoding:'utf8',timeout:10000});expect(r.status).toBe(1);expect(r.stderr).toContain('b8_sqlite_golden: FAIL');expect(r.stdout).not.toContain('1 passed');}}finally{rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+  // #222: an input that never verifies must not leave a tmp/b8-sqlite-gate-* folder behind
+  const gateDirs=()=>readdirSync(resolve(root,'tmp')).filter(n=>n.startsWith('b8-sqlite-gate-')).sort();const before=gateDirs();
+  try{writeFileSync(resolve(dir,'bad.tgz'),'not a tarball');for(const filename of ['missing.tgz','bad.tgz']){const r=spawnSync(process.execPath,[resolve(root,'scripts/dual-backend-matrix.mjs'),'--b8-sqlite-only','--baseline-tgz',resolve(dir,filename)],{cwd:root,encoding:'utf8',timeout:10000});expect(r.status).toBe(1);expect(r.stderr).toContain('b8_sqlite_golden: FAIL');expect(r.stdout).not.toContain('1 passed');}expect(gateDirs()).toEqual(before);}finally{rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
  it('#135 exported golden specs exist and identify exactly the reports accepted by the gate',async()=>{
   const {goldenSpecs,goldenReport}=await loadGate();const specs=goldenSpecs();expect(specs).toEqual(['packages/ops/tools/tests/b8-sqlite-golden.spec.ts']);

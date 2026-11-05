@@ -97,6 +97,9 @@ chk "plugin list"         0 -- $Y plugin list
 chk "未知组 rc=2"         2 -- $Y nope-not-a-group
 chk "config list"         0 -- $Y config list
 chk "db export"           0 -- $Y db export "$YGL_HOME/dump.sql"
+# #222 验证工作区保留策略（默认只列不删；用法错误 rc=2 先于任何 verify 目录 I/O）
+chk "verify prune 试跑"   0 -- $Y verify prune
+chk "verify prune 用法 rc=2" 2 -- $Y verify prune --keep-last 0
 # llms.txt 发布面新鲜度（0.84 评审 #6：版本头必须与 package.json 同步）
 N=$((N+1))
 PV=$(node -p "require('./package.json').version")

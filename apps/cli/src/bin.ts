@@ -1083,6 +1083,7 @@ export function generateLlmsManifest(): string {
       ["verify archive <run-id|spec-id> [--with …] [--snapshot <db>]", "archive bundle (report+spec+materials; --snapshot for cross-impl runs)"],
       ["verify archive verify <file>", "recompute the full hash chain of an archive bundle"],
       ["verify list --unarchived", "runs that exist but were never archived"],
+      ["verify prune [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]… [--min-age-minutes M] [--apply]", "retention for reports/archives/snapshots: keeps recent, verdict flips, first of each version, pinned and young runs; dry run unless --apply (#222)"],
       ["verify self-check", "recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives"],
       ["verify example [--checker <type>]", "corpus-derived candidates for the seven checker types (null ops included)"],
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],

@@ -50,6 +50,8 @@ import type { SigningKeyTable } from "../../../verify/core/src/signature";
 import { fingerprintOfRawPublicKey, SIGNING_SCHEME } from "../../../verify/core/src/signature";
 import { INSTANCE_FLAGS, instancePreflight, runInstance } from "./verify-instance";
 import { AsOfError, normalizeAsOf } from "./as-of";
+import { applyPrune, parsePruneOptions, planPrune, planView, PRUNE_FLAGS, prunePreflight } from "./verify-prune";
+import { dropFromListIndex } from "./verify-list-index";
 
 const KINDS = ["materials", "specs", "reports", "registrations", "binaries", "trees", "tree-reports"] as const;
 
@@ -1014,6 +1016,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   export: ["out", "portable"],
   import: [],
   instance: INSTANCE_FLAGS,
+  prune: PRUNE_FLAGS,
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
@@ -1054,6 +1057,13 @@ export function preflightUsage(action: string, rest: string[], args: any): strin
     const unknown = Object.keys(args.flags ?? {}).filter((k) => !INSTANCE_FLAGS.includes(k) && !GLOBAL_FLAGS.has(k));
     if (unknown.length) return `unknown flag${unknown.length > 1 ? "s" : ""} for verify instance: ${unknown.map((k) => `--${k}`).join(" ")}`;
     return instancePreflight(rest, args.flags ?? {});
+  }
+  if (action === "prune") {
+    // #222: a mistyped flag or pin must be refused before anything is read or deleted
+    const unknown = Object.keys(args.flags ?? {}).filter((k) => !PRUNE_FLAGS.includes(k) && !GLOBAL_FLAGS.has(k));
+    if (unknown.length) return `unknown flag${unknown.length > 1 ? "s" : ""} for verify prune: ${unknown.map((k) => `--${k}`).join(" ")}`;
+    if (rest.length) return `verify prune takes no positional arguments (got ${rest.join(" ")})`;
+    return prunePreflight(args.flags ?? {});
   }
   if ((action === "run" || (action === "tree" && rest[0] === "run")) && args.flags.provenance !== undefined && (typeof args.flags.provenance !== "string" || !args.flags.provenance.trim())) return "--provenance needs a JSON file path";
   if (action !== "prepare") return null;
@@ -1118,12 +1128,62 @@ function expectKeyTable(args: any): SigningKeyTable | null {
   return { scheme: SIGNING_SCHEME, keys: { [fp]: { public_key: hexText.toLowerCase(), created: "expect-key" } } };
 }
 
+const gib = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GiB` : `${(n / 1024 ** 2).toFixed(1)} MiB`);
+
+/** `verify prune`: a dry run unless --apply (#222). Registry run ids are pinned like --keep-runs-in. */
+function runPrune(env: Env, root: string, rest: string[], args: any): number {
+  const { ctx } = env;
+  const usage = preflightUsage("prune", rest, args);
+  if (usage) {
+    bad(ctx, usage);
+    return 2;
+  }
+  const opts = parsePruneOptions(args.flags ?? {});
+  let registry: string[] = [];
+  try {
+    registry = env.store.db.all("SELECT id FROM verifier_runs").map((r: any) => String(r.id));
+  } catch {
+    /* a workspace without the registry table pins nothing from it */
+  }
+  let plan;
+  try {
+    plan = planPrune(root, opts, registry);
+  } catch (e: any) {
+    bad(ctx, `verify prune: ${e?.message || e}`);
+    return 1;
+  }
+  const view = planView(plan);
+  const result = opts.apply ? applyPrune(plan, (ids) => dropFromListIndex(root, ids)) : null;
+  if (ctx.json) {
+    console.log(JSON.stringify({ apply: opts.apply, ...view, ...(result ? { deleted: result.deleted, failed: result.failed, log: result.log } : {}) }, null, 2));
+    return result?.failed.length ? 1 : 0;
+  }
+  head(ctx, opts.apply ? "Verify prune — applied" : "Verify prune — dry run (nothing deleted; pass --apply to delete)");
+  const k = view.kept_by;
+  out(ctx, `  root       ${view.root}`);
+  out(ctx, `  reports    ${view.reports.total} total · keep ${view.reports.keep} · delete ${view.reports.delete}${view.reports.unreadable ? ` · unreadable ${view.reports.unreadable}` : ""}`);
+  out(ctx, `  kept by    recent ${k.recent} · flip ${k.flip} · first ${k.first} · pinned ${k.pinned} (${view.policy.pinned_runs} pinned ids) · young ${k.young}`);
+  out(ctx, `  archives   delete ${view.archives.sidecars_delete} sidecars · ${view.archives.zips_delete} zips`);
+  out(ctx, `  snapshots  ${view.snapshots.total} total · keep ${view.snapshots.keep} · delete ${view.snapshots.delete}${view.snapshots.orphan ? ` · orphan ${view.snapshots.orphan} (${gib(view.snapshots.orphan_bytes)}, kept)` : ""}`);
+  out(ctx, `  ${opts.apply ? "freed" : "frees"}      ${gib(view.bytes.total)} (reports ${gib(view.bytes.reports)} · archives ${gib(view.bytes.archives)} · snapshots ${gib(view.bytes.snapshots)})`);
+  const rows = view.specs.filter((s) => s.delete).slice(0, 20);
+  if (rows.length) table(ctx, rows, ["spec_id", "total", "keep", "delete", "oldest_deleted", "newest_deleted"], []);
+  if (result) {
+    out(ctx, `  deleted    ${result.deleted.reports} reports · ${result.deleted.sidecars} sidecars · ${result.deleted.zips} zips · ${result.deleted.snapshots} snapshots — logged to ${result.log}`);
+    for (const f of result.failed.slice(0, 10)) out(ctx, paint(C.red, `  ✗ ${f}`, ctx.color));
+    if (result.failed.length) return 1;
+  }
+  return 0;
+}
+
 function verifyRoot(env: Env): string {
   return paths(env).root;
 }
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx } = env;
+  // #222: prune runs before paths() — a dry run must not even create the missing standard folders
+  if (action === "prune") return runPrune(env, join(env.home, "verify"), rest, args);
   const p = paths(env);
   // 未知旗标是用法错误（rc=2）：静默吞掉会让 `--attachment` 这种拼写落成 files:[]，
   // 提交物缺附件却一路跑到 PASS 边缘——构造期静默比报错危险得多（验证席回灌 ①）。

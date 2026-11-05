@@ -239,6 +239,22 @@ ygl-trees verify list --unarchived                   # 找漏归档的 run
 - 报告**不可变**：归档身份写侧车 `$YGL_HOME/verify/archives/<run_id>.json`，不改报告本体。
 - 边车键：`$YGL_HOME/verify/registrations/<sha256>.json`（register 时写入）。
 
+### 保留策略（#222）：别让验证工作区无限长
+
+每次 `verify run` 都会留下报告、归档 zip 和快照，默认永不清理；高频跑的验证器一个月就能涨到几十 GiB，大头是自检注入用例这类非结论运行。用 `verify prune` 定期收：
+
+```bash
+ygl-trees verify prune                                   # 试跑：只列保留/删除计数与可腾出的字节，不动任何文件
+ygl-trees verify prune --keep-runs-in ./work/results     # 钉住目录里文本文件出现的每个 run id（结果文件、账本）
+ygl-trees verify prune --keep-last 20 --keep-flips 0     # 每个 spec 留最近 20 份，不额外保留结论翻转
+ygl-trees verify prune --keep-runs-in ./pins.txt --apply # 真删；每次在 verify/prune-log.jsonl 追加一行摘要
+```
+
+- **保留规则**（任一成立就留）：最近 N 份（`--keep-last`，默认 10）、最近 F 次结论翻转的两侧（`--keep-flips`，默认 10，0 = 不留）、每个 `spec_version` 的首份、被钉住（`--keep-runs-in` 的文件/目录、毕业记录、树报告、登记表 `verifier_runs`）、`--min-age-minutes` 内刚跑完的（默认 60，护住正在跑的探针）、读不懂的报告（永不删）。
+- **删什么**：被删运行的报告、归档侧车、侧车列出且位于 `archives/` 里的 zip（别处的 `--out` 产物不碰；仍被保留运行引用的 zip 不删）、只被它们引用的快照。无主快照只计数不删。
+- **钉住要钉对**：`--keep-runs-in` 扫的是文件内容里的 `run_…`，目录只扫文本扩展名；路径不存在 rc=2（打错路径会让本该钉住的运行被删，所以按用法错误先拒）。自检用例的结果文件别一起钉，否则什么都删不掉。
+- 先试跑看清单，再 `--apply`；`--apply` 会同步 `verify list` 索引。
+
 ### 跨机器回装冻结件
 
 `verify export` 默认只导出裸 spec；需要在新工作区继续验证时必须加 `--portable`：
@@ -353,6 +369,7 @@ ygl-trees verify instance import-latest ../ygl-webui-verifier/work/results/lates
 
 | 现象 | 原因/处理 |
 |---|---|
+| `verify list` 越来越慢 / `$YGL_HOME/verify` 几十 GiB | 报告/归档/快照默认永不清理；先 `verify prune` 试跑看能腾多少，再 `--keep-runs-in <结果目录> --apply`（§4 保留策略） |
 | `prepare` rc=1 但没说错在哪 | 看 `--json` 的 `open[]`/`blocking[]`；P1/P2 阻断会点名字段 |
 | `run` 报 `no such table` | 快照库不对/没建表——`--db` 要给**真快照**不是主库 |
 | 报告 `overall=ERROR` 且 agent 检查器全错 | 网关凭证没配：环境变量 `AI_GATEWAY_API_KEY` 或 `~/.vercel.ai-gateway.env`（config 键 `decision_model_llm_token` 也会被读，但不推荐存凭证，见 eval-gates §5） |

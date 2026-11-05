@@ -52,6 +52,18 @@ function replace(db: any, kind: string, id: string, value: any, stamp: string, e
   }
   db.prepare("INSERT OR REPLACE INTO files VALUES(?,?,?)").run(kind,id,stamp);
 }
+/** #222: drop pruned runs from the index in one transaction (same "missing" rows a reconcile would write). */
+export function dropFromListIndex(root: string, runIds: string[]): void {
+  if (!runIds.length || !existsSync(listIndexPath(root))) return;
+  let db: any;
+  try {
+    db=open(root);
+    db.transaction(()=>{for(const id of runIds)if(ID.test(id)){replace(db,"reports",id,null,"missing");replace(db,"archives",id,null,"missing");}})();
+  } catch {
+    writeFileSync(join(root,".list-index-dirty"),process.pid+":"+Date.now()+":"+Math.random());
+    process.stderr.write("verifier list index update failed after prune; files are gone; restart webui to reconcile\n");
+  } finally { db?.close(); }
+}
 export function updateListIndex(file: string, value: unknown): void {
   const kind=basename(dirname(file)),id=basename(file,".json");
   if (!["reports","archives"].includes(kind)||!ID.test(id)) return;
