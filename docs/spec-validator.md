@@ -5,7 +5,7 @@ kind: 规范
 ---
 
 > **单一事实源（2026-10-23）**：本文是 spec-validator 的唯一事实源；历史演示稿 `docs/spec-validator.html`
-> 已删除（内容停在 2026-10-19，与 0.110–0.114 的实现漂移，评审记录见 `docs/reviews/REVIEW-spec-validator-m13*.md`）。
+> 已删除（内容停在 2026-10-19，与 0.110–0.114 的实现漂移，评审记录见 `docs/reviews/archive-m13/REVIEW-spec-validator-m13*.md`）。
 
 # spec-validator 设计（验证规范驱动器）— M13 提案（2026-10-19，用户目标 m11350 / 无人工确认裁定 m11558）
 

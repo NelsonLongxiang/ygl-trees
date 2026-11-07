@@ -454,6 +454,7 @@ node -e 'const fs=require("fs"),p=require("path");fs.mkdirSync(".agents/skills",
 | 文档 | 内容 |
 |---|---|
 | [AGENTS.md](AGENTS.md) | **Agent 常驻守则**（仓库布局、命令、契约、开发规则——入口文件） |
+| [docs/guide.md](docs/guide.md) | **情景教程**：每种情况什么时候用、照着敲的完整命令与真实输出、常见报错速查 |
 | [CHANGELOG.md](CHANGELOG.md) | 逐版本聚合 |
 | [docs/research.md](docs/research.md) | 初始调研与差距分析（历史归档） |
 | [docs/spec.md](docs/spec.md) | 需求规格与验收标准（R1–R14） |
