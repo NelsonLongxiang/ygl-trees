@@ -2,7 +2,7 @@
 
 > 评审席：302cb119（本席）与 fdc757f6（交叉核验席）。日期：2026-10-20。
 > 状态：**待用户三项决策后执行**。本文是方案与证据清单，不是已执行记录；与逐轮评审报告冲突时，以
-> `REVIEW-spec-validator-m13-r18..r20.md` 原文为准。
+> `archive-m13/REVIEW-spec-validator-m13-r18..r20.md` 原文为准。
 
 ## 0. 结论摘要
 
@@ -144,5 +144,5 @@
 - harness2 repo：`google-research/harness2`（README、`docs/BENCHMARKS.md`、`docs/SETUP.md`、`docs/EXPERIMENTS.md`）。
 - 本席评审备忘：`tmp/harness2-fit-review.md`（三步使用设想与风险）。
 - 交叉核验席：`tmp/review-harness2.md`（P1–P5 与反向开口）。
-- 我方事实源：`REVIEW-spec-validator-m13-r18.md`–`r20.md`、`packages/verify/core/src/prepare.ts`、
+- 我方事实源：`archive-m13/REVIEW-spec-validator-m13-r18.md`–`r20.md`、`packages/verify/core/src/prepare.ts`、
   `packages/verify/core/corpus/`（33 例 + expected-report）。
