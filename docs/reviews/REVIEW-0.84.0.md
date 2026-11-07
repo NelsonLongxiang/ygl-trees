@@ -135,7 +135,7 @@
 |---|---|---|
 | `tmp/demo-review.log` | 5h `kb add --json` → JSON.parse 崩（`Unexpected non-whitespace character after JSON at position 100`） | P1-4 事件：db 缺失路径 JSON 不纯；进程自身 rc=2 + 非 JSON 文本，管道 `node -e` 直接崩 |
 | `tmp/test-full.log` | 另一会话在 section 4 失败 `ELIFECYCLE` | 与本次评审 demo 并发，共享 `/tmp/ygl-demo` 互删（P1-3） |
-| `tmp/test-full2.log` | 并发会话全门禁 **82/86**：4 项 flag 校验 `rc=1` + `cannot open database D:\workspace\ygl-trees\`（home 指到仓库根） | **未完全归因**。隔离复跑不复现，疑似该 shell 的 `YGL_HOME` 泄漏/争用；建议收口时独占重跑确认 |
+| `tmp/test-full2.log` | 并发会话全门禁 **82/86**：4 项 flag 校验 `rc=1` + `cannot open database <repo-root>\`（home 指到仓库根） | **未完全归因**。隔离复跑不复现，疑似该 shell 的 `YGL_HOME` 泄漏/争用；建议收口时独占重跑确认 |
 
 ---
 

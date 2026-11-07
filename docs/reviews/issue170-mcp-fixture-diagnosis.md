@@ -8,7 +8,7 @@ The original failing invocation had no per-request timestamps. Its exact stalled
 
 ## Original-code investigation
 
-All runs used independent full clone D:/workspace/ygl-mcp170-full, Node v24.12.0, pnpm 9.15.9, source 10b68dc, and the original published bundle (SHA256 e28e912cd79f4254acc78b8a9dba9a6f93fc1f16a01d259c748e1ebd0d5c1ae0). No request deadline or production source was changed.
+All runs used independent full clone ~/ygl/ygl-mcp170-full, Node v24.12.0, pnpm 9.15.9, source 10b68dc, and the original published bundle (SHA256 e28e912cd79f4254acc78b8a9dba9a6f93fc1f16a01d259c748e1ebd0d5c1ae0). No request deadline or production source was changed.
 
 - Thirty focused repetitions under a concurrently running complete default Vitest suite passed 30/30. Ninety interleavings recorded B's response finishing before A's body ended. A second clean-environment batch also passed 30/30 and its background complete suite passed: 1323 passed / 109 skipped = 1432.
 - The first batch's background suite had one update-check failure caused by the diagnostic runner setting YGL_NO_UPDATE_CHECK. That result is not a product defect or a full-suite pass. The override was removed before the clean batch and ten-suite series.
@@ -33,10 +33,10 @@ The earlier observer wrote each event with appendFileSync. Its 1845.58ms heartbe
 
 Evidence on the Windows release box:
 
-- Original clean stress: D:/workspace/ygl-mcp170-full/tmp/issue170-stress-q5jkCl/{rounds.json,summary.json,trace-*}
-- Ten complete suites: D:/workspace/ygl-mcp170-full/tmp/issue170-full10-DOhdzZ/{full-*.json,full-*.log,trace-*}
-- Final analysis: D:/workspace/ygl-trees/tmp/issue170-full10-analysis-final.json
-- Official failure: D:/workspace/ygl-trees/tmp/release-10b68dc-verification/g1-2.log:2585–2597
+- Original clean stress: ~/ygl/ygl-mcp170-full/tmp/issue170-stress-q5jkCl/{rounds.json,summary.json,trace-*}
+- Ten complete suites: ~/ygl/ygl-mcp170-full/tmp/issue170-full10-DOhdzZ/{full-*.json,full-*.log,trace-*}
+- Final analysis: ~/ygl/ygl-trees/tmp/issue170-full10-analysis-final.json
+- Official failure: ~/ygl/ygl-trees/tmp/release-10b68dc-verification/g1-2.log:2585–2597
 
 These are local evidence locations, not portable links or proof that the original host stall cannot recur.
 
