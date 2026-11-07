@@ -13,7 +13,7 @@ kind: 参考
 - 只想查命令，用 `ygl-trees --help`，或 `ygl-trees llms`（给 agent 的完整命令清单）。
 - 各情景的「方法论」细节在 `skills/` 下的十二个技能里，文中会给链接。
 
-> 本教程的命令和输出，是在一个干净的临时工作区里，用本仓库 master 构建的 CLI 实跑出来的。master 比 npm 上发布的 0.120.0 新，但版本号仍显示 0.120.0。如果你装的是 npm 版，请先看 [1.1 节末尾的差异表](#11-安装)。
+> 本教程的命令和输出，都在 ygl-trees 0.121.0 上实跑过，用的是一个干净的临时工作区。如果你还在用 0.120.0 或更早的版本，请先升级（`npm install -g ygl-trees@latest`），或者先看 [1.1 节末尾的差异表](#11-安装)。
 >
 > ID 是 10 位十六进制，每次运行都不一样。照着做时，请换成你自己输出里的 ID。
 
@@ -84,7 +84,7 @@ npm install-scripts approve better-sqlite3 && npm install  # 装在某个项目�
 
 全局安装不能用 `npm install-scripts approve`，npm 会报 EGLOBAL。
 
-**装的是 npm 上的 0.120.0？** 本教程有几处用法比它新。用 npm 版把本教程全部命令重放一遍，差异如下：
+**还在用 0.120.0？** 本教程有几处用法是 0.121.0 才有的。用 npm 上的 0.120.0 把本教程全部命令重放一遍，差异如下：
 
 | 教程里的用法 | 在 npm 0.120.0 上 |
 |---|---|
@@ -956,7 +956,7 @@ ygl-trees patrol run
   ✓ all clear — open findings: 0
 ```
 
-> 已知问题（npm 0.120.0 和当前 master 都有）：`patrol list`、`patrol findings`、`verify list` 的人类表格把数据行打成了空行。请暂时加 `--json` 查看。
+> 已知问题（0.121.0 仍有，下一版修复）：`patrol list`、`patrol findings`、`verify list` 的人类表格把数据行打成了空行。请暂时加 `--json` 查看。
 
 要定期巡检，就把 `patrol run` 登记成 job。
 
@@ -1113,7 +1113,7 @@ YGL_PG_URL=postgres://… ygl-trees db migrate pg   # 一次性完整迁移，�
 | `node ready` 把最终目标列为可做 | 连线方向反了 | `node link <前置> <后续>`，前置写在前面 |
 | 节点没满足前置却显示已解锁 | `unlock` 只是打标记 | 解锁前先 `node can` |
 | 表格只有表头、数据行是空的 | 已知的显示缺陷 | 加 `--json` |
-| 用 `task cancel`、`reopen`、`assign`、`stale` 时只回 `usage: task add …` | 装的是 npm 0.120.0，还没有这些命令 | 见 1.1 节末尾的差异表 |
+| 用 `task cancel`、`reopen`、`assign`、`stale` 时只回 `usage: task add …` | 装的是 0.120.0 或更早，还没有这些命令 | 升级到 0.121.0，或见 1.1 节末尾的差异表 |
 | `unknown verify action: prune`、`unknown job action: retire` | 同上 | 同上 |
 | 退出码 2，提示用法 | 少参数或参数非法 | 看提示，或 `ygl-trees --help` |
 
