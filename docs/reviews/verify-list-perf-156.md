@@ -114,7 +114,7 @@ candidate last 在“不重解析报告”的功能用例中读 specs 达295.12m
 
 ## 原始证据与复现
 
-开发机诊断目录 `D:/workspace/ygl-trees/tmp/issue156-exp/`：`prepare.cjs`/`run.cjs`（两版对照+9pair）、`profile.ts`（request/fs/GC/index trace）、`reporter.cjs`（文件时间线）、`*.snapshot.json`、`*.log`、`results.ndjson`。`full-candidate/` 为正常Git clone。永久仓内结论保存在本文件；原始日志是本机临时证据，不保证随clone分发。
+开发机诊断目录 `<repo-tmp>/issue156-exp/`：`prepare.cjs`/`run.cjs`（两版对照+9pair）、`profile.ts`（request/fs/GC/index trace）、`reporter.cjs`（文件时间线）、`*.snapshot.json`、`*.log`、`results.ndjson`。`full-candidate/` 为正常Git clone。永久仓内结论保存在本文件；原始日志是本机临时证据，不保证随clone分发。
 
 ```bash
 node node_modules/vitest/vitest.mjs run --config diagnostic.config.mjs --maxWorkers=2 packages/ops/tools/tests/verify-list-performance.spec.ts <pair-file>

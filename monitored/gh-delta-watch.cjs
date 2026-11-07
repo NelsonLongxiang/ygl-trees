@@ -11,7 +11,7 @@ const REPO = "NelsonLongxiang/ygl-trees";
 const STATE = path.join(__dirname, "gh-watch-state.json");
 const FIELDS = ["number", "title", "author", "updatedAt"];
 // 2026-10-27: gh 认证恢复于 Roaming 配置目录（.config\gh 早失）；gh 默认只找 .config\gh，故显式给默认。
-const GH_ENV = Object.assign({}, process.env, { GH_CONFIG_DIR: process.env.GH_CONFIG_DIR || "C:\\Users\\Administrator\\AppData\\Roaming\\GitHub CLI" });
+const GH_ENV = process.env; // gh resolves its own config dir; no machine-specific override
 
 function viaGh(kind) {
   try {

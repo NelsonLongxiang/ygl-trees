@@ -5,7 +5,7 @@
 "use strict";
 const { execFileSync } = require("node:child_process");
 const REPO = "NelsonLongxiang/ygl-trees";
-const GH_ENV = Object.assign({}, process.env, { GH_CONFIG_DIR: process.env.GH_CONFIG_DIR || "C:\\Users\\Administrator\\AppData\\Roaming\\GitHub CLI" });
+const GH_ENV = process.env; // gh resolves its own config dir; no machine-specific override
 const OPEN_FIELDS = ["number", "title", "author", "createdAt", "updatedAt"];
 const CLOSED_FIELDS = ["number", "title", "author", "closedAt"];
 

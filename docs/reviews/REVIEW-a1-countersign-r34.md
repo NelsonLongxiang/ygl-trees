@@ -19,7 +19,7 @@ kind: 评审
 ## 1. 采集环境
 
 ```text
-YGL_HOME=/d/workspace/a1-countersign/.home   （空 scratch，db init + project new）
+YGL_HOME=~/.ygl/a1-countersign/.home   （空 scratch，db init + project new）
 BIN=node dist/bundle/bin.cjs                  （HEAD 3e24b58 构建）
 leaf spec: spec_b0de240263b4（材料 S1 + count(claims)>=1，prepare ready 1/1）
 tree: root(all_pass) → a,b（同 leaf spec）；snapshot.sqlite 为工作区库副本
@@ -50,7 +50,7 @@ node scripts/tree-contract-matrix.mjs --results tmp/vitest-tree.json \
 | V7 | 同树第二次 run | 0 | `verdict_digest` 两次均 `f78caad67dbd…`（逐字节相等） | 同输入双跑 digest 相等 |
 | V6/Q2 | pinned 归档追加 `\0` 后 `tree run` | 0 | `verdict: NEUTRALIZED`，leaf `neutralized_reason: archive zip_sha256 mismatch`，root 非 PASS | 篡改 → 子树 NEUTRALIZED、根不得 PASS |
 
-原始输出留档：`/d/workspace/a1-countersign/probes.md`（每项含完整 JSON）。
+原始输出留档：`~/.ygl/a1-countersign/probes.md`（每项含完整 JSON）。
 
 ## 3. 两点观察（不阻塞绿行）
 

@@ -21,7 +21,7 @@ kind: 评审
 **矩阵**：HEAD 重生成 **green 21 / partial 1 / planned 2 / missing 0 / red 0**；Q8 绑定改为 run 级
 `Q8 run: spec.target (frozen) + live leaf mismatch`（原绑 prepare-only，复核修正）。
 
-**CLI 探针**（空 scratch `YGL_HOME=/d/workspace/a1-countersign/.home`）：
+**CLI 探针**（空 scratch `YGL_HOME=~/.ygl/a1-countersign/.home`）：
 
 | 项 | 探针 | 结果 |
 |---|---|---|
