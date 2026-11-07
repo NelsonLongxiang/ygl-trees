@@ -13,7 +13,9 @@ kind: 参考
 - 只想查命令，用 `ygl-trees --help`，或 `ygl-trees llms`（给 agent 的完整命令清单）。
 - 各情景的「方法论」细节在 `skills/` 下的十二个技能里，文中会给链接。
 
-> 本教程的命令和输出都在 ygl-trees 0.120.0 上实跑过，用的是一个干净的临时工作区。ID 是 10 位十六进制，每次运行都不一样；照着做时，请换成你自己输出里的 ID。
+> 本教程的命令和输出，是在一个干净的临时工作区里，用本仓库 master 构建的 CLI 实跑出来的。master 比 npm 上发布的 0.120.0 新，但版本号仍显示 0.120.0。如果你装的是 npm 版，请先看 [1.1 节末尾的差异表](#11-安装)。
+>
+> ID 是 10 位十六进制，每次运行都不一样。照着做时，请换成你自己输出里的 ID。
 
 ---
 
@@ -70,6 +72,29 @@ ygl-trees --version
 ```
 
 在本仓库里开发时，不装全局也行：`pnpm install && pnpm build`，然后用 `node dist/bundle/bin.cjs` 代替 `ygl-trees`。
+
+**npm 11 提示安装脚本没被允许。** 安装时可能看到 `better-sqlite3 … install scripts not yet covered by allowScripts`。
+
+先跑一次 `ygl-trees doctor`。如果 `sqlite_driver` 一项是 ✓，就不用管（macOS arm64 上实测是这样）。如果这一项报错，就放行这个包的安装脚本，再装一次：
+
+```bash
+npm install -g --allow-scripts=better-sqlite3 ygl-trees    # 全局安装
+npm install-scripts approve better-sqlite3 && npm install  # 装在某个项目里
+```
+
+全局安装不能用 `npm install-scripts approve`，npm 会报 EGLOBAL。
+
+**装的是 npm 上的 0.120.0？** 本教程有几处用法比它新。用 npm 版把本教程全部命令重放一遍，差异如下：
+
+| 教程里的用法 | 在 npm 0.120.0 上 |
+|---|---|
+| `task cancel`、`reopen`、`assign`、`stale`（情景 7） | 没有这些命令，报用法错误（退出码 2）。只有 `add`、`list`、`todo`、`doing`、`done` |
+| `task add --owner`（情景 7） | 不报错，但不记录负责人 |
+| `verify prune`（情景 9） | 没有：`unknown verify action: prune` |
+| `job show`、`job retire`（情景 10） | 没有：`unknown job action` |
+| `job add --replaces`（情景 10） | 不报错，但不生效，旧作业照旧保留 |
+| `job add` 不给调度方式，或 `--every` 低于 60（情景 10） | 都能登记，没有这两道保护 |
+| `doctor`（情景 7、13） | schema 是 v12；没有 `task_hygiene`、`job_health` 两项检查 |
 
 ### 1.2 工作区放在哪
 
@@ -162,6 +187,7 @@ ygl-trees research query attach 2f5bb47d05 32c6b49af3     # 记下：这个来�
 ```
 
 - `--relevance` 只收 0–5 的整数；`--confidence` 收 A、B、C。
+- 同一个网址只记一次：再登记同一个 URL，返回的是已有的那条。同一页面的不同段落要当成不同来源时，在网址后面加锚点，比如 `…/whentouse.html#dbcklst`。
 - 批量导入用 `--batch <file.jsonl>`（每行一个 JSON）。坏行会点出行号，整批拒收，一行都不写。
 
 ### 步骤 3：摘原文
@@ -228,6 +254,8 @@ ygl-trees produce export 483aa09b77 report.md            # 报告 ID 见上一�
 - `resolve` 是**人工仲裁**，结果可以是 `supported`、`refuted` 或 `contested`（有争议）。
 - 仲裁错了，用 `research claim unresolve <id>` 退回待验证。
 - 报告前想先看结构，用 `produce outline`。要补几段自己写的文字，用 `produce section <标题> --body "…"`。
+- 同名段落再存一次，会记成新版本（v2）。但报告里 v1 和 v2 会同时出现，目前也没有删除段落的命令。所以段落写定了再存。
+- 报告的「局限与未决问题」一节，只自动列出还没被支持的判断。设计上的取舍和代价，要自己用 `produce section` 写一段。
 
 **做完检查：**
 - `agent brief` 里的 `claims x/y verified` 是不是你预期的数。
@@ -237,6 +265,7 @@ ygl-trees produce export 483aa09b77 report.md            # 报告 ID 见上一�
 - 先写结论再找证据：证据会变成装饰。顺序是先摘原文，再立判断。
 - 把转述当原文存进 `--quote`：将来没人能核对。
 - 判断没有挂证据就 resolve：等于拍脑袋，巡检会抓出来。
+- 判断的文字立下后就改不了，也删不掉。措辞想清楚再 `claim add`。
 
 深入：[ygl-trees-research](../skills/ygl-trees-research/SKILL.md)。
 
@@ -639,6 +668,12 @@ ygl-trees task stale                                    # doing 超 14 天、tod
   ✓ task 6f264349dd: todo → cancelled (试点用不到 BI)
 ```
 
+任务属于项目。在别的项目下操作它，会报找不到，并告诉你它属于哪个项目。按提示加 `-p` 就行：
+
+```text
+  ✗ task not found: 5e760136a7  (it belongs to project 'pg-choice' — use -p pg-choice)
+```
+
 把任务挂到它推进的树节点上，节点和任务就能互相找到：
 
 ```bash
@@ -921,7 +956,7 @@ ygl-trees patrol run
   ✓ all clear — open findings: 0
 ```
 
-> 已知问题（0.120.0）：`patrol list`、`patrol findings`、`verify list` 的人类表格把数据行打成了空行。请暂时加 `--json` 查看。
+> 已知问题（npm 0.120.0 和当前 master 都有）：`patrol list`、`patrol findings`、`verify list` 的人类表格把数据行打成了空行。请暂时加 `--json` 查看。
 
 要定期巡检，就把 `patrol run` 登记成 job。
 
@@ -993,7 +1028,7 @@ MCP 客户端配置示例（各客户端的键名以它自己的文档为准，�
 ### 13.1 体检
 
 ```bash
-ygl-trees doctor          # 18 项检查
+ygl-trees doctor          # 十几项检查，具体数目随版本和工作区里的内容变化
 ygl-trees doctor --fix    # 自动做安全修复：脏索引、死进程留下的锁、幻影写入对账
 ```
 
@@ -1077,7 +1112,9 @@ YGL_PG_URL=postgres://… ygl-trees db migrate pg   # 一次性完整迁移，�
 | `no evaluator configured` | 决策模型没配凭证 | `config set decision_model_llm_token …`；不配就停在待判定 |
 | `node ready` 把最终目标列为可做 | 连线方向反了 | `node link <前置> <后续>`，前置写在前面 |
 | 节点没满足前置却显示已解锁 | `unlock` 只是打标记 | 解锁前先 `node can` |
-| 表格只有表头、数据行是空的 | 0.120.0 的显示缺陷 | 加 `--json` |
+| 表格只有表头、数据行是空的 | 已知的显示缺陷 | 加 `--json` |
+| 用 `task cancel`、`reopen`、`assign`、`stale` 时只回 `usage: task add …` | 装的是 npm 0.120.0，还没有这些命令 | 见 1.1 节末尾的差异表 |
+| `unknown verify action: prune`、`unknown job action: retire` | 同上 | 同上 |
 | 退出码 2，提示用法 | 少参数或参数非法 | 看提示，或 `ygl-trees --help` |
 
 ---
