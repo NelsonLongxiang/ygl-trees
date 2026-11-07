@@ -127,6 +127,28 @@ describe.skipIf(!hasBin)("patrol command family (0.93-T2)", () => {
     expect(rc4.auto_fixed).toBe(1);
   });
 
+  test("human tables show data rows: patrol list and patrol findings (#239)", () => {
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(join(HOME, "ygl-trees.db"));
+    db.prepare(`INSERT INTO projects(id,name,question,status,created,updated)
+      VALUES('pp239','table-proj','','limbo','2019-01-01','2019-01-01')`).run();
+    db.close();
+    expect(run(["patrol", "add", "limbo-projects", "--sql", "SELECT id FROM projects WHERE status = 'limbo'", "--severity", "S2"]).rc).toBe(0);
+    expect(run(["patrol", "run", "--json"]).rc).toBe(0);
+    const check = JSON.parse(run(["patrol", "list", "--json"]).out).find((c: any) => c.name === "limbo-projects");
+    const finding = JSON.parse(run(["patrol", "findings", "--status", "open", "--json"]).out).find((f: any) => f.check_name === "limbo-projects");
+
+    const list = run(["patrol", "list"]);
+    expect(list.rc).toBe(0);
+    const row = list.out.split("\n").find((l) => l.includes(check.id));
+    expect(row, list.out).toBeDefined();
+    expect(row).toMatch(/limbo-projects\s+S2\s+1\s+1/); // severity, on (enabled), open
+
+    const findings = run(["patrol", "findings", "--status", "open"]);
+    expect(findings.rc).toBe(0);
+    expect(findings.out.split("\n").find((l) => l.includes(finding.id)), findings.out).toMatch(/limbo-projects\s+S2\s+open\s+\S*pp239/);
+  });
+
   test("run JSON stays pure (single object) and rm names unknown checks", () => {
     const j = run(["patrol", "run", "--json"]);
     expect(j.rc).toBe(0);

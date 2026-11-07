@@ -1921,7 +1921,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           out(ctx, paint(C.dim, "  every run is archived", ctx.color));
           return 0;
         }
-        table(ctx, runs, ["run_id", "spec_id", "overall", "created"], []);
+        { const cols = ["run_id", "spec_id", "overall", "created"]; table(ctx, runs, cols, cols); }
         return 0;
       }
       const dirs = existsSync(p.specs) ? readdirSync(p.specs) : [];
@@ -1942,7 +1942,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, paint(C.dim, "  no specs yet — verify submit → verify prepare", ctx.color));
         return 0;
       }
-      table(ctx, rows, ["spec_id", "version", "units", "runs", "last_overall", "title"], []);
+      { const cols = ["spec_id", "version", "units", "runs", "last_overall", "title"]; table(ctx, rows, cols, cols); }
       return 0;
     }
 
