@@ -93,7 +93,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
            FROM patrol_checks c ORDER BY c.name`
       ) as any[];
       if (ctx.json) { console.log(JSON.stringify(checks, null, 2)); return 0; }
-      table(ctx, checks, ["id", "name", "severity", "on", "open", "description"], []);
+      table(ctx, checks, ["id", "name", "severity", "on", "open", "description"], ["id", "name", "severity", "enabled", "open", "description"]); // #239: header "on" shows the enabled column
       return 0;
     }
 
@@ -151,7 +151,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         status ? [status] : []
       ) as any[];
       if (ctx.json) { console.log(JSON.stringify(findings, null, 2)); return 0; }
-      table(ctx, findings, ["id", "check_name", "severity", "status", "row_key", "last_seen", "note"], []);
+      { const cols = ["id", "check_name", "severity", "status", "row_key", "last_seen", "note"]; table(ctx, findings, cols, cols); }
       return 0;
     }
 

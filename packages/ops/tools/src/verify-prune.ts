@@ -655,7 +655,7 @@ export function runPruneCommand(ctx: Ctx, home: string, rest: string[], flags: R
     if (history) out(ctx, `  self-check history  ${history.total} files · keep ${history.keep} (newest per case) · delete ${history.delete} (${gib(history.bytes)})`);
     out(ctx, `  ${opts.apply ? "freed" : "frees"}      ${gib(view.bytes.total + (history?.bytes ?? 0))} (reports ${gib(view.bytes.reports)} · archives ${gib(view.bytes.archives)} · snapshots ${gib(view.bytes.snapshots)}${history ? ` · self-check history ${gib(history.bytes)}` : ""})`);
     const specs = view.specs.filter((s) => s.delete).slice(0, repo ? 5 : 20);
-    if (specs.length) table(ctx, specs, ["spec_id", "total", "keep", "delete", "oldest_deleted", "newest_deleted"], []);
+    if (specs.length) { const cols = ["spec_id", "total", "keep", "delete", "oldest_deleted", "newest_deleted"]; table(ctx, specs, cols, cols); }
     if (result) {
       out(ctx, `  deleted    ${result.deleted.reports} reports · ${result.deleted.sidecars} sidecars · ${result.deleted.zips} zips · ${result.deleted.snapshots} snapshots${history ? ` · ${result.deleted.selfcheck_history} self-check history files` : ""} — logged to ${result.log}`);
       for (const f of result.failed.slice(0, 10)) out(ctx, paint(C.red, `  ✗ ${f}`, ctx.color));
