@@ -7,7 +7,7 @@ kind: 评审
 # A1 v1.2 Q10 返工 · 复核报告（r35）
 
 > 复核对象：HEAD `29d0a3a`（Q10 返工 `eb3d6f2` + Q12/Q13 `29d0a3a`），矩阵声称 green 13→20。
-> 方法：代码路径核对 + `pnpm build` 后空 scratch CLI 探针（`YGL_HOME=/d/workspace/a1-countersign/.home`，HEAD 构建）。
+> 方法：代码路径核对 + `pnpm build` 后空 scratch CLI 探针（`YGL_HOME=~/.ygl/a1-countersign/.home`，HEAD 构建）。
 > 结论：**退回补做，不签 0.115.0**。绿行测试通过属实，但 Q8/Q9/G8 的绿行与裁定单断言不对应（测试只覆盖子集），另有树五值枚举泄漏与 V15 全序冲突两个契约级问题。
 
 ## 0. 已通过项（正向）

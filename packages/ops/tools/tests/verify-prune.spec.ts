@@ -313,6 +313,25 @@ describe("verify prune — usage and CLI", () => {
     const again = JSON.parse(spawnSync(process.execPath, [BIN, "verify", "prune", "--keep-last", "5", "--json"], { cwd: ROOT, encoding: "utf8", env }).stdout);
     expect(again.reports.delete).toBe(0);
   });
+
+  it("human tables show data rows: verify list, verify list --unarchived and the prune plan (#239)", () => {
+    const h = home();
+    const env = { ...process.env, YGL_HOME: h, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" };
+    expect(spawnSync(process.execPath, [BIN, "db", "init", "--json"], { cwd: ROOT, encoding: "utf8", env }).status).toBe(0);
+    const v = join(h, "verify");
+    series(v, "spec_t239", 1, 8);
+    const loose = addRun(v, 900, "spec_t239", day(20), "FAIL", { zip: false });
+    mkdirSync(join(v, "specs", "spec_t239"), { recursive: true });
+    writeFileSync(join(v, "specs", "spec_t239", "spec.json"), JSON.stringify({ spec_id: "spec_t239", spec_version: 3, title: "table rows", vu: [{}, {}] }));
+    const cli = (...argv: string[]) => {
+      const r = spawnSync(process.execPath, [BIN, "verify", ...argv], { cwd: ROOT, encoding: "utf8", env });
+      expect(r.status, argv.join(" ") + r.stdout + r.stderr).toBe(0);
+      return r.stdout.split("\n");
+    };
+    expect(cli("list").find((l) => l.includes("spec_t239"))).toMatch(/spec_t239\s+3\s+2\s+9\s+\S+\s+table rows/);
+    expect(cli("list", "--unarchived").find((l) => l.includes(loose))).toMatch(/spec_t239\s+FAIL/);
+    expect(cli("prune", "--keep-last", "5").find((l) => /^\s+spec_t239\s/.test(l))).toMatch(/spec_t239\s+9\s+\d+\s+\d+/);
+  });
 });
 
 /** A verifier repository in the fleet layout: state/home/verify + work/results (latest.json) + ledger/. */

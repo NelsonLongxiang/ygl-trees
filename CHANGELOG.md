@@ -1,8 +1,10 @@
 ## Unreleased
 
+## 0.121.0
+
 用户可见行为变化：
 
-- **PG 目标显示**：连接目标经共用 URL 格式化助手输出，统一处理用户信息和凭据参数；无法解析的目标以占位文本显示，连接行为和命令退出码不变。
+- **PG 目标显示**（#230，Refs #93）：连接目标经共用 URL 格式化助手输出，统一处理用户信息和凭据参数；无法解析的目标以占位文本显示，连接行为和命令退出码不变。
 - **验证工作区保留策略 `verify prune`**（#222）：报告、归档 zip 与快照原先永不清理，高频验证器一个月涨到几十 GiB。`verify prune` 默认只试跑——列出保留/删除计数、按 spec 的删除时间段与可腾出字节，不动任何文件；`--apply` 才删，并同步 `verify list` 索引、在 `verify/prune-log.jsonl` 追加一行摘要（含被删 run id 排序清单的 sha256）。保留规则任一成立即留：每个 spec 最近 N 份（`--keep-last`，默认 10）、最近 F 次结论翻转两侧（`--keep-flips`，默认 10，0 关）、每个 `spec_version` 首份、被钉住（`--keep-runs-in <文件|目录>` 内容里的 `run_…`、毕业记录、树报告、登记表 `verifier_runs`）、`--min-age-minutes`（默认 60）内刚跑完、读不懂的报告。删除只碰 `archives/` 内侧车列出的 zip，仍被保留运行引用的 zip 与快照不删，无主快照只计数。用法错误（含 `--keep-runs-in` 路径不存在）rc2 单 JSON，先于任何 verify 目录 I/O。**任何节点通用**：`--repo <验证器仓库>`（可多个）按舰队约定（`state/home/verify` + `work/results/latest.json` 契约 `ygl-verifier-latest/1` + 可选 `ledger/`）清理验证器仓库——钉住来源是整个仓库（`state/`、`.git/`、`node_modules/` 之外任何类型的文件，含 `ledger.sql` 与账本库；自检工作副本与自检历史除外），自检历史 `selfcheck-<用例>--run_<id>.json` 每个用例留最新一份，其余列为可删；所有仓库先全部规划再动手；被清理仓库的工作区库从不打开。`verify prune` 在 CLI 启动工作区之前执行：不打开、不新建、不迁移任何数据库，没 `db init` 的新节点也能直接跑；本工作区登记表的 run id 只读读取，库坏了 rc1 报错而不是当成没有钉住。另有两条保护：保留运行快照里点名的子运行传递保留（「cited」）；zip 只在真实路径（解开链接/junction）位于 `archives/` 内、且没有任何留存侧车（含读不懂的报告）还列着时才删；报告删失败时它的快照不删，重跑可续；钉住范围里任何文件或目录读不了（没权限、断掉的链接）就 rc1 点名，所有目标都不删任何东西（读不到的钉住绝不当成没有钉住）。
 - **测试不再往 `tmp/` 漏空目录**（#222）：`scripts/dual-backend-matrix.mjs --b8-sqlite-only` 先校验基线再建 `tmp/b8-sqlite-gate-*`，输入缺失或损坏时不留空目录（原先每跑一次单测留两个）；校验通过之后的失败仍保留目录供排查。
 
@@ -21,6 +23,26 @@
 - **旧验证器仓库的桥 `verify instance import-latest`**（#207，Refs #205 · 规模化 S1）：`verify instance import-latest <latest.json> --owner <谁>` 把仓库式验证器写出的 `ygl-verifier-latest/1` 导进登记表：实例 `kind: legacy-repo`（`pack` = 验证器名，`pack_version: legacy`），运行 id 即 `root_run_id`（同轮再导 rc0 `duplicate:true`；该 id 已属别的实例 rc1）。target 先认 GitHub 上游（`repo_url`，再读本地检出 `.git/config` 的 origin），无上游才落 `path:`。形状不合（缺字段/非法 `overall`/非 ISO `judged_at`…）rc1 逐项点名、不写入；归档或结果文件缺失时 `archive_ok:false` 但照常导入。旧仓库本身不改。`verify instance show` 另带 `runs`：最近 20 轮运行（新在前）。
 - **验证器两层：全局规范与项目包**（#213，Refs #205 · 严格方案）：不带作用域的 `ygl-v-<名>` 只给全局包（`ygl-v-core-aggregate`、`ygl-v-pr-gate`、`ygl-v-release-audit`，名单只在 ygl-trees 源码），名单外 `verify instance create` rc2；项目包必须 `@<项目>/ygl-v-<名>`，target 为 git 仓时作用域须等于目标仓名，否则 rc2；git target 解析不出仓名（如 `git:/`、`git:////`）对任何包都 rc2，不再跳过作用域检查。实例输出新增 `scope`（`global` 或项目名；归不到项目时为 `(none)`——带括号，不会与任何真实仓名相撞，从包名或 legacy 目标推出，不入库，v13 表结构不变），`verify instance list --scope <s>` 按层筛选。`import-latest` 的目标归不到具名的 GitHub 项目（`path:`/`ref:`，或 `owner/.`、`owner/..` 这类不指向仓库的写法）时 rc1 不写入。
 - 重复旗标：`--param` 与 `--attach`/`--db` 一样按出现顺序累积为数组（其余旗标仍后者覆盖前者）。
+
+- **PG 工作区的科技树状态与查询**（#194，Refs #176 · W1-T3）：PG 下开放 `node cond add/rm/list`、`node unlock/lock`、`node can`、`node ready`（含 `--all`）、`node path` 与 `node parents/children/ancestors/descendants`。判定不为 PG 另写一套：把所选树物化进内存 SQLite，复用同一份 `canUnlock`/`ready`/`pathTo` 实现。`--eval`、`cond --due`、`search/export/import` 在 PG 下仍 rc2，在连库之前拒绝。
+- **锁定的节点不再冒充刚解锁**（#198，Refs #197）：未解锁（锁定或无状态）节点的 `unlocked_at` 读出为 null，SQLite 与 PG 的四个读投影一致；以前会把加锁时的更新时间当成解锁时间。不改 schema、写路径和历史数据。
+- **帮助面写全可移植冻结件**（#200，Refs #195）：`verify --help` 分别列出裸 `export`、`export --portable` 与保身份的 `import`（含哈希、duplicate、冲突语义）；llms 清单各占一行；verify 技能补上可移植往返的说明。运行时行为不变。
+- **`verify instance import-latest` 拒收不点名仓库的旧目标**（#219，Refs #207 #213）：旧验证器仓库的目标按仓库名判定作用域，`.`、`..` 或空名一律拒绝（rc1），在写入之前。
+- **新示例：校验采集的 SQLite 结构快照**（#211，Refs #80）：`examples/verify-schema-snapshot/` 演示调用方采集器从静止的独立 SQLite 读取表元数据、另建证据库并记录源 SHA 与时间，再用现有判据校验普通表。契约 1.2 不变，#80 仍开放。
+
+文档：
+
+- **首次使用与 MCP 反馈渠道**（#196）：新增 issue 模板，收集首次使用和 MCP 客户端的结果（含失败）；README 反馈段指向它，并写明反馈是公开的，不得上传私有数据、数据库或凭证。
+- **验证器仓库布局与多验证器组合**（#204）：verify 技能新增 §2d，写明 `verify meta` 强制的部分与舰队约定、R3/R5a/R6 要点、两层组合方式与新验证器最小清单。
+- **验证器规模化方案与两层规范**（#208、#215，Refs #205 #213）：`docs/reviews/verifier-scale-plan.md`（包、实例、运行三层取代一仓一验证器；§2.1 全局与项目两层）；verify 技能 §2d 同步。
+- **章程 v1.4**（#226，Refs #225）：标题改为 v1.4 并补 v1.4 修订行；P2 过渡例外后注明 v3 consumer 以更具体的 R6⑥ 为准、登记 `invoke` 不能让 consumer 通过准入、v1/v2 兼容不是降级求绿、`source_roots` 只界定 R3。
+
+门禁与测试（不影响运行时）：
+
+- **README 计数门**（#217、#218，Refs #216）：内嵌单测运行失败时点名失败用例而不是留空；每次运行单独保留一份日志。
+- **PG 测试接受无密码 URL**（#201，Refs #199）：凭证输出检查放行无密码连接串，泄漏检查不放宽。
+- **MCP 超时诊断**（#223，随 #221 合入）：MCP 用例超时时报出请求序号、阶段、工具与会话，以及 CLI 子进程的启动、退出、关闭时刻和输出字节数；参数、argv 与输出尾部按键名脱敏。15 秒时限、并发与重试均未改。
+- **测试不再往系统临时目录漏目录**（#229、#231，Refs #227）：六个单测与 Rust 的 `cli.rs`、`file_ignore.rs` 测完自行删除临时目录（Rust 侧 panic 时也删）；整轮单测改用独立临时根（vitest `globalSetup`），跑完清点后删除，除 Node 编译缓存与引擎快照副本外还有残留就判红并点名。被跳过的用例组也不再在收集阶段建目录（#231：没有 Rust 二进制时 `seal-parity` 原先会留一个目录）。
 
 ## 0.120.0
 

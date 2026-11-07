@@ -81,6 +81,8 @@ export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[]
     if (hint) out(ctx, paint(C.dim, `  → ${hint}`, ctx.color));
     return;
   }
+  // #239: an empty keys array is truthy and used to render every data row as a blank line — refuse it loudly.
+  if (keys && !keys.length) throw new Error("table(): keys is empty — pass the row keys to show, or omit it");
   const cols = keys || Object.keys(rows[0]).filter((k) => !k.startsWith("_"));
   const hs = headers || cols;
   const widthOf = (k: string) => Math.min(40, Math.max(...rows.map((r) => dispWidth(String(r[k] ?? "")))));

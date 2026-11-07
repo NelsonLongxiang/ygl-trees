@@ -35,7 +35,7 @@
 | POST run（同 spec + snapshot） | 200 `overall=PASS`，`archive=true`（`arc_de366276c82d`），`archive_error=null` |
 | 报告 `data_source` | `{kind:"sqlite-snapshot", sha256:"sha256:02c771f0…", source:"blob:02c771f01c31", captured_at}` |
 | file 型 VU over HTTP | ERROR `file checker requires --attachments <dir>`（fail-closed，与 CLI 无 `--submission` 同义） |
-| command 型 VU over HTTP | PASS；`evidence.stdout` = `D:\workspace\ygl-trees\n["API_TIMEOUT_MS"]`（见 P3-3） |
+| command 型 VU over HTTP | PASS；`evidence.stdout` = `<repo-root>\n["API_TIMEOUT_MS"]`（见 P3-3） |
 | agent 型 VU（无 reviewer） | ERROR `review layer not available in fact-only mode`（engine.ts:501-503，fail-closed） |
 | 运行后 `archive --with snapshot` | rc=0，`archive_id=arc_30a04a73840f`，`items=5`，`with:["snapshot"]` |
 
@@ -71,7 +71,7 @@ CLI 支持 `--as-of`（`verify-cmds.ts:215/398-399`，默认冻结时刻），HT
 上传门按 host 判定（`verify-web.ts uploadAllowed`：回环才默认开，`YGL_VERIFY_ALLOW_UPLOAD` 显式开/关）；作业面只看 `--enable-verify-jobs`（`webui.ts:580-590`）。若操作员 `serve --host 0.0.0.0 --enable-verify-jobs`，LAN 客户端可 POST prepare/run（对已存在 blob 的 spec 反复跑/归档，CPU 与磁盘 DoS；不能上传新快照）。建议与上传门同构：非回环默认拒作业面，`YGL_VERIFY_ALLOW_JOBS_REMOTE=1` 显式开；或至少在 docs 写明「flag 打开的是 serve 所绑定接口上的执行面」。
 
 ### P3-3 command 型 VU 继承 serve 的 cwd/env
-实测 `evidence.stdout` 含 `process.cwd()`=`D:\workspace\ygl-trees` 与环境变量**键名**（该环境无 token 类键；生产 env 若有则键名会进报告/归档）。`spawnSync` 用 `stdio pipe`、`cwd`=submissionDir（HTTP 无 → 进程 cwd）、env 默认继承。建议：command VU 传 `env:{}`+最小 `PATH`（或白名单 env 键）并显式 `cwd`；至少在 §7 写明 command 型在 HTTP 面继承 serve 环境，生产环境应隔离。
+实测 `evidence.stdout` 含 `process.cwd()`=`<repo-root>` 与环境变量**键名**（该环境无 token 类键；生产 env 若有则键名会进报告/归档）。`spawnSync` 用 `stdio pipe`、`cwd`=submissionDir（HTTP 无 → 进程 cwd）、env 默认继承。建议：command VU 传 `env:{}`+最小 `PATH`（或白名单 env 键）并显式 `cwd`；至少在 §7 写明 command 型在 HTTP 面继承 serve 环境，生产环境应隔离。
 
 ### P3-4 快照 blob 上限 64 MiB 隐含约束
 `BLOB_LIMIT=64 MiB` 同时约束附件与快照；业务库快照 >64 MiB 时 HTTP run 无法进行（CLI 不受限）。docs:290 只写了「超 64 MiB 回 413」。建议 §7 明确「HTTP run 的快照上限 64 MiB；更大库走 CLI 或调高上限」。

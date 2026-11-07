@@ -21,7 +21,7 @@ kind: 评审
 
 ## 1. 阻塞 bug：tree spec 冻结的 target 在 run 期是 `[object Object]`
 
-**复现**（`YGL_HOME=/d/workspace/a1-countersign/.home`）：
+**复现**（`YGL_HOME=~/.ygl/a1-countersign/.home`）：
 
 ```json
 // tree JSON（prepare 用）

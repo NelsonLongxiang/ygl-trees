@@ -1,6 +1,6 @@
 # ygl-trees 项目目录层级规划
 
-日期：2026-10-16 ｜ 参考：D:\workspace\deepseek-harness（packages/apps/vendor 分层 + Cordis 框架） ｜ 状态：定稿
+日期：2026-10-16 ｜ 参考：deepseek-harness 仓（packages/apps/vendor 分层 + Cordis 框架） ｜ 状态：定稿
 
 ## 设计原则（从 deepseek-harness 提炼并适配）
 

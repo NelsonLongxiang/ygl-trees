@@ -1,4 +1,4 @@
-# ygl-trees v0.120.0 — AI Agent Research Workbench
+# ygl-trees v0.121.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -50,6 +50,8 @@ research claim resolve <cid> --as supported|refuted|contested # manual arbitrati
 research claim unresolve <cid>                               # reset to unverified (undo link auto-promote)
 research claim evaluate <cid>                                # decision model confidence (0-5 → A/B/C/D), persisted as claim.eval
 research claim calibration [--all]                           # model-vs-human grade gap (校准预测判据 ≥60%)
+research predict list [--all] [--due]                        # P / Brier + settlement-note drift
+research predict score [--all] [--channel <c>]               # channel hit rate / mean Brier
 research evidence assess <eid>                               # decision model quality assessment
 research evidence rm <eid> [--force]                         # delete evidence (refuse if linked)
 research claim unlink <cid> <eid>                            # remove one claim-evidence link
@@ -119,9 +121,12 @@ node validate                                                # cycles, dangling 
 Task state machine
 
 ```bash
-task add "<title>"                                           # create task (todo)
-task list [--status]                                         # list by status
+task add "<title>" [--owner <who>]                           # create task (todo)
+task list [--status] [--owner]                               # list by status / owner (owner, status_at, done_at)
 task doing <id> / task done <id> / task todo <id>            # advance or roll back
+task cancel <id> --reason <why> / task reopen <id>           # close without doing it (reason required) / back to todo (#220)
+task assign <id> <owner>                                     # set the owner
+task stale [--all]                                           # open tasks past the doing/todo thresholds (#220)
 ```
 
 ### rel
@@ -171,7 +176,7 @@ db reset                                                     # delete database
 
 ### doctor
 
-Health check (10 items)
+Health check (18 items)
 
 ```bash
 doctor [--fix]                                               # diagnose (+ auto-fix: dirty index, dead stale lock, phantom writes)
@@ -190,8 +195,11 @@ config list / get / set / reset                              # registry-backed s
 Batch scheduling
 
 ```bash
-job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"] -- "<cmd>" # create scheduled job
+job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <old>] -- "<cmd>" # create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force)
 job tick                                                     # run due jobs (drive with cron)
+job list / job show <id|title>                               # command + health, consecutive failures, last error, next due (#220)
+job retire <id|title> --reason <why>                         # disable + mark retired; history kept
+job prune-runs [--keep N] [--apply]                          # trim old run rows (dry run by default)
 ```
 
 ### verify
@@ -202,22 +210,28 @@ Spec validator (M13): material → spec → report
 verify submit --title <t> --text <file|-> [--attach <f>] [--clause-pattern <regex>] [--meta-repo <dir> | --require-meta | --no-meta] # freeze material (+ its clause pattern, default ^([A-Z]+[0-9]+) ); verifier repos must pass verify meta (default hard since 0.113.0); --meta-repo names a repo outside cwd, --no-meta bypasses, recorded as meta.bypass
 verify prepare <material-id> --candidates <f> --reviews <f> --db <snap> [--meta-repo <dir> | --require-meta] [--draft] [--no-meta] # extract → translate → blind self-review → freeze spec (--draft = dry run); meta gate default hard for verifier repos (0.113.0); --meta-repo/--require-meta make it explicit, --no-meta bypasses with a ledger event
 verify tree prepare <material-id> [--pinned <node>=<sha256>] # freeze recursive tree spec (A1; cycles/empty/depth/operator checks);材料=纯 JSON 树对象（入口容差：kind:agg→group、op→aggregate 别名，冻结面 canonical）
-verify tree run <tree-spec-id> [--db <path>|--db <node>=<path>] # post-order recursive run; leaves real run+archive (--no-archive skips)
+verify tree run <tree-spec-id> [--db <path>|--db <node>=<path>] [--provenance <json>] # post-order recursive run; leaves real run+archive (--no-archive skips)
 verify tree report <tree-run-id> | trace <tree-spec-id>      # read frozen tree run report / list tree runs
-verify run <spec-id> --db <snapshot.sqlite>                  # run checkers on a snapshot copy → report (rc=0 even on FAIL)
+verify export <spec-id> --portable [--out <f>]               # self-contained frozen bundle: spec + prepare + material + attachments; content-hash checked on import; omit --portable for a bare spec
+verify import <file.yglverify.json>                          # content-hash checked restore keeping spec_id/spec_version/as_of; repeat → rc0 duplicate:true, conflicting bytes → rc1
+verify run <spec-id> --db <snapshot.sqlite> [--provenance <json>] # run checkers on a snapshot copy → report (rc=0 even on FAIL)
 verify graduate <spec-id> [--min-runs N] [--min-span-days D] [--db <source>] [--every MIN --schedule] [--patrol] # freeze eligibility (same spec_version, N PASS runs, span ≥ D days) → recurring check (--db retargets the job only); --patrol only when the verified db IS the workspace db
 verify register <sealed-binary> [--keys <file>]              # register a sealed yglverify build (footer chain + signature → registrations/ + binaries/)
 verify signature <sealed-binary> [--expect-key <hex|file>]   # verify the seal's ed25519 footer signature against the repository key table
-verify list / report <run-id> / trace <spec-id> / export <spec-id> # catalog, reports, construction trace, .yglverify.json
+verify list / report <run-id> / trace <spec-id>              # catalog, reports and construction trace
 verify report import <report.json>                           # import a sealed-run report (payload/binary/spec_version checks)
 verify archive <run-id|spec-id> [--with …] [--snapshot <db>] # archive bundle (report+spec+materials; --snapshot for cross-impl runs)
 verify archive verify <file>                                 # recompute the full hash chain of an archive bundle
 verify list --unarchived                                     # runs that exist but were never archived
+verify prune [--repo <verifier-repo>]… [--keep-last N] [--keep-flips N] [--keep-runs-in <file|dir>]… [--min-age-minutes M] [--apply] # retention for reports/archives/snapshots: keeps recent, verdict flips, first of each version, pinned and young runs; --repo cleans verifier repos (pins from work/results + ledger, newest self-check history per case); dry run unless --apply (#222)
 verify self-check                                            # recursive gate: canonical vectors → corpus digest → shapes → corpus cases → archives
 verify example [--checker <type>]                            # corpus-derived candidates for the seven checker types (null ops included)
 verify meta [<repo>]                                         # verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)
 verify probe --matrix [--target <sealed>] [--only <probe>]   # 16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)
 verify lint-candidates <file> [--text <material>] [--reviews <file>] # shape + clause-coverage + review-pairing check without consuming spec_version
+verify instance create --pack <@project/ygl-v-name>@<semver> --target <kind>:<ref> --owner <who> # register a verifier instance as a registry row; id is content-addressed, same binding → rc0 duplicate:true (#206); unscoped names only for global packs (#213)
+verify instance list [--scope <project|global>] | show <id> | retire <id> --reason <r> # registry reads with last run and scope; retire keeps the row readable
+verify instance import-latest <latest.json> --owner <who>    # record a legacy verifier repo's latest run (instance kind legacy-repo; same run → duplicate:true) (#207)
 ```
 
 ### patrol
