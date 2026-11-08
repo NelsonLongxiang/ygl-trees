@@ -3,6 +3,12 @@
  * version nag. It is NOT the R5b audit clock (#29): cache-only, stderr-only,
  * never gates, never touches stdout/JSON, silent offline, silent in scheduler
  * context, one prompt per npm latest, 24h TTL for the detached refresh.
+ *
+ * #235: this suite isolates every env var the update-check code reads
+ * (YGL_NO_UPDATE_CHECK / YGL_SERVE / YGL_RUN_ID) before each describe run and
+ * restores them afterwards — a test must not depend on the caller's
+ * environment for something it controls itself (the 0.121.0 G7 wrapper
+ * exported YGL_NO_UPDATE_CHECK=1 and this suite went 1-red on exactly that).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -35,16 +41,41 @@ function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
     encoding: "utf8",
     timeout: 60_000,
-    env: { ...process.env, YGL_HOME: HOME, YGL_NO_UPDATE_CHECK: "" },
+    env: { ...process.env, YGL_HOME: HOME, YGL_NO_UPDATE_CHECK: undefined } as NodeJS.ProcessEnv, // #235: unset, not empty-string
   });
   return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
 }
 
 describe("update-check compare/cache (unit)", () => {
+  // #235: snapshot & clear the vars this suite owns; restore in afterAll.
+  let PREV: { noUpdate?: string; serve?: string; runId?: string } = {};
+  const restoreAll = () => {
+    const set = (name: string, v: string | undefined) => {
+      if (v === undefined) delete process.env[name];
+      else process.env[name] = v;
+    };
+    set("YGL_NO_UPDATE_CHECK", PREV.noUpdate);
+    set("YGL_SERVE", PREV.serve);
+    set("YGL_RUN_ID", PREV.runId);
+  };
+  const scrubEnv = () => {
+    delete process.env.YGL_NO_UPDATE_CHECK;
+    delete process.env.YGL_SERVE;
+    delete process.env.YGL_RUN_ID;
+  };
   beforeAll(() => {
+    PREV = {
+      noUpdate: process.env.YGL_NO_UPDATE_CHECK,
+      serve: process.env.YGL_SERVE,
+      runId: process.env.YGL_RUN_ID,
+    };
+    scrubEnv();
     HOME = mkdtempSync(join(tmpdir(), "ygl-upd-"));
   });
-  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  afterAll(() => {
+    restoreAll();
+    rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
   beforeEach(() => {
     try {
       rmSync(cachePath(HOME), { force: true });
@@ -117,12 +148,32 @@ describe("update-check compare/cache (unit)", () => {
 });
 
 describe.skipIf(!HAS_BIN)("update-check CLI surface (0.114.6)", () => {
+  // #235: same isolation contract for the CLI face (spawned children inherit
+  // this env — db init in beforeAll must not nag-or-skip on the caller's vars).
+  let PREV: { noUpdate?: string; serve?: string; runId?: string } = {};
   beforeAll(() => {
+    PREV = {
+      noUpdate: process.env.YGL_NO_UPDATE_CHECK,
+      serve: process.env.YGL_SERVE,
+      runId: process.env.YGL_RUN_ID,
+    };
+    delete process.env.YGL_NO_UPDATE_CHECK;
+    delete process.env.YGL_SERVE;
+    delete process.env.YGL_RUN_ID;
     HOME = HOME || mkdtempSync(join(tmpdir(), "ygl-upd-cli-"));
     const init = spawnSync(process.execPath, [BIN, "db", "init"], { encoding: "utf8", env: { ...process.env, YGL_HOME: HOME } });
     expect(init.status).toBe(0);
   });
-  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  afterAll(() => {
+    const set = (name: string, v: string | undefined) => {
+      if (v === undefined) delete process.env[name];
+      else process.env[name] = v;
+    };
+    set("YGL_NO_UPDATE_CHECK", PREV.noUpdate);
+    set("YGL_SERVE", PREV.serve);
+    set("YGL_RUN_ID", PREV.runId);
+    rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
 
   it("human command: update available → stderr line, rc unchanged, stdin/stdout contract intact", () => {
     seed("9.9.9");
