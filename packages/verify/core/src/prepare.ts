@@ -912,6 +912,10 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
       rounds: round,
       materials_sha256: materialsSha,
       diagnostics: [{ stage: "P4", message: "no red-team gate provided — a spec that was never run against adversarial input cannot be frozen" }],
+      // #243: a red-team rejection still keeps the accepted exemptions — an
+      // attempt that writes coverage_exempt: [] while exemptions were given is
+      // worse than no field at all.
+      coverage: coverageResult,
     };
   }
   const failures = await opts.redteam(spec);
@@ -924,6 +928,8 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
       rounds: round,
       materials_sha256: materialsSha,
       diagnostics: failures.map((f) => ({ stage: "P4", message: f })),
+      // #243: same as above — the exemptions are construction evidence.
+      coverage: coverageResult,
     };
   }
 
