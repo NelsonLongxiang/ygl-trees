@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { snapshotCopy } from "../src/verify-cmds";
 
 /**
  * #228: verify run's working copy under <TEMP|TMPDIR>/ygl-verify-snapshots is
@@ -99,26 +100,6 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     expect(filesLeft(), "an engine-rejected run drops its working copy too").toEqual([]);
   }, 120000);
 
-  it("#228 review: consecutive snapshotCopies get unique paths; one cleanup spares the others; the dir survives", () => {
-    // Deterministic regression for the two concurrency regressions: (a) same-ms
-    // name collisions used to share one file, so one run's cleanup deleted the
-    // other's in-use copy; (b) rmdir-ing the empty dir ENOENTed a concurrent
-    // copier. Assert the observable invariants without concurrency stress.
-    const { specId, db } = preparedSpec();
-    const first = run(["verify", "run", specId, "--db", db, "--json"]);
-    expect(first.rc).toBe(0);
-    // During the first run the copy existed and was unique; after it, nothing.
-    const names = () => readdirSync(snapshotScratchDir());
-    expect(names().length).toBe(0);
-    // The directory itself is still there (never rmdir'd) for the next copier.
-    expect(existsSync(snapshotScratchDir())).toBe(true);
-    // A second run reuses the same db — same basename, must still get its own file.
-    const second = run(["verify", "run", specId, "--db", db, "--json"]);
-    expect(second.rc).toBe(0);
-    expect(names().length).toBe(0);
-    expect(existsSync(snapshotScratchDir())).toBe(true);
-  }, 180000);
-
   it("tree run (group face) removes every working copy it made", () => {
     // Group face via the tree path: two leaves over one db. Build the smallest
     // tree spec through the CLI's own tree-spec acceptance (spec_id suffixed).
@@ -170,4 +151,33 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     // between mkdir and copyFile); only files are the leftover contract.
     expect(existsSync(snapshotScratchDir()), "scratch dir stays for concurrent copiers").toBe(true);
   }, 180000);
+});
+
+describe("snapshotCopy names (#228)", () => {
+  it("same db in the same millisecond: unique paths, one cleanup spares the others, the dir survives", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ygl-snap-unit-"));
+    const src = join(dir, "same.db");
+    writeFileSync(src, "x");
+    const saved = { TEMP: process.env.TEMP, TMPDIR: process.env.TMPDIR };
+    process.env.TEMP = dir;
+    process.env.TMPDIR = dir;
+    const t = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t); // the old name was unique only by millisecond
+    try {
+      const copies = Array.from({ length: 8 }, () => snapshotCopy(src));
+      expect(new Set(copies.map((c) => c.path)).size).toBe(8);
+      copies[0].cleanup();
+      expect(existsSync(copies[0].path)).toBe(false);
+      expect(existsSync(copies[1].path), "one run's cleanup must not delete another run's copy").toBe(true);
+      copies.slice(1).forEach((c) => c.cleanup());
+      expect(readdirSync(join(dir, "ygl-verify-snapshots"))).toEqual([]);
+    } finally {
+      clock.mockRestore();
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
 });
