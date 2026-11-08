@@ -7,7 +7,7 @@ import { join } from "node:path";
  * 跑完整个删掉——验证器一天重跑几十轮，漏收尾的测试目录不再堆进系统临时目录。
  * 删之前先清点：除 Node 编译缓存与引擎快照副本外还有残留 = 有测试漏收尾，整轮判红并点名。
  */
-const EXPECTED = new Set(["node-compile-cache", "ygl-verify-snapshots"]);
+const EXPECTED = new Set(["node-compile-cache", "ygl-verify-snapshots"]); // #228 partial: per-run cleanup landed, but at least one full-suite caller still leaves copies — keep expecting the dir until that caller is located
 const KEYS = ["TMPDIR", "TEMP", "TMP"] as const;
 
 export default function setup() {
