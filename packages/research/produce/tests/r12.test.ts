@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
@@ -25,6 +26,40 @@ afterAll(async () => {
   await closeOrm();
   db?.close();
   fs.rmSync(dir, { recursive: true, force: true }); // scratch cleanup
+});
+
+const BIN = path.join(process.cwd(), "dist", "bundle", "bin.cjs");
+const hasBundle = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
+
+// #240: same-title sections — the report shows the highest version once, in the
+// position where the title first appeared; produce list still shows every version.
+describe.skipIf(!hasBundle)("produce report 同名节只取最高版本（#240）", () => {
+  let home: string;
+  const runCli = (args: string[]) => spawnSync(process.execPath, [BIN, ...args, "--json"], {
+    encoding: "utf8",
+    env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" },
+  });
+  beforeAll(() => {
+    home = path.join(process.cwd(), "tmp", `r12-240-${Date.now()}`);
+    fs.mkdirSync(home, { recursive: true });
+    if (runCli(["db", "init"]).status !== 0) throw new Error("db init failed");
+    if (runCli(["project", "new", "p240"]).status !== 0) throw new Error("project new failed");
+  });
+  afterAll(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+
+  it("saves the same title twice → report has the heading once with only the v2 body; list keeps both", () => {
+    expect(runCli(["produce", "section", "背景", "--body", "v1 body"]).status).toBe(0);
+    expect(runCli(["produce", "section", "结论", "--body", "唯一节"]).status).toBe(0);
+    expect(runCli(["produce", "section", "背景", "--body", "v2 body revised"]).status).toBe(0);
+    const report = JSON.parse(runCli(["produce", "report"]).stdout as string) as { content: string };
+    const text = report.content;
+    expect((text.match(/^## 背景$/gm) ?? []).length, text).toBe(1); // once, not twice
+    expect(text).toContain("v2 body revised");
+    expect(text).not.toContain("v1 body"); // old version out of the report
+    expect((text.match(/^## 结论$/gm) ?? []).length).toBe(1); // untouched section intact
+    const list = JSON.parse(runCli(["produce", "list"]).stdout as string) as Array<{ kind: string }>;
+    expect(list.filter((x) => x.kind === "section").length).toBe(3); // both versions + the other title stay queryable
+  });
 });
 
 describe("schema 版本（artifacts.meta 信封 + 时间字段）", () => {
