@@ -15,7 +15,17 @@ export default function setup() {
   const saved = KEYS.map((k) => [k, process.env[k]] as const);
   for (const k of KEYS) process.env[k] = root;
   return () => {
-    const leftovers = readdirSync(root).filter((n) => !EXPECTED.has(n));
+    // #228 review: an EMPTY ygl-verify-snapshots directory is fine — a concurrent
+    // snapshotCopy may sit between mkdir and copyFile, so the dir must outlive
+    // runs (never rmdir'd). Files inside it are the leftover contract.
+    const leftovers = readdirSync(root).filter((n) => {
+      if (EXPECTED.has(n)) return false;
+      if (n === "ygl-verify-snapshots") {
+        const inside = readdirSync(join(root, n));
+        return inside.length > 0; // empty dir passes, any file fails
+      }
+      return true;
+    });
     // #228 debug: name the offending entry's shape (file vs dir + contents) so a
     // leftover can be attributed without re-running with a watcher.
     for (const n of leftovers) {

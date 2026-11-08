@@ -12,7 +12,7 @@
  */
 import { jcsCanonical } from "./jcs";
 import { updateListIndex } from "./verify-list-index";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -850,26 +850,9 @@ function pruneSnapshots(dir: string): number {
       /* 并发删除/占用不影响本次 run */
     }
   }
-  // #228: WAL sidecars of a pruned main file can outlive it by days (a
-  // readonly closer never checkpoints); sweep same-age -shm/-wal/-journal
-  // siblings whose main file is gone.
-  try {
-    for (const name of readdirSync(dir)) {
-      const m = /^(.+)\.(sqlite|db)(-[a-z]+)?$/.exec(name);
-      if (!m || !m[3]) continue;
-      const p = join(dir, name);
-      if (!existsSync(m[1] + "." + m[2]) && now - statSync(p).mtimeMs > SNAPSHOT_TTL_MS) {
-        try {
-          unlinkSync(p);
-          removed++;
-        } catch {
-          /* locked right now; next sweep gets it */
-        }
-      }
-    }
-  } catch {
-    /* dir vanished mid-sweep */
-  }
+  // #228 review: the second sweep that used to live here was dead code — the
+  // loop above already removes every TTL-aged entry by its own mtime, sidecars
+  // included; and its existsSync used a relative path (cwd-dependent).
   return removed;
 }
 
@@ -895,7 +878,11 @@ export function snapshotCopy(dbPath: string): { path: string; sha256: string; so
   const dir = join(process.env.TEMP || process.env.TMPDIR || ".", "ygl-verify-snapshots");
   mkdirSync(dir, { recursive: true });
   pruneSnapshots(dir);
-  const target = join(dir, `${basename(dbPath)}.${Date.now()}.sqlite`);
+  // #228 review: the old `${basename}.${Date.now()}.sqlite` name collides when two
+  // processes copy the same db within one millisecond — harmless before cleanup
+  // existed (identical bytes), but with cleanup a colliding run deletes the copy
+  // another run is still using. pid + random suffix makes names unique.
+  const target = join(dir, `${basename(dbPath)}.${Date.now()}.${process.pid}.${randomBytes(4).toString("hex")}.sqlite`);
   copyFileSync(dbPath, target);
   // #228: the working copy is single-run scratch. Callers remove it when the
   // run is over (PASS/FAIL/ERROR/throw); the 7-day pruneSnapshots above stays
@@ -913,14 +900,10 @@ export function snapshotCopy(dbPath: string): { path: string; sha256: string; so
         /* absent or locked: a crashed run leaves it to the 7-day backstop */
       }
     }
-    // #228: drop the directory too when this was the last copy — rmdir only
-    // succeeds on an empty dir, so concurrent runs are inherently safe (the
-    // last unlinker wins; a fresh snapshotCopy recreates it on demand).
-    try {
-      rmdirSync(dir);
-    } catch {
-      /* another run's copy is still in flight */
-    }
+    // #228 review: the directory intentionally stays. A concurrent snapshotCopy
+    // may sit between its mkdirSync and copyFileSync; rmdir-ing the empty dir
+    // there ENOENTs its copy (8-proc x 400 measured: 554/3200 errors). The
+    // tmpdir guard tolerates the empty dir; files are the leftover contract.
   };
   return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath), cleanup };
 }

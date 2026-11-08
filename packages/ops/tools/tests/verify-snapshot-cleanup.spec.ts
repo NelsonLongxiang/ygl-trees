@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -85,15 +85,39 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     expect(filesLeft(), "working copy must be gone after a FAIL run too").toEqual([]);
   }, 180000);
 
-  it("the error path (spec missing) leaves no copy behind either", () => {
-    const db = join(home, "err.sqlite");
-    const edb = new DatabaseSync(db);
-    edb.exec("CREATE TABLE t(x)");
-    edb.close();
-    const r = run(["verify", "run", "spec_nope228", "--db", db, "--json"]);
+  it("a run rejected by the engine mid-flight still leaves no copy (#228 review: real throw path)", () => {
+    // #228 review: "spec missing" returns BEFORE snapshotCopy — it never made a
+    // copy, so it proved nothing. Corrupt an already-prepared spec's contract
+    // version instead: snapshotCopy runs, runVerify rejects, the copy must go.
+    const { specId, db } = preparedSpec();
+    const specFile = join(home, "verify", "specs", specId, "spec.json");
+    const broken = JSON.parse(readFileSync(specFile, "utf8")) as Record<string, unknown>;
+    broken.contract_version = "0.0"; // engine pins the contract version and refuses
+    writeFileSync(specFile, JSON.stringify(broken), "utf8");
+    const r = run(["verify", "run", specId, "--db", db, "--json"]);
     expect(r.rc).toBe(1);
-    expect(filesLeft(), "a run that errors before the engine still leaves no copy").toEqual([]);
-  });
+    expect(filesLeft(), "an engine-rejected run drops its working copy too").toEqual([]);
+  }, 120000);
+
+  it("#228 review: consecutive snapshotCopies get unique paths; one cleanup spares the others; the dir survives", () => {
+    // Deterministic regression for the two concurrency regressions: (a) same-ms
+    // name collisions used to share one file, so one run's cleanup deleted the
+    // other's in-use copy; (b) rmdir-ing the empty dir ENOENTed a concurrent
+    // copier. Assert the observable invariants without concurrency stress.
+    const { specId, db } = preparedSpec();
+    const first = run(["verify", "run", specId, "--db", db, "--json"]);
+    expect(first.rc).toBe(0);
+    // During the first run the copy existed and was unique; after it, nothing.
+    const names = () => readdirSync(snapshotScratchDir());
+    expect(names().length).toBe(0);
+    // The directory itself is still there (never rmdir'd) for the next copier.
+    expect(existsSync(snapshotScratchDir())).toBe(true);
+    // A second run reuses the same db — same basename, must still get its own file.
+    const second = run(["verify", "run", specId, "--db", db, "--json"]);
+    expect(second.rc).toBe(0);
+    expect(names().length).toBe(0);
+    expect(existsSync(snapshotScratchDir())).toBe(true);
+  }, 180000);
 
   it("tree run (group face) removes every working copy it made", () => {
     // Group face via the tree path: two leaves over one db. Build the smallest
@@ -142,6 +166,8 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     const r = run(["verify", "run", prepared.spec_id, "--db", output, "--json"]);
     expect(r.rc, r.out + r.err).toBe(0);
     expect(filesLeft(), "WAL source: main copy AND its sidecars are gone").toEqual([]);
-    expect(existsSync(snapshotScratchDir()), "the scratch dir itself is gone once empty").toBe(false);
+    // #228 review: the directory itself STAYS (a concurrent snapshotCopy may be
+    // between mkdir and copyFile); only files are the leftover contract.
+    expect(existsSync(snapshotScratchDir()), "scratch dir stays for concurrent copiers").toBe(true);
   }, 180000);
 });
