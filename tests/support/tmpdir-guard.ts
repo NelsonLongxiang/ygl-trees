@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +7,7 @@ import { join } from "node:path";
  * 跑完整个删掉——验证器一天重跑几十轮，漏收尾的测试目录不再堆进系统临时目录。
  * 删之前先清点：除 Node 编译缓存与引擎快照副本外还有残留 = 有测试漏收尾，整轮判红并点名。
  */
-const EXPECTED = new Set(["node-compile-cache", "ygl-verify-snapshots"]);
+const EXPECTED = new Set(["node-compile-cache"]); // #228: ygl-verify-snapshots copies (incl. WAL sidecars) are removed per-run
 const KEYS = ["TMPDIR", "TEMP", "TMP"] as const;
 
 export default function setup() {
@@ -15,7 +15,24 @@ export default function setup() {
   const saved = KEYS.map((k) => [k, process.env[k]] as const);
   for (const k of KEYS) process.env[k] = root;
   return () => {
-    const leftovers = readdirSync(root).filter((n) => !EXPECTED.has(n));
+    // #228 review: an EMPTY ygl-verify-snapshots directory is fine — a concurrent
+    // snapshotCopy may sit between mkdir and copyFile, so the dir must outlive
+    // runs (never rmdir'd). Files inside it are the leftover contract.
+    const leftovers = readdirSync(root).filter((n) => {
+      if (EXPECTED.has(n)) return false;
+      if (n === "ygl-verify-snapshots") {
+        const inside = readdirSync(join(root, n));
+        return inside.length > 0; // empty dir passes, any file fails
+      }
+      return true;
+    });
+    // #228 debug: name the offending entry's shape (file vs dir + contents) so a
+    // leftover can be attributed without re-running with a watcher.
+    for (const n of leftovers) {
+      const full = join(root, n);
+      const stat = statSync(full);
+      process.stderr.write(`tmpdir-guard leftover: ${n} ${stat.isDirectory() ? "dir[" + readdirSync(full).join(",") + "]" : "file"}\n`);
+    }
     for (const [k, v] of saved) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;

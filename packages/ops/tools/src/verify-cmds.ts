@@ -12,7 +12,7 @@
  */
 import { jcsCanonical } from "./jcs";
 import { updateListIndex } from "./verify-list-index";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -387,7 +387,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     else defaultDb = d;
   }
   const nodeById = new Map(spec.nodes.map((n) => [n.id, n]));
-  const snapshots = new Map<string, { path: string; sha256: string; source: string }>();
+  const snapshots = new Map<string, { path: string; sha256: string; source: string; cleanup: () => void }>();
   const getSnapshot = (file: string) => {
     if (!snapshots.has(file)) {
       const snap = snapshotCopy(file);
@@ -558,7 +558,17 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     if (!dbFile) throw new Error("leaf " + n.id + ": no --db binding (pass --db <path> or --db " + n.id + "=<path>)");
     const snap = getSnapshot(dbFile);
     const runner = new SqliteRunner(snap.path);
-    const report = await runVerify(leafSpec, { runner, mode: "open", engineVersion: env.version });
+    let report: VerifyReport;
+    try {
+      report = await runVerify(leafSpec, { runner, mode: "open", engineVersion: env.version });
+    } finally {
+      // #228: release the SQLite handle before any unlink attempt (Windows).
+      try {
+        runner.close();
+      } catch {
+        /* already closed */
+      }
+    }
     // Q8：叶 data_source 投影（kind+id 恒比；声明 sha256 时才比 sha）。
     // 缺陷②（总工席 direct-085b7275）：id = 被验快照身份（snap.source），不是树内
     // 节点坐标——node.id 与 target.id（快照身份）必 mismatch 导致全叶 STALE 沿父链。
@@ -665,6 +675,12 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
     }
     bad(ctx, "tree run failed: " + msg);
     return 1;
+  } finally {
+    // #228: every working copy this run made is single-run scratch — remove
+    // all of them on every exit path (PASS/FAIL/ERROR/usage rc2 alike). The
+    // runners above already closed their handles; crash-killed runs fall back
+    // to the 7-day pruneSnapshots backstop.
+    for (const snap of snapshots.values()) snap.cleanup();
   }
 }
 
@@ -834,6 +850,9 @@ function pruneSnapshots(dir: string): number {
       /* 并发删除/占用不影响本次 run */
     }
   }
+  // #228 review: the second sweep that used to live here was dead code — the
+  // loop above already removes every TTL-aged entry by its own mtime, sidecars
+  // included; and its existsSync used a relative path (cwd-dependent).
   return removed;
 }
 
@@ -853,15 +872,40 @@ export function scopeLine(report: object): string {
   return `semantic_scope structural  (未知值 ${JSON.stringify(raw)} 不在闭集 structural|factual|semantic 内，按最保守读——父 PASS 不代表子结论为真)`;
 }
 
-export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string } {
+export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string; cleanup: () => void } {
   const stat = statSync(dbPath);
   if (!stat.isFile()) throw new Error(`--db must point to a SQLite file (snapshot copy), not a directory: ${dbPath}`);
   const dir = join(process.env.TEMP || process.env.TMPDIR || ".", "ygl-verify-snapshots");
   mkdirSync(dir, { recursive: true });
   pruneSnapshots(dir);
-  const target = join(dir, `${basename(dbPath)}.${Date.now()}.sqlite`);
+  // #228 review: the old `${basename}.${Date.now()}.sqlite` name collides when two
+  // processes copy the same db within one millisecond — harmless before cleanup
+  // existed (identical bytes), but with cleanup a colliding run deletes the copy
+  // another run is still using. pid + random suffix makes names unique.
+  const target = join(dir, `${basename(dbPath)}.${Date.now()}.${process.pid}.${randomBytes(4).toString("hex")}.sqlite`);
   copyFileSync(dbPath, target);
-  return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath) };
+  // #228: the working copy is single-run scratch. Callers remove it when the
+  // run is over (PASS/FAIL/ERROR/throw); the 7-day pruneSnapshots above stays
+  // as the backstop for runs that crash or are killed. The content-addressed
+  // retainSnapshot copy under $YGL_HOME/verify/snapshots/ is NOT touched.
+  // A WAL-mode source (journal_mode is a persistent file-header property and
+  // travels with the copy) makes every connection — including SqliteRunner's
+  // readOnly one — create -shm/-wal sidecars next to the copy, and a readonly
+  // closer never checkpoints them away. Remove the trio, not just the file.
+  const cleanup = (): void => {
+    for (const p of [target, `${target}-shm`, `${target}-wal`, `${target}-journal`]) {
+      try {
+        unlinkSync(p);
+      } catch {
+        /* absent or locked: a crashed run leaves it to the 7-day backstop */
+      }
+    }
+    // #228 review: the directory intentionally stays. A concurrent snapshotCopy
+    // may sit between its mkdirSync and copyFileSync; rmdir-ing the empty dir
+    // there ENOENTs its copy (8-proc x 400 measured: 554/3200 errors). The
+    // tmpdir guard tolerates the empty dir; files are the leftover contract.
+  };
+  return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath), cleanup };
 }
 
 export function specDir(env: Env, specId: string): string {
@@ -1657,7 +1701,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const spec = readJson<VerifySpec>(specFile);
       const submission = args.flags.submission ? String(args.flags.submission) : undefined;
-      let snap: { path: string; sha256: string; source: string };
+      let snap: { path: string; sha256: string; source: string; cleanup: () => void };
       try {
         snap = snapshotCopy(dbPath);
       } catch (e: any) {
@@ -1671,6 +1715,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const runner = new SqliteRunner(snap.path);
       const fileScans: FileScanRecord[] = [];
+      // #228: close the handle first (Windows), then drop the working copy — on
+      // every outcome including the throw path.
+      const finishRun = (): void => {
+        try {
+          runner.close();
+        } catch {
+          /* already closed */
+        }
+        snap.cleanup();
+      };
       return runVerify(spec, { runner, submissionDir: submission, mode: "open", engineVersion: env.version, onFileScan: (r) => fileScans.push(r) })
         .then((report): number => {
           const withSource = { ...report, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport;
@@ -1730,9 +1784,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             else if (archiveError) out(ctx, paint(C.red, `  ✗ archive failed: ${archiveError}`, ctx.color));
             else out(ctx, paint(C.dim, "  archive: skipped (--no-archive)", ctx.color));
           }
+          finishRun(); // #228: closed + removed on the success path too
           return archiveError ? 1 : 0; // rc 只表达过程：FAIL 是有效结论；归档失败是过程错误
         })
         .catch((e: any): number => {
+          finishRun(); // #228: and on the error/throw path
           bad(ctx, `run failed: ${e?.message || e}`);
           return 1;
         });
