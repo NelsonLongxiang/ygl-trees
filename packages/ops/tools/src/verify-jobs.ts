@@ -232,7 +232,7 @@ export async function runViaHttp(env: Env, input: unknown, deps: JobsDeps): Prom
   const snap = snapshotPath(env, body.snapshot_sha256);
   if ("status" in snap) return snap;
   const spec = readJson<VerifySpec>(specFile);
-  let copy: { path: string; sha256: string; source: string };
+  let copy: { path: string; sha256: string; source: string; cleanup: () => void };
   try {
     copy = snapshotCopy(snap.path);
   } catch (e: any) {
@@ -245,12 +245,27 @@ export async function runViaHttp(env: Env, input: unknown, deps: JobsDeps): Prom
     // 快照留存失败不阻塞判定；只有 `--with snapshot` 归档会要求它
   }
   let report: VerifyReport;
+  const runner = new SqliteRunner(copy.path);
   try {
-    report = await runVerify(spec, { runner: new SqliteRunner(copy.path), commandAllowlist: deps.commandAllowlist, mode: "open", engineVersion: env.version });
+    report = await runVerify(spec, { runner, commandAllowlist: deps.commandAllowlist, mode: "open", engineVersion: env.version });
   } catch (e: any) {
     // 引擎的契约钉版 / R13 / N2 / S2 都是硬拒绝：这是 spec 的问题，不是请求格式的问题。
+    // #228: still drop the working copy on the rejection path (close first for Windows).
+    try {
+      runner.close();
+    } catch {
+      /* already closed */
+    }
+    copy.cleanup();
     return fail(422, `run rejected: ${e?.message || e}`);
   }
+  // #228: success path — close the handle, then remove the single-run copy.
+  try {
+    runner.close();
+  } catch {
+    /* already closed */
+  }
+  copy.cleanup();
   const withSource = {
     ...report,
     data_source: { kind: "sqlite-snapshot", sha256: copy.sha256, source: `blob:${snap.sha256.slice(0, 12)}`, captured_at: new Date().toISOString() },
