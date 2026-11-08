@@ -3,6 +3,12 @@
  * version nag. It is NOT the R5b audit clock (#29): cache-only, stderr-only,
  * never gates, never touches stdout/JSON, silent offline, silent in scheduler
  * context, one prompt per npm latest, 24h TTL for the detached refresh.
+ *
+ * #235: this suite isolates every env var the update-check code reads
+ * (YGL_NO_UPDATE_CHECK / YGL_SERVE / YGL_RUN_ID) before each describe run and
+ * restores them afterwards — a test must not depend on the caller's
+ * environment for something it controls itself (the 0.121.0 G7 wrapper
+ * exported YGL_NO_UPDATE_CHECK=1 and this suite went 1-red on exactly that).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -18,6 +24,20 @@ import {
   updateHintFromCache,
   updateCheckDisabled,
 } from "../src/update-check";
+
+// #235 (review): YGL_RUN_ID is captured at MODULE LOAD (update-check.ts:30
+// INHERITED_RUN_ID) — a static import evaluates before any beforeAll, so the
+// var must be removed before imports run. vi.hoisted executes ahead of the
+// import statements; the file-level afterAll below restores it afterwards.
+const PREV_RUN_ID = vi.hoisted(() => {
+  const v = process.env.YGL_RUN_ID;
+  delete process.env.YGL_RUN_ID;
+  return v;
+});
+afterAll(() => {
+  if (PREV_RUN_ID === undefined) delete process.env.YGL_RUN_ID;
+  else process.env.YGL_RUN_ID = PREV_RUN_ID;
+});
 
 const REPO = resolve(__dirname, "../../../..");
 const BIN = resolve(REPO, "dist/bundle/bin.cjs");
@@ -35,16 +55,39 @@ function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
     encoding: "utf8",
     timeout: 60_000,
-    env: { ...process.env, YGL_HOME: HOME, YGL_NO_UPDATE_CHECK: "" },
+    env: { ...process.env, YGL_HOME: HOME, YGL_NO_UPDATE_CHECK: undefined } as NodeJS.ProcessEnv, // #235: unset, not empty-string
   });
   return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
 }
 
 describe("update-check compare/cache (unit)", () => {
+  // #235: snapshot & clear the runtime-read vars; restore in afterAll.
+  // (YGL_RUN_ID is load-time captured — handled file-wide by vi.hoisted above.)
+  let PREV: { noUpdate?: string; serve?: string } = {};
+  const restoreAll = () => {
+    const set = (name: string, v: string | undefined) => {
+      if (v === undefined) delete process.env[name];
+      else process.env[name] = v;
+    };
+    set("YGL_NO_UPDATE_CHECK", PREV.noUpdate);
+    set("YGL_SERVE", PREV.serve);
+  };
+  const scrubEnv = () => {
+    delete process.env.YGL_NO_UPDATE_CHECK;
+    delete process.env.YGL_SERVE;
+  };
   beforeAll(() => {
+    PREV = {
+      noUpdate: process.env.YGL_NO_UPDATE_CHECK,
+      serve: process.env.YGL_SERVE,
+    };
+    scrubEnv();
     HOME = mkdtempSync(join(tmpdir(), "ygl-upd-"));
   });
-  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  afterAll(() => {
+    restoreAll();
+    rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
   beforeEach(() => {
     try {
       rmSync(cachePath(HOME), { force: true });
@@ -109,20 +152,41 @@ describe("update-check compare/cache (unit)", () => {
       expect(updateHintFromCache(HOME, "0.1.0")).toMatchObject({ latest: "9.9.9", update_available: true });
       expect(updateHintFromCache(HOME, "9.9.9")?.update_available).toBe(false);
     } finally {
-      process.env.YGL_NO_UPDATE_CHECK = prev;
-      process.env.YGL_SERVE = prevServe;
+      // #235 (review, non-blocking): prev === undefined must delete, not store
+      // the string "undefined".
+      if (prev === undefined) delete process.env.YGL_NO_UPDATE_CHECK;
+      else process.env.YGL_NO_UPDATE_CHECK = prev;
+      if (prevServe === undefined) delete process.env.YGL_SERVE;
+      else process.env.YGL_SERVE = prevServe;
       err.mockRestore();
     }
   });
 });
 
 describe.skipIf(!HAS_BIN)("update-check CLI surface (0.114.6)", () => {
+  // #235: same isolation contract for the CLI face (spawned children inherit
+  // this env — db init in beforeAll must not nag-or-skip on the caller's vars).
+  let PREV: { noUpdate?: string; serve?: string } = {};
   beforeAll(() => {
+    PREV = {
+      noUpdate: process.env.YGL_NO_UPDATE_CHECK,
+      serve: process.env.YGL_SERVE,
+    };
+    delete process.env.YGL_NO_UPDATE_CHECK;
+    delete process.env.YGL_SERVE;
     HOME = HOME || mkdtempSync(join(tmpdir(), "ygl-upd-cli-"));
     const init = spawnSync(process.execPath, [BIN, "db", "init"], { encoding: "utf8", env: { ...process.env, YGL_HOME: HOME } });
     expect(init.status).toBe(0);
   });
-  afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  afterAll(() => {
+    const set = (name: string, v: string | undefined) => {
+      if (v === undefined) delete process.env[name];
+      else process.env[name] = v;
+    };
+    set("YGL_NO_UPDATE_CHECK", PREV.noUpdate);
+    set("YGL_SERVE", PREV.serve);
+    rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
 
   it("human command: update available → stderr line, rc unchanged, stdin/stdout contract intact", () => {
     seed("9.9.9");
