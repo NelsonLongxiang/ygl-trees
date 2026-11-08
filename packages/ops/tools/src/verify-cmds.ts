@@ -13,7 +13,7 @@
 import { jcsCanonical } from "./jcs";
 import { updateListIndex } from "./verify-list-index";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
@@ -912,6 +912,14 @@ export function snapshotCopy(dbPath: string): { path: string; sha256: string; so
       } catch {
         /* absent or locked: a crashed run leaves it to the 7-day backstop */
       }
+    }
+    // #228: drop the directory too when this was the last copy — rmdir only
+    // succeeds on an empty dir, so concurrent runs are inherently safe (the
+    // last unlinker wins; a fresh snapshotCopy recreates it on demand).
+    try {
+      rmdirSync(dir);
+    } catch {
+      /* another run's copy is still in flight */
     }
   };
   return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath), cleanup };

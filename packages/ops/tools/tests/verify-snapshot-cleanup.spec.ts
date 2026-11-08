@@ -142,5 +142,6 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     const r = run(["verify", "run", prepared.spec_id, "--db", output, "--json"]);
     expect(r.rc, r.out + r.err).toBe(0);
     expect(filesLeft(), "WAL source: main copy AND its sidecars are gone").toEqual([]);
+    expect(existsSync(snapshotScratchDir()), "the scratch dir itself is gone once empty").toBe(false);
   }, 180000);
 });

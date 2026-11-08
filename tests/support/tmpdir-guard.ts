@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,13 @@ export default function setup() {
   for (const k of KEYS) process.env[k] = root;
   return () => {
     const leftovers = readdirSync(root).filter((n) => !EXPECTED.has(n));
+    // #228 debug: name the offending entry's shape (file vs dir + contents) so a
+    // leftover can be attributed without re-running with a watcher.
+    for (const n of leftovers) {
+      const full = join(root, n);
+      const stat = statSync(full);
+      process.stderr.write(`tmpdir-guard leftover: ${n} ${stat.isDirectory() ? "dir[" + readdirSync(full).join(",") + "]" : "file"}\n`);
+    }
     for (const [k, v] of saved) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
