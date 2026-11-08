@@ -117,4 +117,30 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     expect(r.rc, r.out + r.err).toBe(0);
     expect(filesLeft(), "tree run drops every per-db working copy").toEqual([]);
   }, 180000);
+
+  it("a WAL-mode source leaves no -shm/-wal sidecars behind (#228 full-suite caller)", () => {
+    // The unlocated full-suite leftover: db snapshot output (WAL is a persistent
+    // header property) used as --db. Read-only connections still create the
+    // sidecars and a readonly closer never checkpoints them away — cleanup()
+    // must remove the trio, not just the main file.
+    const walDir = join(home, "wal-src");
+    require("node:fs").mkdirSync(walDir, { recursive: true });
+    const src = join(walDir, "wal-source.sqlite");
+    const wdb = new DatabaseSync(src);
+    wdb.exec("CREATE TABLE orders(id INTEGER PRIMARY KEY, amount INTEGER NOT NULL); PRAGMA journal_mode=wal; PRAGMA user_version=7");
+    wdb.close();
+    const output = join(walDir, "wal-evidence.sqlite");
+    const collector = spawnSync(process.execPath, [join(EXAMPLE, "collect.mjs"), src, output], { encoding: "utf8" });
+    expect(collector.status, collector.stderr).toBe(0);
+    expect(run(["db", "init"]).rc).toBe(0);
+    const submitted = JSON.parse(run(["verify", "submit", "--title", "wal cleanup", "--text", join(EXAMPLE, "material.md"), "--meta-repo", ROOT, "--json"]).out) as { material_id: string };
+    const edb = new DatabaseSync(output, { readOnly: true });
+    let asOf = "";
+    try { asOf = String((edb.prepare("SELECT captured_at FROM collection_source").get() as any).captured_at); } finally { edb.close(); }
+    const prepared = JSON.parse(run(["verify", "prepare", submitted.material_id, "--candidates", join(EXAMPLE, "candidates.json"), "--reviews", join(EXAMPLE, "reviews.json"), "--db", output, "--as-of", asOf, "--candidates-author", "wal-test", "--reviews-author", "wal-test", "--meta-repo", ROOT, "--json"]).out) as { verdict: string; spec_id: string };
+    expect(prepared.verdict).toBe("ready");
+    const r = run(["verify", "run", prepared.spec_id, "--db", output, "--json"]);
+    expect(r.rc, r.out + r.err).toBe(0);
+    expect(filesLeft(), "WAL source: main copy AND its sidecars are gone").toEqual([]);
+  }, 180000);
 });

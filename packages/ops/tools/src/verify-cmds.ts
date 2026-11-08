@@ -850,6 +850,26 @@ function pruneSnapshots(dir: string): number {
       /* 并发删除/占用不影响本次 run */
     }
   }
+  // #228: WAL sidecars of a pruned main file can outlive it by days (a
+  // readonly closer never checkpoints); sweep same-age -shm/-wal/-journal
+  // siblings whose main file is gone.
+  try {
+    for (const name of readdirSync(dir)) {
+      const m = /^(.+)\.(sqlite|db)(-[a-z]+)?$/.exec(name);
+      if (!m || !m[3]) continue;
+      const p = join(dir, name);
+      if (!existsSync(m[1] + "." + m[2]) && now - statSync(p).mtimeMs > SNAPSHOT_TTL_MS) {
+        try {
+          unlinkSync(p);
+          removed++;
+        } catch {
+          /* locked right now; next sweep gets it */
+        }
+      }
+    }
+  } catch {
+    /* dir vanished mid-sweep */
+  }
   return removed;
 }
 
@@ -881,11 +901,17 @@ export function snapshotCopy(dbPath: string): { path: string; sha256: string; so
   // run is over (PASS/FAIL/ERROR/throw); the 7-day pruneSnapshots above stays
   // as the backstop for runs that crash or are killed. The content-addressed
   // retainSnapshot copy under $YGL_HOME/verify/snapshots/ is NOT touched.
+  // A WAL-mode source (journal_mode is a persistent file-header property and
+  // travels with the copy) makes every connection — including SqliteRunner's
+  // readOnly one — create -shm/-wal sidecars next to the copy, and a readonly
+  // closer never checkpoints them away. Remove the trio, not just the file.
   const cleanup = (): void => {
-    try {
-      unlinkSync(target);
-    } catch {
-      /* best-effort: a crashed or killed run leaves the file to the 7-day backstop */
+    for (const p of [target, `${target}-shm`, `${target}-wal`, `${target}-journal`]) {
+      try {
+        unlinkSync(p);
+      } catch {
+        /* absent or locked: a crashed run leaves it to the 7-day backstop */
+      }
     }
   };
   return { path: target, sha256: `sha256:${sha256(readFileSync(target))}`, source: basename(dbPath), cleanup };
