@@ -329,9 +329,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const claims = store.claimList(pid);
       const evidence = store.evidenceList(pid);
       const sources = store.sourceList(pid);
+      // #240: a revised section (same title, higher version) replaces the old body in
+      // the report while staying where the title FIRST appeared — no command deletes
+      // sections, so "latest version per title" is the only clean-report reading.
+      // Older versions stay queryable via produce list / produce show.
       const sections = store.db.all(
-        "SELECT title,content,version FROM artifacts WHERE project_id=? AND kind='section' ORDER BY created",
-        [pid]
+        "SELECT a.title, a.content, a.version FROM artifacts a" +
+          " JOIN (SELECT title, MAX(version) AS mv FROM artifacts WHERE project_id=? AND kind='section' GROUP BY title) m" +
+          " ON a.title=m.title AND a.version=m.mv AND a.project_id=? AND a.kind='section'" +
+          " ORDER BY (SELECT MIN(created) FROM artifacts f WHERE f.project_id=a.project_id AND f.kind='section' AND f.title=a.title), a.created",
+        [pid, pid]
       );
       const evIndex = new Map(evidence.map((e: any, i: number) => [e.id, i + 1]));
       const L: string[] = [];
