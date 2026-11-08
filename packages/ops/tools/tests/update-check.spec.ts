@@ -25,6 +25,20 @@ import {
   updateCheckDisabled,
 } from "../src/update-check";
 
+// #235 (review): YGL_RUN_ID is captured at MODULE LOAD (update-check.ts:30
+// INHERITED_RUN_ID) — a static import evaluates before any beforeAll, so the
+// var must be removed before imports run. vi.hoisted executes ahead of the
+// import statements; the file-level afterAll below restores it afterwards.
+const PREV_RUN_ID = vi.hoisted(() => {
+  const v = process.env.YGL_RUN_ID;
+  delete process.env.YGL_RUN_ID;
+  return v;
+});
+afterAll(() => {
+  if (PREV_RUN_ID === undefined) delete process.env.YGL_RUN_ID;
+  else process.env.YGL_RUN_ID = PREV_RUN_ID;
+});
+
 const REPO = resolve(__dirname, "../../../..");
 const BIN = resolve(REPO, "dist/bundle/bin.cjs");
 const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).status === 0;
@@ -47,8 +61,9 @@ function run(args: string[]) {
 }
 
 describe("update-check compare/cache (unit)", () => {
-  // #235: snapshot & clear the vars this suite owns; restore in afterAll.
-  let PREV: { noUpdate?: string; serve?: string; runId?: string } = {};
+  // #235: snapshot & clear the runtime-read vars; restore in afterAll.
+  // (YGL_RUN_ID is load-time captured — handled file-wide by vi.hoisted above.)
+  let PREV: { noUpdate?: string; serve?: string } = {};
   const restoreAll = () => {
     const set = (name: string, v: string | undefined) => {
       if (v === undefined) delete process.env[name];
@@ -56,18 +71,15 @@ describe("update-check compare/cache (unit)", () => {
     };
     set("YGL_NO_UPDATE_CHECK", PREV.noUpdate);
     set("YGL_SERVE", PREV.serve);
-    set("YGL_RUN_ID", PREV.runId);
   };
   const scrubEnv = () => {
     delete process.env.YGL_NO_UPDATE_CHECK;
     delete process.env.YGL_SERVE;
-    delete process.env.YGL_RUN_ID;
   };
   beforeAll(() => {
     PREV = {
       noUpdate: process.env.YGL_NO_UPDATE_CHECK,
       serve: process.env.YGL_SERVE,
-      runId: process.env.YGL_RUN_ID,
     };
     scrubEnv();
     HOME = mkdtempSync(join(tmpdir(), "ygl-upd-"));
@@ -140,8 +152,12 @@ describe("update-check compare/cache (unit)", () => {
       expect(updateHintFromCache(HOME, "0.1.0")).toMatchObject({ latest: "9.9.9", update_available: true });
       expect(updateHintFromCache(HOME, "9.9.9")?.update_available).toBe(false);
     } finally {
-      process.env.YGL_NO_UPDATE_CHECK = prev;
-      process.env.YGL_SERVE = prevServe;
+      // #235 (review, non-blocking): prev === undefined must delete, not store
+      // the string "undefined".
+      if (prev === undefined) delete process.env.YGL_NO_UPDATE_CHECK;
+      else process.env.YGL_NO_UPDATE_CHECK = prev;
+      if (prevServe === undefined) delete process.env.YGL_SERVE;
+      else process.env.YGL_SERVE = prevServe;
       err.mockRestore();
     }
   });
@@ -150,16 +166,14 @@ describe("update-check compare/cache (unit)", () => {
 describe.skipIf(!HAS_BIN)("update-check CLI surface (0.114.6)", () => {
   // #235: same isolation contract for the CLI face (spawned children inherit
   // this env — db init in beforeAll must not nag-or-skip on the caller's vars).
-  let PREV: { noUpdate?: string; serve?: string; runId?: string } = {};
+  let PREV: { noUpdate?: string; serve?: string } = {};
   beforeAll(() => {
     PREV = {
       noUpdate: process.env.YGL_NO_UPDATE_CHECK,
       serve: process.env.YGL_SERVE,
-      runId: process.env.YGL_RUN_ID,
     };
     delete process.env.YGL_NO_UPDATE_CHECK;
     delete process.env.YGL_SERVE;
-    delete process.env.YGL_RUN_ID;
     HOME = HOME || mkdtempSync(join(tmpdir(), "ygl-upd-cli-"));
     const init = spawnSync(process.execPath, [BIN, "db", "init"], { encoding: "utf8", env: { ...process.env, YGL_HOME: HOME } });
     expect(init.status).toBe(0);
@@ -171,7 +185,6 @@ describe.skipIf(!HAS_BIN)("update-check CLI surface (0.114.6)", () => {
     };
     set("YGL_NO_UPDATE_CHECK", PREV.noUpdate);
     set("YGL_SERVE", PREV.serve);
-    set("YGL_RUN_ID", PREV.runId);
     rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
