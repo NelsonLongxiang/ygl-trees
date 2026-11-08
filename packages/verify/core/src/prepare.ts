@@ -318,6 +318,9 @@ export interface CoverageResult {
   clauses: number;
   covered: number;
   exempted: number;
+  /** #243: accepted exemptions with reasons and matched clause text — construction
+   * evidence for the frozen records; spec.json is NOT part of this. */
+  coverage_exempt: Array<{ id?: string; locator?: string; text?: string; reason: string; clause_text: string; clause_id: string }>;
   uncovered: Array<{ id: string; locator: string; line: number; text: string }>;
   problems: string[];
 }
@@ -349,6 +352,7 @@ export function checkCoverage(
     }
   }
   const exempted = new Set<string>();
+  const exemptions: CoverageResult["coverage_exempt"] = [];
   for (const [i, e] of exempt.entries()) {
     const label = JSON.stringify(e?.id ?? e?.locator ?? e?.text);
     let clause: MaterialClause | undefined;
@@ -378,11 +382,13 @@ export function checkCoverage(
       continue;
     }
     exempted.add(clause.id);
+    // #243: keep the exemption auditable — entry, reason, matched clause.
+    exemptions.push({ ...(e.id !== undefined ? { id: String(e.id) } : {}), ...(e.locator !== undefined ? { locator: String(e.locator) } : {}), ...(e.text !== undefined ? { text: String(e.text) } : {}), reason: String(e.reason), clause_text: clause.text, clause_id: clause.id });
   }
   const uncovered = inv.clauses
     .filter((c) => !covered.has(c.id) && !exempted.has(c.id))
     .map((c) => ({ id: c.id, locator: c.locator, line: c.line, text: c.text }));
-  return { pattern: inv.pattern, enforced: inv.clauses.length > 0, clauses: inv.clauses.length, covered: covered.size, exempted: exempted.size, uncovered, problems };
+  return { pattern: inv.pattern, enforced: inv.clauses.length > 0, clauses: inv.clauses.length, covered: covered.size, exempted: exempted.size, coverage_exempt: exemptions, uncovered, problems };
 }
 
 // The named skip for a material whose lines match no clause pattern.
@@ -861,6 +867,10 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     }
   }
   if (kept.length === 0) {
+    // #243: a not-ready attempt keeps its exemption list too — run the coverage
+    // check here (empty candidate set is fine; exemptions resolve against the
+    // clause inventory, which is exactly the evidence an attempt must keep).
+    const noKeepCoverage = checkCoverage(materialText, p1Passing, opts.coverageExempt ?? [], pattern, opts.clausePatternDeclared === true);
     return {
       verdict: "needs-material",
       units: [],
@@ -868,6 +878,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
       rounds: round,
       materials_sha256: materialsSha,
       diagnostics: [{ stage: "P1-P3", message: "no candidate survived extraction/translation/self-review — ask the business expert for the missing material" }],
+      coverage: noKeepCoverage,
     };
   }
 

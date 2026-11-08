@@ -1628,6 +1628,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             diagnostics: res.diagnostics,
             authors,
             ...(res.coverage ? { coverage: res.coverage } : {}),
+            // #243: draft says which exemptions a real prepare would freeze.
+            coverage_exempt: res.coverage?.coverage_exempt ?? [],
             ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
           };
@@ -1652,6 +1654,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           diagnostics: res.diagnostics,
           materials_sha256: res.materials_sha256,
           clause_scope: clauseScopeOf(patOpt, res.coverage),
+          // #243: the accepted exemptions (entry + reason + matched clause) ride
+          // every frozen record; [] when none — the key is always present.
+          coverage_exempt: res.coverage?.coverage_exempt ?? [],
           authors,
         }, created);
         if (ready && res.spec) {
@@ -1662,6 +1667,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             spec_version: res.spec.spec_version,
             // #171 第4项：构造面作者留痕（候选/评审各自的身份与来源）
             authors,
+            // #243: construction evidence — accepted exemptions with reasons.
+            coverage_exempt: res.coverage?.coverage_exempt ?? [],
             units: res.spec.vu.map((v) => ({ id: v.id, title: v.title, source_clause: v.source_clause, severity: v.severity, checker: v.checker.type, expected_from: v.expected_from })),
             rejected: res.rejected,
           });
@@ -1669,7 +1676,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), coverage_exempt: res.coverage?.coverage_exempt ?? [], ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {
@@ -2607,6 +2614,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       out(ctx, `  ${trace.spec_id} v${trace.spec_version}  ← material ${trace.material_id}`);
       for (const u of trace.units ?? []) out(ctx, `    ${u.id} [${u.severity}] ${u.checker}  “${String(u.source_clause).slice(0, 48)}”`);
       for (const r of trace.rejected ?? []) out(ctx, paint(C.dim, `    ✗ [${r.stage}] ${r.reason}`, ctx.color));
+      // #243: exemptions are part of the construction story — name them in human mode.
+      for (const e of trace.coverage_exempt ?? []) {
+        const which = e.id ?? e.locator ?? e.text ?? "?";
+        out(ctx, paint(C.dim, `    ⏭  exempt ${which} → ${e.clause_id} “${String(e.clause_text).slice(0, 40)}” — ${e.reason}`, ctx.color));
+      }
       return 0;
     }
 
