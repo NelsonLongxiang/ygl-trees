@@ -1050,12 +1050,12 @@ const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db"
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
   prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
-  run: ["db", "submission", "no-archive", "provenance"],
+  run: ["db", "submission", "no-archive", "provenance", "spec-version"], // #242: --spec-version <N> runs a kept old version
   tree: ["pinned", "no-archive", "target", "provenance"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
   list: ["unarchived"],
   report: ["out", "keys", "expect-key"],
-  trace: [],
+  trace: ["spec-version"], // #242: read a kept old trace
   export: ["out", "portable"],
   import: [],
   instance: INSTANCE_FLAGS,
@@ -1630,6 +1630,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             ...(res.coverage ? { coverage: res.coverage } : {}),
             // #243: draft says which exemptions a real prepare would freeze.
             coverage_exempt: res.coverage?.coverage_exempt ?? [],
+            // #242: a draft writes nothing, but says which version a real prepare would replace.
+            ...(prevVersion >= 1 && existsSync(specDir(env, `spec_${short(sha256(materialId))}`) + "/spec.json") ? { would_replace: { spec_version: prevVersion } } : {}),
             ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
           };
@@ -1645,6 +1647,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const dir = specDir(env, `spec_${short(sha256(materialId))}`);
         const created = new Date().toISOString();
         const ready = res.verdict === "ready" && !!res.spec;
+        // #242: move the replaced version aside BEFORE the new prepare.json is
+        // written — otherwise the fresh record migrates instead of the old one.
+        let replaced: { spec_version: number; spec_sha256: string } | undefined;
+        if (ready && res.spec && prevVersion >= 1 && existsSync(join(dir, "spec.json"))) {
+          const keep = join(dir, "versions", `v${prevVersion}`);
+          mkdirSync(keep, { recursive: true });
+          const prevSpecBytes = readFileSync(join(dir, "spec.json"));
+          const prevSpecSha = `sha256:${sha256(prevSpecBytes)}`;
+          for (const f of ["prepare.json", "spec.json", "trace.json"]) {
+            if (existsSync(join(dir, f))) renameSync(join(dir, f), join(keep, f));
+          }
+          replaced = { spec_version: prevVersion, spec_sha256: prevSpecSha };
+        }
         const recordPath = writePrepareRecord(dir, ready, {
           material_id: materialId,
           created,
@@ -1676,11 +1691,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), coverage_exempt: res.coverage?.coverage_exempt ?? [], ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
+          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, ...(replaced ? { replaced } : {}), rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), coverage_exempt: res.coverage?.coverage_exempt ?? [], ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {
-          out(ctx, `  ✓ prepared & frozen: ${res.spec?.spec_id} v${res.spec?.spec_version}  (${res.spec?.vu.length} unit(s), ${res.rounds} round(s))`);
+          out(ctx, `  ✓ prepared & frozen: ${res.spec?.spec_id} v${res.spec?.spec_version}  (${res.spec?.vu.length} unit(s), ${res.rounds} round(s))` + (replaced ? `  replaces ${res.spec?.spec_id} v${replaced.spec_version}` : ""));
           out(ctx, paint(C.dim, "  next: verify run " + res.spec?.spec_id + " --db <snapshot.sqlite>", ctx.color));
           return 0;
         }
@@ -1701,9 +1716,18 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: verify run <spec-id> --db <snapshot.sqlite> [--submission <dir>]");
         return 2;
       }
-      const specFile = join(specDir(env, specId), "spec.json");
+      // #242: --spec-version <N> reads the kept old version byte for byte
+      // (--version is the CLI's global version flag — name clash, not ours).
+      const verFlag = args.flags["spec-version"] !== undefined ? Number(args.flags["spec-version"]) : undefined;
+      if (verFlag !== undefined && (!Number.isInteger(verFlag) || verFlag < 1)) {
+        bad(ctx, "--spec-version must be a positive integer");
+        return 2;
+      }
+      const specFile = verFlag !== undefined
+        ? join(specDir(env, specId), "versions", `v${verFlag}`, "spec.json")
+        : join(specDir(env, specId), "spec.json");
       if (!existsSync(specFile)) {
-        bad(ctx, `spec not found: ${specId} (prepare first)`);
+        bad(ctx, verFlag !== undefined ? `spec not found: ${specId} v${verFlag} (kept versions live under versions/v<N>/)` : `spec not found: ${specId} (prepare first)`);
         return 1;
       }
       const spec = readJson<VerifySpec>(specFile);
@@ -2601,9 +2625,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: verify trace <spec-id>");
         return 2;
       }
-      const file = join(specDir(env, specId), "trace.json");
+      // #242: --spec-version <N> reads the kept old trace (versions/v<N>/trace.json).
+      const tVer = args.flags["spec-version"] !== undefined ? Number(args.flags["spec-version"]) : undefined;
+      if (tVer !== undefined && (!Number.isInteger(tVer) || tVer < 1)) {
+        bad(ctx, "--spec-version must be a positive integer");
+        return 2;
+      }
+      const file = tVer !== undefined
+        ? join(specDir(env, specId), "versions", `v${tVer}`, "trace.json")
+        : join(specDir(env, specId), "trace.json");
       if (!existsSync(file)) {
-        bad(ctx, `trace not found: ${specId} (was the spec prepared?)`);
+        bad(ctx, tVer !== undefined ? `trace not found: ${specId} v${tVer} (kept versions live under versions/v<N>/)` : `trace not found: ${specId} (was the spec prepared?)`);
         return 1;
       }
       const trace = readJson<any>(file);
