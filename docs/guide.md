@@ -833,6 +833,7 @@ ygl-trees verify run spec_f9ec865ed62d --db orders.sqlite
 
 - **结论是 FAIL，退出码仍然是 0。** 退出码只表示「程序有没有出错」，判定结果看报告。
 - `prepare` 必须给 `--as-of`，表示这份快照描述的是哪个时刻。这样同一份材料，换时间、换机器重做，冻结出来的都是同一个 spec。只是试跑时，用 `--draft` 不冻结。
+- **同一材料第二次 `prepare` 成功会替换当前版本**（输出 `replaces spec_… vN`、JSON 带 `replaced`）：旧版的 spec/trace/prepare 三件**逐字节保留**在 `specs/<id>/versions/v<N>/`，`verify run/trace <id> --spec-version N` 可以读取旧版（#242）；归档按报告的版本取文件，不会拿新版判据解释旧结论。
 - `run` 默认会打一个确定性的 zip 归档：同一次运行，两次归档逐字节相同。
 
 ### 9.3 看报告、复核归档
