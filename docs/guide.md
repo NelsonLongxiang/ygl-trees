@@ -1113,7 +1113,6 @@ YGL_PG_URL=postgres://… ygl-trees db migrate pg   # 一次性完整迁移，�
 | `no evaluator configured` | 决策模型没配凭证 | `config set decision_model_llm_token …`；不配就停在待判定 |
 | `node ready` 把最终目标列为可做 | 连线方向反了 | `node link <前置> <后续>`，前置写在前面 |
 | 节点没满足前置却显示已解锁 | `unlock` 只是打标记 | 解锁前先 `node can` |
-| 表格只有表头、数据行是空的 | 已知的显示缺陷 | 加 `--json` |
 | 用 `task cancel`、`reopen`、`assign`、`stale` 时只回 `usage: task add …` | 装的是 0.120.0 或更早，还没有这些命令 | 升级到 0.121.0，或见 1.1 节末尾的差异表 |
 | `unknown verify action: prune`、`unknown job action: retire` | 同上 | 同上 |
 | 退出码 2，提示用法 | 少参数或参数非法 | 看提示，或 `ygl-trees --help` |
