@@ -481,4 +481,16 @@ describe("prepare：P0–P5 流水线（零人工确认，fail-closed）", () =>
     expect(res.diagnostics.find((d) => d.stage === "P3")?.message).toMatch(/orphan review/);
     expect((await prep(ALL3, { reviewedClauses: ALL3.map((c) => c.source_clause) })).verdict).toBe("ready");
   });
+
+  it("#243: a red-team failure still reports the accepted exemptions", async () => {
+    const res = await prepareSpec(MATERIAL + "\nS9 影子条款不适用。\n", {
+      asOf: AS_OF,
+      runner: runnerOf([goodCandidate()]),
+      reviewer: reviewerOf(okReview),
+      coverageExempt: [{ id: "S9", reason: "影子版判据" }],
+      redteam: () => ["forced red-team failure"],
+    });
+    expect(res.verdict).toBe("error");
+    expect(res.coverage?.coverage_exempt).toEqual([{ id: "S9", reason: "影子版判据", clause_text: "S9 影子条款不适用。", clause_id: "S9" }]);
+  });
 });
