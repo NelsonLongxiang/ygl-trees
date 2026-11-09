@@ -24,6 +24,7 @@
 - `update-check.spec.ts` 隔离它读取的环境变量（#247，Refs #235），`YGL_RUN_ID` 在模块加载前清除。
 - 临时目录门禁（#248）：`ygl-verify-snapshots` 里有任何文件都判红，空目录放行。
 - `verify/meta.json` 补登记 #245 改动的两个监控脚本（#246）。
+- G12 解释器锚修复：`test:unit` 改走 `scripts/run-sh.mjs`。这条漂移由 #156 引入，一直没被发现，因为 G12 不在 `pnpm test` 的链路里。
 
 ## 0.121.0
 
