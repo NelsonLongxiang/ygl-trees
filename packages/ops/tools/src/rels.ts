@@ -121,6 +121,36 @@ export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "re
       const rows = (await mgr.query(`SELECT * FROM relations WHERE id=?`, [ex[0].id])) as any[];
       return { row: rows[0], duplicate: true };
     }
+    // #241: superseded-by between claims is an ordering, not a free-form tag —
+    // refuse a rel that crosses projects (a replacement must live where the
+    // report can see both) and one that would close a cycle (a claim cannot
+    // supersede its own replacement chain).
+    if (rel === "superseded-by" && src.type === "claim" && dst.type === "claim") {
+      const rows = (await mgr.query(
+        `SELECT id, project_id FROM claims WHERE id IN (?, ?)`,
+        [src.id, dst.id]
+      )) as Array<{ id: string; project_id: string }>;
+      const byId = new Map(rows.map((r) => [String(r.id), String(r.project_id)]));
+      const srcProj = byId.get(String(src.id));
+      const dstProj = byId.get(String(dst.id));
+      if (srcProj && dstProj && srcProj !== dstProj) {
+        throw new RelError(2, `superseded-by crosses projects: claim ${src.id} (project ${srcProj}) → claim ${dst.id} (project ${dstProj}) — a replacement must stay inside one project`);
+      }
+      // walk the replacement chain from dst; reaching src closes a cycle
+      const seen = new Set<string>();
+      let cursor: string | undefined = String(dst.id);
+      while (cursor && !seen.has(cursor)) {
+        if (cursor === String(src.id)) {
+          throw new RelError(2, `superseded-by would close a cycle: claim ${src.id} → ${dst.id} already reaches ${src.id} through the replacement chain`);
+        }
+        seen.add(cursor);
+        const next = (await mgr.query(
+          `SELECT dst_id FROM relations WHERE src_type='claim' AND src_id=? AND dst_type='claim' AND rel='superseded-by' LIMIT 1`,
+          [cursor]
+        )) as Array<{ dst_id: string }>;
+        cursor = next.length ? String(next[0].dst_id) : undefined;
+      }
+    }
     const id = shortId(["rel", src.id, dst.id, rel], 10);
     await mgr.query(
       `INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created) VALUES(?,?,?,?,?,?,1,?)`,

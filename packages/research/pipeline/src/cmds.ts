@@ -1463,6 +1463,13 @@ if (subAction === "show") {
           WHERE ce.claim_id=? ORDER BY e.created`,
         [id]
       ) as any[];
+      // #241: a claim replaced by another one says so — the rel was accepted
+      // long ago but nothing read it; show is the first reader.
+      const supRow = await readOne(env,
+        "SELECT dst_id FROM relations WHERE src_type='claim' AND src_id=? AND dst_type='claim' AND rel='superseded-by' ORDER BY created DESC LIMIT 1",
+        [id]
+      ) as any;
+      const supersededBy = supRow?.dst_id ? String(supRow.dst_id) : "";
       const payload = {
         id: c.id,
         project: project.name,
@@ -1472,6 +1479,7 @@ if (subAction === "show") {
         channel: c.channel || "",
         created: c.created,
         updated: c.updated || "",
+        ...(supersededBy ? { superseded_by: supersededBy } : {}),
         evidence: links.map((l) => ({
           evidence_id: l.evidence_id,
           stance: l.stance,
@@ -1490,6 +1498,7 @@ if (subAction === "show") {
       out(ctx, `  status ${c.status} · confidence ${c.confidence} · channel ${c.channel || "(none)"}`);
       out(ctx, `  text: ${c.text}`);
       out(ctx, paint(C.dim, `  created ${c.created}${c.updated ? ` · updated ${c.updated}` : ""}`, ctx.color));
+      if (supersededBy) out(ctx, `  superseded-by: ${supersededBy}  _（由新版替代；报告不再单列此条）_`);
       if (!links.length) {
         out(ctx, paint(C.dim, "  evidence: (none linked)", ctx.color));
       } else {
@@ -1506,6 +1515,11 @@ if (subAction === "show") {
             relations: { claimEvidence: true },
             order: { created: "ASC" },
           });
+          // #241: which claims were replaced by another claim (superseded-by).
+          const supRows = (await ds.query(
+            "SELECT src_id, dst_id FROM relations WHERE src_type='claim' AND dst_type='claim' AND rel='superseded-by'"
+          )) as Array<{ src_id: string; dst_id: string }>;
+          const supBy = new Map(supRows.map((r) => [String(r.src_id), String(r.dst_id)]));
           const rows = cls.map((c) => ({
             id: c.id,
             text: clip(c.text, 60),
@@ -1517,12 +1531,13 @@ if (subAction === "show") {
             channel: (c as any).channel ?? null,
             sup: (c.claimEvidence ?? []).filter((ce) => ce.stance === "supports").length,
             ref: (c.claimEvidence ?? []).filter((ce) => ce.stance === "refutes").length,
+            ...(supBy.has(String(c.id)) ? { superseded_by: supBy.get(String(c.id)) } : {}),
           }));
           if (ctx.json) {
             console.log(JSON.stringify(rows, null, 2));
             return 0;
           }
-          table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref"], ["id", "text", "status", "confidence", "channel", "sup", "ref"]);
+          table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref", "superseded"], ["id", "text", "status", "confidence", "channel", "sup", "ref", "superseded_by"]); // #241: replaced claims name their replacement
           return 0;
         })
         .catch((e: any): number => {

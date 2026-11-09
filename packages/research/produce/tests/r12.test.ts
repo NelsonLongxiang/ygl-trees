@@ -57,6 +57,9 @@ describe.skipIf(!hasBundle)("produce report 同名节只取最高版本（#240�
     expect(text).toContain("v2 body revised");
     expect(text).not.toContain("v1 body"); // old version out of the report
     expect((text.match(/^## 结论$/gm) ?? []).length).toBe(1); // untouched section intact
+    // #240 tail: a revision must NOT move the section — the title keeps its
+    // first-appearance position (背景 was saved before 结论).
+    expect(text.indexOf("## 背景")).toBeLessThan(text.indexOf("## 结论"));
     const list = JSON.parse(runCli(["produce", "list"]).stdout as string) as Array<{ kind: string }>;
     expect(list.filter((x) => x.kind === "section").length).toBe(3); // both versions + the other title stay queryable
   });
