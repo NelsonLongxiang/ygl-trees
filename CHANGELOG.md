@@ -1,5 +1,30 @@
 ## Unreleased
 
+## 0.122.0
+
+用户可见行为变化：
+
+- **第二次 `verify prepare` 不再悄悄覆盖旧版本**（#253，Refs #242）：同一材料再次 ready 时，人类输出写 `replaces spec_… vN`，`--json` 带 `replaced: { spec_version, spec_sha256 }`；`--draft` 不写盘，但说明会替换哪个版本（`would_replace`）。旧版的 `spec.json`、`trace.json`、`prepare.json` 逐字节移到 `specs/<id>/versions/v<N>/`。`verify run` 和 `verify trace` 新增 `--spec-version N` 读取旧版（叫这个名字是因为 `--version` 是全局版本旗标）。
+- **归档按报告实际运行的版本取文件**（#253）：`verify archive` 现在打包报告对应版本的 spec、prepare、trace，不再一律取当前版本。**行为变化**：如果该版本的文件已经不在了（例如旧引擎下被覆盖的版本），归档会报错拒绝并点名两个版本，不再把别的版本打包进去。已知限制：`meta-bypass.json` 仍在 spec 顶层，没有按版本保留。
+- **`--coverage-exempt` 的豁免理由写进冻结记录**（#252，Refs #243）：`prepare.json`、`trace.json`、未就绪的 `attempts/` 记录都带 `coverage_exempt: [{ id|locator|text, reason, clause_text, clause_id }]`（没有豁免时为 `[]`，键恒在）；`verify trace` 逐条显示豁免条款和理由。`spec.json` 及其哈希不变。
+- **断言可以被新版替代**（#254，Refs #241）：`rel add claim:<旧> claim:<新> --rel superseded-by` 现在真正生效。`produce report` 的摘要、主要结论、待补证据不再列旧断言，并在摘要里点名一次替代关系；`research claim show` 和 `claim list` 带 `superseded_by`；`agent brief` 的计数不含被替代的断言。**新增拒绝**（rc=2，点名 id）：一个断言只能有一个替代者（要换先 `rel rm`），跨项目和成环的 `superseded-by` 都不接受。
+- **报告里同名节只显示最新版本**（#249，Refs #240）：同一标题多次 `produce section` 后，`produce report` 只取最高版本，节保持在标题首次出现的位置。旧版本仍在表里，`produce list` / `produce show` 照常可见。
+- **`verify run` 的临时副本跑完就删**（#248，Refs #228）：单跑、树跑、HTTP 作业三条路径在 PASS、FAIL、ERROR 和抛错时都先关 SQLite 句柄再删副本，WAL 模式的 `-shm`/`-wal` 一并清掉；副本文件名带进程号和随机后缀，并发运行互不影响。`ygl-verify-snapshots` 目录本身保留（空目录），7 天回收继续兜底，`$YGL_HOME/verify/snapshots/` 的留存副本不受影响。
+- **人类表格恢复显示数据行**（#244，Refs #239）：`patrol list`、`patrol findings`、`verify list`、`verify prune` 的表格原先把每行都打成空行，只有 `--json` 正常。
+
+文档：
+
+- 新增场景教程 `docs/guide.md`（#238）：13 个情景，每条命令都实跑过；M13 的评审记录归档到 `docs/reviews/archive-m13/`。
+- `verify --help`、llms 清单、`ygl-trees-verify` 与 `ygl-trees-research` 技能、教程同步了 `--spec-version` 和 `superseded-by` 的用法（#253、#254）。
+- 隐私清理（#245）：评审文档里的机器本地路径换成中性写法。
+
+门禁与测试（不影响运行时）：
+
+- 单测默认离线（#251，Refs #250）：整轮设 `YGL_EVAL_OFFLINE=1`，`YGL_TEST_LIVE_EVAL=1` 才真调评估网关。原先在有凭证的机器上，`claim link` 等用例会真的调用网关，结果取决于网络。
+- `update-check.spec.ts` 隔离它读取的环境变量（#247，Refs #235），`YGL_RUN_ID` 在模块加载前清除。
+- 临时目录门禁（#248）：`ygl-verify-snapshots` 里有任何文件都判红，空目录放行。
+- `verify/meta.json` 补登记 #245 改动的两个监控脚本（#246）。
+
 ## 0.121.0
 
 用户可见行为变化：
