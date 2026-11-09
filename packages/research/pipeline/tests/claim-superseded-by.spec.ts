@@ -76,4 +76,51 @@ describe.skipIf(!hasBundle)("claim superseded-by (#241)", () => {
     expect(cyc.out).toMatch(/cycle/);
     expect(cyc.out).toContain(oldC.id);
   }, 180000);
+
+  it("one replacement per claim — a second superseded-by from the same claim is refused (#241 review)", () => {
+    const a = addClaim("甲断言");
+    const b = addClaim("乙断言");
+    const c2 = addClaim("丙断言");
+    expect(run(["rel", "add", "claim:" + a.id, "claim:" + b.id, "--rel", "superseded-by"]).rc).toBe(0);
+    const second = run(["rel", "add", "claim:" + a.id, "claim:" + c2.id, "--rel", "superseded-by"]);
+    expect(second.rc).toBe(2);
+    expect(second.out).toContain(a.id);
+    expect(second.out).toContain(b.id);
+  }, 120000);
+
+  it("a cycle two hops away is refused through every branch (#241 review)", () => {
+    const a = addClaim("链头断言");
+    const x = addClaim("中间断言");
+    const end = addClaim("尾端断言");
+    // a→x, x→end (no cycle yet)
+    expect(run(["rel", "add", "claim:" + a.id, "claim:" + x.id, "--rel", "superseded-by"]).rc).toBe(0);
+    expect(run(["rel", "add", "claim:" + x.id, "claim:" + end.id, "--rel", "superseded-by"]).rc).toBe(0);
+    // end→a closes the two-hop cycle
+    const cyc = run(["rel", "add", "claim:" + end.id, "claim:" + a.id, "--rel", "superseded-by"]);
+    expect(cyc.rc).toBe(2);
+    expect(cyc.out).toMatch(/cycle/);
+  }, 120000);
+
+  it("an historic claim with TWO outgoing rels is refused at any branch (#241 review)", () => {
+    // build history with an illegal double edge directly in the DB: a→x and a→y
+    const a = addClaim("双出边断言");
+    const x = addClaim("替代X");
+    const y = addClaim("替代Y");
+    const { DatabaseSync } = require("node:sqlite");
+    const db = new DatabaseSync(join(home, "ygl-trees.db"));
+    db.exec(
+      "INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created) VALUES " +
+      "('reldblx','claim','" + a.id + "','claim','" + x.id + "','superseded-by',1,'2026-11-09T00:00:00.000Z')"
+    );
+    db.exec(
+      "INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created) VALUES " +
+      "('reldbly','claim','" + a.id + "','claim','" + y.id + "','superseded-by',1,'2026-11-09T00:00:01.000Z')"
+    );
+    db.close();
+    // any branch pointing back at a's chain must be refused, not id-order-dependent:
+    // y→a walks a's two successors and finds a on one branch.
+    const back = run(["rel", "add", "claim:" + y.id, "claim:" + a.id, "--rel", "superseded-by"]);
+    expect(back.rc).toBe(2);
+    expect(back.out).toMatch(/cycle/);
+  }, 120000);
 });

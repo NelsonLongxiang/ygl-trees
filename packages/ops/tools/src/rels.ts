@@ -121,10 +121,14 @@ export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "re
       const rows = (await mgr.query(`SELECT * FROM relations WHERE id=?`, [ex[0].id])) as any[];
       return { row: rows[0], duplicate: true };
     }
-    // #241: superseded-by between claims is an ordering, not a free-form tag —
-    // refuse a rel that crosses projects (a replacement must live where the
-    // report can see both) and one that would close a cycle (a claim cannot
-    // supersede its own replacement chain).
+    // #241: superseded-by between claims is an ordering, not a free-form tag.
+    // (review round 2) Guards, all naming both endpoints:
+    //  1. one replacement per claim — a second superseded-by from the same
+    //     claim to a DIFFERENT claim is refused (swap: rel rm then rel add);
+    //  2. cross-project rel refused (the replacement must live where the
+    //     report can see both);
+    //  3. cycle check walks ALL successors (historic data may carry multiple
+    //     outgoing rels; LIMIT 1 let an id-order-dependent escape through).
     if (rel === "superseded-by" && src.type === "claim" && dst.type === "claim") {
       const rows = (await mgr.query(
         `SELECT id, project_id FROM claims WHERE id IN (?, ?)`,
@@ -136,19 +140,28 @@ export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "re
       if (srcProj && dstProj && srcProj !== dstProj) {
         throw new RelError(2, `superseded-by crosses projects: claim ${src.id} (project ${srcProj}) → claim ${dst.id} (project ${dstProj}) — a replacement must stay inside one project`);
       }
-      // walk the replacement chain from dst; reaching src closes a cycle
+      const existing = (await mgr.query(
+        `SELECT dst_id FROM relations WHERE src_type='claim' AND src_id=? AND dst_type='claim' AND rel='superseded-by' AND dst_id<>?`,
+        [src.id, dst.id]
+      )) as Array<{ dst_id: string }>;
+      if (existing.length) {
+        throw new RelError(2, `claim ${src.id} already has a superseded-by to ${existing[0].dst_id} — one replacement per claim (rm it first with: ygl-trees rel rm claim:${src.id} claim:${existing[0].dst_id} --rel superseded-by)`);
+      }
+      // walk every successor from dst; reaching src closes a cycle
       const seen = new Set<string>();
-      let cursor: string | undefined = String(dst.id);
-      while (cursor && !seen.has(cursor)) {
-        if (cursor === String(src.id)) {
-          throw new RelError(2, `superseded-by would close a cycle: claim ${src.id} → ${dst.id} already reaches ${src.id} through the replacement chain`);
+      const queue: string[] = [String(dst.id)];
+      while (queue.length) {
+        const cur = queue.shift()!;
+        if (cur === String(src.id)) {
+          throw new RelError(2, `superseded-by would close a cycle: claim ${src.id} → ${dst.id} reaches ${src.id} through the replacement chain`);
         }
-        seen.add(cursor);
+        if (seen.has(cur)) continue;
+        seen.add(cur);
         const next = (await mgr.query(
-          `SELECT dst_id FROM relations WHERE src_type='claim' AND src_id=? AND dst_type='claim' AND rel='superseded-by' LIMIT 1`,
-          [cursor]
+          `SELECT dst_id FROM relations WHERE src_type='claim' AND src_id=? AND dst_type='claim' AND rel='superseded-by'`,
+          [cur]
         )) as Array<{ dst_id: string }>;
-        cursor = next.length ? String(next[0].dst_id) : undefined;
+        for (const n of next) queue.push(String(n.dst_id));
       }
     }
     const id = shortId(["rel", src.id, dst.id, rel], 10);

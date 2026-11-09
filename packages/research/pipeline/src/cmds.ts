@@ -1465,9 +1465,11 @@ if (subAction === "show") {
       ) as any[];
       // #241: a claim replaced by another one says so — the rel was accepted
       // long ago but nothing read it; show is the first reader.
+      // #241 review: same-project condition as report/brief — a historic
+      // cross-project rel must not mark the claim as replaced here.
       const supRow = await readOne(env,
-        "SELECT dst_id FROM relations WHERE src_type='claim' AND src_id=? AND dst_type='claim' AND rel='superseded-by' ORDER BY created DESC LIMIT 1",
-        [id]
+        "SELECT r.dst_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.src_id=? AND r.dst_type='claim' AND r.rel='superseded-by' ORDER BY r.created DESC LIMIT 1",
+        [project.id, id]
       ) as any;
       const supersededBy = supRow?.dst_id ? String(supRow.dst_id) : "";
       const payload = {
@@ -1516,8 +1518,11 @@ if (subAction === "show") {
             order: { created: "ASC" },
           });
           // #241: which claims were replaced by another claim (superseded-by).
+          // #241 review: only same-project rels mark a replacement (aligned
+          // with report and brief).
           const supRows = (await ds.query(
-            "SELECT src_id, dst_id FROM relations WHERE src_type='claim' AND dst_type='claim' AND rel='superseded-by'"
+            "SELECT r.src_id, r.dst_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.dst_type='claim' AND r.rel='superseded-by'",
+            [project.id]
           )) as Array<{ src_id: string; dst_id: string }>;
           const supBy = new Map(supRows.map((r) => [String(r.src_id), String(r.dst_id)]));
           const rows = cls.map((c) => ({
