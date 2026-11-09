@@ -67,6 +67,7 @@ ygl-trees research claim unresolve <claimId>   # 复位回 unverified（0.82.1�
 ygl-trees research claim unlink <claimId> <evidenceId>  # 解除单条链接并重算状态（[预测·] 保持原状态，0.105.0）
 ygl-trees research evidence rm <evidenceId> [--force]       # 删证据；仍被链接时默认拒绝，--force 级联删链并重算（0.105.0）
 ygl-trees research claim evaluate <claimId>    # 模型置信度评估（0.84：写 claim.eval 事件，不再 stdout 蒸发）
+ygl-trees rel add claim:<old> claim:<new> --rel superseded-by  # 旧断言被新版替代：报告「摘要/主要结论/待补证据」不再单列旧条并点名替代，show/list 标 superseded_by，brief 计数排除；跨项目与成环的 rel 被拒（#241）
 ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（0.84：校准预测 ≥60% 判据的测量面）
 ```
 
