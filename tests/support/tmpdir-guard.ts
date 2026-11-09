@@ -9,11 +9,19 @@ import { join } from "node:path";
  */
 const EXPECTED = new Set(["node-compile-cache"]); // #228: ygl-verify-snapshots copies (incl. WAL sidecars) are removed per-run
 const KEYS = ["TMPDIR", "TEMP", "TMP"] as const;
+// #250: the whole unit suite runs with the evaluator pinned offline unless the
+// live opt-in is given — specs that spawn claim link/evaluate must not reach the
+// real gateway just because the host has credentials (three 2026-11-08 full-run
+// reds traced to exactly that). A spec that needs another state sets it itself.
+const LIVE = process.env.YGL_TEST_LIVE_EVAL === "1";
 
 export default function setup() {
   const root = mkdtempSync(join(tmpdir(), "ygl-vitest-"));
   const saved = KEYS.map((k) => [k, process.env[k]] as const);
   for (const k of KEYS) process.env[k] = root;
+  const savedEval = process.env.YGL_EVAL_OFFLINE;
+  if (!LIVE) process.env.YGL_EVAL_OFFLINE = "1";
+
   return () => {
     // #228 review: an EMPTY ygl-verify-snapshots directory is fine — a concurrent
     // snapshotCopy may sit between mkdir and copyFile, so the dir must outlive
@@ -37,6 +45,8 @@ export default function setup() {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
+    if (savedEval === undefined) delete process.env.YGL_EVAL_OFFLINE;
+    else process.env.YGL_EVAL_OFFLINE = savedEval;
     rmSync(root, { recursive: true, force: true, maxRetries: 3 });
     if (leftovers.length) {
       throw new Error(`tests left ${leftovers.length} entr${leftovers.length === 1 ? "y" : "ies"} in the temp directory (#227): ${leftovers.sort().join(", ")}`);
