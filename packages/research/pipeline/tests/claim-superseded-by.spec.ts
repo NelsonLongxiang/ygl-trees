@@ -117,10 +117,13 @@ describe.skipIf(!hasBundle)("claim superseded-by (#241)", () => {
       "('reldbly','claim','" + a.id + "','claim','" + y.id + "','superseded-by',1,'2026-11-09T00:00:01.000Z')"
     );
     db.close();
-    // any branch pointing back at a's chain must be refused, not id-order-dependent:
-    // y→a walks a's two successors and finds a on one branch.
-    const back = run(["rel", "add", "claim:" + y.id, "claim:" + a.id, "--rel", "superseded-by"]);
-    expect(back.rc).toBe(2);
-    expect(back.out).toMatch(/cycle/);
+    // every branch pointing back at a's chain must be refused, not
+    // id-order-dependent: each of a's two successors returning to a walks a's
+    // two outgoing rels and finds a on one branch (review round 3).
+    for (const branch of [x, y]) {
+      const back = run(["rel", "add", "claim:" + branch.id, "claim:" + a.id, "--rel", "superseded-by"]);
+      expect(back.rc).toBe(2);
+      expect(back.out).toMatch(/cycle/);
+    }
   }, 120000);
 });
