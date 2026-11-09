@@ -483,6 +483,8 @@ can unlock: goal
 
 **要记住：模型判定 ≠ 仲裁。** 判过了，仍然要人 `node unlock`；断言仍然要人 `claim resolve`。
 
+**断言措辞错了怎么办**（#241）：断言不能改原文——新增一条新措辞的断言，然后把旧条指向新版：`rel add claim:<旧> claim:<新> --rel superseded-by`。报告不再单列旧条、会在摘要点名替代；`claim show/list` 显示 `superseded_by`；`agent brief` 的计数排除被替代条。跨项目或会成环的这条 rel 会被拒（两个 id 都点名）。
+
 **常见坑：**
 - 用 eval 门去判事实性的里程碑（「v2 发布了没有」）：这种事有确定答案，应该挂证据加人工解锁，不该让模型猜。
 - 把 pending 当成失败：pending 是「证据不够，模型拿不准」。该补的是证据，不是去改门槛。

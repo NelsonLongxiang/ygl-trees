@@ -326,7 +326,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
 
     case "report": {
-      const claims = store.claimList(pid);
+      const claimsAll = store.claimList(pid);
+      // #241: a claim with an outgoing superseded-by rel to another claim in the
+      // same project is replaced — the report lists its replacement instead of
+      // the old item (摘要/主要结论/待补证据 all see the filtered set).
+      const supRows = (store.db.all(
+        "SELECT r.src_id, r.dst_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.dst_type='claim' AND r.rel='superseded-by'",
+        [pid]
+      ) ?? []) as Array<{ src_id: string; dst_id: string }>;
+      const supersededBy = new Map(supRows.map((r) => [String(r.src_id), String(r.dst_id)]));
+      const claims = claimsAll.filter((c: any) => !supersededBy.has(String(c.id)));
       const evidence = store.evidenceList(pid);
       const sources = store.sourceList(pid);
       // #240: a revised section (same title, higher version) replaces the old body in
@@ -355,6 +364,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           `基于 ${evidence.length} 条证据、${sources.length} 个来源。`,
         ""
       );
+      // #241: name each replaced claim once, with its replacement.
+      for (const [oldId, newId] of supersededBy) {
+        const oldClaim = claimsAll.find((c: any) => String(c.id) === oldId);
+        if (!oldClaim) continue;
+        L.push(`> 已由新版替代：${oldClaim.text} → \`${newId}\``, "");
+      }
 
       L.push("## 主要结论", "");
       claims.forEach((c: any, i: number) => {

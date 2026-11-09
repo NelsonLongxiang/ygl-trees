@@ -1463,6 +1463,15 @@ if (subAction === "show") {
           WHERE ce.claim_id=? ORDER BY e.created`,
         [id]
       ) as any[];
+      // #241: a claim replaced by another one says so — the rel was accepted
+      // long ago but nothing read it; show is the first reader.
+      // #241 review: same-project condition as report/brief — a historic
+      // cross-project rel must not mark the claim as replaced here.
+      const supRow = await readOne(env,
+        "SELECT r.dst_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.src_id=? AND r.dst_type='claim' AND r.rel='superseded-by' ORDER BY r.created DESC LIMIT 1",
+        [project.id, id]
+      ) as any;
+      const supersededBy = supRow?.dst_id ? String(supRow.dst_id) : "";
       const payload = {
         id: c.id,
         project: project.name,
@@ -1472,6 +1481,7 @@ if (subAction === "show") {
         channel: c.channel || "",
         created: c.created,
         updated: c.updated || "",
+        ...(supersededBy ? { superseded_by: supersededBy } : {}),
         evidence: links.map((l) => ({
           evidence_id: l.evidence_id,
           stance: l.stance,
@@ -1490,6 +1500,7 @@ if (subAction === "show") {
       out(ctx, `  status ${c.status} · confidence ${c.confidence} · channel ${c.channel || "(none)"}`);
       out(ctx, `  text: ${c.text}`);
       out(ctx, paint(C.dim, `  created ${c.created}${c.updated ? ` · updated ${c.updated}` : ""}`, ctx.color));
+      if (supersededBy) out(ctx, `  superseded-by: ${supersededBy}  _（由新版替代；报告不再单列此条）_`);
       if (!links.length) {
         out(ctx, paint(C.dim, "  evidence: (none linked)", ctx.color));
       } else {
@@ -1506,6 +1517,14 @@ if (subAction === "show") {
             relations: { claimEvidence: true },
             order: { created: "ASC" },
           });
+          // #241: which claims were replaced by another claim (superseded-by).
+          // #241 review: only same-project rels mark a replacement (aligned
+          // with report and brief).
+          const supRows = (await ds.query(
+            "SELECT r.src_id, r.dst_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.dst_type='claim' AND r.rel='superseded-by'",
+            [project.id]
+          )) as Array<{ src_id: string; dst_id: string }>;
+          const supBy = new Map(supRows.map((r) => [String(r.src_id), String(r.dst_id)]));
           const rows = cls.map((c) => ({
             id: c.id,
             text: clip(c.text, 60),
@@ -1517,12 +1536,13 @@ if (subAction === "show") {
             channel: (c as any).channel ?? null,
             sup: (c.claimEvidence ?? []).filter((ce) => ce.stance === "supports").length,
             ref: (c.claimEvidence ?? []).filter((ce) => ce.stance === "refutes").length,
+            ...(supBy.has(String(c.id)) ? { superseded_by: supBy.get(String(c.id)) } : {}),
           }));
           if (ctx.json) {
             console.log(JSON.stringify(rows, null, 2));
             return 0;
           }
-          table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref"], ["id", "text", "status", "confidence", "channel", "sup", "ref"]);
+          table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref", "superseded"], ["id", "text", "status", "confidence", "channel", "sup", "ref", "superseded_by"]); // #241: replaced claims name their replacement
           return 0;
         })
         .catch((e: any): number => {

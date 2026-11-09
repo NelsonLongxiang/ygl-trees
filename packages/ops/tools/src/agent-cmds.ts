@@ -99,7 +99,15 @@ export function buildBrief(env: Env, sel = resolveProject(env.store.db)): any {
   } catch { /* events table optional in exotic setups */ }
 
   if (project) {
-    const claims = store.claimList(project.id);
+    const claimsAll = store.claimList(project.id);
+    // #241: replaced claims do not count toward the brief's numbers — the
+    // replacement does.
+    const supRows = (store.db.all(
+      "SELECT r.src_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.dst_type='claim' AND r.rel='superseded-by'",
+      [project.id]
+    ) ?? []) as Array<{ src_id: string }>;
+    const supSet = new Set(supRows.map((r) => String(r.src_id)));
+    const claims = claimsAll.filter((c: any) => !supSet.has(String(c.id)));
     const ev = store.evidenceList(project.id);
     const src = store.sourceList(project.id);
     const arts = store.artifactList(project.id);

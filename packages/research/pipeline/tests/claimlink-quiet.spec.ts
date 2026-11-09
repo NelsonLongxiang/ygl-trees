@@ -94,9 +94,9 @@ describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
     expect(r.out).not.toMatch(/\[模型\]/);
   });
 
-  // 运行期门（it.runIf 是收集期求值，beforeAll 探针尚未跑——不能用）：
-  // 网关不可达（无凭证离线环境）时 ctx.skip 带可见原因——监督席 direct-bc90dd8a/#90：
-  // 套件必须无凭证全绿，verbose 接受性由 --verbose-accepted 断言无条件钉。
+  // 运行期门（it.runIf 是收集期求值——不能用；这里用 ctx.skip 带可见原因）：
+  // #250 起不再探测网关：整轮被 tests/support/tmpdir-guard.ts 钉在离线态，
+  // 展开用例只在 YGL_TEST_LIVE_EVAL=1 时跑；quiet 用例在离线态恒跑。
   it("--verbose expands the [模型] line when the evaluator is reachable (#84.2)", (ctx) => {
     if (!LIVE_EVAL) ctx.skip("live evaluator not opted in — set YGL_TEST_LIVE_EVAL=1 on a credentials host to run (#250)");
     const ev = run(["research", "evidence", "add", SID, "--quote", "q4", "-p", "lq", "--json"]);
