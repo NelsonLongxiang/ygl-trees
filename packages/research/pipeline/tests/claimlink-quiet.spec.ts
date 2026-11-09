@@ -26,9 +26,10 @@ function run(args: string[]) {
   return { rc: r.status ?? -1, raw: (r.stdout || "") + (r.stderr || ""), out: r.stdout || "" };
 }
 
-// 网关可达探针（监督席 direct-bc90dd8a：无凭证环境必须离线安全）——
-// 评估成功 model_confidence 为数值；离线回落 null（ops evalClaim 无凭证 ok:false）。
-let HAS_EVAL = false;
+// #250: no gateway probe — the suite pins the evaluator offline
+// (tests/support/tmpdir-guard.ts sets YGL_EVAL_OFFLINE=1 unless
+// YGL_TEST_LIVE_EVAL=1), so this spec's result is the same on every machine.
+const LIVE_EVAL = process.env.YGL_TEST_LIVE_EVAL === "1";
 
 describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
   beforeAll(() => {
@@ -46,8 +47,8 @@ describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
     // 预链一条证据给两条 claim（by-source 批量只需 source 内 ≥1 条未链证据时 linked>0）
     run(["research", "claim", "link", CID, JSON.parse(ev1.out).id ?? JSON.parse(ev1.out).row?.id, "-p", "lq"]);
     // 预测 claim 故意不预链——批量时会触发 auto-promote skip 摘要行
-    const probe = run(["research", "claim", "evaluate", CID, "-p", "lq", "--json"]);
-    try { HAS_EVAL = typeof JSON.parse(probe.out)?.model_confidence === "number"; } catch { HAS_EVAL = false; }
+    // #250: the gateway probe that used to live here is gone — one flaky probe
+    // vs a later gateway answer is exactly the three 2026-11-08 full-run reds.
   });
 
   afterAll(() => rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
@@ -97,7 +98,7 @@ describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
   // 网关不可达（无凭证离线环境）时 ctx.skip 带可见原因——监督席 direct-bc90dd8a/#90：
   // 套件必须无凭证全绿，verbose 接受性由 --verbose-accepted 断言无条件钉。
   it("--verbose expands the [模型] line when the evaluator is reachable (#84.2)", (ctx) => {
-    if (!HAS_EVAL) ctx.skip("evaluator unreachable (offline, no credentials) — expansion assertion N/A");
+    if (!LIVE_EVAL) ctx.skip("live evaluator not opted in — set YGL_TEST_LIVE_EVAL=1 on a credentials host to run (#250)");
     const ev = run(["research", "evidence", "add", SID, "--quote", "q4", "-p", "lq", "--json"]);
     const eid = JSON.parse(ev.out).id ?? JSON.parse(ev.out).row?.id;
     const r = run(["research", "claim", "link", CID, eid, "--verbose", "-p", "lq"]);
@@ -106,7 +107,8 @@ describe.skipIf(!HAS_BIN)("claim link quiet-by-default (#84)", () => {
   });
 
   it("--verbose is accepted in offline environments (rc=0, quiet path)", (ctx) => {
-    if (HAS_EVAL) ctx.skip("evaluator reachable here — quiet-path assertion covered by #84.1");
+    if (LIVE_EVAL) ctx.skip("live evaluator opted in — the quiet-path case needs the pinned-offline suite (#250)");
+    // #250: otherwise always runs — the suite pins offline; the old HAS_EVAL skip made this case's reach depend on a one-shot gateway probe.
     const ev = run(["research", "evidence", "add", SID, "--quote", "q5", "-p", "lq", "--json"]);
     const eid = JSON.parse(ev.out).id ?? JSON.parse(ev.out).row?.id;
     const r = run(["research", "claim", "link", CID, eid, "--verbose", "-p", "lq"]);
