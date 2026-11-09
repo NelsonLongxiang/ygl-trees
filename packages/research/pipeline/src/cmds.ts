@@ -1519,8 +1519,10 @@ if (subAction === "show") {
           });
           // #241: which claims were replaced by another claim (superseded-by).
           // #241 review: only same-project rels mark a replacement (aligned
-          // with report and brief).
-          const supRows = (await ds.query(
+          // with report and brief). readRows routes by env.pgUrl — its asyncStore
+          // converts placeholders per driver; a raw ds.query with a bare ? is
+          // sqlite-only and failed the whole claim list on PG (G7 caught it).
+          const supRows = (await readRows(env,
             "SELECT r.src_id, r.dst_id FROM relations r JOIN claims c ON c.id=r.dst_id AND c.project_id=? WHERE r.src_type='claim' AND r.dst_type='claim' AND r.rel='superseded-by'",
             [project.id]
           )) as Array<{ src_id: string; dst_id: string }>;
