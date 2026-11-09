@@ -209,9 +209,26 @@ export function buildArchive(opts: BuildArchiveOptions): BuildArchiveResult {
   if (!report.payload_sha256) throw new Error(`report ${opts.runId} has no payload_sha256 — refusing to archive an unverifiable report`);
   const specId = report.spec_id;
   if (!specId) throw new Error(`report ${opts.runId} has no spec_id — cannot archive`);
-  const specDir = join(root, "specs", specId);
-  const specPath = join(specDir, "spec.json");
-  if (!existsSync(specPath)) throw new Error(`spec not found: ${specId}`);
+  // #242: archive the files OF THE VERSION THE REPORT RAN. A report produced by
+  // `verify run <id> --spec-version 1` must be explained by v1's criteria —
+  // archiving the current top-level files would let v2's spec explain v1's
+  // verdict. Version dir when the report's version is kept there, top level
+  // when it is the current one, fail-closed naming both when neither.
+  const reportVer = Number(report.verifier?.spec_version);
+  const versionedDir = Number.isInteger(reportVer) && reportVer >= 1 ? join(root, "specs", specId, "versions", `v${reportVer}`) : "";
+  const topSpecPath = join(root, "specs", specId, "spec.json");
+  let specDir = join(root, "specs", specId);
+  let specPath = topSpecPath;
+  const topSpecObj = existsSync(topSpecPath) ? readJsonFile<VerifySpec>(topSpecPath) : null;
+  if (topSpecObj && Number(topSpecObj.spec_version) === reportVer) {
+    specPath = topSpecPath; // the report's version is the current one
+  } else if (versionedDir && existsSync(join(versionedDir, "spec.json"))) {
+    specDir = versionedDir;
+    specPath = join(versionedDir, "spec.json");
+  } else {
+    const available = topSpecObj ? `current top-level spec is v${topSpecObj.spec_version}` : "no spec at top level";
+    throw new Error(`spec not found for ${specId} v${reportVer} (report ${opts.runId} ran that version; ${available}) — refusing to archive another version's criteria as this report's evidence`);
+  }
   const spec = readJsonFile<VerifySpec>(specPath);
   let withKinds = opts.with && opts.with.length ? [...new Set(opts.with)] : (["materials"] as ArchiveWith[]);
   if (opts.skipMaterials) withKinds = withKinds.filter((k) => k !== "materials");

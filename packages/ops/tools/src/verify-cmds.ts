@@ -1639,7 +1639,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             console.log(JSON.stringify(payload));
             return res.verdict === "ready" ? 0 : 1;
           }
-          out(ctx, `  · draft ${res.verdict}: ${res.units.length} candidate unit(s), ${res.rounds} round(s), ${res.rejected.length} rejected — nothing written`);
+          out(ctx, `  · draft ${res.verdict}: ${res.units.length} candidate unit(s), ${res.rounds} round(s), ${res.rejected.length} rejected — nothing written`
+            + (prevVersion >= 1 && existsSync(specDir(env, `spec_${short(sha256(materialId))}`) + "/spec.json") ? ` — would replace spec_${short(sha256(materialId))} v${prevVersion}` : ""));
           for (const d of res.diagnostics) out(ctx, paint(C.dim, `    [${d.stage}] ${d.message}`, ctx.color));
           for (const r of res.rejected.slice(0, 5)) out(ctx, paint(C.dim, `    · [${r.stage}] ${r.reason}`, ctx.color));
           return res.verdict === "ready" ? 0 : 1;
@@ -1713,7 +1714,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const specId = rest[0];
       const dbPath = lastDbFlag(args.flags.db);
       if (!specId || !dbPath) {
-        bad(ctx, "usage: verify run <spec-id> --db <snapshot.sqlite> [--submission <dir>]");
+        bad(ctx, "usage: verify run <spec-id> --db <snapshot.sqlite> [--submission <dir>] [--spec-version N]");
         return 2;
       }
       // #242: --spec-version <N> reads the kept old version byte for byte
@@ -1723,11 +1724,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "--spec-version must be a positive integer");
         return 2;
       }
-      const specFile = verFlag !== undefined
-        ? join(specDir(env, specId), "versions", `v${verFlag}`, "spec.json")
-        : join(specDir(env, specId), "spec.json");
+      // #242 review: --spec-version naming the CURRENT version reads the top
+      // level (it lives there); only older kept versions come from versions/.
+      const topRun = join(specDir(env, specId), "spec.json");
+      let specFile = topRun;
+      if (verFlag !== undefined) {
+        const cur = existsSync(topRun) ? readJson<VerifySpec>(topRun).spec_version : undefined;
+        if (cur === verFlag) specFile = topRun;
+        else {
+          const vPath = join(specDir(env, specId), "versions", `v${verFlag}`, "spec.json");
+          if (existsSync(vPath)) specFile = vPath;
+          else {
+            bad(ctx, `spec not found: ${specId} v${verFlag} (current is v${cur ?? "?"}; kept versions live under versions/v<N>/)`);
+            return 1;
+          }
+        }
+      }
       if (!existsSync(specFile)) {
-        bad(ctx, verFlag !== undefined ? `spec not found: ${specId} v${verFlag} (kept versions live under versions/v<N>/)` : `spec not found: ${specId} (prepare first)`);
+        bad(ctx, `spec not found: ${specId} (prepare first)`);
         return 1;
       }
       const spec = readJson<VerifySpec>(specFile);
@@ -2622,7 +2636,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "trace": {
       const specId = rest[0];
       if (!specId) {
-        bad(ctx, "usage: verify trace <spec-id>");
+        bad(ctx, "usage: verify trace <spec-id> [--spec-version N]");
         return 2;
       }
       // #242: --spec-version <N> reads the kept old trace (versions/v<N>/trace.json).
@@ -2631,11 +2645,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "--spec-version must be a positive integer");
         return 2;
       }
-      const file = tVer !== undefined
-        ? join(specDir(env, specId), "versions", `v${tVer}`, "trace.json")
-        : join(specDir(env, specId), "trace.json");
+      // #242 review: naming the CURRENT version reads the top-level trace.
+      const topTrace = join(specDir(env, specId), "trace.json");
+      let file = topTrace;
+      if (tVer !== undefined) {
+        const topSpecPath2 = join(specDir(env, specId), "spec.json");
+        const cur = existsSync(topSpecPath2) ? readJson<VerifySpec>(topSpecPath2).spec_version : undefined;
+        if (cur === tVer) file = topTrace;
+        else {
+          const vTrace = join(specDir(env, specId), "versions", `v${tVer}`, "trace.json");
+          if (existsSync(vTrace)) file = vTrace;
+          else {
+            bad(ctx, `trace not found: ${specId} v${tVer} (current is v${cur ?? "?"}; kept versions live under versions/v<N>/)`);
+            return 1;
+          }
+        }
+      }
       if (!existsSync(file)) {
-        bad(ctx, tVer !== undefined ? `trace not found: ${specId} v${tVer} (kept versions live under versions/v<N>/)` : `trace not found: ${specId} (was the spec prepared?)`);
+        bad(ctx, `trace not found: ${specId} (was the spec prepared?)`);
         return 1;
       }
       const trace = readJson<any>(file);
