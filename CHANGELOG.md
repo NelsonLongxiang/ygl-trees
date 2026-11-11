@@ -26,6 +26,12 @@
   - **没有采用设计稿里的 `:memory:` + `ATTACH` 写法**：实测那样 `pragma_user_version` 会读到空内存库的 0，让 pragma 来源静默答错。
   - **红队断言**：候选或视图里任何字符串出现快照自身路径，prepare P2 拒绝；1.3 spec 的手写 SQL 去掉注释和字面量后出现 `ATTACH` / `DETACH` / `file:`，run 拒跑。
   - 共享向量：6 个派生表用例、3 个视图、3 个读视图用例、11 条拒绝，TS 与 Rust 逐字节一致。
+- **验证器契约 1.3，第三部分：`verify collect archive`，以及读不到的输入不判 PASS**（#80、#232）。
+  - **新命令** `verify collect archive <file.tgz> --out <snapshot.sqlite>`：只读输入，把 tar / tgz 写成一份新的 SQLite 快照，只记原始观测——每个头一行（路径、原始字节、类型、大小、权限、载荷 sha256、头校验和是否正确、PAX 键、同路径出现次数），没有 ok/changed/invalid 一类的判定列。
+  - **读失败也是行**：文件读不到、空文件、gzip 损坏或截断、不是 tar、头损坏、孤悬 PAX、缺结束块、超过上限，都写进 `archive_errors`，不丢成员、不静默。
+  - **确定性、有上限**：同一输入得到逐字节相同的快照；头数、解压字节、路径长度都有上限（默认 10 万 / 1 GiB / 4096），记在快照里，解压炸弹只会变成一行错误。
+  - **读不到的输入不判 PASS**：1.3 spec 的快照里 `archive_errors` 有行时，本会 PASS 的单元一律改判 ERROR（`input_errors`）；FAIL 不变。TS 与 Rust 同规则。
+  - **可运行示例** `examples/verify-archive-collect/`：#232 的全部用例（哈希不同、缺/多路径、重复、空输入、`..`/绝对/空段/反斜杠/控制字符/包外路径、符号链接、头校验和、截断、上限），CLI 测试跑同一份 spec。
 
 ## 0.123.0
 

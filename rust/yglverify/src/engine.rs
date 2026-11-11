@@ -1328,6 +1328,28 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
             json!({ "vu": r.id, "severity": r.severity, "row_count": row_count })
         })
         .collect();
+    // 1.3 (#80 item 7): a snapshot whose collector recorded failed reads never yields PASS (engine.ts, same text).
+    if spec.contract_version == "1.3" {
+        let input_errors: Vec<(String, i64)> = opts.runner.collect_errors()?.into_iter().filter(|(_, n)| *n > 0).collect();
+        if !input_errors.is_empty() {
+            let reason = format!(
+                "input_errors: {} — the collected input is incomplete, so this unit cannot PASS",
+                input_errors.iter().map(|(t, n)| format!("{n} row(s) in {t}")).collect::<Vec<_>>().join(", ")
+            );
+            let listed: Vec<Value> = input_errors.iter().map(|(t, n)| json!({ "table": t, "rows": n })).collect();
+            for r in results.iter_mut() {
+                if r.role.as_deref() != Some("source") && r.verdict == Verdict::Pass {
+                    r.verdict = Verdict::Error;
+                    let mut ev = r.evidence.clone().unwrap_or_else(|| json!({}));
+                    if let Some(obj) = ev.as_object_mut() {
+                        obj.insert("input_errors".into(), json!(listed));
+                        obj.insert("reason".into(), json!(reason));
+                    }
+                    r.evidence = Some(ev);
+                }
+            }
+        }
+    }
     // 1.3 (ruling ③): an isolated run must leave the snapshot byte-identical — proven, not assumed.
     if isolated {
         if let Some(changed) = opts.runner.untouched() {

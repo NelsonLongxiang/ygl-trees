@@ -39,6 +39,7 @@ import type { FileScanRecord } from "../../../verify/core/src/engine";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
+import { collectArchive, DEFAULT_ARCHIVE_LIMITS } from "../../../verify/core/src/collect-archive";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, foldOverall, foldSummary, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
@@ -1090,6 +1091,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
+  collect: ["out", "max-entries", "max-bytes", "max-path"],
   example: ["checker", "null-ops"],
   meta: [],
   probe: ["matrix", "target", "only"],
@@ -2452,6 +2454,47 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         out(ctx, `  probe_version ${report.probe_version} · ${probes.length} probes · verdict ${verdict}`);
         return verdict === "PASS" ? 0 : 1;
       });
+    }
+
+    case "collect": {
+      // 1.3 (#80 item 6, #232): read-only, deterministic archive observations → a new SQLite snapshot. rc 0 = the
+      // snapshot was written (error rows included: a failed read is data); rc 1 = it could not be; rc 2 = usage.
+      const usage = "usage: verify collect archive <file.tgz|file.tar> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]";
+      const [kind, input] = rest;
+      const outFlag = args.flags.out;
+      if (kind !== "archive" || !input || typeof outFlag !== "string" || outFlag === "") {
+        bad(ctx, usage);
+        return 2;
+      }
+      const limit = (flag: string, dflt: number): number | null => {
+        const v = args.flags[flag];
+        if (v === undefined) return dflt;
+        const n = Number(v);
+        return Number.isSafeInteger(n) && n > 0 ? n : null;
+      };
+      const limits = {
+        maxEntries: limit("max-entries", DEFAULT_ARCHIVE_LIMITS.maxEntries),
+        maxBytes: limit("max-bytes", DEFAULT_ARCHIVE_LIMITS.maxBytes),
+        maxPath: limit("max-path", DEFAULT_ARCHIVE_LIMITS.maxPath),
+      };
+      const badLimit = Object.entries(limits).find(([, v]) => v === null);
+      if (badLimit) {
+        bad(ctx, `--${badLimit[0].replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} must be a positive integer — ${usage}`);
+        return 2;
+      }
+      let res: ReturnType<typeof collectArchive>;
+      try {
+        res = collectArchive(input, resolve(outFlag), limits as { maxEntries: number; maxBytes: number; maxPath: number });
+      } catch (e: any) {
+        bad(ctx, String(e?.message || e));
+        return 1;
+      }
+      if (ctx.json) console.log(JSON.stringify(res));
+      else {
+        out(ctx, `collected ${res.entries} entr${res.entries === 1 ? "y" : "ies"}, ${res.errors} error row(s) → ${res.out}`);
+        out(ctx, paint(C.dim, `  sha256 ${res.sha256}${res.errors ? " · error rows make every 1.3 PASS an ERROR (archive_errors)" : ""}`, ctx.color));
+      }
+      return 0;
     }
 
     case "lint-candidates": {

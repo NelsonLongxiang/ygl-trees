@@ -135,6 +135,10 @@ export interface SpecView {
 /** 1.3: a view name is snake_case and may not shadow SQLite's reserved prefixes. The names a spec declares are its
  *  frozen vocabulary: `from` may name only a snapshot table or one of them. */
 export const VIEW_NAME = /^[a-z][a-z0-9_]*$/;
+
+/** 1.3 (#80 item 7): tables in which a 1.3 collector records failed or partial reads. A snapshot with rows in any of
+ *  them never yields PASS for a 1.3 spec: every assert unit that would PASS becomes ERROR (input_errors). */
+export const COLLECT_ERROR_TABLES: readonly string[] = ["archive_errors"];
 export const VIEW_RESERVED_PREFIXES: readonly string[] = ["sqlite_", "pragma_"];
 
 export interface Predicate {

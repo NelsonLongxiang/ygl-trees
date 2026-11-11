@@ -43,6 +43,9 @@ pub const MAX_DERIVED_DEPTH: usize = 4;
 /// 1.3: a spec view name may not start with these (contract.ts `VIEW_RESERVED_PREFIXES`).
 pub const VIEW_RESERVED_PREFIXES: [&str; 2] = ["sqlite_", "pragma_"];
 
+/// 1.3 (#80 item 7): collector error tables; rows in any of them turn a 1.3 spec's PASS units into ERROR.
+pub const COLLECT_ERROR_TABLES: [&str; 1] = ["archive_errors"];
+
 pub fn pragma_spec(name: &str) -> Option<&'static PragmaSpec> {
     PRAGMA_SOURCES.iter().find(|p| p.name == name)
 }

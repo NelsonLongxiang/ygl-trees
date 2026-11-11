@@ -13,7 +13,7 @@ import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 import { canonicalStringify } from "./canonical";
-import { KNOWN_CONTRACT_VERSIONS, MAX_DERIVED_DEPTH, PRAGMA_SOURCES, QUOTED_IDENTS, VIEW_NAME, VIEW_RESERVED_PREFIXES } from "./contract";
+import { COLLECT_ERROR_TABLES, KNOWN_CONTRACT_VERSIONS, MAX_DERIVED_DEPTH, PRAGMA_SOURCES, QUOTED_IDENTS, VIEW_NAME, VIEW_RESERVED_PREFIXES } from "./contract";
 import { compareValues, ISO_DATETIME_TZ, validateCompareSpec, withOffsetMinutes } from "./compare";
 import type {
   AgentChecker,
@@ -53,6 +53,8 @@ export interface QueryRunner {
   untouched?: () => string | null;
   /** 1.3: names of views stored in the snapshot — a 1.3 spec may never read one (their SQL is the producer's). */
   snapshotViews?: () => string[];
+  /** 1.3 (#80 item 7): row counts of the COLLECT_ERROR_TABLES present in the snapshot (absent tables omitted). */
+  collectErrors?: () => Array<{ table: string; rows: number }>;
 }
 
 /** #28: the file checker's scan trace. Emitted only to callers that ask for it
@@ -1430,6 +1432,19 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
     else if (r.verdict === "FAIL") summary.fail++;
     else if (r.verdict === "NEEDS-MATERIAL") summary.needs_material++;
     else summary.error++;
+  }
+  // 1.3 (#80 item 7): a snapshot whose collector recorded failed reads never yields PASS — the data is incomplete.
+  if (spec.contract_version === "1.3") {
+    const inputErrors = (runnerOf(opts).collectErrors?.() ?? []).filter((e) => e.rows > 0);
+    if (inputErrors.length) {
+      const reason = `input_errors: ${inputErrors.map((e) => `${e.rows} row(s) in ${e.table}`).join(", ")} — the collected input is incomplete, so this unit cannot PASS`;
+      for (const r of results) {
+        if (r.role !== "source" && r.verdict === "PASS") {
+          (r as { verdict: string }).verdict = "ERROR";
+          r.evidence = { ...(r.evidence ?? {}), input_errors: inputErrors, reason };
+        }
+      }
+    }
   }
   // 1.3 (ruling ③): an isolated run must leave the snapshot byte-identical — proven, not assumed.
   if (usesIsolation(spec)) {

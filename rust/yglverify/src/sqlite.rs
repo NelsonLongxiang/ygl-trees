@@ -193,6 +193,26 @@ impl SqliteRunner {
         }
     }
 
+    /// 1.3 (#80 item 7): rows in each collector error table present in the snapshot (sqlite-runner.ts `collectErrors`).
+    pub fn collect_errors(&self) -> Result<Vec<(String, i64)>, String> {
+        let mut out = Vec::new();
+        for table in crate::contract::COLLECT_ERROR_TABLES {
+            let mut has = self
+                .conn
+                .prepare("SELECT 1 FROM main.sqlite_master WHERE type='table' AND name = ?1")
+                .map_err(|e| format!("collect_errors: {e}"))?;
+            if !has.exists([table]).map_err(|e| format!("collect_errors: {e}"))? {
+                continue;
+            }
+            let n: i64 = self
+                .conn
+                .query_row(&format!("SELECT count(*) FROM main.\"{table}\""), [], |r| r.get(0))
+                .map_err(|e| format!("collect_errors: {e}"))?;
+            out.push((table.to_string(), n));
+        }
+        Ok(out)
+    }
+
     /// 1.3: names of views stored in the snapshot (main schema) — a 1.3 spec may never read one.
     pub fn snapshot_views(&self) -> Result<Vec<String>, String> {
         let rows = self.query("SELECT name FROM main.sqlite_master WHERE type='view' ORDER BY name")?;

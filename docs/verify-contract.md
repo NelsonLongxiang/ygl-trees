@@ -34,7 +34,16 @@ kind: 规范
   - **红队断言**（裁定 ②）：prepare P2 拒绝任何一处字符串里出现快照自身路径（`--db` 的绝对路径）的候选或视图；1.3 spec 的手写 `sql` / `scope_sql` 去掉注释和字符串字面量后出现 `ATTACH`、`DETACH` 或 `file:` → run 拒跑（`snapshot_reference`）。机械谓词从构造上产生不了这些文本。
   - **构造面输入**：视图放在候选文件的信封里，`{ "views": [...], "candidates": [...] }`；`verify prepare` 与 `verify lint-candidates` 读同一个文件。作业端点 `POST /api/verify/prepare` 收可选的 `views` 字段。
   - 共享向量：`packages/verify/core/tests/fixtures/predicate-derived.json`（6 个派生表用例、3 个视图、3 个读视图用例、11 条拒绝）。
-- **待落地**：归档采集器，以及"读不到的输入不得按空集判 PASS"。
+- **已落地：归档采集器 `verify collect archive`**（第三部分，#232）。
+  - `verify collect archive <file.tgz|file.tar> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]`：只读输入，写一份新的 SQLite 快照；`--out` 已存在就拒绝（rc 1）。快照写出来就是 rc 0，**含错误行也是**——读失败是观测数据，不是过程错误。用法错 rc 2。
+  - **确定性**：按流顺序在内存里建行，最后 `VACUUM INTO` 落盘；同一输入在同一引擎上得到逐字节相同的快照。
+  - **只有原始观测，没有判定列**（没有 `ok` / `changed` / `invalid`）：
+    - `archive_meta(key, value)`：`collector`（`archive@1`）、`input_name`（只记文件名）、`input_sha256`、`input_bytes`、`compression`（`gzip` / `none`）、三个上限、`entries`、`errors`。
+    - `archive_entries`：每个 tar 头一行，按流顺序，PAX `x`/`g`、GNU `L`/`K` 头也各占一行，所以孤悬的扩展头看得见。列：`seq`、`header_offset`、`path`（生效路径：PAX `path` > GNU 长名 > ustar 前缀/名字，按 UTF-8 解码，非法字节成 U+FFFD）、`path_hex`（原始字节）、`header_name`、`typeflag`（原样字符，NUL 记空串）、`size`、`mode`、`linkname`、`payload_sha256`（无载荷的类型为空）、`header_checksum_ok`、`pax_keys`（作用于该行的 PAX 键，排序后逗号连接）、`path_occurrence`（同一路径在此之前出现的次数 + 1；AST 没有 GROUP BY，"不得重复"就写成 `path_occurrence > 1` 即违规）。
+    - `archive_errors(seq, header_offset, kind, detail, raw_hex)`：`kind` 取 `unreadable`、`empty_input`、`malformed_input`（gzip 数据损坏）、`not_tar`、`truncated`（gzip 或 tar）、`malformed_header`（含头校验和不对、size/mode 不是数字、PAX 记录格式错）、`orphan_pax`、`missing_end`、`bound_entries`、`bound_bytes`、`bound_path`。会让后续流不可靠的错误出现后就停止采集，之前的行保留。
+  - **有上限**：默认 10 万个头、1 GiB 解压后载荷、4096 字节路径，记在 `archive_meta`。gunzip 带 `maxOutputLength`，解压炸弹变成一行 `bound_bytes`，不会把进程撑爆。
+- **已落地：读不到的输入不得按空集判 PASS**（#80 第 7 条）。契约常量 `COLLECT_ERROR_TABLES = ["archive_errors"]`。1.3 spec 的快照里这些表有行时，每个本会 PASS 的 assert 单元改判 **ERROR**，`evidence.input_errors` 列出表与行数，`reason` 为 `input_errors: N row(s) in archive_errors — …`。FAIL 与 NEEDS-MATERIAL 不变。"没有输入"（合法但空的归档）由已有的零扫描规则判 NEEDS-MATERIAL。TS 与 Rust 同规则、同文字；1.2 spec 不受影响。
+- **可运行示例**：`examples/verify-archive-collect/`（#232 全部用例，`make-archives.mjs` 逐字节造输入；CLI 测试跑同一份材料、候选与评审）。
 
 ## 0. 契约 1.2 增量（2026-10-21）
 
@@ -324,6 +333,7 @@ verify export <spec> --out <file>                                   # 构建原�
 verify archive <run-id|spec-id> [--with materials|snapshot|binary|all] [--out <file>]
 verify archive verify <file.yglverify.zip>                          # 重算归档全链
 verify list --unarchived                                            # 跑过但没归档的 run
+verify collect archive <file.tgz> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]   # 1.3：归档原始观测 → 新快照
 ```
 
 > 命令名唯一：`verify report import`（fdc757f6 ②，与设计文档 §8.5.1 同步；曾写作 `import-report`）。

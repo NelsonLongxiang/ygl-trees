@@ -11,6 +11,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { openDatabaseSync } from "./sqlite-bindings";
 
+import { COLLECT_ERROR_TABLES } from "./contract";
 import { extractTables, parsePragmaSource, type QueryRunner, type Row } from "./engine";
 
 /**
@@ -130,6 +131,18 @@ export class SqliteRunner implements QueryRunner {
     if (this.isolatedSha === null) return null;
     const now = createHash("sha256").update(readFileSync(this.path)).digest("hex");
     return now === this.isolatedSha ? null : `snapshot_changed: sha256 ${this.isolatedSha.slice(0, 12)} before the views, ${now.slice(0, 12)} after the run`;
+  }
+
+  /** 1.3 (#80 item 7): rows in each collector error table the snapshot has (Rust sqlite.rs `collect_errors`). */
+  collectErrors(): Array<{ table: string; rows: number }> {
+    const out: Array<{ table: string; rows: number }> = [];
+    const has = this.db.prepare("SELECT 1 FROM main.sqlite_master WHERE type='table' AND name = ?");
+    for (const table of COLLECT_ERROR_TABLES) {
+      if (!has.get(table)) continue;
+      const row = this.db.prepare(`SELECT count(*) AS n FROM main."${table}"`).get() as { n: number };
+      out.push({ table, rows: Number(row.n) });
+    }
+    return out;
   }
 
   /** 1.3: views stored in the snapshot (main schema), by name — the engine refuses a 1.3 spec that reads one. */

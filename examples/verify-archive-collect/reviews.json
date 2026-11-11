@@ -1,0 +1,148 @@
+{
+  "reviews": [
+    {
+      "source_clause": "S1 package/index.js 的内容哈希必须等于发布记录里的值。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "判据只读采集表里的原始观测，条件与条款字面一致。",
+          "anchor": {
+            "quote": "S1 package/index.js 的内容哈希必须等于发布记录里的值。",
+            "locator": "material.md#S1"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "有违规行（或计数不足）即 FAIL，机械可判。"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "采集表有行时扫描面非空；空包会被零扫描规则拦下，采集错误会把 PASS 降为 ERROR。"
+        }
+      ]
+    },
+    {
+      "source_clause": "S2 package/package.json 与 package/index.js 必须都在包里。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "判据只读采集表里的原始观测，条件与条款字面一致。",
+          "anchor": {
+            "quote": "S2 package/package.json 与 package/index.js 必须都在包里。",
+            "locator": "material.md#S2"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "有违规行（或计数不足）即 FAIL，机械可判。"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "采集表有行时扫描面非空；空包会被零扫描规则拦下，采集错误会把 PASS 降为 ERROR。"
+        }
+      ]
+    },
+    {
+      "source_clause": "S3 包里不得出现清单之外的路径。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "判据只读采集表里的原始观测，条件与条款字面一致。",
+          "anchor": {
+            "quote": "S3 包里不得出现清单之外的路径。",
+            "locator": "material.md#S3"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "有违规行（或计数不足）即 FAIL，机械可判。"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "采集表有行时扫描面非空；空包会被零扫描规则拦下，采集错误会把 PASS 降为 ERROR。"
+        }
+      ]
+    },
+    {
+      "source_clause": "S4 同一路径不得出现两次。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "判据只读采集表里的原始观测，条件与条款字面一致。",
+          "anchor": {
+            "quote": "S4 同一路径不得出现两次。",
+            "locator": "material.md#S4"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "有违规行（或计数不足）即 FAIL，机械可判。"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "采集表有行时扫描面非空；空包会被零扫描规则拦下，采集错误会把 PASS 降为 ERROR。"
+        }
+      ]
+    },
+    {
+      "source_clause": "S5 路径不得是绝对路径，不得含 .. 段、空段、反斜杠或控制字符，必须在 package/ 下。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "判据只读采集表里的原始观测，条件与条款字面一致。",
+          "anchor": {
+            "quote": "S5 路径不得是绝对路径，不得含 .. 段、空段、反斜杠或控制字符，必须在 package/ 下。",
+            "locator": "material.md#S5"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "有违规行（或计数不足）即 FAIL，机械可判。"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "采集表有行时扫描面非空；空包会被零扫描规则拦下，采集错误会把 PASS 降为 ERROR。"
+        }
+      ]
+    },
+    {
+      "source_clause": "S6 只允许普通文件和目录。",
+      "findings": [
+        {
+          "question": "faithful",
+          "verdict": "ok",
+          "reason": "判据只读采集表里的原始观测，条件与条款字面一致。",
+          "anchor": {
+            "quote": "S6 只允许普通文件和目录。",
+            "locator": "material.md#S6"
+          }
+        },
+        {
+          "question": "decidable",
+          "verdict": "ok",
+          "reason": "有违规行（或计数不足）即 FAIL，机械可判。"
+        },
+        {
+          "question": "not-vacuous",
+          "verdict": "ok",
+          "reason": "采集表有行时扫描面非空；空包会被零扫描规则拦下，采集错误会把 PASS 降为 ERROR。"
+        }
+      ]
+    }
+  ]
+}
