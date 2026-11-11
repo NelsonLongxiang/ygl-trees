@@ -18,6 +18,20 @@
   - witness 统计 pragma 自己的行数，结构检查不会被零扫描规则降级。
   - SQLite 不允许裸写的五个保留字列（`from`、`notnull`、`table`、`to`、`unique`）渲染时加引号，其余标识符不变。
   - 共享向量 12 例、9 条拒绝，TS 与 Rust 逐字节一致。
+- **验证器契约 1.3，第二部分 b：派生表与 spec 视图，只在内存里执行**（#80，裁定 ② ③）。
+  - **派生表**：`"from": {"derived": {…内层谓词…}}`，外层读内层的 select 列名和聚合别名，最多嵌套 4 层。
+  - **视图**：候选文件信封里加 `"views": [{"name": "big_orders", "predicate": {…}}]`，候选用 `"from": "big_orders"` 引用。名字用 snake_case，不能与快照里的对象同名，只能读声明在它之前的视图。spec 冻结时一并冻结；`verify lint-candidates` 和作业端点 `POST /api/verify/prepare`（`views` 字段）认同样的形状。
+  - **快照里自带的视图一律不执行**（它的 SQL 是数据产出方写的）：prepare 点名拒绝，1.3 spec 在 run 时也会再查一遍。
+  - **执行方式**：快照照旧只读打开，临时库强制在内存（读回确认），视图建成 TEMP VIEW 后重新锁成 `query_only`；run 结束时快照 sha256 必须与建视图前相同，否则拒绝出报告。没用到派生表和视图的 spec 走原路径，1.2 行为不变。
+  - **没有采用设计稿里的 `:memory:` + `ATTACH` 写法**：实测那样 `pragma_user_version` 会读到空内存库的 0，让 pragma 来源静默答错。
+  - **红队断言**：候选或视图里任何字符串出现快照自身路径，prepare P2 拒绝；1.3 spec 的手写 SQL 去掉注释和字面量后出现 `ATTACH` / `DETACH` / `file:`，run 拒跑。
+  - 共享向量：6 个派生表用例、3 个视图、3 个读视图用例、11 条拒绝，TS 与 Rust 逐字节一致。
+- **验证器契约 1.3，第三部分：`verify collect archive`，以及读不到的输入不判 PASS**（#80、#232）。
+  - **新命令** `verify collect archive <file.tgz> --out <snapshot.sqlite>`：只读输入，把 tar / tgz 写成一份新的 SQLite 快照，只记原始观测——每个头一行（路径、原始字节、类型、大小、权限、载荷 sha256、头校验和是否正确、PAX 键、同路径出现次数），没有 ok/changed/invalid 一类的判定列。
+  - **读失败也是行**：文件读不到、空文件、gzip 损坏或截断、不是 tar、头损坏、孤悬 PAX、缺结束块、超过上限，都写进 `archive_errors`，不丢成员、不静默。
+  - **确定性、有上限**：同一输入得到逐字节相同的快照；头数、解压字节、路径长度都有上限（默认 10 万 / 1 GiB / 4096），记在快照里，解压炸弹只会变成一行错误。
+  - **读不到的输入不判 PASS**：1.3 spec 的快照里 `archive_errors` 有行时，本会 PASS 的单元一律改判 ERROR（`input_errors`）；FAIL 不变。TS 与 Rust 同规则。
+  - **可运行示例** `examples/verify-archive-collect/`：#232 的全部用例（哈希不同、缺/多路径、重复、空输入、`..`/绝对/空段/反斜杠/控制字符/包外路径、符号链接、头校验和、截断、上限），CLI 测试跑同一份 spec。
 
 ## 0.123.0
 

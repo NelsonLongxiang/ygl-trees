@@ -23,7 +23,7 @@ import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { bad, C, head, ok, out, paint, table } from "../../../core/text/src/fmt";
-import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
+import type { ReviewFinding, ReviewRunner, SpecView, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
@@ -39,6 +39,7 @@ import type { FileScanRecord } from "../../../verify/core/src/engine";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
+import { collectArchive, DEFAULT_ARCHIVE_LIMITS } from "../../../verify/core/src/collect-archive";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, foldOverall, foldSummary, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
@@ -774,6 +775,10 @@ export function minimalRedTeam(schemaSql: string[], submissionDir?: string): (s:
         tableRows: (t: string) => db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>,
         schemaFingerprint: () => "empty-snapshot",
         sourceTables: () => [] as string[],
+        // 1.3: spec views on the empty in-memory schema (this db is already :memory:, so temp views stay in memory).
+        isolate: (views: Array<{ name: string; sql: string }>) => {
+          for (const v of views) db.exec(`CREATE TEMP VIEW ${v.name} AS ${v.sql}`);
+        },
       };
       const report = await runVerify(s, { runner: runner as never, submissionDir, mode: "open", nowIso: () => "1970-01-01T00:00:00.000Z" });
       const failures: string[] = [];
@@ -1086,6 +1091,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
+  collect: ["out", "max-entries", "max-bytes", "max-path"],
   example: ["checker", "null-ops"],
   meta: [],
   probe: ["matrix", "target", "only"],
@@ -1569,6 +1575,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const candidatesRaw = readJson<unknown>(candidatesPath);
       const reviewsRaw = readJson<unknown>(reviewsPath);
       const candidatesFile = { candidates: Array.isArray(candidatesRaw) ? (candidatesRaw as PrepareCandidate[]) : ((candidatesRaw as { candidates?: PrepareCandidate[] }).candidates ?? []) };
+      // 1.3 (#80): spec views ride in the candidates envelope `{ views: [...], candidates: [...] }`.
+      const specViews = Array.isArray(candidatesRaw) ? undefined : (candidatesRaw as { views?: unknown }).views;
+      if (specViews !== undefined && !Array.isArray(specViews)) {
+        bad(ctx, "invalid --candidates: views must be an array of { name, predicate }");
+        return 2;
+      }
       const reviewsFile = { reviews: Array.isArray(reviewsRaw) ? (reviewsRaw as Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>) : ((reviewsRaw as { reviews?: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }> }).reviews ?? []) };
       const reviewsProblem = reviewsShapeProblem(reviewsFile.reviews);
       if (reviewsProblem) {
@@ -1620,6 +1632,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         reviewedClauses: (reviewsFile.reviews ?? []).map((r) => String(r?.source_clause ?? "")),
         materialIndex,
         schemaProbe,
+        views: specViews as SpecView[] | undefined,
+        snapshotPath: resolve(dbPath),
         specId: `spec_${short(sha256(materialId))}`,
         title: args.flags.title ? String(args.flags.title) : undefined,
         domain: args.flags.domain ? String(args.flags.domain) : undefined,
@@ -2442,6 +2456,47 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       });
     }
 
+    case "collect": {
+      // 1.3 (#80 item 6, #232): read-only, deterministic archive observations → a new SQLite snapshot. rc 0 = the
+      // snapshot was written (error rows included: a failed read is data); rc 1 = it could not be; rc 2 = usage.
+      const usage = "usage: verify collect archive <file.tgz|file.tar> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]";
+      const [kind, input] = rest;
+      const outFlag = args.flags.out;
+      if (kind !== "archive" || !input || typeof outFlag !== "string" || outFlag === "") {
+        bad(ctx, usage);
+        return 2;
+      }
+      const limit = (flag: string, dflt: number): number | null => {
+        const v = args.flags[flag];
+        if (v === undefined) return dflt;
+        const n = Number(v);
+        return Number.isSafeInteger(n) && n > 0 ? n : null;
+      };
+      const limits = {
+        maxEntries: limit("max-entries", DEFAULT_ARCHIVE_LIMITS.maxEntries),
+        maxBytes: limit("max-bytes", DEFAULT_ARCHIVE_LIMITS.maxBytes),
+        maxPath: limit("max-path", DEFAULT_ARCHIVE_LIMITS.maxPath),
+      };
+      const badLimit = Object.entries(limits).find(([, v]) => v === null);
+      if (badLimit) {
+        bad(ctx, `--${badLimit[0].replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} must be a positive integer — ${usage}`);
+        return 2;
+      }
+      let res: ReturnType<typeof collectArchive>;
+      try {
+        res = collectArchive(input, resolve(outFlag), limits as { maxEntries: number; maxBytes: number; maxPath: number });
+      } catch (e: any) {
+        bad(ctx, String(e?.message || e));
+        return 1;
+      }
+      if (ctx.json) console.log(JSON.stringify(res));
+      else {
+        out(ctx, `collected ${res.entries} entr${res.entries === 1 ? "y" : "ies"}, ${res.errors} error row(s) → ${res.out}`);
+        out(ctx, paint(C.dim, `  sha256 ${res.sha256}${res.errors ? " · error rows make every 1.3 PASS an ERROR (archive_errors)" : ""}`, ctx.color));
+      }
+      return 0;
+    }
+
     case "lint-candidates": {
       // 0.110.0: the prepare gate without the ceremony — no spec file, no
       // spec_version bump, no events. rc expresses process only (0/2); the
@@ -2462,6 +2517,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const candidates = Array.isArray(parsed) ? parsed : parsed?.candidates;
       if (!Array.isArray(candidates)) {
         bad(ctx, "candidates file must be a JSON array or { candidates: [...] }");
+        return 2;
+      }
+      const lintViews = Array.isArray(parsed) ? undefined : parsed?.views;
+      if (lintViews !== undefined && !Array.isArray(lintViews)) {
+        bad(ctx, "candidates file views must be an array of { name, predicate }");
         return 2;
       }
       let materialText: string | undefined;
@@ -2521,7 +2581,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         reviewedClauses = list.map((r: any) => String(r?.source_clause ?? ""));
       }
-      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, clausePatternDeclared: patOpt.declared, reviewedClauses });
+      const res = lintCandidates(candidates, {
+        materialText,
+        schema,
+        coverageExempt: covOpt.exempt,
+        clausePattern: patOpt.pattern,
+        clausePatternDeclared: patOpt.declared,
+        reviewedClauses,
+        views: lintViews as SpecView[] | undefined,
+        snapshotPath: args.flags.db ? resolve(lastDbFlag(args.flags.db)) : undefined,
+      });
       // #79 discoverability: a rejected lint ships a pasteable candidate
       // skeleton. The schema otherwise has to be archaeology'd out of
       // examples.generated.ts, whose `vu` shape is the SPEC face
@@ -2883,17 +2952,19 @@ export function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
  * 加的列不在那条原始 DDL 文本里——结构上正确、数据里存在的列会被 P2 误判「列不在 schema」。
  * 探针必须问数据库要真实 schema（PRAGMA 认全部列与类型），DDL 文本只留给红队建空库。
  */
-export function probeOfDb(dbPath: string): { tables: Record<string, string[]> } {
+export function probeOfDb(dbPath: string): { tables: Record<string, string[]>; views: string[] } {
   const db = openDatabaseSync(dbPath, { readOnly: true });
   try {
     const tables: Record<string, string[]> = {};
+    // 1.3 (#80): views stored in the snapshot are listed by name only — never executed, so P2 can name them.
+    const views = (db.prepare("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name").all() as Array<{ name: string }>).map((r) => r.name);
     const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
     for (const { name } of names) {
       const quoted = `"${name.replace(/"/g, '""')}"`;
       const cols = db.prepare(`PRAGMA table_info(${quoted})`).all() as Array<{ name: string }>;
       tables[name] = cols.map((c) => c.name);
     }
-    return { tables };
+    return { tables, views };
   } finally {
     db.close();
   }

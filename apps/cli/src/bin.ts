@@ -195,7 +195,9 @@ ${paint(C.bold, "verify", color)}      spec validator (M13): material → spec �
   example [--checker <type>]                         corpus-derived candidate examples (seven checker types)
   meta [<repo>]                                      verifier-repo admission rules R1-R3 (charter §4.1, rc=PASS/FAIL)
   probe --matrix [--target <sealed>] [--only <name>]  16-probe union (charter §4.3; offline RFC8032 seeds)
-  lint-candidates <file> [--text <material>] [--reviews <file>]  shape + clause-coverage check (no spec_version consumed)${checkerHelpLines(color)}
+  lint-candidates <file> [--text <material>] [--reviews <file>]  shape + clause-coverage check (no spec_version consumed)
+  collect archive <file.tgz> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]
+                                       raw archive observations → new snapshot (1.3; failed reads are archive_errors rows)${checkerHelpLines(color)}
 
 ${paint(C.bold, "produce", color)}     outline → section → report · spec/design（工程产出）
   outline                    auto-outline from claims
@@ -621,7 +623,7 @@ export async function main(argv: string[]): Promise<number> {
   // #18②: DB-free verify reads — example / lint-candidates are construction-surface
   // helpers that never touch the workspace db; refusing them on an empty YGL_HOME
   // sends authors the wrong way (they need examples, not a database).
-  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check"); // #93-①: self-check 语料驱动
+  const VERIFY_DB_FREE = group === "verify" && (action === "example" || action === "lint-candidates" || action === "probe" || action === "self-check" || action === "collect"); // #93-①: self-check 语料驱动
   if (VERIFY_DB_FREE) process.env.YGL_DB_NO_CREATE = "1"; // #18: 不静默建库（缺库→:memory:）
   const needInit = !pgUrl && !(group === "db" && action === "init") && group !== "plugin" && !VERIFY_DB_FREE; // B7: PG 模式不要求 SQLite 工作区
   if (needInit && !require("node:fs").existsSync(file)) {
@@ -1116,6 +1118,7 @@ export function generateLlmsManifest(): string {
       ["verify meta [<repo>]", "verifier-repo admission rules R1-R3 (charter §4.1; rc mirrors verdict)"],
       ["verify probe --matrix [--target <sealed>] [--only <probe>]", "16-probe union as review evidence (charter §4.3; offline RFC8032 seeds)"],
       ["verify lint-candidates <file> [--text <material>] [--reviews <file>]", "shape + clause-coverage + review-pairing check without consuming spec_version"],
+      ["verify collect archive <file.tgz> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]", "read-only, deterministic tar/tgz observations → a new SQLite snapshot (archive_entries / archive_errors / archive_meta; contract 1.3, #80)"],
       ["verify instance create --pack <@project/ygl-v-name>@<semver> --target <kind>:<ref> --owner <who>", "register a verifier instance as a registry row; id is content-addressed, same binding → rc0 duplicate:true (#206); unscoped names only for global packs (#213)"],
       ["verify instance list [--scope <project|global>] | show <id> | retire <id> --reason <r>", "registry reads with last run and scope; retire keeps the row readable"],
       ["verify instance import-latest <latest.json> --owner <who>", "record a legacy verifier repo's latest run (instance kind legacy-repo; same run → duplicate:true) (#207)"],
