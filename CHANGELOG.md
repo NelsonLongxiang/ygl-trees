@@ -1,5 +1,16 @@
 ## Unreleased
 
+用户可见行为变化：
+
+- **生命周期规则出现在动作发生的那一刻**（#233）：此前「解锁要同轮挂证据」只写在 lifecycle 技能里，一次只读审计发现 267 个已解锁节点里有 167 个背后什么都没有，doctor 却全绿。现在：
+  - `node unlock` 的节点如果没有任何证据、断言、来源、产出或 kb 关联，回执会点名下一步：`--json` 的 `next_actions` 字段，或人类输出的 `next:` 行，内容是 `rel add 'node:<tree>/<key>' evidence:<evidenceId> --rel evidenced-by`。任务、检索式、技能或别的节点不算证据。
+  - `node add`、`node link`、`node rm` 之后索引变脏时，同样点名 `node index` 和 `node validate`。
+  - `node import` 的回执新增 `unlocked_without_evidence`：目标树里已解锁、背后没有证据的节点数。
+  - `doctor` 新增 `node_evidence` 检查（warn）：按树列出这类节点的数量，`--json` 还带前 20 个 `tree/key`。
+  - `agent brief` 的 `next_actions` 按树点名这类节点，最多 3 棵树。
+  - 以上都只新增字段，原有字段和退出码不变。
+- **技能**：techtree 和 research 技能为 `node unlock/add/link/unlink/rm/import`、`claim add`、`claim resolve` 写明同轮跟进。lifecycle 技能新增「导入」一行，以及会话开始跑 `agent brief`、会话结束跑 `doctor` 的钩子写法；它的描述也改为按事件触发（刚 unlock、导入后、会话结束……）。
+
 门禁与文档（不影响运行时）：
 
 - `pnpm test` 最先跑 G12 解释器锚，新增 `pnpm gate:g12`。此前 G12 不在这条链路里，漂移了三个版本没人发现。
