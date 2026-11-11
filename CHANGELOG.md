@@ -1,5 +1,14 @@
 ## Unreleased
 
+用户可见行为变化：
+
+- **冻结之前就能试跑判据**（#232）：`verify prepare … --draft --run` 在内存里构造 spec，ready 后用 `--db` 的工作副本跑一遍，打印完整报告（`run.report`，带 `draft: true`、每条判据的 witness 和数据来源）。
+  - 工作区什么都不写：不进 `specs/`、`reports/`、`archives/`，不留快照副本，不占 spec 版本号；源快照字节不变。
+  - 退出码同 `verify run`：跑完就是 rc 0，不论 PASS 还是 FAIL；草稿没 ready 就不跑，rc 1、`run.report` 为 null。
+  - meta 门照常生效，没有旁路。文件型判据可加 `--submission <dir>`。
+  - 用法错误（rc 2，先于任何 I/O）：`--run` 不带 `--draft`；`--submission` 不带 `--run`。
+  - 此前下游消费者只能先冻结版本才能看到判据跑出来的结果。
+
 门禁与文档（不影响运行时）：
 
 - `pnpm test` 最先跑 G12 解释器锚，新增 `pnpm gate:g12`。此前 G12 不在这条链路里，漂移了三个版本没人发现。
