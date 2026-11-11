@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, mkdirSync, cpSync, rmSync, mkdtempSync } from "node:fs";
+import { readdirSync, readFileSync, mkdirSync, rmSync, mkdtempSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -26,19 +26,32 @@ describe("#267 fileURLToPath guard", () => {
     const weird = join(outer, "sp ace~1 目录");
     mkdirSync(weird, { recursive: true });
     // 只拷 scripts/ + package.json + llms.txt（volume-gate 读它们）——轻量克隆
-    cpSync(join(ROOT, "scripts"), join(weird, "scripts"), { recursive: true });
-    cpSync(join(ROOT, "package.json"), join(weird, "package.json"));
-    try {
-      cpSync(join(ROOT, "llms.txt"), join(weird, "llms.txt"));
-    } catch { /* llms.txt 缺席时 volume-gate 自会报——断言只认路径解码类 ENOENT */ }
+    // 夹具＝两脚本实际读的全部根文件（#267 复核：缺 volume-baseline.json 在 macOS ENOENT 变红）。
+    // node 的 cpSync(目录) 在含 ~1 的路径上静默不拷（本机实测 cp dir OK:false 无异常）——逐文件手工递归。
+    const copyTree = (from: string, to: string) => {
+      mkdirSync(to, { recursive: true });
+      for (const e of readdirSync(from, { withFileTypes: true })) {
+        if (e.isDirectory()) copyTree(join(from, e.name), join(to, e.name));
+        else copyFileSync(join(from, e.name), join(to, e.name));
+      }
+    };
+    copyTree(join(ROOT, "scripts"), join(weird, "scripts"));
+    copyFileSync(join(ROOT, "package.json"), join(weird, "package.json"));
+    copyFileSync(join(ROOT, "volume-baseline.json"), join(weird, "volume-baseline.json"));
+    copyTree(join(ROOT, "docs"), join(weird, "docs"));
+    try { copyFileSync(join(ROOT, "llms.txt"), join(weird, "llms.txt")); } catch { /* 可选 */ }
     try {
       for (const s of ["interp-anchor.mjs", "volume-gate.mjs"]) {
-        const r = spawnSync(process.execPath, [join(weird, "scripts", s)], { cwd: weird, encoding: "utf8" });
+        // vitest worker 的 Windows spawn 对含空格 argv 引号不稳——经 shell:true 让平台 shell 负责引号；
+        // 根因回归面仍在：脚本用 import.meta.url 定位 ROOT，若退回 pathname 写法将以 %XX 路径 ENOENT。
+        if (!existsSync(join(weird, "scripts", s))) throw new Error("fixture missing: " + join(weird, "scripts", s) + " | weird exists: " + existsSync(weird) + " | weird entries: " + (existsSync(weird) ? readdirSync(weird).join(",") : "-") + " | scripts exists: " + existsSync(join(weird, "scripts")));
+        const q = (p: string) => '"' + p + '"';
+        const r = spawnSync(q(process.execPath) + " " + q(join(weird, "scripts", s)), { shell: true, cwd: weird, encoding: "utf8" });
         expect(
           r.status,
-          s + " from weird path — rc=" + r.status + " err=" + String(r.stderr).slice(0, 200),
-        ).not.toBeNull();
-        expect(String(r.stderr)).not.toContain("ENOENT");
+          s + " from weird path — rc=" + r.status + " out=" + String(r.stdout).slice(0, 120) + " err=" + String(r.stderr).slice(0, 200),
+        ).toBe(0);
+        expect(String(r.stderr)).not.toMatch(/%7E|%20|%E7/);
       }
     } finally {
       rmSync(outer, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
