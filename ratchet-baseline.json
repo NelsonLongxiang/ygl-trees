@@ -2,26 +2,26 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-11-11T19:40:17.937Z",
-  "_attribution": "supervisor ruling 2026-11-11 (#268): contract 1.3 (owner ruling #80) + 0.123.0 features — bundle 787698→805353 across #261–#265 and #268",
+  "measured_at": "2026-11-11T21:11:52.187Z",
+  "_attribution": "supervisor ruling 2026-11-11 (#269): contract 1.3 parts 2b+3 (owner ruling #80) — bundle 805353→~822.7k: derived tables/views + verify collect archive",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 805353,
+      "value": 822696,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-11T19:40:17.195Z",
+      "measured_at": "2026-11-11T21:11:51.425Z",
       "method": "sum-file-sizes-recursive"
     },
     "web_dist_bytes": {
       "value": 1401666,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-11T19:40:17.196Z",
+      "measured_at": "2026-11-11T21:11:51.426Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 79,
+      "value": 80,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-11-11T19:40:17.936Z",
+      "measured_at": "2026-11-11T21:11:52.186Z",
       "method": "warm2-min7-retry-once"
     }
   }
