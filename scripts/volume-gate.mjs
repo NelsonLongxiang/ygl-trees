@@ -8,8 +8,9 @@
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const ROOT = fileURLToPath(new URL("..", import.meta.url)); // #267: fileURLToPath decodes %XX
 const BASE = join(ROOT, "volume-baseline.json");
 const asJson = process.argv.includes("--json");
 const write = process.argv.includes("--write");

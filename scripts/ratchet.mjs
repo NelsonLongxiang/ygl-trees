@@ -20,8 +20,9 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const ROOT = fileURLToPath(new URL("..", import.meta.url)); // #267: decode %XX path escapes (8.3 short name, spaces, non-ASCII)
 const BASELINE = join(ROOT, "ratchet-baseline.json");
 const BUNDLE = join(ROOT, "dist/bundle");
 const BIN = join(BUNDLE, "bin.cjs");
