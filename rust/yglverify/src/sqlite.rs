@@ -164,13 +164,23 @@ impl SqliteRunner {
         if let Some(n) = self.table_cache.borrow().get(table) {
             return Ok(*n);
         }
-        let ok = !table.is_empty()
-            && table.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
-            && table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        // 1.3: a whitelisted pragma source counts its own rows, re-parsed against the closed form (never spliced).
+        let is_pragma = table.len() >= 7 && table[..7].eq_ignore_ascii_case("pragma_");
+        let pragma = if is_pragma { crate::predicate::parse_pragma_source(table) } else { None };
+        let ok = if is_pragma {
+            pragma.is_some()
+        } else {
+            !table.is_empty()
+                && table.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
+                && table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        };
         if !ok {
             return Err(format!("invalid table name: {table}"));
         }
-        let rows = self.query(&format!("SELECT count(*) AS n FROM \"{table}\""))?;
+        let rows = match &pragma {
+            Some(p) => self.query(&format!("SELECT count(*) AS n FROM {p}"))?,
+            None => self.query(&format!("SELECT count(*) AS n FROM \"{table}\""))?,
+        };
         let n = rows
             .first()
             .and_then(first_value)
@@ -229,6 +239,20 @@ pub fn extract_tables(sql: &str) -> Vec<String> {
             let start = j;
             while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                 j += 1;
+            }
+            // 1.3: keep a whitelisted pragma source whole — `pragma_table_info('orders')` — so its rows can be counted.
+            if j > start && lower[start..j].starts_with("pragma_") && bytes.get(j) == Some(&b'(') {
+                if let Some(close) = sql[j..].find(')') {
+                    let whole = &sql[start..j + close + 1];
+                    if crate::predicate::parse_pragma_source(whole).is_some() {
+                        let name = whole.to_string();
+                        if !out.iter().any(|x| x == &name) {
+                            out.push(name);
+                        }
+                        i = j + close + 1;
+                        continue;
+                    }
+                }
             }
             if j > start {
                 let name: String = sql[start..j].to_string();

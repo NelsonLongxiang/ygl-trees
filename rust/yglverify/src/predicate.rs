@@ -33,7 +33,102 @@ fn ident(name: &str, what: &str) -> Result<String, String> {
             "predicate {what} must be a bare identifier (optionally table-qualified), got {name:?}"
         ));
     }
-    Ok(parts.join("."))
+    // 1.3: the five reserved words a pragma source returns are quoted; every other identifier renders bare.
+    Ok(parts
+        .iter()
+        .map(|p| if crate::contract::QUOTED_IDENTS.contains(p) { format!("\"{p}\"") } else { (*p).to_string() })
+        .collect::<Vec<_>>()
+        .join("."))
+}
+
+fn bare_ident(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// 1.3: a whitelisted pragma source as SQL, or None (same closed form as engine.ts `pragmaSourceSql`).
+pub fn pragma_source_sql(name: &str, arg: Option<&str>) -> Option<String> {
+    let spec = crate::contract::pragma_spec(name)?;
+    if spec.arg == "none" {
+        return if arg.is_none() { Some(format!("pragma_{name}")) } else { None };
+    }
+    match arg {
+        Some(a) if bare_ident(a) => Some(format!("pragma_{name}('{a}')")),
+        _ => None,
+    }
+}
+
+/// Parse rendered pragma source text back to its closed form (row counts); None when it is not one.
+pub fn parse_pragma_source(text: &str) -> Option<String> {
+    let rest = text.strip_prefix("pragma_")?;
+    let (name, arg) = match rest.find('(') {
+        None => (rest, None),
+        Some(i) => {
+            let inner = rest[i..].strip_prefix("('")?.strip_suffix("')")?;
+            (&rest[..i], Some(inner))
+        }
+    };
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+        return None;
+    }
+    pragma_source_sql(name, arg)
+}
+
+/// 1.3 (#80): the predicate source — a bare table name, or a whitelisted read-only pragma function. Returns
+/// (sql, same-table qualifier); a pragma source has no qualifier. Messages match engine.ts `renderFrom`.
+pub fn render_from(from: &serde_json::Value) -> Result<(String, String), String> {
+    if let Some(s) = from.as_str() {
+        if s.len() >= 7 && s[..7].eq_ignore_ascii_case("pragma_") {
+            return Err(format!(
+                "pragma_not_allowed: {} as a table name — write a pragma source as {{ pragma, arg }}",
+                serde_json::to_string(s).unwrap_or_default()
+            ));
+        }
+        return Ok((ident(s, "from")?, s.to_string()));
+    }
+    if let Some(obj) = from.as_object() {
+        if let Some(pragma) = obj.get("pragma").and_then(|v| v.as_str()) {
+            let extra: Vec<&str> = obj.keys().map(|k| k.as_str()).filter(|k| *k != "pragma" && *k != "arg").collect();
+            if !extra.is_empty() {
+                return Err(format!("pragma source takes only {{ pragma, arg }}, got {}", extra.join(", ")));
+            }
+            let spec = match crate::contract::pragma_spec(pragma) {
+                Some(s) => s,
+                None => {
+                    let names: Vec<&str> = crate::contract::PRAGMA_SOURCES.iter().map(|p| p.name).collect();
+                    return Err(format!(
+                        "pragma_not_allowed: {} — the read-only whitelist is {}",
+                        serde_json::to_string(pragma).unwrap_or_default(),
+                        names.join(", ")
+                    ));
+                }
+            };
+            let arg = obj.get("arg");
+            let arg_str = match arg {
+                None => None,
+                Some(v) => match v.as_str() {
+                    Some(s) => Some(s),
+                    None => {
+                        return Err(if spec.arg == "none" {
+                            format!("pragma {pragma} takes no arg")
+                        } else {
+                            format!("pragma {pragma} needs arg: a bare identifier naming a {}", spec.arg)
+                        })
+                    }
+                },
+            };
+            return match pragma_source_sql(pragma, arg_str) {
+                Some(sql) => Ok((sql, String::new())),
+                None => Err(if spec.arg == "none" {
+                    format!("pragma {pragma} takes no arg")
+                } else {
+                    format!("pragma {pragma} needs arg: a bare identifier naming a {}", spec.arg)
+                }),
+            };
+        }
+    }
+    Err("predicate.from must be a table name or a { pragma, arg } source (contract 1.3)".into())
 }
 
 /// 时间字面量规范化（r8 F5）：带偏移的时间统一折成 UTC Z（SQLite 里日期是字符串，字典序 ≠ 时间序）。
@@ -165,8 +260,11 @@ pub fn first_col_ref_pair(pred: &Predicate) -> Option<(String, String)> {
     walk_group(&pred.where_).or_else(|| walk_group(&pred.scan))
 }
 
-/// 1.3: does the predicate use a 1.3-only op (glob / not-glob), in `where` or `scan`?
+/// 1.3: does the predicate use a 1.3-only shape — a pragma source, or a glob / not-glob op in `where` or `scan`?
 pub fn contains_op13(pred: &Predicate) -> bool {
+    if !pred.from.is_string() {
+        return true;
+    }
     fn walk_node(n: &PredicateNode) -> bool {
         match n {
             PredicateNode::Condition(c) => c.op == "glob" || c.op == "not-glob",
@@ -316,9 +414,9 @@ pub struct RenderedScan {
 
 /// 谓词渲染的公共部分：from 与 where/scan 两段（find/scope/count/exists 共用）。
 pub fn render_scan(pred: &Predicate) -> Result<RenderedScan, String> {
-    let from = ident(&pred.from, "from")?;
-    let scan_sql = render_where(pred.scan.as_ref(), &pred.from)?;
-    let where_sql = render_where(and_groups(pred.scan.as_ref(), pred.where_.as_ref()).as_ref(), &pred.from)?;
+    let (from, table) = render_from(&pred.from)?;
+    let scan_sql = render_where(pred.scan.as_ref(), &table)?;
+    let where_sql = render_where(and_groups(pred.scan.as_ref(), pred.where_.as_ref()).as_ref(), &table)?;
     Ok(RenderedScan { from, where_sql, scan_sql })
 }
 

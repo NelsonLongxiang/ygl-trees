@@ -10,7 +10,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { openDatabaseSync } from "./sqlite-bindings";
 
-import { extractTables, type QueryRunner, type Row } from "./engine";
+import { extractTables, parsePragmaSource, type QueryRunner, type Row } from "./engine";
 
 /**
  * 单语句判定（#162）：只把引号、标识符与注释之外的分号当语句分隔符。
@@ -111,8 +111,11 @@ export class SqliteRunner implements QueryRunner {
   tableRows(table: string): number {
     const cached = this.tableCache.get(table);
     if (cached !== undefined) return cached;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) throw new Error(`invalid table name: ${table}`);
-    const stmt = this.db.prepare(`SELECT count(*) AS n FROM "${table}"`);
+    // 1.3: a whitelisted pragma source counts its own rows; it is re-parsed against the closed form, never spliced.
+    const isPragma = /^pragma_/i.test(table);
+    const pragma = isPragma ? parsePragmaSource(table) : null;
+    if (isPragma ? !pragma : !/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) throw new Error(`invalid table name: ${table}`);
+    const stmt = this.db.prepare(pragma ? `SELECT count(*) AS n FROM ${pragma}` : `SELECT count(*) AS n FROM "${table}"`);
     const row = stmt.get() as { n: number } | undefined;
     const n = Number(row?.n ?? 0);
     this.tableCache.set(table, n);

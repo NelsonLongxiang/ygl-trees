@@ -11,6 +11,13 @@
   - `corpus_version` 不变（向量不在语料里）。
   - 1.3 的其余部分（pragma 白名单、派生表与视图、`verify collect archive`）随后续 PR 落地。
 - 内部：`prepare.ts` 里两个字面 NUL 字符改成 `\u0000` 转义，值不变，文件重新是文本，grep 一类工具能搜到它。
+- **验证器契约 1.3，第二部分 a：只读 pragma 来源**（#80）。
+  - 判据可以直接查快照的结构：`"from": {"pragma": "table_info", "arg": "orders"}`。用得到的有列存在、NOT NULL、唯一索引、索引列、外键、`user_version`。
+  - 白名单共 7 个 pragma，各自的列固定，两个引擎共用同一张表。
+  - 白名单外的 pragma、把 pragma 写成表名、`arg` 指向不存在的表、用了 pragma 不返回的列，prepare 一律拒绝；渲染器同样拒绝。
+  - witness 统计 pragma 自己的行数，结构检查不会被零扫描规则降级。
+  - SQLite 不允许裸写的五个保留字列（`from`、`notnull`、`table`、`to`、`unique`）渲染时加引号，其余标识符不变。
+  - 共享向量 12 例、9 条拒绝，TS 与 Rust 逐字节一致。
 
 ## 0.123.0
 

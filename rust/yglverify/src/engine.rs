@@ -472,8 +472,9 @@ pub fn run_fact_checker(
                         let rows = runner.table_rows(t).unwrap_or(-1);
                         srcs.push(SourceRow { table: t.clone(), rows });
                     } else if let Some(p) = &side.predicate {
-                        let rows = runner.table_rows(&p.from).unwrap_or(-1);
-                        srcs.push(SourceRow { table: p.from.clone(), rows });
+                        let label = crate::predicate::render_from(&p.from).map(|(s, _)| s).unwrap_or_else(|_| p.from.to_string());
+                        let rows = runner.table_rows(&label).unwrap_or(-1);
+                        srcs.push(SourceRow { table: label, rows });
                     }
                 }
                 srcs
@@ -1013,7 +1014,7 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         });
         if uses13 {
             return Err(format!(
-                "version_shape: this spec declares contract_version {} but uses 1.3-only shapes (glob / not-glob) — bump the spec to 1.3",
+                "version_shape: this spec declares contract_version {} but uses 1.3-only shapes (glob / not-glob / pragma source) — bump the spec to 1.3",
                 spec.contract_version
             ));
         }
