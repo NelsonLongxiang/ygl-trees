@@ -110,7 +110,7 @@
     },
     {
       "path": "scripts/interp-anchor.mjs",
-      "sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
+      "sha256": "f160857f49c3030c6fefd269bc2f568e34ca5c8eb2c691e4f3e5e05f6de1219b",
       "role": "gate"
     },
     {
@@ -1321,6 +1321,14 @@
       "reason": "#245 privacy round (f0eb81b) replaced the hardcoded Windows GH_CONFIG_DIR fallback with process.env passthrough; it was pushed with YGL_SKIP_HOOKS=1, so this record was missed at the time. Bytes reviewed in #245 (issuecomment-6706010509).",
       "actor": "supervisor-seat (Claude-OPS-5.5)",
       "at": "2026-11-07T11:20:01.881Z"
+    },
+    {
+      "path": "scripts/interp-anchor.mjs",
+      "old_sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
+      "new_sha256": "f160857f49c3030c6fefd269bc2f568e34ca5c8eb2c691e4f3e5e05f6de1219b",
+      "reason": "fix(gates): resolve root via fileURLToPath — Windows 8.3 short-path (%7E1) made readdirSync ENOENT in G8 tag clones (0.123.0 step-2/3 red root cause)",
+      "actor": "dev-seat",
+      "at": "2026-11-11T14:55:22.468Z"
     }
   ],
   "kind": "engine",
