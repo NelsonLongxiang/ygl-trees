@@ -110,8 +110,19 @@ describe("#119 MCP argv and request-session safety",()=>{
   environment.YGL_SESSION="later-global-change";
   expect((await good("read",{domain:"project",action:"show"})).project.name).toBe("startup-project");expect(writes).toEqual([]);expect(childInvocations.map(c=>c.env.YGL_SESSION)).toEqual(["s-A","startup"]);
  });
- it("schemas expose context and explicit condition inputs without adding lock/path mutation tools",async()=>{
-  const list=await request({jsonrpc:"2.0",id:2,method:"tools/list"});const tools=list.result.tools;const read=tools.find((t:any)=>t.name==="read"),write=tools.find((t:any)=>t.name==="write");expect(read.inputSchema.properties.context.type).toBe("string");expect(write.inputSchema.properties.context.type).toBe("string");expect(write.inputSchema.properties.op.enum).toContain(">=");expect(write.inputSchema.properties.value).toBeDefined();expect(write.inputSchema.properties.action.enum).not.toContain("node-lock");
+ it("schemas expose context and condition inputs; node-lock is a listed write with --context forwarding; reads carry no path mutation (ruling 2026-11-11 #257)",async()=>{
+  const list=await request({jsonrpc:"2.0",id:2,method:"tools/list"});const tools=list.result.tools;const read=tools.find((t:any)=>t.name==="read"),write=tools.find((t:any)=>t.name==="write");expect(read.inputSchema.properties.context.type).toBe("string");expect(write.inputSchema.properties.context.type).toBe("string");expect(write.inputSchema.properties.op.enum).toContain(">=");expect(write.inputSchema.properties.value).toBeDefined();
+  // #257 ruling (2026-11-11): node-lock joins node-unlock — the #119 fence scoped that fix, it was not a safety ruling.
+  expect(write.inputSchema.properties.action.enum).toContain("node-lock");expect(write.inputSchema.properties.action.enum).toContain("node-unlock");
+  // --context forwarding identical to node-unlock (#119 item 5).
+  boot(["tree","new","guardtree"]);boot(["node","add","gk","-t","guardtree"]);boot(["node","unlock","gk","-t","guardtree"]);
+  const r=await request({jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"write",arguments:{domain:"tree",action:"node-lock",key:"gk",tree:"guardtree",context:"ctxB"}}});
+  expect(r.result.isError,JSON.stringify(r.result)).toBeFalsy();
+  const inv=childInvocations[childInvocations.length-1];expect(inv.argv.join(" ")).toContain("--context ctxB");
+  // idempotent like the other writes: a second lock lands rc0.
+  const r2=await request({jsonrpc:"2.0",id:4,method:"tools/call",params:{name:"write",arguments:{domain:"tree",action:"node-lock",key:"gk",tree:"guardtree",context:"ctxB"}}});expect(r2.result.isError,JSON.stringify(r2.result)).toBeFalsy();
+  // path/ancestors/descendants are read routes, never write actions; no path mutation tool exists.
+  expect(write.inputSchema.properties.action.enum).not.toContain("path");expect(write.inputSchema.properties.action.enum).not.toContain("ancestors");expect(write.inputSchema.properties.action.enum).not.toContain("descendants");expect(read.inputSchema.properties.action.enum).toContain("path");
  });
  it("PG credentials stay in the controlled child env, never argv or error output",async()=>{
   const url="postgres://vrfyuser:vrfypass@127.0.0.1:1/no-db?password=vrfypass";

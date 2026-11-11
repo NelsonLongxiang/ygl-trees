@@ -124,7 +124,7 @@ describe("#260 read routes pass explicit project through", () => {
       kb: ["search", "show"],
       research: ["query-list", "source-list", "source-search", "source-show", "evidence-list", "evidence-show", "claim-list", "claim-show", "claim-evaluate", "claim-calibration", "predict-list"],
       tree: ["state", "list", "show"],
-      node: ["can", "ready"],
+      node: ["can", "ready", "path", "ancestors", "descendants", "validate"],
       task: ["list"],
       rel: ["list"],
       produce: ["report-show", "report-list"],

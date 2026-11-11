@@ -128,6 +128,11 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   node: {
     can: (a) => { const p = ["node", "can", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return [...p, ...opt("--context", a.context), ...opt("--state", a.state)]; },
     ready: (a) => { const p = ["node", "ready"]; if (a.all) p.push("--all"); if (a.tree) p.push("-t", String(a.tree)); return [...p, ...opt("--context", a.context), ...opt("--state", a.state)]; },
+    // #257 C 类：树导航与收尾索引（path/ancestors/descendants 读；validate 刷新派生索引后校验）
+    "path": (a) => { const p = ["node", "path", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return [...p, ...opt("--context", a.context)]; },
+    "ancestors": (a) => { const p = ["node", "ancestors", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return p; },
+    "descendants": (a) => { const p = ["node", "descendants", String(a.key)]; if (a.tree) p.push("-t", String(a.tree)); return p; },
+    "validate": (a) => { const p = ["node", "validate"]; if (a.tree) p.push("-t", String(a.tree)); return p; },
   },
   task: {
     list: (a) => [...opt("-p", a.project), "task", "list"],
@@ -172,6 +177,11 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
       : ["research", "claim", "add", String(a.text), ...opt("-p", a.project)],
     "claim-link": (a) => ["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...opt("-p", a.project)],
     "claim-resolve": (a) => ["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...opt("-p", a.project)],
+    // #257 C 类：source fetch（有网络副作用，默认拒绝；YGL_MCP_SOURCE_FETCH=1 才放行）
+    "source-fetch": (a) => {
+      if (process.env.YGL_MCP_SOURCE_FETCH !== "1") throw usageError("source fetch via MCP is disabled by default (network side effect); set YGL_MCP_SOURCE_FETCH=1 to enable");
+      return ["research", "source", "fetch", String(a.b ?? a.url)];
+    },
   },
   kb: {
     add: (a) => {
@@ -180,6 +190,9 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
       return ["kb", "add", "--title", String(a.name), ...(a.file ? ["-f", String(a.file)] : ["--body", String(a.body ?? a.description)])];
     },
     link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
+    // #257 C 类：知识收口（promote 幂等；ingest 导入已完成 artifact）
+    promote: (a) => ["kb", "promote", String(a.id), ...opt("--name", a.name)],
+    ingest: (a) => ["kb", "ingest", String(a.id)],
   },
   tree: {
     "tree-new": (a) => ["tree", "new", String(a.tree), ...opt("-p", a.project)],
@@ -187,6 +200,8 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     "node-add": (a) => ["node", "add", String(a.key), ...opt("--name", a.name), ...opt("-t", a.tree)],
     "node-link": (a) => ["node", "link", String(a.key), String(a.child), ...opt("-t", a.tree)],
     "node-unlock": (a) => ["node", "unlock", String(a.key), ...opt("-t", a.tree), ...opt("--context", a.context)],
+    // #257 C 类：node lock（收回解锁态，等有证据再 unlock——lifecycle 技能收口）
+    "node-lock": (a) => ["node", "lock", String(a.key), ...opt("-t", a.tree), ...opt("--context", a.context)],
     "node-index": (a) => ["node", "index", ...opt("-t", a.tree)],
     "node-cond": (a) => {
       if (!a.key || !a.name || !a.op || a.value === undefined || a.value === null || String(a.value) === "") throw usageError("node-cond requires key, name, op and a non-empty value");
@@ -220,6 +235,12 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   },
   produce: {
     report: (a) => ["produce", "report", ...opt("-p", a.project)],
+    // #257 C 类：produce 交付面（section/spec/design 幂等；outline 由 claims 自动生成；export 写文件）
+    outline: (a) => [...opt("-p", a.project), "produce", "outline"],
+    section: (a) => ["produce", "section", String(a.title), ...opt("--body", a.body), ...opt("-f", a.file), ...opt("-p", a.project)],
+    spec: (a) => ["produce", "spec", String(a.title), ...opt("--body", a.body), ...opt("-f", a.file), ...opt("-p", a.project)],
+    design: (a) => ["produce", "design", String(a.title), ...opt("--body", a.body), ...opt("-f", a.file), ...opt("--design-type", a.design_type), ...opt("-p", a.project)],
+    export: (a) => ["produce", "export", String(a.id), String(a.file), ...opt("-p", a.project)],
   },
 };
 
@@ -295,9 +316,16 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           batch_file: { type: "string", description: "#83 source-add/claim-add/evidence-add: jsonl batch file path (all-or-nothing; bad row names line+field rc=2, file missing rc=1, nothing written on failure)" },
           source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
           name: { type: "string", description: "kb name / node name / project name" },
-          body: { type: "string", description: "kb add: note body; mutually exclusive with file" },
+          body: { type: "string", description: "kb add: note body; produce section/spec/design: artifact body (与 file 互斥)" },
           description: { type: "string", description: "kb add: compatibility alias for body; mutually exclusive with file" },
-          file: { type: "string", description: "kb add: markdown file path" },
+          file: { type: "string", description: "kb add: markdown file path; produce section/spec/design: body file (-f)" },
+          title: { type: "string", description: "produce section/spec/design: artifact title" },
+          design_type: { type: "string", enum: ["ui-ux", "arch", "decision"], description: "produce design: design type (R12)" },
+          url: { type: "string", description: "source-fetch: page url (requires YGL_MCP_SOURCE_FETCH=1)" },
+          spec_version: { type: "number", description: "verify trace: kept old spec version N (#242)" },
+          checker: { type: "string", description: "verify example: checker type filter" },
+          reviews: { type: "string", description: "verify lint-candidates: reviews file" },
+          no_archive: { type: "boolean", description: "verify tree-run: skip archive (--no-archive)" },
           note: { type: "string", description: "kb link: note id" },
           evidence_id: { type: "string", description: "kb link: evidence id" },
           tree: { type: "string", description: "tree name" },
@@ -344,7 +372,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
         properties: {
           action: {
             type: "string",
-            enum: ["submit", "prepare", "run", "report", "archive", "meta"],
+            enum: ["submit", "prepare", "run", "report", "trace", "archive", "meta", "lint-candidates", "example", "tree-prepare", "tree-run", "tree-report", "tree-trace"],
             description: "Pipeline verb (archive=verify existing archive; sealing happens automatically during run)",
           },
           a: { type: "string", description: "submit: title | prepare: material-id + b/c/db | run: spec-id + b=db | report/archive/meta: run-id/spec-id/repo-path" },
@@ -352,6 +380,9 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           c: { type: "string", description: "prepare: reviews file" },
           db: { type: "string", description: "prepare: snapshot db path (required)" },
           as_of: { type: "string", description: "prepare: ISO-8601 moment the snapshot describes (required; #171 — no default to the freeze time)" },
+          spec_version: { type: "number", description: "trace/tree-trace: kept old spec version N (#242)" },
+          checker: { type: "string", description: "example: checker type filter" },
+          no_archive: { type: "boolean", description: "tree-run: skip archive (--no-archive)" },
         },
         required: ["action", "a"],
       },
@@ -363,6 +394,14 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           case "report": return runCli(["verify", "report", String(a.a)]);
           case "archive": return runCli(["verify", "archive", "verify", String(a.a)]);
           case "meta": return runCli(["verify", "meta", String(a.a)]);
+          // #257 C 类：免 DB 自检 + 树跑（参数映射与 CLI 子命令一致）
+          case "trace": return runCli(["verify", "trace", String(a.a), ...opt("--spec-version", a.spec_version)]);
+          case "lint-candidates": return runCli(["verify", "lint-candidates", String(a.a), ...opt("--text", a.text), ...opt("--reviews", a.reviews)]);
+          case "example": return runCli(["verify", "example", ...opt("--checker", a.checker)]);
+          case "tree-prepare": return runCli(["verify", "tree", "prepare", String(a.a)]);
+          case "tree-run": return runCli(["verify", "tree", "run", String(a.a), ...opt("--db", a.db), ...opt("--no-archive", a.no_archive)]);
+          case "tree-report": return runCli(["verify", "tree", "report", String(a.a)]);
+          case "tree-trace": return runCli(["verify", "tree", "trace", String(a.a)]);
           default: return Promise.reject(new Error(`unknown action: ${String(a.action)}`));
         }
       },
