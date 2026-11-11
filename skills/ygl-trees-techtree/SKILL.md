@@ -19,6 +19,19 @@ tags: ygl-trees,techtree,dag,unlock,gate
 
 > **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
 
+## 0. 同轮跟进（#233）
+
+下面每条命令做完，**同一轮**就把右边的跟进做掉。CLI 回执也会点名：`--json` 里是 `next_actions` 字段，人类输出是 `next:` 行。
+
+| 刚做完 | 同轮跟进 |
+|---|---|
+| `node unlock <key>` | `rel add node:<key> evidence:<id> --rel evidenced-by`。节点背后没有证据、断言、来源、产出或 kb 时，回执会点名这一步 |
+| `node add <key>` | 挂到父节点 `node link <parent> <key>`，然后 `node index` + `node validate` |
+| `node link <a> <b>` | `node index` + `node validate` |
+| `node unlink <a> <b>` | `node index` + `node validate`。方向反转时先 unlink 再 link，三步在同一轮做完 |
+| `node rm <key>` | `node index` + `node validate`。节点身上的 rel 不会级联删除，用 `rel prune --dry-run` 看残留 |
+| `node import --file <tree.json>` | 看回执里的 `unlocked_without_evidence`。不是 0，就给这些节点挂来源，或者按 lifecycle 技能的「导入」一行处理 |
+
 ## MCP 等价面（AI agent 用 write / read 代替 CLI）
 
 | CLI 命令 | MCP 调用 |

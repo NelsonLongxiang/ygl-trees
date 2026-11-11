@@ -872,6 +872,29 @@ export function scopeLine(report: object): string {
   return `semantic_scope structural  (未知值 ${JSON.stringify(raw)} 不在闭集 structural|factual|semantic 内，按最保守读——父 PASS 不代表子结论为真)`;
 }
 
+/** #232: run a spec that exists only in memory on a working copy of the snapshot. Nothing is retained: the copy is
+ *  dropped on every outcome and no report, archive or snapshot is written under the verify root. */
+export async function draftRun(spec: VerifySpec, dbPath: string, submissionDir: string | undefined, engineVersion: string | undefined): Promise<{ report: VerifyReport | null; error?: string }> {
+  let snap: ReturnType<typeof snapshotCopy>;
+  try {
+    snap = snapshotCopy(dbPath);
+  } catch (e: any) {
+    return { report: null, error: `cannot snapshot --db: ${e?.message || e}` };
+  }
+  const runner = new SqliteRunner(snap.path);
+  try {
+    const report = await runVerify(spec, { runner, submissionDir, mode: "open", engineVersion });
+    return {
+      report: { ...report, draft: true, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport,
+    };
+  } catch (e: any) {
+    return { report: null, error: e?.message || String(e) };
+  } finally {
+    try { runner.close(); } catch { /* already closed */ }
+    snap.cleanup();
+  }
+}
+
 export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string; cleanup: () => void } {
   const stat = statSync(dbPath);
   if (!stat.isFile()) throw new Error(`--db must point to a SQLite file (snapshot copy), not a directory: ${dbPath}`);
@@ -1049,7 +1072,7 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "run", "submission", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
   run: ["db", "submission", "no-archive", "provenance", "spec-version"], // #242: --spec-version <N> runs a kept old version
   tree: ["pinned", "no-archive", "target", "provenance"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
@@ -1071,7 +1094,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
 };
 
 /** `verify prepare` 的用法串：命令体内校验与 bin 层前置校验共用，避免两处措辞漂移。 */
-const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> --as-of <ISO-8601> [--spec-version N] [--draft (as_of optional)] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> --as-of <ISO-8601> [--spec-version N] [--draft (as_of optional) [--run [--submission <dir>]]] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
 /**
  * #171 建议 4：非 --draft 的 prepare 必须显式给 as_of。默认取「冻结此刻」会让同一份材料换时间、换机器重新
  * prepare 时冻出不同的 spec（版本白涨、跨机器对不上）。as_of 是快照所描述的时刻（如被验提交的时间），只有
@@ -1094,6 +1117,17 @@ const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-2
  * 所以缺库或库打不开时，命令体内的校验根本轮不到——把用法错误降级成了运行错误。
  * 这里只做不碰 I/O 的旗标校验，供 bin 在门禁之前调用；返回 null 表示旗标面合法。
  */
+/** #232 draft-run entry: `--run` belongs to `--draft` (a draft run never freezes anything), and `--submission` belongs
+ *  to `--run`. Usage errors, refused before any I/O by preflightUsage and again in the command body. */
+export function draftRunUsage(flags: Record<string, unknown>): string | null {
+  if (flags.run !== undefined && flags.run !== true) return "--run takes no value";
+  if (flags.run === true && flags.draft !== true)
+    return "--run needs --draft: a draft run builds the spec in memory and never freezes it (to run a frozen spec, use: verify run <spec-id> --db <snapshot>)";
+  if (flags.submission !== undefined && flags.run !== true) return "--submission only applies to --draft --run here (verify run takes its own --submission)";
+  if (flags.submission === true || flags.submission === "") return "--submission needs a directory";
+  return null;
+}
+
 export function preflightUsage(action: string, rest: string[], args: any): string | null {
   if (action === "instance") {
     // #206: unknown flags are a usage error too, and must be refused before the DB gate like the rest
@@ -1110,6 +1144,8 @@ export function preflightUsage(action: string, rest: string[], args: any): strin
   }
   if ((action === "run" || (action === "tree" && rest[0] === "run")) && args.flags.provenance !== undefined && (typeof args.flags.provenance !== "string" || !args.flags.provenance.trim())) return "--provenance needs a JSON file path";
   if (action !== "prepare") return null;
+  const draftRunProblem = draftRunUsage(args.flags ?? {});
+  if (draftRunProblem) return draftRunProblem;
   // #171 第4项（#188 评审 P3）：裸 --candidates-author / --reviews-author 会被记成作者 "true"，
   // 属用法错误，按 #175 的规矩在门禁之前就 rc=2。
   for (const flagName of ["candidates-author", "reviews-author"]) {
@@ -1499,6 +1535,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, USAGE_PREPARE);
         return 2;
       }
+      {
+        const problem = draftRunUsage(args.flags ?? {});
+        if (problem) { bad(ctx, problem); return 2; }
+      }
       // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
       // 放在最前面：旗标错误是用法错误，不该先做 material/db 的 I/O 再说。
       {
@@ -1589,7 +1629,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         engineVersion: env.version,
         corpusVersion: CORPUS_VERSION,
         knownMaterialHashes: knownMaterialHashes(env, materialId),
-      }).then((res): number => {
+      }).then(async (res): Promise<number> => {
         if (metaWarning) res.diagnostics.push({ stage: "META", message: metaWarning });
         // #171 第4项：同一作者既出候选又出评审时留一条诊断（不阻塞，但进 prepare.json 与 --json）。
         if (authors.candidates.id === authors.reviews.id) {
@@ -1635,15 +1675,28 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
           };
+          // #232 draft-run entry: run the in-memory spec on a working copy of --db and print the report, writing
+          // nothing to the workspace (no specs/, reports/, archives/ or retained snapshots; no version consumed).
+          // rc follows verify run: 0 once the run completed, whatever the verdict; a draft that is not ready runs nothing.
+          let drafted: { report: VerifyReport | null; error?: string } | undefined;
+          if (args.flags.run === true) drafted = res.verdict === "ready" && res.spec ? await draftRun(res.spec as VerifySpec, String(dbPath), args.flags.submission ? String(args.flags.submission) : undefined, env.version) : { report: null };
+          if (drafted) (payload as any).run = drafted.error ? { report: null, error: drafted.error } : { report: drafted.report };
+          const draftRc = res.verdict !== "ready" ? 1 : drafted?.error ? 1 : 0;
           if (ctx.json) {
             console.log(JSON.stringify(payload));
-            return res.verdict === "ready" ? 0 : 1;
+            return draftRc;
           }
           out(ctx, `  · draft ${res.verdict}: ${res.units.length} candidate unit(s), ${res.rounds} round(s), ${res.rejected.length} rejected — nothing written`
             + (prevVersion >= 1 && existsSync(specDir(env, `spec_${short(sha256(materialId))}`) + "/spec.json") ? ` — would replace spec_${short(sha256(materialId))} v${prevVersion}` : ""));
           for (const d of res.diagnostics) out(ctx, paint(C.dim, `    [${d.stage}] ${d.message}`, ctx.color));
           for (const r of res.rejected.slice(0, 5)) out(ctx, paint(C.dim, `    · [${r.stage}] ${r.reason}`, ctx.color));
-          return res.verdict === "ready" ? 0 : 1;
+          if (drafted?.error) bad(ctx, `draft run failed: ${drafted.error}`);
+          else if (drafted?.report) {
+            const r = drafted.report;
+            out(ctx, `  · draft run ${r.overall}: pass ${r.summary.pass}, fail ${r.summary.fail}, needs-material ${r.summary.needs_material}, error ${r.summary.error} — not frozen, nothing written`);
+            for (const v of r.vu.slice(0, 20)) out(ctx, paint(C.dim, `    ${v.verdict.padEnd(14)} ${v.id}  ${String(v.source_clause ?? "").slice(0, 100)}`, ctx.color));
+          } else if (args.flags.run === true) out(ctx, paint(C.dim, "  · draft not ready: nothing ran", ctx.color));
+          return draftRc;
         }
         const dir = specDir(env, `spec_${short(sha256(materialId))}`);
         const created = new Date().toISOString();

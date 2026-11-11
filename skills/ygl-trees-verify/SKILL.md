@@ -45,6 +45,10 @@ ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> 
                                                 # rc=0 仅当 ready；P1/P2 阻断、灰带进 open
 ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --draft
                                                 # 无损试跑：照构造但**不冻结** spec 版本
+ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --draft --run
+                                                # 草稿试跑（#232）：ready 就在快照副本上跑一遍、打印报告（draft:true），
+                                                # 工作区什么都不写（不进 specs/reports/archives、不留快照、不占版本号）；
+                                                # FAIL 也是 rc=0，没 ready 就不跑（rc=1）；meta 门照常；文件型判据加 --submission <dir>
 ygl-trees verify trace <spec-id> [--spec-version N]  # 构造追溯：清单/判据↔检查器表/盲审与红队结论（只读）；N 读 versions/v<N>/ 的旧版 trace（#242）
 
 ygl-trees verify run <spec-id> --db snapshot.sqlite [--spec-version N]  # FAIL 也是 rc=0，看 overall/summary；N 跑 versions/v<N>/ 保留旧版判据（#242：二次 ready prepare 会把旧版三件字节级移入 versions/、输出 replaced 提示，归档按报告版本取文件）
