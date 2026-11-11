@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 
 const version = process.argv[2];
@@ -20,7 +21,7 @@ if (!version) {
   console.error("usage: node scripts/post-release-check.mjs <version>");
   process.exit(2);
 }
-const REPO = resolve(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+const REPO = resolve(fileURLToPath(new URL("..", import.meta.url))); // #267: pathname keeps %7E1 (8.3 short name) / %20 — fileURLToPath decodes
 // #98 复核（macOS）：工作目录**出仓**（os.tmpdir）——仓内会让 npm 向上找到仓库根的
 // workspace package.json（同名 ygl-trees + workspace: 依赖）而崩溃。
 const WORK = mkdtempSync(join(os.tmpdir(), "ygl-post-release-"));

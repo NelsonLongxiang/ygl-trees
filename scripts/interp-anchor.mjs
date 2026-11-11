@@ -10,8 +10,10 @@
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+// Windows 8.3 短名（ADMINI~1）经 import.meta.url 变成百分号编码（%7E1），pathname 直取不解码 → readdirSync ENOENT（0.123.0 G8 三步红的共同根因）。fileURLToPath 是标准解法。
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dir = join(ROOT, "scripts");
 let bad = 0;
 for (const f of readdirSync(dir)) {
