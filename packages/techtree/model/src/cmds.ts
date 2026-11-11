@@ -22,6 +22,7 @@ import { getOrm, getPgOrm } from "../../../core/database/src/orm";
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { currentSelectionVia, resolveProject, selectionChangeWarning, sessionId } from "../../../core/database/src/selection";
 import * as treeWrites from "./writes";
+import { NODE_HAS_EVIDENCE_SQL, UNLOCKED_WITHOUT_EVIDENCE_IN_TREE_SQL, attachEvidenceAction, reindexActions } from "./evidence-gap";
 import {
   DEFAULT_ENDPOINT, evalBoolean, evalChoice, evalMixed, evalScore, evalToken,
   mapChoiceOutcome, mapOutcome, mapScoreOutcome, packEvalChoiceSpec, packEvalScoreSpec, parseEvalSpec,
@@ -431,6 +432,17 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       if (q2.ref !== rest[1]) rest[1] = q2.ref;
     }
     const key = rest[0];
+    // #233: the lifecycle skill's "same round" follow-ups, printed where the action happens. A structural write leaves
+    // the index dirty (markDirty), so add/link/unlink/rm name `node index` + `node validate`; an unlock with nothing
+    // behind it names `rel add`. Additive only: a `next_actions` field in JSON, a dim `next:` line for humans.
+    const indexHint = async (): Promise<string[]> => {
+      const row = (await trees.queryOne("SELECT dirty FROM node_index WHERE tree_id=?", [tid])) as any;
+      return row && Number(row.dirty) === 1 ? reindexActions(tree.name) : [];
+    };
+    const printNext = (actions: string[]): void => {
+      if (ctx.json) return;
+      for (const a of actions) out(ctx, paint(C.dim, `  next: ${a}`, ctx.color));
+    };
     if (["show", "parents", "children", "ancestors", "descendants"].includes(sub) && !key) {
       bad(ctx, `usage: node ${sub} <key>`);
       return 2;
@@ -462,18 +474,21 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         payload: flagStr("payload"),
         tags: flagStr("tags"),
       };
-      return runTreeWrite((ds) => treeWrites.nodeAdd(ds, tid, spec), (r): number => {
+      return runTreeWrite((ds) => treeWrites.nodeAdd(ds, tid, spec), async (r): Promise<number> => {
+        const next = r.created ? await indexHint() : [];
+        const withNext = (row: any) => (next.length ? { ...row, next_actions: next } : row);
         const warning = env.pgUrl ? undefined : selectionChangeWarning(env.db, "tree", (currentSelectionVia() || "none") as any);
         if (warning) {
           process.stderr.write(`  note: ${warning}\n`);
           if (ctx.json) {
-            console.log(JSON.stringify({ ...(r.created ? r.row : { ...r.row, duplicate: true }), selection_warning: warning }, null, 2));
+            console.log(JSON.stringify({ ...withNext(r.created ? r.row : { ...r.row, duplicate: true }), selection_warning: warning }, null, 2));
             return 0;
           }
         }
-        if (ctx.json) console.log(JSON.stringify(r.created ? r.row : { ...r.row, duplicate: true }, null, 2));
+        if (ctx.json) console.log(JSON.stringify(withNext(r.created ? r.row : { ...r.row, duplicate: true }), null, 2));
         else if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
         else ok(ctx, `node added: ${key}${r.row.name !== key ? `  (${r.row.name})` : ""}`);
+        printNext(next);
         return 0;
       });
     }
@@ -494,15 +509,17 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
             weight: flagNum("weight", 1),
             note: flagStr("note"),
           }),
-        (row): number => {
+        async (row): Promise<number> => {
           const dup = row?.duplicate === true;
+          const next = await indexHint();
           ack(
             ctx,
-            row,
+            next.length ? { ...row, next_actions: next } : row,
             dup
               ? `linked ${key} → ${child}  [${row.rel}/${row.mode}/${row.required ? "必检" : "可选"}]  (duplicate, updated in place)`
               : `linked ${key} → ${child}  [${row.rel}/${row.mode}/${row.required ? "必检" : "可选"}]`
           );
+          printNext(next);
           return 0;
         }
       );
@@ -514,8 +531,10 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         return 2;
       }
       const relU = flagStr("rel", "prereq");
-      return runTreeWrite((ds) => treeWrites.unlink(ds, tid, key, rest[1], relU), (): number => {
-        ack(ctx, { unlinked: `${key} -> ${rest[1]}` }, `unlinked ${key} → ${rest[1]}`);
+      return runTreeWrite((ds) => treeWrites.unlink(ds, tid, key, rest[1], relU), async (): Promise<number> => {
+        const next = await indexHint();
+        ack(ctx, { unlinked: `${key} -> ${rest[1]}`, ...(next.length ? { next_actions: next } : {}) }, `unlinked ${key} → ${rest[1]}`);
+        printNext(next);
         return 0;
       });
     }
@@ -1109,8 +1128,16 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       }
       const status = sub === "unlock" ? "unlocked" : "locked";
       const ctxName = flagStr("context", "default");
-      return runTreeWrite((ds) => treeWrites.stateSet(ds, tid, key, status, ctxName, flagNum("level", 1)), (): number => {
-        ack(ctx, { key, status, context: ctxName }, `marked ${status}: ${key}`);
+      return runTreeWrite((ds) => treeWrites.stateSet(ds, tid, key, status, ctxName, flagNum("level", 1)), async (): Promise<number> => {
+        // #233: an unlock with no evidence, claim, source, artifact or kb behind it gets the same-round step named.
+        let next: string[] = [];
+        if (status === "unlocked") {
+          const node = (await trees.nodeGet(tid, key)) as any;
+          const hit = node ? await trees.queryOne(NODE_HAS_EVIDENCE_SQL, [node.id]) : null;
+          if (node && !hit) next = [attachEvidenceAction(tree.name, node.key)];
+        }
+        ack(ctx, { key, status, context: ctxName, ...(next.length ? { next_actions: next } : {}) }, `marked ${status}: ${key}`);
+        printNext(next);
         return 0;
       });
     }
@@ -1164,12 +1191,22 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       }
       return runTreeWrite(
         (ds) => treeWrites.importTree(ds, spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") }),
-        (r): number => {
+        async (r): Promise<number> => {
+          // #233: an imported model arrives with its unlocked state but none of the evidence behind it. Say how many,
+          // so the importer attaches the source or records the tree as an unverified model (lifecycle skill, import row).
+          const bare = (await trees.query(UNLOCKED_WITHOUT_EVIDENCE_IN_TREE_SQL, [r.tree.id])) as any[];
+          const next = bare.length ? [attachEvidenceAction(r.tree.name, bare[0].key)] : [];
           ack(
             ctx,
-            { tree: r.tree.name, nodes: r.nodes, edges: r.edges, conditions: r.conditions },
-            `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions`
+            {
+              tree: r.tree.name, nodes: r.nodes, edges: r.edges, conditions: r.conditions,
+              unlocked_without_evidence: bare.length,
+              ...(next.length ? { next_actions: next } : {}),
+            },
+            `imported tree ${r.tree.name}: ${r.nodes} nodes, ${r.edges} edges, ${r.conditions} conditions` +
+              (bare.length ? `; ${bare.length} unlocked without evidence` : "")
           );
+          printNext(next);
           // R16.2: import re-points the SESSION selection, not the global.
           db.metaSet(`current_tree@${sessionId()}`, r.tree.name);
           logSelectionEvent(db, "tree.use", r.tree.name);
@@ -1241,8 +1278,10 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         bad(ctx, "usage: node rm <key>");
         return 2;
       }
-      return runTreeWrite((ds) => treeWrites.nodeDel(ds, tid, key), (): number => {
-        ack(ctx, { removed: key }, `node removed: ${key}`);
+      return runTreeWrite((ds) => treeWrites.nodeDel(ds, tid, key), async (): Promise<number> => {
+        const next = await indexHint();
+        ack(ctx, { removed: key, ...(next.length ? { next_actions: next } : {}) }, `node removed: ${key}`);
+        printNext(next);
         return 0;
       });
     }

@@ -119,7 +119,8 @@ type ArgvBuilder = (a: Record<string, any>) => string[];
 /** Read routes — every CLI read face, white-listed. */
 const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   agent: {
-    brief: () => ["agent", "brief"],
+    // #260: 显式 project 透传为 -p（显式指定优先于会话已选项目）
+    brief: (a) => [...opt("-p", a.project), "agent", "brief"],
     match: (a) => ["agent", "match", String(a.query)],
     log: () => ["agent", "log"],
   },
@@ -131,12 +132,12 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     "query-list": (a) => [...opt("-p", a.project), "research", "query", "list"],
     "source-list": (a) => [...opt("-p", a.project), "research", "source", "list"],
     "source-search": (a) => [...opt("-p", a.project), "research", "source", "search", String(a.query)],
-    "source-show": (a) => ["research", "source", "show", String(a.id)],
+    "source-show": (a) => [...opt("-p", a.project), "research", "source", "show", String(a.id)],
     "evidence-list": (a) => [...opt("-p", a.project), "research", "evidence", "list"],
-    "evidence-show": (a) => ["research", "evidence", "show", String(a.id)],
+    "evidence-show": (a) => [...opt("-p", a.project), "research", "evidence", "show", String(a.id)],
     "claim-list": (a) => [...opt("-p", a.project), "research", "claim", "list"],
-    "claim-show": (a) => ["research", "claim", "show", String(a.id)],
-    "claim-evaluate": (a) => ["research", "claim", "evaluate", String(a.id)],
+    "claim-show": (a) => [...opt("-p", a.project), "research", "claim", "show", String(a.id)],
+    "claim-evaluate": (a) => [...opt("-p", a.project), "research", "claim", "evaluate", String(a.id)],
     "claim-calibration": () => ["research", "claim", "calibration", "--all"],
     "predict-list": (a) => { const p = ["research", "predict", "list"]; if (a.all) p.push("--all"); if (a.project) p.push("-p", String(a.project)); return p; },
   },
@@ -156,12 +157,13 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     list: (a) => { const p = ["rel", "list"]; if (a.node) p.push("--node", String(a.node)); return p; },
   },
   produce: {
-    "report-show": (a) => ["produce", "show", String(a.id)],
+    "report-show": (a) => [...opt("-p", a.project), "produce", "show", String(a.id)],
     "report-list": (a) => [...opt("-p", a.project), "produce", "list"],
   },
   project: {
     list: () => ["project", "list"],
-    show: () => ["project", "show"],
+    // #260: project 与 name 同义（都作 -p）；两者同给且不一致在 execute 前置拒绝（rc2）
+    show: (a) => ["project", "show", ...opt("-p", a.project ?? a.name)],
   },
   db: {
     stats: () => ["db", "stats"],
@@ -270,13 +272,13 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           action: { type: "string", enum: allReadActions, description: "Read action within domain" },
           query: { type: "string", description: "search/match query" },
           id: { type: "string", description: "entity id (show)" },
-          name: { type: "string", description: "entity name (skill show)" },
+          name: { type: "string", description: "entity name (skill show, project show)" },
           tree: { type: "string", description: "tree name filter" },
           node: { type: "string", description: "node key (rel list)" },
           key: { type: "string", description: "node key (can)" },
           context: { type: "string", description: "node can/ready: named state context, default is default" },
           state: { type: "string", description: "node can/ready: temporary state using the CLI key=value,key2=value2 syntax" },
-          project: { type: "string", description: "project filter" },
+          project: { type: "string", description: "explicit project (overrides the session selection)" },
           all: { type: "boolean", description: "include all (ready/predict)" },
           eval: { type: "boolean", description: "enable semantic re-ranking (kb search)" },
           actor: { type: "string", description: "actor filter (db timeline)" },
@@ -288,6 +290,10 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
         if (!domain) return Promise.reject(new Error(`unknown domain: ${String(a.domain)}`));
         const builder = domain[String(a.action)];
         if (!builder) return Promise.reject(new Error(`unknown action '${String(a.action)}' for domain '${String(a.domain)}'`));
+        // #260: project/show 的 project 与 name 同给且不一致 → rc2，先于任何 I/O
+        if (a.domain === "project" && a.action === "show" && a.project !== undefined && a.name !== undefined && String(a.project) !== String(a.name)) {
+          return Promise.reject(usageError(`project show: 'project' (${String(a.project)}) and 'name' (${String(a.name)}) differ; give at most one`));
+        }
         return runCli(builder(a));
       },
     },
