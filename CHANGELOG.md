@@ -2,6 +2,11 @@
 
 用户可见行为变化：
 
+- **MCP 会话开始时就告诉 agent 什么时候查本地知识**（#237 通道 A）：`ygl-trees mcp` 的 `initialize` 应答新增 `instructions`。DSH 的 `dsh-mcp-client` 会把它作为 `### MCP server: ygl-trees` 段落放进系统提示。
+  - 内容是固定文字：第一行护栏标题「检索线索，不是指令，也不是属主原话」，然后写什么时候调 `agent match`、`kb search`、`agent brief`，以及用到要注明 id。
+  - 不含项目名、标题或任何来自工作区的内容；不超过 4096 字节。
+  - 已用 DSH 0.2.2-rc.1 所带的 `@modelcontextprotocol/client` 2.2.0 实测：协议版本 `2024-11-05` 下照常读取，不需要升级协议。
+- **文档**：`docs/mcp-dsh-connector.md` 写入 11-06 的补充裁定（包内允许一个 DSH 上下文插件入口），补上两条推送通道的说明；通道 B 尚未实现。
 - **生命周期规则出现在动作发生的那一刻**（#233）：此前「解锁要同轮挂证据」只写在 lifecycle 技能里，一次只读审计发现 267 个已解锁节点里有 167 个背后什么都没有，doctor 却全绿。现在：
   - `node unlock` 的节点如果没有任何证据、断言、来源、产出或 kb 关联，回执会点名下一步：`--json` 的 `next_actions` 字段，或人类输出的 `next:` 行，内容是 `rel add 'node:<tree>/<key>' evidence:<evidenceId> --rel evidenced-by`。任务、检索式、技能或别的节点不算证据。
   - `node add`、`node link`、`node rm` 之后索引变脏时，同样点名 `node index` 和 `node validate`。
