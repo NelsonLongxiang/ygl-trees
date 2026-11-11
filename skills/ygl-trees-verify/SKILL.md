@@ -411,5 +411,6 @@ ygl-trees verify instance import-latest ../ygl-webui-verifier/work/results/lates
 
 - `tree_contract_version`：递归树契约（与 `contract_version` 分开钉）；五值全序+cap-on-PASS 是 v1.2 语义。
 - `contract_version 1.2`：spec/report 形状（1.2 新增「右值可引用列」两形态：同表 `{col}` 列对列 / `count.against` 单值标量；1.1 spec 兼容运行）；`corpus_version 1.2`：黄金语料摘要（44 例）。
+- `contract_version 1.3`（#80/#232）：谓词 op 新增 `glob` / `not-glob`（SQLite GLOB：大小写敏感，`*` `?` `[...]`，没有转义符；NULL 不命中）。路径语法检查这样写：`{"col":"path","op":"glob","value":"*/../*"}`，找包外条目用 `not-glob` 加 `package/*`。prepare 只在用到 1.3 形态时才盖 1.3，否则照旧盖 1.2；1.1/1.2 spec 里出现 glob 会被 `version_shape` 拒跑。pragma、派生表、视图和归档采集器（1.3 第二、三部分）还没落地。
 - 报告字段 snake_case；witness 必带 `rows_scanned`/`rows_matched`（或 `compared`）——**没有 witness 的 PASS 不算证据**。
 - 一切写路径事务化；读端点只读；`--json` 失败也是单对象 `{"error": "..."}` + rc 承载类别。
