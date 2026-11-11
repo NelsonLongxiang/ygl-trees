@@ -18,6 +18,14 @@
   - witness 统计 pragma 自己的行数，结构检查不会被零扫描规则降级。
   - SQLite 不允许裸写的五个保留字列（`from`、`notnull`、`table`、`to`、`unique`）渲染时加引号，其余标识符不变。
   - 共享向量 12 例、9 条拒绝，TS 与 Rust 逐字节一致。
+- **验证器契约 1.3，第二部分 b：派生表与 spec 视图，只在内存里执行**（#80，裁定 ② ③）。
+  - **派生表**：`"from": {"derived": {…内层谓词…}}`，外层读内层的 select 列名和聚合别名，最多嵌套 4 层。
+  - **视图**：候选文件信封里加 `"views": [{"name": "big_orders", "predicate": {…}}]`，候选用 `"from": "big_orders"` 引用。名字用 snake_case，不能与快照里的对象同名，只能读声明在它之前的视图。spec 冻结时一并冻结；`verify lint-candidates` 和作业端点 `POST /api/verify/prepare`（`views` 字段）认同样的形状。
+  - **快照里自带的视图一律不执行**（它的 SQL 是数据产出方写的）：prepare 点名拒绝，1.3 spec 在 run 时也会再查一遍。
+  - **执行方式**：快照照旧只读打开，临时库强制在内存（读回确认），视图建成 TEMP VIEW 后重新锁成 `query_only`；run 结束时快照 sha256 必须与建视图前相同，否则拒绝出报告。没用到派生表和视图的 spec 走原路径，1.2 行为不变。
+  - **没有采用设计稿里的 `:memory:` + `ATTACH` 写法**：实测那样 `pragma_user_version` 会读到空内存库的 0，让 pragma 来源静默答错。
+  - **红队断言**：候选或视图里任何字符串出现快照自身路径，prepare P2 拒绝；1.3 spec 的手写 SQL 去掉注释和字面量后出现 `ATTACH` / `DETACH` / `file:`，run 拒跑。
+  - 共享向量：6 个派生表用例、3 个视图、3 个读视图用例、11 条拒绝，TS 与 Rust 逐字节一致。
 
 ## 0.123.0
 

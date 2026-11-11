@@ -14,7 +14,10 @@ use serde_json::{json, Value};
 use crate::canonical::canonical_sha256;
 use crate::compare::{compare_values, validate_compare_spec, CompareOutcome};
 use crate::contract::*;
-use crate::predicate::{agg_alias_of, contains_col_ref, contains_op13, first_col_ref_pair, render_predicate, render_scan};
+use crate::predicate::{
+    agg_alias_of, contains_col_ref, contains_op13, first_col_ref_pair, from_names_of, has_derived, render_predicate, render_scan,
+    render_views,
+};
 use crate::sqlite::{column, first_value, Row, SqliteRunner};
 
 const EMPTY_SCHEMA: &str = "sha256:empty";
@@ -107,6 +110,82 @@ fn has_dollar_placeholder(sql: &str) -> bool {
 }
 
 /// 找违规型守卫：无 WHERE 且无 scope_sql 的整表查询是「整表非空」冒充，拒绝。
+/// 1.3 red-team assertion (ruling ②) — engine.ts `isolationRefusal`: comments and string literals stripped, then
+/// ATTACH / DETACH and a `file:` URI refused (ASCII word boundaries, as in JS).
+pub fn isolation_refusal(sql: &str) -> Option<String> {
+    let lit = regex::Regex::new("'(?:[^']|'')*'").expect("literal regex");
+    let bare = lit.replace_all(&strip_sql_comments(sql), "''").to_string();
+    let re = regex::Regex::new(r"(?i)(?-u:\b)(attach|detach)(?-u:\b)|(?-u:\b)file:").expect("attach regex");
+    re.find(&bare).map(|m| {
+        format!(
+            "snapshot_reference: {} is not allowed in a 1.3 spec's SQL (the run reads only its own snapshot)",
+            m.as_str().to_uppercase()
+        )
+    })
+}
+
+/// 1.3: a spec that declares views or reads a derived table runs isolated (engine.ts `usesIsolation`).
+pub fn uses_isolation(spec: &VerifySpec) -> bool {
+    if spec.views.as_ref().and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false) {
+        return true;
+    }
+    spec.vu.iter().any(|vu| match &vu.checker {
+        Checker::Sql(c) => c.predicate.as_ref().map(has_derived).unwrap_or(false),
+        Checker::SqlPair(c) => {
+            c.left.predicate.as_ref().map(has_derived).unwrap_or(false) || c.right.predicate.as_ref().map(has_derived).unwrap_or(false)
+        }
+        Checker::Count(c) => c.predicate.as_ref().map(has_derived).unwrap_or(false),
+        Checker::Exists(c) => c.predicate.as_ref().map(has_derived).unwrap_or(false),
+        _ => false,
+    })
+}
+
+/// Every bare name a spec reads — engine.ts `namesReadBy`, same fields, same order, de-duplicated.
+pub fn names_read_by(spec: &VerifySpec) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |n: String| {
+        if !out.contains(&n) {
+            out.push(n);
+        }
+    };
+    for vu in &spec.vu {
+        let (preds, tables, texts): (Vec<Option<&Predicate>>, Vec<Option<String>>, Vec<Option<String>>) = match &vu.checker {
+            Checker::Sql(c) => (vec![c.predicate.as_ref()], vec![], vec![c.sql.clone(), c.scope_sql.clone()]),
+            Checker::SqlPair(c) => (
+                vec![c.left.predicate.as_ref(), c.right.predicate.as_ref()],
+                vec![c.left.table.clone(), c.right.table.clone()],
+                vec![],
+            ),
+            Checker::Count(c) => (vec![c.predicate.as_ref()], vec![c.against.as_ref().map(|a| a.from.clone())], vec![c.sql.clone()]),
+            Checker::Exists(c) => (vec![c.predicate.as_ref()], vec![], vec![c.sql.clone()]),
+            _ => (vec![], vec![], vec![]),
+        };
+        for p in preds.into_iter().flatten() {
+            for n in from_names_of(p) {
+                add(n);
+            }
+        }
+        for t in tables.into_iter().flatten() {
+            add(t);
+        }
+        for t in texts.into_iter().flatten() {
+            for n in crate::sqlite::extract_tables(&t) {
+                add(n);
+            }
+        }
+    }
+    if let Some(arr) = spec.views.as_ref().and_then(|v| v.as_array()) {
+        for v in arr {
+            if let Ok(p) = serde_json::from_value::<Predicate>(v.get("predicate").cloned().unwrap_or(Value::Null)) {
+                for n in from_names_of(&p) {
+                    add(n);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn strip_sql_comments(sql: &str) -> String {
     let mut out = String::with_capacity(sql.len());
     let bytes = sql.as_bytes();
@@ -1002,7 +1081,7 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
     }
     // 1.3: glob / not-glob are only admissible in a spec that declares 1.3 (same rule as engine.ts).
     if spec.contract_version != "1.3" {
-        let uses13 = spec.vu.iter().any(|vu| match &vu.checker {
+        let uses13 = spec.views.is_some() || spec.vu.iter().any(|vu| match &vu.checker {
             Checker::Sql(c) => c.predicate.as_ref().map(contains_op13).unwrap_or(false),
             Checker::SqlPair(c) => {
                 c.left.predicate.as_ref().map(contains_op13).unwrap_or(false)
@@ -1014,7 +1093,7 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         });
         if uses13 {
             return Err(format!(
-                "version_shape: this spec declares contract_version {} but uses 1.3-only shapes (glob / not-glob / pragma source) — bump the spec to 1.3",
+                "version_shape: this spec declares contract_version {} but uses 1.3-only shapes (glob / not-glob / pragma source / derived table / views) — bump the spec to 1.3",
                 spec.contract_version
             ));
         }
@@ -1079,6 +1158,35 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
     }
     if !spec.vu.iter().any(|u| u.role == "assert") {
         return Err("spec has no assert units — nothing to verify".into());
+    }
+    // 1.3 (#80): red-team assertion on supplied SQL text, stored snapshot views, then in-memory isolation.
+    if spec.contract_version == "1.3" {
+        for vu in &spec.vu {
+            let text = match &vu.checker {
+                Checker::Sql(c) => format!("{} {}", c.sql.clone().unwrap_or_default(), c.scope_sql.clone().unwrap_or_default()),
+                Checker::Count(c) => format!("{} ", c.sql.clone().unwrap_or_default()),
+                Checker::Exists(c) => format!("{} ", c.sql.clone().unwrap_or_default()),
+                _ => String::new(),
+            };
+            if let Some(refusal) = isolation_refusal(&text) {
+                return Err(format!("{}: {refusal}", vu.id));
+            }
+        }
+        let stored: Vec<String> = opts.runner.snapshot_views()?.into_iter().map(|n| n.to_ascii_lowercase()).collect();
+        if !stored.is_empty() {
+            for name in names_read_by(spec) {
+                if stored.contains(&name.to_ascii_lowercase()) {
+                    return Err(format!(
+                        "snapshot_view: {name} is a view stored in the snapshot — snapshot views are never executed (contract 1.3); declare a spec view instead"
+                    ));
+                }
+            }
+        }
+    }
+    let isolated = uses_isolation(spec);
+    if isolated {
+        let views = render_views(spec.views.as_ref())?;
+        opts.runner.isolate(&views)?;
     }
     let order = topo_order(&spec.vu)?;
     let mut outputs: HashMap<String, Vec<Row>> = HashMap::new();
@@ -1220,6 +1328,12 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
             json!({ "vu": r.id, "severity": r.severity, "row_count": row_count })
         })
         .collect();
+    // 1.3 (ruling ③): an isolated run must leave the snapshot byte-identical — proven, not assumed.
+    if isolated {
+        if let Some(changed) = opts.runner.untouched() {
+            return Err(changed);
+        }
+    }
     let (overall, reason) = fold_overall(&results);
     let summary = summary_of(&results);
     let run_id = opts

@@ -23,7 +23,7 @@ import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { bad, C, head, ok, out, paint, table } from "../../../core/text/src/fmt";
-import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
+import type { ReviewFinding, ReviewRunner, SpecView, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
@@ -774,6 +774,10 @@ export function minimalRedTeam(schemaSql: string[], submissionDir?: string): (s:
         tableRows: (t: string) => db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>,
         schemaFingerprint: () => "empty-snapshot",
         sourceTables: () => [] as string[],
+        // 1.3: spec views on the empty in-memory schema (this db is already :memory:, so temp views stay in memory).
+        isolate: (views: Array<{ name: string; sql: string }>) => {
+          for (const v of views) db.exec(`CREATE TEMP VIEW ${v.name} AS ${v.sql}`);
+        },
       };
       const report = await runVerify(s, { runner: runner as never, submissionDir, mode: "open", nowIso: () => "1970-01-01T00:00:00.000Z" });
       const failures: string[] = [];
@@ -1569,6 +1573,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const candidatesRaw = readJson<unknown>(candidatesPath);
       const reviewsRaw = readJson<unknown>(reviewsPath);
       const candidatesFile = { candidates: Array.isArray(candidatesRaw) ? (candidatesRaw as PrepareCandidate[]) : ((candidatesRaw as { candidates?: PrepareCandidate[] }).candidates ?? []) };
+      // 1.3 (#80): spec views ride in the candidates envelope `{ views: [...], candidates: [...] }`.
+      const specViews = Array.isArray(candidatesRaw) ? undefined : (candidatesRaw as { views?: unknown }).views;
+      if (specViews !== undefined && !Array.isArray(specViews)) {
+        bad(ctx, "invalid --candidates: views must be an array of { name, predicate }");
+        return 2;
+      }
       const reviewsFile = { reviews: Array.isArray(reviewsRaw) ? (reviewsRaw as Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>) : ((reviewsRaw as { reviews?: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }> }).reviews ?? []) };
       const reviewsProblem = reviewsShapeProblem(reviewsFile.reviews);
       if (reviewsProblem) {
@@ -1620,6 +1630,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         reviewedClauses: (reviewsFile.reviews ?? []).map((r) => String(r?.source_clause ?? "")),
         materialIndex,
         schemaProbe,
+        views: specViews as SpecView[] | undefined,
+        snapshotPath: resolve(dbPath),
         specId: `spec_${short(sha256(materialId))}`,
         title: args.flags.title ? String(args.flags.title) : undefined,
         domain: args.flags.domain ? String(args.flags.domain) : undefined,
@@ -2464,6 +2476,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "candidates file must be a JSON array or { candidates: [...] }");
         return 2;
       }
+      const lintViews = Array.isArray(parsed) ? undefined : parsed?.views;
+      if (lintViews !== undefined && !Array.isArray(lintViews)) {
+        bad(ctx, "candidates file views must be an array of { name, predicate }");
+        return 2;
+      }
       let materialText: string | undefined;
       if (args.flags.text !== undefined) {
         const t = String(args.flags.text);
@@ -2521,7 +2538,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         reviewedClauses = list.map((r: any) => String(r?.source_clause ?? ""));
       }
-      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, clausePatternDeclared: patOpt.declared, reviewedClauses });
+      const res = lintCandidates(candidates, {
+        materialText,
+        schema,
+        coverageExempt: covOpt.exempt,
+        clausePattern: patOpt.pattern,
+        clausePatternDeclared: patOpt.declared,
+        reviewedClauses,
+        views: lintViews as SpecView[] | undefined,
+        snapshotPath: args.flags.db ? resolve(lastDbFlag(args.flags.db)) : undefined,
+      });
       // #79 discoverability: a rejected lint ships a pasteable candidate
       // skeleton. The schema otherwise has to be archaeology'd out of
       // examples.generated.ts, whose `vu` shape is the SPEC face
@@ -2883,17 +2909,19 @@ export function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
  * 加的列不在那条原始 DDL 文本里——结构上正确、数据里存在的列会被 P2 误判「列不在 schema」。
  * 探针必须问数据库要真实 schema（PRAGMA 认全部列与类型），DDL 文本只留给红队建空库。
  */
-export function probeOfDb(dbPath: string): { tables: Record<string, string[]> } {
+export function probeOfDb(dbPath: string): { tables: Record<string, string[]>; views: string[] } {
   const db = openDatabaseSync(dbPath, { readOnly: true });
   try {
     const tables: Record<string, string[]> = {};
+    // 1.3 (#80): views stored in the snapshot are listed by name only — never executed, so P2 can name them.
+    const views = (db.prepare("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name").all() as Array<{ name: string }>).map((r) => r.name);
     const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
     for (const { name } of names) {
       const quoted = `"${name.replace(/"/g, '""')}"`;
       const cols = db.prepare(`PRAGMA table_info(${quoted})`).all() as Array<{ name: string }>;
       tables[name] = cols.map((c) => c.name);
     }
-    return { tables };
+    return { tables, views };
   } finally {
     db.close();
   }

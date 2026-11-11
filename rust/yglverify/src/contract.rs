@@ -37,6 +37,12 @@ pub const PRAGMA_SOURCES: [PragmaSpec; 7] = [
     PragmaSpec { name: "user_version", arg: "none", columns: &["user_version"] },
 ];
 
+/// 1.3 (#80): how deep derived tables may nest; same as contract.ts `MAX_DERIVED_DEPTH`.
+pub const MAX_DERIVED_DEPTH: usize = 4;
+
+/// 1.3: a spec view name may not start with these (contract.ts `VIEW_RESERVED_PREFIXES`).
+pub const VIEW_RESERVED_PREFIXES: [&str; 2] = ["sqlite_", "pragma_"];
+
 pub fn pragma_spec(name: &str) -> Option<&'static PragmaSpec> {
     PRAGMA_SOURCES.iter().find(|p| p.name == name)
 }
@@ -370,6 +376,10 @@ pub struct VerifySpec {
     pub schema_fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub materials_sha256: Option<String>,
+    /// 1.3 (#80): spec-declared views `[{ name, predicate }]`, kept raw so `render_views` refuses bad shapes with the
+    /// same messages as engine.ts `renderViews`. Absent (or null) = none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub views: Option<serde_json::Value>,
     pub sealed: Sealed,
 }
 

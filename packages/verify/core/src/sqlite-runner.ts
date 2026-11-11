@@ -5,6 +5,7 @@
  * 源表行数与 schema 指纹供 scope witness 使用（评审 B2）。
  */
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import type { DatabaseSync } from "node:sqlite";
 
@@ -74,8 +75,11 @@ export interface SqliteRunnerOptions {
 export class SqliteRunner implements QueryRunner {
   private readonly db: DatabaseSync;
   private tableCache = new Map<string, number>();
+  private isolated = false;
+  /** 1.3: the snapshot file's sha256 when isolate() ran — `untouched()` proves it unchanged at the end of the run. */
+  private isolatedSha: string | null = null;
 
-  constructor(path: string, opts: SqliteRunnerOptions = {}) {
+  constructor(private readonly path: string, opts: SqliteRunnerOptions = {}) {
     this.db = openDatabaseSync(path, { readOnly: true });
     if (opts.queryOnly !== false) {
       try {
@@ -88,6 +92,49 @@ export class SqliteRunner implements QueryRunner {
 
   close(): void {
     this.db.close();
+  }
+
+  /**
+   * 1.3 (#80, rulings ② ③): derived tables and spec views run in memory only. The snapshot stays opened read-only
+   * (SQLITE_OPEN_READONLY, so its file cannot change); temp storage is forced to memory and checked, each view is
+   * created as a TEMP VIEW, then `query_only` locks the connection again before the first checker. A view name that
+   * equals any object in the snapshot is refused (a temp view would shadow it). Rust sqlite.rs `isolate` is the same.
+   */
+  isolate(views: Array<{ name: string; sql: string }>): void {
+    if (this.isolated) throw new Error("isolate: already isolated");
+    this.isolated = true;
+    this.isolatedSha = this.path === ":memory:" ? null : createHash("sha256").update(readFileSync(this.path)).digest("hex");
+    this.db.exec("PRAGMA query_only = OFF");
+    try {
+      this.db.exec("PRAGMA temp_store = MEMORY");
+      const ts = this.db.prepare("PRAGMA temp_store").get() as { temp_store?: number } | undefined;
+      if (Number(ts?.temp_store) !== 2) throw new Error(`isolation_unavailable: temp_store is ${String(ts?.temp_store)}, not MEMORY — this SQLite build keeps temp objects on disk`);
+      const clash = this.db.prepare("SELECT name FROM main.sqlite_master WHERE lower(name) = lower(?)");
+      for (const v of views) {
+        if (!/^[a-z][a-z0-9_]*$/.test(v.name)) throw new Error(`view_name: ${JSON.stringify(v.name)} is not snake_case`);
+        if (clash.get(v.name)) throw new Error(`view_name: ${v.name} is already an object in the snapshot — a spec view may not shadow it`);
+        try {
+          this.db.exec(`CREATE TEMP VIEW ${v.name} AS ${v.sql}`);
+        } catch (e) {
+          throw new Error(`view ${v.name}: ${(e as Error).message}`);
+        }
+      }
+    } finally {
+      this.db.exec("PRAGMA query_only = ON");
+    }
+  }
+
+  /** 1.3 (ruling ③): after an isolated run the snapshot's sha256 must equal the one taken before the views were
+   *  created; returns the refusal, or null (also null when the run was not isolated). */
+  untouched(): string | null {
+    if (this.isolatedSha === null) return null;
+    const now = createHash("sha256").update(readFileSync(this.path)).digest("hex");
+    return now === this.isolatedSha ? null : `snapshot_changed: sha256 ${this.isolatedSha.slice(0, 12)} before the views, ${now.slice(0, 12)} after the run`;
+  }
+
+  /** 1.3: views stored in the snapshot (main schema), by name — the engine refuses a 1.3 spec that reads one. */
+  snapshotViews(): string[] {
+    return (this.db.prepare("SELECT name FROM main.sqlite_master WHERE type='view' ORDER BY name").all() as Array<{ name: string }>).map((r) => r.name);
   }
 
   query(sql: string): Row[] {

@@ -111,11 +111,34 @@ export interface PragmaSource {
   arg?: string;
 }
 
-/** Predicate source: a snapshot table (bare identifier), or — 1.3 — a whitelisted pragma function. */
-export type PredicateFrom = string | PragmaSource;
+/** 1.3 (#80): a derived table — another predicate, rendered as the subquery `(<its findSql>) AS derived`. The outer
+ *  predicate reads the inner one's output columns (select names, agg aliases). Same mechanical AST, no SQL text. */
+export interface DerivedSource {
+  derived: Predicate;
+}
+
+/** 1.3: how deep derived tables may nest (`{ derived: { from: { derived: … } } }`); both engines refuse deeper. */
+export const MAX_DERIVED_DEPTH = 4;
+
+/** Predicate source: a snapshot table or a spec view (bare identifier), or — 1.3 — a whitelisted pragma function,
+ *  or a derived table. */
+export type PredicateFrom = string | PragmaSource | DerivedSource;
+
+/** 1.3 (#80, ruling ③): a spec-declared view. The engine creates it as a TEMP VIEW (temp_store = MEMORY) on the
+ *  run's read-only connection before the first checker, so it never touches the snapshot file. A view may read
+ *  snapshot tables, pragma sources, derived tables and earlier views; views stored in the snapshot are never run. */
+export interface SpecView {
+  name: string;
+  predicate: Predicate;
+}
+
+/** 1.3: a view name is snake_case and may not shadow SQLite's reserved prefixes. The names a spec declares are its
+ *  frozen vocabulary: `from` may name only a snapshot table or one of them. */
+export const VIEW_NAME = /^[a-z][a-z0-9_]*$/;
+export const VIEW_RESERVED_PREFIXES: readonly string[] = ["sqlite_", "pragma_"];
 
 export interface Predicate {
-  /** 表/视图名（裸标识符）；1.3 起也可以是白名单内的只读 pragma 函数 `{ pragma, arg? }` */
+  /** 表名或 spec 视图名（裸标识符）；1.3 起也可以是白名单内的只读 pragma 函数 `{ pragma, arg? }` 或派生表 `{ derived }` */
   from: PredicateFrom;
   /**
    * 取数列（裸标识符）。审计看不出「取了什么」的 `select *` 一律拒绝；
@@ -392,6 +415,8 @@ export interface VerifySpec {
   schema_fingerprint?: string;
   /** 冻结材料的 sha256（W15）；runVerify 在开 review 前复核 materialsText，不一致 → ERROR */
   materials_sha256?: string;
+  /** 1.3 (#80): spec-declared views, created in memory in this order before the first checker (absent = none). */
+  views?: SpecView[];
   sealed: { review: boolean };
 }
 
