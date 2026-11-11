@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use crate::canonical::canonical_sha256;
 use crate::compare::{compare_values, validate_compare_spec, CompareOutcome};
 use crate::contract::*;
-use crate::predicate::{agg_alias_of, contains_col_ref, first_col_ref_pair, render_predicate, render_scan};
+use crate::predicate::{agg_alias_of, contains_col_ref, contains_op13, first_col_ref_pair, render_predicate, render_scan};
 use crate::sqlite::{column, first_value, Row, SqliteRunner};
 
 const EMPTY_SCHEMA: &str = "sha256:empty";
@@ -992,11 +992,31 @@ pub fn run_verify(spec: &VerifySpec, opts: &VerifyOptions) -> Result<VerifyRepor
         if uses12 {
             return Err("version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2".into());
         }
-    } else if spec.contract_version != CONTRACT_VERSION {
+    } else if !crate::contract::is_known_contract(&spec.contract_version) {
         return Err(format!(
-            "unsupported contract_version {} — this engine implements {CONTRACT_VERSION}",
-            spec.contract_version
+            "unsupported contract_version {} — this engine implements {}",
+            spec.contract_version,
+            crate::contract::KNOWN_CONTRACT_VERSIONS.join(", ")
         ));
+    }
+    // 1.3: glob / not-glob are only admissible in a spec that declares 1.3 (same rule as engine.ts).
+    if spec.contract_version != "1.3" {
+        let uses13 = spec.vu.iter().any(|vu| match &vu.checker {
+            Checker::Sql(c) => c.predicate.as_ref().map(contains_op13).unwrap_or(false),
+            Checker::SqlPair(c) => {
+                c.left.predicate.as_ref().map(contains_op13).unwrap_or(false)
+                    || c.right.predicate.as_ref().map(contains_op13).unwrap_or(false)
+            }
+            Checker::Count(c) => c.predicate.as_ref().map(contains_op13).unwrap_or(false),
+            Checker::Exists(c) => c.predicate.as_ref().map(contains_op13).unwrap_or(false),
+            _ => false,
+        });
+        if uses13 {
+            return Err(format!(
+                "version_shape: this spec declares contract_version {} but uses 1.3-only shapes (glob / not-glob) — bump the spec to 1.3",
+                spec.contract_version
+            ));
+        }
     }
     // N2：sql 文本不支持占位展开（$vu: 只允许出现在 count.from / sql-pair 侧引用）
     for vu in &spec.vu {

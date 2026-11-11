@@ -1,0 +1,257 @@
+{
+  "note": "Contract 1.3 glob / not-glob (#80, #232). Generated from the TS renderer (the reference) and checked against SQLite. engine.ts and the Rust engine must render findSql byte for byte, match the same rows, and refuse the same conditions. Not part of the corpus: adding cases here does not change corpus_version.",
+  "table": "CREATE TABLE entries(path TEXT)",
+  "cases": [
+    {
+      "name": "absolute path",
+      "op": "glob",
+      "pattern": "/*",
+      "value": "/etc/passwd",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '/*')"
+    },
+    {
+      "name": "absolute path: relative entry",
+      "op": "glob",
+      "pattern": "/*",
+      "value": "package/index.js",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '/*')"
+    },
+    {
+      "name": "parent segment at start",
+      "op": "glob",
+      "pattern": "../*",
+      "value": "../escape.txt",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '../*')"
+    },
+    {
+      "name": "parent segment in the middle",
+      "op": "glob",
+      "pattern": "*/../*",
+      "value": "package/../../etc",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*/../*')"
+    },
+    {
+      "name": "parent segment: dots inside a name are not a segment",
+      "op": "glob",
+      "pattern": "*/../*",
+      "value": "package/a..b/c",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*/../*')"
+    },
+    {
+      "name": "parent segment at end",
+      "op": "glob",
+      "pattern": "*/..",
+      "value": "package/..",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*/..')"
+    },
+    {
+      "name": "current segment",
+      "op": "glob",
+      "pattern": "*/./*",
+      "value": "package/./x",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*/./*')"
+    },
+    {
+      "name": "backslash anywhere (GLOB has no escape char)",
+      "op": "glob",
+      "pattern": "*\\*",
+      "value": "package\\win.txt",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*\\*')"
+    },
+    {
+      "name": "backslash: none present",
+      "op": "glob",
+      "pattern": "*\\*",
+      "value": "package/win.txt",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*\\*')"
+    },
+    {
+      "name": "control character",
+      "op": "glob",
+      "pattern": "*[\u0001-\u001f]*",
+      "value": "package/a\nb",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*[\u0001-\u001f]*')"
+    },
+    {
+      "name": "control character: tab",
+      "op": "glob",
+      "pattern": "*[\u0001-\u001f]*",
+      "value": "package/a\tb",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*[\u0001-\u001f]*')"
+    },
+    {
+      "name": "control character: clean name",
+      "op": "glob",
+      "pattern": "*[\u0001-\u001f]*",
+      "value": "package/ab",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*[\u0001-\u001f]*')"
+    },
+    {
+      "name": "empty segment",
+      "op": "glob",
+      "pattern": "*//*",
+      "value": "package//x",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*//*')"
+    },
+    {
+      "name": "single package prefix: inside",
+      "op": "glob",
+      "pattern": "package/*",
+      "value": "package/lib/a.js",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB 'package/*')"
+    },
+    {
+      "name": "single package prefix: outside, found by not-glob",
+      "op": "not-glob",
+      "pattern": "package/*",
+      "value": "other/a.js",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path NOT GLOB 'package/*')"
+    },
+    {
+      "name": "single package prefix: inside, not-glob does not match",
+      "op": "not-glob",
+      "pattern": "package/*",
+      "value": "package/a.js",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path NOT GLOB 'package/*')"
+    },
+    {
+      "name": "case-sensitive (unlike LIKE)",
+      "op": "glob",
+      "pattern": "Package/*",
+      "value": "package/a.js",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB 'Package/*')"
+    },
+    {
+      "name": "? matches exactly one character",
+      "op": "glob",
+      "pattern": "v?.txt",
+      "value": "v1.txt",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB 'v?.txt')"
+    },
+    {
+      "name": "? does not match two",
+      "op": "glob",
+      "pattern": "v?.txt",
+      "value": "v10.txt",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB 'v?.txt')"
+    },
+    {
+      "name": "character class",
+      "op": "glob",
+      "pattern": "*.[jt]s",
+      "value": "a.ts",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*.[jt]s')"
+    },
+    {
+      "name": "negated character class",
+      "op": "glob",
+      "pattern": "*.[^jt]s",
+      "value": "a.ts",
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*.[^jt]s')"
+    },
+    {
+      "name": "quote in the pattern is escaped, not SQL",
+      "op": "glob",
+      "pattern": "it's*",
+      "value": "it's here",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB 'it''s*')"
+    },
+    {
+      "name": "unicode literal",
+      "op": "glob",
+      "pattern": "包/*",
+      "value": "包/说明.md",
+      "match": true,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '包/*')"
+    },
+    {
+      "name": "NULL never matches glob",
+      "op": "glob",
+      "pattern": "*",
+      "value": null,
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path GLOB '*')"
+    },
+    {
+      "name": "NULL never matches not-glob either",
+      "op": "not-glob",
+      "pattern": "x*",
+      "value": null,
+      "match": false,
+      "findSql": "SELECT path FROM entries WHERE (path NOT GLOB 'x*')"
+    }
+  ],
+  "rejects": [
+    {
+      "name": "{col} right-hand side",
+      "condition": {
+        "col": "path",
+        "op": "glob",
+        "value": {
+          "col": "other"
+        }
+      },
+      "error": "glob_rhs_must_be_pattern"
+    },
+    {
+      "name": "empty pattern",
+      "condition": {
+        "col": "path",
+        "op": "glob",
+        "value": ""
+      },
+      "error": "needs a non-empty string pattern"
+    },
+    {
+      "name": "number pattern",
+      "condition": {
+        "col": "path",
+        "op": "not-glob",
+        "value": 7
+      },
+      "error": "needs a non-empty string pattern"
+    },
+    {
+      "name": "array pattern",
+      "condition": {
+        "col": "path",
+        "op": "glob",
+        "value": [
+          "a*"
+        ]
+      },
+      "error": "needs a non-empty string pattern"
+    },
+    {
+      "name": "op outside the closed set is never spliced into SQL",
+      "condition": {
+        "col": "path",
+        "op": "= 1 OR 1=1 --",
+        "value": "x"
+      },
+      "error": "unknown predicate op"
+    }
+  ]
+}

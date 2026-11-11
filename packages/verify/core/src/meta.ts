@@ -34,7 +34,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { CONTRACT_VERSION } from "./contract";
+import { BASELINE_CONTRACT_VERSION } from "./contract";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
@@ -547,6 +547,10 @@ function r5a(repo: string, index: IndexState): MetaRule {
  *  require >=0.107.0 (PR#16: five fleet repos sat on 0.106.0 and could not read
  *  1.2 specs). A missing entry is a named problem, never a pass. */
 const ENGINE_FLOOR: Record<string, string> = { "1.2": "0.107.0" };
+/** 1.3 (#80/#232): the consumer floor keys on the version prepare stamps by default (BASELINE_CONTRACT_VERSION, 1.2),
+ *  not on the newest contract this engine can run. A spec only becomes 1.3 when it uses a 1.3 shape, and an engine
+ *  too old for it refuses that spec by name ("unsupported contract_version 1.3"), so pins need not all rise at once. */
+const FLOOR_CONTRACT = BASELINE_CONTRACT_VERSION;
 const SEMVER_LOOSE = /(\d+)\.(\d+)\.(\d+)/;
 
 function cmpSemver(a: string, b: string): number {
@@ -674,9 +678,9 @@ function r6(repo: string, index: IndexState): MetaRule {
         problems.push(`package.json unreadable: ${e?.message || e}`);
       }
     }
-    const floor = ENGINE_FLOOR[CONTRACT_VERSION];
+    const floor = ENGINE_FLOOR[FLOOR_CONTRACT];
     if (!pinned) problems.push("consumer repo must declare a ygl-trees engine pin in dependencies");
-    else if (!floor) problems.push(`no ENGINE_FLOOR entry for contract ${CONTRACT_VERSION} — maintain the table with the contract`);
+    else if (!floor) problems.push(`no ENGINE_FLOOR entry for contract ${FLOOR_CONTRACT} — maintain the table with the contract`);
     else {
       const m = SEMVER_LOOSE.exec(pinned);
       if (!m) problems.push(`cannot parse engine pin ${JSON.stringify(pinned)} (want a semver like ${floor})`);
@@ -684,7 +688,7 @@ function r6(repo: string, index: IndexState): MetaRule {
         const got = `${m[1]}.${m[2]}.${m[3]}`;
         checks.engine_pin = got;
         checks.engine_floor = floor;
-        if (cmpSemver(got, floor) < 0) problems.push(`engine pin ${got} is below contract ${CONTRACT_VERSION} floor ${floor}`);
+        if (cmpSemver(got, floor) < 0) problems.push(`engine pin ${got} is below contract ${FLOOR_CONTRACT} floor ${floor}`);
       }
     }
     // 6) orchestration drives CLI verbs only

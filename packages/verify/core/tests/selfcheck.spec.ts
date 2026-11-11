@@ -32,7 +32,7 @@ describe("verify self-check（递归验证 L0–L6 单入口）", () => {
       "archives:skip",
     ]);
     expect(res.ok).toBe(true);
-    expect(res.environment.contract_version).toBe("1.2");
+    expect(res.environment.contract_version).toBe("1.3");
     expect(res.environment.corpus_version).toBe("1.2");
   }, 120_000);
 
