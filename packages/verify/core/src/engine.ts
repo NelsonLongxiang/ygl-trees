@@ -13,7 +13,7 @@ import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 import { canonicalStringify } from "./canonical";
-import { CONTRACT_VERSION } from "./contract";
+import { KNOWN_CONTRACT_VERSIONS } from "./contract";
 import { compareValues, ISO_DATETIME_TZ, validateCompareSpec, withOffsetMinutes } from "./compare";
 import type {
   AgentChecker,
@@ -843,6 +843,15 @@ function renderCondition(w: PredicateCondition, fromTable = ""): string {
   const col = ident(w.col, "where column");
   const rhsCol = columnRefOf(w.value);
   switch (w.op) {
+    case "glob":
+    case "not-glob": {
+      // 1.3 (#80/#232): SQLite's own GLOB, so the TS and Rust engines run the same SQL. The value is a literal pattern:
+      // no {col} (a pattern from another column is not a predicate on this row's raw value), no ISO normalisation
+      // (a pattern is not a timestamp). NULL never matches either form, like every other comparison here.
+      if (rhsCol !== null) throw new Error(`glob_rhs_must_be_pattern: predicate where ${col} ${w.op} takes a string pattern, not a {col}`);
+      if (typeof w.value !== "string" || w.value === "") throw new Error(`predicate where ${col} ${w.op} needs a non-empty string pattern`);
+      return `${col} ${w.op === "glob" ? "GLOB" : "NOT GLOB"} '${w.value.replace(/'/g, "''")}'`;
+    }
     case "is null":
     case "is not null":
       // r8 F3：is null 带 value 是构造错误，不能静默忽略（会让人以为在比较值）
@@ -874,7 +883,7 @@ function renderCondition(w: PredicateCondition, fromTable = ""): string {
       // it first; this is the defence-in-depth layer).
       const COMPARE = new Set(["=", "!=", ">", ">=", "<", "<="]);
       if (!COMPARE.has(String(w.op))) {
-        throw new Error(`unknown predicate op ${JSON.stringify(w.op)} — closed set is ${[...COMPARE].join(", ")}, plus in|between|is null|is not null`);
+        throw new Error(`unknown predicate op ${JSON.stringify(w.op)} — closed set is ${[...COMPARE].join(", ")}, plus in|between|is null|is not null|glob|not-glob`);
       }
       if (rhsCol !== null) {
         // 1.2 column-to-column: same table only (a cross-table compare needs an
@@ -1082,17 +1091,34 @@ function uses12Shapes(spec: VerifySpec): boolean {
   });
 }
 
+/** 1.3 shapes (glob / not-glob) anywhere in a predicate: sql, count, exists, and both sql-pair sides; where and scan. */
+export function uses13Shapes(spec: VerifySpec): boolean {
+  const OPS13 = new Set(["glob", "not-glob"]);
+  const walk = (node: unknown): boolean => {
+    if (!node || typeof node !== "object") return false;
+    const n = node as { op?: unknown; conditions?: unknown[]; where?: unknown; scan?: unknown };
+    if (typeof n.op === "string" && OPS13.has(n.op) && !Array.isArray(n.conditions)) return true;
+    return (n.conditions ?? []).some(walk) || walk(n.where) || walk(n.scan);
+  };
+  return (spec.vu ?? []).some((vu) => {
+    const c = vu.checker as { predicate?: unknown; left?: { predicate?: unknown }; right?: { predicate?: unknown } };
+    return walk(c.predicate) || walk(c.left?.predicate) || walk(c.right?.predicate);
+  });
+}
+
 export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<VerifyReport> {
-  // 契约钉版：旧 spec 不会"大概能跑"——形状变了必须升版重出。1.2 起，
-  // 1.1 的 spec 仍可跑（向后兼容），但不得携带 1.2 才冻结的形态。
-  if (spec.contract_version === "1.1") {
-    if (uses12Shapes(spec)) {
-      throw new Error(
-        "version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2"
-      );
-    }
-  } else if (spec.contract_version !== CONTRACT_VERSION) {
-    throw new Error(`unsupported contract_version ${String(spec.contract_version)} — this engine implements ${CONTRACT_VERSION}`);
+  // 契约钉版：旧 spec 不会"大概能跑"——形状变了必须升版重出。旧版 spec 仍可跑（向后兼容），
+  // 但不得携带后来才冻结的形态：1.1 不得用 1.2 形态，1.1/1.2 不得用 1.3 形态（version_shape）。
+  if (!KNOWN_CONTRACT_VERSIONS.includes(String(spec.contract_version))) {
+    throw new Error(`unsupported contract_version ${String(spec.contract_version)} — this engine implements ${KNOWN_CONTRACT_VERSIONS.join(", ")}`);
+  }
+  if (spec.contract_version === "1.1" && uses12Shapes(spec)) {
+    throw new Error(
+      "version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2"
+    );
+  }
+  if (spec.contract_version !== "1.3" && uses13Shapes(spec)) {
+    throw new Error(`version_shape: this spec declares contract_version ${spec.contract_version} but uses 1.3-only shapes (glob / not-glob) — bump the spec to 1.3`);
   }
   const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };
   const now = opts.nowIso ?? (() => new Date().toISOString());

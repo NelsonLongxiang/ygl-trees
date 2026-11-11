@@ -165,10 +165,40 @@ pub fn first_col_ref_pair(pred: &Predicate) -> Option<(String, String)> {
     walk_group(&pred.where_).or_else(|| walk_group(&pred.scan))
 }
 
+/// 1.3: does the predicate use a 1.3-only op (glob / not-glob), in `where` or `scan`?
+pub fn contains_op13(pred: &Predicate) -> bool {
+    fn walk_node(n: &PredicateNode) -> bool {
+        match n {
+            PredicateNode::Condition(c) => c.op == "glob" || c.op == "not-glob",
+            PredicateNode::Group(g) => g.conditions.iter().any(walk_node),
+        }
+    }
+    fn walk_group(g: &Option<PredicateGroup>) -> bool {
+        g.as_ref().map(|g| g.conditions.iter().any(walk_node)).unwrap_or(false)
+    }
+    walk_group(&pred.where_) || walk_group(&pred.scan)
+}
+
 fn render_condition(w: &PredicateCondition, from_table: &str) -> Result<String, String> {
     let col = ident(&w.col, "where column")?;
     let rhs_col = column_ref(&w.value);
     match w.op.as_str() {
+        "glob" | "not-glob" => {
+            // 1.3 (#80/#232): SQLite's own GLOB, same SQL as engine.ts. A literal pattern only: no {col}, no ISO
+            // normalisation. NULL never matches either form.
+            if rhs_col.is_some() {
+                return Err(format!(
+                    "glob_rhs_must_be_pattern: predicate where {col} {} takes a string pattern, not a {{col}}",
+                    w.op
+                ));
+            }
+            let pat = match &w.value {
+                Some(serde_json::Value::String(s)) if !s.is_empty() => s,
+                _ => return Err(format!("predicate where {col} {} needs a non-empty string pattern", w.op)),
+            };
+            let kw = if w.op == "glob" { "GLOB" } else { "NOT GLOB" };
+            Ok(format!("{col} {kw} '{}'", pat.replace('\'', "''")))
+        }
         "is null" | "is not null" => {
             if rhs_col.is_some() {
                 return Err(format!(
@@ -202,6 +232,14 @@ fn render_condition(w: &PredicateCondition, from_table: &str) -> Result<String, 
             Ok(format!("{col} BETWEEN {} AND {}", literal(&arr[0])?, literal(&arr[1])?))
         }
         op => {
+            // Parity with engine.ts (GitHub #19): the closed set is enforced here too, so an op string can never be
+            // spliced into SQL (`"= 1 OR 1=(SELECT …)"`). Before 1.3 the Rust engine interpolated any op.
+            const COMPARE: [&str; 6] = ["=", "!=", ">", ">=", "<", "<="];
+            if !COMPARE.contains(&op) {
+                return Err(format!(
+                    "unknown predicate op {op:?} — closed set is =, !=, >, >=, <, <=, plus in|between|is null|is not null|glob|not-glob"
+                ));
+            }
             if let Some(rhs) = &rhs_col {
                 // 1.2 column-to-column: same table only.
                 let parts: Vec<&str> = rhs.split('.').collect();

@@ -9,6 +9,17 @@ kind: 规范
 > M13-1 的第一步：契约先行。三个 JSON 是唯一接口真相——TS 参考实现、Rust 二进制、黄金语料都只认这三个形状。
 > **冻结条件**：①评审席 direct-30389fca（fdc757f6）与 direct-7510b90f（302cb119）两份意见收敛；②**七型 checker 形状齐**（sql / sql-pair / count / exists / file / command / agent，corpus 每型 ≥1 案例）；③`contract_version` 钉为 `1.0` 并在 CHANGELOG 记。冻结后任何变更走 `contract_version` 自增。
 
+## 0a. 契约 1.3 增量（2026-11-11，属主「批准 1.3 范围」，#80 / #232）
+
+1.3 的范围分三次落地，本节随每次合并补全。完成标准与关单条件见 #80 正文。
+
+- **已落地：谓词 op 新增 `glob` / `not-glob`**（见 §1.5）。渲染成 SQLite 原生 `GLOB` / `NOT GLOB`，TS 与 Rust 两个引擎跑同一句 SQL；不引入正则，也不引入自定义函数。共享向量在 `packages/verify/core/tests/fixtures/predicate-glob.json`，覆盖 #232 的路径语法：绝对路径、`..` 段、反斜杠、控制字符、空段、单一包前缀。两个引擎必须渲染出逐字节相同的 SQL、命中同样的行、拒绝同样的条件。向量不在语料里，所以 `corpus_version` 不变。
+- **版本门**：引擎能跑 1.1 / 1.2 / 1.3。声明 1.1 或 1.2 却用了 `glob` / `not-glob` → 入口 `version_shape` 拒跑，并点名要升到 1.3。未知版本 → `unsupported contract_version`。
+- **prepare 盖最小够用的版本**：spec 用到 1.3 形态才盖 `1.3`，否则照旧盖 `1.2`（`BASELINE_CONTRACT_VERSION`）。所以不用新形态的 spec 与 1.2 引擎冻出的字节一致，旧引擎照样能跑。旧引擎遇到 1.3 spec 会点名拒绝，不会静默跑。
+- **消费仓引擎下限**（meta）：按默认盖的版本（1.2 → 0.107.0）取，不随引擎能跑的最高版本平白抬高。
+- **顺带补齐的 parity**：Rust 引擎此前不检查条件 op 的闭集，会把任意 op 字符串拼进 SQL；TS 在 #19 已经堵上。1.3 起 Rust 同样拒绝，错误文字与 TS 一致。
+- **待落地**：pragma 只读白名单、派生表与视图（仅 `:memory:`）、`verify collect archive` 采集器、"读不到的输入不得按空集判 PASS"。
+
 ## 0. 契约 1.2 增量（2026-10-21）
 
 1.1 之上新增「右值可引用列」两类形态：同表列对列 `{col}`、`count.against` 单值标量（`agg` 必填）。
@@ -99,7 +110,12 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
   }}
 ```
 
-- 条件 op 闭集：`= != > >= < <= in between is null is not null`；`in` 传非空数组，`between` 传两元素数组且**闭区间**（含两端）。
+- 条件 op 闭集：`= != > >= < <= in between is null is not null`，1.3 起加 `glob not-glob`；`in` 传非空数组，`between` 传两元素数组且**闭区间**（含两端）。
+- **`glob` / `not-glob`（1.3）**：值是非空字符串模式，按 SQLite `GLOB` 语义匹配。
+  - 大小写敏感；`*` 匹配任意串，`?` 匹配单个字符，`[...]` / `[^...]` 是字符类。
+  - 没有转义符，反斜杠就是字面字符。
+  - 不接受 `{col}` 右值，不做 ISO 时间规范化；NULL 对两种写法都不命中。
+  - 路径语法检查的写法见 `tests/fixtures/predicate-glob.json`，例如 `*/../*`、`*//*`、``*[<U+0001>-<U+001F>]*``。
 - **元素同型**（r8 F3）：`in` / `between` 的元素必须全为数字或全为字符串——混合类型在 PG 直接报错、在 SQLite 按类型序比较，结论不可移植；`is null` / `is not null` 带 `value` 是构造错误（不得静默忽略）。
 - 组节点 `and|or|not` 可嵌套；`not` 内部按 AND 连接后整体取反。
 - `agg` 支持 `count|sum|min|max`（count 可省略 col）；别名进报告，便于审计，且**别名必须唯一**（自动名 `count_all` 也在唯一性检查内）。

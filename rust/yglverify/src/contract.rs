@@ -6,12 +6,14 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CONTRACT_VERSION: &str = "1.2";
+pub const CONTRACT_VERSION: &str = "1.3";
 
-/// 1.1 specs remain runnable under the 1.2 engine (new shapes are optional and
-/// gated by the version-shape check); anything else is rejected.
+/// Every contract version this engine runs. Older specs stay runnable (newer
+/// shapes are gated by the version-shape check); anything else is rejected.
+pub const KNOWN_CONTRACT_VERSIONS: [&str; 3] = ["1.1", "1.2", "1.3"];
+
 pub fn is_known_contract(version: &str) -> bool {
-    version == CONTRACT_VERSION || version == "1.1"
+    KNOWN_CONTRACT_VERSIONS.contains(&version)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -443,7 +445,8 @@ pub fn parse_spec(json: &str) -> Result<VerifySpec, String> {
     if !is_known_contract(&spec.contract_version) {
         return Err(format!(
             "unsupported contract_version {:?} (this build supports {})",
-            spec.contract_version, CONTRACT_VERSION
+            spec.contract_version,
+            KNOWN_CONTRACT_VERSIONS.join(", ")
         ));
     }
     Ok(spec)

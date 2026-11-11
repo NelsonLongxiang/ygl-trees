@@ -12,8 +12,8 @@
 import { createHash } from "node:crypto";
 
 import { validateCompareSpec } from "./compare";
-import { CONTRACT_VERSION, CORPUS_VERSION } from "./contract";
-import { containsVerbatim, renderPredicate, renderScan } from "./engine";
+import { BASELINE_CONTRACT_VERSION, CORPUS_VERSION } from "./contract";
+import { containsVerbatim, renderPredicate, renderScan, uses13Shapes } from "./engine";
 import type {
   Checker,
   FileChecker,
@@ -405,7 +405,7 @@ export function orphanReviews(candidates: Array<{ source_clause?: unknown }>, re
 }
 
 /** P2 子步骤：谓词里的表/列必须在探针里存在（E5②/E5⑤：sql、sql-pair、count、exists 共用） */
-const PREDICATE_OPS = new Set(["=", "!=", ">", ">=", "<", "<=", "in", "between", "is null", "is not null"]);
+const PREDICATE_OPS = new Set(["=", "!=", ">", ">=", "<", "<=", "in", "between", "is null", "is not null", "glob", "not-glob"]);
 const GROUP_OPS = new Set(["and", "or", "not"]);
 
 /** GitHub #19: the op value is interpolated into SQL, so an unknown op is an
@@ -782,7 +782,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   // same fact, not a new rejection — round only exists for P3 retries.
   const rejectedKeys = new Set<string>();
   const pushDeterministic = (source_clause: string, stage: "P1" | "P2", reason: string) => {
-    const key = `${stage} ${source_clause} ${reason}`;
+    const key = `${stage}\u0000${source_clause}\u0000${reason}`;
     if (rejectedKeys.has(key)) return false;
     rejectedKeys.add(key);
     rejected.push({ source_clause, stage, reason });
@@ -883,7 +883,9 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
 
   const spec: VerifySpec = {
-    contract_version: CONTRACT_VERSION,
+    // 1.3: stamp the lowest version that can hold the spec — 1.3 only when it uses a 1.3 shape (glob / not-glob), so
+    // specs without one keep the bytes a 1.2 engine froze and older engines still run them. Re-stamped below.
+    contract_version: BASELINE_CONTRACT_VERSION,
     spec_id: opts.specId ?? `spec_${materialsSha.slice(0, 12)}`,
     // 条件④：版本由调用方递增（同一材料的第 N 次冻结），缺省 1 只对首次成立
     spec_version: opts.specVersion ?? 1,
@@ -901,6 +903,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     sealed: { review: false },
     materials_sha256: materialsSha,
   } as VerifySpec;
+  if (uses13Shapes(spec)) spec.contract_version = "1.3";
 
   // P4：红队门禁（调用方注入；未注入 = 未验证，不得落 ready）
   if (!opts.redteam) {

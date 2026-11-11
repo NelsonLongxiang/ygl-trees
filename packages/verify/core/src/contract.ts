@@ -6,7 +6,14 @@
  */
 
 // 1.0 冻结 2026-10-19（fdc757f6 持闸放行）；1.1（2026-10-20）新增报告 verifier.signature/signing_scheme/public_key_fingerprint 三个可选字段（封包签名身份）；1.2（2026-10-21）新增两类「右值可引用列」形态：谓词内同表 {col} 列对列、count.against 单值标量（agg 必填）。1.1 spec 在 1.2 引擎下行为不变；声明 1.1 却用 1.2 形态 → 入口拒跑（version_shape）
-export const CONTRACT_VERSION = "1.2";
+// 1.3（2026-11-11，属主「批准 1.3 范围」，#80/#232）：谓词 op 闭集新增 glob / not-glob（SQLite 原生 GLOB，两引擎同一句 SQL）。
+// 1.2 spec 在 1.3 引擎下行为不变；声明 1.1/1.2 却用 1.3 形态 → 入口拒跑（version_shape）。
+export const CONTRACT_VERSION = "1.3";
+/** prepare 在 spec 不用任何 1.3 形态时盖的版本（最小够用）：不用新形态的 spec 字节与 1.2 引擎时一致，
+ *  旧引擎照样能跑；消费仓的引擎下限（meta ENGINE_FLOOR）也按它取，不因引擎升版平白抬高。 */
+export const BASELINE_CONTRACT_VERSION = "1.2";
+/** 本引擎能跑的全部契约版本（旧版 spec 只要不带后来才冻结的形态就照跑）。 */
+export const KNOWN_CONTRACT_VERSIONS: readonly string[] = ["1.1", "1.2", "1.3"];
 /** 语料版本（与 corpus/manifest.json 同步；prepare/self-check/报告都用它）。升版=冻结快照重铸。 */
 export const CORPUS_VERSION = "1.2";
 
@@ -44,7 +51,10 @@ export type PredicateOp =
   | "in"
   | "between"
   | "is null"
-  | "is not null";
+  | "is not null"
+  /** 1.3：SQLite GLOB 模式匹配（大小写敏感，* ? [...] 字符类）；值为非空字符串模式。 */
+  | "glob"
+  | "not-glob";
 
 /** 1.2：右值引用同一谓词表的一列（列对列比较；只允许同表——跨表要 join key，属 sql-pair）。 */
 export interface ColumnRef {
