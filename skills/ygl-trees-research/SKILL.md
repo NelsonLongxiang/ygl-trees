@@ -71,6 +71,13 @@ ygl-trees rel add claim:<old> claim:<new> --rel superseded-by  # 旧断言被新
 ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（0.84：校准预测 ≥60% 判据的测量面）
 ```
 
+同轮跟进（#233；什么时候动见 lifecycle 技能）：
+
+| 刚做完 | 同轮跟进 |
+|---|---|
+| `research claim add "<断言>"` | `research claim link <claimId> <evidenceId>`。没挂证据的断言只是待验证的假设 |
+| `research claim resolve <claimId> --as supported` | `produce report` 重新生成。报告是状态的投影，不是手写的副本 |
+
 - 原文已存储时，新增引文必须在 `sources.content` 中出现：两边仅折叠连续空白（含换行）并 trim，再精确子串匹配；不做 NFKC、大小写或语义匹配。失败 rc=1、单 JSON error 点名 source id、零证据/影子/新增事件写入。转述不是已核引文；翻译或改写必须显式 `--unverified`，返回 `quote_verified:false`，新增 `evidence.add` 事件记 `unverified:true`。`--force` 不绕过引文检查。
 - 匹配成功的新增回执含 `quote_verified:true`；原文为空允许写入但为 false，不自动抓取。批量逐行同规则，任一不符整批回滚并点名物理行号，成功 rows 分别带该字段；全局 `--unverified` 显式绕过本次批量，false 不绕过。
 - 已存在证据保持幂等且不追溯重验：重复回执只读创建事件里已有 `quote_verified`（旧事件未知为 false），不重新检查后改的来源、不改存量；本次显式绕过始终回 false。

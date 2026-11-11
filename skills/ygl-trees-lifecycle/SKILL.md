@@ -8,6 +8,8 @@ description: >-
   漂移反模式。机制细节见各专职技能，本技能只回答「什么时候」。
   触发词：更新时机、什么时候更新、何时解锁、何时该动、何时挂、维护、节奏、cadence、
   keep in sync、同步、漂移、stale、脏索引、收口、会话结束、下次做什么、lifecycle。
+  事件触发（#233）：刚 unlock、刚解锁、刚 link、刚加节点、刚删节点、导入后、node import、
+  会话开始、会话结束、next_actions、node_evidence、没挂证据。
 version: 0.118.0
 tags: ygl-trees,lifecycle,cadence,maintenance,timing
 ---
@@ -36,7 +38,8 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 
 | 触发事件 | 立刻做 | 别做 |
 |---|---|---|
-| 一个里程碑/能力**真正达成**（有可指认的证据） | `node unlock <key>` + `rel add node:<key> evidence:<id> --rel evidenced-by`（不带 `--rel` 会落成弱关联 `related`） | 只在心里认为"算做到了"，不 unlock |
+| 一个里程碑/能力**真正达成**（有可指认的证据） | `node unlock <key>` + `rel add node:<key> evidence:<id> --rel evidenced-by`（不带 `--rel` 会落成弱关联 `related`）。节点背后什么都没有时，unlock 回执的 `next_actions` 会点名这一步 | 只在心里认为"算做到了"，不 unlock |
+| **导入**了一棵整体模型（`node import`；从 `db export` 的备份整库恢复同理） | `node import` 看回执里的 `unlocked_without_evidence`；整库恢复之后跑 `doctor`，看 `node_evidence`。找得到依据，就同轮 `rel add node:<key> source:<id> --rel evidenced-by`；找不到，就 `node lock <key>` 回到未解锁，等有证据再 unlock。确实要保留解锁态，就 `kb add` 一条「未核实模型」说明，并挂到根节点 | 把导入带来的解锁态当成已经验证过的事实 |
 | 发现领域里还有**未建模的子能力** | `node add <child>` + `node link <parent> <child>`（先判定必检 or `--optional`） | 用 payload/备注描述层级关系（关系必须进 `node_edges`） |
 | 发现两条路线**互斥** | `node link a b --rel excludes --mode NOT`（或同父 XOR） | 靠文档写"这两个不能同时选" |
 | 出现**语义门槛**（"做到 X 才算过"，无客观阈值） | `node cond add <key> --name <cond> --op eval --value "<判定问题>"`（判据题型见 eval-gates 技能）；加完同轮 `node index`（改条件会标脏索引） | 把主观判断硬凑成 `kind=level --value 3` |
@@ -80,7 +83,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | 时机 | 必做 |
 |---|---|
 | **每轮会话开场** | `agent brief`（我在哪、有什么、下一步）→ 有 `next_actions` 就照做 |
-| **每轮会话收口前** | `doctor`（共 18 项检查，含 `task_hygiene` / `job_health`）；有脏索引/重复/孤儿按其提示修（`doctor --fix` 可安全修脏索引） |
+| **每轮会话收口前** | `doctor`（含 `node_evidence` / `task_hygiene` / `job_health`）；有脏索引、重复、孤儿、没挂证据的解锁节点，按它的提示修（`doctor --fix` 可安全修脏索引） |
 | **每周**（或巡检时） | `task stale --all`：停滞的 doing（默认 ≥14 天）推进或取消，挂账的 todo（≥30 天）认领或取消；`job list` 里 failing / overdue / manual 逐条有处置 |
 | **加删节点/删边/改条件后**（同一轮内） | `node index` + `node validate`——别把脏索引留给下一轮 |
 | **解锁任何节点后** | 同轮 `rel` 挂依据；否则验尸时无法回答"凭什么解锁" |
@@ -89,6 +92,23 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | **长时间未动（跨多轮）** | `agent brief` + `doctor` 先对账，再决定动不动树（避免基于过期认知改结构） |
 | **周期性**（可选） | `job add ... --every <min>` + `job tick`（cron 驱动）；`db export <file.sql>` 做完整备份 |
 | **结构性风险动作前**（`node import --merge`、大批节点改写、`db sql` 手改） | 先 `db export <file.sql>` 备份（恢复：`sqlite3 new.db < file.sql`）——`node import --merge` 按 (tree,key) 覆盖已有节点 |
+
+### 会话边界钩子（#233）
+
+「开场 brief、收口 doctor」靠 agent 自己记，最容易漏。可以交给宿主的钩子去做。Claude Code 的写法（`.claude/settings.json`）：
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "ygl-trees agent brief" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "ygl-trees doctor --json > \"$HOME/.ygl-doctor-last.json\" 2>&1 || true" }] }]
+  }
+}
+```
+
+- SessionStart 的输出会进入会话上下文，`next_actions` 一开场就能看到，包括没挂证据的解锁节点和脏索引。
+- SessionEnd 的输出 agent 看不到，所以落盘留档。下次开场的 brief 会再点名还没处理的项。
+- 别的宿主照同样的两个时刻挂钩子。DSH 用它自己的会话事件。
 
 ## 4. 该不该动：五个自问
 
