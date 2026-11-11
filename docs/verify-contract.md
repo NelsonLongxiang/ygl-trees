@@ -18,7 +18,14 @@ kind: 规范
 - **prepare 盖最小够用的版本**：spec 用到 1.3 形态才盖 `1.3`，否则照旧盖 `1.2`（`BASELINE_CONTRACT_VERSION`）。所以不用新形态的 spec 与 1.2 引擎冻出的字节一致，旧引擎照样能跑。旧引擎遇到 1.3 spec 会点名拒绝，不会静默跑。
 - **消费仓引擎下限**（meta）：按默认盖的版本（1.2 → 0.107.0）取，不随引擎能跑的最高版本平白抬高。
 - **顺带补齐的 parity**：Rust 引擎此前不检查条件 op 的闭集，会把任意 op 字符串拼进 SQL；TS 在 #19 已经堵上。1.3 起 Rust 同样拒绝，错误文字与 TS 一致。
-- **待落地**：pragma 只读白名单、派生表与视图（仅 `:memory:`）、`verify collect archive` 采集器、"读不到的输入不得按空集判 PASS"。
+- **已落地：只读 pragma 来源**（第二部分 a）。`predicate.from` 可以写成 `{ "pragma": "<名>", "arg": "<表>" }`，渲染成 `pragma_<名>('<表>')`。
+  - 白名单：`table_info`、`table_xinfo`、`index_list`、`foreign_key_list`（`arg` 是快照里的表）；`index_info`、`index_xinfo`（`arg` 是索引名）；`user_version`（不带 `arg`）。各自的列固定，写在契约常量 `PRAGMA_SOURCES` 里，两个引擎、prepare、run 共用这一张表。
+  - 白名单外的 pragma（`writable_schema`、`foreign_keys` 等）在 prepare P2 和渲染器两处都拒绝。把 pragma 写成表名（`from: "pragma_x"`）同样拒绝：SQLite 会把 `pragma_x` 当作表值函数，这条路一开就绕过了白名单。
+  - prepare 用快照探针核对 `arg` 指向的表确实存在，并按该 pragma 的固定列核对 `select`、`where` 里用到的列。
+  - witness 统计 pragma 自己的行数（如 `pragma_table_info('orders')` 3 行），所以结构检查不会被零扫描规则降级。
+  - 这些 pragma 返回的列里，有五个是 SQLite 不允许裸写的保留字：`from`、`notnull`、`table`、`to`、`unique`（契约常量 `QUOTED_IDENTS`）。渲染器只给这五个加双引号，其余标识符照旧裸写。1.3 之前用到这五个名字的判据本来就会报错，所以没有哪个能跑的判据会因此改变渲染结果。
+  - 共享向量：`packages/verify/core/tests/fixtures/predicate-pragma.json`（12 例、9 条拒绝）。
+- **待落地**：派生表与视图（仅 `:memory:`），归档采集器，以及"读不到的输入不得按空集判 PASS"。
 
 ## 0. 契约 1.2 增量（2026-10-21）
 
@@ -130,7 +137,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
 - 渲染结果 `rendered.find_sql` / `rendered.scope_sql` 写进报告 evidence，与 witness 对账。
 - `authored:"mechanical"` 的手写 sql 直接 ERROR（机械 spec 只能用 predicate）；手写 sql 形态必须自带 `scope_sql` 或 WHERE。
 
-### Contract 1.2 下的元数据采集替代路径
+### Contract 1.2 下的元数据采集替代路径（1.3 起可直接用 pragma 来源）
 
 需要检查 SQLite 列存在性，而 `predicate.from` 不能表达 `pragma_table_info(...)` 时，可先对静止、完整的源快照只读采集，将结果落成独立 evidence SQLite 的普通表，再用现有 count/exists/sql 谓词验证。可运行示例及 PASS/FAIL 归档回归见 [schema snapshot recipe](../examples/verify-schema-snapshot/README.md)。报告的快照 SHA 指采集后的证据库；原源库 SHA 保留在 `collection_source` 中，两者不可混淆。这个替代路径不开放手写 SQL、不执行源 view，不等于 #80 的契约 1.3 扩展已完成。
 

@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 
 import { validateCompareSpec } from "./compare";
-import { BASELINE_CONTRACT_VERSION, CORPUS_VERSION } from "./contract";
+import { BASELINE_CONTRACT_VERSION, CORPUS_VERSION, PRAGMA_SOURCES } from "./contract";
 import { containsVerbatim, renderPredicate, renderScan, uses13Shapes } from "./engine";
 import type {
   Checker,
@@ -434,8 +434,26 @@ function validatePredicateOps(n: unknown): string | null {
 }
 
 function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "predicate"): string | null {
-  const table = pred.from;
-  const cols = schema.tables[table];
+  // 1.3 (#80): a pragma source has the whitelist's fixed columns; its arg must name a probed table (index names are
+  // not probed, so index_info / index_xinfo args are checked only for shape — an unknown index yields 0 rows, which
+  // the zero-scan rule turns into NEEDS-MATERIAL, never a PASS).
+  let table: string;
+  let cols: string[] | undefined;
+  if (typeof pred.from === "string") {
+    table = pred.from;
+    cols = schema.tables[table];
+  } else if (pred.from && typeof pred.from === "object" && typeof (pred.from as { pragma?: unknown }).pragma === "string") {
+    const { pragma, arg } = pred.from as { pragma: string; arg?: string };
+    const spec = Object.prototype.hasOwnProperty.call(PRAGMA_SOURCES, pragma) ? PRAGMA_SOURCES[pragma] : undefined;
+    if (!spec) return `${label}.from: pragma_not_allowed ${JSON.stringify(pragma)} — the read-only whitelist is ${Object.keys(PRAGMA_SOURCES).join(", ")}`;
+    if (spec.arg === "table" && (typeof arg !== "string" || !schema.tables[arg])) {
+      return `${label}.from: pragma ${pragma} arg ${JSON.stringify(arg)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
+    }
+    table = `pragma_${pragma}`;
+    cols = [...spec.columns];
+  } else {
+    return `${label}.from must be a table name or a { pragma, arg } source`;
+  }
   const opErr = validatePredicateOps(pred.where as unknown);
   if (opErr) return `${label}: ${opErr}`;
   if (pred.scan) {

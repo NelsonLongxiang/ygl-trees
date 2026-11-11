@@ -16,6 +16,31 @@ pub fn is_known_contract(version: &str) -> bool {
     KNOWN_CONTRACT_VERSIONS.contains(&version)
 }
 
+/// 1.3: identifiers SQLite refuses unquoted that the pragma sources return. Same list as contract.ts.
+pub const QUOTED_IDENTS: [&str; 5] = ["from", "notnull", "table", "to", "unique"];
+
+/// 1.3 (#80): one whitelisted read-only pragma source; same table, same order as contract.ts `PRAGMA_SOURCES`.
+pub struct PragmaSpec {
+    pub name: &'static str,
+    /// "table" | "index" | "none"
+    pub arg: &'static str,
+    pub columns: &'static [&'static str],
+}
+
+pub const PRAGMA_SOURCES: [PragmaSpec; 7] = [
+    PragmaSpec { name: "table_info", arg: "table", columns: &["cid", "name", "type", "notnull", "dflt_value", "pk"] },
+    PragmaSpec { name: "table_xinfo", arg: "table", columns: &["cid", "name", "type", "notnull", "dflt_value", "pk", "hidden"] },
+    PragmaSpec { name: "index_list", arg: "table", columns: &["seq", "name", "unique", "origin", "partial"] },
+    PragmaSpec { name: "index_info", arg: "index", columns: &["seqno", "cid", "name"] },
+    PragmaSpec { name: "index_xinfo", arg: "index", columns: &["seqno", "cid", "name", "desc", "coll", "key"] },
+    PragmaSpec { name: "foreign_key_list", arg: "table", columns: &["id", "seq", "table", "from", "to", "on_update", "on_delete", "match"] },
+    PragmaSpec { name: "user_version", arg: "none", columns: &["user_version"] },
+];
+
+pub fn pragma_spec(name: &str) -> Option<&'static PragmaSpec> {
+    PRAGMA_SOURCES.iter().find(|p| p.name == name)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Verdict {
     #[serde(rename = "PASS")]
@@ -95,7 +120,9 @@ pub struct PredicateAgg {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Predicate {
-    pub from: String,
+    /// A table name (JSON string), or — 1.3 — a pragma source `{ "pragma": .., "arg": .. }`. Kept as a raw value so the
+    /// renderer can refuse every other shape with the same message as engine.ts.
+    pub from: serde_json::Value,
     #[serde(default)]
     pub select: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -13,7 +13,7 @@ import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 import { canonicalStringify } from "./canonical";
-import { KNOWN_CONTRACT_VERSIONS } from "./contract";
+import { KNOWN_CONTRACT_VERSIONS, PRAGMA_SOURCES, QUOTED_IDENTS } from "./contract";
 import { compareValues, ISO_DATETIME_TZ, validateCompareSpec, withOffsetMinutes } from "./compare";
 import type {
   AgentChecker,
@@ -114,7 +114,8 @@ function stripSqlComments(sql: string): string {
 
 export function extractTables(sql: string): string[] {
   const out = new Set<string>();
-  const re = /\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)/gi;
+  // 1.3: a whitelisted pragma source is kept whole (`pragma_table_info('orders')`) so its rows can be counted.
+  const re = /\b(?:from|join)\s+(pragma_[a-z_]+\('[A-Za-z_][A-Za-z0-9_]*'\)|[A-Za-z_][A-Za-z0-9_]*)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(sql))) out.add(m[1]);
   return [...out];
@@ -381,7 +382,7 @@ async function runFactChecker(
         const tableSides: string[] = [];
         for (const side of [c.left, c.right]) {
           if ("table" in side) tableSides.push(side.table);
-          else if ("predicate" in side && side.predicate) tableSides.push(side.predicate.from);
+          else if ("predicate" in side && side.predicate) tableSides.push(renderFrom(side.predicate.from).sql);
         }
         return tableSides.map((t) => {
           try {
@@ -799,7 +800,8 @@ function ident(name: string, what: string): string {
   if (parts.length > 2 || parts.some((x) => !IDENT.test(x))) {
     throw new Error(`predicate ${what} must be a bare identifier (optionally table-qualified), got ${JSON.stringify(name)}`);
   }
-  return parts.join(".");
+  // 1.3: the five reserved words a pragma source returns are quoted; every other identifier renders bare as before.
+  return parts.map((x) => (QUOTED_IDENTS.includes(x) ? `"${x}"` : x)).join(".");
 }
 
 /**
@@ -934,10 +936,54 @@ export interface RenderedPredicate {
  */
 /** 谓词渲染的公共部分：from 与 where（find/scope/count/exists 共用，保证同源） */
 export function renderScan(pred: Predicate): { from: string; whereSql: string; scanSql: string } {
-  const from = ident(pred.from, "from");
-  const scanSql = renderWhere(pred.scan, pred.from);
-  const whereSql = renderWhere(andGroups(pred.scan, pred.where), pred.from);
+  const { sql: from, table } = renderFrom(pred.from);
+  const scanSql = renderWhere(pred.scan, table);
+  const whereSql = renderWhere(andGroups(pred.scan, pred.where), table);
   return { from, whereSql, scanSql };
+}
+
+/** A whitelisted pragma source as SQL, or null when the text is not one (`pragma_table_info('orders')`,
+ *  `pragma_user_version`). Used by the renderer, by source extraction and by the runner's row count, so the three
+ *  agree on exactly one closed form. */
+export function pragmaSourceSql(name: string, arg: unknown): string | null {
+  const spec = Object.prototype.hasOwnProperty.call(PRAGMA_SOURCES, name) ? PRAGMA_SOURCES[name] : undefined;
+  if (!spec) return null;
+  if (spec.arg === "none") return arg === undefined ? `pragma_${name}` : null;
+  if (typeof arg !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(arg)) return null;
+  return `pragma_${name}('${arg}')`;
+}
+
+/** Parse rendered pragma source text back to its closed form (for row counts); null when it is not one. */
+export function parsePragmaSource(text: string): string | null {
+  const m = /^pragma_([a-z_]+)(?:\('([A-Za-z_][A-Za-z0-9_]*)'\))?$/.exec(text);
+  return m ? pragmaSourceSql(m[1], m[2]) : null;
+}
+
+/** 1.3 (#80): the predicate source — a bare table name, or a whitelisted read-only pragma function. `table` is the
+ *  same-table qualifier for {col} references; a pragma source has none. Anything else is refused here too (defence
+ *  in depth behind prepare's P2), so no other text can reach FROM. */
+export function renderFrom(from: unknown): { sql: string; table: string } {
+  if (typeof from === "string") {
+    // SQLite resolves `pragma_<name>` as a table-valued function, so a bare `from: "pragma_foreign_keys"` would read
+    // a pragma outside the whitelist. Pragma sources go through { pragma, arg } only.
+    if (/^pragma_/i.test(from)) throw new Error(`pragma_not_allowed: ${JSON.stringify(from)} as a table name — write a pragma source as { pragma, arg }`);
+    return { sql: ident(from, "from"), table: from };
+  }
+  if (from && typeof from === "object" && !Array.isArray(from) && typeof (from as { pragma?: unknown }).pragma === "string") {
+    const { pragma, arg } = from as { pragma: string; arg?: unknown };
+    const keys = Object.keys(from as object).filter((k) => k !== "pragma" && k !== "arg");
+    if (keys.length) throw new Error(`pragma source takes only { pragma, arg }, got ${keys.join(", ")}`);
+    if (!Object.prototype.hasOwnProperty.call(PRAGMA_SOURCES, pragma)) {
+      throw new Error(`pragma_not_allowed: ${JSON.stringify(pragma)} — the read-only whitelist is ${Object.keys(PRAGMA_SOURCES).join(", ")}`);
+    }
+    const sql = pragmaSourceSql(pragma, arg);
+    if (sql === null) {
+      const need = PRAGMA_SOURCES[pragma].arg;
+      throw new Error(need === "none" ? `pragma ${pragma} takes no arg` : `pragma ${pragma} needs arg: a bare identifier naming a ${need}`);
+    }
+    return { sql, table: "" };
+  }
+  throw new Error("predicate.from must be a table name or a { pragma, arg } source (contract 1.3)");
 }
 
 /** 域过滤 AND 判据 —— 两侧共用同一渲染器，保证 scope 与 find 的差异只在判据本身 */
@@ -1094,6 +1140,8 @@ function uses12Shapes(spec: VerifySpec): boolean {
 /** 1.3 shapes (glob / not-glob) anywhere in a predicate: sql, count, exists, and both sql-pair sides; where and scan. */
 export function uses13Shapes(spec: VerifySpec): boolean {
   const OPS13 = new Set(["glob", "not-glob"]);
+  const pragmaFrom = (p: unknown): boolean =>
+    !!p && typeof p === "object" && (p as { from?: unknown }).from !== undefined && typeof (p as { from?: unknown }).from !== "string";
   const walk = (node: unknown): boolean => {
     if (!node || typeof node !== "object") return false;
     const n = node as { op?: unknown; conditions?: unknown[]; where?: unknown; scan?: unknown };
@@ -1102,7 +1150,7 @@ export function uses13Shapes(spec: VerifySpec): boolean {
   };
   return (spec.vu ?? []).some((vu) => {
     const c = vu.checker as { predicate?: unknown; left?: { predicate?: unknown }; right?: { predicate?: unknown } };
-    return walk(c.predicate) || walk(c.left?.predicate) || walk(c.right?.predicate);
+    return [c.predicate, c.left?.predicate, c.right?.predicate].some((p) => walk(p) || pragmaFrom(p));
   });
 }
 
@@ -1118,7 +1166,7 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
     );
   }
   if (spec.contract_version !== "1.3" && uses13Shapes(spec)) {
-    throw new Error(`version_shape: this spec declares contract_version ${spec.contract_version} but uses 1.3-only shapes (glob / not-glob) — bump the spec to 1.3`);
+    throw new Error(`version_shape: this spec declares contract_version ${spec.contract_version} but uses 1.3-only shapes (glob / not-glob / pragma source) — bump the spec to 1.3`);
   }
   const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };
   const now = opts.nowIso ?? (() => new Date().toISOString());

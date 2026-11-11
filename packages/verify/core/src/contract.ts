@@ -86,9 +86,37 @@ export interface PredicateAgg {
   as?: string;
 }
 
+/** 1.3 (#80, owner 2026-11-11): read-only pragma table functions as a predicate source. The whitelist and each
+ *  function's fixed columns are part of the contract — both engines, prepare and run use this one table.
+ *  `arg` names a snapshot table (an index for index_info / index_xinfo); user_version takes none. */
+export const PRAGMA_SOURCES: Readonly<Record<string, { arg: "table" | "index" | "none"; columns: readonly string[] }>> = {
+  table_info: { arg: "table", columns: ["cid", "name", "type", "notnull", "dflt_value", "pk"] },
+  table_xinfo: { arg: "table", columns: ["cid", "name", "type", "notnull", "dflt_value", "pk", "hidden"] },
+  index_list: { arg: "table", columns: ["seq", "name", "unique", "origin", "partial"] },
+  index_info: { arg: "index", columns: ["seqno", "cid", "name"] },
+  index_xinfo: { arg: "index", columns: ["seqno", "cid", "name", "desc", "coll", "key"] },
+  foreign_key_list: { arg: "table", columns: ["id", "seq", "table", "from", "to", "on_update", "on_delete", "match"] },
+  user_version: { arg: "none", columns: ["user_version"] },
+};
+
+/** 1.3: identifiers SQLite refuses unquoted that the pragma sources return (`foreign_key_list.table/from/to`,
+ *  `index_list.unique`, `table_info.notnull`). The renderer double-quotes exactly these; any other identifier stays
+ *  bare. A spec that used one of them before 1.3 errored, so no working spec renders differently. Measured on SQLite:
+ *  `match`, `desc`, `key` are accepted bare and stay bare. */
+export const QUOTED_IDENTS: readonly string[] = ["from", "notnull", "table", "to", "unique"];
+
+/** 1.3: `{ pragma, arg? }` — rendered as `pragma_<name>('<arg>')` (user_version: `pragma_user_version`). */
+export interface PragmaSource {
+  pragma: string;
+  arg?: string;
+}
+
+/** Predicate source: a snapshot table (bare identifier), or — 1.3 — a whitelisted pragma function. */
+export type PredicateFrom = string | PragmaSource;
+
 export interface Predicate {
-  /** 表/视图名（裸标识符） */
-  from: string;
+  /** 表/视图名（裸标识符）；1.3 起也可以是白名单内的只读 pragma 函数 `{ pragma, arg? }` */
+  from: PredicateFrom;
   /**
    * 取数列（裸标识符）。审计看不出「取了什么」的 `select *` 一律拒绝；
    * 纯聚合查询（agg 非空）时 select 必须为空数组——列与聚合混排需要 GROUP BY，
