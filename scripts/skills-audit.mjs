@@ -9,9 +9,10 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."); // #267: fileURLToPath decodes %XX
 const argv = process.argv.slice(2);
 const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
 const bin = path.resolve(repo, flag("--bin") || "dist/bundle/bin.cjs");
