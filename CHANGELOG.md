@@ -2,6 +2,14 @@
 
 用户可见行为变化：
 
+- **生命周期规则出现在动作发生的那一刻**（#233）：此前「解锁要同轮挂证据」只写在 lifecycle 技能里，一次只读审计发现 267 个已解锁节点里有 167 个背后什么都没有，doctor 却全绿。现在：
+  - `node unlock` 的节点如果没有任何证据、断言、来源、产出或 kb 关联，回执会点名下一步：`--json` 的 `next_actions` 字段，或人类输出的 `next:` 行，内容是 `rel add 'node:<tree>/<key>' evidence:<evidenceId> --rel evidenced-by`。任务、检索式、技能或别的节点不算证据。
+  - `node add`、`node link`、`node rm` 之后索引变脏时，同样点名 `node index` 和 `node validate`。
+  - `node import` 的回执新增 `unlocked_without_evidence`：目标树里已解锁、背后没有证据的节点数。
+  - `doctor` 新增 `node_evidence` 检查（warn）：按树列出这类节点的数量，`--json` 还带前 20 个 `tree/key`。
+  - `agent brief` 的 `next_actions` 按树点名这类节点，最多 3 棵树。
+  - 以上都只新增字段，原有字段和退出码不变。
+- **技能**：techtree 和 research 技能为 `node unlock/add/link/unlink/rm/import`、`claim add`、`claim resolve` 写明同轮跟进。lifecycle 技能新增「导入」一行，以及会话开始跑 `agent brief`、会话结束跑 `doctor` 的钩子写法；它的描述也改为按事件触发（刚 unlock、导入后、会话结束……）。
 - **MCP \`read\` 的显式 \`project\` 不再丢失**（Refs #260）：\`agent/brief\`、\`project/show\`（\`project\` 与 \`name\` 同义，两者同给且不一致 rc=2）、\`research/source-show\`、\`evidence-show\`、\`claim-show\`、\`claim-evaluate\`、\`produce/report-show\` 七条路由把显式 \`project\` 透传为 \`-p\`，显式指定优先于会话已选项目；未知项目 rc=1 \`project not found\`；这些读不改变会话选择。\`tools/list\` 里 \`project\` 的描述改为 "explicit project (overrides the session selection)"。新增扫表测试：在双项目工作区、无会话选择下带 \`project\` 调遍全部读路由，任何路由返回 \`ambiguous project\` 即红——以后新加的项目域读路由漏透传会被当场抓住。
 
 门禁与文档（不影响运行时）：

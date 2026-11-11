@@ -25,11 +25,15 @@ import { dirname, join } from "node:path";
 import { orphanRelations } from "./rels";
 import { migrateIndexNames } from "./pgsync";
 import { updateHintFromCache } from "./update-check";
+import { UNLOCKED_WITHOUT_EVIDENCE_SQL, groupByTree } from "../../../techtree/model/src/evidence-gap";
 
 interface Check {
   name: string;
   status: "pass" | "warn" | "fail" | "skip";
   detail: string;
+  /** node_evidence (#233), --json only: count per tree and the first keys. */
+  trees?: Array<{ tree: string; count: number }>;
+  keys?: string[];
 }
 
 /** Documentation drift audit (#85): skills/<name>/SKILL.md frontmatter version
@@ -139,7 +143,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       checks.push({ name: "pg_connectivity", status: connected ? "pass" : "fail", detail: connected ? "connected (" + latencyMs + "ms) → " + redacted : "cannot connect: " + errDetail + " (" + redacted + ")" });
       checks.push({ name: "dialect", status: "pass", detail: "pg (B7 PG-direct mode)" });
-      for (const n of ["schema_version", "index_freshness", "fts_sync", "orphans", "relation_orphans", "config", "stale_lock", "eval_envelopes", "plugin_profile", "write_integrity", "update_hint", "task_hygiene", "job_health"]) {
+      for (const n of ["schema_version", "index_freshness", "fts_sync", "orphans", "relation_orphans", "config", "stale_lock", "eval_envelopes", "plugin_profile", "write_integrity", "update_hint", "task_hygiene", "job_health", "node_evidence"]) {
         checks.push({ name: n, status: "warn" as const, detail: "N/A in PG mode — SQLite workspace check (run without YGL_DB_URL)" });
       }
       const failed = checks.filter((c) => c.status === "fail").length;
@@ -172,6 +176,24 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ? "all tree indexes clean"
       : `${dirtyTrees.length} tree(s) with dirty index: ${dirtyTrees.map((t: any) => t.name).join(", ")} — run: ygl-trees node index`,
   });
+
+  // ── 2a. Unlocked nodes with nothing behind them (#233) ──
+  // A read-only audit found 167 of 267 unlocked nodes with no evidence, claim, source, artifact or kb relation, while
+  // doctor passed. Warn with the count per tree; --json also lists the first keys so a caller can attach evidence.
+  {
+    const gaps = groupByTree(db.all(UNLOCKED_WITHOUT_EVIDENCE_SQL) as Array<{ tree: string; key: string }>);
+    const total = gaps.reduce((n, g) => n + g.count, 0);
+    const KEYS = 20;
+    const keys = gaps.flatMap((g) => g.keys.map((k) => `${g.tree}/${k}`)).slice(0, KEYS);
+    checks.push({
+      name: "node_evidence",
+      status: total ? "warn" : "pass",
+      detail: total
+        ? `${total} unlocked node(s) without evidence: ${gaps.slice(0, 5).map((g) => `${g.tree} ${g.count}`).join(", ")}${gaps.length > 5 ? ` … +${gaps.length - 5} tree(s)` : ""} — rel add node:<tree>/<key> evidence:<id>, or note the tree as an unverified model`
+        : "every unlocked node has evidence, a claim, a source, an artifact or a kb note",
+      ...(total ? { trees: gaps.map((g) => ({ tree: g.tree, count: g.count })), keys } : {}),
+    });
+  }
 
   // ── 2b. Selection hygiene (R16.2) ──
   // The global current_project pointer is a migration fallback now; a

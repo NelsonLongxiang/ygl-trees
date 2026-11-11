@@ -8,6 +8,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { clip } from "../../../core/text/src/text";
 import { resolveProject, ambiguousProject, projectCount, projectSample, sessionId } from "../../../core/database/src/selection";
+import { UNLOCKED_WITHOUT_EVIDENCE_SQL, attachEvidenceAction, groupByTree } from "../../../techtree/model/src/evidence-gap";
 
 /** Build the brief payload (where am I / what exists / what next).
  *  Shared by the `agent brief` command and the WebUI dashboard. */
@@ -142,6 +143,14 @@ export function buildBrief(env: Env, sel = resolveProject(env.store.db)): any {
   const dirtyTrees = store.db.all(`SELECT t.name FROM trees t JOIN node_index i ON i.tree_id=t.id WHERE i.dirty=1`);
   // #105：裸 `node index` 会索引错树 → 显式 -t <tree>；树名经 shellQuote（换行/分号注入面）
   for (const t of dirtyTrees) payload.next_actions.push(`ygl-trees node index --tree=${shellQuote(singleLine(t.name))}   # tree ${commentSlug(t.name)} index is stale`);
+  // #233: unlocked nodes with no evidence behind them — one line per tree (first key named, up to 3 trees), so the
+  // same-round rule from the lifecycle skill reaches the agent at session start. Names are quoted like the line above.
+  try {
+    const gaps = groupByTree(store.db.all(UNLOCKED_WITHOUT_EVIDENCE_SQL) as Array<{ tree: string; key: string }>);
+    for (const g of gaps.slice(0, 3))
+      payload.next_actions.push(`${attachEvidenceAction(g.tree, g.keys[0])}   # tree ${commentSlug(g.tree)}: ${g.count} unlocked node(s) without evidence`);
+    if (gaps.length > 3) payload.next_actions.push(`ygl-trees doctor --json   # node_evidence lists ${gaps.length - 3} more tree(s) with unlocked nodes without evidence`);
+  } catch { /* trees/relations tables optional in exotic setups */ }
   const dupGroups = store.db.all(
     `SELECT 'claims' t, COUNT(*) c FROM (SELECT 1 FROM claims GROUP BY project_id, text HAVING COUNT(*)>1)
      UNION ALL SELECT 'queries', COUNT(*) FROM (SELECT 1 FROM queries GROUP BY project_id, text HAVING COUNT(*)>1)
