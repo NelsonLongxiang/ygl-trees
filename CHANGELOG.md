@@ -1,5 +1,9 @@
 ## Unreleased
 
+用户可见行为变化：
+
+- **MCP \`read\` 的显式 \`project\` 不再丢失**（Refs #260）：\`agent/brief\`、\`project/show\`（\`project\` 与 \`name\` 同义，两者同给且不一致 rc=2）、\`research/source-show\`、\`evidence-show\`、\`claim-show\`、\`claim-evaluate\`、\`produce/report-show\` 七条路由把显式 \`project\` 透传为 \`-p\`，显式指定优先于会话已选项目；未知项目 rc=1 \`project not found\`；这些读不改变会话选择。\`tools/list\` 里 \`project\` 的描述改为 "explicit project (overrides the session selection)"。新增扫表测试：在双项目工作区、无会话选择下带 \`project\` 调遍全部读路由，任何路由返回 \`ambiguous project\` 即红——以后新加的项目域读路由漏透传会被当场抓住。
+
 门禁与文档（不影响运行时）：
 
 - `pnpm test` 最先跑 G12 解释器锚，新增 `pnpm gate:g12`。此前 G12 不在这条链路里，漂移了三个版本没人发现。
