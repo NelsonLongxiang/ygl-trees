@@ -174,6 +174,24 @@ node scripts/pack-repro.mjs                 # 官方字节（clean worktree + �
 `--allow-dirty` 仅供本地实验，**不得用于发布字节**。官方流程固定为：干净主检出@release-commit（共享检出按文件/窗口协调，不用 worktree）
 → 该树 `pnpm install && pnpm build` → `pack:repro`；主树脏时禁止出包。
 
+**clean-build guard（#236，0.121.0 门禁沉淀）**：`dist/` 被 gitignore，上面的 clean-tree guard 看不见它，
+而 `pnpm pack` 会把 `dist/` 全量装进包——长期使用的检出里，删掉源文件后留下的旧产物、甚至从未提交的
+工作构建出的文件，都可能混进官方字节（0.121.0 Windows 包就多了两个这样的文件，只靠跨机比字节才发现）。
+所以**官方 tarball 只来自一次干净构建**：`pnpm build` 第一步清空 `dist/`，最后一步把本次产出的文件集合
+记入 `node_modules/.cache/ygl-trees/dist-manifest.json`（在 `dist/` 外，不进包、不影响字节）；
+`pack:repro` 打包前比对，`dist/` 里多出或缺少任何文件、或没有清单，都 rc=1 并点名路径：
+
+```bash
+node scripts/pack-repro.mjs --check-dist    # {"ok":true,...} 才可出包；extra/missing 点名
+node scripts/dist-manifest.mjs check        # 同一判定（构建脚本的三个子命令：clean / write / check）
+```
+
+只跑部分构建（如单独 `pnpm build:bundle:only`）后清单不再对得上，重新 `pnpm build` 即可。
+
+**第二台机器只核不打**：发布字节由一台机器从干净构建产出；另一台（发布席）下载同一 tarball，
+复算 sha256（及 sha512）与发布记录逐字比对，一致后 `npm publish <该 tgz>`——**不在本机重新打包**。
+两机各自 `pack:repro` 同一 commit 只用于交叉核对（应得同一 sha256），不作为发布字节来源。
+
 ## 二、发布命令
 
 **必守顺序（#131）**：release 提交先并入 master → push 项目主远端 master →（创建并 push tag）→ guard → publish。tag 可先准备，但 tag commit 和远端 master 两者都必须先于 npm 可见；不能只推 release 分支/tag 就发布。`--remote` 使用项目主远端名字（当前 `github`，不是固定要求名为 origin）。guard 每次新 fetch 该远端 master，验证远端 tag 的 peeled commit 与本地 HEAD 一致，再验证该 commit 是远端 master 的祖先；失败输出双方 SHA。离线 `--no-network` 或未给 `--remote` 仅为本地 tag 检查，`remote_verified:false`，不能作为发布门通过证据。

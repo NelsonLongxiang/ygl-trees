@@ -20,7 +20,7 @@
  *   - gzip         = level 9, no name, no mtime, OS byte pinned to 255 so the
  *                    hash does not depend on the host zlib's OS_CODE (issue #5)
  *
- * Usage: node scripts/pack-repro.mjs [--out <file>] [--json]
+ * Usage: node scripts/pack-repro.mjs [--out <file>] [--json] [--check-dirty] [--check-dist] [--allow-dirty]
  * Prints the tarball path, byte size and sha256.
  */
 import { existsSync, readFileSync, writeFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -30,6 +30,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { dirtyPaths, assertCleanTree } from "./lib/pack-guard.mjs";
+import { assertDistClean, distDrift } from "./lib/dist-manifest.mjs";
 
 const BLOCK = 512;
 
@@ -100,6 +101,7 @@ const outFlag = args.indexOf("--out");
 const asJson = args.includes("--json");
 const allowDirty = args.includes("--allow-dirty");
 const checkDirty = args.includes("--check-dirty");
+const checkDist = args.includes("--check-dist");
 const root = resolve(process.cwd());
 
 // 0.110.0 incident: bytes must not depend on local dirt. Guard the input face
@@ -122,6 +124,24 @@ try {
   }
   console.error(String(e?.message || e));
   process.exit(1);
+}
+
+// #236: dist/ is gitignored, so the guard above cannot see stale build output,
+// and pnpm pack ships all of dist/. Pack only what the last clean build produced;
+// --check-dist exposes the same judge for tests/CI.
+if (checkDist) {
+  const d = distDrift(root);
+  console.log(JSON.stringify(d));
+  process.exit(d.ok ? 0 : 1);
+}
+try {
+  assertDistClean(root);
+} catch (e) {
+  if (!allowDirty) {
+    console.error(String(e?.message || e));
+    process.exit(1);
+  }
+  console.error(`pack:repro: WARNING — sealing bytes with --allow-dirty over a stale dist/:\n${String(e?.message || e)}`);
 }
 
 // Spawn pnpm's JS entrypoint through this node binary (no shell, no .cmd shim).
