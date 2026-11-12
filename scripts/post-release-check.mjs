@@ -11,10 +11,11 @@
  * 用法：node scripts/post-release-check.mjs <version>   # 例 0.116.0
  */
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
+import { openLog } from "./lib/run-log.mjs";
 
 const version = process.argv[2];
 if (!version) {
@@ -36,7 +37,7 @@ const isWin = process.platform === "win32";
  */
 function run(cmd, args, { cwd, env, logName, timeout = 45 * 60_000 } = {}) {
   const logFile = join(LOGS, logName);
-  const fd = openSync(logFile, "a");
+  const fd = openLog(logFile); // #178: not "a" — MSYS bash cannot write to a Windows O_APPEND handle
   try {
     const r = isWin
       ? spawnSync("cmd", ["/c", cmd, ...args], { cwd, env, stdio: ["ignore", fd, fd], timeout })
