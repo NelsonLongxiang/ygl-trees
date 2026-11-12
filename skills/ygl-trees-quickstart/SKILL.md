@@ -29,9 +29,10 @@ tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 **MCP 4 工具**（0.115.0 收敛，domain×action 路由——少工具、富参数）：
 
 ```
-read   → 一切读面：{domain: "agent|kb|tree|node|task|rel|research|produce|project|db|skill", action: "brief|search|state|list|can|...", ...}
-write  → 一切写面：{domain: "research|kb|tree|task|rel|project|produce", action: "query-add|source-add|node-add|attach|...", ...}
-verify → 验证管线：{action: "submit|prepare|run|report|archive|meta", a: ..., b: ..., c: ..., db: ...}
+read   → 一切读面：{domain: "agent|kb|tree|node|task|rel|research|produce|project|db|skill", action: "brief|search|state|list|can|ready|path|ancestors|descendants|validate|...", ...}
+write  → 一切写面：{domain: "research|kb|tree|task|rel|project|produce", action: "query-add|source-add|node-add|node-unlock|node-lock|attach|outline|section|spec|design|export|promote|ingest|...", ...}
+verify → 验证管线：{action: "submit|prepare|run|report|trace|archive|meta|lint-candidates|example|tree-prepare|tree-run|tree-report|tree-trace", a: ..., b: ..., c: ..., db: ...}
+（source-fetch 有网络副作用，默认拒绝；服务端 YGL_MCP_SOURCE_FETCH=1 才放行）
 doctor → 健康检查：{fix: true|false}
 ```
 
