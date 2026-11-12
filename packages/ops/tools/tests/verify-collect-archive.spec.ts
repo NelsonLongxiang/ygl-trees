@@ -138,10 +138,16 @@ describe.skipIf(!hasBundle)("verify collect archive → prepare → run → arch
     expect(bound.r.json).toMatchObject({ entries: 2, errors: 1 });
     for (const c of [trunc, cksum, bound]) {
       expect(c.r.json.errors).toBeGreaterThan(0);
-      const { by, report } = verdicts(c.out);
+      const { r, by, report } = verdicts(c.out);
       expect(Object.values(by)).not.toContain("PASS");
       const err = report.vu.find((v: { verdict: string }) => v.verdict === "ERROR");
       expect(JSON.stringify(err.evidence)).toContain("input_errors");
+      // #270: the summary agrees with the units, so the archive re-verifies
+      expect(report.summary.pass).toBe(0);
+      expect(report.summary.error).toBe(Object.values(by).filter((v) => v === "ERROR").length);
+      expect(r.json.archive?.path, r.text).toBeTruthy();
+      const av = run(["verify", "archive", "verify", r.json.archive.path]);
+      expect(av.rc, av.text).toBe(0);
     }
   });
 
