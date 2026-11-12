@@ -1,37 +1,27 @@
-## Unreleased
+## 0.124.0
 
 用户可见行为变化：
 
-- **验证器契约 1.3，第一部分：`glob` / `not-glob`**（#80、#232，属主 2026-11-11「批准 1.3 范围」）。
-  - 谓词条件新增两个 op，渲染成 SQLite 原生 `GLOB` / `NOT GLOB`，TS 与 Rust 引擎跑同一句 SQL。没有正则，也没有自定义函数。
-  - #232 要的路径语法检查（绝对路径、`..` 段、反斜杠、控制字符、空段、单一包前缀）都能写成判据。两个引擎共用 25 条向量和 5 条拒绝用例（`packages/verify/core/tests/fixtures/predicate-glob.json`），必须渲染出逐字节相同的 SQL、命中同样的行。
-  - **版本门**：引擎能跑 1.1 / 1.2 / 1.3。声明 1.1 或 1.2 却用了 glob，入口 `version_shape` 拒跑。
-  - **prepare 盖最小够用的版本**：用到 glob 才盖 1.3，否则照旧盖 1.2。所以不用新形态的 spec 字节不变，旧引擎照跑。消费仓引擎下限（meta）仍按 1.2 → 0.107.0。
-  - **Rust 引擎补上条件 op 闭集检查**：此前 `yglverify` 会把任意 op 字符串拼进 SQL，TS 在 #19 早已拒绝。
-  - `corpus_version` 不变（向量不在语料里）。
-  - 1.3 的其余部分（pragma 白名单、派生表与视图、`verify collect archive`）随后续 PR 落地。
-- 内部：`prepare.ts` 里两个字面 NUL 字符改成 `\u0000` 转义，值不变，文件重新是文本，grep 一类工具能搜到它。
-- **验证器契约 1.3，第二部分 a：只读 pragma 来源**（#80）。
-  - 判据可以直接查快照的结构：`"from": {"pragma": "table_info", "arg": "orders"}`。用得到的有列存在、NOT NULL、唯一索引、索引列、外键、`user_version`。
-  - 白名单共 7 个 pragma，各自的列固定，两个引擎共用同一张表。
-  - 白名单外的 pragma、把 pragma 写成表名、`arg` 指向不存在的表、用了 pragma 不返回的列，prepare 一律拒绝；渲染器同样拒绝。
-  - witness 统计 pragma 自己的行数，结构检查不会被零扫描规则降级。
-  - SQLite 不允许裸写的五个保留字列（`from`、`notnull`、`table`、`to`、`unique`）渲染时加引号，其余标识符不变。
-  - 共享向量 12 例、9 条拒绝，TS 与 Rust 逐字节一致。
-- **验证器契约 1.3，第二部分 b：派生表与 spec 视图，只在内存里执行**（#80，裁定 ② ③）。
+- **验证器契约 1.3**（#80、#232；属主 2026-11-11「批准 1.3 范围」；#265、#268、#269）。1.3 是一整组能力，这一版一次带齐。spec 要用下面任何一项，必须声明 `contract_version: "1.3"`。
+  - **版本门**：引擎能跑 1.1 / 1.2 / 1.3。1.1 或 1.2 的 spec 里出现任何 1.3 形态，入口 `version_shape` 拒跑，并点名要升到 1.3。
+  - **prepare 盖最小够用的版本**：用到 1.3 形态才盖 1.3，否则照旧盖 1.2，所以不用新形态的 spec 字节不变，旧引擎照跑。消费仓引擎下限（meta）仍按 1.2 → 0.107.0。
+  - **`glob` / `not-glob`**：谓词条件新增两个 op，渲染成 SQLite 原生 `GLOB` / `NOT GLOB`，没有正则也没有自定义函数。#232 的路径语法检查（绝对路径、`..` 段、反斜杠、控制字符、空段、单一包前缀）都能写成判据。
+  - **只读 pragma 来源**：`"from": {"pragma": "table_info", "arg": "orders"}` 直接查快照结构——列存在、NOT NULL、唯一索引、索引列、外键、`user_version`。白名单 7 个 pragma，各自的列固定；白名单外的 pragma、把 pragma 写成表名、`arg` 指向不存在的表、用了 pragma 不返回的列，prepare 和渲染器都拒绝。witness 统计 pragma 自己的行数，结构检查不会被零扫描规则降级。`from`、`notnull`、`table`、`to`、`unique` 五个保留字列渲染时加引号，其余标识符不变。
   - **派生表**：`"from": {"derived": {…内层谓词…}}`，外层读内层的 select 列名和聚合别名，最多嵌套 4 层。
-  - **视图**：候选文件信封里加 `"views": [{"name": "big_orders", "predicate": {…}}]`，候选用 `"from": "big_orders"` 引用。名字用 snake_case，不能与快照里的对象同名，只能读声明在它之前的视图。spec 冻结时一并冻结；`verify lint-candidates` 和作业端点 `POST /api/verify/prepare`（`views` 字段）认同样的形状。
-  - **快照里自带的视图一律不执行**（它的 SQL 是数据产出方写的）：prepare 点名拒绝，1.3 spec 在 run 时也会再查一遍。
-  - **执行方式**：快照照旧只读打开，临时库强制在内存（读回确认），视图建成 TEMP VIEW 后重新锁成 `query_only`；run 结束时快照 sha256 必须与建视图前相同，否则拒绝出报告。没用到派生表和视图的 spec 走原路径，1.2 行为不变。
-  - **没有采用设计稿里的 `:memory:` + `ATTACH` 写法**：实测那样 `pragma_user_version` 会读到空内存库的 0，让 pragma 来源静默答错。
-  - **红队断言**：候选或视图里任何字符串出现快照自身路径，prepare P2 拒绝；1.3 spec 的手写 SQL 去掉注释和字面量后出现 `ATTACH` / `DETACH` / `file:`，run 拒跑。
-  - 共享向量：6 个派生表用例、3 个视图、3 个读视图用例、11 条拒绝，TS 与 Rust 逐字节一致。
-- **验证器契约 1.3，第三部分：`verify collect archive`，以及读不到的输入不判 PASS**（#80、#232）。
-  - **新命令** `verify collect archive <file.tgz> --out <snapshot.sqlite>`：只读输入，把 tar / tgz 写成一份新的 SQLite 快照，只记原始观测——每个头一行（路径、原始字节、类型、大小、权限、载荷 sha256、头校验和是否正确、PAX 键、同路径出现次数），没有 ok/changed/invalid 一类的判定列。
-  - **读失败也是行**：文件读不到、空文件、gzip 损坏或截断、不是 tar、头损坏、孤悬 PAX、缺结束块、超过上限，都写进 `archive_errors`，不丢成员、不静默。
-  - **确定性、有上限**：同一输入得到逐字节相同的快照；头数、解压字节、路径长度都有上限（默认 10 万 / 1 GiB / 4096），记在快照里，解压炸弹只会变成一行错误。
-  - **读不到的输入不判 PASS**：1.3 spec 的快照里 `archive_errors` 有行时，本会 PASS 的单元一律改判 ERROR（`input_errors`）；FAIL 不变。TS 与 Rust 同规则。
-  - **可运行示例** `examples/verify-archive-collect/`：#232 的全部用例（哈希不同、缺/多路径、重复、空输入、`..`/绝对/空段/反斜杠/控制字符/包外路径、符号链接、头校验和、截断、上限），CLI 测试跑同一份 spec。
+  - **spec 视图**：候选文件信封里加 `"views": [{"name": "big_orders", "predicate": {…}}]`，候选用 `"from": "big_orders"` 引用。名字用 snake_case，不能与快照里的对象同名，只能读声明在它之前的视图；spec 冻结时一并冻结。`verify lint-candidates` 和作业端点 `POST /api/verify/prepare`（`views` 字段）认同样的形状。
+  - **快照里自带的视图一律不执行**（它的 SQL 是数据产出方写的）：prepare 点名拒绝，1.3 spec 在 run 时也再查一遍。
+  - **派生表和视图只在内存里执行**：快照照旧只读打开，临时库强制在内存（读回确认），视图建成 TEMP VIEW 后重新锁成 `query_only`；run 结束时快照 sha256 必须与建视图前相同，否则拒绝出报告。没用到它们的 spec 走原路径。（没有采用设计稿里的 `:memory:` + `ATTACH`：那样 `pragma_user_version` 会读到空内存库的 0。）
+  - **红队断言**：候选或视图里任何字符串出现快照自身路径，prepare 拒绝；1.3 spec 的手写 SQL 去掉注释和字面量后出现 `ATTACH` / `DETACH` / `file:`，run 拒跑。
+  - **新命令 `verify collect archive <file.tgz> --out <snapshot.sqlite>`**：只读输入，把 tar / tgz 写成一份新的 SQLite 快照，只记原始观测——每个头一行（路径与原始字节、类型、大小、权限、载荷 sha256、头校验和是否正确、PAX 键、同路径出现次数），没有 ok/changed/invalid 一类的判定列。读不到、空文件、gzip 损坏或截断、不是 tar、头损坏、孤悬 PAX、缺结束块、超过上限，都写成 `archive_errors` 的行，不丢成员。同一输入得到逐字节相同的快照；头数、解压字节、路径长度有上限（默认 10 万 / 1 GiB / 4096），解压炸弹只会变成一行错误。
+  - **读不到的输入不判 PASS**：1.3 spec 的快照里 `archive_errors` 有行时，本会 PASS 的单元一律改判 ERROR（`evidence.input_errors`）；FAIL 不变；空归档是零扫描，判 NEEDS-MATERIAL。
+  - **可运行示例** `examples/verify-archive-collect/`：#232 的全部用例（哈希不同、缺/多路径、重复、空输入、各类坏路径、符号链接、头校验和、截断、上限），CLI 测试跑同一份 spec。
+  - **TS 与 Rust 一致**：共享向量 glob 25 例 + 5 条拒绝、pragma 12 例 + 9 条拒绝、派生表与视图（6 个派生表、3 个视图定义、3 个读视图）+ 11 条拒绝，两个引擎逐字节同 SQL、同结果；Rust 引擎同时补上了条件 op 闭集检查（此前会把任意 op 字符串拼进 SQL，TS 在 #19 早已拒绝）。`corpus_version` 不变（向量不在语料里）。
+
+门禁与文档（不影响运行时）：
+
+- 发布门禁脚本（`interp-anchor`、`post-release-check`、`ratchet`、`skills-audit`、`volume-gate`）改用 `fileURLToPath` 取仓库根（#267）。此前在 Windows 的 8.3 短路径（`ADMINI~1`）、带空格或非 ASCII 的临时目录里，`URL.pathname` 的百分号编码让 G8、G11、skills:audit 找不到文件；0.123.0 的 Windows G8 首跑就红在这里。新增守卫测试（脚本退回 `URL.pathname` 即红）和行为测试。
+- 体积棘轮基线两次按裁定在 Windows 重签（#268：787698 → 805353；#269：→ 822696），增长全部来自属主批准的 1.3 范围。
+- 内部：`prepare.ts` 里两个字面 NUL 字符改成 `\u0000` 转义，值不变，文件重新是文本。
 
 ## 0.123.0
 
