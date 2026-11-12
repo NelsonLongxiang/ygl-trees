@@ -1,10 +1,10 @@
-## Unreleased
+## 0.125.0
 
 用户可见行为变化：
 
 - **MCP 补上 C 类路由缺口**（Refs #257）：produce 交付面（outline/section/spec/design/export）、verify 自检与树跑（lint-candidates/trace/example、tree-prepare/run/report/trace）、kb 收口（promote/ingest）、node path/ancestors/descendants/validate 与 node-lock 进 MCP；research source-fetch 有网络副作用默认拒绝（YGL_MCP_SOURCE_FETCH=1 放行）。写面保持幂等（同内容重跑 duplicate:true rc0；section/spec/design 同名重复产生新版 rc0）；参数映射与 CLI 一致，tools/list enum 全列出。新增 mcp-c-routes.spec.ts（7 例：enum 列出、CLI 同形、幂等语义、fetch 开关拒认、promote 质量门）。
 
-- **MCP `read` 的显式 `project` 不再丢失**（Refs #260）：`agent/brief`、`project/show`（`project` 与 `name` 同义，两者同给且不一致 rc=2）、`research/source-show`、`evidence-show`、`claim-show`、`claim-evaluate`、`produce/report-show` 七条路由把显式 `project` 透传为 `-p`，显式指定优先于会话已选项目；未知项目 rc=1 `project not found`；这些读不改变会话选择。`tools/list` 里 `project` 的描述改为 "explicit project (overrides the session selection)"。新增扫表测试：在双项目工作区、无会话选择下带 `project` 调遍全部读路由，任何路由返回 `ambiguous project` 即红——以后新加的项目域读路由漏透传会被当场抓住。
+- **官方 tarball 只来自干净构建**（Refs #236）：`pnpm build` 第一步清空 `dist/`，最后把本次产出的文件集合记入 `node_modules/.cache/ygl-trees/dist-manifest.json`（在 `dist/` 外，不进包、不改字节）；`pack:repro` 打包前比对，`dist/` 多出或缺少任何文件、或没有清单都 rc=1 并点名路径（`--check-dist` 给同一判定的 JSON）。修掉长期检出里旧产物混进发布字节的口子（0.121.0 Windows 包多出两个无源文件）。`docs/release.md` 写明第二台机器只核 sha256、发同一份字节，不重打包。新增 dist-manifest.spec.ts（5 例）。
 
 ## 0.124.1
 
