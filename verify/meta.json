@@ -44,6 +44,16 @@
       "role": "test"
     },
     {
+      "path": "examples/verify-archive-collect/gen-candidates.mjs",
+      "sha256": "3cefaf8601cdbc8da8e60264e4bf24bb2b32a7eed9fb87dea0587c872b5224e5",
+      "role": "build"
+    },
+    {
+      "path": "examples/verify-archive-collect/make-archives.mjs",
+      "sha256": "de0d4e97eb75af6e09cd579de10323b76b2197dcd86b6e7a3537f3ec363f8cb1",
+      "role": "build"
+    },
+    {
       "path": "examples/verify-schema-snapshot/collect.mjs",
       "sha256": "8a77b43572fd5cfe0153a163faac2ad682a56164663992171f17e20c55d7600a",
       "role": "build"
@@ -110,7 +120,7 @@
     },
     {
       "path": "scripts/interp-anchor.mjs",
-      "sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
+      "sha256": "f160857f49c3030c6fefd269bc2f568e34ca5c8eb2c691e4f3e5e05f6de1219b",
       "role": "gate"
     },
     {
@@ -155,7 +165,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "1f6839a6ae9c31c93563496751494f8a4eb9c8880e58b22ca4b23a2e89a8d278",
+      "sha256": "f38a7d03aad5cbfffa8e30094b71dfd4c54cb4372f166b0f47c33dd972a88129",
       "role": "gate"
     },
     {
@@ -165,7 +175,7 @@
     },
     {
       "path": "scripts/ratchet.mjs",
-      "sha256": "d48c1b0757cc314c771b2029e40a1f13e8da196f046fa06c82830141b649def0",
+      "sha256": "eea89ba6833a63f02e0e6a0756d06291942f3be6c74fc10d97b5bb34d3f9dbf5",
       "role": "gate"
     },
     {
@@ -190,7 +200,7 @@
     },
     {
       "path": "scripts/skills-audit.mjs",
-      "sha256": "c07c4c2d1cd733aeaa700333bd9ef4295712218b76678edc3f37fbe2ce849e8c",
+      "sha256": "058e8ce1e43cb3ead5f4d2179089fa4b9ce23ac0b5e77ec503df21942a408344",
       "role": "gate"
     },
     {
@@ -215,7 +225,7 @@
     },
     {
       "path": "scripts/volume-gate.mjs",
-      "sha256": "ba7f3a04109b999943a6b7a3bc6490fb261ee26a4df00e416f6b97c79593fcfa",
+      "sha256": "3c337cf4d3045b26358a4917299594a83d5280e6d8d31d5c3950e2d414c4c164",
       "role": "gate"
     },
     {
@@ -1321,6 +1331,62 @@
       "reason": "#245 privacy round (f0eb81b) replaced the hardcoded Windows GH_CONFIG_DIR fallback with process.env passthrough; it was pushed with YGL_SKIP_HOOKS=1, so this record was missed at the time. Bytes reviewed in #245 (issuecomment-6706010509).",
       "actor": "supervisor-seat (Claude-OPS-5.5)",
       "at": "2026-11-07T11:20:01.881Z"
+    },
+    {
+      "path": "scripts/interp-anchor.mjs",
+      "old_sha256": "fb482f43cd0a6d2186f27feecebe45e0f4c2fe7cb7f5f2bacb292d3884e522e6",
+      "new_sha256": "f160857f49c3030c6fefd269bc2f568e34ca5c8eb2c691e4f3e5e05f6de1219b",
+      "reason": "fix(gates): resolve root via fileURLToPath — Windows 8.3 short-path (%7E1) made readdirSync ENOENT in G8 tag clones (0.123.0 step-2/3 red root cause)",
+      "actor": "dev-seat",
+      "at": "2026-11-11T14:55:22.468Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "1f6839a6ae9c31c93563496751494f8a4eb9c8880e58b22ca4b23a2e89a8d278",
+      "new_sha256": "f38a7d03aad5cbfffa8e30094b71dfd4c54cb4372f166b0f47c33dd972a88129",
+      "reason": "#267: fileURLToPath replaces raw pathname (8.3 short-name/space/non-ASCII percent-encoding made G8/G11/skills:audit fail in %TEMP% clones)",
+      "actor": "dev-seat",
+      "at": "2026-11-11T15:36:18.590Z"
+    },
+    {
+      "path": "scripts/ratchet.mjs",
+      "old_sha256": "d48c1b0757cc314c771b2029e40a1f13e8da196f046fa06c82830141b649def0",
+      "new_sha256": "eea89ba6833a63f02e0e6a0756d06291942f3be6c74fc10d97b5bb34d3f9dbf5",
+      "reason": "#267: fileURLToPath replaces raw pathname (8.3 short-name/space/non-ASCII percent-encoding made G8/G11/skills:audit fail in %TEMP% clones)",
+      "actor": "dev-seat",
+      "at": "2026-11-11T15:36:18.668Z"
+    },
+    {
+      "path": "scripts/skills-audit.mjs",
+      "old_sha256": "c07c4c2d1cd733aeaa700333bd9ef4295712218b76678edc3f37fbe2ce849e8c",
+      "new_sha256": "058e8ce1e43cb3ead5f4d2179089fa4b9ce23ac0b5e77ec503df21942a408344",
+      "reason": "#267: fileURLToPath replaces raw pathname (8.3 short-name/space/non-ASCII percent-encoding made G8/G11/skills:audit fail in %TEMP% clones)",
+      "actor": "dev-seat",
+      "at": "2026-11-11T15:36:18.735Z"
+    },
+    {
+      "path": "scripts/volume-gate.mjs",
+      "old_sha256": "ba7f3a04109b999943a6b7a3bc6490fb261ee26a4df00e416f6b97c79593fcfa",
+      "new_sha256": "3c337cf4d3045b26358a4917299594a83d5280e6d8d31d5c3950e2d414c4c164",
+      "reason": "#267: fileURLToPath replaces raw pathname (8.3 short-name/space/non-ASCII percent-encoding made G8/G11/skills:audit fail in %TEMP% clones)",
+      "actor": "dev-seat",
+      "at": "2026-11-11T15:36:18.805Z"
+    },
+    {
+      "path": "examples/verify-archive-collect/make-archives.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "de0d4e97eb75af6e09cd579de10323b76b2197dcd86b6e7a3537f3ec363f8cb1",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "supervisor-seat",
+      "at": "2026-11-11T19:41:15.887Z"
+    },
+    {
+      "path": "examples/verify-archive-collect/gen-candidates.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "3cefaf8601cdbc8da8e60264e4bf24bb2b32a7eed9fb87dea0587c872b5224e5",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "supervisor-seat",
+      "at": "2026-11-11T19:41:15.941Z"
     }
   ],
   "kind": "engine",

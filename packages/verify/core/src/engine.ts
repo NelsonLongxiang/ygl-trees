@@ -13,7 +13,7 @@ import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 import { canonicalStringify } from "./canonical";
-import { CONTRACT_VERSION } from "./contract";
+import { COLLECT_ERROR_TABLES, KNOWN_CONTRACT_VERSIONS, MAX_DERIVED_DEPTH, PRAGMA_SOURCES, QUOTED_IDENTS, VIEW_NAME, VIEW_RESERVED_PREFIXES } from "./contract";
 import { compareValues, ISO_DATETIME_TZ, validateCompareSpec, withOffsetMinutes } from "./compare";
 import type {
   AgentChecker,
@@ -34,6 +34,7 @@ import type {
   PredicateCondition,
   PredicateGroup,
   PredicateNode,
+  SpecView,
 } from "./contract";
 
 export type Row = Record<string, unknown>;
@@ -44,6 +45,16 @@ export interface QueryRunner {
   tableRows(table: string): number;
   schemaFingerprint(): string;
   sourceTables?: (sql: string) => string[];
+  /** 1.3 (#80): run derived tables and spec views in memory — temp storage forced to memory, each view created as a
+   *  TEMP VIEW in order, then the connection re-locked read-only. Called once, before the first checker, only for a
+   *  spec that uses derived tables or views; a runner without it cannot run such a spec (the run is refused). */
+  isolate?: (views: Array<{ name: string; sql: string }>) => void;
+  /** 1.3: after an isolated run, null when the snapshot bytes are unchanged, else the refusal (run fails). */
+  untouched?: () => string | null;
+  /** 1.3: names of views stored in the snapshot — a 1.3 spec may never read one (their SQL is the producer's). */
+  snapshotViews?: () => string[];
+  /** 1.3 (#80 item 7): row counts of the COLLECT_ERROR_TABLES present in the snapshot (absent tables omitted). */
+  collectErrors?: () => Array<{ table: string; rows: number }>;
 }
 
 /** #28: the file checker's scan trace. Emitted only to callers that ask for it
@@ -114,7 +125,8 @@ function stripSqlComments(sql: string): string {
 
 export function extractTables(sql: string): string[] {
   const out = new Set<string>();
-  const re = /\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)/gi;
+  // 1.3: a whitelisted pragma source is kept whole (`pragma_table_info('orders')`) so its rows can be counted.
+  const re = /\b(?:from|join)\s+(pragma_[a-z_]+\('[A-Za-z_][A-Za-z0-9_]*'\)|[A-Za-z_][A-Za-z0-9_]*)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(sql))) out.add(m[1]);
   return [...out];
@@ -381,7 +393,7 @@ async function runFactChecker(
         const tableSides: string[] = [];
         for (const side of [c.left, c.right]) {
           if ("table" in side) tableSides.push(side.table);
-          else if ("predicate" in side && side.predicate) tableSides.push(side.predicate.from);
+          else if ("predicate" in side && side.predicate) tableSides.push(renderFrom(side.predicate.from).sql);
         }
         return tableSides.map((t) => {
           try {
@@ -799,7 +811,8 @@ function ident(name: string, what: string): string {
   if (parts.length > 2 || parts.some((x) => !IDENT.test(x))) {
     throw new Error(`predicate ${what} must be a bare identifier (optionally table-qualified), got ${JSON.stringify(name)}`);
   }
-  return parts.join(".");
+  // 1.3: the five reserved words a pragma source returns are quoted; every other identifier renders bare as before.
+  return parts.map((x) => (QUOTED_IDENTS.includes(x) ? `"${x}"` : x)).join(".");
 }
 
 /**
@@ -843,6 +856,15 @@ function renderCondition(w: PredicateCondition, fromTable = ""): string {
   const col = ident(w.col, "where column");
   const rhsCol = columnRefOf(w.value);
   switch (w.op) {
+    case "glob":
+    case "not-glob": {
+      // 1.3 (#80/#232): SQLite's own GLOB, so the TS and Rust engines run the same SQL. The value is a literal pattern:
+      // no {col} (a pattern from another column is not a predicate on this row's raw value), no ISO normalisation
+      // (a pattern is not a timestamp). NULL never matches either form, like every other comparison here.
+      if (rhsCol !== null) throw new Error(`glob_rhs_must_be_pattern: predicate where ${col} ${w.op} takes a string pattern, not a {col}`);
+      if (typeof w.value !== "string" || w.value === "") throw new Error(`predicate where ${col} ${w.op} needs a non-empty string pattern`);
+      return `${col} ${w.op === "glob" ? "GLOB" : "NOT GLOB"} '${w.value.replace(/'/g, "''")}'`;
+    }
     case "is null":
     case "is not null":
       // r8 F3：is null 带 value 是构造错误，不能静默忽略（会让人以为在比较值）
@@ -874,7 +896,7 @@ function renderCondition(w: PredicateCondition, fromTable = ""): string {
       // it first; this is the defence-in-depth layer).
       const COMPARE = new Set(["=", "!=", ">", ">=", "<", "<="]);
       if (!COMPARE.has(String(w.op))) {
-        throw new Error(`unknown predicate op ${JSON.stringify(w.op)} — closed set is ${[...COMPARE].join(", ")}, plus in|between|is null|is not null`);
+        throw new Error(`unknown predicate op ${JSON.stringify(w.op)} — closed set is ${[...COMPARE].join(", ")}, plus in|between|is null|is not null|glob|not-glob`);
       }
       if (rhsCol !== null) {
         // 1.2 column-to-column: same table only (a cross-table compare needs an
@@ -924,11 +946,151 @@ export interface RenderedPredicate {
  * find 与 scope **共享同一 where 子句字符串**，物理上不可能伪造扫描面。
  */
 /** 谓词渲染的公共部分：from 与 where（find/scope/count/exists 共用，保证同源） */
-export function renderScan(pred: Predicate): { from: string; whereSql: string; scanSql: string } {
-  const from = ident(pred.from, "from");
-  const scanSql = renderWhere(pred.scan, pred.from);
-  const whereSql = renderWhere(andGroups(pred.scan, pred.where), pred.from);
+export function renderScan(pred: Predicate, depth = 0): { from: string; whereSql: string; scanSql: string } {
+  const { sql: from, table } = renderFrom(pred.from, depth);
+  const scanSql = renderWhere(pred.scan, table);
+  const whereSql = renderWhere(andGroups(pred.scan, pred.where), table);
   return { from, whereSql, scanSql };
+}
+
+/** A whitelisted pragma source as SQL, or null when the text is not one (`pragma_table_info('orders')`,
+ *  `pragma_user_version`). Used by the renderer, by source extraction and by the runner's row count, so the three
+ *  agree on exactly one closed form. */
+export function pragmaSourceSql(name: string, arg: unknown): string | null {
+  const spec = Object.prototype.hasOwnProperty.call(PRAGMA_SOURCES, name) ? PRAGMA_SOURCES[name] : undefined;
+  if (!spec) return null;
+  if (spec.arg === "none") return arg === undefined ? `pragma_${name}` : null;
+  if (typeof arg !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(arg)) return null;
+  return `pragma_${name}('${arg}')`;
+}
+
+/** Parse rendered pragma source text back to its closed form (for row counts); null when it is not one. */
+export function parsePragmaSource(text: string): string | null {
+  const m = /^pragma_([a-z_]+)(?:\('([A-Za-z_][A-Za-z0-9_]*)'\))?$/.exec(text);
+  return m ? pragmaSourceSql(m[1], m[2]) : null;
+}
+
+/** 1.3 (#80): the predicate source — a bare table (or spec view) name, a whitelisted read-only pragma function, or a
+ *  derived table. `table` is the same-table qualifier for {col} references: a pragma source has none, a derived
+ *  table is `derived`. Anything else is refused here too (defence in depth behind prepare's P2), so no other text can
+ *  reach FROM. */
+export function renderFrom(from: unknown, depth = 0): { sql: string; table: string } {
+  if (typeof from === "string") {
+    // SQLite resolves `pragma_<name>` as a table-valued function, so a bare `from: "pragma_foreign_keys"` would read
+    // a pragma outside the whitelist. Pragma sources go through { pragma, arg } only.
+    if (/^pragma_/i.test(from)) throw new Error(`pragma_not_allowed: ${JSON.stringify(from)} as a table name — write a pragma source as { pragma, arg }`);
+    return { sql: ident(from, "from"), table: from };
+  }
+  if (from && typeof from === "object" && !Array.isArray(from) && typeof (from as { pragma?: unknown }).pragma === "string") {
+    const { pragma, arg } = from as { pragma: string; arg?: unknown };
+    const keys = Object.keys(from as object).filter((k) => k !== "pragma" && k !== "arg");
+    if (keys.length) throw new Error(`pragma source takes only { pragma, arg }, got ${keys.join(", ")}`);
+    if (!Object.prototype.hasOwnProperty.call(PRAGMA_SOURCES, pragma)) {
+      throw new Error(`pragma_not_allowed: ${JSON.stringify(pragma)} — the read-only whitelist is ${Object.keys(PRAGMA_SOURCES).join(", ")}`);
+    }
+    const sql = pragmaSourceSql(pragma, arg);
+    if (sql === null) {
+      const need = PRAGMA_SOURCES[pragma].arg;
+      throw new Error(need === "none" ? `pragma ${pragma} takes no arg` : `pragma ${pragma} needs arg: a bare identifier naming a ${need}`);
+    }
+    return { sql, table: "" };
+  }
+  if (from && typeof from === "object" && !Array.isArray(from) && "derived" in (from as object)) {
+    const keys = Object.keys(from as object).filter((k) => k !== "derived");
+    if (keys.length) throw new Error(`derived source takes only { derived }, got ${keys.join(", ")}`);
+    const inner = (from as { derived: unknown }).derived;
+    if (!inner || typeof inner !== "object" || Array.isArray(inner)) throw new Error("derived source needs { derived: <predicate> }");
+    if (depth + 1 > MAX_DERIVED_DEPTH) throw new Error(`derived tables nest at most ${MAX_DERIVED_DEPTH} deep`);
+    return { sql: `(${renderPredicate(inner as Predicate, depth + 1).findSql}) AS derived`, table: "derived" };
+  }
+  throw new Error("predicate.from must be a table name, a { pragma, arg } source or a { derived } table (contract 1.3)");
+}
+
+/** 1.3: the columns a predicate yields — select names (the part after a table qualifier) and agg aliases. A derived
+ *  table or a spec view exposes exactly these to the predicate that reads it. */
+export function outputColumnsOf(pred: Predicate): string[] {
+  const plain = (pred.select ?? []).map((c) => String(c).split(".").pop() as string);
+  const aggs = (pred.agg ?? []).map((a) => a.as ?? `${a.fn}_${a.col ?? "all"}`);
+  return [...plain, ...aggs];
+}
+
+/** 1.3 (#80, ruling ③): check a spec's view list and render each to the SELECT its TEMP VIEW wraps. Names are
+ *  snake_case, unique, outside SQLite's reserved prefixes; a view may read only views declared before it (a later or
+ *  its own name is refused, so creation order is the declaration order). Snapshot tables are checked by prepare. */
+export function renderViews(views: unknown): Array<{ name: string; sql: string }> {
+  if (views === undefined) return [];
+  if (!Array.isArray(views)) throw new Error("spec.views must be an array of { name, predicate }");
+  const names = views.map((v) => (v && typeof v === "object" ? (v as { name?: unknown }).name : undefined));
+  const out: Array<{ name: string; sql: string }> = [];
+  views.forEach((v, i) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`spec.views[${i}] must be { name, predicate }`);
+    const extra = Object.keys(v).filter((k) => k !== "name" && k !== "predicate");
+    if (extra.length) throw new Error(`spec.views[${i}] takes only { name, predicate }, got ${extra.join(", ")}`);
+    const { name, predicate } = v as SpecView;
+    if (typeof name !== "string" || !VIEW_NAME.test(name) || VIEW_RESERVED_PREFIXES.some((p) => name.startsWith(p))) {
+      throw new Error(`view_name: ${JSON.stringify(name)} must be snake_case ([a-z][a-z0-9_]*) and not start with ${VIEW_RESERVED_PREFIXES.join(" or ")}`);
+    }
+    if (names.indexOf(name) !== i) throw new Error(`view_name: ${JSON.stringify(name)} is declared twice`);
+    for (const ref of fromNamesOf(predicate)) {
+      const at = names.indexOf(ref);
+      if (at >= i) throw new Error(`view ${name} reads view ${ref}, which is not declared before it`);
+    }
+    out.push({ name, sql: renderPredicate(predicate).findSql });
+  });
+  return out;
+}
+
+/** The bare names a predicate's `from` reads, through derived tables (pragma sources name no table here). */
+export function fromNamesOf(pred: unknown): string[] {
+  if (!pred || typeof pred !== "object") return [];
+  const from = (pred as { from?: unknown }).from;
+  if (typeof from === "string") return [from];
+  if (from && typeof from === "object" && "derived" in (from as object)) return fromNamesOf((from as { derived: unknown }).derived);
+  return [];
+}
+
+/** Every bare name a spec reads: predicate sources (through derived tables) on all checker sides, sql-pair `table`
+ *  sides, count.against.from and views, plus the tables named in supplied sql / scope_sql text (FROM / JOIN, best
+ *  effort as for the witness). Rust engine.rs `names_read_by` walks the same fields in the same order. */
+export function namesReadBy(spec: VerifySpec): string[] {
+  const out = new Set<string>();
+  for (const vu of spec.vu ?? []) {
+    const c = vu.checker as {
+      predicate?: unknown; sql?: string; scope_sql?: string; against?: { from?: unknown };
+      left?: { predicate?: unknown; table?: unknown }; right?: { predicate?: unknown; table?: unknown };
+    };
+    for (const p of [c.predicate, c.left?.predicate, c.right?.predicate]) for (const n of fromNamesOf(p)) out.add(n);
+    for (const t of [c.left?.table, c.right?.table, c.against?.from]) if (typeof t === "string") out.add(t);
+    for (const t of [c.sql, c.scope_sql]) if (typeof t === "string") for (const n of extractTables(t)) out.add(n);
+  }
+  for (const v of Array.isArray(spec.views) ? spec.views : []) for (const n of fromNamesOf((v as SpecView)?.predicate)) out.add(n);
+  return [...out];
+}
+
+/** Does a predicate read a derived table anywhere (through nesting)? */
+function hasDerived(pred: unknown): boolean {
+  if (!pred || typeof pred !== "object") return false;
+  const from = (pred as { from?: unknown }).from;
+  return !!from && typeof from === "object" && "derived" in (from as object);
+}
+
+/** 1.3: a spec that declares views or reads a derived table runs isolated (in memory); every other spec keeps the
+ *  plain read-only connection, so 1.2 behaviour and witnesses stay byte-identical. */
+export function usesIsolation(spec: VerifySpec): boolean {
+  if (Array.isArray(spec.views) && spec.views.length > 0) return true;
+  return (spec.vu ?? []).some((vu) => {
+    const c = vu.checker as { predicate?: unknown; left?: { predicate?: unknown }; right?: { predicate?: unknown } };
+    return [c.predicate, c.left?.predicate, c.right?.predicate].some(hasDerived);
+  });
+}
+
+/** 1.3 red-team assertion (ruling ②): SQL text a spec supplies must not reach another database. Comments and string
+ *  literals are stripped first, then ATTACH / DETACH and a `file:` URI are refused. Mechanical predicates cannot
+ *  produce these by construction; the check covers hand-written sql / scope_sql in a 1.3 spec. */
+export function isolationRefusal(sql: string): string | null {
+  const bare = stripSqlComments(sql).replace(/'(?:[^']|'')*'/g, "''");
+  const m = /\b(attach|detach)\b|\bfile:/i.exec(bare);
+  return m ? `snapshot_reference: ${m[0].toUpperCase()} is not allowed in a 1.3 spec's SQL (the run reads only its own snapshot)` : null;
 }
 
 /** 域过滤 AND 判据 —— 两侧共用同一渲染器，保证 scope 与 find 的差异只在判据本身 */
@@ -970,8 +1132,8 @@ export interface RenderedPredicate {
  * rows_scanned 因此是「域内看了多少行」而不是「判据命中多少行」。
  * 纯聚合形态（agg 非空、select 为空）产出 `SELECT SUM(x) AS sum_x ...`，报告可比对聚合值（r8 F1）。
  */
-export function renderPredicate(pred: Predicate): RenderedPredicate {
-  const { from, whereSql, scanSql } = renderScan(pred);
+export function renderPredicate(pred: Predicate, depth = 0): RenderedPredicate {
+  const { from, whereSql, scanSql } = renderScan(pred, depth);
   const aggs = renderAggs(pred);
   const plain = pred.select.map((c) => ident(c, "select column"));
   const cols = [...plain, ...aggs];
@@ -1082,17 +1244,37 @@ function uses12Shapes(spec: VerifySpec): boolean {
   });
 }
 
+/** 1.3 shapes (glob / not-glob) anywhere in a predicate: sql, count, exists, and both sql-pair sides; where and scan. */
+export function uses13Shapes(spec: VerifySpec): boolean {
+  const OPS13 = new Set(["glob", "not-glob"]);
+  const pragmaFrom = (p: unknown): boolean =>
+    !!p && typeof p === "object" && (p as { from?: unknown }).from !== undefined && typeof (p as { from?: unknown }).from !== "string";
+  const walk = (node: unknown): boolean => {
+    if (!node || typeof node !== "object") return false;
+    const n = node as { op?: unknown; conditions?: unknown[]; where?: unknown; scan?: unknown };
+    if (typeof n.op === "string" && OPS13.has(n.op) && !Array.isArray(n.conditions)) return true;
+    return (n.conditions ?? []).some(walk) || walk(n.where) || walk(n.scan);
+  };
+  if (spec.views !== undefined && spec.views !== null) return true;
+  return (spec.vu ?? []).some((vu) => {
+    const c = vu.checker as { predicate?: unknown; left?: { predicate?: unknown }; right?: { predicate?: unknown } };
+    return [c.predicate, c.left?.predicate, c.right?.predicate].some((p) => walk(p) || pragmaFrom(p));
+  });
+}
+
 export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<VerifyReport> {
-  // 契约钉版：旧 spec 不会"大概能跑"——形状变了必须升版重出。1.2 起，
-  // 1.1 的 spec 仍可跑（向后兼容），但不得携带 1.2 才冻结的形态。
-  if (spec.contract_version === "1.1") {
-    if (uses12Shapes(spec)) {
-      throw new Error(
-        "version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2"
-      );
-    }
-  } else if (spec.contract_version !== CONTRACT_VERSION) {
-    throw new Error(`unsupported contract_version ${String(spec.contract_version)} — this engine implements ${CONTRACT_VERSION}`);
+  // 契约钉版：旧 spec 不会"大概能跑"——形状变了必须升版重出。旧版 spec 仍可跑（向后兼容），
+  // 但不得携带后来才冻结的形态：1.1 不得用 1.2 形态，1.1/1.2 不得用 1.3 形态（version_shape）。
+  if (!KNOWN_CONTRACT_VERSIONS.includes(String(spec.contract_version))) {
+    throw new Error(`unsupported contract_version ${String(spec.contract_version)} — this engine implements ${KNOWN_CONTRACT_VERSIONS.join(", ")}`);
+  }
+  if (spec.contract_version === "1.1" && uses12Shapes(spec)) {
+    throw new Error(
+      "version_shape: this spec declares contract_version 1.1 but uses 1.2-only shapes ({col} right-hand side / count.against) — bump the spec to 1.2"
+    );
+  }
+  if (spec.contract_version !== "1.3" && uses13Shapes(spec)) {
+    throw new Error(`version_shape: this spec declares contract_version ${spec.contract_version} but uses 1.3-only shapes (glob / not-glob / pragma source / derived table / views) — bump the spec to 1.3`);
   }
   const fopts: FactContext = { ...opts, expectedMaterialsSha: spec.materials_sha256 };
   const now = opts.nowIso ?? (() => new Date().toISOString());
@@ -1140,6 +1322,28 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   }
   if (!spec.vu.some((v) => v.role === "assert")) {
     throw new Error("spec has no assert units — a spec that asserts nothing must not report PASS");
+  }
+  // 1.3 (#80): red-team assertion on supplied SQL text, then the in-memory isolation for derived tables / views.
+  if (spec.contract_version === "1.3") {
+    for (const vu of spec.vu) {
+      const c = vu.checker as { sql?: string; scope_sql?: string };
+      const refusal = isolationRefusal(`${c.sql ?? ""} ${c.scope_sql ?? ""}`);
+      if (refusal) throw new Error(`${vu.id}: ${refusal}`);
+    }
+    const stored = new Set((runnerOf(opts).snapshotViews?.() ?? []).map((n) => n.toLowerCase()));
+    if (stored.size) {
+      for (const name of namesReadBy(spec)) {
+        if (stored.has(name.toLowerCase())) {
+          throw new Error(`snapshot_view: ${name} is a view stored in the snapshot — snapshot views are never executed (contract 1.3); declare a spec view instead`);
+        }
+      }
+    }
+  }
+  if (usesIsolation(spec)) {
+    const views = renderViews(spec.views);
+    const runner = runnerOf(opts);
+    if (!runner.isolate) throw new Error("isolation_unavailable: this spec uses derived tables or views (contract 1.3), which run only in memory, and this runner cannot");
+    runner.isolate(views);
   }
   const outputs = new Map<string, Row[]>();
   const results: VuResult[] = [];
@@ -1221,6 +1425,35 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
       if (st) outputs.set(vu.id, safeQuery(opts.runner, st));
     }
   }
+  // #270: every verdict downgrade happens before summary / overall / exceptions are folded, so the report agrees
+  // with its own units (archive verify and self-check re-fold them) and with the Rust engine, which downgrades first.
+  // Schema drift (评审 c): the frozen fingerprint differs from this run's → ERROR.
+  if (spec.schema_fingerprint) {
+    for (const r of results) {
+      if (r.witness && r.witness.schema_fingerprint !== spec.schema_fingerprint) {
+        (r as { verdict: string }).verdict = "ERROR";
+        r.evidence = { ...(r.evidence ?? {}), schema_drift: true, expected_schema: spec.schema_fingerprint, seen: r.witness.schema_fingerprint };
+      }
+    }
+  }
+  // 1.3 (#80 item 7): a snapshot whose collector recorded failed reads never yields PASS — the data is incomplete.
+  if (spec.contract_version === "1.3") {
+    const inputErrors = (runnerOf(opts).collectErrors?.() ?? []).filter((e) => e.rows > 0);
+    if (inputErrors.length) {
+      const reason = `input_errors: ${inputErrors.map((e) => `${e.rows} row(s) in ${e.table}`).join(", ")} — the collected input is incomplete, so this unit cannot PASS`;
+      for (const r of results) {
+        if (r.role !== "source" && r.verdict === "PASS") {
+          (r as { verdict: string }).verdict = "ERROR";
+          r.evidence = { ...(r.evidence ?? {}), input_errors: inputErrors, reason };
+        }
+      }
+    }
+  }
+  // 1.3 (ruling ③): an isolated run must leave the snapshot byte-identical — proven, not assumed.
+  if (usesIsolation(spec)) {
+    const changed = runnerOf(opts).untouched?.() ?? null;
+    if (changed) throw new Error(changed);
+  }
   const summary = { pass: 0, fail: 0, needs_material: 0, error: 0 };
   for (const r of results) {
     if (r.role !== "assert") continue;
@@ -1233,14 +1466,6 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
   const exceptions = results
     .filter((r) => r.role === "assert" && (r.verdict === "FAIL" || r.verdict === "NEEDS-MATERIAL"))
     .map((r) => ({ vu: r.id, severity: r.severity as Severity, row_count: Number((r.evidence as { violations?: number; rows_total?: number } | undefined)?.violations ?? 0) }));
-  if (spec.schema_fingerprint) {
-    for (const r of results) {
-      if (r.witness && r.witness.schema_fingerprint !== spec.schema_fingerprint) {
-        (r as { verdict: string }).verdict = "ERROR";
-        r.evidence = { ...(r.evidence ?? {}), schema_drift: true, expected_schema: spec.schema_fingerprint, seen: r.witness.schema_fingerprint };
-      }
-    }
-  }
   const report: VerifyReport = {
     contract_version: spec.contract_version,
     run_id: runId,

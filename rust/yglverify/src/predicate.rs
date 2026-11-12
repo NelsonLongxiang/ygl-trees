@@ -33,7 +33,203 @@ fn ident(name: &str, what: &str) -> Result<String, String> {
             "predicate {what} must be a bare identifier (optionally table-qualified), got {name:?}"
         ));
     }
-    Ok(parts.join("."))
+    // 1.3: the five reserved words a pragma source returns are quoted; every other identifier renders bare.
+    Ok(parts
+        .iter()
+        .map(|p| if crate::contract::QUOTED_IDENTS.contains(p) { format!("\"{p}\"") } else { (*p).to_string() })
+        .collect::<Vec<_>>()
+        .join("."))
+}
+
+fn bare_ident(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// 1.3: a whitelisted pragma source as SQL, or None (same closed form as engine.ts `pragmaSourceSql`).
+pub fn pragma_source_sql(name: &str, arg: Option<&str>) -> Option<String> {
+    let spec = crate::contract::pragma_spec(name)?;
+    if spec.arg == "none" {
+        return if arg.is_none() { Some(format!("pragma_{name}")) } else { None };
+    }
+    match arg {
+        Some(a) if bare_ident(a) => Some(format!("pragma_{name}('{a}')")),
+        _ => None,
+    }
+}
+
+/// Parse rendered pragma source text back to its closed form (row counts); None when it is not one.
+pub fn parse_pragma_source(text: &str) -> Option<String> {
+    let rest = text.strip_prefix("pragma_")?;
+    let (name, arg) = match rest.find('(') {
+        None => (rest, None),
+        Some(i) => {
+            let inner = rest[i..].strip_prefix("('")?.strip_suffix("')")?;
+            (&rest[..i], Some(inner))
+        }
+    };
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+        return None;
+    }
+    pragma_source_sql(name, arg)
+}
+
+/// 1.3 (#80): the predicate source — a bare table (or spec view) name, a whitelisted read-only pragma function, or a
+/// derived table. Returns (sql, same-table qualifier); a pragma source has no qualifier, a derived table is
+/// `derived`. Messages match engine.ts `renderFrom`.
+pub fn render_from(from: &serde_json::Value) -> Result<(String, String), String> {
+    render_from_at(from, 0)
+}
+
+fn render_from_at(from: &serde_json::Value, depth: usize) -> Result<(String, String), String> {
+    if let Some(s) = from.as_str() {
+        if s.len() >= 7 && s[..7].eq_ignore_ascii_case("pragma_") {
+            return Err(format!(
+                "pragma_not_allowed: {} as a table name — write a pragma source as {{ pragma, arg }}",
+                serde_json::to_string(s).unwrap_or_default()
+            ));
+        }
+        return Ok((ident(s, "from")?, s.to_string()));
+    }
+    if let Some(obj) = from.as_object() {
+        if let Some(pragma) = obj.get("pragma").and_then(|v| v.as_str()) {
+            let extra: Vec<&str> = obj.keys().map(|k| k.as_str()).filter(|k| *k != "pragma" && *k != "arg").collect();
+            if !extra.is_empty() {
+                return Err(format!("pragma source takes only {{ pragma, arg }}, got {}", extra.join(", ")));
+            }
+            let spec = match crate::contract::pragma_spec(pragma) {
+                Some(s) => s,
+                None => {
+                    let names: Vec<&str> = crate::contract::PRAGMA_SOURCES.iter().map(|p| p.name).collect();
+                    return Err(format!(
+                        "pragma_not_allowed: {} — the read-only whitelist is {}",
+                        serde_json::to_string(pragma).unwrap_or_default(),
+                        names.join(", ")
+                    ));
+                }
+            };
+            let arg = obj.get("arg");
+            let arg_str = match arg {
+                None => None,
+                Some(v) => match v.as_str() {
+                    Some(s) => Some(s),
+                    None => {
+                        return Err(if spec.arg == "none" {
+                            format!("pragma {pragma} takes no arg")
+                        } else {
+                            format!("pragma {pragma} needs arg: a bare identifier naming a {}", spec.arg)
+                        })
+                    }
+                },
+            };
+            return match pragma_source_sql(pragma, arg_str) {
+                Some(sql) => Ok((sql, String::new())),
+                None => Err(if spec.arg == "none" {
+                    format!("pragma {pragma} takes no arg")
+                } else {
+                    format!("pragma {pragma} needs arg: a bare identifier naming a {}", spec.arg)
+                }),
+            };
+        }
+        if obj.contains_key("derived") {
+            let extra: Vec<&str> = obj.keys().map(|k| k.as_str()).filter(|k| *k != "derived").collect();
+            if !extra.is_empty() {
+                return Err(format!("derived source takes only {{ derived }}, got {}", extra.join(", ")));
+            }
+            let inner_v = &obj["derived"];
+            if !inner_v.is_object() {
+                return Err("derived source needs { derived: <predicate> }".into());
+            }
+            if depth + 1 > crate::contract::MAX_DERIVED_DEPTH {
+                return Err(format!("derived tables nest at most {} deep", crate::contract::MAX_DERIVED_DEPTH));
+            }
+            let inner: Predicate = serde_json::from_value(inner_v.clone())
+                .map_err(|e| format!("derived source needs {{ derived: <predicate> }}: {e}"))?;
+            let r = render_predicate_at(&inner, depth + 1)?;
+            return Ok((format!("({}) AS derived", r.find_sql), "derived".to_string()));
+        }
+    }
+    Err("predicate.from must be a table name, a { pragma, arg } source or a { derived } table (contract 1.3)".into())
+}
+
+/// 1.3: the columns a predicate yields — select names (after a table qualifier) and agg aliases (`outputColumnsOf`).
+pub fn output_columns_of(pred: &Predicate) -> Vec<String> {
+    let mut out: Vec<String> = pred.select.iter().map(|c| c.rsplit('.').next().unwrap_or("").to_string()).collect();
+    if let Some(aggs) = &pred.agg {
+        out.extend(aggs.iter().map(agg_alias));
+    }
+    out
+}
+
+/// The bare names a predicate's `from` reads, through derived tables (`fromNamesOf`).
+pub fn from_names_of(pred: &Predicate) -> Vec<String> {
+    from_names_of_value(&pred.from)
+}
+
+fn from_names_of_value(from: &serde_json::Value) -> Vec<String> {
+    if let Some(s) = from.as_str() {
+        return vec![s.to_string()];
+    }
+    match from.as_object().and_then(|o| o.get("derived")).and_then(|d| d.get("from")) {
+        Some(inner) => from_names_of_value(inner),
+        None => vec![],
+    }
+}
+
+/// Does the predicate read a derived table (`hasDerived`)?
+pub fn has_derived(pred: &Predicate) -> bool {
+    pred.from.as_object().map(|o| o.contains_key("derived")).unwrap_or(false)
+}
+
+fn is_view_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !crate::contract::VIEW_RESERVED_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
+/// 1.3 (#80, ruling ③): check a spec's view list and render each to the SELECT its TEMP VIEW wraps — engine.ts
+/// `renderViews`, same checks in the same order and the same messages.
+pub fn render_views(views: Option<&serde_json::Value>) -> Result<Vec<(String, String)>, String> {
+    let views = match views {
+        None | Some(serde_json::Value::Null) => return Ok(vec![]),
+        Some(v) => v,
+    };
+    let arr = views.as_array().ok_or_else(|| "spec.views must be an array of { name, predicate }".to_string())?;
+    let names: Vec<Option<&str>> = arr.iter().map(|v| v.get("name").and_then(|n| n.as_str())).collect();
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, v) in arr.iter().enumerate() {
+        let obj = v.as_object().ok_or_else(|| format!("spec.views[{i}] must be {{ name, predicate }}"))?;
+        let extra: Vec<&str> = obj.keys().map(|k| k.as_str()).filter(|k| *k != "name" && *k != "predicate").collect();
+        if !extra.is_empty() {
+            return Err(format!("spec.views[{i}] takes only {{ name, predicate }}, got {}", extra.join(", ")));
+        }
+        let name = match obj.get("name").and_then(|n| n.as_str()) {
+            Some(n) if is_view_name(n) => n,
+            _ => {
+                return Err(format!(
+                    "view_name: {} must be snake_case ([a-z][a-z0-9_]*) and not start with {}",
+                    serde_json::to_string(obj.get("name").unwrap_or(&serde_json::Value::Null)).unwrap_or_default(),
+                    crate::contract::VIEW_RESERVED_PREFIXES.join(" or ")
+                ))
+            }
+        };
+        if names.iter().position(|n| *n == Some(name)) != Some(i) {
+            return Err(format!("view_name: {} is declared twice", serde_json::to_string(name).unwrap_or_default()));
+        }
+        let pv = obj.get("predicate").cloned().unwrap_or(serde_json::Value::Null);
+        for r in from_names_of_value(pv.get("from").unwrap_or(&serde_json::Value::Null)) {
+            if let Some(at) = names.iter().position(|n| *n == Some(r.as_str())) {
+                if at >= i {
+                    return Err(format!("view {name} reads view {r}, which is not declared before it"));
+                }
+            }
+        }
+        let pred: Predicate = serde_json::from_value(pv).map_err(|e| format!("view {name}: predicate: {e}"))?;
+        out.push((name.to_string(), render_predicate(&pred)?.find_sql));
+    }
+    Ok(out)
 }
 
 /// 时间字面量规范化（r8 F5）：带偏移的时间统一折成 UTC Z（SQLite 里日期是字符串，字典序 ≠ 时间序）。
@@ -165,10 +361,43 @@ pub fn first_col_ref_pair(pred: &Predicate) -> Option<(String, String)> {
     walk_group(&pred.where_).or_else(|| walk_group(&pred.scan))
 }
 
+/// 1.3: does the predicate use a 1.3-only shape — a pragma source, or a glob / not-glob op in `where` or `scan`?
+pub fn contains_op13(pred: &Predicate) -> bool {
+    if !pred.from.is_string() {
+        return true;
+    }
+    fn walk_node(n: &PredicateNode) -> bool {
+        match n {
+            PredicateNode::Condition(c) => c.op == "glob" || c.op == "not-glob",
+            PredicateNode::Group(g) => g.conditions.iter().any(walk_node),
+        }
+    }
+    fn walk_group(g: &Option<PredicateGroup>) -> bool {
+        g.as_ref().map(|g| g.conditions.iter().any(walk_node)).unwrap_or(false)
+    }
+    walk_group(&pred.where_) || walk_group(&pred.scan)
+}
+
 fn render_condition(w: &PredicateCondition, from_table: &str) -> Result<String, String> {
     let col = ident(&w.col, "where column")?;
     let rhs_col = column_ref(&w.value);
     match w.op.as_str() {
+        "glob" | "not-glob" => {
+            // 1.3 (#80/#232): SQLite's own GLOB, same SQL as engine.ts. A literal pattern only: no {col}, no ISO
+            // normalisation. NULL never matches either form.
+            if rhs_col.is_some() {
+                return Err(format!(
+                    "glob_rhs_must_be_pattern: predicate where {col} {} takes a string pattern, not a {{col}}",
+                    w.op
+                ));
+            }
+            let pat = match &w.value {
+                Some(serde_json::Value::String(s)) if !s.is_empty() => s,
+                _ => return Err(format!("predicate where {col} {} needs a non-empty string pattern", w.op)),
+            };
+            let kw = if w.op == "glob" { "GLOB" } else { "NOT GLOB" };
+            Ok(format!("{col} {kw} '{}'", pat.replace('\'', "''")))
+        }
         "is null" | "is not null" => {
             if rhs_col.is_some() {
                 return Err(format!(
@@ -202,6 +431,14 @@ fn render_condition(w: &PredicateCondition, from_table: &str) -> Result<String, 
             Ok(format!("{col} BETWEEN {} AND {}", literal(&arr[0])?, literal(&arr[1])?))
         }
         op => {
+            // Parity with engine.ts (GitHub #19): the closed set is enforced here too, so an op string can never be
+            // spliced into SQL (`"= 1 OR 1=(SELECT …)"`). Before 1.3 the Rust engine interpolated any op.
+            const COMPARE: [&str; 6] = ["=", "!=", ">", ">=", "<", "<="];
+            if !COMPARE.contains(&op) {
+                return Err(format!(
+                    "unknown predicate op {op:?} — closed set is =, !=, >, >=, <, <=, plus in|between|is null|is not null|glob|not-glob"
+                ));
+            }
             if let Some(rhs) = &rhs_col {
                 // 1.2 column-to-column: same table only.
                 let parts: Vec<&str> = rhs.split('.').collect();
@@ -278,9 +515,13 @@ pub struct RenderedScan {
 
 /// 谓词渲染的公共部分：from 与 where/scan 两段（find/scope/count/exists 共用）。
 pub fn render_scan(pred: &Predicate) -> Result<RenderedScan, String> {
-    let from = ident(&pred.from, "from")?;
-    let scan_sql = render_where(pred.scan.as_ref(), &pred.from)?;
-    let where_sql = render_where(and_groups(pred.scan.as_ref(), pred.where_.as_ref()).as_ref(), &pred.from)?;
+    render_scan_at(pred, 0)
+}
+
+fn render_scan_at(pred: &Predicate, depth: usize) -> Result<RenderedScan, String> {
+    let (from, table) = render_from_at(&pred.from, depth)?;
+    let scan_sql = render_where(pred.scan.as_ref(), &table)?;
+    let where_sql = render_where(and_groups(pred.scan.as_ref(), pred.where_.as_ref()).as_ref(), &table)?;
     Ok(RenderedScan { from, where_sql, scan_sql })
 }
 
@@ -328,7 +569,11 @@ pub struct RenderedPredicate {
 
 /// 从同一 AST 渲染 find 与 scope 两段查询（同源生成）。
 pub fn render_predicate(pred: &Predicate) -> Result<RenderedPredicate, String> {
-    let scan = render_scan(pred)?;
+    render_predicate_at(pred, 0)
+}
+
+fn render_predicate_at(pred: &Predicate, depth: usize) -> Result<RenderedPredicate, String> {
+    let scan = render_scan_at(pred, depth)?;
     let aggs = render_aggs(pred)?;
     let mut cols = Vec::new();
     for c in &pred.select {

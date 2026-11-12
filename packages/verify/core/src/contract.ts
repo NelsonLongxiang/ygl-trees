@@ -6,7 +6,14 @@
  */
 
 // 1.0 冻结 2026-10-19（fdc757f6 持闸放行）；1.1（2026-10-20）新增报告 verifier.signature/signing_scheme/public_key_fingerprint 三个可选字段（封包签名身份）；1.2（2026-10-21）新增两类「右值可引用列」形态：谓词内同表 {col} 列对列、count.against 单值标量（agg 必填）。1.1 spec 在 1.2 引擎下行为不变；声明 1.1 却用 1.2 形态 → 入口拒跑（version_shape）
-export const CONTRACT_VERSION = "1.2";
+// 1.3（2026-11-11，属主「批准 1.3 范围」，#80/#232）：谓词 op 闭集新增 glob / not-glob（SQLite 原生 GLOB，两引擎同一句 SQL）。
+// 1.2 spec 在 1.3 引擎下行为不变；声明 1.1/1.2 却用 1.3 形态 → 入口拒跑（version_shape）。
+export const CONTRACT_VERSION = "1.3";
+/** prepare 在 spec 不用任何 1.3 形态时盖的版本（最小够用）：不用新形态的 spec 字节与 1.2 引擎时一致，
+ *  旧引擎照样能跑；消费仓的引擎下限（meta ENGINE_FLOOR）也按它取，不因引擎升版平白抬高。 */
+export const BASELINE_CONTRACT_VERSION = "1.2";
+/** 本引擎能跑的全部契约版本（旧版 spec 只要不带后来才冻结的形态就照跑）。 */
+export const KNOWN_CONTRACT_VERSIONS: readonly string[] = ["1.1", "1.2", "1.3"];
 /** 语料版本（与 corpus/manifest.json 同步；prepare/self-check/报告都用它）。升版=冻结快照重铸。 */
 export const CORPUS_VERSION = "1.2";
 
@@ -44,7 +51,10 @@ export type PredicateOp =
   | "in"
   | "between"
   | "is null"
-  | "is not null";
+  | "is not null"
+  /** 1.3：SQLite GLOB 模式匹配（大小写敏感，* ? [...] 字符类）；值为非空字符串模式。 */
+  | "glob"
+  | "not-glob";
 
 /** 1.2：右值引用同一谓词表的一列（列对列比较；只允许同表——跨表要 join key，属 sql-pair）。 */
 export interface ColumnRef {
@@ -76,9 +86,64 @@ export interface PredicateAgg {
   as?: string;
 }
 
+/** 1.3 (#80, owner 2026-11-11): read-only pragma table functions as a predicate source. The whitelist and each
+ *  function's fixed columns are part of the contract — both engines, prepare and run use this one table.
+ *  `arg` names a snapshot table (an index for index_info / index_xinfo); user_version takes none. */
+export const PRAGMA_SOURCES: Readonly<Record<string, { arg: "table" | "index" | "none"; columns: readonly string[] }>> = {
+  table_info: { arg: "table", columns: ["cid", "name", "type", "notnull", "dflt_value", "pk"] },
+  table_xinfo: { arg: "table", columns: ["cid", "name", "type", "notnull", "dflt_value", "pk", "hidden"] },
+  index_list: { arg: "table", columns: ["seq", "name", "unique", "origin", "partial"] },
+  index_info: { arg: "index", columns: ["seqno", "cid", "name"] },
+  index_xinfo: { arg: "index", columns: ["seqno", "cid", "name", "desc", "coll", "key"] },
+  foreign_key_list: { arg: "table", columns: ["id", "seq", "table", "from", "to", "on_update", "on_delete", "match"] },
+  user_version: { arg: "none", columns: ["user_version"] },
+};
+
+/** 1.3: identifiers SQLite refuses unquoted that the pragma sources return (`foreign_key_list.table/from/to`,
+ *  `index_list.unique`, `table_info.notnull`). The renderer double-quotes exactly these; any other identifier stays
+ *  bare. A spec that used one of them before 1.3 errored, so no working spec renders differently. Measured on SQLite:
+ *  `match`, `desc`, `key` are accepted bare and stay bare. */
+export const QUOTED_IDENTS: readonly string[] = ["from", "notnull", "table", "to", "unique"];
+
+/** 1.3: `{ pragma, arg? }` — rendered as `pragma_<name>('<arg>')` (user_version: `pragma_user_version`). */
+export interface PragmaSource {
+  pragma: string;
+  arg?: string;
+}
+
+/** 1.3 (#80): a derived table — another predicate, rendered as the subquery `(<its findSql>) AS derived`. The outer
+ *  predicate reads the inner one's output columns (select names, agg aliases). Same mechanical AST, no SQL text. */
+export interface DerivedSource {
+  derived: Predicate;
+}
+
+/** 1.3: how deep derived tables may nest (`{ derived: { from: { derived: … } } }`); both engines refuse deeper. */
+export const MAX_DERIVED_DEPTH = 4;
+
+/** Predicate source: a snapshot table or a spec view (bare identifier), or — 1.3 — a whitelisted pragma function,
+ *  or a derived table. */
+export type PredicateFrom = string | PragmaSource | DerivedSource;
+
+/** 1.3 (#80, ruling ③): a spec-declared view. The engine creates it as a TEMP VIEW (temp_store = MEMORY) on the
+ *  run's read-only connection before the first checker, so it never touches the snapshot file. A view may read
+ *  snapshot tables, pragma sources, derived tables and earlier views; views stored in the snapshot are never run. */
+export interface SpecView {
+  name: string;
+  predicate: Predicate;
+}
+
+/** 1.3: a view name is snake_case and may not shadow SQLite's reserved prefixes. The names a spec declares are its
+ *  frozen vocabulary: `from` may name only a snapshot table or one of them. */
+export const VIEW_NAME = /^[a-z][a-z0-9_]*$/;
+
+/** 1.3 (#80 item 7): tables in which a 1.3 collector records failed or partial reads. A snapshot with rows in any of
+ *  them never yields PASS for a 1.3 spec: every assert unit that would PASS becomes ERROR (input_errors). */
+export const COLLECT_ERROR_TABLES: readonly string[] = ["archive_errors"];
+export const VIEW_RESERVED_PREFIXES: readonly string[] = ["sqlite_", "pragma_"];
+
 export interface Predicate {
-  /** 表/视图名（裸标识符） */
-  from: string;
+  /** 表名或 spec 视图名（裸标识符）；1.3 起也可以是白名单内的只读 pragma 函数 `{ pragma, arg? }` 或派生表 `{ derived }` */
+  from: PredicateFrom;
   /**
    * 取数列（裸标识符）。审计看不出「取了什么」的 `select *` 一律拒绝；
    * 纯聚合查询（agg 非空）时 select 必须为空数组——列与聚合混排需要 GROUP BY，
@@ -354,6 +419,8 @@ export interface VerifySpec {
   schema_fingerprint?: string;
   /** 冻结材料的 sha256（W15）；runVerify 在开 review 前复核 materialsText，不一致 → ERROR */
   materials_sha256?: string;
+  /** 1.3 (#80): spec-declared views, created in memory in this order before the first checker (absent = none). */
+  views?: SpecView[];
   sealed: { review: boolean };
 }
 

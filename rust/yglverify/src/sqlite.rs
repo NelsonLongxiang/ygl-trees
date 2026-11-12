@@ -3,7 +3,7 @@
 //! 纪律与 TS 一致：只允许 SELECT/WITH（单语句），表名白名单字符集，
 //! 指纹算法逐字节相同（`name:normalized_sql` 用 `|` 连接后 sha256）——prepare 冻结值与 run 比对靠它。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use rusqlite::types::ValueRef;
@@ -17,6 +17,17 @@ pub type Row = Vec<(String, Value)>;
 pub struct SqliteRunner {
     conn: Connection,
     table_cache: RefCell<HashMap<String, i64>>,
+    path: String,
+    isolated: Cell<bool>,
+    /// 1.3: the snapshot file's sha256 when `isolate` ran — `untouched` proves it unchanged at the end of the run.
+    isolated_sha: RefCell<Option<String>>,
+}
+
+fn file_sha256(path: &str) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read snapshot {path}: {e}"))?;
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    Ok(hex::encode(h.finalize()))
 }
 
 fn value_of(raw: ValueRef<'_>) -> Value {
@@ -120,7 +131,92 @@ impl SqliteRunner {
         )
         .map_err(|e| format!("cannot open snapshot read-only: {e}"))?;
         let _ = conn.execute_batch("PRAGMA query_only = ON;");
-        Ok(Self { conn, table_cache: RefCell::new(HashMap::new()) })
+        Ok(Self {
+            conn,
+            table_cache: RefCell::new(HashMap::new()),
+            path: path.to_string(),
+            isolated: Cell::new(false),
+            isolated_sha: RefCell::new(None),
+        })
+    }
+
+    /// 1.3 (#80, rulings ② ③): derived tables and spec views run in memory only — sqlite-runner.ts `isolate`. The
+    /// snapshot stays opened read-only; temp storage is forced to memory and checked, each view is created as a TEMP
+    /// VIEW, then `query_only` locks the connection again. A view name equal to a snapshot object is refused.
+    pub fn isolate(&self, views: &[(String, String)]) -> Result<(), String> {
+        if self.isolated.get() {
+            return Err("isolate: already isolated".into());
+        }
+        self.isolated.set(true);
+        if self.path != ":memory:" {
+            *self.isolated_sha.borrow_mut() = Some(file_sha256(&self.path)?);
+        }
+        self.conn.execute_batch("PRAGMA query_only = OFF;").map_err(|e| format!("isolate: {e}"))?;
+        let res = (|| -> Result<(), String> {
+            self.conn.execute_batch("PRAGMA temp_store = MEMORY;").map_err(|e| format!("isolate: {e}"))?;
+            let ts: i64 = self.conn.query_row("PRAGMA temp_store", [], |r| r.get(0)).map_err(|e| format!("isolate: {e}"))?;
+            if ts != 2 {
+                return Err(format!(
+                    "isolation_unavailable: temp_store is {ts}, not MEMORY — this SQLite build keeps temp objects on disk"
+                ));
+            }
+            let mut clash = self
+                .conn
+                .prepare("SELECT name FROM main.sqlite_master WHERE lower(name) = lower(?1)")
+                .map_err(|e| format!("isolate: {e}"))?;
+            for (name, sql) in views {
+                let snake = name.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false)
+                    && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+                if !snake {
+                    return Err(format!("view_name: {} is not snake_case", serde_json::to_string(name).unwrap_or_default()));
+                }
+                if clash.exists([name]).map_err(|e| format!("isolate: {e}"))? {
+                    return Err(format!("view_name: {name} is already an object in the snapshot — a spec view may not shadow it"));
+                }
+                self.conn
+                    .execute_batch(&format!("CREATE TEMP VIEW {name} AS {sql}"))
+                    .map_err(|e| format!("view {name}: {e}"))?;
+            }
+            Ok(())
+        })();
+        let _ = self.conn.execute_batch("PRAGMA query_only = ON;");
+        res
+    }
+
+    /// 1.3 (ruling ③): None when the run was not isolated or the snapshot bytes are unchanged, else the refusal.
+    pub fn untouched(&self) -> Option<String> {
+        let before = self.isolated_sha.borrow().clone()?;
+        match file_sha256(&self.path) {
+            Ok(now) if now == before => None,
+            Ok(now) => Some(format!("snapshot_changed: sha256 {} before the views, {} after the run", &before[..12], &now[..12])),
+            Err(e) => Some(e),
+        }
+    }
+
+    /// 1.3 (#80 item 7): rows in each collector error table present in the snapshot (sqlite-runner.ts `collectErrors`).
+    pub fn collect_errors(&self) -> Result<Vec<(String, i64)>, String> {
+        let mut out = Vec::new();
+        for table in crate::contract::COLLECT_ERROR_TABLES {
+            let mut has = self
+                .conn
+                .prepare("SELECT 1 FROM main.sqlite_master WHERE type='table' AND name = ?1")
+                .map_err(|e| format!("collect_errors: {e}"))?;
+            if !has.exists([table]).map_err(|e| format!("collect_errors: {e}"))? {
+                continue;
+            }
+            let n: i64 = self
+                .conn
+                .query_row(&format!("SELECT count(*) FROM main.\"{table}\""), [], |r| r.get(0))
+                .map_err(|e| format!("collect_errors: {e}"))?;
+            out.push((table.to_string(), n));
+        }
+        Ok(out)
+    }
+
+    /// 1.3: names of views stored in the snapshot (main schema) — a 1.3 spec may never read one.
+    pub fn snapshot_views(&self) -> Result<Vec<String>, String> {
+        let rows = self.query("SELECT name FROM main.sqlite_master WHERE type='view' ORDER BY name")?;
+        Ok(rows.iter().filter_map(|r| column(r, "name").and_then(|v| v.as_str()).map(|s| s.to_string())).collect())
     }
 
     pub fn query(&self, sql: &str) -> Result<Vec<Row>, String> {
@@ -164,13 +260,23 @@ impl SqliteRunner {
         if let Some(n) = self.table_cache.borrow().get(table) {
             return Ok(*n);
         }
-        let ok = !table.is_empty()
-            && table.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
-            && table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        // 1.3: a whitelisted pragma source counts its own rows, re-parsed against the closed form (never spliced).
+        let is_pragma = table.len() >= 7 && table[..7].eq_ignore_ascii_case("pragma_");
+        let pragma = if is_pragma { crate::predicate::parse_pragma_source(table) } else { None };
+        let ok = if is_pragma {
+            pragma.is_some()
+        } else {
+            !table.is_empty()
+                && table.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
+                && table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        };
         if !ok {
             return Err(format!("invalid table name: {table}"));
         }
-        let rows = self.query(&format!("SELECT count(*) AS n FROM \"{table}\""))?;
+        let rows = match &pragma {
+            Some(p) => self.query(&format!("SELECT count(*) AS n FROM {p}"))?,
+            None => self.query(&format!("SELECT count(*) AS n FROM \"{table}\""))?,
+        };
         let n = rows
             .first()
             .and_then(first_value)
@@ -229,6 +335,20 @@ pub fn extract_tables(sql: &str) -> Vec<String> {
             let start = j;
             while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                 j += 1;
+            }
+            // 1.3: keep a whitelisted pragma source whole — `pragma_table_info('orders')` — so its rows can be counted.
+            if j > start && lower[start..j].starts_with("pragma_") && bytes.get(j) == Some(&b'(') {
+                if let Some(close) = sql[j..].find(')') {
+                    let whole = &sql[start..j + close + 1];
+                    if crate::predicate::parse_pragma_source(whole).is_some() {
+                        let name = whole.to_string();
+                        if !out.iter().any(|x| x == &name) {
+                            out.push(name);
+                        }
+                        i = j + close + 1;
+                        continue;
+                    }
+                }
             }
             if j > start {
                 let name: String = sql[start..j].to_string();

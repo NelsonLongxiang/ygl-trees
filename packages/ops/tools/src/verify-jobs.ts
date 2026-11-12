@@ -21,7 +21,7 @@ import { join, relative, sep } from "node:path";
 
 import type { Env } from "../../../core/database/src/types";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
-import type { ReviewFinding, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
+import type { ReviewFinding, SpecView, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import type { PrepareCandidate } from "../../../verify/core/src/prepare";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import { prepareSpec } from "../../../verify/core/src/prepare";
@@ -110,6 +110,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
   if (!candidates || !reviews) {
     return fail(400, "candidates and reviews must be JSON arrays (the agent's construction artifacts; this server does not invent them)");
   }
+  // 1.3 (#80): optional spec views, same shape as the CLI candidates envelope's `views`.
+  if (body.views !== undefined && !Array.isArray(body.views)) return fail(400, "views must be an array of { name, predicate }");
   let material;
   try {
     material = findMaterial(env, materialId);
@@ -149,6 +151,8 @@ export async function prepareViaHttp(env: Env, input: unknown): Promise<HttpResu
     redteam: minimalRedTeam(schema.ddl),
     materialIndex: { text, files: material.files.map((f) => ({ path: f.path, sha256: f.sha256, mime: f.mime, size: f.size })) },
     schemaProbe: probeOfDb(snap.path),
+    views: body.views as SpecView[] | undefined,
+    snapshotPath: snap.path,
     specId: `spec_${short(sha256(materialId))}`,
     title: body.title ? String(body.title) : undefined,
     domain: body.domain ? String(body.domain) : undefined,

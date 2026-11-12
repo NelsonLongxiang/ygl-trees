@@ -12,14 +12,16 @@
 import { createHash } from "node:crypto";
 
 import { validateCompareSpec } from "./compare";
-import { CONTRACT_VERSION, CORPUS_VERSION } from "./contract";
-import { containsVerbatim, renderPredicate, renderScan } from "./engine";
+import { BASELINE_CONTRACT_VERSION, CORPUS_VERSION, PRAGMA_SOURCES } from "./contract";
+import { containsVerbatim, outputColumnsOf, renderPredicate, renderScan, renderViews, uses13Shapes } from "./engine";
 import type {
   Checker,
+  DerivedSource,
   FileChecker,
   Predicate,
   ReviewFinding,
   ReviewRunner,
+  SpecView,
   SqlChecker,
   VerifySpec,
   VerifyUnit,
@@ -47,6 +49,10 @@ export interface MaterialIndex {
 /** 目标库 schema 探针结果（prepare 只读 schema，不取数） */
 export interface SchemaProbe {
   tables: Record<string, string[]>;
+  /** 1.3: names of views stored in the snapshot — never executed; a `from` naming one gets a pointed refusal. */
+  views?: string[];
+  /** 1.3: the spec's registered views and their output columns (filled by prepare from `views`, not by a probe). */
+  specViews?: Record<string, string[]>;
 }
 
 export interface PrepareCandidate {
@@ -116,6 +122,10 @@ export interface PrepareOptions {
   reviewedClauses?: string[];
   /** 之前已冻结的 materials_sha256 集合（防"旧材料重放"） */
   knownMaterialHashes?: string[];
+  /** 1.3 (#80): spec-level views (`--views`), checked at P2 and frozen into the spec. */
+  views?: SpecView[];
+  /** 1.3 (#80, ruling ②): the snapshot the spec is built against; P2 refuses a spec that names its path. */
+  snapshotPath?: string;
 }
 
 export interface PrepareResult {
@@ -405,7 +415,7 @@ export function orphanReviews(candidates: Array<{ source_clause?: unknown }>, re
 }
 
 /** P2 子步骤：谓词里的表/列必须在探针里存在（E5②/E5⑤：sql、sql-pair、count、exists 共用） */
-const PREDICATE_OPS = new Set(["=", "!=", ">", ">=", "<", "<=", "in", "between", "is null", "is not null"]);
+const PREDICATE_OPS = new Set(["=", "!=", ">", ">=", "<", "<=", "in", "between", "is null", "is not null", "glob", "not-glob"]);
 const GROUP_OPS = new Set(["and", "or", "not"]);
 
 /** GitHub #19: the op value is interpolated into SQL, so an unknown op is an
@@ -434,8 +444,38 @@ function validatePredicateOps(n: unknown): string | null {
 }
 
 function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "predicate"): string | null {
-  const table = pred.from;
-  const cols = schema.tables[table];
+  // 1.3 (#80): a pragma source has the whitelist's fixed columns; its arg must name a probed table (index names are
+  // not probed, so index_info / index_xinfo args are checked only for shape — an unknown index yields 0 rows, which
+  // the zero-scan rule turns into NEEDS-MATERIAL, never a PASS).
+  let table: string;
+  let cols: string[] | undefined;
+  if (typeof pred.from === "string") {
+    table = pred.from;
+    cols = Object.prototype.hasOwnProperty.call(schema.tables, table) ? schema.tables[table] : schema.specViews?.[table];
+    // 1.3 (ruling ③): a view stored in the snapshot runs SQL its producer wrote — never executed; register a spec view.
+    if (!cols && schema.views?.includes(table)) {
+      return `${label}.from ${JSON.stringify(table)} is a view stored in the snapshot — snapshot views are never executed (contract 1.3); declare a spec view in views instead`;
+    }
+  } else if (pred.from && typeof pred.from === "object" && "derived" in (pred.from as object)) {
+    // 1.3: a derived table — check the inner predicate first, then the outer one reads its output columns.
+    const inner = (pred.from as DerivedSource).derived;
+    if (!inner || typeof inner !== "object") return `${label}.from.derived must be a predicate`;
+    const innerErr = checkPredicateSchema(inner, schema, `${label}.from.derived`);
+    if (innerErr) return innerErr;
+    table = "derived";
+    cols = outputColumnsOf(inner);
+  } else if (pred.from && typeof pred.from === "object" && typeof (pred.from as { pragma?: unknown }).pragma === "string") {
+    const { pragma, arg } = pred.from as { pragma: string; arg?: string };
+    const spec = Object.prototype.hasOwnProperty.call(PRAGMA_SOURCES, pragma) ? PRAGMA_SOURCES[pragma] : undefined;
+    if (!spec) return `${label}.from: pragma_not_allowed ${JSON.stringify(pragma)} — the read-only whitelist is ${Object.keys(PRAGMA_SOURCES).join(", ")}`;
+    if (spec.arg === "table" && (typeof arg !== "string" || !schema.tables[arg])) {
+      return `${label}.from: pragma ${pragma} arg ${JSON.stringify(arg)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
+    }
+    table = `pragma_${pragma}`;
+    cols = [...spec.columns];
+  } else {
+    return `${label}.from must be a table name, a { pragma, arg } source or a { derived } table`;
+  }
   const opErr = validatePredicateOps(pred.where as unknown);
   if (opErr) return `${label}: ${opErr}`;
   if (pred.scan) {
@@ -443,7 +483,9 @@ function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "pre
     if (scanErr) return `${label}: ${scanErr}`;
   }
   if (!cols) {
-    return `${label}.from ${JSON.stringify(table)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")})`;
+    const views = Object.keys(schema.specViews ?? {});
+    const viewNote = views.length ? `; registered views: ${views.slice(0, 8).join(", ")}` : "";
+    return `${label}.from ${JSON.stringify(table)} is not in the probed schema (tables: ${Object.keys(schema.tables).slice(0, 8).join(", ")}${viewNote})`;
   }
   const wanted = [...pred.select];
   const collect = (n: unknown): string[] => {
@@ -471,10 +513,59 @@ function checkPredicateSchema(pred: Predicate, schema: SchemaProbe, label = "pre
   return null;
 }
 
+/** 1.3 red team (ruling ②): no string anywhere in a candidate or view may name the snapshot's path — the spec reads
+ *  its snapshot through the runner only. Mechanical rendering cannot emit ATTACH / file: (engine isolationRefusal
+ *  re-checks supplied SQL at run). */
+export function snapshotPathRefusal(value: unknown, snapshotPaths: string[]): string | null {
+  const paths = snapshotPaths.filter((p) => p.length > 0);
+  if (!paths.length) return null;
+  const strings: string[] = [];
+  const walk = (v: unknown): void => {
+    if (typeof v === "string") strings.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(value);
+  return strings.some((s) => paths.some((p) => s.includes(p)))
+    ? "snapshot_reference: the spec names the snapshot's own path — a spec reads its snapshot only through the runner (contract 1.3)"
+    : null;
+}
+
+/** 1.3 (#80): check `views` against the probed snapshot and register their columns for the candidates' P2. Names
+ *  may not equal a snapshot table or view; each view's predicate passes the same schema check as a VU, reading only
+ *  snapshot tables, pragma sources, derived tables and earlier views. */
+export function prepareViews(views: unknown, schema: SchemaProbe | undefined, snapshotPaths: string[] = []): { schema?: SchemaProbe; error?: string } {
+  if (views === undefined) return { schema };
+  let rendered: Array<{ name: string; sql: string }>;
+  try {
+    rendered = renderViews(views);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  const specViews: Record<string, string[]> = {};
+  for (const [i, v] of (views as SpecView[]).entries()) {
+    const pathErr = snapshotPathRefusal(v, snapshotPaths);
+    if (pathErr) return { error: `view ${v.name}: ${pathErr}` };
+    if (hasTimeFunction(rendered[i].sql)) return { error: `view ${v.name} renders a time function (now()/current_timestamp) — not replayable` };
+    if (schema) {
+      const lower = v.name.toLowerCase();
+      if (Object.keys(schema.tables).some((t) => t.toLowerCase() === lower) || (schema.views ?? []).some((t) => t.toLowerCase() === lower)) {
+        return { error: `view_name: ${v.name} is already an object in the snapshot — a spec view may not shadow it` };
+      }
+      const err = checkPredicateSchema(v.predicate, { ...schema, specViews: { ...specViews } }, `view ${v.name}`);
+      if (err) return { error: err };
+    }
+    specViews[v.name] = outputColumnsOf(v.predicate);
+  }
+  return { schema: schema ? { ...schema, specViews } : undefined };
+}
+
 /** P2：只允许谓词 AST；形状/时间函数/占位符/schema 归属全部构造期校验 */
-function p2(c: PrepareCandidate, schema?: SchemaProbe): string | null {
+function p2(c: PrepareCandidate, schema?: SchemaProbe, snapshotPaths: string[] = []): string | null {
   const checker = c.checker as Checker;
   if (!checker || typeof checker !== "object" || !("type" in checker)) return "checker is missing or malformed";
+  const pathErr = snapshotPathRefusal(checker, snapshotPaths);
+  if (pathErr) return pathErr;
   // 0.110.0: an unknown checker.type used to fall through every branch and
   // "pass" P2 (then only the engine rejected it later). The closed set is
   // contract 1.x; lint-candidates relies on this same gate (single projection).
@@ -638,9 +729,16 @@ export function lintCandidates(
     clausePatternDeclared?: boolean;
     /** source_clauses of the review file, when given (`--reviews`) */
     reviewedClauses?: string[];
+    /** 1.3: spec views the candidates may read (`--views`) */
+    views?: SpecView[];
+    snapshotPath?: string;
   } = {},
 ): LintResult {
   const issues: LintIssue[] = [];
+  const lintPaths = opts.snapshotPath ? [opts.snapshotPath] : [];
+  const lintViews = prepareViews(opts.views, opts.schema, lintPaths);
+  if (lintViews.error) issues.push({ index: -1, source_clause: "", stage: "P2", reason: lintViews.error });
+  const lintSchema = lintViews.error ? opts.schema : lintViews.schema;
   let coverage: CoverageResult | null = null;
   const p1Passing: PrepareCandidate[] = [];
   const pattern = opts.clausePattern ?? DEFAULT_CLAUSE_PATTERN;
@@ -652,7 +750,7 @@ export function lintCandidates(
     if (!reason) {
       p1Passing.push(c);
       stage = "P2";
-      reason = p2(c, opts.schema);
+      reason = p2(c, lintSchema, lintPaths);
     }
     if (reason) issues.push({ index, source_clause: c.source_clause, stage, reason });
   });
@@ -772,6 +870,14 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     };
   }
 
+  // 1.3 (#80): spec views are checked once, before any candidate — a bad view blocks the whole spec.
+  const snapshotPaths = opts.snapshotPath ? [opts.snapshotPath] : [];
+  const viewCheck = prepareViews(opts.views, opts.schemaProbe, snapshotPaths);
+  if (viewCheck.error) {
+    return { verdict: "error", units: [], rejected, rounds: 0, materials_sha256: materialsSha, diagnostics: [{ stage: "P2", message: viewCheck.error }] };
+  }
+  const schemaProbe = viewCheck.schema;
+
   const kept: Array<{ candidate: PrepareCandidate; vu: VerifyUnit }> = [];
   const p1Passing: PrepareCandidate[] = [];
   const pattern = opts.clausePattern ?? DEFAULT_CLAUSE_PATTERN;
@@ -782,7 +888,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   // same fact, not a new rejection — round only exists for P3 retries.
   const rejectedKeys = new Set<string>();
   const pushDeterministic = (source_clause: string, stage: "P1" | "P2", reason: string) => {
-    const key = `${stage} ${source_clause} ${reason}`;
+    const key = `${stage}\u0000${source_clause}\u0000${reason}`;
     if (rejectedKeys.has(key)) return false;
     rejectedKeys.add(key);
     rejected.push({ source_clause, stage, reason });
@@ -795,7 +901,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     const candidates = await opts.runner.prepare({
       materialText,
       materialIndex: opts.materialIndex,
-      schemaProbe: opts.schemaProbe,
+      schemaProbe,
       hint: opts.hint,
       round,
       feedback,
@@ -810,7 +916,7 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
         continue;
       }
       p1Passing.push(candidate);
-      const r2 = p2(candidate, opts.schemaProbe);
+      const r2 = p2(candidate, schemaProbe, snapshotPaths);
       if (r2) {
         if (pushDeterministic(candidate.source_clause, "P2", r2)) feedback.push(r2);
         continue;
@@ -883,7 +989,9 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
   }
 
   const spec: VerifySpec = {
-    contract_version: CONTRACT_VERSION,
+    // 1.3: stamp the lowest version that can hold the spec — 1.3 only when it uses a 1.3 shape (glob / not-glob), so
+    // specs without one keep the bytes a 1.2 engine froze and older engines still run them. Re-stamped below.
+    contract_version: BASELINE_CONTRACT_VERSION,
     spec_id: opts.specId ?? `spec_${materialsSha.slice(0, 12)}`,
     // 条件④：版本由调用方递增（同一材料的第 N 次冻结），缺省 1 只对首次成立
     spec_version: opts.specVersion ?? 1,
@@ -901,6 +1009,8 @@ export async function prepareSpec(materialText: string, opts: PrepareOptions): P
     sealed: { review: false },
     materials_sha256: materialsSha,
   } as VerifySpec;
+  if (opts.views !== undefined && opts.views.length > 0) spec.views = opts.views;
+  if (uses13Shapes(spec)) spec.contract_version = "1.3";
 
   // P4：红队门禁（调用方注入；未注入 = 未验证，不得落 ready）
   if (!opts.redteam) {

@@ -1,0 +1,238 @@
+{
+  "candidates": [
+    {
+      "source_clause": "S1 package/index.js 的内容哈希必须等于发布记录里的值。",
+      "anchor": {
+        "quote": "S1 package/index.js 的内容哈希必须等于发布记录里的值。",
+        "locator": "material.md#S1"
+      },
+      "checker": {
+        "type": "sql",
+        "expect": "empty",
+        "fail_when": "rows>0",
+        "predicate": {
+          "from": "archive_entries",
+          "select": [
+            "seq",
+            "path",
+            "typeflag",
+            "payload_sha256"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "path",
+                "op": "=",
+                "value": "package/index.js"
+              },
+              {
+                "col": "payload_sha256",
+                "op": "!=",
+                "value": "6e66e366f0aefb84ad8110afcd9b2245702c643c831edf8316ff048fec739d2e"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "source_clause": "S2 package/package.json 与 package/index.js 必须都在包里。",
+      "anchor": {
+        "quote": "S2 package/package.json 与 package/index.js 必须都在包里。",
+        "locator": "material.md#S2"
+      },
+      "checker": {
+        "type": "count",
+        "predicate": {
+          "from": "archive_entries",
+          "select": [
+            "seq"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "path",
+                "op": "in",
+                "value": [
+                  "package/package.json",
+                  "package/index.js"
+                ]
+              },
+              {
+                "col": "path_occurrence",
+                "op": "=",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "op": ">=",
+        "value": 2
+      }
+    },
+    {
+      "source_clause": "S3 包里不得出现清单之外的路径。",
+      "anchor": {
+        "quote": "S3 包里不得出现清单之外的路径。",
+        "locator": "material.md#S3"
+      },
+      "checker": {
+        "type": "sql",
+        "expect": "empty",
+        "fail_when": "rows>0",
+        "predicate": {
+          "from": "archive_entries",
+          "select": [
+            "seq",
+            "path",
+            "typeflag",
+            "payload_sha256"
+          ],
+          "where": {
+            "op": "not",
+            "conditions": [
+              {
+                "col": "path",
+                "op": "in",
+                "value": [
+                  "package/",
+                  "package/package.json",
+                  "package/index.js"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "source_clause": "S4 同一路径不得出现两次。",
+      "anchor": {
+        "quote": "S4 同一路径不得出现两次。",
+        "locator": "material.md#S4"
+      },
+      "checker": {
+        "type": "sql",
+        "expect": "empty",
+        "fail_when": "rows>0",
+        "predicate": {
+          "from": "archive_entries",
+          "select": [
+            "seq",
+            "path",
+            "typeflag",
+            "payload_sha256"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "path_occurrence",
+                "op": ">",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "source_clause": "S5 路径不得是绝对路径，不得含 .. 段、空段、反斜杠或控制字符，必须在 package/ 下。",
+      "anchor": {
+        "quote": "S5 路径不得是绝对路径，不得含 .. 段、空段、反斜杠或控制字符，必须在 package/ 下。",
+        "locator": "material.md#S5"
+      },
+      "checker": {
+        "type": "sql",
+        "expect": "empty",
+        "fail_when": "rows>0",
+        "predicate": {
+          "from": "archive_entries",
+          "select": [
+            "seq",
+            "path",
+            "typeflag",
+            "payload_sha256"
+          ],
+          "where": {
+            "op": "or",
+            "conditions": [
+              {
+                "col": "path",
+                "op": "glob",
+                "value": "/*"
+              },
+              {
+                "col": "path",
+                "op": "glob",
+                "value": "../*"
+              },
+              {
+                "col": "path",
+                "op": "glob",
+                "value": "*/../*"
+              },
+              {
+                "col": "path",
+                "op": "glob",
+                "value": "*//*"
+              },
+              {
+                "col": "path",
+                "op": "glob",
+                "value": "*\\*"
+              },
+              {
+                "col": "path",
+                "op": "glob",
+                "value": "*[\u0001-\u001f]*"
+              },
+              {
+                "col": "path",
+                "op": "not-glob",
+                "value": "package/*"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "source_clause": "S6 只允许普通文件和目录。",
+      "anchor": {
+        "quote": "S6 只允许普通文件和目录。",
+        "locator": "material.md#S6"
+      },
+      "checker": {
+        "type": "sql",
+        "expect": "empty",
+        "fail_when": "rows>0",
+        "predicate": {
+          "from": "archive_entries",
+          "select": [
+            "seq",
+            "path",
+            "typeflag",
+            "payload_sha256"
+          ],
+          "where": {
+            "op": "not",
+            "conditions": [
+              {
+                "col": "typeflag",
+                "op": "in",
+                "value": [
+                  "0",
+                  "",
+                  "5"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

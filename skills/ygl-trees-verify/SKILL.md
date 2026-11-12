@@ -45,6 +45,10 @@ ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> 
                                                 # rc=0 仅当 ready；P1/P2 阻断、灰带进 open
 ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --draft
                                                 # 无损试跑：照构造但**不冻结** spec 版本
+ygl-trees verify prepare <material-id> --candidates <c.json> --reviews <r.json> --db <snapshot.sqlite> --draft --run
+                                                # 草稿试跑（#232）：ready 就在快照副本上跑一遍、打印报告（draft:true），
+                                                # 工作区什么都不写（不进 specs/reports/archives、不留快照、不占版本号）；
+                                                # FAIL 也是 rc=0，没 ready 就不跑（rc=1）；meta 门照常；文件型判据加 --submission <dir>
 ygl-trees verify trace <spec-id> [--spec-version N]  # 构造追溯：清单/判据↔检查器表/盲审与红队结论（只读）；N 读 versions/v<N>/ 的旧版 trace（#242）
 
 ygl-trees verify run <spec-id> --db snapshot.sqlite [--spec-version N]  # FAIL 也是 rc=0，看 overall/summary；N 跑 versions/v<N>/ 保留旧版判据（#242：二次 ready prepare 会把旧版三件字节级移入 versions/、输出 replaced 提示，归档按报告版本取文件）
@@ -411,5 +415,7 @@ ygl-trees verify instance import-latest ../ygl-webui-verifier/work/results/lates
 
 - `tree_contract_version`：递归树契约（与 `contract_version` 分开钉）；五值全序+cap-on-PASS 是 v1.2 语义。
 - `contract_version 1.2`：spec/report 形状（1.2 新增「右值可引用列」两形态：同表 `{col}` 列对列 / `count.against` 单值标量；1.1 spec 兼容运行）；`corpus_version 1.2`：黄金语料摘要（44 例）。
+- `contract_version 1.3`（#80/#232）：谓词 op 新增 `glob` / `not-glob`（SQLite GLOB：大小写敏感，`*` `?` `[...]`，没有转义符；NULL 不命中）。路径语法检查这样写：`{"col":"path","op":"glob","value":"*/../*"}`，找包外条目用 `not-glob` 加 `package/*`。prepare 只在用到 1.3 形态时才盖 1.3，否则照旧盖 1.2；1.1/1.2 spec 里出现 glob 会被 `version_shape` 拒跑。1.3 还支持只读 pragma 来源：`"from": {"pragma": "table_info", "arg": "orders"}` 可以查列、NOT NULL、索引、外键，以及 `user_version`，白名单见契约文档 §0a。白名单外的 pragma、把 pragma 写成表名、`arg` 指向不存在的表，都会被 prepare 拒绝。派生表写成 `"from": {"derived": {…内层谓词…}}`，外层读内层的 select 列名和聚合别名，最多嵌套 4 层。视图放在候选文件信封里：`{"views": [{"name": "big_orders", "predicate": {…}}], "candidates": [...]}`，候选用 `"from": "big_orders"` 引用；名字用 snake_case，不能与快照里的表或视图同名，只能读声明在它之前的视图。快照里自带的视图一律不执行，要用就声明成 spec 视图。用到派生表或视图的 spec 只在内存里跑，结束时核对快照 sha256 不变。
+- 发布包这类归档先采集成快照再判：`ygl-trees verify collect archive pkg.tgz --out pkg.sqlite`。快照里只有原始观测：`archive_entries`（每个头一行：`path`、`typeflag`、`size`、`payload_sha256`、`header_checksum_ok`、`pax_keys`、`path_occurrence`）、`archive_errors`（读失败、截断、头损坏、超上限）、`archive_meta`。判据照常写谓词，查重复用 `path_occurrence > 1`，路径语法用 glob。1.3 spec 遇到 `archive_errors` 有行时，本会 PASS 的单元一律改判 ERROR；空归档是零扫描，判 NEEDS-MATERIAL。完整例子见仓库 `examples/verify-archive-collect/`。
 - 报告字段 snake_case；witness 必带 `rows_scanned`/`rows_matched`（或 `compared`）——**没有 witness 的 PASS 不算证据**。
 - 一切写路径事务化；读端点只读；`--json` 失败也是单对象 `{"error": "..."}` + rc 承载类别。

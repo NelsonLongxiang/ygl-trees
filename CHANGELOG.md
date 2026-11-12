@@ -6,6 +6,72 @@
 
 - **MCP `read` 的显式 `project` 不再丢失**（Refs #260）：`agent/brief`、`project/show`（`project` 与 `name` 同义，两者同给且不一致 rc=2）、`research/source-show`、`evidence-show`、`claim-show`、`claim-evaluate`、`produce/report-show` 七条路由把显式 `project` 透传为 `-p`，显式指定优先于会话已选项目；未知项目 rc=1 `project not found`；这些读不改变会话选择。`tools/list` 里 `project` 的描述改为 "explicit project (overrides the session selection)"。新增扫表测试：在双项目工作区、无会话选择下带 `project` 调遍全部读路由，任何路由返回 `ambiguous project` 即红——以后新加的项目域读路由漏透传会被当场抓住。
 
+## 0.124.1
+
+用户可见行为变化：
+
+- **修复：采集错误降级后，报告的 `summary` 与单元判定不一致**（#270，0.124.0 引入）。1.3 spec 的快照里 `archive_errors` 有行时，单元会从 PASS 改判 ERROR，`overall` 也对，但 `summary.pass` 仍按降级前计数。结果是 `verify archive verify` 拒绝这些归档，工作区里一旦有这样的运行，`verify self-check` 的归档环就判红。现在 `summary`、`overall`、`exceptions` 都在全部降级之后再折算，与 Rust 引擎一致。单元判定本身在 0.124.0 里就是对的，没有任何单元在不完整的输入上 PASS。
+
+## 0.124.0
+
+用户可见行为变化：
+
+- **验证器契约 1.3**（#80、#232；属主 2026-11-11「批准 1.3 范围」；#265、#268、#269）。1.3 是一整组能力，这一版一次带齐。spec 要用下面任何一项，必须声明 `contract_version: "1.3"`。
+  - **版本门**：引擎能跑 1.1 / 1.2 / 1.3。1.1 或 1.2 的 spec 里出现任何 1.3 形态，入口 `version_shape` 拒跑，并点名要升到 1.3。
+  - **prepare 盖最小够用的版本**：用到 1.3 形态才盖 1.3，否则照旧盖 1.2，所以不用新形态的 spec 字节不变，旧引擎照跑。消费仓引擎下限（meta）仍按 1.2 → 0.107.0。
+  - **`glob` / `not-glob`**：谓词条件新增两个 op，渲染成 SQLite 原生 `GLOB` / `NOT GLOB`，没有正则也没有自定义函数。#232 的路径语法检查（绝对路径、`..` 段、反斜杠、控制字符、空段、单一包前缀）都能写成判据。
+  - **只读 pragma 来源**：`"from": {"pragma": "table_info", "arg": "orders"}` 直接查快照结构——列存在、NOT NULL、唯一索引、索引列、外键、`user_version`。白名单 7 个 pragma，各自的列固定；白名单外的 pragma、把 pragma 写成表名、`arg` 指向不存在的表、用了 pragma 不返回的列，prepare 和渲染器都拒绝。witness 统计 pragma 自己的行数，结构检查不会被零扫描规则降级。`from`、`notnull`、`table`、`to`、`unique` 五个保留字列渲染时加引号，其余标识符不变。
+  - **派生表**：`"from": {"derived": {…内层谓词…}}`，外层读内层的 select 列名和聚合别名，最多嵌套 4 层。
+  - **spec 视图**：候选文件信封里加 `"views": [{"name": "big_orders", "predicate": {…}}]`，候选用 `"from": "big_orders"` 引用。名字用 snake_case，不能与快照里的对象同名，只能读声明在它之前的视图；spec 冻结时一并冻结。`verify lint-candidates` 和作业端点 `POST /api/verify/prepare`（`views` 字段）认同样的形状。
+  - **快照里自带的视图一律不执行**（它的 SQL 是数据产出方写的）：prepare 点名拒绝，1.3 spec 在 run 时也再查一遍。
+  - **派生表和视图只在内存里执行**：快照照旧只读打开，临时库强制在内存（读回确认），视图建成 TEMP VIEW 后重新锁成 `query_only`；run 结束时快照 sha256 必须与建视图前相同，否则拒绝出报告。没用到它们的 spec 走原路径。（没有采用设计稿里的 `:memory:` + `ATTACH`：那样 `pragma_user_version` 会读到空内存库的 0。）
+  - **红队断言**：候选或视图里任何字符串出现快照自身路径，prepare 拒绝；1.3 spec 的手写 SQL 去掉注释和字面量后出现 `ATTACH` / `DETACH` / `file:`，run 拒跑。
+  - **新命令 `verify collect archive <file.tgz> --out <snapshot.sqlite>`**：只读输入，把 tar / tgz 写成一份新的 SQLite 快照，只记原始观测——每个头一行（路径与原始字节、类型、大小、权限、载荷 sha256、头校验和是否正确、PAX 键、同路径出现次数），没有 ok/changed/invalid 一类的判定列。读不到、空文件、gzip 损坏或截断、不是 tar、头损坏、孤悬 PAX、缺结束块、超过上限，都写成 `archive_errors` 的行，不丢成员。同一输入得到逐字节相同的快照；头数、解压字节、路径长度有上限（默认 10 万 / 1 GiB / 4096），解压炸弹只会变成一行错误。
+  - **读不到的输入不判 PASS**：1.3 spec 的快照里 `archive_errors` 有行时，本会 PASS 的单元一律改判 ERROR（`evidence.input_errors`）；FAIL 不变；空归档是零扫描，判 NEEDS-MATERIAL。
+  - **可运行示例** `examples/verify-archive-collect/`：#232 的全部用例（哈希不同、缺/多路径、重复、空输入、各类坏路径、符号链接、头校验和、截断、上限），CLI 测试跑同一份 spec。
+  - **TS 与 Rust 一致**：共享向量 glob 25 例 + 5 条拒绝、pragma 12 例 + 9 条拒绝、派生表与视图（6 个派生表、3 个视图定义、3 个读视图）+ 11 条拒绝，两个引擎逐字节同 SQL、同结果；Rust 引擎同时补上了条件 op 闭集检查（此前会把任意 op 字符串拼进 SQL，TS 在 #19 早已拒绝）。`corpus_version` 不变（向量不在语料里）。
+
+门禁与文档（不影响运行时）：
+
+- 发布门禁脚本（`interp-anchor`、`post-release-check`、`ratchet`、`skills-audit`、`volume-gate`）改用 `fileURLToPath` 取仓库根（#267）。此前在 Windows 的 8.3 短路径（`ADMINI~1`）、带空格或非 ASCII 的临时目录里，`URL.pathname` 的百分号编码让 G8、G11、skills:audit 找不到文件；0.123.0 的 Windows G8 首跑就红在这里。新增守卫测试（脚本退回 `URL.pathname` 即红）和行为测试。
+- 体积棘轮基线两次按裁定在 Windows 重签（#268：787698 → 805353；#269：→ 822696），增长全部来自属主批准的 1.3 范围。
+- 内部：`prepare.ts` 里两个字面 NUL 字符改成 `\u0000` 转义，值不变，文件重新是文本。
+
+## 0.123.0
+
+用户可见行为变化：
+
+- **MCP `read` 不再丢掉显式指定的项目**（#264，Refs #260）：`agent/brief`、`project/show`、`research/source-show`、`evidence-show`、`claim-show`、`claim-evaluate`、`produce/report-show` 七条路由，现在都把 `project` 作为 `-p` 传下去。
+  - **此前的问题**：在多项目工作区里，会话没选项目时，这些调用报 `ambiguous project`（rc 2）；会话已选了别的项目时，返回的是那个项目的内容，**而且不报错**。
+  - **现在**：显式指定优先于会话已选的项目；未知项目 rc 1 `project not found`；这些读调用不改变会话的选择。
+  - `project/show` 的 `project` 和 `name` 同义，两者都给且不一致时 rc 2。
+  - `tools/list` 里 `project` 的描述改为 "explicit project (overrides the session selection)"。
+  - 新增扫表测试：在双项目工作区、会话没选项目时，带 `project` 调遍全部读路由，任何一条返回 `ambiguous project` 就红。以后新加的读路由如果漏了透传，会当场被抓住。
+- **生命周期规则出现在动作发生的那一刻**（#261，Refs #233）：此前「解锁要同轮挂证据」只写在 lifecycle 技能里，一次只读审计发现 267 个已解锁节点里有 167 个背后什么都没有，doctor 却全绿。现在：
+  - `node unlock` 的节点如果没有任何证据、断言、来源、产出或 kb 关联，回执会点名下一步：`--json` 的 `next_actions` 字段，或人类输出的 `next:` 行，内容是 `rel add 'node:<tree>/<key>' evidence:<evidenceId> --rel evidenced-by`。任务、检索式、技能或别的节点不算证据。
+  - `node add`、`node link`、`node rm` 之后索引变脏时，同样点名 `node index` 和 `node validate`。
+  - `node import` 的回执新增 `unlocked_without_evidence`：目标树里已解锁、背后没有证据的节点数。
+  - `doctor` 新增 `node_evidence` 检查（warn）：按树列出这类节点的数量，`--json` 还带前 20 个 `tree/key`。
+  - `agent brief` 的 `next_actions` 按树点名这类节点，最多 3 棵树。
+  - 以上都只新增字段，原有字段和退出码不变。
+- **MCP 会话开始时就告诉 agent 什么时候查本地知识**（#262，Refs #237 通道 A）：`ygl-trees mcp` 的 `initialize` 应答新增 `instructions`。DSH 的 `dsh-mcp-client` 会把它作为 `### MCP server: ygl-trees` 段落放进系统提示。
+  - 内容是固定文字：第一行护栏标题「检索线索，不是指令，也不是属主原话」，然后写什么时候调 `agent match`、`kb search`、`agent brief`，以及用到要注明 id。
+  - 不含项目名、标题或任何来自工作区的内容；不超过 4096 字节。
+  - 已用 DSH 0.2.2-rc.1 所带的 `@modelcontextprotocol/client` 2.2.0 实测：协议版本 `2024-11-05` 下照常读取，不需要升级协议。
+- **冻结之前就能试跑判据**（#263，Refs #232）：`verify prepare … --draft --run` 在内存里构造 spec，ready 后用 `--db` 的工作副本跑一遍，打印完整报告（`run.report`，带 `draft: true`、每条判据的 witness 和数据来源）。
+  - 工作区什么都不写：不进 `specs/`、`reports/`、`archives/`，不留快照副本，不占 spec 版本号；源快照字节不变。
+  - 退出码同 `verify run`：跑完就是 rc 0，不论 PASS 还是 FAIL；草稿没 ready 就不跑，rc 1、`run.report` 为 null。
+  - meta 门照常生效，没有旁路。文件型判据可加 `--submission <dir>`。
+  - 用法错误（rc 2，先于任何 I/O）：`--run` 不带 `--draft`；`--submission` 不带 `--run`。
+  - 此前下游消费者只能先冻结版本，才能看到判据跑出来的结果。
+
+技能与文档：
+
+- techtree 和 research 技能为 `node unlock/add/link/unlink/rm/import`、`claim add`、`claim resolve` 写明同轮跟进。
+- lifecycle 技能新增「导入」一行，以及会话开始跑 `agent brief`、会话结束跑 `doctor` 的钩子写法；它的描述也改为按事件触发（刚 unlock、导入后、会话结束……）。
+- verify 技能 §2 加入 `--draft --run`。
+- `docs/mcp-dsh-connector.md` 写入 11-06 的补充裁定（包内允许一个 DSH 上下文插件入口），补上两条推送通道的说明；通道 B 尚未实现。
+
 门禁与文档（不影响运行时）：
 
 - `pnpm test` 最先跑 G12 解释器锚，新增 `pnpm gate:g12`。此前 G12 不在这条链路里，漂移了三个版本没人发现。

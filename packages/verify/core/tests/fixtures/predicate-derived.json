@@ -1,0 +1,720 @@
+{
+  "note": "Contract 1.3 part 2b, derived tables and spec views (#80). Generated from the TS renderer (reference) and checked on SQLite with the views created as TEMP VIEWs. engine.ts and the Rust engine must render the same SQL, return the same rows and refuse the same shapes. Not part of the corpus.",
+  "ddl": [
+    "CREATE TABLE orders(id INTEGER PRIMARY KEY, sku TEXT, amount INTEGER, batch TEXT)",
+    "CREATE TABLE items(id INTEGER PRIMARY KEY, order_id INTEGER, qty INTEGER)",
+    "INSERT INTO orders VALUES (1,'a',5,'b1'),(2,'b',50,'b1'),(3,'c',500,'b2'),(4,'d',NULL,'b2')",
+    "INSERT INTO items VALUES (1,1,1),(2,1,2),(3,2,0),(4,3,7)"
+  ],
+  "cases": [
+    {
+      "name": "derived rows",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        },
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "amount",
+              "op": "<",
+              "value": 100
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT id FROM (SELECT id, amount, batch FROM orders WHERE (amount > 10)) AS derived WHERE (amount < 100)",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT id, amount, batch FROM orders WHERE (amount > 10)) AS derived",
+      "rows": 1,
+      "scanned": 2
+    },
+    {
+      "name": "derived with outer scan",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        },
+        "select": [
+          "id"
+        ],
+        "scan": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "batch",
+              "op": "=",
+              "value": "b2"
+            }
+          ]
+        },
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "amount",
+              "op": ">=",
+              "value": 500
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT id FROM (SELECT id, amount, batch FROM orders WHERE (amount > 10)) AS derived WHERE ((batch = 'b2') AND (amount >= 500))",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT id, amount, batch FROM orders WHERE (amount > 10)) AS derived WHERE (batch = 'b2')",
+      "rows": 1,
+      "scanned": 1
+    },
+    {
+      "name": "derived aggregate",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": "items",
+            "select": [],
+            "agg": [
+              {
+                "fn": "count",
+                "as": "n"
+              }
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "qty",
+                  "op": ">",
+                  "value": 0
+                }
+              ]
+            }
+          }
+        },
+        "select": [
+          "n"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "n",
+              "op": ">=",
+              "value": 3
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT n FROM (SELECT COUNT(*) AS n FROM items WHERE (qty > 0)) AS derived WHERE (n >= 3)",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT COUNT(*) AS n FROM items WHERE (qty > 0)) AS derived",
+      "rows": 1,
+      "scanned": 1
+    },
+    {
+      "name": "derived nested twice",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": {
+              "derived": {
+                "from": "orders",
+                "select": [
+                  "id",
+                  "amount",
+                  "batch"
+                ],
+                "where": {
+                  "op": "and",
+                  "conditions": [
+                    {
+                      "col": "amount",
+                      "op": ">",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            },
+            "select": [
+              "id",
+              "amount"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": "<",
+                  "value": 400
+                }
+              ]
+            }
+          }
+        },
+        "select": [
+          "id"
+        ]
+      },
+      "findSql": "SELECT id FROM (SELECT id, amount FROM (SELECT id, amount, batch FROM orders WHERE (amount > 10)) AS derived WHERE (amount < 400)) AS derived",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT id, amount FROM (SELECT id, amount, batch FROM orders WHERE (amount > 10)) AS derived WHERE (amount < 400)) AS derived",
+      "rows": 1,
+      "scanned": 1
+    },
+    {
+      "name": "derived over a pragma source",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": {
+              "pragma": "table_info",
+              "arg": "orders"
+            },
+            "select": [
+              "name",
+              "pk"
+            ]
+          }
+        },
+        "select": [
+          "name"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "pk",
+              "op": "=",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT name FROM (SELECT name, pk FROM pragma_table_info('orders')) AS derived WHERE (pk = 1)",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT name, pk FROM pragma_table_info('orders')) AS derived",
+      "rows": 1,
+      "scanned": 4
+    },
+    {
+      "name": "derived qualifier and column ref",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": "orders",
+            "select": [
+              "orders.id",
+              "amount"
+            ]
+          }
+        },
+        "select": [
+          "derived.id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "derived.amount",
+              "op": ">",
+              "value": {
+                "col": "derived.id"
+              }
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT derived.id FROM (SELECT orders.id, amount FROM orders) AS derived WHERE (derived.amount > id)",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT orders.id, amount FROM orders) AS derived",
+      "rows": 3,
+      "scanned": 4
+    }
+  ],
+  "views": [
+    {
+      "name": "big_orders",
+      "predicate": {
+        "from": "orders",
+        "select": [
+          "id",
+          "amount",
+          "batch"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "amount",
+              "op": ">",
+              "value": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "item_counts",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": "items",
+            "select": [
+              "order_id",
+              "qty"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "qty",
+                  "op": ">",
+                  "value": 0
+                }
+              ]
+            }
+          }
+        },
+        "select": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "name": "big_b1",
+      "predicate": {
+        "from": "big_orders",
+        "select": [
+          "id",
+          "amount"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "batch",
+              "op": "=",
+              "value": "b1"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "view_sql": [
+    {
+      "name": "big_orders",
+      "sql": "SELECT id, amount, batch FROM orders WHERE (amount > 10)"
+    },
+    {
+      "name": "item_counts",
+      "sql": "SELECT order_id FROM (SELECT order_id, qty FROM items WHERE (qty > 0)) AS derived"
+    },
+    {
+      "name": "big_b1",
+      "sql": "SELECT id, amount FROM big_orders WHERE (batch = 'b1')"
+    }
+  ],
+  "view_cases": [
+    {
+      "name": "reads a view",
+      "predicate": {
+        "from": "big_orders",
+        "select": [
+          "id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "amount",
+              "op": "between",
+              "value": [
+                10,
+                100
+              ]
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT id FROM big_orders WHERE (amount BETWEEN 10 AND 100)",
+      "scopeSql": "SELECT count(*) AS n FROM big_orders",
+      "rows": 1,
+      "scanned": 2
+    },
+    {
+      "name": "reads a view over a view",
+      "predicate": {
+        "from": "big_b1",
+        "select": [
+          "id"
+        ]
+      },
+      "findSql": "SELECT id FROM big_b1",
+      "scopeSql": "SELECT count(*) AS n FROM big_b1",
+      "rows": 1,
+      "scanned": 1
+    },
+    {
+      "name": "derived over a view",
+      "predicate": {
+        "from": {
+          "derived": {
+            "from": "item_counts",
+            "select": [
+              "order_id"
+            ]
+          }
+        },
+        "select": [
+          "order_id"
+        ],
+        "where": {
+          "op": "and",
+          "conditions": [
+            {
+              "col": "order_id",
+              "op": "in",
+              "value": [
+                1,
+                3
+              ]
+            }
+          ]
+        }
+      },
+      "findSql": "SELECT order_id FROM (SELECT order_id FROM item_counts) AS derived WHERE (order_id IN (1, 3))",
+      "scopeSql": "SELECT count(*) AS n FROM (SELECT order_id FROM item_counts) AS derived",
+      "rows": 3,
+      "scanned": 3
+    }
+  ],
+  "rejects": [
+    {
+      "name": "derived with an extra key",
+      "from": {
+        "derived": {
+          "from": "orders",
+          "select": [
+            "id",
+            "amount",
+            "batch"
+          ],
+          "where": {
+            "op": "and",
+            "conditions": [
+              {
+                "col": "amount",
+                "op": ">",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "sql": "x"
+      },
+      "error": "derived source takes only { derived }, got sql"
+    },
+    {
+      "name": "derived that is not a predicate",
+      "from": {
+        "derived": "orders"
+      },
+      "error": "derived source needs { derived: <predicate> }"
+    },
+    {
+      "name": "derived nested five deep",
+      "from": {
+        "derived": {
+          "from": {
+            "derived": {
+              "from": {
+                "derived": {
+                  "from": {
+                    "derived": {
+                      "from": {
+                        "derived": {
+                          "from": "orders",
+                          "select": [
+                            "id"
+                          ]
+                        }
+                      },
+                      "select": [
+                        "id"
+                      ]
+                    }
+                  },
+                  "select": [
+                    "id"
+                  ]
+                }
+              },
+              "select": [
+                "id"
+              ]
+            }
+          },
+          "select": [
+            "id"
+          ]
+        }
+      },
+      "error": "derived tables nest at most 4 deep"
+    },
+    {
+      "name": "derived inner select *",
+      "from": {
+        "derived": {
+          "from": "orders",
+          "select": [
+            "*"
+          ]
+        }
+      },
+      "error": "must be a bare identifier"
+    }
+  ],
+  "view_rejects": [
+    {
+      "name": "upper-case view name",
+      "views": [
+        {
+          "name": "BigOrders",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "view_name"
+    },
+    {
+      "name": "sqlite_ prefix",
+      "views": [
+        {
+          "name": "sqlite_x",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "view_name"
+    },
+    {
+      "name": "pragma_ prefix",
+      "views": [
+        {
+          "name": "pragma_x",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "view_name"
+    },
+    {
+      "name": "declared twice",
+      "views": [
+        {
+          "name": "v",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "v",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "is declared twice"
+    },
+    {
+      "name": "reads a later view",
+      "views": [
+        {
+          "name": "a",
+          "predicate": {
+            "from": "b",
+            "select": [
+              "id"
+            ]
+          }
+        },
+        {
+          "name": "b",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "error": "view a reads view b, which is not declared before it"
+    },
+    {
+      "name": "reads itself",
+      "views": [
+        {
+          "name": "a",
+          "predicate": {
+            "from": "a",
+            "select": [
+              "id"
+            ]
+          }
+        }
+      ],
+      "error": "view a reads view a, which is not declared before it"
+    },
+    {
+      "name": "extra key",
+      "views": [
+        {
+          "name": "a",
+          "predicate": {
+            "from": "orders",
+            "select": [
+              "id",
+              "amount",
+              "batch"
+            ],
+            "where": {
+              "op": "and",
+              "conditions": [
+                {
+                  "col": "amount",
+                  "op": ">",
+                  "value": 10
+                }
+              ]
+            }
+          },
+          "sql": "SELECT 1"
+        }
+      ],
+      "error": "takes only { name, predicate }, got sql"
+    }
+  ]
+}

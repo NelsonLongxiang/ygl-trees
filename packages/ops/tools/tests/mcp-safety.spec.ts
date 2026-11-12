@@ -124,6 +124,21 @@ describe("#119 MCP argv and request-session safety",()=>{
   // path/ancestors/descendants are read routes, never write actions; no path mutation tool exists.
   expect(write.inputSchema.properties.action.enum).not.toContain("path");expect(write.inputSchema.properties.action.enum).not.toContain("ancestors");expect(write.inputSchema.properties.action.enum).not.toContain("descendants");expect(read.inputSchema.properties.action.enum).toContain("path");
  });
+ it("tree-run no_archive is a bare flag: true → bare --no-archive (next token is not \"true\"); false/absent → flag absent (#266 review)",async()=>{
+  const call=(no_archive:unknown)=>request({jsonrpc:"2.0",id:5,method:"tools/call",params:{name:"verify",arguments:{action:"tree-run",a:"spec_none",...(no_archive===undefined?{}:{no_archive})}}});
+  const before=childInvocations.length;
+  await call(true); // rc1 (missing spec) is fine — the assertion is on argv shape
+  const argvTrue=childInvocations[before]?.argv??[];
+  const j=argvTrue.join(" ");
+  expect(j).toContain("--no-archive");
+  expect(j).not.toContain("--no-archive true");
+  await call(false);
+  const argvFalse=childInvocations[childInvocations.length-1]?.argv??[];
+  expect(argvFalse.join(" ")).not.toContain("--no-archive");
+  await call(undefined);
+  const argvAbsent=childInvocations[childInvocations.length-1]?.argv??[];
+  expect(argvAbsent.join(" ")).not.toContain("--no-archive");
+ });
  it("PG credentials stay in the controlled child env, never argv or error output",async()=>{
   const url="postgres://vrfyuser:vrfypass@127.0.0.1:1/no-db?password=vrfypass";
   const tools=buildTools({...environment,YGL_HOME:join(home,"pg-failure"),YGL_DB_URL:url});const tool=tools.find(t=>t.name==="write")!;

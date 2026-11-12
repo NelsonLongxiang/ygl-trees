@@ -12,3 +12,4 @@ export * from "./sqlite-runner";
 export * from "./prepare";
 export * from "./selfcheck";
 export * from "./corpus-runner";
+export * from "./collect-archive";

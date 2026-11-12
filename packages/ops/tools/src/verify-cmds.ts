@@ -23,7 +23,7 @@ import type { Env } from "../../../core/database/src/types";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 import { bad, C, head, ok, out, paint, table } from "../../../core/text/src/fmt";
-import type { ReviewFinding, ReviewRunner, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
+import type { ReviewFinding, ReviewRunner, SpecView, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
 import type { MaterialIndex, PrepareCandidate, PrepareRunner } from "../../../verify/core/src/prepare";
@@ -39,6 +39,7 @@ import type { FileScanRecord } from "../../../verify/core/src/engine";
 import { CHECKER_EXAMPLES, EXAMPLES_DERIVED_FROM, NULL_OPS_NOTE } from "../../../verify/core/src/examples.generated";
 import { selfCheck } from "../../../verify/core/src/selfcheck";
 import { SqliteRunner } from "../../../verify/core/src/sqlite-runner";
+import { collectArchive, DEFAULT_ARCHIVE_LIMITS } from "../../../verify/core/src/collect-archive";
 import type { ArchiveWith } from "./archive";
 import { appendRegistry, ARCHIVE_WITH, buildArchive, foldOverall, foldSummary, readArchiveReport, retainSnapshot, unarchivedRuns, verifyArchiveBytes, verifyArchiveFile } from "./archive";
 import { BLOB_LIMIT, blobPath, mimeFor, putBlob, putBlobFromFile } from "./blob-store";
@@ -774,6 +775,10 @@ export function minimalRedTeam(schemaSql: string[], submissionDir?: string): (s:
         tableRows: (t: string) => db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>,
         schemaFingerprint: () => "empty-snapshot",
         sourceTables: () => [] as string[],
+        // 1.3: spec views on the empty in-memory schema (this db is already :memory:, so temp views stay in memory).
+        isolate: (views: Array<{ name: string; sql: string }>) => {
+          for (const v of views) db.exec(`CREATE TEMP VIEW ${v.name} AS ${v.sql}`);
+        },
       };
       const report = await runVerify(s, { runner: runner as never, submissionDir, mode: "open", nowIso: () => "1970-01-01T00:00:00.000Z" });
       const failures: string[] = [];
@@ -870,6 +875,29 @@ export function scopeLine(report: object): string {
   if (typeof raw !== "string") return "semantic_scope structural  (缺省：报告无 semantic_scope 字段，按最保守读——父 PASS 不代表子结论为真)";
   if (SEMANTIC_SCOPES.has(raw)) return `semantic_scope ${raw}`;
   return `semantic_scope structural  (未知值 ${JSON.stringify(raw)} 不在闭集 structural|factual|semantic 内，按最保守读——父 PASS 不代表子结论为真)`;
+}
+
+/** #232: run a spec that exists only in memory on a working copy of the snapshot. Nothing is retained: the copy is
+ *  dropped on every outcome and no report, archive or snapshot is written under the verify root. */
+export async function draftRun(spec: VerifySpec, dbPath: string, submissionDir: string | undefined, engineVersion: string | undefined): Promise<{ report: VerifyReport | null; error?: string }> {
+  let snap: ReturnType<typeof snapshotCopy>;
+  try {
+    snap = snapshotCopy(dbPath);
+  } catch (e: any) {
+    return { report: null, error: `cannot snapshot --db: ${e?.message || e}` };
+  }
+  const runner = new SqliteRunner(snap.path);
+  try {
+    const report = await runVerify(spec, { runner, submissionDir, mode: "open", engineVersion });
+    return {
+      report: { ...report, draft: true, data_source: { kind: "sqlite-snapshot", sha256: snap.sha256, source: snap.source, captured_at: new Date().toISOString() } } as VerifyReport,
+    };
+  } catch (e: any) {
+    return { report: null, error: e?.message || String(e) };
+  } finally {
+    try { runner.close(); } catch { /* already closed */ }
+    snap.cleanup();
+  }
 }
 
 export function snapshotCopy(dbPath: string): { path: string; sha256: string; source: string; cleanup: () => void } {
@@ -1049,7 +1077,7 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
 const GLOBAL_FLAGS = new Set(["json", "color", "no-color", "quiet", "home", "db", "project", "p", "verbose", "global", "force"]);
 const ACTION_FLAGS: Record<string, string[]> = {
   submit: ["title", "text", "attach", "meta-repo", "require-meta", "no-meta", "clause-pattern"],
-  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
+  prepare: ["candidates", "reviews", "db", "as-of", "title", "domain", "draft", "run", "submission", "spec-version", "meta-repo", "require-meta", "no-meta", "coverage-exempt", "candidates-author", "reviews-author"],
   run: ["db", "submission", "no-archive", "provenance", "spec-version"], // #242: --spec-version <N> runs a kept old version
   tree: ["pinned", "no-archive", "target", "provenance"],
   graduate: ["min-runs", "min-span-days", "every", "schedule", "patrol", "db"],
@@ -1063,6 +1091,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
   archive: ["with", "out", "snapshot"],
   "self-check": ["corpus", "cases", "no-cases", "limit"],
   "lint-candidates": ["text", "db", "reviews", "coverage-exempt", "clause-pattern"],
+  collect: ["out", "max-entries", "max-bytes", "max-path"],
   example: ["checker", "null-ops"],
   meta: [],
   probe: ["matrix", "target", "only"],
@@ -1071,7 +1100,7 @@ const ACTION_FLAGS: Record<string, string[]> = {
 };
 
 /** `verify prepare` 的用法串：命令体内校验与 bin 层前置校验共用，避免两处措辞漂移。 */
-const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> --as-of <ISO-8601> [--spec-version N] [--draft (as_of optional)] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
+const USAGE_PREPARE = "usage: verify prepare <material-id> --candidates <file> --reviews <file> --db <snapshot.sqlite> --as-of <ISO-8601> [--spec-version N] [--draft (as_of optional) [--run [--submission <dir>]]] [--candidates-author <id> --reviews-author <id>] [--meta-repo <verifier-root> | --require-meta | --no-meta]";
 /**
  * #171 建议 4：非 --draft 的 prepare 必须显式给 as_of。默认取「冻结此刻」会让同一份材料换时间、换机器重新
  * prepare 时冻出不同的 spec（版本白涨、跨机器对不上）。as_of 是快照所描述的时刻（如被验提交的时间），只有
@@ -1094,6 +1123,17 @@ const AS_OF_USAGE_HINT = "(--as-of expects an ISO-8601 timestamp, e.g. 2026-10-2
  * 所以缺库或库打不开时，命令体内的校验根本轮不到——把用法错误降级成了运行错误。
  * 这里只做不碰 I/O 的旗标校验，供 bin 在门禁之前调用；返回 null 表示旗标面合法。
  */
+/** #232 draft-run entry: `--run` belongs to `--draft` (a draft run never freezes anything), and `--submission` belongs
+ *  to `--run`. Usage errors, refused before any I/O by preflightUsage and again in the command body. */
+export function draftRunUsage(flags: Record<string, unknown>): string | null {
+  if (flags.run !== undefined && flags.run !== true) return "--run takes no value";
+  if (flags.run === true && flags.draft !== true)
+    return "--run needs --draft: a draft run builds the spec in memory and never freezes it (to run a frozen spec, use: verify run <spec-id> --db <snapshot>)";
+  if (flags.submission !== undefined && flags.run !== true) return "--submission only applies to --draft --run here (verify run takes its own --submission)";
+  if (flags.submission === true || flags.submission === "") return "--submission needs a directory";
+  return null;
+}
+
 export function preflightUsage(action: string, rest: string[], args: any): string | null {
   if (action === "instance") {
     // #206: unknown flags are a usage error too, and must be refused before the DB gate like the rest
@@ -1110,6 +1150,8 @@ export function preflightUsage(action: string, rest: string[], args: any): strin
   }
   if ((action === "run" || (action === "tree" && rest[0] === "run")) && args.flags.provenance !== undefined && (typeof args.flags.provenance !== "string" || !args.flags.provenance.trim())) return "--provenance needs a JSON file path";
   if (action !== "prepare") return null;
+  const draftRunProblem = draftRunUsage(args.flags ?? {});
+  if (draftRunProblem) return draftRunProblem;
   // #171 第4项（#188 评审 P3）：裸 --candidates-author / --reviews-author 会被记成作者 "true"，
   // 属用法错误，按 #175 的规矩在门禁之前就 rc=2。
   for (const flagName of ["candidates-author", "reviews-author"]) {
@@ -1499,6 +1541,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, USAGE_PREPARE);
         return 2;
       }
+      {
+        const problem = draftRunUsage(args.flags ?? {});
+        if (problem) { bad(ctx, problem); return 2; }
+      }
       // as_of 双侧同校验（r22 ②）：可解析 → 归一 toISOString；不可解析 → rc=2（不落盘、不消耗版本）。
       // 放在最前面：旗标错误是用法错误，不该先做 material/db 的 I/O 再说。
       {
@@ -1529,6 +1575,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const candidatesRaw = readJson<unknown>(candidatesPath);
       const reviewsRaw = readJson<unknown>(reviewsPath);
       const candidatesFile = { candidates: Array.isArray(candidatesRaw) ? (candidatesRaw as PrepareCandidate[]) : ((candidatesRaw as { candidates?: PrepareCandidate[] }).candidates ?? []) };
+      // 1.3 (#80): spec views ride in the candidates envelope `{ views: [...], candidates: [...] }`.
+      const specViews = Array.isArray(candidatesRaw) ? undefined : (candidatesRaw as { views?: unknown }).views;
+      if (specViews !== undefined && !Array.isArray(specViews)) {
+        bad(ctx, "invalid --candidates: views must be an array of { name, predicate }");
+        return 2;
+      }
       const reviewsFile = { reviews: Array.isArray(reviewsRaw) ? (reviewsRaw as Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }>) : ((reviewsRaw as { reviews?: Array<{ source_clause: string; findings: Array<Omit<ReviewFinding, "vu_id">> }> }).reviews ?? []) };
       const reviewsProblem = reviewsShapeProblem(reviewsFile.reviews);
       if (reviewsProblem) {
@@ -1580,6 +1632,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         reviewedClauses: (reviewsFile.reviews ?? []).map((r) => String(r?.source_clause ?? "")),
         materialIndex,
         schemaProbe,
+        views: specViews as SpecView[] | undefined,
+        snapshotPath: resolve(dbPath),
         specId: `spec_${short(sha256(materialId))}`,
         title: args.flags.title ? String(args.flags.title) : undefined,
         domain: args.flags.domain ? String(args.flags.domain) : undefined,
@@ -1589,7 +1643,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         engineVersion: env.version,
         corpusVersion: CORPUS_VERSION,
         knownMaterialHashes: knownMaterialHashes(env, materialId),
-      }).then((res): number => {
+      }).then(async (res): Promise<number> => {
         if (metaWarning) res.diagnostics.push({ stage: "META", message: metaWarning });
         // #171 第4项：同一作者既出候选又出评审时留一条诊断（不阻塞，但进 prepare.json 与 --json）。
         if (authors.candidates.id === authors.reviews.id) {
@@ -1635,15 +1689,28 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}),
             record: null,
           };
+          // #232 draft-run entry: run the in-memory spec on a working copy of --db and print the report, writing
+          // nothing to the workspace (no specs/, reports/, archives/ or retained snapshots; no version consumed).
+          // rc follows verify run: 0 once the run completed, whatever the verdict; a draft that is not ready runs nothing.
+          let drafted: { report: VerifyReport | null; error?: string } | undefined;
+          if (args.flags.run === true) drafted = res.verdict === "ready" && res.spec ? await draftRun(res.spec as VerifySpec, String(dbPath), args.flags.submission ? String(args.flags.submission) : undefined, env.version) : { report: null };
+          if (drafted) (payload as any).run = drafted.error ? { report: null, error: drafted.error } : { report: drafted.report };
+          const draftRc = res.verdict !== "ready" ? 1 : drafted?.error ? 1 : 0;
           if (ctx.json) {
             console.log(JSON.stringify(payload));
-            return res.verdict === "ready" ? 0 : 1;
+            return draftRc;
           }
           out(ctx, `  · draft ${res.verdict}: ${res.units.length} candidate unit(s), ${res.rounds} round(s), ${res.rejected.length} rejected — nothing written`
             + (prevVersion >= 1 && existsSync(specDir(env, `spec_${short(sha256(materialId))}`) + "/spec.json") ? ` — would replace spec_${short(sha256(materialId))} v${prevVersion}` : ""));
           for (const d of res.diagnostics) out(ctx, paint(C.dim, `    [${d.stage}] ${d.message}`, ctx.color));
           for (const r of res.rejected.slice(0, 5)) out(ctx, paint(C.dim, `    · [${r.stage}] ${r.reason}`, ctx.color));
-          return res.verdict === "ready" ? 0 : 1;
+          if (drafted?.error) bad(ctx, `draft run failed: ${drafted.error}`);
+          else if (drafted?.report) {
+            const r = drafted.report;
+            out(ctx, `  · draft run ${r.overall}: pass ${r.summary.pass}, fail ${r.summary.fail}, needs-material ${r.summary.needs_material}, error ${r.summary.error} — not frozen, nothing written`);
+            for (const v of r.vu.slice(0, 20)) out(ctx, paint(C.dim, `    ${v.verdict.padEnd(14)} ${v.id}  ${String(v.source_clause ?? "").slice(0, 100)}`, ctx.color));
+          } else if (args.flags.run === true) out(ctx, paint(C.dim, "  · draft not ready: nothing ran", ctx.color));
+          return draftRc;
         }
         const dir = specDir(env, `spec_${short(sha256(materialId))}`);
         const created = new Date().toISOString();
@@ -2389,6 +2456,47 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       });
     }
 
+    case "collect": {
+      // 1.3 (#80 item 6, #232): read-only, deterministic archive observations → a new SQLite snapshot. rc 0 = the
+      // snapshot was written (error rows included: a failed read is data); rc 1 = it could not be; rc 2 = usage.
+      const usage = "usage: verify collect archive <file.tgz|file.tar> --out <snapshot.sqlite> [--max-entries N] [--max-bytes N] [--max-path N]";
+      const [kind, input] = rest;
+      const outFlag = args.flags.out;
+      if (kind !== "archive" || !input || typeof outFlag !== "string" || outFlag === "") {
+        bad(ctx, usage);
+        return 2;
+      }
+      const limit = (flag: string, dflt: number): number | null => {
+        const v = args.flags[flag];
+        if (v === undefined) return dflt;
+        const n = Number(v);
+        return Number.isSafeInteger(n) && n > 0 ? n : null;
+      };
+      const limits = {
+        maxEntries: limit("max-entries", DEFAULT_ARCHIVE_LIMITS.maxEntries),
+        maxBytes: limit("max-bytes", DEFAULT_ARCHIVE_LIMITS.maxBytes),
+        maxPath: limit("max-path", DEFAULT_ARCHIVE_LIMITS.maxPath),
+      };
+      const badLimit = Object.entries(limits).find(([, v]) => v === null);
+      if (badLimit) {
+        bad(ctx, `--${badLimit[0].replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} must be a positive integer — ${usage}`);
+        return 2;
+      }
+      let res: ReturnType<typeof collectArchive>;
+      try {
+        res = collectArchive(input, resolve(outFlag), limits as { maxEntries: number; maxBytes: number; maxPath: number });
+      } catch (e: any) {
+        bad(ctx, String(e?.message || e));
+        return 1;
+      }
+      if (ctx.json) console.log(JSON.stringify(res));
+      else {
+        out(ctx, `collected ${res.entries} entr${res.entries === 1 ? "y" : "ies"}, ${res.errors} error row(s) → ${res.out}`);
+        out(ctx, paint(C.dim, `  sha256 ${res.sha256}${res.errors ? " · error rows make every 1.3 PASS an ERROR (archive_errors)" : ""}`, ctx.color));
+      }
+      return 0;
+    }
+
     case "lint-candidates": {
       // 0.110.0: the prepare gate without the ceremony — no spec file, no
       // spec_version bump, no events. rc expresses process only (0/2); the
@@ -2409,6 +2517,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const candidates = Array.isArray(parsed) ? parsed : parsed?.candidates;
       if (!Array.isArray(candidates)) {
         bad(ctx, "candidates file must be a JSON array or { candidates: [...] }");
+        return 2;
+      }
+      const lintViews = Array.isArray(parsed) ? undefined : parsed?.views;
+      if (lintViews !== undefined && !Array.isArray(lintViews)) {
+        bad(ctx, "candidates file views must be an array of { name, predicate }");
         return 2;
       }
       let materialText: string | undefined;
@@ -2468,7 +2581,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         reviewedClauses = list.map((r: any) => String(r?.source_clause ?? ""));
       }
-      const res = lintCandidates(candidates, { materialText, schema, coverageExempt: covOpt.exempt, clausePattern: patOpt.pattern, clausePatternDeclared: patOpt.declared, reviewedClauses });
+      const res = lintCandidates(candidates, {
+        materialText,
+        schema,
+        coverageExempt: covOpt.exempt,
+        clausePattern: patOpt.pattern,
+        clausePatternDeclared: patOpt.declared,
+        reviewedClauses,
+        views: lintViews as SpecView[] | undefined,
+        snapshotPath: args.flags.db ? resolve(lastDbFlag(args.flags.db)) : undefined,
+      });
       // #79 discoverability: a rejected lint ships a pasteable candidate
       // skeleton. The schema otherwise has to be archaeology'd out of
       // examples.generated.ts, whose `vu` shape is the SPEC face
@@ -2830,17 +2952,19 @@ export function probeOf(ddl: string[]): { tables: Record<string, string[]> } {
  * 加的列不在那条原始 DDL 文本里——结构上正确、数据里存在的列会被 P2 误判「列不在 schema」。
  * 探针必须问数据库要真实 schema（PRAGMA 认全部列与类型），DDL 文本只留给红队建空库。
  */
-export function probeOfDb(dbPath: string): { tables: Record<string, string[]> } {
+export function probeOfDb(dbPath: string): { tables: Record<string, string[]>; views: string[] } {
   const db = openDatabaseSync(dbPath, { readOnly: true });
   try {
     const tables: Record<string, string[]> = {};
+    // 1.3 (#80): views stored in the snapshot are listed by name only — never executed, so P2 can name them.
+    const views = (db.prepare("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name").all() as Array<{ name: string }>).map((r) => r.name);
     const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
     for (const { name } of names) {
       const quoted = `"${name.replace(/"/g, '""')}"`;
       const cols = db.prepare(`PRAGMA table_info(${quoted})`).all() as Array<{ name: string }>;
       tables[name] = cols.map((c) => c.name);
     }
-    return { tables };
+    return { tables, views };
   } finally {
     db.close();
   }
