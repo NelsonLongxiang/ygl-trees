@@ -1,3 +1,9 @@
+## Unreleased
+
+用户可见行为变化：
+
+- **修复：采集错误降级后，报告的 `summary` 与单元判定不一致**（#270，0.124.0 引入）。1.3 spec 的快照里 `archive_errors` 有行时，单元会从 PASS 改判 ERROR，`overall` 也对，但 `summary.pass` 仍按降级前计数。结果是 `verify archive verify` 拒绝这些归档，工作区里一旦有这样的运行，`verify self-check` 的归档环就判红。现在 `summary`、`overall`、`exceptions` 都在全部降级之后再折算，与 Rust 引擎一致。单元判定本身在 0.124.0 里就是对的，没有任何单元在不完整的输入上 PASS。
+
 ## 0.124.0
 
 用户可见行为变化：

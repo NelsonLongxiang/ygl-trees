@@ -72,6 +72,20 @@ fn collector_error_rows_turn_pass_into_error_for_1_3_only() {
     let reason = errs["vu"][0]["evidence"]["reason"].as_str().unwrap();
     assert_eq!(reason, "input_errors: 2 row(s) in archive_errors — the collected input is incomplete, so this unit cannot PASS");
     assert_eq!(errs["overall"], "FAIL");
+    // #270: summary is folded after the downgrade (same as engine.ts after the fix)
+    assert_eq!(errs["summary"]["pass"], 0);
+    assert_eq!(errs["summary"]["fail"], 1);
+    assert_eq!(errs["summary"]["error"], 1);
+
+    // #270: schema drift downgrades before summary and overall
+    let mut drift = spec("1.3", json!({ "op": "and", "conditions": [{ "col": "path", "op": "=", "value": "elsewhere/x" }] }));
+    drift["vu"] = json!([drift["vu"][0].clone()]);
+    drift["schema_fingerprint"] = json!("sha256:not-the-snapshot");
+    let d = run(&dir, &drift, &snapshot(&dir, "drift.sqlite", 0));
+    assert_eq!(verdicts(&d), vec!["ERROR"]);
+    assert_eq!(d["summary"]["pass"], 0);
+    assert_eq!(d["summary"]["error"], 1);
+    assert_eq!(d["overall"], "ERROR");
 
     let eq = json!({ "op": "and", "conditions": [{ "col": "path", "op": "=", "value": "elsewhere/x" }] });
     let twelve = run(&dir, &spec("1.2", eq), &snapshot(&dir, "errors12.sqlite", 1));

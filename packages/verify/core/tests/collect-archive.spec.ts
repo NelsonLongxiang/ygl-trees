@@ -195,6 +195,36 @@ describe("no silent empty pass: collector error rows turn a 1.3 PASS into ERROR"
     expect(r.overall).toBe("FAIL");
   });
 
+  // #270: summary / overall are folded after every downgrade, so the report agrees with its own units
+  const folded = (vu: Array<{ verdict: string; role?: string }>) => {
+    const out = { pass: 0, fail: 0, needs_material: 0, error: 0 };
+    for (const v of vu) {
+      if (v.role === "source") continue;
+      if (v.verdict === "PASS") out.pass++;
+      else if (v.verdict === "FAIL") out.fail++;
+      else if (v.verdict === "NEEDS-MATERIAL") out.needs_material++;
+      else out.error++;
+    }
+    return out;
+  };
+
+  it("#270: with error rows the summary counts the downgraded units as ERROR, not PASS", async () => {
+    const r = await run(spec("1.3"), snap("errors270.sqlite", 1));
+    expect(r.summary).toEqual(folded(r.vu as never));
+    expect(r.summary).toMatchObject({ pass: 0, fail: 1, error: 1 });
+  });
+
+  it("#270: schema drift downgrades before summary and overall are folded", async () => {
+    const s = spec("1.3");
+    s.vu = [s.vu[0]];
+    s.schema_fingerprint = "sha256:not-the-snapshot";
+    const r = await run(s, snap("drift270.sqlite", 0));
+    expect(r.vu[0].verdict).toBe("ERROR");
+    expect(r.summary).toEqual(folded(r.vu as never));
+    expect(r.summary).toMatchObject({ pass: 0, error: 1 });
+    expect(r.overall).toBe("ERROR");
+  });
+
   it("1.2 specs are untouched by the rule", async () => {
     const twelve = spec("1.3");
     twelve.contract_version = "1.2";

@@ -1425,13 +1425,16 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
       if (st) outputs.set(vu.id, safeQuery(opts.runner, st));
     }
   }
-  const summary = { pass: 0, fail: 0, needs_material: 0, error: 0 };
-  for (const r of results) {
-    if (r.role !== "assert") continue;
-    if (r.verdict === "PASS") summary.pass++;
-    else if (r.verdict === "FAIL") summary.fail++;
-    else if (r.verdict === "NEEDS-MATERIAL") summary.needs_material++;
-    else summary.error++;
+  // #270: every verdict downgrade happens before summary / overall / exceptions are folded, so the report agrees
+  // with its own units (archive verify and self-check re-fold them) and with the Rust engine, which downgrades first.
+  // Schema drift (评审 c): the frozen fingerprint differs from this run's → ERROR.
+  if (spec.schema_fingerprint) {
+    for (const r of results) {
+      if (r.witness && r.witness.schema_fingerprint !== spec.schema_fingerprint) {
+        (r as { verdict: string }).verdict = "ERROR";
+        r.evidence = { ...(r.evidence ?? {}), schema_drift: true, expected_schema: spec.schema_fingerprint, seen: r.witness.schema_fingerprint };
+      }
+    }
   }
   // 1.3 (#80 item 7): a snapshot whose collector recorded failed reads never yields PASS — the data is incomplete.
   if (spec.contract_version === "1.3") {
@@ -1451,18 +1454,18 @@ export async function runVerify(spec: VerifySpec, opts: VerifyOptions): Promise<
     const changed = runnerOf(opts).untouched?.() ?? null;
     if (changed) throw new Error(changed);
   }
+  const summary = { pass: 0, fail: 0, needs_material: 0, error: 0 };
+  for (const r of results) {
+    if (r.role !== "assert") continue;
+    if (r.verdict === "PASS") summary.pass++;
+    else if (r.verdict === "FAIL") summary.fail++;
+    else if (r.verdict === "NEEDS-MATERIAL") summary.needs_material++;
+    else summary.error++;
+  }
   const { overall, reason } = foldOverall(results);
   const exceptions = results
     .filter((r) => r.role === "assert" && (r.verdict === "FAIL" || r.verdict === "NEEDS-MATERIAL"))
     .map((r) => ({ vu: r.id, severity: r.severity as Severity, row_count: Number((r.evidence as { violations?: number; rows_total?: number } | undefined)?.violations ?? 0) }));
-  if (spec.schema_fingerprint) {
-    for (const r of results) {
-      if (r.witness && r.witness.schema_fingerprint !== spec.schema_fingerprint) {
-        (r as { verdict: string }).verdict = "ERROR";
-        r.evidence = { ...(r.evidence ?? {}), schema_drift: true, expected_schema: spec.schema_fingerprint, seen: r.witness.schema_fingerprint };
-      }
-    }
-  }
   const report: VerifyReport = {
     contract_version: spec.contract_version,
     run_id: runId,
