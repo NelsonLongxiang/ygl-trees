@@ -104,6 +104,11 @@
       "role": "gate"
     },
     {
+      "path": "scripts/dist-manifest.mjs",
+      "sha256": "e07437638a57272c3e5e99e16a0905f684c7904892bc2038a9863336038c5130",
+      "role": "build"
+    },
+    {
       "path": "scripts/dual-backend-matrix.mjs",
       "sha256": "64c350092c58b1554da03fe903788a7f23f703ae6a4fc7c30ec684da8d651494",
       "role": "gate"
@@ -127,6 +132,11 @@
       "path": "scripts/json-check.mjs",
       "sha256": "064ffbbd3c8649d1fbf150a73f1e989fa41daf7b56de780f1cd4571ea80e094a",
       "role": "gate"
+    },
+    {
+      "path": "scripts/lib/dist-manifest.mjs",
+      "sha256": "49ffc639a0e972680050f8fab2cb03c9b94f375d3f4389a060ce49a76c946a1b",
+      "role": "release"
     },
     {
       "path": "scripts/lib/pack-guard.mjs",
@@ -155,7 +165,7 @@
     },
     {
       "path": "scripts/pack-repro.mjs",
-      "sha256": "4f37db48bccdbad3068e6f47244d9c5140ede24e14e359b869b78ba107f6b131",
+      "sha256": "ac1cf5f823eafc9c58de80f2ae6a35aedb9c64b14c03b4934550fa33d2206df2",
       "role": "build"
     },
     {
@@ -1387,6 +1397,30 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "supervisor-seat",
       "at": "2026-11-11T19:41:15.941Z"
+    },
+    {
+      "path": "scripts/pack-repro.mjs",
+      "old_sha256": "4f37db48bccdbad3068e6f47244d9c5140ede24e14e359b869b78ba107f6b131",
+      "new_sha256": "ac1cf5f823eafc9c58de80f2ae6a35aedb9c64b14c03b4934550fa33d2206df2",
+      "reason": "#236: refuse to pack a dist/ that differs from the last clean build's manifest; --check-dist",
+      "actor": "supervisor-seat",
+      "at": "2026-11-12T10:20:28.838Z"
+    },
+    {
+      "path": "scripts/lib/dist-manifest.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "49ffc639a0e972680050f8fab2cb03c9b94f375d3f4389a060ce49a76c946a1b",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "supervisor-seat",
+      "at": "2026-11-12T10:20:28.881Z"
+    },
+    {
+      "path": "scripts/dist-manifest.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "e07437638a57272c3e5e99e16a0905f684c7904892bc2038a9863336038c5130",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "supervisor-seat",
+      "at": "2026-11-12T10:20:28.912Z"
     }
   ],
   "kind": "engine",

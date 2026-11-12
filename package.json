@@ -60,7 +60,7 @@
     "pg": "^8.13.0"
   },
   "scripts": {
-    "build": "node scripts/run-sh.mjs \"tsc -p tsconfig.json && pnpm build:bundle:only && pnpm --filter @ygl/web build && node scripts/stage-web-dist.mjs\"",
+    "build": "node scripts/run-sh.mjs \"node scripts/dist-manifest.mjs clean && tsc -p tsconfig.json && pnpm build:bundle:only && pnpm --filter @ygl/web build && node scripts/stage-web-dist.mjs && node scripts/dist-manifest.mjs write\"",
     "build:bundle:only": "tsdown --config ./tsdown.config.mjs apps/cli/src/bin.ts --format cjs --out-dir dist/bundle --platform node --target node20 --deps.never-bundle better-sqlite3 --deps.never-bundle typeorm --deps.never-bundle reflect-metadata --deps.never-bundle pg --deps.never-bundle @deepseek-ai/dsh-atomic-write",
     "build:bundle": "pnpm build",
     "start": "node dist/bundle/bin.cjs",
