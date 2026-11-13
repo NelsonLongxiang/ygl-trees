@@ -455,6 +455,13 @@ echo "── 7. scheduling"
 $Y job add "nightly" -- "echo hello" --every 1440
 D=$($Y job add "nightly" -- "echo hello" --every 1440 2>&1)
 case "$D" in *duplicate*) echo "  ✓ job add idempotent";; *) echo "  ✗ job add NOT idempotent: $D"; exit 1;; esac
+# v14 (#258): attribution — the job carries the selected project and the session actor; --project filters; unknown name rc=1
+JP=$($Y job list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s).find(x=>x.title==='nightly');console.log(j&&j.project_id&&j.owner!==undefined?'ok':'bad')})")
+[ "$JP" = "ok" ] && echo "  ✓ job add records attribution (project_id + owner, v14)" || { echo "  ✗ job attribution: $JP"; exit 1; }
+JL=$($Y job list --project techtree --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).some(x=>x.title==='nightly')?'ok':'bad')})")
+[ "$JL" = "ok" ] && echo "  ✓ job list --project filters (v14)" || { echo "  ✗ job list --project: $JL"; exit 1; }
+if $Y job list --project nope >/dev/null 2>&1; then JN=0; else JN=$?; fi
+[ "$JN" = "1" ] && echo "  ✓ job list --project <unknown> rc=1" || { echo "  ✗ job list --project unknown rc=$JN"; exit 1; }
 $Y job run nightly
 # 0.83.1: run history must persist（jobFinish 曾漏传 runId，UPDATE 静默 no-op）
 JH=$($Y db sql "SELECT rc FROM runs WHERE job_id=(SELECT id FROM jobs WHERE title='nightly') ORDER BY rowid DESC LIMIT 1" --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s)[0];console.log(r&&r.rc===0?'ok':'bad')})")

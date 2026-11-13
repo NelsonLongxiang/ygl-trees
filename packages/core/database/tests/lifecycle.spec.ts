@@ -83,3 +83,28 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }, 20000);
 });
+
+describe("schema v14: v13 workspace upgrades in place, jobs kept intact (#258)", () => {
+  it("a v13 jobs table gains project_id/owner; PRAGMA user_version reports 14", () => {
+    process.env.YGL_TEST = "1";
+    const dir = path.join(process.cwd(), "tmp", `v14-upgrade-${Date.now()}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const dbFile = path.join(dir, "test.db");
+    const pre = new DB(dbFile, false);
+    // DB construction already replayed SCHEMA_SQL at v14 — drop the two new columns and pin v13 to fabricate a legacy workspace.
+    pre.exec("ALTER TABLE jobs DROP COLUMN project_id");
+    pre.exec("ALTER TABLE jobs DROP COLUMN owner");
+    pre.exec("INSERT INTO jobs(id,title,command,every_minutes,at,enabled,runs,last_run,status,created) VALUES('j1','legacy job','echo a',0,'',1,0,'','pending','2026-01-01T00:00:00Z')");
+    pre.exec("PRAGMA user_version=13");
+    pre.close();
+    const ctx = new Context();
+    const svc = new DatabaseService(ctx, dbFile);
+    const ver = svc.db.get("PRAGMA user_version") as any;
+    expect(ver.user_version).toBe(14);
+    const job = svc.db.get("SELECT id,title,project_id,owner FROM jobs WHERE id='j1'") as any;
+    expect(job.id).toBe("j1");
+    expect(job.project_id).toBe("");
+    expect(job.owner).toBe("");
+    svc.stop();
+  });
+});

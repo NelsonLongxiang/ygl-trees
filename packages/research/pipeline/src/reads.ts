@@ -354,10 +354,12 @@ export class Store {
 
   // ================================================================ jobs
   /** Idempotent by title; force appends a numeric suffix (nightly-2, -3…). */
-  jobList(): Row[] {
-    return this.db.all(
-      "SELECT id,title,every_minutes AS every,at,enabled,runs,last_run,status FROM jobs ORDER BY created"
-    );
+  /** #258: list carries attribution; an explicit project filter narrows to that
+   *  project's jobs only (a named project's rows, not the workspace-wide list). */
+  jobList(projectId?: string): Row[] {
+    const base = "SELECT id,title,every_minutes AS every,at,enabled,runs,last_run,status,project_id,owner FROM jobs";
+    if (projectId === undefined) return this.db.all(base + " ORDER BY created");
+    return this.db.all(base + " WHERE project_id=? ORDER BY created", [projectId]);
   }
 
   /** Jobs `tick` should run now (#220 review of f509022). Before, any never-run job was due at once — a --manual job

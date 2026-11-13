@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "c8aaae5051fd2d104ccef35832fcd8b9d43d1f3b95dd9c6524771c6a60d03859",
+      "sha256": "3c180c8a4d4d55c404e902c6b83df18de787431ac7a7c3ef839f3a768cb6ed21",
       "role": "test"
     },
     {
@@ -1442,6 +1442,30 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "supervisor-seat",
       "at": "2026-11-12T15:21:12.920Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "c8aaae5051fd2d104ccef35832fcd8b9d43d1f3b95dd9c6524771c6a60d03859",
+      "new_sha256": "230a3cc603201a3f018a2549a55c8d6fdb615588e8c2c71de73f51a10e377dc0",
+      "reason": "#258: demo gains job list --project attribution assertions (3 new asserts)",
+      "actor": "dev-seat",
+      "at": "2026-11-13T06:31:56.126Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "230a3cc603201a3f018a2549a55c8d6fdb615588e8c2c71de73f51a10e377dc0",
+      "new_sha256": "3c7b3a10a2830027276d6efec7656eab7da42080a3b92ce0ae69c9ef1d9d16f9",
+      "reason": "#258: fix unclosed parens in the two attribution node -e one-liners",
+      "actor": "dev-seat",
+      "at": "2026-11-13T07:18:03.126Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "3c7b3a10a2830027276d6efec7656eab7da42080a3b92ce0ae69c9ef1d9d16f9",
+      "new_sha256": "3c180c8a4d4d55c404e902c6b83df18de787431ac7a7c3ef839f3a768cb6ed21",
+      "reason": "#258: third attribution assertion must survive set -e (if/then capture)",
+      "actor": "dev-seat",
+      "at": "2026-11-13T07:40:28.469Z"
     }
   ],
   "kind": "engine",
