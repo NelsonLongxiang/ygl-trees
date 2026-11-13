@@ -35,6 +35,9 @@ ygl-trees kb search "闭包表 索引" --eval     # 语义重排：决策模型�
 ygl-trees kb list
 ygl-trees kb show <id>
 ygl-trees kb rm <id>                         # 删除笔记
+ygl-trees kb add --title t --body b --scope dept:ops   # 授权范围（#276：dept:<id>|bench:<id>|*|restricted；空=未归属）
+ygl-trees kb rescope <id> --scope restricted           # 改范围（同值重跑 duplicate）
+ygl-trees kb list --scope ""                           # 只看未归属
 ygl-trees db obsidian [dir]                  # 导出为 Obsidian vault
 ```
 

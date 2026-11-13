@@ -1020,7 +1020,9 @@ export function generateLlmsManifest(): string {
       ["produce export <id> <file>", "export artifact to file"],
     ]],
     ["kb", "Long-term knowledge + reuse", [
-      ["kb add --title --body|-f", "add knowledge note"],
+      ["kb add --title --body|-f [--scope <k>]", "add knowledge note (#276: scope dept:<id>|bench:<id>|*|restricted)"],
+      ["kb rescope <id|title> --scope <k>", "change a note grant scope (idempotent; #276)"],
+      ["kb list [--scope <k>]", "list notes, filtered by grant scope (#276)"],
       ["kb import <dir|file.md>", "batch markdown import (>1MB skipped, --force to include)"],
       ["kb search \"<q>\" [--eval]", "FTS5 CJK search (--eval: semantic re-rank via decision model)"],
       ["kb rm <id>", "remove note"],

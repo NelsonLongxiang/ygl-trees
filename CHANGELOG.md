@@ -2,6 +2,8 @@
 
 用户可见行为变化：
 
+- **kb/skill 记授权范围：schema v15（kb_notes/skills.scope）**（Refs #276）。`kb add`/`kb import` 落 `scope`（`--scope` 或 import 的 frontmatter `scope:`；四值词表 `dept:<id>|bench:<id>|*|restricted`，写时校验 rc2 零写入；无 flag 存空串＝未归属，不从项目推断）。`kb rescope <id|title> --scope <k>` 改范围（同值重跑 duplicate rc0）；`kb list --scope <k>` 过滤（空串只选未归属；无 flag 输出与旧版逐字节一致）；promote 复制笔记 scope 到技能，rescope 后 re-promote 更新。MCP：`write kb add` 透传 `scope`、`write kb rescope` 新路由。SQLite v14→v15 原位升级；PG `PG_UPGRADES` v15 步；schema-parity 一致。
+
 - **job 记归属：schema v14（jobs.project_id/owner）**（Refs #258，#220 phase B）。`job add` 落两列：`project_id` 取显式 `--project` 或会话所选项目，`owner` 取显式 `--owner` 或会话 actor（同 events 口径）；`job list`/`job show` 携带两列，`job list --project <name|id>` 过滤（未知名 rc=1）。doctor `job_health` 新增分类：**孤儿**＝project_id 非空但项目已删（点名＋`job show <id>` 下一步，warn 级），**unattributed**＝legacy 空 project_id（只计数不改写，绝不报孤儿）；retired 不报。SQLite v13 工作区原位升级 v14（PRAGMA user_version=14，旧行保留、空串默认）；PG `PG_UPGRADES` 同步 v14 步（`ADD COLUMN IF NOT EXISTS`）；`schema-parity` 两端列集一致。MCP 无 job 面（既有白名单排除），无新增路由。`AGENTS.md` 版本行同步 v14。
 
 ## 0.125.0
