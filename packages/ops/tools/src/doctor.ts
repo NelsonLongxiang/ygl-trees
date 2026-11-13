@@ -299,6 +299,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     });
 
     const jobs = jobViews(env);
+    // #258: orphan = project_id set but the project row is gone; unattributed = empty project_id (legacy).
+    // Retired jobs are never reported — a retired orphan is already on the disposal path.
+    const liveProjects = new Set((db.all("SELECT id FROM projects") as any[]).map((p) => p.id));
+    const orphanJobs = jobs.filter((j) => j.project_id && !liveProjects.has(j.project_id) && j.status !== "retired");
+    const unattributedJobs = jobs.filter((j) => !j.project_id && j.status !== "retired");
     const floor = configGetNumber(db, "job.min_every_minutes");
     const name = (list: any[]) => list.slice(0, 3).map((j) => j.title).join(", ") + (list.length > 3 ? ` … +${list.length - 3}` : "");
     const failing = jobs.filter((j) => j.health === "failing");
@@ -319,9 +324,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     ].filter(Boolean);
     checks.push({
       name: "job_health",
-      status: failing.length || suspended.length ? "fail" : jobIssues.length ? "warn" : "pass",
-      detail: jobIssues.length
-        ? `${jobs.length} job(s): ${jobIssues.join("; ")} — job show <id>; fix it, or job retire <id> --reason …`
+      // #258 review③: legacy unattributed rows are counted in detail but never decide the level —
+      // an upgraded workspace with only legacy jobs stays pass. Only orphans (and the existing issues) warn.
+      status: failing.length || suspended.length ? "fail" : jobIssues.length || orphanJobs.length ? "warn" : "pass",
+      detail: (jobIssues.length || orphanJobs.length || unattributedJobs.length)
+        ? `${jobs.length} job(s): ${[...jobIssues, ...orphanJobs.map((j) => `orphan: ${j.title} (${j.id}) — its project is gone; job show ${j.id} to decide: retire or move`), unattributedJobs.length ? `${unattributedJobs.length} unattributed (legacy, empty project_id) — job add records attribution since v14` : ""].filter(Boolean).join("; ")} — job show <id>; fix it, or job retire <id> --reason …`
         : `${jobs.length} job(s); none failing, overdue, unscheduled or duplicated`,
     });
   }

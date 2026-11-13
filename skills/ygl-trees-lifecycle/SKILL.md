@@ -72,7 +72,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 
 | 触发事件 | 立刻做 |
 |---|---|
-| 新增周期作业 | `job add <title> --every <min> -- <cmd>`；确实没有调度就显式 `--manual`；每小时以内要 `--allow-frequent`（默认下限 60 分钟） |
+| 新增周期作业 | `job add <title> --every <min> -- <cmd>`；确实没有调度就显式 `--manual`；每小时以内要 `--allow-frequent`（默认下限 60 分钟）；v14 起自动记归属（project_id 取所选项目，owner 取 `--owner` 或会话 actor，#258） |
 | 作业**升级**（换命令、换版本） | `job add <新> --every <min> --replaces <旧> -- <cmd>`：同一步退役旧的（同族新登记不带 `--replaces` 会被拒，确实要并存才用 `--force`） |
 | doctor `job_health` 报 failing / suspended | `job show <id>` 看 `last_error` → 修命令后 `job enable <id>` 重新上岗，或 `job retire <id> --reason …`；tick 连续失败 3 次会自动暂停（suspended），别让它一直红着 |
 | 一次性作业 | `--at "YYYY-MM-DD HH:MM"`；跑完自动 done + 停用，无需手动收 |
@@ -84,7 +84,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 |---|---|
 | **每轮会话开场** | `agent brief`（我在哪、有什么、下一步）→ 有 `next_actions` 就照做 |
 | **每轮会话收口前** | `doctor`（含 `node_evidence` / `task_hygiene` / `job_health`）；有脏索引、重复、孤儿、没挂证据的解锁节点，按它的提示修（`doctor --fix` 可安全修脏索引） |
-| **每周**（或巡检时） | `task stale --all`：停滞的 doing（默认 ≥14 天）推进或取消，挂账的 todo（≥30 天）认领或取消；`job list` 里 failing / overdue / manual 逐条有处置 |
+| **每周**（或巡检时） | `task stale --all`：停滞的 doing（默认 ≥14 天）推进或取消，挂账的 todo（≥30 天）认领或取消；`job list` 里 failing / overdue / manual 逐条有处置；doctor 会点名孤儿 job（project_id 指向已删项目，#258：job show 后人裁 retire 或迁移），legacy 空 project_id 行只计 unattributed 不算孤儿 |
 | **加删节点/删边/改条件后**（同一轮内） | `node index` + `node validate`——别把脏索引留给下一轮 |
 | **解锁任何节点后** | 同轮 `rel` 挂依据；否则验尸时无法回答"凭什么解锁" |
 | **claim 状态变化后** | 建议 `produce report` 重生成（报告是状态的投影，不是手写副本） |

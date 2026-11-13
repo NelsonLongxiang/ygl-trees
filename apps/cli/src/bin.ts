@@ -224,7 +224,7 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   promote <noteId> [--name]  turn a note into a reusable skill
 
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
-  add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] -- <command>   options before --
+  add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] [--owner <who>] [--project <name>] -- <command>   options before --
                              a schedule (or --manual) is required; --every below job.min_every_minutes (60) needs --allow-frequent;
                              a new version of an existing job needs --replaces (retires the old one) or --force (keeps both)
   list | show <id|title>     rows carry command + health (ok|failing|never-ran|overdue|manual|done|retired|suspended|disabled); show names the last actor
@@ -1093,9 +1093,9 @@ export function generateLlmsManifest(): string {
       ["config list / get / set / reset", "registry-backed settings"],
     ]],
     ["job", "Batch scheduling", [
-      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"|--manual] [--replaces <old>] -- \"<cmd>\"", "create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force)"],
+      ["job add <title> [--every <min>|--at \"YYYY-MM-DD HH:MM\"|--manual] [--replaces <old>] [--owner <who>] [--project <name>] -- \"<cmd>\"", "create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force; v14 records project_id from --project or the session selection and owner from --owner or the session actor #258)"],
       ["job tick", "run due jobs (drive with cron)"],
-      ["job list / job show <id|title>", "command + health, consecutive failures, last error, next due (#220)"],
+      ["job list [--project <name>] / job show <id|title>", "command + health, consecutive failures, last error, next due (#220); --project narrows to that project's jobs, and rows carry project_id/owner (v14 #258)"],
       ["job retire <id|title> --reason <why>", "disable + mark retired; history kept"],
       ["job prune-runs [--keep N] [--apply]", "trim old run rows (dry run by default)"],
     ]],

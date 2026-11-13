@@ -55,7 +55,7 @@ MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排�
 | `db init / export / sync / migrate` | 工作区生命周期管理——部署者操作，非 agent 面 |
 | `plugin install / enable / disable` | 代码执行面——插件可跑任意 JS |
 | `config set / reset` | 系统配置变更——影响引擎行为 |
-| `job add / retire / tick` | 调度器管理——可触发任意已注册 job（退役不删行；`job show` 看健康） |
+| `job add / list / show / retire / tick` | 调度器管理——可触发任意已注册 job（退役不删行；`job show` 看健康）；v14 起 job 记 project_id/owner（`--owner`/`--project` 可显式指定，`job list --project <name>` 过滤，doctor 点名孤儿，#258） |
 | `patrol add / rm` | 巡检管理——同上 |
 | `webui serve` | 长驻进程——MCP 工具调用是短生命周期 |
 

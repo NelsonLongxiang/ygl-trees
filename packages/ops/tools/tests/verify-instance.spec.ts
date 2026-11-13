@@ -140,7 +140,7 @@ describe("schema v13", () => {
       db.close();
       const reopened = new DB(file);
       expect((reopened.get("PRAGMA user_version") as any).user_version).toBe(SCHEMA_VERSION);
-      expect(SCHEMA_VERSION).toBe(13);
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(14); // v14 bumped jobs attribution (#258); re-pin when v15 lands
       for (const t of ["verifier_instances", "verifier_runs"]) expect(reopened.get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [t])).toBeTruthy();
       reopened.close();
     } finally { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }

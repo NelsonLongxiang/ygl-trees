@@ -189,12 +189,6 @@ ygl-trees 的**业务交付面 = CLI（npm 包）**：安装即用、退出码�
 
 ## 4. 兼容性承诺
 
-## 5. 仓内体量预算（G11，2026-10-27 总工裁 direct-a2f54173 A）
-
-- **spec.md 总字节** ≤ 26,000 · **docs/ 活跃字节**（全部 `.md`，不含 `*archive*`）≤ 880,000。
-- 超阈必须归档（plan 拆分模式）；阈值是**上限**不是棘轮，下调须显式改 `volume-baseline.json` 并携带裁定注。
-- **单一事实源注记**：阈值的机器定义在 `scripts/volume-gate.mjs` + `volume-baseline.json`（本节是其规范面陈述）。
-
 - v2 老库首次被 v3 CLI 打开时自动迁移，无损、无需人工介入；迁移在事务内
 - JSON 输出结构只增字段不改字段名；退出码语义：0 成功（含"重复已存在"）、1 运行错误、2 用法错误
 - **flag 校验是冻结契约**（0.54 定契）：裸 flag（`--flag` 无值）→ rc=2 `needs a value`，**绝不落库为 `"true"` 字符串**；枚举型 flag（`--kind`/`--op`/`--effect`/`--confidence`/`--stance`/`--rel`/`--mode`）非法值 → rc=2 `must be one of ...`，**不触发任何写入**。回归护栏：`pnpm contract:audit` contract 6（11 项）机械断言
@@ -203,3 +197,9 @@ ygl-trees 的**业务交付面 = CLI（npm 包）**：安装即用、退出码�
   字段一律 snake_case（camelCase 泄漏视为违约）；人类用法/提示文本只在**非 json 模式**输出。
   回归护栏：`pnpm contract:audit` 的 contract 5（31 条读命令 + 6 条错误路径）机械断言本承诺
 - `node export` 格式不变；`node import` 按 R3.3 严格校验，坏文件零副作用
+
+## 5. 仓内体量预算（G11，2026-10-27 总工裁 direct-a2f54173 A）
+
+- **spec.md 总字节** ≤ 26,000 · **docs/ 活跃字节**（全部 `.md`，不含 `*archive*`）≤ 880,000。
+- 超阈必须归档（plan 拆分模式）；阈值是**上限**不是棘轮，下调须显式改 `volume-baseline.json` 并携带裁定注。
+- **单一事实源注记**：阈值的机器定义在 `scripts/volume-gate.mjs` + `volume-baseline.json`（本节是其规范面陈述）。

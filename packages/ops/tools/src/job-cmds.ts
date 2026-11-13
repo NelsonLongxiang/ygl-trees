@@ -5,6 +5,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, table, paint, C, writeResult } from "../../../core/text/src/fmt";
 import { nowIso } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
+import { resolveProject, eventActor } from "../../../core/database/src/selection";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
@@ -54,15 +55,19 @@ export function lastActor(env: Env, entityId: string): string {
 }
 
 /** Job rows as `job list --json` / `job show` expose them (#220): the stored row, its command, and derived health. */
-export function jobViews(env: Env): Array<Record<string, any>> {
+export function jobViews(env: Env, projectId?: string): Array<Record<string, any>> {
   const failing = configGetNumber(env.db, "job.failing_runs");
   // health reads whole-history facts (streak, last_ok, last_error) from SQL; the run window is only a fallback
   const runs = runsByJob(env, Math.max(20, failing + 1));
   const facts = runFacts(env);
   const now = Date.now();
-  return (env.db.all("SELECT * FROM jobs ORDER BY created") as any[]).map((j) => ({
+  // #258: attribution columns travel; an explicit project narrows to that project's rows.
+  const rows = projectId === undefined
+    ? (env.db.all("SELECT * FROM jobs ORDER BY created") as any[])
+    : (env.db.all("SELECT * FROM jobs WHERE project_id=? ORDER BY created", [projectId]) as any[]);
+  return rows.map((j) => ({
     id: j.id, title: j.title, command: j.command, every: j.every_minutes, at: j.at, enabled: j.enabled, runs: j.runs,
-    last_run: j.last_run, status: j.status, created: j.created,
+    last_run: j.last_run, status: j.status, created: j.created, project_id: j.project_id ?? "", owner: j.owner ?? "",
     ...jobHealth(j, runs.get(j.id) ?? [], now, failing, facts.get(j.id) ?? { streak: 0, last_ok: "", last_error: "" }),
   }));
 }
@@ -148,8 +153,13 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 2;
         }
       }
+      // #258: attribution — explicit --project wins, else the session selection; --owner wins, else the session actor.
+      const sel = resolveProject(env.db, args.flags.project ? String(args.flags.project) : undefined);
+      if ((args.flags.project || sel.name) && !sel.id) { bad(ctx, "project not found: " + (args.flags.project || sel.name)); return 1; }
+      // #258 review①: the fallback is the event actor — same as events record (selection.ts eventActor, "cli" default).
+      const owner = args.flags.owner ? String(args.flags.owner) : eventActor();
       return getOrm(env.db.path)
-        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force, replaces }))
+        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force, replaces, projectId: sel.id || "", owner }))
         .then((r): number => {
           if (ctx.json) {
             console.log(
@@ -174,7 +184,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "list": {
-      const rows = jobViews(env);
+      // #258: --project <name|id> narrows the list to that project's jobs (rc=1 when the name matches nothing).
+      let listProject: string | undefined;
+      if (args.flags.project !== undefined) {
+        const sel = resolveProject(env.db, String(args.flags.project));
+        if (!sel.id) { bad(ctx, "project not found: " + args.flags.project); return 1; }
+        listProject = sel.id;
+      }
+      const rows = jobViews(env, listProject);
       if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
       table(ctx, rows, ["id", "title", "every", "at", "on", "runs", "last_run", "health"], [
         "id",
@@ -195,7 +212,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const recent = store.db.all("SELECT id, started, finished, rc, substr(output,1,200) AS output FROM runs WHERE job_id=? ORDER BY started DESC, id DESC LIMIT 10", [j.id]);
       const shown: Record<string, any> = { ...j, last_actor: lastActor(env, j.id) };
       if (ctx.json) { console.log(JSON.stringify({ ...shown, recent_runs: recent }, null, 2)); return 0; }
-      for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run", "last_actor"])
+      for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run", "last_actor", "project_id", "owner"])
         out(ctx, `  ${k.padEnd(21)} ${shown[k] === "" || shown[k] === undefined ? "—" : String(shown[k])}`);
       out(ctx, `  recent runs`);
       for (const r of recent as any[]) out(ctx, `    ${r.started}  rc=${r.rc ?? "…"}  ${String(r.output || "").replace(/\s+/g, " ").slice(0, 100)}`);

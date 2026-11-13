@@ -273,7 +273,8 @@ CREATE TABLE jobs (
   id text PRIMARY KEY, title text NOT NULL, command text NOT NULL,
   every_minutes integer DEFAULT 0, at text DEFAULT '', enabled integer NOT NULL DEFAULT 1,
   runs integer NOT NULL DEFAULT 0, last_run text DEFAULT '',
-  status text NOT NULL DEFAULT 'pending', created text NOT NULL);
+  status text NOT NULL DEFAULT 'pending', created text NOT NULL,
+  project_id text NOT NULL DEFAULT '', owner text NOT NULL DEFAULT '');
 CREATE TABLE runs (
   id text PRIMARY KEY, job_id text NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   started text NOT NULL, finished text DEFAULT '', rc integer, output text DEFAULT '');
@@ -506,6 +507,8 @@ export interface PgUpgradeStep { version: number; note: string; sql: string }
 export const PG_UPGRADES: PgUpgradeStep[] = [
   // v13 (#206): verifier registry — additive tables; their indexes converge through MIGRATE_INDEXES.
   { version: 13, note: "v13: verifier_instances/verifier_runs (verifier registry, #206)", sql: migrateTableDdl(["verifier_instances", "verifier_runs"]) },
+  // v14 (#258): jobs attribution — project_id/owner with the empty-string legacy default.
+  { version: 14, note: "v14: jobs.project_id/owner (job attribution, #258)", sql: `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT ''; ALTER TABLE jobs ADD COLUMN IF NOT EXISTS owner text NOT NULL DEFAULT '';` },
 ];
 
 /** CREATE TABLE IF NOT EXISTS statements for the named tables, taken from MIGRATE_DDL — the one PG DDL text, so an

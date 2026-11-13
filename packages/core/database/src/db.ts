@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 /** #51: ONE SQLite driver for every write path. The wasm driver's Node VFS
  *  implements its own lock protocol that native SQLite (better-sqlite3, used
@@ -369,7 +369,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   runs          INTEGER NOT NULL DEFAULT 0,
   last_run      TEXT DEFAULT '',
   status        TEXT NOT NULL DEFAULT 'pending',
-  created       TEXT NOT NULL
+  created       TEXT NOT NULL,
+  project_id    TEXT NOT NULL DEFAULT '',  -- v14 (#258): 归属项目；空 = legacy 未归属
+  owner         TEXT NOT NULL DEFAULT ''   -- v14 (#258): --owner 或会话 actor
 );
 CREATE TABLE IF NOT EXISTS runs (
   id       TEXT PRIMARY KEY,
@@ -781,6 +783,7 @@ export class DB {
       if ((v > 0 && v < 11) || (v === 0 && tablesPreExist)) this.upgrade10to11();
       if ((v > 0 && v < 12) || (v === 0 && tablesPreExist)) this.upgrade11to12();
       if ((v > 0 && v < 13) || (v === 0 && tablesPreExist)) this.upgrade12to13();
+      if ((v > 0 && v < 14) || (v === 0 && tablesPreExist)) this.upgrade13to14();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
       // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
@@ -828,6 +831,18 @@ export class DB {
    *  EXISTS (both tables live in SCHEMA_SQL); no-op guard kept for ledger symmetry. */
   private upgrade12to13(): void {
     /* SCHEMA_SQL exec below creates verifier_instances/verifier_runs */
+  }
+
+  /** v13 -> v14 (#258): jobs gain project attribution and an owner, so orphaned
+   *  jobs can be named and doctor can say whose job is failing. Legacy rows
+   *  keep the empty-string default = unattributed, never rewritten. */
+  private upgrade13to14(): void {
+    const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='jobs'");
+    if (!hasTable) return;
+    const hasProject = this.get("SELECT 1 FROM pragma_table_info('jobs') WHERE name='project_id'");
+    if (!hasProject) this.db.exec(`ALTER TABLE jobs ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`);
+    const hasOwner = this.get("SELECT 1 FROM pragma_table_info('jobs') WHERE name='owner'");
+    if (!hasOwner) this.db.exec(`ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT ''`);
   }
 
   /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine
