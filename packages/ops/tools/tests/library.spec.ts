@@ -109,6 +109,48 @@ describe("library feed (#275)", () => {
     const badKind = cli(["library", "list", "--kind", "nope"]);
     expect(badKind.rc).toBe(2);
   });
+
+  it("#278 review3: the four loose Date.parse shapes are each rc 2", () => {
+    for (const loose of ["2026-11-13 10:00", "Nov 13 2026", "2026-11-13T10:00:00", "2026-02-30"]) {
+      const r = cli(["library", "list", "--kind", "note", "--since", loose]);
+      expect(r.rc, loose).toBe(2);
+      expect(r.json.error, loose).toBeTruthy();
+    }
+  });
+
+  it("#278 review4: --scope before #276 is rc 2, never silently ignored", () => {
+    const r = cli(["library", "list", "--kind", "note", "--scope", "dept:x"]);
+    expect(r.rc).toBe(2);
+    expect(r.json.error).toContain("#276");
+  });
+
+  it("#278 review5: show skill refuses bundled and unknown with rc 1", () => {
+    expect(cli(["library", "show", "skill", "ygl-trees-techtree"]).rc).toBe(1);
+    expect(cli(["library", "show", "skill", "no-such-skill"]).rc).toBe(1);
+  });
+
+  it("#278 review9: a leading --- rule with NO closing delimiter is not stripped", () => {
+    writeFileSync(join(home, "open-fm.md"), "---\nno closing delimiter\n\nreal first para here.\n");
+    cliRaw(["kb", "add", "--title", "open-fm", "-f", join(home, "open-fm.md")]);
+    const page = cli(["library", "list", "--kind", "note"]).json;
+    const it0 = page.items.find((i: any) => i.title === "open-fm");
+    expect(it0.summary).toContain("no closing delimiter");
+  });
+
+  it("#278 review1: check kind works from a plain workspace (index self-prepared), runs are one row each", () => {
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    expect(page.contract).toBe("ygl-library/1");
+    expect(Array.isArray(page.items)).toBe(true);
+  });
+
+  it("#278 review8: show returns the row plus body — note carries summary and body", () => {
+    const note = cli(["library", "list", "--kind", "note"]).json.items[0];
+    const show = cli(["library", "show", "note", note.id]).json;
+    expect(show.contract).toBe("ygl-library/1");
+    expect(typeof show.summary).toBe("string");
+    expect(typeof show.body).toBe("string");
+    expect(show.id).toBe(note.id);
+  });
 });
 
 describe("library MCP parity (#275)", () => {

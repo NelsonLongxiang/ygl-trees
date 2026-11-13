@@ -6,7 +6,8 @@
  * 唯一调用方 = 市场经验库页面（本机 CLI --json / 后续 MCP HTTP）。
  */
 import type { Env } from "../../../core/database/src/types";
-import { readListIndex } from "./verify-list-index";
+import { readListIndex, prepareListIndex } from "./verify-list-index";
+import { strictIsoTimestamp, AsOfError } from "./as-of";
 
 export const LIBRARY_CONTRACT = "ygl-library/1";
 
@@ -35,10 +36,10 @@ const CURSOR_SCOPE_MAX = 512;
 
 /** Strict ISO, same acceptance as verify prepare --as-of (#171). */
 export function parseSince(raw: string | undefined): string | null {
-  if (raw === undefined) return null;
-  const t = Date.parse(raw);
-  if (!Number.isFinite(t)) throw new LibraryUsageError("since must be a strict ISO-8601 datetime (e.g. 2026-11-13T00:00:00Z)");
-  return new Date(t).toISOString();
+  if (raw === undefined || raw === "") return null;
+  // #278 review③：verify prepare --as-of 同款严格 ISO（Date.parse 会吞 "Nov 13 2026" 等松散形）
+  try { return strictIsoTimestamp(raw, "since"); }
+  catch (e) { if (e instanceof AsOfError) throw new LibraryUsageError(e.message); throw e; }
 }
 
 function pagination(limitRaw: string | undefined, cursor: string | undefined, scopeKey: string) {
@@ -69,16 +70,12 @@ function pageEnvelope(rows: LibraryRow[], total: number, limit: number, scopeKey
 
 /** First paragraph after an optional leading YAML frontmatter block, cut to 200 chars. */
 export function firstParagraph(body: string, cut = 200): string {
+  // review⑨ plain rule: a leading --- line stripped only when a closing --- line exists
   let text = body || "";
-  if (text.startsWith("---")) {
-    const end = text.indexOf("\n---", 3);
-    if (end > 0) {
-      const after = text.slice(end + 4);
-      const nl = after.indexOf("\n");
-      // only strip when the --- line is a lone delimiter line (frontmatter shape)
-      const between = text.slice(3, end);
-      if (!between.includes("\n---") && /^\r?\n/.test(after) === false || nl >= 0) text = after.replace(/^\r?\n/, "");
-    }
+  const lines = text.split(/\r?\n/);
+  if (lines.length > 0 && lines[0].trim() === "---") {
+    const close = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+    if (close > 0) text = lines.slice(close + 1).join("\n");
   }
   const para = text.split(/\r?\n\r?\n/, 1)[0].replace(/\s+/g, " ").trim();
   return para.length > cut ? para.slice(0, cut) : para;
@@ -97,12 +94,13 @@ function claimRows(db: any, since: string | null, projectFilter?: string): Libra
     params) as any[]).map((r) => {
     const row: LibraryRow = {
       kind: "claim", id: r.id, title: r.text,
-      summary: r.channel ? `channel:${r.channel}` : "",
+      // review②：channel 属 never-exposed——summary 用首条 evidence note（无则空串）
+      summary: (() => { const e0 = db.get("SELECT e.note FROM claim_evidence ce JOIN evidence e ON e.id=ce.evidence_id WHERE ce.claim_id=? ORDER BY e.created LIMIT 1", [r.id]) as any; return (e0?.note && String(e0.note).trim()) || ""; })(),
       status: r.status === "unverified" ? "open" : r.status,
       created: r.created, updated: r.updated,
     };
     if (r.project) row.project = r.project; // absent when unknown, never ""
-    row.confidence = r.confidence;
+    const conf = typeof r.confidence === "string" && r.confidence.trim() ? r.confidence : undefined; if (conf) row.confidence = conf; // review⑦：空则缺席
     return row;
   });
 }
@@ -119,7 +117,7 @@ function noteRows(db: any, since: string | null): LibraryRow[] {
       created: r.created, updated: r.updated,
     };
     if (r.tags) row.tags = r.tags;
-    row.confidence = r.confidence;
+    if (typeof r.confidence === "string" && r.confidence.trim()) row.confidence = r.confidence; // review⑦
     if (r.source_url) row.source_url = r.source_url;
     const scope = noteScope(r); if (scope) row.scope = scope;
     return row;
@@ -131,7 +129,7 @@ function skillRows(db: any, since: string | null): LibraryRow[] {
   const clauses: string[] = ["origin LIKE 'kb:%'"]; const params: string[] = [];
   if (since) { clauses.push("updated >= ?"); params.push(since); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  return (db.all("SELECT id,name,description,tags,origin,enabled,hits,created,updated FROM skills" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
+  return (db.all("SELECT id,name,version,description,tags,origin,enabled,hits,created,updated FROM skills" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
     const m = /^kb:(.+)$/.exec(r.origin || "");
     const row: LibraryRow = {
       kind: "skill", id: r.id, title: r.name,
@@ -140,38 +138,59 @@ function skillRows(db: any, since: string | null): LibraryRow[] {
       created: r.created, updated: r.updated,
       from_note: m ? m[1] : null,
     };
+    if (r.version) row.version = r.version; // review⑥
     if (r.tags) row.tags = r.tags;
     return row;
   });
 }
 
+/** check 行 = verify run 行（一 run 一行；#278 review①）。句柄是 better-sqlite3：prepare().all(...)。
+ *  reports(run_id,spec_id,finished,overall,row_json)；archived 计数来自 archives 表。 */
 function checkRows(indexDb: any, since: string | null): LibraryRow[] {
   const clauses: string[] = []; const params: string[] = [];
-  if (since) { clauses.push("finished >= ?"); params.push(since); }
+  if (since) { clauses.push("r.finished >= ?"); params.push(since); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  const reports = (indexDb.all("SELECT run_id,overall,summary_json,finished FROM reports" + where + " ORDER BY finished DESC, run_id DESC", params) as any[]).map((r) => ({
-    kind: "check" as const, id: r.run_id, title: `run ${r.run_id}`,
-    summary: (() => { try { const s = JSON.parse(r.summary_json || "{}"); return `pass ${s.pass ?? 0} · fail ${s.fail ?? 0} · error ${s.error ?? 0}`; } catch { return ""; } })(),
-    status: r.overall, created: r.finished, updated: r.finished,
-  }));
-  const archives = (indexDb.all("SELECT archive_id,filename,created FROM archives" + (since ? " WHERE created >= ?" : "") + " ORDER BY created DESC, archive_id DESC", since ? [since] : []) as any[]).map((r) => ({
-    kind: "check" as const, id: r.archive_id, title: r.filename || `archive ${r.archive_id}`,
-    summary: "", status: "archived", created: r.created, updated: r.created,
-  }));
-  return [...reports, ...archives].sort((a, b) => (a.updated === b.updated ? a.id.localeCompare(b.id) : a.updated < b.updated ? 1 : -1));
+  const sql = "SELECT r.row_json,(SELECT COUNT(*) FROM archives a WHERE a.run_id=r.run_id) archived FROM reports r" + where + " ORDER BY r.finished DESC, r.run_id DESC";
+  return (indexDb.prepare(sql).all(...params) as any[]).map((r: any) => {
+    let j: any = {}; try { j = JSON.parse(r.row_json || "{}"); } catch {}
+    const s = j.summary || {};
+    const row: LibraryRow = {
+      kind: "check", id: j.run_id || "",
+      title: j.spec_id ? `verify ${j.spec_id}` : `run ${j.run_id || ""}`,
+      summary: `pass ${s.pass ?? 0} · fail ${s.fail ?? 0} · error ${s.error ?? 0}`,
+      status: j.overall || "?",
+      created: j.started || "", updated: j.finished || "",
+      spec_id: j.spec_id || "",
+      finished: j.finished || "",
+      archived: Number(r.archived || 0),
+    };
+    if (j.verifier?.binary_sha256) row.archive_sha256 = j.verifier.binary_sha256;
+    row.signature = j.signature || (j.verifier?.binary_sha256 ? "signed" : "none");
+    return row;
+  });
+}
+
+/** CLI 面必须自备索引（review①）：未备则先调和再读。 */
+async function ensureIndex(env: Env): Promise<void> {
+  try { readListIndex(env.home, () => undefined); } catch {
+    await prepareListIndex(env.home);
+    readListIndex(env.home, () => undefined);
+  }
 }
 
 export async function libraryList(env: Env, o: {
   kind: LibraryKind; limit?: string; cursor?: string; since?: string; scope?: string; project?: string;
 }): Promise<LibraryPage> {
+  // #278 review④：#276 落地前 --scope 必须 rc 2——静默忽略等于访问泄漏
+  if (o.scope !== undefined && o.scope !== "") throw new LibraryUsageError("scope filter needs #276 (the kb/skill scope column is not shipped yet)");
   const since = parseSince(o.since);
   const scopeKey = [o.kind, o.since ?? "", o.scope ?? "", o.project ?? ""].join("|");
   const { limit, after } = pagination(o.limit, o.cursor, scopeKey);
-  let rows: LibraryRow[];
   let total: number;
   const count = (r: LibraryRow[]) => r.length; // in-memory counts are fine for workspace scale
   if (o.kind === "check") {
-    // check 走 verify 列表索引（与 verify-list 同一事实源，不新建索引文件）
+    // check 走 verify 列表索引（与 verify-list 同一事实源，不新建索引文件）。CLI 面必须自备索引（review①）。
+    await ensureIndex(env);
     return readListIndex(env.home, (db) => {
       const all = checkRows(db, since);
       const filtered = after ? all.filter((r) => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
@@ -179,7 +198,6 @@ export async function libraryList(env: Env, o: {
       return pageEnvelope(filtered, total, limit, scopeKey);
     });
   }
-  rows = env.db.all("SELECT 1"); // touch
   const db = env.db as any;
   const all =
     o.kind === "claim" ? claimRows(db, since, o.project) :
@@ -201,8 +219,12 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
       quote: e.quote, note: e.note, stance: e.stance, created: e.created,
       source: (() => { const s = env.db.get("SELECT title,url FROM sources WHERE id=?", [e.source_id]) as any; return s ? { title: s.title, url: s.url } : undefined; })(),
     }));
-    const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.text, status: r.status, created: r.created, updated: r.updated, confidence: r.confidence, evidence };
+    // review⑧：show = {...row, body}——补 summary 与 body；confidence 空则缺席（review⑦）
+    const firstEv = evidence[0];
+    const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.text, summary: (firstEv?.note || "").trim(), status: r.status, created: r.created, updated: r.updated, evidence };
+    if (typeof r.confidence === "string" && r.confidence.trim()) out.confidence = r.confidence;
     if (r.project) out.project = r.project;
+    out.body = r.text;
     return out;
   }
   if (kind === "note") {
@@ -210,27 +232,36 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
     if (!r) fail(`note not found: ${id}`);
     const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.title, summary: firstParagraph(r.body), status: "open", created: r.created, updated: r.updated, body: r.body };
     if (r.tags) out.tags = r.tags;
-    out.confidence = r.confidence;
+    if (typeof r.confidence === "string" && r.confidence.trim()) out.confidence = r.confidence;
     if (r.source_url) out.source_url = r.source_url;
     return out;
   }
   if (kind === "skill") {
-    const r = env.db.get("SELECT * FROM skills WHERE id=? OR name=?", [id, id]) as any;
+    // review⑤：show 与 list 同规则——只认 promoted（origin LIKE kb:%）；bundled/未知 rc 1
+    const r = env.db.get("SELECT * FROM skills WHERE (id=? OR name=?) AND origin LIKE 'kb:%'", [id, id]) as any;
     if (!r) fail(`skill not found: ${id}`);
     const m = /^kb:(.+)$/.exec(r.origin || "");
     const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.name, status: r.enabled ? "enabled" : "disabled", created: r.created, updated: r.updated, body: r.body, from_note: m ? m[1] : null };
     if (r.tags) out.tags = r.tags;
     return out;
   }
-  // check
+  // check show：run 行（一 run 一行）；body=row_json 去掉本地路径（review①：data_source.source 不出口）
+  await ensureIndex(env);
   return readListIndex(env.home, (db) => {
-    const rep = db.get("SELECT row_json FROM reports WHERE run_id=?", [id]) as any;
+    const rep = db.prepare("SELECT row_json FROM reports WHERE run_id=?").get(id) as any;
     if (rep) {
-      const r = JSON.parse(rep.row_json || "{}");
-      return { contract: LIBRARY_CONTRACT, kind, id, title: `run ${id}`, status: r.overall ?? "?", created: r.started ?? "", updated: r.finished ?? "", body: rep.row_json } as LibraryShow;
+      let j: any = {}; try { j = JSON.parse(rep.row_json || "{}"); } catch {}
+      if (j?.data_source && typeof j.data_source === "object") delete j.data_source.source; // 本地路径
+      const s = j.summary || {};
+      return {
+        contract: LIBRARY_CONTRACT, kind, id,
+        title: j.spec_id ? `verify ${j.spec_id}` : `run ${id}`,
+        summary: `pass ${s.pass ?? 0} · fail ${s.fail ?? 0} · error ${s.error ?? 0}`,
+        status: j.overall ?? "?", created: j.started ?? "", updated: j.finished ?? "",
+        spec_id: j.spec_id || "", finished: j.finished || "",
+        body: JSON.stringify(j),
+      } as LibraryShow;
     }
-    const arc = db.get("SELECT * FROM archives WHERE archive_id=?", [id]) as any;
-    if (arc) return { contract: LIBRARY_CONTRACT, kind, id, title: arc.filename ?? id, status: "archived", created: arc.created, updated: arc.created, body: "" } as LibraryShow;
     throw Object.assign(new Error(`check not found: ${id}`), { rc: 1 });
   });
 }
