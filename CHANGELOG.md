@@ -1,3 +1,9 @@
+## Unreleased
+
+用户可见行为变化：
+
+- **job 记归属：schema v14（jobs.project_id/owner）**（Refs #258，#220 phase B）。`job add` 落两列：`project_id` 取显式 `--project` 或会话所选项目，`owner` 取显式 `--owner` 或会话 actor（同 events 口径）；`job list`/`job show` 携带两列，`job list --project <name|id>` 过滤（未知名 rc=1）。doctor `job_health` 新增分类：**孤儿**＝project_id 非空但项目已删（点名＋`job show <id>` 下一步，warn 级），**unattributed**＝legacy 空 project_id（只计数不改写，绝不报孤儿）；retired 不报。SQLite v13 工作区原位升级 v14（PRAGMA user_version=14，旧行保留、空串默认）；PG `PG_UPGRADES` 同步 v14 步（`ADD COLUMN IF NOT EXISTS`）；`schema-parity` 两端列集一致。MCP 无 job 面（既有白名单排除），无新增路由。`AGENTS.md` 版本行同步 v14。
+
 ## 0.125.0
 
 用户可见行为变化：
