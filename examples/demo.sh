@@ -121,6 +121,9 @@ echo "── 5f. 0.79 feedback hardening (real-user report surfaces)"
 # ① kb receipt self-verify + workspace echo (lost-notes incident class)
 KBV=$($Y kb add --title "demo-verify" --body "receipt self-verify probe" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.verified===true?'ok':'verified='+r.verified)})")
 case "$KBV" in ok) echo "  ✓ kb add receipt self-verified (verified:true)";; *) echo "  ✗ kb verify failed: $KBV"; exit 1;; esac
+# #275: market experience library — paged read-only feed over the four kinds; contract pinned in the envelope
+LIB=$($Y library list --kind note --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);console.log(p.contract==='ygl-library/1'&&p.items.length>0&&p.items[0].kind==='note'?'ok':'bad')})")
+[ "$LIB" = "ok" ] && echo "  ✓ library feed: contract ygl-library/1 + note rows (#275)" || { echo "  ✗ library feed: $LIB"; exit 1; }
 # ④ claim link with a SOURCE id must teach the taxonomy, not just fail
 SRC4=$($Y db sql "SELECT source_id FROM evidence LIMIT 1" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)[0].source_id))")
 CL4=$($Y research claim link "$C" "$SRC4" 2>&1 || true)

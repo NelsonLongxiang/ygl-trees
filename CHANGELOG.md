@@ -1,3 +1,9 @@
+## Unreleased
+
+用户可见行为变化：
+
+- **library：市场经验库只读出口**（Refs #275）。新 `library` 命令组（CLI＋MCP `read` 1:1 映射）：`library list --kind <claim|note|skill|check> [--since <ISO>] [--limit 1..500] [--cursor <c>]` 游标分页＋`library show <kind> <id>`。统一行形 `{kind,id,title,summary,status,created,updated}`＋已知字段，未知字段缺席不给空串；note 的 summary 剥 `---` frontmatter 取首段截 200；claim show 带 `evidence[]`；skill 只列 promoted（bundled 天然 absent，`from_note` 点名来源）；check 汇总 verify reports＋sealed archives（复用 verify-list 索引，不新建索引文件）。每个响应带 `contract: "ygl-library/1"`。只读：不写 events、不 bump hits/reuse。`kb add` 增 `--source-url`（MCP `kb add` 透传 `tags`/`source_url`；body 以等号形态转发，frontmatter 起首不再触发 bare-flag rc2）。新增 library.spec（5 例）＋demo 断言。
+
 ## 0.125.0
 
 用户可见行为变化：

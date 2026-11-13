@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "c8aaae5051fd2d104ccef35832fcd8b9d43d1f3b95dd9c6524771c6a60d03859",
+      "sha256": "7f8deb7e497243d9dde0cc98946545eb94027c3724d7033b3b76987e9ea91d3f",
       "role": "test"
     },
     {
@@ -1442,6 +1442,14 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "supervisor-seat",
       "at": "2026-11-12T15:21:12.920Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "c8aaae5051fd2d104ccef35832fcd8b9d43d1f3b95dd9c6524771c6a60d03859",
+      "new_sha256": "7f8deb7e497243d9dde0cc98946545eb94027c3724d7033b3b76987e9ea91d3f",
+      "reason": "#275: library feed demo assertion",
+      "actor": "dev-seat",
+      "at": "2026-11-13T11:40:41.534Z"
     }
   ],
   "kind": "engine",

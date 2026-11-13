@@ -35,6 +35,7 @@ ygl-trees kb search "闭包表 索引" --eval     # 语义重排：决策模型�
 ygl-trees kb list
 ygl-trees kb show <id>
 ygl-trees kb rm <id>                         # 删除笔记
+ygl-trees library list --kind note --json   # 市场经验库只读出口（#275，contract ygl-library/1；四类 claim|note|skill|check，游标分页 + --since）
 ygl-trees db obsidian [dir]                  # 导出为 Obsidian vault
 ```
 
