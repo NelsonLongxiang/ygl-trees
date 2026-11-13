@@ -100,7 +100,7 @@ describe("schema v14: v13 workspace upgrades in place, jobs kept intact (#258)",
     const ctx = new Context();
     const svc = new DatabaseService(ctx, dbFile);
     const ver = svc.db.get("PRAGMA user_version") as any;
-    expect(ver.user_version).toBe(14);
+    expect(ver.user_version).toBe(15); // v15 re-pin (#276 bumps); the v13->v14 step stays exercised by the same upgrade path
     const job = svc.db.get("SELECT id,title,project_id,owner FROM jobs WHERE id='j1'") as any;
     expect(job.id).toBe("j1");
     expect(job.project_id).toBe("");
