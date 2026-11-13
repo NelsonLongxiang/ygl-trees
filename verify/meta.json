@@ -1470,6 +1470,14 @@
     {
       "path": "examples/demo.sh",
       "old_sha256": "3c180c8a4d4d55c404e902c6b83df18de787431ac7a7c3ef839f3a768cb6ed21",
+      "new_sha256": "7f8deb7e497243d9dde0cc98946545eb94027c3724d7033b3b76987e9ea91d3f",
+      "reason": "#275: library feed demo assertion",
+      "actor": "dev-seat",
+      "at": "2026-11-13T11:40:41.534Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "7f8deb7e497243d9dde0cc98946545eb94027c3724d7033b3b76987e9ea91d3f",
       "new_sha256": "71b95a9d93f12a63627d457300627e6cef2f4d83ce23f9bfd9e91b267b87fe00",
       "reason": "#278: merge master (v14 #277) into feat/275-library — union of job + library assertions",
       "actor": "dev-seat",
@@ -1478,6 +1486,8 @@
   ],
   "kind": "engine",
   "reregistration_baseline": [
+    "3c180c8a*->7f8deb7e*",
+    "7f8deb7e*->71b95a9d*",
     "7b367f41*->c241e42c*",
     "c241e42c*->e6bf02b0*",
     "e6bf02b0*->dafc0240*",
