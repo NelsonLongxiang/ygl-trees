@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 import { jobFamilies, jobFamilyStem, jobHealth, staleTasks, taskJobPreflight, taskView } from "../../../research/pipeline/src/lifecycle";
@@ -372,6 +373,45 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(miss.json.error).toContain("project not found");
   });
 
+  it("v14 review2: --project filter has a negative case and unfiltered shows every job", () => {
+    cli(["project", "new", "negA"]);
+    cli(["project", "use", "negA"]);
+    cli(["job", "add", "inA", "--manual", "--owner", "dev-seat", "--", "echo a"]);
+    cli(["project", "new", "negB"]);
+    cli(["project", "use", "negB"]);
+    cli(["job", "add", "inB", "--manual", "--", "echo b"]);
+    const all = cli(["job", "list", "--json"]).json;
+    expect(all.some((r: any) => r.title === "inA")).toBe(true);
+    expect(all.some((r: any) => r.title === "inB")).toBe(true);
+    const onlyA = cli(["job", "list", "--project", "negA", "--json"]).json;
+    expect(onlyA.some((r: any) => r.title === "inA")).toBe(true);
+    expect(onlyA.some((r: any) => r.title === "inB")).toBe(false);
+  });
+
+  it("v14 review1: owner falls back to the event actor (cli default) with no --owner and no session env", () => {
+    cli(["project", "new", "actorp"]);
+    const e = { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1", YGL_SESSION: "", DSH_SESSION_ID: "" };
+    const r = spawnSync(process.execPath, [BIN, "job", "add", "noenv", "--manual", "--json", "--", "echo z"], { encoding: "utf8", timeout: 60000, env: e });
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).owner).toBe("cli");
+  });
+
+  it("v14 review3: legacy-only workspace stays pass with the unattributed count in detail", () => {
+    const iso = mkdtempSync(join(tmpdir(), "y258r3-"));
+    const cliIso = (args: string[]) => { const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { encoding: "utf8", timeout: 60000, env: { ...process.env, YGL_HOME: iso, YGL_DB_URL: "", YGL_PG_URL: "", YGL_SESSION: "iso", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1" } }); return { rc: r.status, json: r.stdout.trim() ? JSON.parse(r.stdout) : null }; };
+    cliIso(["db", "init"]);
+    const DatabaseSync = (require("node:sqlite") as any).DatabaseSync;
+    const raw = new DatabaseSync(join(iso, "ygl-trees.db"));
+    const q = String.fromCharCode(39);
+    // enabled=0: a legacy disabled job raises no schedule/never-ran issue — the ONLY signal is the unattributed count.
+    raw.exec("INSERT INTO jobs(id,title,command,every_minutes,at,enabled,runs,last_run,status,created,project_id,owner) VALUES(" + [q + "legacy1" + q, q + "legacy job one" + q, q + "echo l" + q, "0", q + q, "0", "0", q + q, q + "pending" + q, q + "2026-01-01T00:00:00Z" + q, q + q, q + q].join(",") + ")");
+    raw.close();
+    const job = cliIso(["doctor"]).json.find((c: any) => c.name === "job_health");
+    expect(job.status).toBe("pass");
+    expect(job.detail).toMatch(/1 unattributed \(legacy, empty project_id\)/);
+    rmSync(iso, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
   it("doctor job_health: an orphan is named with job show as next step; legacy empty project_id counts unattributed, never orphan (#258)", () => {
     cli(["project", "new", "goneproj"]);
     cli(["job", "add", "孤儿作业", "--manual", "--", "echo x"]);
@@ -387,6 +427,6 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(job.status).toBe("warn");
     expect(job.detail).toMatch(/orphan: 孤儿作业 \([^)]+\) — its project is gone; job show/);
     expect(job.detail).not.toMatch(/orphan: legacy-job/);
-    expect(job.detail).toMatch(/1 unattributed \(legacy, empty project_id\)/);
+    expect(job.detail).toMatch(/unattributed \(legacy, empty project_id\)/);
   });
 });

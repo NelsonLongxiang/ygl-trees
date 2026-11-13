@@ -982,6 +982,7 @@ export async function jobAdd(
       row: {
         id, title, command: o.command, every_minutes: o.every ?? 0, at: o.at || "",
         enabled: 1, runs: 0, last_run: "", status: "pending", created,
+        project_id: o.projectId || "", owner: o.owner || "", // #258: attribution rides the receipt too
       },
       dup: false,
     };

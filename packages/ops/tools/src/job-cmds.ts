@@ -5,7 +5,7 @@ import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, table, paint, C, writeResult } from "../../../core/text/src/fmt";
 import { nowIso } from "../../../core/text/src/text";
 import { getOrm } from "../../../core/database/src/orm";
-import { resolveProject } from "../../../core/database/src/selection";
+import { resolveProject, eventActor } from "../../../core/database/src/selection";
 import * as writes from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
@@ -156,7 +156,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // #258: attribution — explicit --project wins, else the session selection; --owner wins, else the session actor.
       const sel = resolveProject(env.db, args.flags.project ? String(args.flags.project) : undefined);
       if ((args.flags.project || sel.name) && !sel.id) { bad(ctx, "project not found: " + (args.flags.project || sel.name)); return 1; }
-      const owner = args.flags.owner ? String(args.flags.owner) : (process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "");
+      // #258 review①: the fallback is the event actor — same as events record (selection.ts eventActor, "cli" default).
+      const owner = args.flags.owner ? String(args.flags.owner) : eventActor();
       return getOrm(env.db.path)
         .then((ds) => writes.jobAdd(ds, { title, command, every, at, force, replaces, projectId: sel.id || "", owner }))
         .then((r): number => {

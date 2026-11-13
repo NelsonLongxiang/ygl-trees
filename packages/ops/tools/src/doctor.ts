@@ -324,7 +324,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     ].filter(Boolean);
     checks.push({
       name: "job_health",
-      status: failing.length || suspended.length ? "fail" : jobIssues.length || orphanJobs.length || unattributedJobs.length ? "warn" : "pass",
+      // #258 review③: legacy unattributed rows are counted in detail but never decide the level —
+      // an upgraded workspace with only legacy jobs stays pass. Only orphans (and the existing issues) warn.
+      status: failing.length || suspended.length ? "fail" : jobIssues.length || orphanJobs.length ? "warn" : "pass",
       detail: (jobIssues.length || orphanJobs.length || unattributedJobs.length)
         ? `${jobs.length} job(s): ${[...jobIssues, ...orphanJobs.map((j) => `orphan: ${j.title} (${j.id}) — its project is gone; job show ${j.id} to decide: retire or move`), unattributedJobs.length ? `${unattributedJobs.length} unattributed (legacy, empty project_id) — job add records attribution since v14` : ""].filter(Boolean).join("; ")} — job show <id>; fix it, or job retire <id> --reason …`
         : `${jobs.length} job(s); none failing, overdue, unscheduled or duplicated`,
