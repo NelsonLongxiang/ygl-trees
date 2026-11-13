@@ -38,7 +38,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             title,
             body,
             tags: String(args.flags.tags || ""),
-            source_url: String(args.flags.url || ""),
+            source_url: String(args.flags["source-url"] || args.flags.url || ""), // #275: market 写站相对路径；--source-url 与 --url 同义
             confidence: String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"))),
             force,
           })

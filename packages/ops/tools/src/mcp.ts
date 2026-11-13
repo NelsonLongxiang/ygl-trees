@@ -128,6 +128,11 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     search: (a) => { const p = ["kb", "search", String(a.query ?? "")]; if (a.eval) p.push("--eval"); return p; },
     show: (a) => ["kb", "show", String(a.id)],
   },
+  // #275: market experience library — read-only feed, contract ygl-library/1
+  library: {
+    list: (a) => [...opt("--kind", a.kind), ...opt("--since", a.since), ...opt("--limit", a.limit), ...opt("--cursor", a.cursor), ...opt("--scope", a.scope), "library", "list"],
+    show: (a) => ["library", "show", String(a.kind), String(a.id)],
+  },
   research: {
     "query-list": (a) => [...opt("-p", a.project), "research", "query", "list"],
     "source-list": (a) => [...opt("-p", a.project), "research", "source", "list"],
@@ -208,7 +213,9 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     add: (a) => {
       if (!a.name || (!a.file && !a.body && !a.description)) throw usageError("kb add requires name and body (or file)");
       if (a.file && (a.body !== undefined || a.description !== undefined)) throw usageError("kb add accepts body or file, not both");
-      return ["kb", "add", "--title", String(a.name), ...(a.file ? ["-f", String(a.file)] : ["--body", String(a.body ?? a.description)])];
+      // #275: body 可能以 --- frontmatter 开头——等号形态防「--body needs a value」rc2（空格形态会把 - 起首值当旗标）
+      const bodyArgs = a.file ? ["-f", String(a.file)] : ["--body=" + String(a.body ?? a.description)];
+      return ["kb", "add", "--title", String(a.name), ...bodyArgs, ...opt("--tags", a.tags), ...opt("--source-url", a.source_url ?? a.url)];
     },
     link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
     // #257 C 类：知识收口（promote 幂等；ingest 导入已完成 artifact）
@@ -310,6 +317,12 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           action: { type: "string", enum: allReadActions, description: "Read action within domain" },
           query: { type: "string", description: "search/match query" },
           id: { type: "string", description: "entity id (show)" },
+          // #275 library feed
+          kind: { type: "string", enum: ["claim", "note", "skill", "check"], description: "library material kind" },
+          since: { type: "string", description: "ISO-8601 lower bound on updated (library list)" },
+          limit: { type: "number", description: "page size 1..500 (library list)" },
+          cursor: { type: "string", description: "opaque next_cursor from the previous page" },
+          scope: { type: "string", description: "grant-scope filter (#276 vocabulary; library list)" },
           name: { type: "string", description: "entity name (skill show, project show)" },
           tree: { type: "string", description: "tree name filter" },
           node: { type: "string", description: "node key (rel list)" },
