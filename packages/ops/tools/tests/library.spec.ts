@@ -148,14 +148,14 @@ describe("library feed (#275)", () => {
     const archivesDir = join(home, "verify", "archives");
     mkdirSync(reportsDir, { recursive: true });
     mkdirSync(archivesDir, { recursive: true });
-    const specDir = join(home, "verify", "spec_lib1");
+    const specDir = join(home, "verify", "specs", "spec_lib1"); // round3①：真实路径 verify/specs/<id>/
     mkdirSync(specDir, { recursive: true });
     writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_lib1", title: "lib check", spec_version: 1 }));
     writeFileSync(join(reportsDir, "run_lib1.json"), JSON.stringify({
       run_id: "run_lib1", spec_id: "spec_lib1", overall: "PASS",
       summary: { pass: 2, fail: 0, needs_material: 0, error: 0 },
       started: "2026-11-13T10:00:00Z", finished: "2026-11-13T10:05:00Z",
-      signature: "ed25519:abc", mode: "sealed",
+      signature: "ed25519:abc", verifier: { mode: "sealed" }, // round3①：真实报告 shape（mode 在 verifier 下）
       data_source: { source: join(home, "local.db") },
     }));
     writeFileSync(join(archivesDir, "run_lib1.json"), JSON.stringify({
@@ -175,6 +175,39 @@ describe("library feed (#275)", () => {
     const show = cli(["library", "show", "check", "run_lib1"]).json;
     expect(show.body).not.toContain("local.db");
     expect(show.body).not.toContain(home);
+  }, 120000);
+
+  it("#278 round3-2: an OLD-format index (row missing signature) is rebuilt and still reports signed", () => {
+    rmSync(join(home, "verify", ".list-index.sqlite"), { force: true });
+    cli(["library", "list", "--kind", "check"]);
+    const DatabaseSync = (require("node:sqlite") as any).DatabaseSync;
+    const idxDb = new DatabaseSync(join(home, "verify", ".list-index.sqlite"));
+    const rep = idxDb.prepare("SELECT run_id,row_json FROM reports WHERE run_id=?").get("run_lib1") as any;
+    expect(rep, "run_lib1 indexed").toBeTruthy();
+    const j = JSON.parse(rep.row_json); delete j.signature;
+    idxDb.prepare("UPDATE reports SET row_json=? WHERE run_id=?").run(JSON.stringify(j), "run_lib1");
+    idxDb.prepare("DELETE FROM metadata WHERE key=?").run("format");
+    idxDb.close();
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    const run = page.items.find((i: any) => i.id === "run_lib1");
+    expect(run, "run row after rebuild").toBeTruthy();
+    expect(run.signature).toBe("signed");
+  }, 120000);
+
+  it("#278 round3-1: a sealed report WITHOUT a footer signature is legacy, not none", () => {
+    const reportsDir = join(home, "verify", "reports");
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(join(reportsDir, "run_liblegacy.json"), JSON.stringify({
+      run_id: "run_liblegacy", spec_id: "spec_lib1", overall: "PASS",
+      summary: { pass: 1, fail: 0, needs_material: 0, error: 0 },
+      started: "2026-11-13T11:00:00Z", finished: "2026-11-13T11:01:00Z",
+      verifier: { mode: "sealed" },
+    }));
+    rmSync(join(home, "verify", ".list-index.sqlite"), { force: true });
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    const run = page.items.find((i: any) => i.id === "run_liblegacy");
+    expect(run, "legacy run row").toBeTruthy();
+    expect(run.signature).toBe("legacy");
   }, 120000);
 
   it("#278 review8: show returns the row plus body — note carries summary and body", () => {

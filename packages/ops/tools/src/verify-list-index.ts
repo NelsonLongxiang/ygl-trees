@@ -134,6 +134,8 @@ export async function prepareListIndex(home:string):Promise<void> {
         }})();
       }
     }
+    // #278 round3②：格式版本键——readListIndex 失配即拒绝缓存读，调用方重建后全量刷新
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('format','2')").run();
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('ready','1')").run();
     if(dirty&&existsSync(dirtyFile)&&readFileSync(dirtyFile,"utf8")===dirty)unlinkSync(dirtyFile);
   }finally{db.close();}
@@ -144,7 +146,10 @@ export function readListIndex<T>(home:string,read:(db:any)=>T):T {
   if(existsSync(join(root,".list-index-dirty")))throw new Error("verifier list index needs reconciliation");
   if(!existsSync(listIndexPath(root)))throw new Error("verifier list index not prepared");
   const db=new Sqlite(listIndexPath(root),{readonly:true});
-  try {db.pragma("busy_timeout = 5000");if(!(db.prepare("SELECT value FROM metadata WHERE key='ready'").get() as any)?.value)throw new Error("verifier list index not ready");return db.transaction(()=>read(db)).deferred();}finally{db.close();}
+  try {db.pragma("busy_timeout = 5000");if(!(db.prepare("SELECT value FROM metadata WHERE key='ready'").get() as any)?.value)throw new Error("verifier list index not ready");
+    const fmt=(db.prepare("SELECT value FROM metadata WHERE key='format'").get() as any)?.value;
+    if(fmt!=='2')throw new Error("verifier list index format mismatch — needs reconciliation");
+    return db.transaction(()=>read(db)).deferred();}finally{db.close();}
 }
 /** External edits are reconciled by filename events, without a periodic full-directory stat loop. */
 export function watchListIndex(home:string) {

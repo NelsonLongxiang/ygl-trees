@@ -150,10 +150,10 @@ function checkRows(indexDb: any, since: string | null, specTitles: Record<string
   const clauses: string[] = []; const params: string[] = [];
   if (since) { clauses.push("r.finished >= ?"); params.push(since); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  const sql = "SELECT r.row_json,(SELECT COUNT(*) FROM archives a WHERE a.run_id=r.run_id) n_arch,(SELECT a2.row_json FROM archives a2 WHERE a2.run_id=r.run_id ORDER BY a2.created DESC LIMIT 1) first_archive FROM reports r" + where + " ORDER BY r.finished DESC, r.run_id DESC";
+  const sql = "SELECT r.row_json,(SELECT COUNT(*) FROM archives a WHERE a.run_id=r.run_id) n_arch,(SELECT a2.row_json FROM archives a2 WHERE a2.run_id=r.run_id ORDER BY a2.created DESC LIMIT 1) latest_archive FROM reports r" + where + " ORDER BY r.finished DESC, r.run_id DESC";
   return (indexDb.prepare(sql).all(...params) as any[]).map((r: any) => {
     let j: any = {}; try { j = JSON.parse(r.row_json || "{}"); } catch {}
-    let arc: any = null; try { arc = r.first_archive ? JSON.parse(r.first_archive) : null; } catch {}
+    let arc: any = null; try { arc = r.latest_archive ? JSON.parse(r.latest_archive) : null; } catch {}
     const s = j.summary || {};
     // #278 review-B：binary_sha256 是 reportSummary 顶层字段；archive_sha256 属归档行；archived 布尔；signature 取报告 footer 身份
     const row: LibraryRow = {
@@ -167,7 +167,8 @@ function checkRows(indexDb: any, since: string | null, specTitles: Record<string
       archived: Number(r.n_arch || 0) > 0,
     };
     if (arc?.archive_sha256) row.archive_sha256 = arc.archive_sha256;
-    row.signature = j.signature ? "signed" : (j.mode === "sealed" ? "legacy" : "none");
+    // round3①：真实报告的 mode 在 verifier.mode（reportSummary 也只读它）；legacy＝sealed 且无 footer 签名
+    row.signature = j.signature ? "signed" : (j.mode === "sealed" || j.verifier?.mode === "sealed" ? "legacy" : "none");
     return row;
   });
 }
@@ -178,21 +179,32 @@ async function specTitleMap(home: string): Promise<Record<string, string>> {
   try {
     const { readdir, readFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
-    const root = join(home, "verify");
-    for (const d of await readdir(root, { withFileTypes: true })) {
-      if (!d.isDirectory()) continue;
-      try {
-        const j = JSON.parse(await readFile(join(root, d.name, "spec.json"), "utf8"));
-        if (j?.spec_id && j?.title) out[String(j.spec_id)] = String(j.title);
-      } catch { /* 无 spec.json 的目录跳过 */ }
-    }
+    // #278 round3①：spec 在 verify/specs/<spec_id>/spec.json（archive.ts/graduate.ts 同款路径）
+    const specsRoot = join(home, "verify", "specs");
+    try {
+      for (const d of await readdir(specsRoot, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue;
+        try {
+          const j = JSON.parse(await readFile(join(specsRoot, d.name, "spec.json"), "utf8"));
+          if (j?.spec_id && j?.title) out[String(j.spec_id)] = String(j.title);
+        } catch { /* 无 spec.json 的目录跳过 */ }
+      }
+    } catch { /* specs 根不存在 */ }
   } catch { /* verify 根不存在 */ }
   return out;
 }
 
 /** CLI 面必须自备索引（review①）：未备则先调和再读。 */
 async function ensureIndex(env: Env): Promise<void> {
-  try { readListIndex(env.home, () => undefined); } catch {
+  try { readListIndex(env.home, () => undefined); }
+  catch (e: any) {
+    // round3②：格式失配（旧索引缺 signature 等）——删缓存强制全量重建
+    if (String(e?.message || e).includes("format mismatch")) {
+      const { existsSync, rmSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const p = join(env.home, "verify", ".list-index.sqlite");
+      if (existsSync(p)) rmSync(p, { force: true });
+    }
     await prepareListIndex(env.home);
     readListIndex(env.home, () => undefined);
   }

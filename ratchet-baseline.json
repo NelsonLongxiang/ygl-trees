@@ -19,7 +19,7 @@
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
-      "value": 101,
+      "value": 80,
       "tolerance_rel": 0.3,
       "measured_at": "2026-11-13T18:40:00.899Z",
       "method": "warm2-min7-retry-once"
