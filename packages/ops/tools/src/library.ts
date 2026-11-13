@@ -146,28 +146,48 @@ function skillRows(db: any, since: string | null): LibraryRow[] {
 
 /** check 行 = verify run 行（一 run 一行；#278 review①）。句柄是 better-sqlite3：prepare().all(...)。
  *  reports(run_id,spec_id,finished,overall,row_json)；archived 计数来自 archives 表。 */
-function checkRows(indexDb: any, since: string | null): LibraryRow[] {
+function checkRows(indexDb: any, since: string | null, specTitles: Record<string, string>): LibraryRow[] {
   const clauses: string[] = []; const params: string[] = [];
   if (since) { clauses.push("r.finished >= ?"); params.push(since); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  const sql = "SELECT r.row_json,(SELECT COUNT(*) FROM archives a WHERE a.run_id=r.run_id) archived FROM reports r" + where + " ORDER BY r.finished DESC, r.run_id DESC";
+  const sql = "SELECT r.row_json,(SELECT COUNT(*) FROM archives a WHERE a.run_id=r.run_id) n_arch,(SELECT a2.row_json FROM archives a2 WHERE a2.run_id=r.run_id ORDER BY a2.created DESC LIMIT 1) first_archive FROM reports r" + where + " ORDER BY r.finished DESC, r.run_id DESC";
   return (indexDb.prepare(sql).all(...params) as any[]).map((r: any) => {
     let j: any = {}; try { j = JSON.parse(r.row_json || "{}"); } catch {}
+    let arc: any = null; try { arc = r.first_archive ? JSON.parse(r.first_archive) : null; } catch {}
     const s = j.summary || {};
+    // #278 review-B：binary_sha256 是 reportSummary 顶层字段；archive_sha256 属归档行；archived 布尔；signature 取报告 footer 身份
     const row: LibraryRow = {
       kind: "check", id: j.run_id || "",
-      title: j.spec_id ? `verify ${j.spec_id}` : `run ${j.run_id || ""}`,
+      title: specTitles[j.spec_id] || j.spec_id || `run ${j.run_id || ""}`, // title = spec title
       summary: `pass ${s.pass ?? 0} · fail ${s.fail ?? 0} · error ${s.error ?? 0}`,
       status: j.overall || "?",
       created: j.started || "", updated: j.finished || "",
       spec_id: j.spec_id || "",
       finished: j.finished || "",
-      archived: Number(r.archived || 0),
+      archived: Number(r.n_arch || 0) > 0,
     };
-    if (j.verifier?.binary_sha256) row.archive_sha256 = j.verifier.binary_sha256;
-    row.signature = j.signature || (j.verifier?.binary_sha256 ? "signed" : "none");
+    if (arc?.archive_sha256) row.archive_sha256 = arc.archive_sha256;
+    row.signature = j.signature ? "signed" : (j.mode === "sealed" ? "legacy" : "none");
     return row;
   });
+}
+
+/** 从 $YGL_HOME/verify/<spec>/spec.json 建 spec_id→title 映射（#278 review-B：title=spec title）。 */
+async function specTitleMap(home: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  try {
+    const { readdir, readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const root = join(home, "verify");
+    for (const d of await readdir(root, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      try {
+        const j = JSON.parse(await readFile(join(root, d.name, "spec.json"), "utf8"));
+        if (j?.spec_id && j?.title) out[String(j.spec_id)] = String(j.title);
+      } catch { /* 无 spec.json 的目录跳过 */ }
+    }
+  } catch { /* verify 根不存在 */ }
+  return out;
 }
 
 /** CLI 面必须自备索引（review①）：未备则先调和再读。 */
@@ -191,8 +211,9 @@ export async function libraryList(env: Env, o: {
   if (o.kind === "check") {
     // check 走 verify 列表索引（与 verify-list 同一事实源，不新建索引文件）。CLI 面必须自备索引（review①）。
     await ensureIndex(env);
+    const specTitles = await specTitleMap(env.home);
     return readListIndex(env.home, (db) => {
-      const all = checkRows(db, since);
+      const all = checkRows(db, since, specTitles);
       const filtered = after ? all.filter((r) => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
       total = count(all);
       return pageEnvelope(filtered, total, limit, scopeKey);

@@ -32,7 +32,8 @@ export function reportSummary(r: any): ReportRow | null {
   if (typeof r?.run_id !== "string" || !ID.test(r.run_id)) return null;
   return { run_id:r.run_id,spec_id:text(r.spec_id,128),spec_version:Number(r.verifier?.spec_version??r.spec_version??0),overall:text(r.overall,64),reason:text(r.reason),
     summary:{pass:Number(r.summary?.pass??0),fail:Number(r.summary?.fail??0),needs_material:Number(r.summary?.needs_material??0),error:Number(r.summary?.error??0)},
-    started:text(r.started,64),finished:text(r.finished,64),mode:text(r.verifier?.mode,64),binary_sha256:text(r.verifier?.binary_sha256,128),archived:0,semantic_scope:typeof r.semantic_scope==="string"?text(r.semantic_scope,64):null };
+    started:text(r.started,64),finished:text(r.finished,64),mode:text(r.verifier?.mode,64),binary_sha256:text(r.verifier?.binary_sha256,128),archived:0,semantic_scope:typeof r.semantic_scope==="string"?text(r.semantic_scope,64):null,
+    signature:typeof r.signature==="string"?text(r.signature,64):"",signing_scheme:typeof r.signing_scheme==="string"?text(r.signing_scheme,64):"" }; // #275: 封包签名身份进索引（additive，reconcile 促活）
 }
 function replace(db: any, kind: string, id: string, value: any, stamp: string, exclusion = "") {
   db.prepare("DELETE FROM excluded WHERE kind=? AND id=?").run(kind,id);

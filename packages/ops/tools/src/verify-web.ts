@@ -137,6 +137,9 @@ export interface ReportRow {
   archived: number;
   /** #27 Q3 / 方案 T6：报告的语义边界，原样透传；契约 ≤1.2 的报告没有该字段 → null（UI 按 structural 显示，服务端不替报告发明值） */
   semantic_scope: string | null;
+  /** #275: 封包签名身份（contract 1.1 footer）；open 模式为空串 */
+  signature: string;
+  signing_scheme: string;
 }
 
 /** Up to 200 report summaries; use reportPage for cursor pagination after preparing the index. */

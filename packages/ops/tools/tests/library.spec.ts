@@ -1,7 +1,7 @@
 /** #275 library: market experience library read-only feed (CLI + MCP parity). */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -142,6 +142,40 @@ describe("library feed (#275)", () => {
     expect(page.contract).toBe("ygl-library/1");
     expect(Array.isArray(page.items)).toBe(true);
   });
+
+  it("#278 review-C: a seeded run+archive shows one row with spec title, archived:true, archive_sha256, signature; show body leaks no local path", () => {
+    const reportsDir = join(home, "verify", "reports");
+    const archivesDir = join(home, "verify", "archives");
+    mkdirSync(reportsDir, { recursive: true });
+    mkdirSync(archivesDir, { recursive: true });
+    const specDir = join(home, "verify", "spec_lib1");
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_lib1", title: "lib check", spec_version: 1 }));
+    writeFileSync(join(reportsDir, "run_lib1.json"), JSON.stringify({
+      run_id: "run_lib1", spec_id: "spec_lib1", overall: "PASS",
+      summary: { pass: 2, fail: 0, needs_material: 0, error: 0 },
+      started: "2026-11-13T10:00:00Z", finished: "2026-11-13T10:05:00Z",
+      signature: "ed25519:abc", mode: "sealed",
+      data_source: { source: join(home, "local.db") },
+    }));
+    writeFileSync(join(archivesDir, "run_lib1.json"), JSON.stringify({
+      run_id: "run_lib1",
+      archives: [{ archive_id: "arc1", filename: "a.yglverify.zip", archive_sha256: "sha256:deadbeef", zip_sha256: "sha256:feed", created: "2026-11-13T10:06:00Z", with: [] }],
+    }));
+    rmSync(join(home, "verify", ".list-index.sqlite"), { force: true }); // 强制 ensureIndex 重扫新种的文件
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    const run = page.items.find((i: any) => i.id === "run_lib1");
+    expect(run, "run row").toBeTruthy();
+    expect(run.title).toBe("lib check");
+    expect(run.spec_id).toBe("spec_lib1");
+    expect(run.finished).toBe("2026-11-13T10:05:00Z");
+    expect(run.archived).toBe(true);
+    expect(run.archive_sha256).toBe("sha256:deadbeef");
+    expect(run.signature).toBe("signed");
+    const show = cli(["library", "show", "check", "run_lib1"]).json;
+    expect(show.body).not.toContain("local.db");
+    expect(show.body).not.toContain(home);
+  }, 120000);
 
   it("#278 review8: show returns the row plus body — note carries summary and body", () => {
     const note = cli(["library", "list", "--kind", "note"]).json.items[0];
