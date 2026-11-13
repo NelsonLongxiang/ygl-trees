@@ -208,7 +208,11 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     add: (a) => {
       if (!a.name || (!a.file && !a.body && !a.description)) throw usageError("kb add requires name and body (or file)");
       if (a.file && (a.body !== undefined || a.description !== undefined)) throw usageError("kb add accepts body or file, not both");
-      return ["kb", "add", "--title", String(a.name), ...(a.file ? ["-f", String(a.file)] : ["--body", String(a.body ?? a.description)])];
+      return ["kb", "add", "--title", String(a.name), ...(a.file ? ["-f", String(a.file)] : ["--body", String(a.body ?? a.description)]), ...opt("--scope", a.scope)]; // #276
+    },
+    rescope: (a) => { // #276
+      if (!a.id || a.scope === undefined) throw usageError("kb rescope requires id and scope");
+      return ["kb", "rescope", String(a.id), "--scope", String(a.scope)];
     },
     link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
     // #257 C 类：知识收口（promote 幂等；ingest 导入已完成 artifact）

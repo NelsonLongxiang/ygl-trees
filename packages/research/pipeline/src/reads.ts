@@ -207,9 +207,16 @@ export class Store {
     return rows;
   }
 
-  kbList(): Row[] {
+  /** #276: --scope 过滤（''=未归属行）；无 flag 输出与旧版逐字节一致。 */
+  kbList(scope?: string): Row[] {
+    if (scope === undefined) {
+      return this.db.all(
+        "SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC"
+      );
+    }
     return this.db.all(
-      "SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC"
+      "SELECT id,title,tags,confidence,reuse,updated FROM kb_notes WHERE scope=? ORDER BY reuse DESC, updated DESC",
+      [scope]
     );
   }
 

@@ -40,6 +40,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             tags: String(args.flags.tags || ""),
             source_url: String(args.flags.url || ""),
             confidence: String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"))),
+            scope: args.flags.scope !== undefined ? writes.validateScope(args.flags.scope) : "", // #276：validateScope 抛 rc2
             force,
           })
         )
@@ -73,7 +74,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         })
         .catch((e: any): number => {
           bad(ctx, env.pgUrl ? pgFailure() : e?.message || String(e));
-          return 1;
+          return typeof e?.rc === "number" ? e.rc : 1; // #276：校验类错误（rc2）原样透传
         });
     }
     case "search": {
@@ -124,6 +125,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "list":
+      // #276: --scope 过滤（空串选未归属）；无 flag 与旧版逐字节一致
+      if (args.flags.scope !== undefined) {
+        const sc = writes.validateScope(args.flags.scope);
+        if (env.pgUrl) return env.asyncStore.kbList().then((rows) => { console.log(JSON.stringify(rows.filter((r: any) => (r.scope || "") === sc))); return 0; });
+        const rows = store.kbList(sc);
+        if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+        table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "updated"], ["id", "title", "tags", "confidence", "reuse", "updated"]);
+        return 0;
+      }
       if (env.pgUrl) return env.asyncStore.kbList().then((rows) => {
         table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "updated"], ["id", "title", "tags", "confidence", "reuse", "updated"]); return 0;
       });
@@ -238,6 +248,20 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
+    case "rescope": { // #276：改笔记 grant scope；--scope 必给（可空串=未归属）
+      if (!rest[0] || args.flags.scope === undefined) {
+        bad(ctx, "usage: kb rescope <id|title> --scope <dept:id|bench:id|*|restricted|empty>");
+        return 2;
+      }
+      return getOrm(env.db.path)
+        .then(ds => writes.kbRescope(ds, rest[0], args.flags.scope))
+        .then((r): number => {
+          if (ctx.json) { console.log(JSON.stringify({ ...r.row, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          out(ctx, `rescoped: ${r.row.title} -> ${r.row.scope || "(unattributed)"}`);
+          return 0;
+        })
+        .catch((e: any) => { bad(ctx, e?.message || String(e)); return typeof e?.rc === "number" ? e.rc : 1; });
+    }
     case "promote": {
       if (!rest[0]) {
         bad(ctx, "usage: kb promote <noteId> [--name <skill>] [--force]");
@@ -315,6 +339,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           tags: meta.tags || String(args.flags.tags || ""),
           source_url: meta.url || "",
           confidence: meta.confidence || "B",
+          scope: meta.scope !== undefined ? meta.scope : (args.flags.scope !== undefined ? String(args.flags.scope) : ""), // #276
           origin: `import:${f}`,
         };
       });
@@ -327,7 +352,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         })
         .catch((e: any): number => {
           bad(ctx, env.pgUrl ? (e instanceof PgCapabilityError ? e.message : pgFailure()) : e?.message || String(e));
-          return 1;
+          return typeof e?.rc === "number" ? e.rc : 1; // #276
         });
     }
     case "":

@@ -805,7 +805,7 @@ async function assertPgWriteTarget(mgr: EntityManager): Promise<void> {
 
 // ================================================================ kb
 
-async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string }, hash: string): Promise<WriteResult> {
+async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string; scope?: string }, hash: string): Promise<WriteResult> {
 
   if (!(process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "").trim()) throw new Error("PG writes require YGL_SESSION or DSH_SESSION_ID");
   await assertPgWriteTarget(mgr);
@@ -813,8 +813,8 @@ async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string;
   const now = nowIso();
   const r = await insertOrFetch({
     table: "kb_notes",
-    cols: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram"],
-    values: [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", 0, hash, now, now, ngram(o.title + " " + (o.tags || "") + " " + o.body)],
+    cols: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "scope", "created", "updated", "ngram"],
+    values: [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", 0, hash, validateScope(o.scope), now, now, ngram(o.title + " " + (o.tags || "") + " " + o.body)],
     conflictCols: ["content_hash"],
   }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
   if (!r.row) throw new Error("kb upsert returned no row");
@@ -823,10 +823,36 @@ async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string;
   return { row, dup: r.duplicate };
 }
 
+/** #276: 市场授权范围词表——dept:<id>|bench:<id>|*|restricted；<id>=[A-Za-z0-9._-]{1,64}。
+ * 空串=未归属（不是 public）。写时校验，非法值 rc2 且零写入。 */
+export function validateScope(raw: unknown): string {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return "";
+  if (s === "*" || s === "restricted") return s;
+  const m = /^(dept|bench):([A-Za-z0-9._-]{1,64})$/.exec(s);
+  if (m) return s;
+  throw Object.assign(new Error(`scope must be dept:<id> | bench:<id> | * | restricted (got: ${JSON.stringify(raw)})`), { rc: 2 });
+}
+
+/** #276: 改一条笔记的 grant scope（rescope）。校验同写入面；同步 FTS 不需要（scope 不入 fts）。 */
+export async function kbRescope(ds: DataSource, idOrTitle: string, scopeRaw: unknown): Promise<WriteResult> {
+  const scope = validateScope(scopeRaw);
+  return runTx(ds, async (mgr) => {
+    const ex = (await mgr.query(`SELECT * FROM kb_notes WHERE id=? OR title=?`, [idOrTitle, idOrTitle])) as any[];
+    if (!ex.length) throw Object.assign(new Error(`kb note not found: ${idOrTitle}`), { rc: 1 });
+    const row = ex[0];
+    if ((row.scope || "") === scope) return { row, dup: true }; // 幂等：同值重跑 duplicate rc0
+    await mgr.query(`UPDATE kb_notes SET scope=?, updated=? WHERE id=?`, [scope, nowIso(), row.id]);
+    await logEvent(mgr, "kb.rescope", "kb_note", row.id, `${row.title}: scope=${scope || "(unattributed)"}`);
+    return { row: { ...row, scope }, dup: false };
+  });
+}
+
 export async function kbAdd(
   ds: DataSource,
-  o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string; force?: boolean }
+  o: { title: string; body: string; tags?: string; source_url?: string; origin?: string; confidence?: string; force?: boolean; scope?: string }
 ): Promise<WriteResult> {
+  const scope = validateScope(o.scope);
   const hash = contentHash(`${o.title}\n${o.body}`, !!o.force);
   return runTx(ds, async (mgr) => {
     if (ormDialect(mgr) === "postgres") return kbAddPgCore(mgr, o, hash);
@@ -835,9 +861,9 @@ export async function kbAdd(
     const id = shortId(["kb", o.title], 10);
     const now = nowIso();
     await mgr.query(
-      `INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,reuse,content_hash,created,updated)
-       VALUES(?,?,?,?,?,?,?,0,?,?,?)`,
-      [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, now, now]
+      `INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,reuse,content_hash,scope,created,updated)
+       VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`,
+      [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, scope, now, now]
     );
     await ftsShadow(mgr, `INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
       id, o.title, o.tags || "", ngram(`${o.title} ${o.tags || ""} ${o.body}`),
@@ -846,7 +872,7 @@ export async function kbAdd(
     return {
       row: {
         id, title: o.title, body: o.body, source_url: o.source_url || "", origin: o.origin || "",
-        tags: o.tags || "", confidence: o.confidence || "B", reuse: 0, content_hash: hash, created: now, updated: now,
+        tags: o.tags || "", confidence: o.confidence || "B", reuse: 0, content_hash: hash, scope, created: now, updated: now,
       },
       dup: false,
     };
@@ -907,6 +933,7 @@ export interface KbImportItem {
   source_url?: string;
   origin?: string;
   confidence?: string;
+  scope?: string; // #276
 }
 
 export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promise<{ added: number; dups: number }> {
@@ -928,9 +955,9 @@ export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promi
       const id = shortId(["kb", o.title], 10);
       const now = nowIso();
       await mgr.query(
-        `INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,reuse,content_hash,created,updated)
-         VALUES(?,?,?,?,?,?,?,0,?,?,?)`,
-        [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, now, now]
+        `INSERT INTO kb_notes(id,title,body,source_url,origin,tags,confidence,reuse,content_hash,scope,created,updated)
+         VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`,
+        [id, o.title, o.body, o.source_url || "", o.origin || "", o.tags || "", o.confidence || "B", hash, validateScope(o.scope), now, now]
       );
       await ftsShadow(mgr, `INSERT INTO kb_fts(id,title,tags,ngram) VALUES(?,?,?,?)`, [
         id, o.title, o.tags || "", ngram(`${o.title} ${o.tags || ""} ${o.body}`),
@@ -1177,17 +1204,18 @@ export async function taskAssign(ds: DataSource, taskId: string, owner: string):
  *  lets them aggregate one summary event instead of N per-skill events. */
 export async function skillUpsertIn(
   mgr: EntityManager,
-  o: { name: string; description?: string; body?: string; tags?: string; version?: string; origin?: string },
+  o: { name: string; description?: string; body?: string; tags?: string; version?: string; origin?: string; scope?: string },
   opts: { emit?: boolean } = {},
 ): Promise<Record<string, any>> {
   const now = nowIso();
   await mgr.query(
-    `INSERT INTO skills(id,name,version,description,body,tags,origin,created,updated)
-     VALUES(?,?,?,?,?,?,?,?,?)
+    // #276: scope 随 promote/rescope 更新（空串显式传入即清空）
+    `INSERT INTO skills(id,name,version,description,body,tags,origin,scope,created,updated)
+     VALUES(?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(name) DO UPDATE SET
        version=excluded.version, description=excluded.description, body=excluded.body,
-       tags=excluded.tags, origin=excluded.origin, updated=excluded.updated`,
-    [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", now, now]
+       tags=excluded.tags, origin=excluded.origin, scope=excluded.scope, updated=excluded.updated`,
+    [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", validateScope(o.scope), now, now]
   );
   const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
   const s = rows[0];
@@ -1229,7 +1257,8 @@ export async function kbPromote(ds: DataSource, ref: string, options: { name?: s
       throw new Error("kb promote refused; missing: " + missing.join(", ") + "; no rel to real evidence/claim. Add nonempty cue/lesson/evidence frontmatter or link real evidence with rel. Do not fill fields with placeholder text just to pass this gate.");
     }
     const name = options.name || note.title;
-    const skill = await skillUpsertIn(mgr, { name, description: deriveL1(body, note.title), body: note.body, tags: note.tags, origin: "kb:" + note.id });
+    // #276: 技能继承笔记的 scope；rescope 后 re-promote 经 skillUpsertIn 的 ON CONFLICT 覆盖更新
+    const skill = await skillUpsertIn(mgr, { name, description: deriveL1(body, note.title), body: note.body, tags: note.tags, origin: "kb:" + note.id, scope: note.scope });
     await mgr.query("DELETE FROM relations WHERE src_type='skill' AND src_id=? AND rel='promoted-with'", [name]);
     for (const support of refs) {
       await mgr.query(
