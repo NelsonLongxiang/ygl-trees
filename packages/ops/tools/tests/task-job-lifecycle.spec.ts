@@ -356,4 +356,37 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     expect(job.detail).toMatch(/every < 60 min: fast/);
     expect(job.detail).toMatch(/no schedule \(manual\)/);
   });
+
+  it("v14 attribution: job add records project_id/owner; job list --project filters; unknown project rc=1 (#258)", () => {
+    cli(["project", "new", "attrproj"]);
+    const added = cli(["job", "add", "归属作业", "--manual", "--owner", "dev-seat", "--", "echo a"]);
+    expect(added.rc).toBe(0);
+    const rows = cli(["job", "list", "--json"]).json;
+    const j = rows.find((r: any) => r.title === "归属作业");
+    expect(j.owner).toBe("dev-seat");
+    expect(j.project_id).toBeTruthy(); // the session-selected project rides along
+    const filtered = cli(["job", "list", "--project", "attrproj", "--json"]).json;
+    expect(filtered.some((r: any) => r.title === "归属作业")).toBe(true);
+    const miss = cli(["job", "list", "--project", "nope"]);
+    expect(miss.rc).toBe(1);
+    expect(miss.json.error).toContain("project not found");
+  });
+
+  it("doctor job_health: an orphan is named with job show as next step; legacy empty project_id counts unattributed, never orphan (#258)", () => {
+    cli(["project", "new", "goneproj"]);
+    cli(["job", "add", "孤儿作业", "--manual", "--", "echo x"]);
+    // orphan the job by deleting the project row, and simulate a v13 legacy row in one pass
+    const dbPath = join(home, "ygl-trees.db");
+    const DatabaseSync = (require("node:sqlite") as any).DatabaseSync;
+    const raw = new DatabaseSync(dbPath);
+    raw.exec("DELETE FROM projects WHERE name = 'goneproj'");
+    raw.exec("INSERT INTO jobs(id,title,command,every_minutes,at,enabled,runs,last_run,status,created) VALUES('legacyjob','legacy-job','echo l',0,'',1,0,'','pending','2026-01-01T00:00:00Z')");
+    raw.close();
+    const checks = cli(["doctor"]).json;
+    const job = checks.find((c: any) => c.name === "job_health");
+    expect(job.status).toBe("warn");
+    expect(job.detail).toMatch(/orphan: 孤儿作业 \([^)]+\) — its project is gone; job show/);
+    expect(job.detail).not.toMatch(/orphan: legacy-job/);
+    expect(job.detail).toMatch(/1 unattributed \(legacy, empty project_id\)/);
+  });
 });

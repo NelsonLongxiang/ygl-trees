@@ -946,7 +946,7 @@ export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promi
 
 export async function jobAdd(
   ds: DataSource,
-  o: { title: string; command: string; every?: number; at?: string; force?: boolean; replaces?: string }
+  o: { title: string; command: string; every?: number; at?: string; force?: boolean; replaces?: string; projectId?: string; owner?: string }
 ): Promise<WriteResult> {
   return runTx(ds, async (mgr) => {
     const ex = (await mgr.query(`SELECT * FROM jobs WHERE title=?`, [o.title])) as any[];
@@ -970,10 +970,12 @@ export async function jobAdd(
     }
     const id = shortId(["job", title], 10);
     const created = nowIso();
+    // #258: attribution rides the insert — the selected project (or the explicit
+    // --project), and --owner / the session actor. Empty string = legacy-style unattributed.
     await mgr.query(
-      `INSERT INTO jobs(id,title,command,every_minutes,at,enabled,runs,last_run,status,created)
-       VALUES(?,?,?,?,?,1,0,'','pending',?)`,
-      [id, title, o.command, o.every ?? 0, o.at || "", created]
+      `INSERT INTO jobs(id,title,command,every_minutes,at,enabled,runs,last_run,status,created,project_id,owner)
+       VALUES(?,?,?,?,?,1,0,'','pending',?,?,?)`,
+      [id, title, o.command, o.every ?? 0, o.at || "", created, o.projectId || "", o.owner || ""]
     );
     await logEvent(mgr, "job.add", "job", id, title);
     return {
