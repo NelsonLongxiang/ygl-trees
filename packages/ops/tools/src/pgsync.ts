@@ -165,6 +165,7 @@ CREATE TABLE skills (
   description text NOT NULL DEFAULT '', body text NOT NULL DEFAULT '',
   tags text DEFAULT '', origin text DEFAULT '',
   enabled integer NOT NULL DEFAULT 1, hits integer NOT NULL DEFAULT 0,
+  scope text NOT NULL DEFAULT '',
   created text NOT NULL, updated text NOT NULL);
 CREATE TABLE skill_refs (
   id text PRIMARY KEY, skill_id text NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
@@ -218,7 +219,7 @@ CREATE TABLE kb_notes (
   id text PRIMARY KEY, title text NOT NULL, body text NOT NULL DEFAULT '',
   source_url text DEFAULT '', origin text DEFAULT '', tags text DEFAULT '',
   confidence text NOT NULL DEFAULT 'B', reuse integer NOT NULL DEFAULT 0,
-  content_hash text NOT NULL DEFAULT '', created text NOT NULL, updated text NOT NULL,
+  content_hash text NOT NULL DEFAULT '', scope text NOT NULL DEFAULT '', created text NOT NULL, updated text NOT NULL,
   UNIQUE (content_hash));
 CREATE TABLE kb_links (
   from_id text NOT NULL REFERENCES kb_notes(id) ON DELETE CASCADE,
@@ -509,6 +510,8 @@ export const PG_UPGRADES: PgUpgradeStep[] = [
   { version: 13, note: "v13: verifier_instances/verifier_runs (verifier registry, #206)", sql: migrateTableDdl(["verifier_instances", "verifier_runs"]) },
   // v14 (#258): jobs attribution — project_id/owner with the empty-string legacy default.
   { version: 14, note: "v14: jobs.project_id/owner (job attribution, #258)", sql: `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT ''; ALTER TABLE jobs ADD COLUMN IF NOT EXISTS owner text NOT NULL DEFAULT '';` },
+  // v15 (#276): kb_notes/skills market grant scope — same empty-string legacy default.
+  { version: 15, note: "v15: kb_notes/skills.scope (market grant scope, #276)", sql: `ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT ''; ALTER TABLE skills ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT '';` },
 ];
 
 /** CREATE TABLE IF NOT EXISTS statements for the named tables, taken from MIGRATE_DDL — the one PG DDL text, so an
