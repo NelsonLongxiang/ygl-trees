@@ -144,6 +144,11 @@
       "role": "gate"
     },
     {
+      "path": "scripts/lib/run-log.mjs",
+      "sha256": "30ea059915f92d6476bfe0cff362303c13d6b4847ee6991d6094872d56782e09",
+      "role": "gate"
+    },
+    {
       "path": "scripts/merge-check.mjs",
       "sha256": "1753f95926d256483a5e6d3d79d55113ec4509e43949d7ab892c0b032a34c612",
       "role": "gate"
@@ -175,7 +180,7 @@
     },
     {
       "path": "scripts/post-release-check.mjs",
-      "sha256": "f38a7d03aad5cbfffa8e30094b71dfd4c54cb4372f166b0f47c33dd972a88129",
+      "sha256": "775bdaafec38942a810463206662efc6f7d993378691d325506a175836d12c6b",
       "role": "gate"
     },
     {
@@ -1421,6 +1426,22 @@
       "reason": "initial registration (--add; #37 item 1 anchor)",
       "actor": "supervisor-seat",
       "at": "2026-11-12T10:20:28.912Z"
+    },
+    {
+      "path": "scripts/post-release-check.mjs",
+      "old_sha256": "f38a7d03aad5cbfffa8e30094b71dfd4c54cb4372f166b0f47c33dd972a88129",
+      "new_sha256": "775bdaafec38942a810463206662efc6f7d993378691d325506a175836d12c6b",
+      "reason": "#178: open G8 child logs with \"w\" via openLog (MSYS bash cannot write to a Windows O_APPEND handle)",
+      "actor": "supervisor-seat",
+      "at": "2026-11-12T15:21:12.871Z"
+    },
+    {
+      "path": "scripts/lib/run-log.mjs",
+      "old_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "new_sha256": "30ea059915f92d6476bfe0cff362303c13d6b4847ee6991d6094872d56782e09",
+      "reason": "initial registration (--add; #37 item 1 anchor)",
+      "actor": "supervisor-seat",
+      "at": "2026-11-12T15:21:12.920Z"
     }
   ],
   "kind": "engine",
