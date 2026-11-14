@@ -140,7 +140,7 @@ prepare 产出的 spec **只允许谓词 AST**，不允许手写 SQL（`authored
   - 大小写敏感；`*` 匹配任意串，`?` 匹配单个字符，`[...]` / `[^...]` 是字符类。
   - 没有转义符，反斜杠就是字面字符。
   - 不接受 `{col}` 右值，不做 ISO 时间规范化；NULL 对两种写法都不命中。
-  - 路径语法检查的写法见 `tests/fixtures/predicate-glob.json`，例如 `*/../*`、`*//*`、``*[<U+0001>-<U+001F>]*``。
+  - 路径语法检查的写法见 `packages/verify/core/tests/fixtures/predicate-glob.json`，例如 `*/../*`、`*//*`、``*[<U+0001>-<U+001F>]*``。
 - **元素同型**（r8 F3）：`in` / `between` 的元素必须全为数字或全为字符串——混合类型在 PG 直接报错、在 SQLite 按类型序比较，结论不可移植；`is null` / `is not null` 带 `value` 是构造错误（不得静默忽略）。
 - 组节点 `and|or|not` 可嵌套；`not` 内部按 AND 连接后整体取反。
 - `agg` 支持 `count|sum|min|max`（count 可省略 col）；别名进报告，便于审计，且**别名必须唯一**（自动名 `count_all` 也在唯一性检查内）。

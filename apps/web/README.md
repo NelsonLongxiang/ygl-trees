@@ -11,7 +11,7 @@ WebUI 的富客户端家园。CLI 内嵌零依赖 dashboard（`webui export/serv
 
 ```bash
 ygl-trees webui serve --port 8642   # 数据面（任意工作区）
-pnpm --filter @ygl/web dev          # http://localhost:5173（/api 代理到 8642）
+pnpm --filter @ygl/web dev          # http://localhost:5173（vite.config.ts 没有配 /api 代理，数据接口不通；看真数据用 build 后的 webui serve）
 pnpm --filter @ygl/web build        # 产物 apps/web/dist（静态托管，/api 指向 serve）
 ```
 

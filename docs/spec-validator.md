@@ -430,7 +430,7 @@ verify list                        # 规范清单与状态
 
 1. **契约先行**：spec/VU/报告三 JSON schema 是唯一接口真相——任何语言实现同一契约即可互换（这本身就是「检查器闭集」的语言面）；契约变更走版本（同 §6.5）。
 2. **进程边界**：语言间只经子进程/服务 + JSON（command 检查器同款边界），**禁跨语言 FFI 纠缠**——每个组件可独立测试、独立发布。
-3. **门禁随语言**：Node=vitest/contract:audit（现有四段制）；Python=pytest+ruff（提取层自己的黄金样本测试：已知附件→期望提取值）；Rust=cargo test+clippy——全部门禁汇总进 ygl-trees 的 pnpm test 编排。
+3. **门禁随语言**：Node=vitest/contract:audit（现有 pnpm test 全门禁）；Python=pytest+ruff（提取层自己的黄金样本测试：已知附件→期望提取值）；Rust=cargo test+clippy——全部门禁汇总进 ygl-trees 的 pnpm test 编排。
 4. **发布单元分离**：npm（壳）/脚本随包或独立仓（提取）/二进制 artifact（内核）——互不绑架升级节奏。
 5. **语言准入判据**：新语言进入（含 Go 等）必须声明组件归属 + 契约遵守 + 门禁接入，无例外。
 6. **四向 parity 门禁（评审小项）**：黄金语料矩阵 = {SQLite, PG} × {TS 参考实现, Rust 二进制} 四向逐字一致（除时间戳）——双实现门禁不能只测单方言。

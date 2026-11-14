@@ -27,5 +27,5 @@ Promotion runs admission, skill/FTS upsert, support snapshots and the `kb.promot
 
 ## Further Exploration
 
-- [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
-- [docs/conventions.md](../../docs/conventions.md) — data model conventions
+- [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
+- [docs/conventions.md](../../../docs/conventions.md) — data model conventions

@@ -12,7 +12,7 @@ M13 的**交付形态**：单静态二进制，spec 进、报告出。TS 侧（`
 | compare 八模式 | ✅ `src/compare.rs`（货币最小单位整数、容差/窗口/集合/区间/正则） |
 | sqlite 只读 runner | ✅ `src/sqlite.rs`（read-only + query_only + 单语句 + schema 指纹） |
 | 七型检查器 + 折叠 + witness | ✅ sql / sql-pair / count / exists / file / command；agent 属 review 层 → ERROR（fact-only 二进制） |
-| 语料 parity（33 例） | ✅ 30 例报告投影逐项一致 + 3 例构造期拒绝（`tests/corpus_parity.rs`） |
+| 语料 parity（44 例） | ✅ 37 例报告投影逐项一致 + 7 例构造期拒绝（`tests/corpus_parity.rs`） |
 | 整份报告 parity | ✅ `packages/verify/core/tests/rust-parity.spec.ts`：剥环境锚（`data_source`）后 `canonicalStringify` 逐字节相等，且两边重算 `payload_sha256` 与注入锚后一致（33/33） |
 | 报告自描述 | ✅ `data_source` / `guard` / `artifacts` / `exceptions` / `evidence.rows` / 真实 `started`·`finished`（`--now` 可钉重放） |
 | `run --spec --db --json` / `self-check` / `--version` | ✅ 三命令；`self-check` 校验内嵌 canonical 向量（12/12） |
@@ -24,7 +24,7 @@ M13 的**交付形态**：单静态二进制，spec 进、报告出。TS 侧（`
 
 ```bash
 cd rust/yglverify
-cargo test          # canonical 向量 + 谓词渲染 + 33 例语料投影 + 封包/签名 + CLI 契约（28 例）
+cargo test          # canonical 向量 + 谓词渲染 + 44 例语料投影 + 封包/签名 + CLI 契约（28 例）
 cargo build --release
 ./target/release/yglverify --version
 ./target/release/yglverify run --spec <spec.json> --db <snapshot.sqlite> --json

@@ -31,5 +31,5 @@ With `YGL_DB_URL` set to a migrated PG target, `tree new/list/show/use` and `nod
 
 ## Further Exploration
 
-- [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
-- [docs/conventions.md](../../docs/conventions.md) — data model conventions
+- [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
+- [docs/conventions.md](../../../docs/conventions.md) — data model conventions

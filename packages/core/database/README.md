@@ -21,5 +21,5 @@ Schema v15 stores `scope TEXT NOT NULL DEFAULT ''` on `kb_notes` and `skills`. S
 
 ## Further Exploration
 
-- [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
-- [docs/conventions.md](../../docs/conventions.md) — data model conventions
+- [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
+- [docs/conventions.md](../../../docs/conventions.md) — data model conventions

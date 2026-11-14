@@ -8,10 +8,10 @@ ygl-trees 是面向 AI Agent 的研究工作台 CLI（研究 → 产出 → 知�
 
 ```
 vendor/           DSH fork 框架全家桶（用户裁定框架级一致性，pnpm workspace 管理）
-  cordis/           @deepseek-ai/cordis 4.0.5-α（修复 rc.11 时序）
-  cosmokit/         @deepseek-ai/cosmokit 1.8.6-α
-  schemastery/      @deepseek-ai/schemastery 3.18.5-α
-  timer/            @deepseek-ai/cordis-plugin-timer 1.1.7-α **已启用**（base bundle 第 4 插件；ctx.timer 生命周期托管定时器，webui serve 心跳在用）
+  cordis/           @deepseek-ai/cordis 4.0.5（修复 rc.11 时序）
+  cosmokit/         @deepseek-ai/cosmokit 1.8.6
+  schemastery/      @deepseek-ai/schemastery 3.18.5
+  timer/            @deepseek-ai/cordis-plugin-timer 1.1.7 **已启用**（base bundle 第 4 插件；ctx.timer 生命周期托管定时器，webui serve 心跳在用）
   loader/ include/ group/ hmr/ logger-console/（五件可用弹药，等需求接入）
 
 packages/         领域模块（库代码，可被 apps 组合；pnpm workspace 成员，各带 package.json 依赖图）
@@ -29,7 +29,7 @@ apps/             应用入口（workspace 包：各带 package.json 声明依�
 
 （发布单元 = 仓库根 ygl-trees：dist/ 运行时从根 node_modules 解析，根 package.json 须保留 dist 用到的运行时依赖——包内声明是依赖图真相，根声明是发布面需求，两者并存）
 
-benchmarks/       性能基准套件（bench.js 七席 + README，pnpm bench）
+benchmarks/       性能基准套件（bench.js 按用户路径调度 startup / research-write / knowledge-search / techtree-index 四个模块 + README，pnpm bench）
 tests/            vitest 单测
 skills/           专属 Agent Skills（junction 到 .agents/skills/）
 docs/             文档体系
@@ -43,15 +43,15 @@ tmp/              临时脚本与数据（gitignored）
 pnpm install              # pnpm workspace（vendor/* + packages/*/* + apps/*）
 pnpm build                # tsc -> dist/ + tsdown -> dist/bundle/（压缩入口与按需分块）
 pnpm test:unit            # vitest 单测
-pnpm test                 # 四段制：build + unit + demo（跑 bundle 发布产物）+ contract:audit（0.84 起构建先行：单测依赖发布产物）
+pnpm test                 # 依次：gate:g12 → build → unit → demo（跑 bundle 发布产物）→ contract:audit → readme:verify → skills:audit → ratchet（构建先行：单测依赖发布产物）
 pnpm bench                # 性能基准（先 build；结果落 tmp/bench-results.json）
 pnpm pack:check           # 发布就绪门禁：打包 → 隔离安装 → 真实驱动发布产物
 pnpm readme:verify        # 文档真值门禁：README 命令示例逐条跑并断言退出码
 pnpm skills:audit         # 技能真值门禁：skills/*/SKILL.md 命令字面量逐条实跑，CLI 拒收命令形状（未知组/子命令/参数）即红
 pnpm ratchet              # 度量棘轮：bundle/前端体积/冷启动只降不升（基线 ratchet-baseline.json）
-pnpm test:rust            # M13-1b 二进制 parity：cargo test（33 例冻结语料 + canonical 向量 + CLI 契约）
+pnpm test:rust            # M13-1b 二进制 parity：cargo test（44 例冻结语料：37 例报告投影 + 7 例构造期拒绝；canonical 向量 + CLI 契约）
 pnpm verify:run           # 验证器组合入口：submit → prepare → run（rc 只表达过程，判定在报告）
-pnpm contract:audit       # 契约体检（145 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道 / 舰队材料 / schema parity
+pnpm contract:audit       # 契约体检（156 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道 / 舰队材料 / schema parity
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 

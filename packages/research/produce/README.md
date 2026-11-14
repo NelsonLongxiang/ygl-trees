@@ -17,5 +17,5 @@ Import from `@ygl/research-produce` when you need report production: outline, se
 
 ## Further Exploration
 
-- [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
-- [docs/conventions.md](../../docs/conventions.md) — data model conventions
+- [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
+- [docs/conventions.md](../../../docs/conventions.md) — data model conventions

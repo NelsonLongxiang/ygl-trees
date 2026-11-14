@@ -13,5 +13,5 @@ Import from `@ygl/techtree-eval` when you need decision model boolean evaluation
 
 ## Further Exploration
 
-- [docs/plan.md](../../docs/plan.md) — architecture decisions and version history
-- [docs/conventions.md](../../docs/conventions.md) — data model conventions
+- [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
+- [docs/conventions.md](../../../docs/conventions.md) — data model conventions
