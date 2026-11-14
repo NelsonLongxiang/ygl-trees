@@ -30,7 +30,11 @@
 > 现行工作见 GitHub issues（#80 谓词 1.3 提案 / #94 A 簇）与 docs/reviews/contract-1.3-proposal.md。
 
 
-## #276 scope v15（在途）
+## 0.126.0 候选准备（未发布）
+
+从 master `17c2ac2` 建 `release/0.126.0`，包含 #273（#178）、#277（#258）、#278（#275）、#279（#276）。版本/CHANGELOG/能力清单收口后冻结候选，依次执行完整门禁、pack:check 与 exact-head G7，并在 #90 留记录。只准备候选：不创建 tag、不 publish，发布须新的属主批准；Windows 包仅供验证/跨机比对，不替代经复核的官方 tarball。
+
+## #276 scope v15（代码已合并，待发版复核）
 
 #278 已合入 master；#276 采用 merge 保留主干历史。`kb_notes/skills.scope` 使用市场精确词表（空串未归属，非公开），不从项目默认；相同内容写入保留旧 scope，只有 id 选择的 rescope 改笔记授权并记 old/new 事件。note/skill 列表、检索、MCP 与 library 过滤先于排序/分页，空与未给参数不混同。旧 SQLite/PG 工作区只加默认空列、不回填；技能普通 upsert 不清除既有授权。JSON 加法字段 scope 与历史字节黄金的例外只覆盖 note add/show 的空 legacy 值，其他字节照常钉死。验收以 #279 exact head 的单测、契约、G7 与独立复评为准；未发版不关闭 #276。
 
