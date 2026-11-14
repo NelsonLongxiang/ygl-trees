@@ -21,6 +21,7 @@ import * as kbCmds from "../../../packages/knowledge/skills/src/cmds";
 import * as webui from "../../../packages/ops/tools/src/webui";
 import * as doctor from "../../../packages/ops/tools/src/doctor";
 import * as rels from "../../../packages/ops/tools/src/rels";
+import * as libraryCmds from "../../../packages/ops/tools/src/library-cmds";
 
 /** group → statically imported module (bundle-traceable) */
 export const DOMAIN_MODULES: Record<string, { run: (env: any, action: string, rest: string[], args: any) => number | Promise<number> }> = {
@@ -38,6 +39,7 @@ export const DOMAIN_MODULES: Record<string, { run: (env: any, action: string, re
   node: treeCmds,
   skill: skillCmds,
   kb: kbCmds,
+  library: libraryCmds,
   webui,
   doctor,
   rel: rels,

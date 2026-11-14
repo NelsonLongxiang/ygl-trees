@@ -2,26 +2,26 @@
   "version": 1,
   "node": "v24.12.0",
   "platform": "win32",
-  "measured_at": "2026-11-11T21:11:52.187Z",
-  "_attribution": "supervisor ruling 2026-11-11 (#269): contract 1.3 parts 2b+3 (owner ruling #80) — bundle 805353→~822.7k: derived tables/views + verify collect archive",
+  "measured_at": "2026-11-13T18:40:00.900Z",
+  "_attribution": "merge master v14 #277 into feat/275-library: union bundle 839291",
   "_note": "2026-10-26 bundle 831917→852712 归因拆分（监督席 direct-23b690c6）：#83 --batch 实占 +6.2KB（846541→852712，npm 0.115.4 实测）；余 ~14.6KB（831917→846541）为 0.115.0 重定基线后 2% 容差内的累积漂移，本轮随 #83 一并显式入账。",
   "metrics": {
     "bundle_bytes": {
-      "value": 822696,
+      "value": 839291,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-11T21:11:51.425Z",
+      "measured_at": "2026-11-13T18:39:59.973Z",
       "method": "sum-file-sizes-recursive"
     },
     "web_dist_bytes": {
       "value": 1401666,
       "tolerance_rel": 0.02,
-      "measured_at": "2026-11-11T21:11:51.426Z",
+      "measured_at": "2026-11-13T18:39:59.974Z",
       "method": "sum-file-sizes-recursive"
     },
     "cold_start_ms": {
       "value": 80,
       "tolerance_rel": 0.3,
-      "measured_at": "2026-11-11T21:11:52.186Z",
+      "measured_at": "2026-11-13T18:40:00.899Z",
       "method": "warm2-min7-retry-once"
     }
   }

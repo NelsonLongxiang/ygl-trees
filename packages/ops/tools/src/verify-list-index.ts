@@ -32,7 +32,8 @@ export function reportSummary(r: any): ReportRow | null {
   if (typeof r?.run_id !== "string" || !ID.test(r.run_id)) return null;
   return { run_id:r.run_id,spec_id:text(r.spec_id,128),spec_version:Number(r.verifier?.spec_version??r.spec_version??0),overall:text(r.overall,64),reason:text(r.reason),
     summary:{pass:Number(r.summary?.pass??0),fail:Number(r.summary?.fail??0),needs_material:Number(r.summary?.needs_material??0),error:Number(r.summary?.error??0)},
-    started:text(r.started,64),finished:text(r.finished,64),mode:text(r.verifier?.mode,64),binary_sha256:text(r.verifier?.binary_sha256,128),archived:0,semantic_scope:typeof r.semantic_scope==="string"?text(r.semantic_scope,64):null };
+    started:text(r.started,64),finished:text(r.finished,64),mode:text(r.verifier?.mode,64),binary_sha256:text(r.verifier?.binary_sha256,128),archived:0,semantic_scope:typeof r.semantic_scope==="string"?text(r.semantic_scope,64):null,
+    signature:typeof r.signature==="string"?text(r.signature,64):"",signing_scheme:typeof r.signing_scheme==="string"?text(r.signing_scheme,64):"" }; // #275: 封包签名身份进索引（additive，reconcile 促活）
 }
 function replace(db: any, kind: string, id: string, value: any, stamp: string, exclusion = "") {
   db.prepare("DELETE FROM excluded WHERE kind=? AND id=?").run(kind,id);
@@ -113,6 +114,8 @@ export async function prepareListIndex(home:string):Promise<void> {
   const root=join(home,"verify"),db=open(root),dirtyFile=join(root,".list-index-dirty");
   const dirty=existsSync(dirtyFile)?readFileSync(dirtyFile,"utf8"):null;
   try {
+    const format=(db.prepare("SELECT value FROM metadata WHERE key='format'").get() as any)?.value;
+    const refreshAll=format!=="2";
     for(const kind of ["reports","archives"]){
       mkdirSync(join(root,kind),{recursive:true});
       const names=(await readdir(join(root,kind))).filter(f=>f.endsWith(".json")&&ID.test(f.slice(0,-5)));
@@ -124,7 +127,7 @@ export async function prepareListIndex(home:string):Promise<void> {
       }})();
       for(let i=0;i<names.length;i+=32){
         const rows=await Promise.all(names.slice(i,i+32).map(async n=>{
-          const s=await fileStamp(join(root,kind,n));if(!dirty&&prior.get(n.slice(0,-5))===s)return null;
+          const s=await fileStamp(join(root,kind,n));if(!dirty&&!refreshAll&&prior.get(n.slice(0,-5))===s)return null;
           return readRecord(root,kind,n);
         }));
         db.transaction(()=>{for(const row of rows)if(row){
@@ -133,6 +136,8 @@ export async function prepareListIndex(home:string):Promise<void> {
         }})();
       }
     }
+    // Publish the new format only after unchanged source files have also been re-derived.
+    db.prepare("INSERT OR REPLACE INTO metadata VALUES('format','2')").run();
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('ready','1')").run();
     if(dirty&&existsSync(dirtyFile)&&readFileSync(dirtyFile,"utf8")===dirty)unlinkSync(dirtyFile);
   }finally{db.close();}
@@ -143,7 +148,10 @@ export function readListIndex<T>(home:string,read:(db:any)=>T):T {
   if(existsSync(join(root,".list-index-dirty")))throw new Error("verifier list index needs reconciliation");
   if(!existsSync(listIndexPath(root)))throw new Error("verifier list index not prepared");
   const db=new Sqlite(listIndexPath(root),{readonly:true});
-  try {db.pragma("busy_timeout = 5000");if(!(db.prepare("SELECT value FROM metadata WHERE key='ready'").get() as any)?.value)throw new Error("verifier list index not ready");return db.transaction(()=>read(db)).deferred();}finally{db.close();}
+  try {db.pragma("busy_timeout = 5000");if(!(db.prepare("SELECT value FROM metadata WHERE key='ready'").get() as any)?.value)throw new Error("verifier list index not ready");
+    const fmt=(db.prepare("SELECT value FROM metadata WHERE key='format'").get() as any)?.value;
+    if(fmt!=='2')throw new Error("verifier list index format mismatch — needs reconciliation");
+    return db.transaction(()=>read(db)).deferred();}finally{db.close();}
 }
 /** External edits are reconciled by filename events, without a periodic full-directory stat loop. */
 export function watchListIndex(home:string) {

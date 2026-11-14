@@ -1027,6 +1027,10 @@ export function generateLlmsManifest(): string {
       ["kb ingest <artifactId>", "sink a report into kb"],
       ["kb promote <noteId>", "promote note to reusable skill"],
     ]],
+    ["library", "Market experience library (read-only feed)", [
+      ["library list --kind <claim|note|skill|check> [--since <iso>] [--limit 1..500] [--cursor <c>]", "paged feed, contract ygl-library/1 (#275)"],
+      ["library show <kind> <id>", "one row + body; claim adds evidence[]"],
+    ]],
     ["skill", "Skill registry (L1/L2/L3)", [
       ["skill list", "all skills with hits"],
       ["skill match \"<query>\"", "full-text match for agent"],
