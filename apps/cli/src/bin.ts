@@ -494,6 +494,11 @@ export async function main(argv: string[]): Promise<number> {
     if (args._.length !== 2) { bad(ctx, "db init takes no positional arguments"); return 2; }
     if (["home", "db"].some(k => args.flags[k] === true || (Array.isArray(args.flags[k]) && (args.flags[k] as unknown[]).some(v => v === true)))) { bad(ctx, "db init --home and --db require a path value"); return 2; }
   }
+  if ((group === "kb" || (group === "skill" && action === "list") || (group === "library" && action === "list")) && args.flags.scope !== undefined) {
+    if (args.flags.scope === true) { bad(ctx, "--scope needs a value"); return 2; }
+    try { require("../../../packages/core/text/src/scope").validateScope(args.flags.scope); }
+    catch (e: any) { bad(ctx, e.message); return 2; }
+  }
   const home = str(args, "home", HOME);
   // verify 组（r15 P1-1）：`--db` 是业务库快照，不是工作区库——把它当工作区库会让
   // `verify run/prepare` 就地给业务库跑 ygl schema 迁移（实测灌入 57 张表、user_version 0→12），
@@ -535,13 +540,13 @@ export async function main(argv: string[]): Promise<number> {
   const PG_TECHTREE_READS = ["list", "show", "can", "ready", "path", "parents", "children", "ancestors", "descendants", "cond"];
   const PG_TECHTREE_COND_WRITE = group === "node" && action === "cond" && ["add", "rm", "remove"].includes(args._[2] || "");
   const PG_TECHTREE = (group === "tree" && ["new", "list", "show", "use"].includes(action || "")) || (group === "node" && (action === undefined || [...PG_TECHTREE_READS, ...PG_TECHTREE_WRITES].includes(action)));
-  const PG_BUSINESS = PG_RESEARCH || PG_TECHTREE || (group === "kb" && ["add", "list", "show", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
+  const PG_BUSINESS = PG_RESEARCH || PG_TECHTREE || (group === "kb" && ["add", "list", "show", "link", "import", "rescope"].includes(action || "")) || (group === "project" && ["new", "use", "list", "show"].includes(action || ""));
   const VERIFY_PG_FREE = group === "verify" && action === "self-check";
   const PG_DIRECT = new Set(["doctor", "webui", "version", "help", "llms"]);
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import | project new/use/list/show | tree new/list/show/use | node add/list/show/link/unlink/rm/move/index/validate/cond/unlock/lock/can/ready/path/parents/children/ancestors/descendants (no --eval, no cond --due) | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import/rescope | project new/use/list/show | tree new/list/show/use | node add/list/show/link/unlink/rm/move/index/validate/cond/unlock/lock/can/ready/path/parents/children/ancestors/descendants (no --eval, no cond --due) | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
@@ -587,7 +592,7 @@ export async function main(argv: string[]): Promise<number> {
         if (PG_TECHTREE) {
           await requirePgColumns(ds, { trees: ["id", "project_id", "name", "note", "created"], nodes: ["id", "tree_id", "key", "name", "kind", "tier", "cost", "cost_unit", "payload", "tags", "created", "ngram"], node_edges: ["id", "tree_id", "parent_id", "child_id", "rel", "mode", "required", "min_level", "weight", "note", "created"], node_state: ["tree_id", "node_id", "context", "status", "updated"], node_index: ["tree_id", "built_at", "dirty", "topo_order", "tiers", "in_degree"], node_closure: ["tree_id", "ancestor", "descendant", "depth"], node_conditions: ["id", "node_id", "name", "kind", "expr", "op", "value", "required", "effect", "weight", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
         }
-        if ((PG_TECHTREE && ((group === "tree" && ["new", "use"].includes(action || "")) || (group === "node" && (PG_TECHTREE_WRITES.includes(action || "") || PG_TECHTREE_COND_WRITE)))) || (PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
+        if ((PG_TECHTREE && ((group === "tree" && ["new", "use"].includes(action || "")) || (group === "node" && (PG_TECHTREE_WRITES.includes(action || "") || PG_TECHTREE_COND_WRITE)))) || (PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import", "rescope"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
           await bindPgWorkspace(ds, home, pgUrl, appVersion());
         } else {
           // Read commands do not create/update metadata or workspace files.
@@ -1021,13 +1026,17 @@ export function generateLlmsManifest(): string {
     ]],
     ["kb", "Long-term knowledge + reuse", [
       ["kb add --title --body|-f [--scope <k>]", "add knowledge note (#276: scope dept:<id>|bench:<id>|*|restricted)"],
-      ["kb rescope <id|title> --scope <k>", "change a note grant scope (idempotent; #276)"],
+      ["kb rescope <id> --scope <k>", "change a note grant scope (idempotent; #276)"],
       ["kb list [--scope <k>]", "list notes, filtered by grant scope (#276)"],
-      ["kb import <dir|file.md>", "batch markdown import (>1MB skipped, --force to include)"],
-      ["kb search \"<q>\" [--eval]", "FTS5 CJK search (--eval: semantic re-rank via decision model)"],
+      ["kb import <dir|file.md> [--scope <k>]", "batch markdown import (>1MB skipped, --force to include)"],
+      ["kb search \"<q>\" [--eval] [--scope <k>]", "FTS5 CJK search (--eval: semantic re-rank via decision model)"],
       ["kb rm <id>", "remove note"],
-      ["kb ingest <artifactId>", "sink a report into kb"],
+      ["kb ingest <artifactId> [--scope <k>]", "sink a report into kb"],
       ["kb promote <noteId>", "promote note to reusable skill"],
+    ]],
+    ["library", "Market experience library (read-only feed)", [
+      ["library list --kind <claim|note|skill|check> [--scope <k>] [--since <iso>] [--limit 1..500] [--cursor <c>]", "paged feed, contract ygl-library/1 (#275)"],
+      ["library show <kind> <id>", "one row + body; claim adds evidence[]"],
     ]],
     ["skill", "Skill registry (L1/L2/L3)", [
       ["skill list", "all skills with hits"],

@@ -15,6 +15,8 @@
  * `agent log` history stays homogeneous.
  */
 import { DataSource, EntityManager } from "typeorm";
+import { validateScope } from "../../../core/text/src/scope";
+export { validateScope } from "../../../core/text/src/scope";
 import { Claim, Evidence, Query, QuerySource, Source } from "./entities";
 import { Event } from "../../../core/database/src/entities";
 import { contentHash, ngram, nowIso, parseFrontmatter, sha1, shortId } from "../../../core/text/src/text";
@@ -823,28 +825,22 @@ async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string;
   return { row, dup: r.duplicate };
 }
 
-/** #276: 市场授权范围词表——dept:<id>|bench:<id>|*|restricted；<id>=[A-Za-z0-9._-]{1,64}。
- * 空串=未归属（不是 public）。写时校验，非法值 rc2 且零写入。 */
-export function validateScope(raw: unknown): string {
-  const s = typeof raw === "string" ? raw.trim() : "";
-  if (!s) return "";
-  if (s === "*" || s === "restricted") return s;
-  const m = /^(dept|bench):([A-Za-z0-9._-]{1,64})$/.exec(s);
-  if (m) return s;
-  throw Object.assign(new Error(`scope must be dept:<id> | bench:<id> | * | restricted (got: ${JSON.stringify(raw)})`), { rc: 2 });
-}
 
 /** #276: 改一条笔记的 grant scope（rescope）。校验同写入面；同步 FTS 不需要（scope 不入 fts）。 */
-export async function kbRescope(ds: DataSource, idOrTitle: string, scopeRaw: unknown): Promise<WriteResult> {
+export async function kbRescope(ds: DataSource, id: string, scopeRaw: unknown): Promise<WriteResult> {
+  if (scopeRaw === undefined) throw Object.assign(new Error("rescope requires an explicit scope"), { rc: 2 });
   const scope = validateScope(scopeRaw);
   return runTx(ds, async (mgr) => {
-    const ex = (await mgr.query(`SELECT * FROM kb_notes WHERE id=? OR title=?`, [idOrTitle, idOrTitle])) as any[];
-    if (!ex.length) throw Object.assign(new Error(`kb note not found: ${idOrTitle}`), { rc: 1 });
-    const row = ex[0];
-    if ((row.scope || "") === scope) return { row, dup: true }; // 幂等：同值重跑 duplicate rc0
-    await mgr.query(`UPDATE kb_notes SET scope=?, updated=? WHERE id=?`, [scope, nowIso(), row.id]);
-    await logEvent(mgr, "kb.rescope", "kb_note", row.id, `${row.title}: scope=${scope || "(unattributed)"}`);
-    return { row: { ...row, scope }, dup: false };
+    const pg = ormDialect(mgr) === "postgres";
+    if (pg) { await requirePgColumns(mgr, { kb_notes: ["id", "scope", "updated"] }); await assertPgWriteTarget(mgr); }
+    const ex = await stateRows(mgr, "SELECT * FROM kb_notes WHERE id=?" + (pg ? " FOR UPDATE" : ""), [id]);
+    if (!ex.length) throw Object.assign(pg ? new PgWriteError("kb note not found: " + id) : new Error("kb note not found: " + id), { rc: 1 });
+    const { ngram: _ngram, ngram_tsv: _tsv, ...row } = ex[0];
+    if (row.scope === scope) return { row, dup: true };
+    const updated = nowIso();
+    await stateRows(mgr, "UPDATE kb_notes SET scope=?, updated=? WHERE id=?", [scope, updated, id]);
+    await logEvent(mgr, "kb.rescope", "kb_note", id, { old_scope: row.scope, new_scope: scope });
+    return { row: { ...row, scope, updated }, dup: false };
   });
 }
 
@@ -908,7 +904,8 @@ export async function kbRemove(ds: DataSource, id: string): Promise<WriteResult>
   });
 }
 
-export async function kbIngestArtifact(ds: DataSource, artifactId: string, force = false): Promise<WriteResult> {
+export async function kbIngestArtifact(ds: DataSource, artifactId: string, force = false, scopeRaw?: string): Promise<WriteResult> {
+  const scope = validateScope(scopeRaw);
   const a = (await ds.query(`SELECT * FROM artifacts WHERE id=?`, [artifactId])) as any[];
   if (!a.length) throw new Error(`artifact not found: ${artifactId}`);
   return kbAdd(ds, {
@@ -917,6 +914,7 @@ export async function kbIngestArtifact(ds: DataSource, artifactId: string, force
     tags: a[0].kind,
     origin: `artifact:${a[0].id}`,
     confidence: "B",
+    scope,
     force,
   });
 }
@@ -937,11 +935,12 @@ export interface KbImportItem {
 }
 
 export async function kbImportBulk(ds: DataSource, items: KbImportItem[]): Promise<{ added: number; dups: number }> {
+  items = items.map(o => ({ ...o, scope: validateScope(o.scope) }));
   return runTx(ds, async (mgr) => {
     let added = 0;
     let dups = 0;
     if (ormDialect(mgr) === "postgres") {
-      await requirePgColumns(mgr, { kb_notes: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram", "ngram_tsv"] });
+      await requirePgColumns(mgr, { kb_notes: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "scope", "created", "updated", "ngram", "ngram_tsv"] });
       for (const o of items) { const result = await kbAddPgCore(mgr, o, contentHash(`${o.title}\n${o.body}`, false)); result.dup ? dups++ : added++; }
       return { added, dups };
     }
@@ -1214,8 +1213,8 @@ export async function skillUpsertIn(
      VALUES(?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(name) DO UPDATE SET
        version=excluded.version, description=excluded.description, body=excluded.body,
-       tags=excluded.tags, origin=excluded.origin, scope=excluded.scope, updated=excluded.updated`,
-    [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", validateScope(o.scope), now, now]
+       tags=excluded.tags, origin=excluded.origin, scope=CASE WHEN ? THEN excluded.scope ELSE skills.scope END, updated=excluded.updated`,
+    [shortId(["skill", o.name], 10), o.name, o.version || "0.1.0", o.description || "", o.body || "", o.tags || "", o.origin || "", validateScope(o.scope), now, now, o.scope !== undefined ? 1 : 0]
   );
   const rows = (await mgr.query(`SELECT * FROM skills WHERE name=?`, [o.name])) as any[];
   const s = rows[0];

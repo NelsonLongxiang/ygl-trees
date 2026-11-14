@@ -24,6 +24,7 @@
  * @module @ygl/ops-tools/mcp
  */
 import * as readline from "node:readline";
+import { validateScope } from "../../../core/text/src/scope";
 
 export interface McpTool {
   name: string;
@@ -109,6 +110,11 @@ export const MCP_INSTRUCTIONS: string = [
 const opt = (flag: string, v: unknown): string[] => (v === undefined || v === null || v === "" ? [] : [flag, String(v)]);
 /** arg helper: positional string if present */
 const pos = (v: unknown): string[] => (v === undefined || v === null || v === "" ? [] : [String(v)]);
+const scopeOpt = (v: unknown): string[] => {
+  if (v === undefined) return [];
+  try { return ["--scope=" + validateScope(v)]; }
+  catch (e: any) { throw usageError(e.message); }
+};
 
 // ============================================================
 // Route tables: domain → action → CLI argv builder
@@ -125,8 +131,14 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     log: () => ["agent", "log"],
   },
   kb: {
-    search: (a) => { const p = ["kb", "search", String(a.query ?? "")]; if (a.eval) p.push("--eval"); return p; },
+    search: (a) => { const p = ["kb", "search", String(a.query ?? ""), ...scopeOpt(a.scope)]; if (a.eval) p.push("--eval"); return p; },
+    list: (a) => ["kb", "list", ...scopeOpt(a.scope)],
     show: (a) => ["kb", "show", String(a.id)],
+  },
+  // #275: market experience library — read-only feed, contract ygl-library/1
+  library: {
+    list: (a) => [...opt("--kind", a.kind), ...opt("--since", a.since), ...opt("--limit", a.limit), ...opt("--cursor", a.cursor), ...scopeOpt(a.scope), "library", "list"],
+    show: (a) => ["library", "show", String(a.kind), String(a.id)],
   },
   research: {
     "query-list": (a) => [...opt("-p", a.project), "research", "query", "list"],
@@ -175,7 +187,7 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     timeline: (a) => { const p = ["db", "timeline"]; if (a.actor) p.push("--actor", String(a.actor)); return p; },
   },
   skill: {
-    list: () => ["skill", "list"],
+    list: (a) => ["skill", "list", ...scopeOpt(a.scope)],
     match: (a) => ["skill", "match", String(a.query)],
     show: (a) => ["skill", "show", String(a.name)],
   },
@@ -208,16 +220,17 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     add: (a) => {
       if (!a.name || (!a.file && !a.body && !a.description)) throw usageError("kb add requires name and body (or file)");
       if (a.file && (a.body !== undefined || a.description !== undefined)) throw usageError("kb add accepts body or file, not both");
-      return ["kb", "add", "--title", String(a.name), ...(a.file ? ["-f", String(a.file)] : ["--body", String(a.body ?? a.description)]), ...opt("--scope", a.scope)]; // #276
+      const bodyArgs = a.file ? ["-f", String(a.file)] : ["--body=" + String(a.body ?? a.description)];
+      return ["kb", "add", "--title", String(a.name), ...bodyArgs, ...opt("--tags", a.tags), ...opt("--source-url", a.source_url ?? a.url), ...scopeOpt(a.scope)];
     },
-    rescope: (a) => { // #276
+    rescope: (a) => {
       if (!a.id || a.scope === undefined) throw usageError("kb rescope requires id and scope");
-      return ["kb", "rescope", String(a.id), "--scope", String(a.scope)];
+      return ["kb", "rescope", String(a.id), ...scopeOpt(a.scope)];
     },
     link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
     // #257 C 类：知识收口（promote 幂等；ingest 导入已完成 artifact）
     promote: (a) => ["kb", "promote", String(a.id), ...opt("--name", a.name)],
-    ingest: (a) => ["kb", "ingest", String(a.id)],
+    ingest: (a) => ["kb", "ingest", String(a.id), ...scopeOpt(a.scope)],
   },
   tree: {
     "tree-new": (a) => ["tree", "new", String(a.tree), ...opt("-p", a.project)],
@@ -314,6 +327,12 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           action: { type: "string", enum: allReadActions, description: "Read action within domain" },
           query: { type: "string", description: "search/match query" },
           id: { type: "string", description: "entity id (show)" },
+          // #275 library feed
+          kind: { type: "string", enum: ["claim", "note", "skill", "check"], description: "library material kind" },
+          since: { type: "string", description: "ISO-8601 lower bound on updated (library list)" },
+          limit: { type: "number", description: "page size 1..500 (library list)" },
+          cursor: { type: "string", description: "opaque next_cursor from the previous page" },
+          scope: { type: "string", description: "kb list/search, skill list and library note/skill: exact grant key (dept:<id>, bench:<id>, *, restricted); empty selects unattributed rows; omitted leaves the list unfiltered" },
           name: { type: "string", description: "entity name (skill show, project show)" },
           tree: { type: "string", description: "tree name filter" },
           node: { type: "string", description: "node key (rel list)" },
@@ -358,6 +377,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           batch_file: { type: "string", description: "#83 source-add/claim-add/evidence-add: jsonl batch file path (all-or-nothing; bad row names line+field rc=2, file missing rc=1, nothing written on failure)" },
           source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
           name: { type: "string", description: "kb name / node name / project name" },
+          scope: { type: "string", description: "kb add/ingest/rescope: dept:<id>, bench:<id>, *, restricted or empty (unattributed); ids match [A-Za-z0-9._-]{1,64}; rescope requires an explicit value" },
           body: { type: "string", description: "kb add: note body; produce section/spec/design: artifact body (与 file 互斥)" },
           description: { type: "string", description: "kb add: compatibility alias for body; mutually exclusive with file" },
           file: { type: "string", description: "kb add: markdown file path; produce section/spec/design: body file (-f)" },

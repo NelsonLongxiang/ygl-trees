@@ -40,6 +40,16 @@ describe("#176 W5b PG upgrade track", () => {
     expect(versions.every((v) => v > PG_BASELINE_VERSION && v <= SCHEMA_VERSION)).toBe(true);
   });
 
+  it("v14 to v15 applies only the two additive grant columns and records version 15", async () => {
+    const c = fakeClient({ version: 14 });
+    const r = await upgradePgSchema(c, 15);
+    expect(r.steps).toEqual([15]);
+    const step = PG_UPGRADES.find(s => s.version === 15)!;
+    expect(step.sql).toContain("ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT ''");
+    expect(step.sql).toContain("ALTER TABLE skills ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT ''");
+    expect(c.log.at(-1)).toBe("COMMIT");
+  });
+
   it("MIGRATE_INDEXES names are unique and include the W5a events index", () => {
     const names = migrateIndexNames();
     expect(names.length).toBeGreaterThan(15);

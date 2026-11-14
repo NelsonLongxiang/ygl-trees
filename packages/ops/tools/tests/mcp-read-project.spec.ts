@@ -131,6 +131,7 @@ describe("#260 read routes pass explicit project through", () => {
       project: ["list", "show"],
       db: ["stats", "timeline"],
       skill: ["list", "match", "show"],
+      library: ["list", "show"],
     };
     // tools/list 的域枚举必须与本表完全一致——新加域/动作忘了这里也会红
     const listed = await request({ jsonrpc: "2.0", id: 3, method: "tools/list" });

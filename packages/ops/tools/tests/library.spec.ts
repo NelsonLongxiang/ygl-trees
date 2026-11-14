@@ -1,0 +1,361 @@
+/** #275 library: market experience library read-only feed (CLI + MCP parity). */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+// @ts-ignore — runtime dependency has no in-repo type declarations.
+import Sqlite from "better-sqlite3";
+import { prepareListIndex, readListIndex } from "../src/verify-list-index";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const ROOT = resolve(__dirname, "../../../..");
+function mkdirSyncUnderTmp(): void { home = mkdtempSync(join(tmpdir(), "y275mcp-")); }
+const BIN = join(ROOT, "dist/apps/cli/src/bin.js");
+let home = "";
+const environment = { ...process.env, YGL_HOME: "", YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1" };
+
+function cli(args: string[], session = "lib-test", workspace = home): { rc: number | null; json: any; text: string } {
+  const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { encoding: "utf8", timeout: 60000,
+    env: { ...environment, YGL_HOME: workspace, YGL_SESSION: session } });
+  let json: any = null;
+  try { json = r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { /* human face */ }
+  return { rc: r.status, json, text: r.stdout + r.stderr };
+}
+function cliRaw(args: string[], session = "lib-test"): { rc: number | null; text: string } {
+  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8", timeout: 60000,
+    env: { ...environment, YGL_HOME: home, YGL_SESSION: session } });
+  return { rc: r.status, text: r.stdout + r.stderr };
+}
+
+describe("library feed (#275)", () => {
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), "y275-"));
+    cliRaw(["db", "init"]);
+    cliRaw(["project", "new", "proj1"]);
+  });
+  afterAll(() => { try { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch {} });
+
+  it("contract + row shape + frontmatter summary + absent-not-empty on a seeded workspace", () => {
+    const src = cli(["research", "source", "add", "--title", "S1", "--url", "https://x.example/a"]).json;
+    const ev = cli(["research", "evidence", "add", src.id, "--quote", "q1", "--note", "n1"]).json;
+    const cl = cli(["research", "claim", "add", "--text", "claim A text"]).json;
+    cliRaw(["research", "claim", "link", cl.id, ev.id, "--stance", "supports"]);
+    cliRaw(["research", "claim", "resolve", cl.id, "--outcome", "supported"]);
+    writeFileSync(join(home, "n.md"), "---\ncue: c\nlesson: l\nevidence: e\n---\n\nFirst paragraph of the body text here.\n");
+    cliRaw(["kb", "add", "--title", "note one", "-f", join(home, "n.md"), "--source-url", "/decisions/1"]);
+    cliRaw(["kb", "add", "--title", "plain note", "--body", "no frontmatter paragraph."]);
+
+    const notes = cli(["library", "list", "--kind", "note"]).json;
+    expect(notes.contract).toBe("ygl-library/1");
+    expect(notes.total).toBe(2);
+    const fmed = notes.items.find((i: any) => i.title === "note one");
+    expect(fmed.summary).toBe("First paragraph of the body text here.");
+    expect(fmed.summary).not.toContain("cue:");
+    expect(fmed.source_url).toBe("/decisions/1");
+    expect(fmed.scope).toBeUndefined(); // absent, not "" (#276 lands the column)
+    const plain = notes.items.find((i: any) => i.title === "plain note");
+    expect(plain.summary).toBe("no frontmatter paragraph.");
+    // no never-exposed field name leaks
+    for (const it of notes.items) { expect("reuse" in it).toBe(false); expect("content_hash" in it).toBe(false); expect("ngram" in it).toBe(false); }
+
+    const claims = cli(["library", "list", "--kind", "claim"]).json;
+    expect(claims.items).toHaveLength(1);
+    expect(claims.items[0].status).toBe("supported");
+    expect(claims.items[0].project).toBe("proj1");
+    expect(claims.items[0].scope).toBeUndefined();
+    const cshow = cli(["library", "show", "claim", cl.id]).json;
+    expect(cshow.contract).toBe("ygl-library/1");
+    expect(Array.isArray(cshow.evidence)).toBe(true);
+    expect(cshow.evidence[0]).toMatchObject({ quote: "q1", stance: "supports" });
+    expect(cshow.evidence[0].source.title).toBe("S1");
+  });
+
+  it("bundled skills are absent; a promoted note appears with from_note", () => {
+    const skills = cli(["library", "list", "--kind", "skill"]).json;
+    expect(skills.items).toHaveLength(0); // db init seeds builtin:* rows — none may leak
+    const notes = cli(["library", "list", "--kind", "note"]).json;
+    const noteOne = notes.items.find((i: any) => i.title === "note one");
+    cliRaw(["kb", "promote", noteOne.id, "--name", "lib-promoted-skill"]);
+    const after = cli(["library", "list", "--kind", "skill"]).json;
+    expect(after.items).toHaveLength(1);
+    expect(after.items[0].from_note).toBe(noteOne.id);
+    const show = cli(["library", "show", "skill", "lib-promoted-skill"]).json;
+    expect(show.from_note).toBe(noteOne.id);
+    expect(typeof show.body).toBe("string");
+  });
+
+  it("paging: --limit 2 over 5 rows gives three pages, no repeat or miss; cursor is opaque", () => {
+    for (let i = 1; i <= 3; i++) cliRaw(["kb", "add", "--title", `pg-${i}`, "--body", `body ${i}`]);
+    // now 5 notes total (note one, plain note, pg-1..3)
+    const seen = new Set<string>();
+    let cursor: string | undefined; let pages = 0;
+    do {
+      const args = ["library", "list", "--kind", "note", "--limit", "2"];
+      if (cursor) args.push("--cursor", cursor);
+      const page = cli(args).json;
+      pages++;
+      for (const it of page.items) { expect(seen.has(it.id)).toBe(false); seen.add(it.id); }
+      cursor = page.next_cursor ?? undefined;
+      if (pages > 3) break;
+    } while (cursor);
+    expect(pages).toBe(3); // 5 rows / 2 = 3 pages
+    expect(seen.size).toBe(5);
+  });
+
+  it("--since filters by updated (strict ISO); bad ISO is rc 2; bad kind is rc 2", () => {
+    const future = cli(["library", "list", "--kind", "note", "--since", "2999-01-01T00:00:00Z"]).json;
+    expect(future.items).toHaveLength(0);
+    const past = cli(["library", "list", "--kind", "note", "--since", "2000-01-01T00:00:00Z"]).json;
+    expect(past.total).toBe(5);
+    const badIso = cli(["library", "list", "--kind", "note", "--since", "nope"]);
+    expect(badIso.rc).toBe(2);
+    const badKind = cli(["library", "list", "--kind", "nope"]);
+    expect(badKind.rc).toBe(2);
+  });
+
+  it("#278 review3: the four loose Date.parse shapes are each rc 2", () => {
+    for (const loose of ["2026-11-13 10:00", "Nov 13 2026", "2026-11-13T10:00:00", "2026-02-30"]) {
+      const r = cli(["library", "list", "--kind", "note", "--since", loose]);
+      expect(r.rc, loose).toBe(2);
+      expect(r.json.error, loose).toBeTruthy();
+    }
+  });
+
+  it("scope filtering is explicit and unsupported kinds cannot silently ignore it", () => {
+    const r = cli(["library", "list", "--kind", "note", "--scope", "dept:x"]);
+    expect(r.rc, r.text).toBe(0);
+    expect(r.json.items).toEqual([]);
+    expect(cli(["library", "list", "--kind", "check", "--scope", "dept:x"]).rc).toBe(2);
+  });
+
+  it("#278 review5: show skill refuses bundled and unknown with rc 1", () => {
+    expect(cli(["library", "show", "skill", "ygl-trees-techtree"]).rc).toBe(1);
+    expect(cli(["library", "show", "skill", "no-such-skill"]).rc).toBe(1);
+  });
+
+  it("#278 review9: a leading --- rule with NO closing delimiter is not stripped", () => {
+    writeFileSync(join(home, "open-fm.md"), "---\nno closing delimiter\n\nreal first para here.\n");
+    cliRaw(["kb", "add", "--title", "open-fm", "-f", join(home, "open-fm.md")]);
+    const page = cli(["library", "list", "--kind", "note"]).json;
+    const it0 = page.items.find((i: any) => i.title === "open-fm");
+    expect(it0.summary).toContain("no closing delimiter");
+  });
+
+  it("#278 review1: check kind works from a plain workspace (index self-prepared), runs are one row each", () => {
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    expect(page.contract).toBe("ygl-library/1");
+    expect(Array.isArray(page.items)).toBe(true);
+  });
+
+  it("#278 review-C: a seeded run+archive shows one row with spec title, archived:true, archive_sha256, signature; show body leaks no local path", () => {
+    const reportsDir = join(home, "verify", "reports");
+    const archivesDir = join(home, "verify", "archives");
+    mkdirSync(reportsDir, { recursive: true });
+    mkdirSync(archivesDir, { recursive: true });
+    const specDir = join(home, "verify", "specs", "spec_lib1"); // round3①：真实路径 verify/specs/<id>/
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(join(specDir, "spec.json"), JSON.stringify({ spec_id: "spec_lib1", title: "lib check", spec_version: 1 }));
+    writeFileSync(join(reportsDir, "run_lib1.json"), JSON.stringify({
+      run_id: "run_lib1", spec_id: "spec_lib1", overall: "PASS",
+      summary: { pass: 2, fail: 0, needs_material: 0, error: 0 },
+      started: "2026-11-13T10:00:00Z", finished: "2026-11-13T10:05:00Z",
+      signature: "ed25519:abc", verifier: { mode: "sealed" }, // round3①：真实报告 shape（mode 在 verifier 下）
+      data_source: { source: join(home, "local.db") },
+    }));
+    writeFileSync(join(archivesDir, "run_lib1.json"), JSON.stringify({
+      run_id: "run_lib1",
+      archives: [{ archive_id: "arc1", filename: "a.yglverify.zip", archive_sha256: "sha256:deadbeef", zip_sha256: "sha256:feed", created: "2026-11-13T10:06:00Z", with: [] }],
+    }));
+    rmSync(join(home, "verify", ".list-index.sqlite"), { force: true }); // 强制 ensureIndex 重扫新种的文件
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    const run = page.items.find((i: any) => i.id === "run_lib1");
+    expect(run, "run row").toBeTruthy();
+    expect(run.title).toBe("lib check");
+    expect(run.spec_id).toBe("spec_lib1");
+    expect(run.finished).toBe("2026-11-13T10:05:00Z");
+    expect(run.archived).toBe(true);
+    expect(run.archive_sha256).toBe("sha256:deadbeef");
+    expect(run.signature).toBe("signed");
+    const show = cli(["library", "show", "check", "run_lib1"]).json;
+    expect(show.body).not.toContain("local.db");
+    expect(show.body).not.toContain(home);
+  }, 120000);
+
+  it("#278 round3-2: an OLD-format index (row missing signature) is rebuilt and still reports signed", () => {
+    rmSync(join(home, "verify", ".list-index.sqlite"), { force: true });
+    cli(["library", "list", "--kind", "check"]);
+    const DatabaseSync = (require("node:sqlite") as any).DatabaseSync;
+    const idxDb = new DatabaseSync(join(home, "verify", ".list-index.sqlite"));
+    const rep = idxDb.prepare("SELECT run_id,row_json FROM reports WHERE run_id=?").get("run_lib1") as any;
+    expect(rep, "run_lib1 indexed").toBeTruthy();
+    const j = JSON.parse(rep.row_json); delete j.signature;
+    idxDb.prepare("UPDATE reports SET row_json=? WHERE run_id=?").run(JSON.stringify(j), "run_lib1");
+    idxDb.prepare("DELETE FROM metadata WHERE key=?").run("format");
+    idxDb.close();
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    const run = page.items.find((i: any) => i.id === "run_lib1");
+    expect(run, "run row after rebuild").toBeTruthy();
+    expect(run.signature).toBe("signed");
+  }, 120000);
+
+  it("old-format indexes refresh unchanged reports before WebUI publishes readiness", async () => {
+    const scratchRoot = join(ROOT, "tmp", "278-cache-upgrade");
+    mkdirSync(scratchRoot, { recursive: true });
+    const workspace = mkdtempSync(join(scratchRoot, "webui-first-"));
+    try {
+      expect(cli(["db", "init"], "cache-test", workspace).rc).toBe(0);
+      const root = join(workspace, "verify");
+      const reportsDir = join(root, "reports");
+      const archivesDir = join(root, "archives");
+      const specDir = join(root, "specs", "spec_upgrade");
+      for (const dir of [reportsDir, archivesDir, specDir]) mkdirSync(dir, { recursive: true });
+      const reportPath = join(reportsDir, "run_upgrade.json");
+      const archivePath = join(archivesDir, "run_upgrade.json");
+      const specPath = join(specDir, "spec.json");
+      writeFileSync(specPath, JSON.stringify({ spec_id: "spec_upgrade", title: "Prepared spec" }));
+      writeFileSync(reportPath, JSON.stringify({
+        run_id: "run_upgrade", spec_id: "spec_upgrade", overall: "PASS",
+        summary: { pass: 1, fail: 0, needs_material: 0, error: 0 },
+        started: "2026-11-13T10:00:00.000Z", finished: "2026-11-13T10:05:00.000Z",
+        verifier: { mode: "sealed" }, signature: "ed25519:fixture", signing_scheme: "ed25519",
+      }));
+      writeFileSync(archivePath, JSON.stringify({ run_id: "run_upgrade", archives: [{
+        archive_id: "archive_upgrade", filename: "upgrade.yglverify.zip", created: "2026-11-13T10:06:00.000Z",
+        archive_sha256: "archive-digest", zip_sha256: "zip-digest", with: [],
+      }] }));
+      const sources = [reportPath, archivePath, specPath];
+      const before = sources.map(path => ({ bytes: readFileSync(path, "utf8"), stamp: statSync(path).mtimeMs }));
+      const list = () => {
+        const result = cli(["library", "list", "--kind", "check"], "cache-test", workspace);
+        expect(result.rc, result.text).toBe(0);
+        expect(result.json.items).toHaveLength(1);
+        return result.json.items[0];
+      };
+      expect(list()).toMatchObject({ title: "Prepared spec", signature: "signed", archived: true, archive_sha256: "archive-digest" });
+      const indexPath = join(root, ".list-index.sqlite");
+      for (const oldFormat of [undefined, "1"]) {
+        const db = new Sqlite(indexPath);
+        try {
+          const cached = JSON.parse(db.prepare("SELECT row_json FROM reports WHERE run_id=?").get("run_upgrade").row_json);
+          delete cached.signature; delete cached.signing_scheme;
+          db.prepare("UPDATE reports SET row_json=? WHERE run_id=?").run(JSON.stringify(cached), "run_upgrade");
+          const archive = JSON.parse(db.prepare("SELECT row_json FROM archives WHERE run_id=?").get("run_upgrade").row_json);
+          archive.archive_sha256 = "stale-archive-digest";
+          db.prepare("UPDATE archives SET row_json=? WHERE run_id=?").run(JSON.stringify(archive), "run_upgrade");
+          if (oldFormat === undefined) db.prepare("DELETE FROM metadata WHERE key=?").run("format");
+          else db.prepare("UPDATE metadata SET value=? WHERE key=?").run(oldFormat, "format");
+        } finally { db.close(); }
+        expect(() => readListIndex(workspace, () => undefined)).toThrow(/format mismatch/);
+        // WebUI calls preparation before serving any library request.
+        await prepareListIndex(workspace);
+        const cached = readListIndex(workspace, db => ({
+          report: JSON.parse(db.prepare("SELECT row_json FROM reports WHERE run_id=?").get("run_upgrade").row_json),
+          format: db.prepare("SELECT value FROM metadata WHERE key=?").get("format").value,
+        }));
+        expect(cached.report.signature).toBe("ed25519:fixture");
+        expect(cached.format).toBe("2");
+        expect(list()).toMatchObject({ title: "Prepared spec", signature: "signed", archived: true, archive_sha256: "archive-digest" });
+        expect(sources.map(path => ({ bytes: readFileSync(path, "utf8"), stamp: statSync(path).mtimeMs }))).toEqual(before);
+      }
+      await prepareListIndex(workspace);
+      expect(list().signature).toBe("signed");
+      for (const [since, expected] of [
+        ["2026-11-13T10:04:59.000Z", ["run_upgrade"]],
+        ["2026-11-13T10:05:00.000Z", ["run_upgrade"]],
+        ["2026-11-13T10:05:01.000Z", []],
+      ] as const) {
+        const page = cli(["library", "list", "--kind", "check", "--since", since], "cache-test", workspace);
+        expect(page.rc, page.text).toBe(0);
+        expect(page.json.items.map((r: any) => r.id)).toEqual(expected);
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  }, 120000);
+
+  it("#278 round3-1: a sealed report WITHOUT a footer signature is legacy, not none", () => {
+    const reportsDir = join(home, "verify", "reports");
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(join(reportsDir, "run_liblegacy.json"), JSON.stringify({
+      run_id: "run_liblegacy", spec_id: "spec_lib1", overall: "PASS",
+      summary: { pass: 1, fail: 0, needs_material: 0, error: 0 },
+      started: "2026-11-13T11:00:00Z", finished: "2026-11-13T11:01:00Z",
+      verifier: { mode: "sealed" },
+    }));
+    rmSync(join(home, "verify", ".list-index.sqlite"), { force: true });
+    const page = cli(["library", "list", "--kind", "check"]).json;
+    const run = page.items.find((i: any) => i.id === "run_liblegacy");
+    expect(run, "legacy run row").toBeTruthy();
+    expect(run.signature).toBe("legacy");
+  }, 120000);
+
+  it("#278 review8: show returns the row plus body — note carries summary and body", () => {
+    const note = cli(["library", "list", "--kind", "note"]).json.items[0];
+    const show = cli(["library", "show", "note", note.id]).json;
+    expect(show.contract).toBe("ygl-library/1");
+    expect(typeof show.summary).toBe("string");
+    expect(typeof show.body).toBe("string");
+    expect(show.id).toBe(note.id);
+  });
+});
+
+describe("library MCP parity (#275)", () => {
+  let server: import("node:http").Server | null = null; let port = 0;
+  let oldEnv: NodeJS.ProcessEnv | undefined; let oldArgv = "";
+  beforeAll(async () => {
+    mkdirSyncUnderTmp();
+    cliRaw(["db", "init"]);
+    const { serveMcpHttp } = await import("../src/mcp.js");
+    oldEnv = process.env; oldArgv = process.argv[1]; process.argv[1] = BIN;
+    environment.YGL_HOME = home; process.env = environment as any;
+    server = serveMcpHttp("0.126.0", 0);
+    await (await import("node:events")).once(server, "listening");
+    port = (server.address() as any).port;
+  }, 120000);
+  afterAll(async () => {
+    if (server) { await new Promise<void>((r) => { server!.close(() => r()); (server as any).closeAllConnections(); }); }
+    if (oldEnv) process.env = oldEnv;
+    if (oldArgv) process.argv[1] = oldArgv;
+    try { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch {}
+  });
+
+  async function rpc(body: unknown): Promise<any> {
+    const http = await import("node:http");
+    return new Promise((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port, path: "/mcp", method: "POST", headers: { "content-type": "application/json" } },
+        (res) => { let out = ""; res.on("data", (d) => (out += d)); res.on("end", () => { try { resolve(JSON.parse(out)); } catch (e) { reject(e); } }); });
+      req.on("error", reject); req.end(JSON.stringify(body));
+    });
+  }
+
+  it("read domain library is listed; list+show round-trip through MCP; kb add passes tags/source_url; frontmatter note promotes without --force", async () => {
+    const tools = await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const readTool = tools.result.tools.find((t: any) => t.name === "read");
+    expect(readTool.inputSchema.properties.domain.enum).toContain("library");
+    const call = (args: any) => rpc({ jsonrpc: "2.0", id: Math.floor(Math.random() * 1e9), method: "tools/call", params: { name: "read", arguments: { domain: "library", ...args } } });
+    cliRaw(["kb", "add", "--title", "via-mcp-note", "--body", "text"]);
+    const list = await call({ action: "list", kind: "note" });
+    expect(list.result.isError ?? false).toBe(false);
+    const page = JSON.parse(list.result.content[0].text);
+    expect(page.contract).toBe("ygl-library/1");
+    const show = await call({ action: "show", kind: "note", id: page.items[0].id });
+    expect(JSON.parse(show.result.content[0].text).body).toBe("text");
+
+    // kb add via MCP carries tags + source_url (market writes a site-relative path)
+    const wcall = (domain: string, args: any) => rpc({ jsonrpc: "2.0", id: Math.floor(Math.random() * 1e9), method: "tools/call", params: { name: "write", arguments: { domain, ...args } } });
+    const addRes = await wcall("kb", { action: "add", name: "mcp fm note", body: "---\ncue: c\nlesson: l\nevidence: e\n---\n\nBody.", tags: "t1", source_url: "/decisions/9" });
+    if (addRes.result?.isError) console.log("KB-ADD-ERR:", JSON.stringify(addRes.result.content?.[0]?.text ?? addRes.result).slice(0, 300));
+    expect(addRes.result.isError ?? false).toBe(false);
+    const added = JSON.parse(addRes.result.content[0].text);
+    const shown = cli(["kb", "show", added.id]).json;
+    expect(shown.tags).toBe("t1");
+    expect(shown.source_url).toBe("/decisions/9");
+    // frontmatter with cue/lesson/evidence passes promote admission without --force
+    const prom = await wcall("kb", { action: "promote", id: added.id, name: "mcp-promoted-skill" });
+    expect(prom.result.isError ?? false).toBe(false);
+    const skills = await call({ action: "list", kind: "skill" });
+    const spage = JSON.parse(skills.result.content[0].text);
+    expect(spage.items).toHaveLength(1);
+    expect(spage.items[0].from_note).toBe(added.id);
+  }, 60000);
+});

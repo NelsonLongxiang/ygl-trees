@@ -15,6 +15,10 @@ Import from `@ygl/core-database` when you need db connection, schema, migration,
 
 `pg-workspace.ts` validates a credential-free target hash, checks `meta.backend_binding`, and atomically publishes the local `pg-binding.json` pointer after connecting to an explicitly migrated schema. PG business commands require `YGL_SESSION` or `DSH_SESSION_ID`; a bound home without its PG target refuses SQLite fallback. `getPgOrm()` stays `synchronize: false`. `requirePgColumns` checks identifier metadata required by the actual command, emits safe table.column diagnostics and never changes the schema. No ticker locking or exactly-once external effects are claimed.
 
+## Knowledge grant schema
+
+Schema v15 stores `scope TEXT NOT NULL DEFAULT ''` on `kb_notes` and `skills`. SQLite v14 and version-zero dump replays upgrade in place without inferring grants. PG uses the v15 `PG_UPGRADES` step; export/mirror paths retain the added column and no ORM synchronization is enabled.
+
 ## Further Exploration
 
 - [docs/plan.md](../../docs/plan.md) — architecture decisions and version history

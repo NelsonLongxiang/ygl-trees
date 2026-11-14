@@ -85,7 +85,7 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
 });
 
 describe("schema v14: v13 workspace upgrades in place, jobs kept intact (#258)", () => {
-  it("a v13 jobs table gains project_id/owner; PRAGMA user_version reports 14", () => {
+  it("a v13 jobs table gains project_id/owner and reaches the current schema", () => {
     process.env.YGL_TEST = "1";
     const dir = path.join(process.cwd(), "tmp", `v14-upgrade-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });

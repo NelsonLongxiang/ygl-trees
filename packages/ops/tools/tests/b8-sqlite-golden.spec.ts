@@ -120,11 +120,14 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
         expect(row.out).toBe(fixed);
         expect([legacy,fixed]).toContain(old.out);
         expect({...row,out:undefined}).toEqual({...old,out:undefined});
-      }else { // #276 v15: kb add receipts gain a deterministic scope field the frozen baseline predates — mask it like quote_verified
-          if (row.args[0]==="kb"&&["add","show","import","rescope","list"].includes(String(row.args[1]))&&row.rc===0) { // #276 v15: scope rides receipts the frozen baseline predates
-            try { const o=JSON.parse(row.out); if (o&&typeof o==="object") { delete o.scope; row.out=JSON.stringify(o,null,2)+String.fromCharCode(10); } } catch {}
-          }
-          expect(row).toEqual(old); }
+      } else if (row.args[0] === "kb" && ["add", "show"].includes(row.args[1]) && row.args.includes("--json") && row.rc === 0) {
+        // The frozen baseline predates the additive scope column; only its empty legacy value is allowed here.
+        const current = JSON.parse(row.out);
+        expect(current.scope).toBe("");
+        delete current.scope;
+        expect(JSON.stringify(current, null, 2) + String.fromCharCode(10)).toBe(old.out);
+        expect({ ...row, out: undefined }).toEqual({ ...old, out: undefined });
+      } else expect(row).toEqual(old);
     }
     expect(attachCount).toBe(2);
   }

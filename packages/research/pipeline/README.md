@@ -15,6 +15,10 @@ Import from `@ygl/research-pipeline` when you need research pipeline: query/sour
 
 `kbAdd` and `projectCreate` use the same `runTx` boundary on PG. `INSERT ... ON CONFLICT ... RETURNING` arbitrates concurrent duplicates; any lookup uses the transaction manager, not another client. Knowledge search input (`ngram`), the generated `ngram_tsv`, base rows and audit events commit or roll back together. Project selection uses only `current_project@<session>` (never the global pointer). Ordinary duplicates keep rc0; forced knowledge copies reuse contentHash(..., true) salts (the migrated PG column is NOT NULL). SQLite SQL and receipt shapes are retained.
 
+## Scope keys
+
+Schema v15 adds empty-default `scope` to notes and skills in SQLite and the explicit PG upgrade track. Add/import/ingest validate an exact market key; duplicates never change it. `kbRescope` selects by id and updates the grant plus an old/new event transactionally. Scope filters are applied before FTS ranking or list ordering; empty selects only unattributed rows, while omitted filters retain the prior list shape. Promotion copies scope, but ordinary skill upserts that omit it retain the existing grant.
+
 ## PG research writes (B8 batch 2)
 
 `sourceAdd`, `evidenceAdd`, `claimAdd` and their batch variants share the existing transaction service and input validation. A batch is one transaction: bad input is rejected before business writes; runtime failure rolls back the entire batch. Source/evidence `ngram` and generated `ngram_tsv` commit with base rows and events. Claims has no fulltext surface in either backend; no extra search columns or migration are introduced. `source add --query` validates and attaches in the same PG transaction; query add/attach/list are available in batch 3; query done stays unavailable. Scoped list/show remain read-only.

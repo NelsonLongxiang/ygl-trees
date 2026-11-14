@@ -53,11 +53,11 @@ export class AsyncResearchStore {
   }
 
   async kbGet(id: string): Promise<Row | null> {
-    return this.adb.get("SELECT id,title,body,source_url,origin,tags,confidence,reuse,content_hash,created,updated FROM kb_notes WHERE id=? OR title=?", [id, id]);
+    return this.adb.get("SELECT id,title,body,source_url,origin,tags,confidence,reuse,content_hash,scope,created,updated FROM kb_notes WHERE id=? OR title=?", [id, id]);
   }
 
-  async kbList(): Promise<Row[]> {
-    return this.adb.all("SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC");
+  async kbList(scope?: string): Promise<Row[]> {
+    return this.adb.all("SELECT id,title,tags,confidence,reuse,updated" + (scope === undefined ? "" : ",scope") + " FROM kb_notes" + (scope === undefined ? "" : " WHERE scope=?") + " ORDER BY reuse DESC, updated DESC", scope === undefined ? [] : [scope]);
   }
 
   async configValue(key: string, fallback: string): Promise<string> {
@@ -101,7 +101,7 @@ export class AsyncResearchStore {
   async artifactGet(id: string): Promise<Row | null> { this.guard(); return this.sync!.artifactGet(id); }
 
   // ================================================================ skills
-  async skillList(): Promise<Row[]> { this.guard(); return this.sync!.skillList(); }
+  async skillList(scope?: string): Promise<Row[]> { this.guard(); return this.sync!.skillList(scope); }
   async skillGet(name: string): Promise<Row | null> { this.guard(); return this.sync!.skillGet(name); }
   async skillMatch(q: string, limit?: number): Promise<Row[]> { this.guard(); return this.sync!.skillMatch(q, limit); }
 

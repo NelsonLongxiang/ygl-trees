@@ -10,7 +10,7 @@ import { assertNoPgPassword } from "./fixtures/pg-output-guard";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
-import { migrateToPg, PG_BASELINE_VERSION } from "../src/pgsync";
+import { migrateToPg, PG_BASELINE_VERSION, upgradePgSchema } from "../src/pgsync";
 
 const ROOT = resolve(__dirname, "../../../..");
 const BIN = join(ROOT, "dist/bundle/bin.cjs");
@@ -98,6 +98,44 @@ describe.skipIf(!adminUrl)("#176 W5b PG upgrade replay (real PG)", () => {
     expect(JSON.parse(r.out)).toMatchObject({ steps: [], indexes_created: [], duplicate: true });
     expect(await structure(baseline)).toEqual(before);
   }, 60000);
+
+  it("v14 notes and skills survive v15; PG scope filters and rescope match the CLI contract", async () => {
+    const target = await newDb("scope15");
+    await withClient(target, async c => {
+      await c.query(BASELINE);
+      await upgradePgSchema(c, 14);
+      await c.query("INSERT INTO kb_notes(id,title,body,content_hash,created,updated,ngram) VALUES('legacy-note','PG legacy note','old body','legacy-scope-hash','old','old','old body')");
+      await c.query("INSERT INTO skills(id,name,body,created,updated) VALUES('legacy-skill','PG legacy skill','old skill','old','old')");
+    });
+    const scopeHome = join(dir, "scope15-home");
+    const upgraded = cli(target, scopeHome, ["db", "upgrade", "--json"]);
+    expect(upgraded.rc, upgraded.text).toBe(0);
+    expect(JSON.parse(upgraded.out)).toMatchObject({ from: 14, to: 15, steps: [15], duplicate: false });
+    await withClient(target, async c => {
+      expect((await c.query("SELECT id,body,scope FROM kb_notes WHERE id='legacy-note'")).rows).toEqual([{id:"legacy-note",body:"old body",scope:""}]);
+      expect((await c.query("SELECT id,body,scope FROM skills WHERE id='legacy-skill'")).rows).toEqual([{id:"legacy-skill",body:"old skill",scope:""}]);
+      const cols = (await c.query("SELECT table_name,column_name,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN ('kb_notes','skills') AND column_name='scope' ORDER BY table_name")).rows;
+      expect(cols).toHaveLength(2);
+      expect(cols.every((r:any)=>r.is_nullable==="NO" && r.column_default==="''::text")).toBe(true);
+    });
+    const call = (args:string[],rc=0) => { const r=cli(target,scopeHome,[...args,"--json"]); expect(r.rc,r.text).toBe(rc); const body=JSON.parse(r.out); if(rc)expect(body).toEqual({error:expect.any(String)});return body; };
+    const a = call(["kb","add","--title","PG scope ops","--body","scope material","--scope=dept:ops"]);
+    call(["kb","add","--title","PG scope other","--body","other material","--scope=bench:other"]);
+    expect(call(["kb","list","--scope=dept:ops"]).map((r:any)=>r.id)).toEqual([a.id]);
+    expect(call(["kb","list","--scope="]).map((r:any)=>r.id)).toEqual(["legacy-note"]);
+    expect(call(["kb","show",a.id]).scope).toBe("dept:ops");
+    expect(call(["kb","add","--title","PG scope ops","--body","scope material","--scope=*"])).toMatchObject({id:a.id,scope:"dept:ops",duplicate:true});
+    call(["kb","add","--title","invalid scope","--body","b","--scope=dept:a b"],2);
+    expect(call(["kb","rescope",a.id,"--scope=restricted"]).scope).toBe("restricted");
+    expect(call(["kb","rescope",a.id,"--scope=restricted"]).duplicate).toBe(true);
+    call(["kb","rescope","missing-id","--scope=restricted"],1);
+    await withClient(target, async c=>{
+      const rows=(await c.query("SELECT payload FROM events WHERE kind='kb.rescope' AND entity_id=$1",[a.id])).rows;
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(rows[0].payload)).toMatchObject({old_scope:"dept:ops",new_scope:"restricted"});
+    });
+    const again=call(["db","upgrade"]);expect(again.duplicate).toBe(true);
+  }, 120000);
 
   it("the business face refuses an older or newer PG schema with no changes, and works at the current version", async () => {
     const target = await newDb("guard");

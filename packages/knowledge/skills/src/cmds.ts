@@ -22,6 +22,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   };
 
   const force = args.flags.force === true || args.flags.force === "true";
+  let scope: string | undefined;
+  if (args.flags.scope !== undefined) {
+    if (rejectBare(ctx, args.flags, ["scope"])) return 2;
+    try { scope = writes.validateScope(args.flags.scope); }
+    catch (e: any) { bad(ctx, e.message); return 2; }
+  }
 
   switch (action) {
     case "add": {
@@ -38,9 +44,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             title,
             body,
             tags: String(args.flags.tags || ""),
-            source_url: String(args.flags.url || ""),
+            source_url: String(args.flags["source-url"] || args.flags.url || ""), // #275: market 写站相对路径；--source-url 与 --url 同义
             confidence: String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"))),
-            scope: args.flags.scope !== undefined ? writes.validateScope(args.flags.scope) : "", // #276：validateScope 抛 rc2
+            scope: scope ?? "",
             force,
           })
         )
@@ -73,7 +79,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return env.pgUrl && !verify ? 1 : 0;
         })
         .catch((e: any): number => {
-          bad(ctx, env.pgUrl ? pgFailure() : e?.message || String(e));
+          bad(ctx, e?.rc === 2 ? e.message : env.pgUrl ? pgFailure() : e?.message || String(e));
           return typeof e?.rc === "number" ? e.rc : 1; // #276：校验类错误（rc2）原样透传
         });
     }
@@ -83,7 +89,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing query");
         return 2;
       }
-      const raw = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit")));
+      const raw = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit")), scope);
       // R15.1: semantic re-ranking via decision model (--eval)
       // 0.86 M7-1: re-rank goes through ctx.ops.semanticRank (Cordis service);
       // service missing (crash-safety boot) → fall back to raw FTS order.
@@ -125,19 +131,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return 0;
     }
     case "list":
-      // #276: --scope 过滤（空串选未归属）；无 flag 与旧版逐字节一致
-      if (args.flags.scope !== undefined) {
-        const sc = writes.validateScope(args.flags.scope);
-        if (env.pgUrl) return env.asyncStore.kbList().then((rows) => { console.log(JSON.stringify(rows.filter((r: any) => (r.scope || "") === sc))); return 0; });
-        const rows = store.kbList(sc);
-        if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
-        table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "updated"], ["id", "title", "tags", "confidence", "reuse", "updated"]);
-        return 0;
-      }
-      if (env.pgUrl) return env.asyncStore.kbList().then((rows) => {
+      if (env.pgUrl) return env.asyncStore.kbList(scope).then((rows) => {
         table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "updated"], ["id", "title", "tags", "confidence", "reuse", "updated"]); return 0;
       });
-      table(ctx, store.kbList(), ["id", "title", "tags", "conf", "reuse", "updated"], [
+      table(ctx, store.kbList(scope), ["id", "title", "tags", "conf", "reuse", "updated"], [
         "id",
         "title",
         "tags",
@@ -233,12 +230,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "ingest": {
       if (!rest[0]) {
-        bad(ctx, "usage: kb ingest <artifactId> [--force]");
+        bad(ctx, "usage: kb ingest <artifactId> [--scope <key>] [--force]");
         return 2;
       }
       const forceKb = args.flags.force === true || args.flags.force === "true";
       return getOrm(env.db.path)
-        .then((ds) => writes.kbIngestArtifact(ds, rest[0], forceKb))
+        .then((ds) => writes.kbIngestArtifact(ds, rest[0], forceKb, scope))
         .then((r): number => {
           writeResult(ctx, r as any, (row) => `artifact ingested into kb: ${row.id}  ${clip(row.title, 50)}`);
           return 0;
@@ -250,17 +247,17 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     }
     case "rescope": { // #276：改笔记 grant scope；--scope 必给（可空串=未归属）
       if (!rest[0] || args.flags.scope === undefined) {
-        bad(ctx, "usage: kb rescope <id|title> --scope <dept:id|bench:id|*|restricted|empty>");
+        bad(ctx, "usage: kb rescope <id> --scope <dept:id|bench:id|*|restricted|empty>");
         return 2;
       }
-      return getOrm(env.db.path)
+      return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
         .then(ds => writes.kbRescope(ds, rest[0], args.flags.scope))
         .then((r): number => {
           if (ctx.json) { console.log(JSON.stringify({ ...r.row, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
           out(ctx, `rescoped: ${r.row.title} -> ${r.row.scope || "(unattributed)"}`);
           return 0;
         })
-        .catch((e: any) => { bad(ctx, e?.message || String(e)); return typeof e?.rc === "number" ? e.rc : 1; });
+        .catch((e: any) => { bad(ctx, env.pgUrl && !(e instanceof PgCapabilityError) && e?.rc !== 2 ? pgFailure() : e?.message || String(e)); return typeof e?.rc === "number" ? e.rc : 1; });
     }
     case "promote": {
       if (!rest[0]) {
@@ -286,7 +283,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "import": {
       const target = rest[0];
       if (!target) {
-        bad(ctx, "usage: kb import <dir|file.md> [--tags ..]");
+        bad(ctx, "usage: kb import <dir|file.md> [--tags ..] [--scope <key>]");
         return 2;
       }
       let st;

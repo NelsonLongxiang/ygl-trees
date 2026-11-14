@@ -8,11 +8,13 @@ export YGL_TEST=1  # demo: skip DB lock
 # Isolated scratch home (P1-3, REVIEW-0.84.0): mktemp guarantees uniqueness even
 # when PID collides across shells/hosts; cleanup on exit. YGL_DEMO_HOME overrides
 # (kept — caller then owns the directory and its lifetime).
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$REPO/tmp"
 CREATED_HOME=0
 if [ -n "${YGL_DEMO_HOME:-}" ]; then
   export YGL_HOME="$YGL_DEMO_HOME"
 else
-  export YGL_HOME="$(mktemp -d "${TMPDIR:-/tmp}/ygl-demo.XXXXXX")"
+  export YGL_HOME="$(mktemp -d "$REPO/tmp/ygl-demo.XXXXXX")"
   CREATED_HOME=1
 fi
 cleanup() { [ "$CREATED_HOME" = 1 ] && rm -rf "$YGL_HOME" || true; }
@@ -20,7 +22,6 @@ trap cleanup EXIT
 # Exercise the SHIPPED entry: the tsdown bundle (single file) when built,
 # else the tsc tree (dev path). Both are the same code; the bundle is what
 # `pnpm build` + the published `bin` field deliver.
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -f "$REPO/dist/bundle/bin.cjs" ]; then
   Y="node $REPO/dist/bundle/bin.cjs --no-color"
 else
@@ -121,6 +122,24 @@ echo "── 5f. 0.79 feedback hardening (real-user report surfaces)"
 # ① kb receipt self-verify + workspace echo (lost-notes incident class)
 KBV=$($Y kb add --title "demo-verify" --body "receipt self-verify probe" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s);console.log(r.verified===true?'ok':'verified='+r.verified)})")
 case "$KBV" in ok) echo "  ✓ kb add receipt self-verified (verified:true)";; *) echo "  ✗ kb verify failed: $KBV"; exit 1;; esac
+# #275: market experience library — paged read-only feed over the four kinds; contract pinned in the envelope
+LIB=$($Y library list --kind note --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);console.log(p.contract==='ygl-library/1'&&p.items.length>0&&p.items[0].kind==='note'?'ok':'bad')})")
+[ "$LIB" = "ok" ] && echo "  ✓ library feed: contract ygl-library/1 + note rows (#275)" || { echo "  ✗ library feed: $LIB"; exit 1; }
+# Grant filters are exact and duplicates do not broaden a note's audience.
+$Y kb add --title "scope-demo" --body "scope-demo-material" --scope dept:ops --json > "$YGL_HOME/scope-add.json"
+SCOPE_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id' "$YGL_HOME/scope-add.json")
+$Y kb add --title "scope-demo" --body "scope-demo-material" --scope '*' --json > "$YGL_HOME/scope-dup.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),r=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.equal(r.scope,"dept:ops");a.equal(r.duplicate,true)' "$YGL_HOME/scope-dup.json"
+echo "  ✓ scope duplicate keeps dept:ops instead of broadening to company"
+$Y kb list --scope dept:ops --json > "$YGL_HOME/scope-list.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),r=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.deepEqual(r.map(x=>x.id),[process.argv[2]])' "$YGL_HOME/scope-list.json" "$SCOPE_ID"
+echo "  ✓ scope filter includes only the intended note"
+$Y kb rescope "$SCOPE_ID" --scope restricted --json > "$YGL_HOME/scope-change.json"
+$Y library list --kind note --scope restricted --json > "$YGL_HOME/scope-library.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),r=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.equal(r.total,1);a.equal(r.items[0].id,process.argv[2]);a.equal(r.items[0].scope,"restricted")' "$YGL_HOME/scope-library.json" "$SCOPE_ID"
+echo "  ✓ rescope is reflected by the library grant filter"
+$Y kb rm "$SCOPE_ID" >/dev/null
+
 # ④ claim link with a SOURCE id must teach the taxonomy, not just fail
 SRC4=$($Y db sql "SELECT source_id FROM evidence LIMIT 1" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s)[0].source_id))")
 CL4=$($Y research claim link "$C" "$SRC4" 2>&1 || true)
