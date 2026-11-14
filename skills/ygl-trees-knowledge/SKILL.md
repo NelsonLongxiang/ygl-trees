@@ -35,6 +35,12 @@ ygl-trees kb search "闭包表 索引" --eval     # 语义重排：决策模型�
 ygl-trees kb list
 ygl-trees kb show <id>
 ygl-trees kb rm <id>                         # 删除笔记
+ygl-trees kb add --title t --body b --scope dept:ops   # 授权范围（#276：dept:<id>|bench:<id>|*|restricted；空=未归属）
+ygl-trees kb rescope <id> --scope restricted           # 改范围（同值重跑 duplicate）
+ygl-trees kb list --scope ""                           # 只看未归属
+ygl-trees kb search "scope" --scope dept:ops             # 先按授权范围过滤再检索
+ygl-trees skill list --scope dept:ops                    # 技能沿用 promote 时的范围
+ygl-trees library list --kind note --scope dept:ops --json # 同一范围过滤，不猜授权含义
 ygl-trees library list --kind note --json   # 市场经验库只读出口（#275，contract ygl-library/1；四类 claim|note|skill|check，游标分页 + --since）
 ygl-trees db obsidian [dir]                  # 导出为 Obsidian vault
 ```

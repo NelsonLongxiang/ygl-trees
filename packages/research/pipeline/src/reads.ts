@@ -129,9 +129,10 @@ export class Store {
   }
 
   // ================================================================ skills
-  skillList(): Row[] {
+  skillList(scope?: string): Row[] {
     return this.db.all(
-      "SELECT name,description,version,enabled,hits,tags,updated FROM skills ORDER BY hits DESC, updated DESC"
+      "SELECT name,description,version,enabled,hits,tags,updated" + (scope === undefined ? "" : ",scope") + " FROM skills" + (scope === undefined ? "" : " WHERE scope=?") + " ORDER BY hits DESC, updated DESC",
+      scope === undefined ? [] : [scope]
     );
   }
 
@@ -181,19 +182,19 @@ export class Store {
     ]);
   }
 
-  kbSearch(q: string, limit = 20): Row[] {
+  kbSearch(q: string, limit = 20, scope?: string): Row[] {
     const rows = this.fts({
       table: "kb_fts",
       join: "kb_notes k ON k.id=f.id",
       idCol: "id",
-      cols: ["k.id", "k.title", "k.tags", "k.confidence", "k.reuse", "k.origin"],
-      where: "",
-      params: [],
+      cols: ["k.id", "k.title", "k.tags", "k.confidence", "k.reuse", "k.origin", ...(scope === undefined ? [] : ["k.scope"])],
+      where: scope === undefined ? "" : "k.scope=?",
+      params: scope === undefined ? [] : [scope],
       q,
       limit,
       boostExpr: "k.title", // title substring hits outrank same-hit rows (see fts doc)
       fallback: () =>
-        this.db.all("SELECT id,title,tags,confidence FROM kb_notes WHERE title LIKE ? LIMIT ?", [`%${q}%`, limit]),
+        this.db.all("SELECT id,title,tags,confidence" + (scope === undefined ? "" : ",scope") + " FROM kb_notes WHERE title LIKE ?" + (scope === undefined ? "" : " AND scope=?") + " LIMIT ?", scope === undefined ? [`%${q}%`, limit] : [`%${q}%`, scope, limit]),
     });
     // single-statement reuse bump: N per-row UPDATEs would mean N implicit
     // transactions (N VFS fsyncs) per search — benchmarked 20x slower (0.23.0)
@@ -207,9 +208,16 @@ export class Store {
     return rows;
   }
 
-  kbList(): Row[] {
+  /** #276: --scope 过滤（''=未归属行）；无 flag 输出与旧版逐字节一致。 */
+  kbList(scope?: string): Row[] {
+    if (scope === undefined) {
+      return this.db.all(
+        "SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC"
+      );
+    }
     return this.db.all(
-      "SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC"
+      "SELECT id,title,tags,confidence,reuse,updated,scope FROM kb_notes WHERE scope=? ORDER BY reuse DESC, updated DESC",
+      [scope]
     );
   }
 

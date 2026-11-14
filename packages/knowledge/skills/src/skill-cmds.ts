@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { Env } from "../../../core/database/src/types";
 import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
 import { parseFrontmatter } from "../../../core/text/src/text";
+import { rejectBare } from "../../../core/text/src/flagcheck";
 import { getOrm } from "../../../core/database/src/orm";
 import * as writes from "../../../research/pipeline/src/writes";
 
@@ -186,7 +187,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "list":
-      table(ctx, store.skillList(), ["name", "ver", "on", "hits", "tags", "updated"], [
+      if (rejectBare(ctx, args.flags, ["scope"])) return 2;
+      let scope: string | undefined;
+      if (args.flags.scope !== undefined) {
+        try { scope = writes.validateScope(args.flags.scope); } catch (e: any) { bad(ctx, e.message); return 2; }
+      }
+      table(ctx, store.skillList(scope), ["name", "ver", "on", "hits", "tags", "updated"], [
         "name",
         "version",
         "enabled",

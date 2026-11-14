@@ -32,14 +32,14 @@ export interface Env {
     claimList(projectId: string): Promise<any[]>;
     artifactList(projectId: string): Promise<any[]>;
     artifactGet(id: string): Promise<any | null>;
-    skillList(): Promise<any[]>;
+    skillList(scope?: string): Promise<any[]>;
     skillGet(name: string): Promise<any | null>;
     skillMatch(q: string, limit?: number): Promise<any[]>;
     tail(limit?: number): Promise<any[]>;
     queryDone(id: string): Promise<void>;
     stats(): Promise<Record<string, number>>;
     kbGet(id: string): Promise<any | null>;
-    kbList(): Promise<any[]>;
+    kbList(scope?: string): Promise<any[]>;
     configValue(key: string, fallback: string): Promise<string>;
     metaGet(key: string): Promise<string>;
     query(sql: string, params?: unknown[]): Promise<any[]>;

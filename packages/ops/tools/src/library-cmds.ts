@@ -7,6 +7,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   const ctx = env.ctx;
   try {
     if (action === "list") {
+      if (args.flags.scope === true) { bad(ctx, "--scope needs a value"); return 2; }
       const kind = String(args.flags.kind || rest[0] || "");
       if (!LIBRARY_KINDS.includes(kind as LibraryKind)) {
         bad(ctx, "usage: library list --kind <" + LIBRARY_KINDS.join("|") + "> [--scope <s>] [--since <iso>] [--limit 1..500] [--cursor <c>]");

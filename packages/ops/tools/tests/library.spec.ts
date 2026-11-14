@@ -121,10 +121,11 @@ describe("library feed (#275)", () => {
     }
   });
 
-  it("#278 review4: --scope before #276 is rc 2, never silently ignored", () => {
+  it("scope filtering is explicit and unsupported kinds cannot silently ignore it", () => {
     const r = cli(["library", "list", "--kind", "note", "--scope", "dept:x"]);
-    expect(r.rc).toBe(2);
-    expect(r.json.error).toContain("#276");
+    expect(r.rc, r.text).toBe(0);
+    expect(r.json.items).toEqual([]);
+    expect(cli(["library", "list", "--kind", "check", "--scope", "dept:x"]).rc).toBe(2);
   });
 
   it("#278 review5: show skill refuses bundled and unknown with rc 1", () => {

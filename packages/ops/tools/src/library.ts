@@ -8,6 +8,7 @@
 import type { Env } from "../../../core/database/src/types";
 import { readListIndex, prepareListIndex } from "./verify-list-index";
 import { strictIsoTimestamp, AsOfError } from "./as-of";
+import { validateScope } from "../../../core/text/src/scope";
 
 export const LIBRARY_CONTRACT = "ygl-library/1";
 
@@ -81,8 +82,8 @@ export function firstParagraph(body: string, cut = 200): string {
   return para.length > cut ? para.slice(0, cut) : para;
 }
 
-/** note scope: #276 lands the column; until then scope is absent (never ""). */
-function noteScope(_row: any): string | undefined { return undefined; }
+/** Empty grants are unattributed and omitted from the library projection. */
+function noteScope(row: any): string | undefined { return row.scope || undefined; }
 
 function claimRows(db: any, since: string | null, projectFilter?: string): LibraryRow[] {
   const clauses: string[] = []; const params: string[] = [];
@@ -105,11 +106,12 @@ function claimRows(db: any, since: string | null, projectFilter?: string): Libra
   });
 }
 
-function noteRows(db: any, since: string | null): LibraryRow[] {
+function noteRows(db: any, since: string | null, scope?: string): LibraryRow[] {
   const clauses: string[] = []; const params: string[] = [];
   if (since) { clauses.push("updated >= ?"); params.push(since); }
+  if (scope !== undefined) { clauses.push("scope = ?"); params.push(scope); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  return (db.all("SELECT id,title,body,tags,confidence,source_url,created,updated FROM kb_notes" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
+  return (db.all("SELECT id,title,body,tags,confidence,source_url,scope,created,updated FROM kb_notes" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
     const row: LibraryRow = {
       kind: "note", id: r.id, title: r.title,
       summary: firstParagraph(r.body),
@@ -124,12 +126,13 @@ function noteRows(db: any, since: string | null): LibraryRow[] {
   });
 }
 
-function skillRows(db: any, since: string | null): LibraryRow[] {
+function skillRows(db: any, since: string | null, scope?: string): LibraryRow[] {
   // bundled 技能在表内（origin=builtin:*，db init 预置）；只暴露 promoted（origin=kb:<noteId>）。
   const clauses: string[] = ["origin LIKE 'kb:%'"]; const params: string[] = [];
   if (since) { clauses.push("updated >= ?"); params.push(since); }
+  if (scope !== undefined) { clauses.push("scope = ?"); params.push(scope); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  return (db.all("SELECT id,name,version,description,tags,origin,enabled,hits,created,updated FROM skills" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
+  return (db.all("SELECT id,name,version,description,tags,origin,enabled,hits,scope,created,updated FROM skills" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
     const m = /^kb:(.+)$/.exec(r.origin || "");
     const row: LibraryRow = {
       kind: "skill", id: r.id, title: r.name,
@@ -138,6 +141,7 @@ function skillRows(db: any, since: string | null): LibraryRow[] {
       created: r.created, updated: r.updated,
       from_note: m ? m[1] : null,
     };
+    const scope = noteScope(r); if (scope) row.scope = scope;
     if (r.version) row.version = r.version; // review⑥
     if (r.tags) row.tags = r.tags;
     return row;
@@ -206,10 +210,10 @@ async function ensureIndex(env: Env): Promise<void> {
 export async function libraryList(env: Env, o: {
   kind: LibraryKind; limit?: string; cursor?: string; since?: string; scope?: string; project?: string;
 }): Promise<LibraryPage> {
-  // #278 review④：#276 落地前 --scope 必须 rc 2——静默忽略等于访问泄漏
-  if (o.scope !== undefined && o.scope !== "") throw new LibraryUsageError("scope filter needs #276 (the kb/skill scope column is not shipped yet)");
+  if (o.scope !== undefined && o.kind !== "note" && o.kind !== "skill") throw new LibraryUsageError("scope filter applies only to note and skill");
+  const scope = o.scope === undefined ? undefined : validateScope(o.scope);
   const since = parseSince(o.since);
-  const scopeKey = [o.kind, o.since ?? "", o.scope ?? "", o.project ?? ""].join("|");
+  const scopeKey = JSON.stringify([o.kind, o.since ?? null, scope ?? null, o.project ?? null]);
   const { limit, after } = pagination(o.limit, o.cursor, scopeKey);
   let total: number;
   const count = (r: LibraryRow[]) => r.length; // in-memory counts are fine for workspace scale
@@ -227,8 +231,8 @@ export async function libraryList(env: Env, o: {
   const db = env.db as any;
   const all =
     o.kind === "claim" ? claimRows(db, since, o.project) :
-    o.kind === "note" ? noteRows(db, since) :
-    skillRows(db, since);
+    o.kind === "note" ? noteRows(db, since, scope) :
+    skillRows(db, since, scope);
   const filtered = after ? all.filter((r) => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
   total = all.length;
   return pageEnvelope(filtered, total, limit, scopeKey);
@@ -260,6 +264,7 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
     if (r.tags) out.tags = r.tags;
     if (typeof r.confidence === "string" && r.confidence.trim()) out.confidence = r.confidence;
     if (r.source_url) out.source_url = r.source_url;
+    const scope = noteScope(r); if (scope) out.scope = scope;
     return out;
   }
   if (kind === "skill") {
@@ -269,6 +274,7 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
     const m = /^kb:(.+)$/.exec(r.origin || "");
     const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.name, status: r.enabled ? "enabled" : "disabled", created: r.created, updated: r.updated, body: r.body, from_note: m ? m[1] : null };
     if (r.tags) out.tags = r.tags;
+    const scope = noteScope(r); if (scope) out.scope = scope;
     return out;
   }
   // check show：run 行（一 run 一行）；body=row_json 去掉本地路径（review①：data_source.source 不出口）

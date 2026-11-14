@@ -31,6 +31,7 @@ tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ```
 read   → 一切读面：{domain: "agent|kb|tree|node|task|rel|research|produce|project|db|skill|library", action: "brief|search|state|list|can|ready|path|ancestors|descendants|validate|...", ...}
 # library（#275）：市场经验库只读出口——library list --kind <claim|note|skill|check> [--since|--limit|--cursor]，contract "ygl-library/1"
+# scope（#276）：read kb list/search、skill list、library note/skill list 支持 scope；write kb add/ingest/rescope 支持同名键；""=未归属，非 public
 write  → 一切写面：{domain: "research|kb|tree|task|rel|project|produce", action: "query-add|source-add|node-add|node-unlock|node-lock|attach|outline|section|spec|design|export|promote|ingest|...", ...}
 verify → 验证管线：{action: "submit|prepare|run|report|trace|archive|meta|lint-candidates|example|tree-prepare|tree-run|tree-report|tree-trace", a: ..., b: ..., c: ..., db: ...}
 （source-fetch 有网络副作用，默认拒绝；服务端 YGL_MCP_SOURCE_FETCH=1 才放行）

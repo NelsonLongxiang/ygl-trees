@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 /** #51: ONE SQLite driver for every write path. The wasm driver's Node VFS
  *  implements its own lock protocol that native SQLite (better-sqlite3, used
@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS skills (
   origin      TEXT DEFAULT '',            -- where it came from (path/repo)
   enabled     INTEGER NOT NULL DEFAULT 1,
   hits        INTEGER NOT NULL DEFAULT 0, -- how often an agent matched it
+  scope       TEXT NOT NULL DEFAULT '',  -- v15 (#276): 同 kb_notes.scope 词表
   created     TEXT NOT NULL,
   updated     TEXT NOT NULL
 );
@@ -221,6 +222,7 @@ CREATE TABLE IF NOT EXISTS kb_notes (
   confidence    TEXT NOT NULL DEFAULT 'B',
   reuse         INTEGER NOT NULL DEFAULT 0,
   content_hash  TEXT NOT NULL DEFAULT '',  -- sha1(title+body): idempotent writes
+  scope         TEXT NOT NULL DEFAULT '',  -- v15 (#276): 市场授权范围 dept:<id>|bench:<id>|*|restricted；空=未归属
   created       TEXT NOT NULL,
   updated       TEXT NOT NULL
 );
@@ -784,6 +786,7 @@ export class DB {
       if ((v > 0 && v < 12) || (v === 0 && tablesPreExist)) this.upgrade11to12();
       if ((v > 0 && v < 13) || (v === 0 && tablesPreExist)) this.upgrade12to13();
       if ((v > 0 && v < 14) || (v === 0 && tablesPreExist)) this.upgrade13to14();
+      if ((v > 0 && v < 15) || (v === 0 && tablesPreExist)) this.upgrade14to15();
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
       // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
@@ -843,6 +846,17 @@ export class DB {
     if (!hasProject) this.db.exec(`ALTER TABLE jobs ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`);
     const hasOwner = this.get("SELECT 1 FROM pragma_table_info('jobs') WHERE name='owner'");
     if (!hasOwner) this.db.exec(`ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT ''`);
+  }
+
+  /** v14 -> v15 (#276): kb_notes and skills gain a market grant scope. Legacy rows keep the
+   *  empty-string default = unattributed; nothing is backfilled or guessed. */
+  private upgrade14to15(): void {
+    for (const t of ["kb_notes", "skills"]) {
+      const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name=?", [t]);
+      if (!hasTable) continue;
+      const has = this.get(`SELECT 1 FROM pragma_table_info('${t}') WHERE name='scope'`);
+      if (!has) this.db.exec(`ALTER TABLE ${t} ADD COLUMN scope TEXT NOT NULL DEFAULT ''`);
+    }
   }
 
   /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine

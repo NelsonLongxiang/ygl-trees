@@ -21,6 +21,10 @@ MCP write maps kb add to `--title` plus exactly one body/file source, rel attach
 
 HTTP MCP snapshots its startup environment and derives a separate child environment per request. `X-YGL-Session` overrides only that request; absent headers use the startup session. The handler never assigns process.env. Legitimate PG credentials remain in the controlled child environment, not argv, JSON or diagnostics; request isolation and argv safety are separate checks.
 
+## Scope-filtered knowledge
+
+MCP `read kb list/search`, `read skill list` and `read library list` (note/skill) forward an exact `scope`. Omitted leaves the list unfiltered; empty remains an explicit unattributed filter. `write kb add/ingest/rescope` use the same syntax validation and exit categories as the CLI. Library responses omit empty scope rather than presenting it as public, and cursors are bound to the selected kind, scope and since filter.
+
 ## Verifier HTTP lists
 
 `verify-list` queries the derived `verify/.list-index.sqlite` summary index by spec and stable cursor. Report/archive pages return `items/total/next_cursor`, default200/max500. The server prepares/reconciles legacy files before readiness, not on an HTTP list request. Official report/sidecar writes update summaries; filename watchers maintain external changes without periodic whole-directory stat scans. Source JSON remains authoritative; no business schema/export/migration changes. Preparation refreshes every source record when the cache format is missing or outdated, even if file stamps are unchanged; the format key is published only after reconciliation finishes. Use `firstReportPage/firstArchivePage` for at most200rows; use page APIs for cursors. Changing/incomplete source records remain pending; stable invalid JSON or mismatched records are recorded in the derived `excluded` table with kind/id/stamp/reason and omitted without failing usable lists. Valid rewrites remove the exclusion. Missing/corrupt SQLite index or watcher IO faults remain explicit failures, never an implicit list-time full scan. Close waits for watchers and preparation to finish.

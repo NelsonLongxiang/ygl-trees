@@ -184,6 +184,12 @@ flag_reject() { # flag_reject <desc> -- cmd...
   fi
 }
 
+# scope shares the same rc/JSON failure contract across the command projections.
+json_err "kb scope invalid" 2 -- $Y kb add --title scope-rejected --body B --scope dept:
+json_err "kb scope bare" 2 -- $Y kb add --title scope-rejected --body B --scope
+json_err "kb rescope unknown" 1 -- $Y kb rescope no-such-scope-note --scope restricted
+json_err "library scope malformed" 2 -- $Y library list --kind note --scope 'dept:a b'
+
 echo "── contract 6: flag validation (bare + enum → rc=2, no write)"
 flag_reject "source --abstract (bare)"   -- $Y research source add --title T --url https://e.com/v --abstract
 flag_reject "claim --confidence (bare)"  -- $Y research claim add T --confidence

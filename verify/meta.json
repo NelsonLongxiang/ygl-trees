@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "71b95a9d93f12a63627d457300627e6cef2f4d83ce23f9bfd9e91b267b87fe00",
+      "sha256": "fba37f1053703a32150dcc5c6435c5cfd7c23f38654d73bfe4fce5750001d564",
       "role": "test"
     },
     {
@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "aa152aad3cb7feb9e69301eabbbfc2a5488918817cd6f5c8021227ae8cb6b879",
+      "sha256": "c4cd0dc2ece22a61ae4f2429ca9503c9b453243f2b78cb924849f5200b76ae2f",
       "role": "gate"
     },
     {
@@ -1482,6 +1482,22 @@
       "reason": "#278: merge master (v14 #277) into feat/275-library — union of job + library assertions",
       "actor": "dev-seat",
       "at": "2026-11-13T16:47:29.166Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "71b95a9d93f12a63627d457300627e6cef2f4d83ce23f9bfd9e91b267b87fe00",
+      "new_sha256": "fba37f1053703a32150dcc5c6435c5cfd7c23f38654d73bfe4fce5750001d564",
+      "reason": "#276: scoped knowledge smoke assertions and project-local demo scratch",
+      "actor": "dev-seat",
+      "at": "2026-11-14T03:55:48.104Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "aa152aad3cb7feb9e69301eabbbfc2a5488918817cd6f5c8021227ae8cb6b879",
+      "new_sha256": "c4cd0dc2ece22a61ae4f2429ca9503c9b453243f2b78cb924849f5200b76ae2f",
+      "reason": "#276: scope malformed/bare/not-found JSON rc contracts",
+      "actor": "dev-seat",
+      "at": "2026-11-14T03:55:48.176Z"
     }
   ],
   "kind": "engine",
