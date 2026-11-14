@@ -197,14 +197,7 @@ async function specTitleMap(home: string): Promise<Record<string, string>> {
 /** CLI 面必须自备索引（review①）：未备则先调和再读。 */
 async function ensureIndex(env: Env): Promise<void> {
   try { readListIndex(env.home, () => undefined); }
-  catch (e: any) {
-    // round3②：格式失配（旧索引缺 signature 等）——删缓存强制全量重建
-    if (String(e?.message || e).includes("format mismatch")) {
-      const { existsSync, rmSync } = await import("node:fs");
-      const { join } = await import("node:path");
-      const p = join(env.home, "verify", ".list-index.sqlite");
-      if (existsSync(p)) rmSync(p, { force: true });
-    }
+  catch {
     await prepareListIndex(env.home);
     readListIndex(env.home, () => undefined);
   }

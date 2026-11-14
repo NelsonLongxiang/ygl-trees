@@ -1,7 +1,10 @@
 /** #275 library: market experience library read-only feed (CLI + MCP parity). */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+// @ts-ignore — runtime dependency has no in-repo type declarations.
+import Sqlite from "better-sqlite3";
+import { prepareListIndex, readListIndex } from "../src/verify-list-index";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -11,9 +14,9 @@ const BIN = join(ROOT, "dist/apps/cli/src/bin.js");
 let home = "";
 const environment = { ...process.env, YGL_HOME: "", YGL_DB_URL: "", YGL_PG_URL: "", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1" };
 
-function cli(args: string[], session = "lib-test"): { rc: number | null; json: any; text: string } {
+function cli(args: string[], session = "lib-test", workspace = home): { rc: number | null; json: any; text: string } {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { encoding: "utf8", timeout: 60000,
-    env: { ...environment, YGL_HOME: home, YGL_SESSION: session } });
+    env: { ...environment, YGL_HOME: workspace, YGL_SESSION: session } });
   let json: any = null;
   try { json = r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { /* human face */ }
   return { rc: r.status, json, text: r.stdout + r.stderr };
@@ -192,6 +195,81 @@ describe("library feed (#275)", () => {
     const run = page.items.find((i: any) => i.id === "run_lib1");
     expect(run, "run row after rebuild").toBeTruthy();
     expect(run.signature).toBe("signed");
+  }, 120000);
+
+  it("old-format indexes refresh unchanged reports before WebUI publishes readiness", async () => {
+    const scratchRoot = join(ROOT, "tmp", "278-cache-upgrade");
+    mkdirSync(scratchRoot, { recursive: true });
+    const workspace = mkdtempSync(join(scratchRoot, "webui-first-"));
+    try {
+      expect(cli(["db", "init"], "cache-test", workspace).rc).toBe(0);
+      const root = join(workspace, "verify");
+      const reportsDir = join(root, "reports");
+      const archivesDir = join(root, "archives");
+      const specDir = join(root, "specs", "spec_upgrade");
+      for (const dir of [reportsDir, archivesDir, specDir]) mkdirSync(dir, { recursive: true });
+      const reportPath = join(reportsDir, "run_upgrade.json");
+      const archivePath = join(archivesDir, "run_upgrade.json");
+      const specPath = join(specDir, "spec.json");
+      writeFileSync(specPath, JSON.stringify({ spec_id: "spec_upgrade", title: "Prepared spec" }));
+      writeFileSync(reportPath, JSON.stringify({
+        run_id: "run_upgrade", spec_id: "spec_upgrade", overall: "PASS",
+        summary: { pass: 1, fail: 0, needs_material: 0, error: 0 },
+        started: "2026-11-13T10:00:00.000Z", finished: "2026-11-13T10:05:00.000Z",
+        verifier: { mode: "sealed" }, signature: "ed25519:fixture", signing_scheme: "ed25519",
+      }));
+      writeFileSync(archivePath, JSON.stringify({ run_id: "run_upgrade", archives: [{
+        archive_id: "archive_upgrade", filename: "upgrade.yglverify.zip", created: "2026-11-13T10:06:00.000Z",
+        archive_sha256: "archive-digest", zip_sha256: "zip-digest", with: [],
+      }] }));
+      const sources = [reportPath, archivePath, specPath];
+      const before = sources.map(path => ({ bytes: readFileSync(path, "utf8"), stamp: statSync(path).mtimeMs }));
+      const list = () => {
+        const result = cli(["library", "list", "--kind", "check"], "cache-test", workspace);
+        expect(result.rc, result.text).toBe(0);
+        expect(result.json.items).toHaveLength(1);
+        return result.json.items[0];
+      };
+      expect(list()).toMatchObject({ title: "Prepared spec", signature: "signed", archived: true, archive_sha256: "archive-digest" });
+      const indexPath = join(root, ".list-index.sqlite");
+      for (const oldFormat of [undefined, "1"]) {
+        const db = new Sqlite(indexPath);
+        try {
+          const cached = JSON.parse(db.prepare("SELECT row_json FROM reports WHERE run_id=?").get("run_upgrade").row_json);
+          delete cached.signature; delete cached.signing_scheme;
+          db.prepare("UPDATE reports SET row_json=? WHERE run_id=?").run(JSON.stringify(cached), "run_upgrade");
+          const archive = JSON.parse(db.prepare("SELECT row_json FROM archives WHERE run_id=?").get("run_upgrade").row_json);
+          archive.archive_sha256 = "stale-archive-digest";
+          db.prepare("UPDATE archives SET row_json=? WHERE run_id=?").run(JSON.stringify(archive), "run_upgrade");
+          if (oldFormat === undefined) db.prepare("DELETE FROM metadata WHERE key=?").run("format");
+          else db.prepare("UPDATE metadata SET value=? WHERE key=?").run(oldFormat, "format");
+        } finally { db.close(); }
+        expect(() => readListIndex(workspace, () => undefined)).toThrow(/format mismatch/);
+        // WebUI calls preparation before serving any library request.
+        await prepareListIndex(workspace);
+        const cached = readListIndex(workspace, db => ({
+          report: JSON.parse(db.prepare("SELECT row_json FROM reports WHERE run_id=?").get("run_upgrade").row_json),
+          format: db.prepare("SELECT value FROM metadata WHERE key=?").get("format").value,
+        }));
+        expect(cached.report.signature).toBe("ed25519:fixture");
+        expect(cached.format).toBe("2");
+        expect(list()).toMatchObject({ title: "Prepared spec", signature: "signed", archived: true, archive_sha256: "archive-digest" });
+        expect(sources.map(path => ({ bytes: readFileSync(path, "utf8"), stamp: statSync(path).mtimeMs }))).toEqual(before);
+      }
+      await prepareListIndex(workspace);
+      expect(list().signature).toBe("signed");
+      for (const [since, expected] of [
+        ["2026-11-13T10:04:59.000Z", ["run_upgrade"]],
+        ["2026-11-13T10:05:00.000Z", ["run_upgrade"]],
+        ["2026-11-13T10:05:01.000Z", []],
+      ] as const) {
+        const page = cli(["library", "list", "--kind", "check", "--since", since], "cache-test", workspace);
+        expect(page.rc, page.text).toBe(0);
+        expect(page.json.items.map((r: any) => r.id)).toEqual(expected);
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
   }, 120000);
 
   it("#278 round3-1: a sealed report WITHOUT a footer signature is legacy, not none", () => {

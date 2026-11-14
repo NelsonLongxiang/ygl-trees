@@ -114,6 +114,8 @@ export async function prepareListIndex(home:string):Promise<void> {
   const root=join(home,"verify"),db=open(root),dirtyFile=join(root,".list-index-dirty");
   const dirty=existsSync(dirtyFile)?readFileSync(dirtyFile,"utf8"):null;
   try {
+    const format=(db.prepare("SELECT value FROM metadata WHERE key='format'").get() as any)?.value;
+    const refreshAll=format!=="2";
     for(const kind of ["reports","archives"]){
       mkdirSync(join(root,kind),{recursive:true});
       const names=(await readdir(join(root,kind))).filter(f=>f.endsWith(".json")&&ID.test(f.slice(0,-5)));
@@ -125,7 +127,7 @@ export async function prepareListIndex(home:string):Promise<void> {
       }})();
       for(let i=0;i<names.length;i+=32){
         const rows=await Promise.all(names.slice(i,i+32).map(async n=>{
-          const s=await fileStamp(join(root,kind,n));if(!dirty&&prior.get(n.slice(0,-5))===s)return null;
+          const s=await fileStamp(join(root,kind,n));if(!dirty&&!refreshAll&&prior.get(n.slice(0,-5))===s)return null;
           return readRecord(root,kind,n);
         }));
         db.transaction(()=>{for(const row of rows)if(row){
@@ -134,7 +136,7 @@ export async function prepareListIndex(home:string):Promise<void> {
         }})();
       }
     }
-    // #278 round3②：格式版本键——readListIndex 失配即拒绝缓存读，调用方重建后全量刷新
+    // Publish the new format only after unchanged source files have also been re-derived.
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('format','2')").run();
     db.prepare("INSERT OR REPLACE INTO metadata VALUES('ready','1')").run();
     if(dirty&&existsSync(dirtyFile)&&readFileSync(dirtyFile,"utf8")===dirty)unlinkSync(dirtyFile);
