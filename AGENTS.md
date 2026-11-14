@@ -25,7 +25,7 @@ packages/         领域模块（库代码，可被 apps 组合；pnpm workspace
 
 apps/             应用入口（workspace 包：各带 package.json 声明依赖图）
   cli/              CLI 应用（@ygl/cli；src/bin.ts 即可执行文件：shebang+自执行，rc 契约在此；profile-boot/startup-diagnostics/process-shutdown/plugin 同 DSH）
-  web/              React 富客户端（xyflow 树视图，spec R13.5；CLI 内嵌零依赖 dashboard 保留）
+  web/              React 富客户端（xyflow 树视图，spec R13.5；唯一前端，dist 由 webui serve 托管）
 
 （发布单元 = 仓库根 ygl-trees：dist/ 运行时从根 node_modules 解析，根 package.json 须保留 dist 用到的运行时依赖——包内声明是依赖图真相，根声明是发布面需求，两者并存）
 
@@ -103,7 +103,7 @@ docs/CHANGELOG-archive-2026-10-20.md / -2026-10-23.md  CHANGELOG 历史归档（
 docs/conventions.md    数据模型应用规范
 docs/pg-compat.md      PG 兼容方案（L2 已取消）
 docs/layout.md         目录层级规划
-docs/webui-design.md   WebUI 方案（React 客户端 + 内嵌 dashboard + SSE 实时通道）
+docs/webui-design.md   WebUI 方案（React 客户端 + SSE 实时通道；内嵌 dashboard 已退役）
 docs/release.md        发布流程（pack:check 门禁 / pnpm publish 纪律 / Windows shim 陷阱）
 docs/bun-compat.md     Bun 目标运行时兼容方案（Windows 受阻，含最小复现与迁移清单）
 docs/plugin-authoring.md  用户插件编写指南（契约 / profile / config-enable / 故障排查）

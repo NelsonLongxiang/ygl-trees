@@ -270,7 +270,7 @@ ygl-trees plugin disable my-domain-plugin              # 保留安装，启动�
 ygl-trees plugin list                                  # 版本 / 状态 / config / 可解析态
 ```
 
-- 契约：`export apply(ctx, config)`（可用 `ctx.database / ctx.research / ctx.techtree / ctx.webApp`）+ `export commands = { <组名>: { run } }`
+- 契约：`export apply(ctx, config)`（可用 `ctx.database / ctx.research / ctx.ops`，base bundle 只提供这三个服务）+ `export commands = { <组名>: { run } }`
 - 逐插件隔离：单个插件加载失败不影响其余，汇总进启动诊断（报告落 `$YGL_HOME/logs/startup-<uuid>.log`）
 - 安装走文件锁；名字按依赖键差集精确解析；`YGL_PACKAGE_MANAGER` 可换包管理器
 - 示例与指南：[examples/plugin-demo](examples/plugin-demo) · [docs/plugin-authoring.md](docs/plugin-authoring.md)

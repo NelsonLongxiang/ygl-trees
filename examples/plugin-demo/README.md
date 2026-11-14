@@ -25,7 +25,7 @@ ygl-trees plugin remove ygl-plugin-demo
 
 | 导出 | 必填 | 语义 |
 |---|---|---|
-| `apply(ctx, config)` | 否 | Cordis 插件体——可用 `ctx.database / ctx.research / ctx.techtree / ctx.webApp` |
+| `apply(ctx, config)` | 否 | Cordis 插件体——可用 `ctx.database / ctx.research / ctx.ops`（base bundle 只提供这三个服务） |
 | `commands` | 否 | `{ <组名>: { run(env, action, rest, args) → rc } }`——贡献 CLI 命令组 |
 
 以下为 v0.117.x 当前实现行为：`args = { _: string[], flags: Record<string, string | boolean | string[]> }`；`args._` 含 group/action，`action` 单独传入，`rest = args._.slice(2)` 不含 action。`greet` 从 `args.flags.name` 读值，优先于 `rest[0]`，省略用 world；裸 `--name` 或空字符串返回 rc2。普通重复键取末值，只有 attach/db 这两个当前指定键收数组；`--k=v` 值为字符串，`--` 结束旗标解析。**解析细节 unstable，非冻结契约**；四参数签名为已声明接口。完整布尔/重复/边界例子见[插件指南](../../docs/plugin-authoring.md#run-的参数与旗标当前实现unstable)。

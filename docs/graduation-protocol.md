@@ -15,11 +15,11 @@
 
 一个研究成果「毕业」为执行规则，须在 ygl 侧形成：
 
-1. **断言终态**：`claim resolve <id> --as supported`（人审仲裁，证据齐）。
+1. **断言终态**：`research claim resolve <id> --as supported`（人审仲裁，证据齐）。
 2. **SOP 源登记**：`research source add <执行侧SOP引用> --tags sop` —— tags=sop 即毕业候选的机器可检索标记（T4 裁定：零 schema，不用 v13）。
 3. **执行织物**：`rel add node:<tree>/<key> source:<id> --rel executes` —— 树节点（能力位）↔ SOP 源（执行体）的 executes 边；同节点已有 evidenced-by 时两读并存（有证据 → 有执行）。
 
-可选：`produce artifact --kind sop` 产出 SOP 草案工件（ygl 产出的是**草案**，渲染与迁移归执行侧）。
+ygl 不产出 SOP 工件：`produce` 只有 outline / section / report / spec / design / export，SOP 的渲染与迁移归执行侧。
 
 ## 三、词汇表（rels 值约定）
 

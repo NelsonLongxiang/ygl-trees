@@ -323,7 +323,7 @@ corpus/
 
 ```
 verify list
-verify submit --title <t> --text <一句话> --attachment <file>…      # 注册材料（baseline=source / submission=附件）
+verify submit --title <t> --text <file|-> --attach <file>…          # 注册材料（baseline=source / submission=附件）
 verify prepare <spec>                                               # 提取→翻译→自审（盲审 ≤3 轮，含红队）
 verify run <spec> [--db file] [--pg url] [--attachments <dir>] [--json]
 verify report <run_id> [--json]                                     # 复核历史报告

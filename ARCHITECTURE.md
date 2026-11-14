@@ -23,9 +23,9 @@
 │              Cordis 框架（DSH fork，plugin 组合）                  │
 │                                                                   │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────┐ │
-│  │  database   │  │  web-app    │  │   timer     │  │ 用户层  │ │
-│  │  Service    │  │  Service    │  │  (ctx.timer)│  │ plugin │ │
-│  │(ctx.database)│ │(ctx.webApp) │  │             │  │        │ │
+│  │  database   │  │ops/research │  │   timer     │  │ 用户层  │ │
+│  │  Service    │  │  ctx.ops    │  │  (ctx.timer)│  │ plugin │ │
+│  │(ctx.database)│ │ctx.research │  │             │  │        │ │
 │  └──────┬──────┘  └─────────────┘  └─────────────┘  └────────┘ │
 │         │                                                         │
 └─────────┼─────────────────────────────────────────────────────────┘
