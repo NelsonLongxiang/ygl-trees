@@ -15,3 +15,4 @@ rust/**/target/
 {}
 snapshot.json
 spec_*.yglverify.json
+*.stackdump

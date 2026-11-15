@@ -64,7 +64,7 @@ const BOOLEAN_FLAGS = new Set(["json", "no-color", "no-colour", "quiet", "debug"
  * overwriting (`--attach a --attach b` → ["a","b"]) — multi-file checker
  * specs need multiple staged attachments (0.114.12 engine gap: the last
  * flag silently won). Every other flag keeps last-wins. */
-// 缺陷①（总工席 direct-085b7275，.157 实盘）：--db 必须多值——tree run 分叶绑库
+// 缺陷①（总工席 direct-085b7275，业务实盘）：--db 必须多值——tree run 分叶绑库
 // （--db <node>=<path> ...）依赖数组形；单值消费方自行取末位（旧覆盖语义的显式化）。
 // #206: `verify instance create --param k=v --param k2=v2` — binding params are an ordered list.
 // #222: `verify prune --repo a --repo b --keep-runs-in x --keep-runs-in y` — last-wins would silently drop a pin

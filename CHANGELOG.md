@@ -1,5 +1,10 @@
 ## Unreleased
 
+开发与内部：
+
+- **`apps/web` 开发服务器恢复 `/api` 代理**：0.67.0（`bda42e6`）加代码分包时把 `vite.config.ts` 的 `server` 配置整块替换掉了，`pnpm --filter @ygl/web dev` 从此拿不到数据。现在 `/api`（含 `/api/events` 实时推送）重新代理到 `webui serve` 的 8642 端口。
+- 删除误提交的 `bash.exe.stackdump`，`.gitignore` 忽略 `*.stackdump`；现行文档、技能与代码注释中的部署主机代号改为中性说法（归档与评审记录按治理规则不动）。
+
 ## 0.126.0
 
 用户可见行为变化：

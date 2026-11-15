@@ -176,7 +176,7 @@ function validateTreeSpec(
     if (!n || typeof n !== "object") return { error: "node must be an object" };
     if (typeof n.id !== "string" || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(n.id)) return { error: "bad node id: " + String(n.id) };
     if (byId.has(n.id)) return { error: "duplicate node id: " + n.id };
-    // 缺陷③（总工席 direct-085b7275，.157 材料 vocab drift）：入口容差——kind:"agg"
+    // 缺陷③（总工席 direct-085b7275，业务实盘材料 vocab drift）：入口容差——kind:"agg"
     // 归一化为 canonical "group"；冻结 spec 只存 canonical 词表（digest 不变）。
     const rawKind = String(n.kind ?? "");
     const canonicalKind = rawKind === "agg" ? "group" : rawKind;

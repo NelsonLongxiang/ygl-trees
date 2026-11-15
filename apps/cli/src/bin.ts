@@ -839,7 +839,7 @@ export async function main(argv: string[]): Promise<number> {
         // 0.93 T3: cmd.run attribution — bare shells keep the historical
         // "cli" actor; session-tagged invocations (YGL_SESSION/DSH_SESSION_ID)
         // carry their seat identity so adoption telemetry can tell seats apart
-        // (.157 ops-handbook blind spot #1, mirrored on our side).
+        // (production ops-handbook blind spot #1, mirrored on our side).
         const actor = process.env.YGL_SESSION || process.env.DSH_SESSION_ID || "cli";
         db.run(
           "INSERT INTO events(id,ts,actor,kind,entity,entity_id,payload,level) VALUES(?,?,?,?,?,?,?,?)",
