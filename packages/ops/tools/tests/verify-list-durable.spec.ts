@@ -11,8 +11,21 @@ import {appendRegistry} from '../src/archive';
 import {createDashboardServer} from '../src/webui';
 import {once} from 'node:events';
 import * as fsp from 'node:fs/promises';
+import {promisify} from 'node:util';
 vi.mock('node:fs/promises',{spy:true});
 vi.mock('node:fs',{spy:true});
+type WatchTrace = { elapsed_ms: number; phase: string; event: string; [key: string]: unknown };
+function watcherSnapshot(home: string, phase: string, trace: WatchTrace[], dropped: number) {
+ const root=join(home,'verify'),file=join(root,'reports/external.json');
+ let source: Record<string,unknown>={exists:false};
+ try {const s=nativeFs.statSync(file);let overall:unknown='invalid json';try{overall=JSON.parse(nativeFs.readFileSync(file,'utf8')).overall;}catch{}source={exists:true,bytes:s.size,mtime_ms:s.mtimeMs,ctime_ms:s.ctimeMs,overall};}
+ catch(e:any){if(e.code!=='ENOENT')source={error_name:e.name,error_code:e.code??null};}
+ let index:Record<string,unknown>={};let db:any;
+ try{db=new Sqlite(listIndexPath(root),{readonly:true});index={revision:db.prepare("SELECT stamp FROM files WHERE kind='reports' AND id='external'").get()??null,projection:db.prepare("SELECT run_id,overall FROM reports WHERE run_id='external'").get()??null,excluded:db.prepare("SELECT reason,stamp FROM excluded WHERE kind='reports' AND id='external'").get()??null,metadata:db.prepare("SELECT key,value FROM metadata WHERE key IN ('format','ready') ORDER BY key").all()};}
+ catch(e:any){index={error_name:e.name,error_code:e.code??null};}finally{db?.close();}
+ return {phase,trace,dropped,source,index,dirty_marker:nativeFs.existsSync(join(root,'.list-index-dirty'))};
+}
+
 describe('#125 durable index requirements',()=>{
  it('idle requests never reparse every report after five seconds',async()=>{mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-red-'));try{for(const d of ['reports','archives'])mkdirSync(join(home,'verify',d),{recursive:true});for(let i=0;i<100;i++)writeFileSync(join(home,'verify/reports','r'+i+'.json'),JSON.stringify({run_id:'r'+i,spec_id:'s'+(i%2)}));await prepareListIndex(home);const env={home}as any;const call=()=>handleVerifyApi(env,'GET',new URL('http://local/api/verify/reports?spec=s0'));await call();vi.mocked(fsp.stat).mockClear();let parsed=0;const parse=JSON.parse,spy=vi.spyOn(JSON,'parse').mockImplementation(((s:string)=>{if(s.includes('spec_id')&&!s.includes('archived'))parsed++;return parse(s);})as any),clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+10000);try{await call();expect(parsed).toBe(0);expect(vi.mocked(fsp.stat).mock.calls.filter(c=>String(c[0]).endsWith('.json'))).toHaveLength(0);}finally{spy.mockRestore();clock.mockRestore();}}finally{rmSync(home,{recursive:true,force:true});}});
  it('fresh environments and changed specs read durable summaries without raw report IO',async()=>{
@@ -36,22 +49,53 @@ describe('#125 durable index requirements',()=>{
  });
  it('filename watcher maintains external edits and deletions and closes without handles',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-watch-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
+  const started=performance.now(),trace:WatchTrace[]=[];let phase='prepare',dropped=0;
+  const mark=(event:string,facts:Record<string,unknown>={})=>{if(trace.length===256){trace.shift();dropped++;}trace.push({elapsed_ms:Math.round(performance.now()-started),phase,event,...facts});};
+  const file=join(home,'verify/reports/external.json');
+  const actual=await vi.importActual<typeof import('node:fs')>('node:fs');
+  const readOriginal=promisify(actual.readFile),statOriginal=promisify(actual.stat);
+  const reads=vi.mocked(fsp.readFile).mockImplementation((async(...args:any[])=>{
+   const observed=String(args[0])===file;if(observed)mark('read-start');
+   try{const bytes=await (readOriginal as any)(...args);if(observed){let overall:unknown='invalid json';try{overall=JSON.parse(String(bytes)).overall;}catch{}mark('read-end',{bytes:Buffer.byteLength(bytes),overall});}return bytes;}
+   catch(e:any){if(observed)mark('read-error',{error_name:e.name,error_code:e.code??null});throw e;}
+  })as any);
+  const stats=vi.mocked(fsp.stat).mockImplementation((async(...args:any[])=>{try{const s=await (statOriginal as any)(...args);if(String(args[0])===file)mark('stat',{bytes:s.size,mtime_ms:s.mtimeMs,ctime_ms:s.ctimeMs});return s;}catch(e:any){if(String(args[0])===file)mark('stat-error',{error_code:e.code??null});throw e;}})as any);
+  const settled=async()=>{mark('settled-start');try{await watcher!.settled();mark('settled-end');}catch(e:any){mark('settled-error',{error_name:e.name});throw e;}};
   try{
    await prepareListIndex(home);
    let ready=false;const {watch}=await vi.importActual<typeof import('node:fs')>('node:fs');
-   const probe=vi.mocked(nativeFs.watch).mockImplementation(((dir:any,callback:any)=>watch(dir,(event:any,file:any)=>{if(file?.toString()==='watch-ready')ready=true;callback(event,file);}))as any);
-   watcher=watchListIndex(home);probe.mockRestore();
-   const sentinel=join(home,'verify/reports/watch-ready');
+   const probe=vi.mocked(nativeFs.watch).mockImplementation(((dir:any,callback:any)=>watch(dir,(event:any,name:any)=>{mark('filename-event',{kind:String(dir).endsWith('reports')?'reports':'archives',notification:event,filename:name?.toString()??null});if(name?.toString()==='watch-ready')ready=true;callback(event,name);}))as any);
+   try{watcher=watchListIndex(home);}finally{probe.mockRestore();}
+   phase='ready';const sentinel=join(home,'verify/reports/watch-ready');
    await vi.waitFor(()=>{writeFileSync(sentinel,'ready');expect(ready).toBe(true);},{timeout:3000,interval:20});
-   rmSync(sentinel);await watcher.settled();
-   const path=join(home,'verify/reports/external.json');
-   writeFileSync(path,JSON.stringify({run_id:'external',spec_id:'watched',overall:'FAIL'}));
-   await vi.waitFor(async()=>{await watcher!.settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));expect(r.body.total).toBe(1);},{timeout:3000,interval:20});
-   writeFileSync(path,JSON.stringify({run_id:'external',spec_id:'watched',overall:'PASS'}));
-   await vi.waitFor(async()=>{await watcher!.settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));expect(r.body.items[0].overall).toBe('PASS');},{timeout:3000,interval:20});
-   rmSync(path);
-   await vi.waitFor(async()=>{await watcher!.settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));expect(r.body.total).toBe(0);},{timeout:3000,interval:20});
-  }finally{await watcher?.close();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
+   rmSync(sentinel);await settled();
+   phase='create';mark('source-write',{overall:'FAIL'});writeFileSync(file,JSON.stringify({run_id:'external',spec_id:'watched',overall:'FAIL'}));
+   await vi.waitFor(async()=>{await settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));mark('projection',{total:r.body.total,overall:r.body.items[0]?.overall??null});expect(r.body.total).toBe(1);},{timeout:3000,interval:20});
+   phase='rewrite';mark('source-write',{overall:'PASS'});writeFileSync(file,JSON.stringify({run_id:'external',spec_id:'watched',overall:'PASS'}));
+   await vi.waitFor(async()=>{await settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));mark('projection',{total:r.body.total,overall:r.body.items[0]?.overall??null});expect(r.body.items[0].overall).toBe('PASS');},{timeout:3000,interval:20});
+   phase='delete';mark('source-delete');rmSync(file);
+   await vi.waitFor(async()=>{await settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));mark('projection',{total:r.body.total});expect(r.body.total).toBe(0);},{timeout:3000,interval:20});
+  }catch(error){
+   const snapshot=watcherSnapshot(home,phase,trace,dropped);
+   const root=join(process.cwd(),'tmp/windows-test-diagnostics-202-203-209');mkdirSync(root,{recursive:true});
+   const retained=join(mkdtempSync(join(root,'watcher-failure-')),'state.json');writeFileSync(retained,JSON.stringify(snapshot,null,2)+'\n');
+   throw new Error('watcher lifecycle failed at '+phase+'; diagnostics='+retained+'; state='+JSON.stringify(snapshot),{cause:error});
+  }finally{try{await watcher?.close();}finally{reads.mockRestore();stats.mockRestore();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}}
+ });
+ it('failure snapshot distinguishes source, indexed revision and projection without repairing them',async()=>{
+  mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-watch-diagnostic-'));
+  try{
+   await prepareListIndex(home);const file=join(home,'verify/reports/external.json');
+   writeJson(file,{run_id:'external',spec_id:'watched',overall:'FAIL'});
+   writeFileSync(file,JSON.stringify({run_id:'external',spec_id:'watched',overall:'PASS'}));
+   const trace:WatchTrace[]=[{elapsed_ms:1,phase:'rewrite',event:'source-write',overall:'PASS'}];
+   const snapshot=watcherSnapshot(home,'rewrite',trace,0)as any;
+   expect(snapshot.source).toMatchObject({exists:true,overall:'PASS'});
+   expect(snapshot.index.projection).toEqual({run_id:'external',overall:'FAIL'});
+   expect(snapshot.index.revision.stamp).toMatch(/^hook:/);
+   expect(snapshot.trace).toEqual(trace);expect(snapshot.dropped).toBe(0);
+   const next=watcherSnapshot(home,'rewrite',trace,0)as any;expect(next.index).toEqual(snapshot.index);
+  }finally{rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
  it('legacy preparation is explicit; missing index never silently scans in a list request',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-missing-'));

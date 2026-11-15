@@ -1,5 +1,9 @@
 ## Unreleased
 
+测试与门禁（不改变产品行为）：
+
+- **Windows 失败取证**（Refs #202、#203、#209）：query attach 测试保留子进程退出码、signal、原始 error.code 与耗时，不再把 null 退出码误诊成超时。bundle 配置隔离用无 Git 元数据的源码快照替代本地 shared clone，保留父目录诱饵与 minify 反例，失败时保留步骤日志和 Git trace。watcher 生命周期测试记录事件、读取和投影顺序，失败时在清理前保存源文件/索引快照；超时、并发及产品实现不变，历史间歇失败未据此宣称根治。
+
 用户可见行为变化：
 
 - **kb/skill 记授权范围：schema v15（kb_notes/skills.scope）**（Refs #276）。`kb add`/`kb import`/`kb ingest` 落 `scope`（`--scope` 或 import 的 frontmatter `scope:`；四值词表 `dept:<id>|bench:<id>|*|restricted`，写时校验 rc2 零写入；无 flag 存空串＝未归属，不从项目推断）。`kb rescope <id> --scope <k>` 改范围（同值重跑 duplicate rc0）；`kb list`/`kb search`/`skill list`/`library list --kind note|skill` 支持 `--scope <k>`（空串只选未归属，library 空 scope 字段缺席；无 flag 保留原列表投影）；promote 复制笔记 scope 到技能，rescope 后 re-promote 更新。MCP：`write kb add` 透传 `scope`、`write kb rescope` 新路由。SQLite v14→v15 原位升级；PG `PG_UPGRADES` v15 步；schema-parity 一致。
