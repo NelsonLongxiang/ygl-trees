@@ -16,6 +16,10 @@ const BIN = join(ROOT, "dist/bundle/bin.cjs");
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-11-05T12:00:00Z");
 const ago = (days: number) => new Date(NOW - days * DAY).toISOString();
+// Rows handed to the real CLI are judged against the real clock (Date.now()),
+// so their timestamps must be relative to it too; a fixed NOW turns into a
+// time bomb once the wall clock moves past NOW plus the tested thresholds.
+const agoNow = (days: number) => new Date(Date.now() - days * DAY).toISOString();
 
 describe("lifecycle derivations (#220)", () => {
   it("taskView reads status_at, and falls back to created for rows written before it", () => {
@@ -133,9 +137,9 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     cli(["task", "doing", doing.id]);
     const todo = cli(["task", "add", "旧的待办"]).json;
     const legacy = cli(["task", "add", "旧格式"]).json;
-    sql(`UPDATE artifacts SET meta=json_set(meta,'$.status_at','${ago(20)}') WHERE id='${doing.id}'`);
-    sql(`UPDATE artifacts SET meta=json_set(meta,'$.status_at','${ago(45)}') WHERE id='${todo.id}'`);
-    sql(`UPDATE artifacts SET meta='{"status":"todo"}', created='${ago(60)}' WHERE id='${legacy.id}'`);
+    sql(`UPDATE artifacts SET meta=json_set(meta,'$.status_at','${agoNow(20)}') WHERE id='${doing.id}'`);
+    sql(`UPDATE artifacts SET meta=json_set(meta,'$.status_at','${agoNow(45)}') WHERE id='${todo.id}'`);
+    sql(`UPDATE artifacts SET meta='{"status":"todo"}', created='${agoNow(60)}' WHERE id='${legacy.id}'`);
     const ids = (r: any) => r.json.map((t: any) => t.id);
     const stale = cli(["task", "stale"]);
     expect(stale.rc).toBe(0);
@@ -259,9 +263,9 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     cli(["job", "add", "old-ok", "--every", "1440", "--", "echo x"]);
     const id = cli(["job", "list"]).json.find((j: any) => j.title === "old-ok").id;
     const okAt = "2026-10-01T00:00:00.000Z";
-    const fails = Array.from({ length: 30 }, (_, i) => `('oo-${i}','${id}','${ago(30 - i)}','${ago(30 - i)}',1,'fail ${i}')`).join(",");
+    const fails = Array.from({ length: 30 }, (_, i) => `('oo-${i}','${id}','${agoNow(30 - i)}','${agoNow(30 - i)}',1,'fail ${i}')`).join(",");
     sql(`INSERT INTO runs(id,job_id,started,finished,rc,output) VALUES ('oo-ok','${id}','${okAt}','${okAt}',0,'ok'),${fails}`);
-    sql(`UPDATE jobs SET status='failed', runs=31, last_run='${ago(1)}' WHERE id='${id}'`);
+    sql(`UPDATE jobs SET status='failed', runs=31, last_run='${agoNow(1)}' WHERE id='${id}'`);
     expect(cli(["config", "set", "job.failing_runs", "25"]).rc).toBe(0);
     try {
       expect(cli(["job", "list"]).json.find((j: any) => j.id === id)).toMatchObject({ consecutive_failures: 30, last_ok: okAt, last_error: "fail 29", health: "failing" });
