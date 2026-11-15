@@ -3,6 +3,7 @@
  *  - UTF-16 (BOM or NUL pattern): rc=2 with an explicit "转码为 UTF-8" message,
  *    never freeze mojibake that later reports a misleading P1 fabrication. */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ let HOME = "";
 function jrun(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
     encoding: "utf8",
-    cwd: HOME,
+    cwd: neutralCwd(),
     env: { ...process.env, YGL_HOME: HOME, YGL_SESSION: "enc" },
     timeout: 60_000,
   });

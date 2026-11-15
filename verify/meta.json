@@ -115,7 +115,7 @@
     },
     {
       "path": "scripts/gate.js",
-      "sha256": "556ca2e516c35b5bcfba7f87883b2cb0ec51df0bc972e241807737c99c801542",
+      "sha256": "96ad2bb58694d93531386b3d4b05ed68d3d46a315c045a6f3fa8704874f18ba1",
       "role": "gate"
     },
     {
@@ -1522,6 +1522,14 @@
       "reason": "#234 invoke graph mode of existing package gate",
       "actor": "dsh/1c56c492",
       "at": "2026-11-15T09:04:59.518Z"
+    },
+    {
+      "path": "scripts/gate.js",
+      "old_sha256": "556ca2e516c35b5bcfba7f87883b2cb0ec51df0bc972e241807737c99c801542",
+      "new_sha256": "96ad2bb58694d93531386b3d4b05ed68d3d46a315c045a6f3fa8704874f18ba1",
+      "reason": "#234 add strict literal-relative source graph diagnostics without implicit exemptions",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-15T13:45:45.796Z"
     }
   ],
   "kind": "engine",

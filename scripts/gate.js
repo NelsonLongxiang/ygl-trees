@@ -125,6 +125,95 @@ if (process.argv[2] === "--workspace-graph") {
   process.exit(0);
 }
 
+
+/** Package-source references are a different graph from workspace installation links. */
+function checkSourceGraph(root, entries) {
+  const ts = require("typescript");
+  const packages = entries.filter(entry => entry.path.startsWith("packages/"));
+  const owners = new Map(), sources = [], names = new Map();
+  const key = file => process.platform === "win32" ? resolve(file).toLowerCase() : resolve(file);
+  for (const entry of packages) {
+    const name = entry.manifest.name;
+    if (typeof name !== "string" || !name) throw new Error("missing workspace name: " + entry.path);
+    if (names.has(name)) throw new Error("duplicate workspace name: " + name);
+    names.set(name, entry);
+    const directory = join(dirnameManifest(entry.path), "src");
+    collect(directory, name);
+  }
+  function dirnameManifest(file) { return path.dirname(resolve(root, file)); }
+  function collect(directory, owner) {
+    let items;
+    try {
+      if (lstatSync(directory).isSymbolicLink()) throw new Error("linked source directory: " + relative(root, directory));
+      items = readdirSync(directory, { withFileTypes: true });
+    } catch (error) { if (error.code === "ENOENT") return; throw error; }
+    for (const item of items.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (item.name === "node_modules" || item.name.startsWith(".")) continue;
+      const file = join(directory, item.name);
+      if (item.isSymbolicLink()) throw new Error("linked source entry: " + relative(root, file));
+      if (item.isDirectory()) collect(file, owner);
+      else if (item.isFile() && /\.[cm]?[jt]sx?$/.test(item.name)) {
+        sources.push({ file, owner }); owners.set(key(file), owner);
+      }
+    }
+  }
+  if (!sources.length) throw new Error("no package source files found");
+  const edges = [];
+  for (const { file, owner } of sources) {
+    const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    if (source.parseDiagnostics.length) throw new Error("cannot parse package source: " + relative(root, file));
+    function visit(node) {
+      let literal, kind, typeOnly = false;
+      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+        literal = node.moduleSpecifier; kind = ts.isImportDeclaration(node) ? "import" : "export";
+        typeOnly = Boolean(node.importClause?.isTypeOnly || node.isTypeOnly);
+      } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || ts.isIdentifier(node.expression) && node.expression.text === "require")) {
+        literal = node.arguments[0]; kind = node.expression.kind === ts.SyntaxKind.ImportKeyword ? "dynamic-import" : "require";
+      }
+      if (literal && ts.isStringLiteralLike(literal) && literal.text.startsWith(".")) {
+        const specifier = literal.text;
+        if (!/\.(?:json|css|svg|png|jpg|jpeg|webp)$/.test(specifier)) {
+          const base = resolve(path.dirname(file), specifier), stem = base.replace(/\.[cm]?jsx?$/, "");
+          const choices = [base, ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"].map(ext => stem + ext), ...["index.ts", "index.tsx", "index.js"].map(name => join(base, name))];
+          const target = choices.find(candidate => owners.has(key(candidate)));
+          if (!target) throw new Error("unresolved package source import: " + relative(root, file).replaceAll("\\", "/") + " -> " + specifier);
+          const to = owners.get(key(target));
+          if (to !== owner) edges.push({ from: owner, to, file: relative(root, file).replaceAll("\\", "/"), target: relative(root, target).replaceAll("\\", "/"), line: source.getLineAndCharacterOfPosition(literal.getStart()).line + 1, kind, typeOnly });
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+  }
+  const graph = new Map([...names.keys()].sort().map(name => [name, new Set()]));
+  for (const edge of edges) graph.get(edge.from).add(edge.to);
+  const done = new Set(), active = new Set(), route = [];
+  function visit(name) {
+    if (active.has(name)) {
+      const cycle = [...route.slice(route.indexOf(name)), name];
+      const witness = edges.find(edge => edge.from === cycle[0] && edge.to === cycle[1]);
+      throw new Error("source cycle: " + cycle.join(" -> ") + " (" + witness.file + ":" + witness.line + " -> " + witness.target + ")");
+    }
+    if (done.has(name)) return;
+    active.add(name); route.push(name);
+    for (const target of [...graph.get(name)].sort()) visit(target);
+    route.pop(); active.delete(name); done.add(name);
+  }
+  for (const name of graph.keys()) visit(name);
+  return { packages: names.size, files: sources.length, references: edges.length, edges: [...graph.values()].reduce((n, set) => n + set.size, 0) };
+}
+
+if (process.argv[2] === "--source-graph") {
+  try {
+    if (process.argv.length > 4) throw new Error("usage: node scripts/gate.js --source-graph [repository]");
+    const root = resolve(process.argv[3] ?? ROOT), result = checkSourceGraph(root, readWorkspaceManifests(root));
+    console.log("source-graph: " + result.packages + " packages, " + result.files + " files, " + result.references + " references, no cycles (literal relative package-source references, including type-only)");
+  } catch (error) {
+    console.error("source-graph: " + error.message); process.exit(1);
+  }
+  process.exit(0);
+}
+
 const PACKAGES_DIR = path.join(ROOT, "packages");
 
 let violations = 0;

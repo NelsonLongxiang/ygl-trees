@@ -1,6 +1,5 @@
-import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 /**
  * #227：整轮单测共用一个新建的临时根（TMPDIR/TEMP/TMP 指过去，worker 与子进程都继承），
@@ -16,7 +15,12 @@ const KEYS = ["TMPDIR", "TEMP", "TMP"] as const;
 const LIVE = process.env.YGL_TEST_LIVE_EVAL === "1";
 
 export default function setup() {
-  const root = mkdtempSync(join(tmpdir(), "ygl-vitest-"));
+  const projectTmp = resolve(__dirname, "../../tmp"), runs = join(projectTmp, "test-runs");
+  for (const directory of [projectTmp, runs]) {
+    mkdirSync(directory, { recursive: true });
+    if (lstatSync(directory).isSymbolicLink()) throw new Error("test temp parent must not be a link: " + directory);
+  }
+  const root = mkdtempSync(join(runs, "ygl-vitest-"));
   const saved = KEYS.map((k) => [k, process.env[k]] as const);
   for (const k of KEYS) process.env[k] = root;
   const savedEval = process.env.YGL_EVAL_OFFLINE;

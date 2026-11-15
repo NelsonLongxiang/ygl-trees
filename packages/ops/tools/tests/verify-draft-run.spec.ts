@@ -4,6 +4,7 @@
  * workspace: no specs/, reports/, archives/ or retained snapshots, and no spec version is consumed.
  */
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,7 +19,7 @@ let home = "";
 
 function run(args: string[], json = true) {
   const r = spawnSync(process.execPath, [BIN, ...args, ...(json ? ["--json"] : [])], {
-    cwd: home, encoding: "utf8", timeout: 60000,
+    cwd: neutralCwd(), encoding: "utf8", timeout: 60000,
     env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1", NO_COLOR: "1" },
   });
   let out: any = null;

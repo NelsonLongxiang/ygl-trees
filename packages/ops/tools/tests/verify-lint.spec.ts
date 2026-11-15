@@ -6,6 +6,7 @@
  * two lookalikes).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,7 +24,7 @@ let snap = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
-    cwd: HOME, // outside the verifier repo: no meta-gate dependency
+    cwd: neutralCwd(), // outside the verifier repo: no meta-gate dependency
     encoding: "utf8",
     env: { ...process.env, YGL_HOME: HOME },
   });

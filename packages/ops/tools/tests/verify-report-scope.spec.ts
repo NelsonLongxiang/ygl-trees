@@ -4,6 +4,7 @@
  * 父验证器的 PASS 不代表子结论为真。JSON 面原样（报告不可变、形状冻结）；看板列表投影透传 null。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -23,7 +24,7 @@ let HOME = "";
 const specId = "spec_scope000000001";
 
 function run(args: string[]) {
-  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8", env: { ...process.env, YGL_HOME: HOME }, cwd: HOME });
+  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8", env: { ...process.env, YGL_HOME: HOME }, cwd: neutralCwd() });
   return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
 }
 

@@ -4,6 +4,7 @@
  * rides as a workspace sidecar and enters the archive as first-class items.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -24,7 +25,7 @@ function jrun(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
     encoding: "utf8",
     env: { ...process.env, YGL_HOME: HOME },
-    cwd: HOME,
+    cwd: neutralCwd(),
   });
   let j: any = null;
   try {

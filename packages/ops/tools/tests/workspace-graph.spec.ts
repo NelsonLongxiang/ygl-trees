@@ -18,14 +18,14 @@ function fixture(packages: Record<string, any>, probe: (root: string) => void) {
     probe(root);
   } finally { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); }
 }
-function run(root = ROOT) {
-  const result = spawnSync(process.execPath, [SCRIPT, "--workspace-graph", root], { encoding: "utf8", timeout: 10000 });
+function run(root = ROOT, mode = "--workspace-graph") {
+  const result = spawnSync(process.execPath, [SCRIPT, mode, root], { encoding: "utf8", timeout: 10000 });
   expect(result.error, result.stderr).toBeUndefined(); expect(result.signal).toBeNull();
   return { rc: result.status, text: result.stdout + result.stderr };
 }
 
-describe("#234 workspace source graph", () => {
-  it("the actual repository is acyclic after the config split", () => {
+describe("#234 declared workspace dependency graph", () => {
+  it("the declared workspace dependencies are acyclic after the config split", () => {
     const result = run(); expect(result.rc).toBe(0); expect(result.text).toMatch(/packages, \d+ edges, no cycles/);
   });
   it("accepts an acyclic app/domain/vendor graph and ignores ordinary npm dependencies", () => fixture({
@@ -76,4 +76,58 @@ describe("#234 workspace source graph", () => {
     expect(gate).toContain("node scripts/gate.js --workspace-graph");
     expect(gate).toContain('fail "workspace graph"');
   });
+});
+
+
+describe("#234 literal relative package-source graph", () => {
+  const packages = { "packages/core/a": { name: "a" }, "packages/domain/b": { name: "b" } };
+  const source = (root: string, file: string, text: string) => {
+    const full = join(root, file); mkdirSync(resolve(full, ".."), { recursive: true }); writeFileSync(full, text);
+  };
+  const check = (root: string) => run(root, "--source-graph");
+  it("reports acyclic source references even when package declarations do not name them", () => fixture(packages, root => {
+    source(root, "packages/core/a/src/index.ts", "export interface A { value: string }");
+    source(root, "packages/domain/b/src/index.ts", 'import type { A } from "../../../core/a/src/index"; export const value: A = { value: "ok" };');
+    const result = check(root); expect(result.rc).toBe(0);
+    expect(result.text).toContain("2 packages, 2 files, 1 references, no cycles");
+  }));
+  it.each([
+    ['import', 'import { value } from "../../../domain/b/src/index"; export const a = value;'],
+    ['type-only import', 'import type { B } from "../../../domain/b/src/index"; export type A = B;'],
+    ['re-export', 'export { value } from "../../../domain/b/src/index";'],
+    ['dynamic import', 'export const load = () => import("../../../domain/b/src/index");'],
+    ['require', 'export const b = require("../../../domain/b/src/index");'],
+  ])("names an undeclared cycle through %s", (_kind, text) => fixture(packages, root => {
+    source(root, "packages/core/a/src/index.ts", text);
+    source(root, "packages/domain/b/src/index.ts", 'export { a } from "../../../core/a/src/index"; export const value = 1; export interface B {}');
+    const result = check(root); expect(result.rc).toBe(1);
+    expect(result.text).toContain("source cycle: a -> b -> a");
+    expect(result.text).toContain("packages/core/a/src/index.ts:1 -> packages/domain/b/src/index.ts");
+    // The manifest graph is deliberately empty: it must not hide this distinct source cycle.
+    expect(run(root).rc).toBe(0);
+  }));
+  it("fails an unresolved local module instead of silently losing an edge", () => fixture(packages, root => {
+    source(root, "packages/core/a/src/index.ts", 'export * from "../../../domain/b/src/missing";');
+    source(root, "packages/domain/b/src/index.ts", "export const value = 1;");
+    const result = check(root); expect(result.rc).toBe(1); expect(result.text).toContain("unresolved package source import");
+  }));
+  it("does not parse imports from strings or comments as graph edges", () => fixture(packages, root => {
+    source(root, "packages/core/a/src/index.ts", '// import { value } from "../../../domain/b/src/index";\nexport const text = "require(../../../domain/b/src/index)";');
+    source(root, "packages/domain/b/src/index.ts", 'export { text } from "../../../core/a/src/index";');
+    expect(check(root).rc).toBe(0);
+  }));
+  it("rejects syntax errors rather than reporting an incomplete graph as acyclic", () => fixture(packages, root => {
+    source(root, "packages/core/a/src/index.ts", "export const broken = ;");
+    source(root, "packages/domain/b/src/index.ts", "export const value = 1;");
+    const result = check(root); expect(result.rc).toBe(1); expect(result.text).toContain("cannot parse package source");
+  }));
+  it("ignores installed node_modules while refusing source links", () => fixture(packages, root => {
+    source(root, "packages/core/a/src/index.ts", "export const value = 1;");
+    source(root, "packages/domain/b/src/index.ts", 'export { value } from "../../../core/a/src/index";');
+    const installed = join(root, "packages/core/a/src/node_modules"); mkdirSync(installed);
+    symlinkSync(root, join(installed, "loop"), process.platform === "win32" ? "junction" : "dir");
+    expect(check(root).rc).toBe(0);
+    symlinkSync(join(root, "packages/domain/b/src"), join(root, "packages/core/a/src/linked"), process.platform === "win32" ? "junction" : "dir");
+    const result = check(root); expect(result.rc).toBe(1); expect(result.text).toContain("linked source entry");
+  }));
 });

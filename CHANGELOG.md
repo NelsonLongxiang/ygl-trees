@@ -1,19 +1,29 @@
 ## Unreleased
 
-- **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增源码清单有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
+- **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增 workspace 清单声明依赖的有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。该门不证明源码 import 图无环。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
 
 测试与门禁（不改变产品行为）：
+
+- **生命周期测试不依赖日历日期**（Refs #283）：真实 CLI 读取的相对年龄种子使用实时基准，新增当前日期和向前 60 天的子进程隔离时钟回归；覆盖年龄、阈值覆盖、legacy created 回退与 doctor 告警。恢复旧固定日期种子时，两组新用例均判红；不改产品时钟或超时。
+- **源码图严格诊断与项目内测试临时根**（Refs #234）：既有包结构入口增加 `--source-graph`，用已安装 TypeScript 解析包内字面量相对 import、类型导入、重导出、require 和动态 import；源码路径解析失败或链接不被忽略。当前 ORM 实体装配循环如实返回非零，该模式未设例外、未接为契约放行门。单测临时根由现有 globalSetup 分配到项目 `tmp/test-runs/`，保留残留判红与环境恢复，并补齐清理反例。验证器夹具显式隔离父仓发现：普通 CLI 使用只读中性 cwd 和绝对夹具路径，仓库准入用真实合成仓库，仓库外定位保留隔离拓扑覆盖；产品 meta 准入不变。离线门的合成配置探针使用提交快照并保留真实链接拒绝，正式 G1/G8 的 clone 判据不变。
 
 - **R3 行尾回归无 clone 夹具**：用项目 tmp 内独立 `GIT_INDEX_FILE` 读取 HEAD 并执行 `checkout-index`，保留 `core.autocrlf=true` 与真实 `.gitattributes` 转换、tooling 零漂移及 R3 PASS 判据；导出不建 `.git`，子进程环境收尾且真实 index 字节不变。
 
 - **Windows 失败取证**（Refs #202、#203、#209）：query attach 测试保留子进程退出码、signal、原始 error.code 与耗时，不再把 null 退出码误诊成超时。bundle 配置隔离用无 Git 元数据的源码快照替代本地 shared clone，保留父目录诱饵与 minify 反例，失败时保留步骤日志和 Git trace。watcher 生命周期测试记录事件、读取和投影顺序，失败时在清理前保存源文件/索引快照；超时、并发及产品实现不变，历史间歇失败未据此宣称根治。
 
+## 0.126.0
+
 用户可见行为变化：
 
 - **kb/skill 记授权范围：schema v15（kb_notes/skills.scope）**（Refs #276）。`kb add`/`kb import`/`kb ingest` 落 `scope`（`--scope` 或 import 的 frontmatter `scope:`；四值词表 `dept:<id>|bench:<id>|*|restricted`，写时校验 rc2 零写入；无 flag 存空串＝未归属，不从项目推断）。`kb rescope <id> --scope <k>` 改范围（同值重跑 duplicate rc0）；`kb list`/`kb search`/`skill list`/`library list --kind note|skill` 支持 `--scope <k>`（空串只选未归属，library 空 scope 字段缺席；无 flag 保留原列表投影）；promote 复制笔记 scope 到技能，rescope 后 re-promote 更新。MCP：`write kb add` 透传 `scope`、`write kb rescope` 新路由。SQLite v14→v15 原位升级；PG `PG_UPGRADES` v15 步；schema-parity 一致。
 
-- **library：市场经验库只读出口**（Refs #275）。新 `library` 命令组（CLI＋MCP `read` 1:1 映射）：`library list --kind <claim|note|skill|check> [--since <ISO>] [--limit 1..500] [--cursor <c>]` 游标分页＋`library show <kind> <id>`。统一行形 `{kind,id,title,summary,status,created,updated}`＋已知字段，未知字段缺席不给空串；note 的 summary 剥 `---` frontmatter 取首段截 200；claim show 带 `evidence[]`；skill 只列 promoted（bundled 天然 absent，`from_note` 点名来源）；check 汇总 verify reports＋sealed archives（复用 verify-list 索引，不新建索引文件）。每个响应带 `contract: "ygl-library/1"`。只读：不写 events、不 bump hits/reuse；首用自备的 verify 列表索引缓存（verify/.list-index.sqlite，format 键失配即全量重建）是缓存文件、非工作区数据。`kb add` 增 `--source-url`（MCP `kb add` 透传 `tags`/`source_url`；body 以等号形态转发，frontmatter 起首不再触发 bare-flag rc2）。新增 library.spec（5 例）＋demo 断言。
+- **library：市场经验库只读出口**（Refs #275）。新 `library` 命令组（CLI＋MCP `read` 1:1 映射）：`library list --kind <claim|note|skill|check> [--since <ISO>] [--limit 1..500] [--cursor <c>]` 游标分页＋`library show <kind> <id>`。统一行形 `{kind,id,title,summary,status,created,updated}`＋已知字段，未知字段缺席不给空串；note 的 summary 剥 `---` frontmatter 取首段截 200；claim show 带 `evidence[]`；skill 只列 promoted（bundled 天然 absent，`from_note` 点名来源）；check 汇总 verify reports＋sealed archives（复用 verify-list 索引，不新建索引文件）。每个响应带 `contract: "ygl-library/1"`。只读：不写 events、不 bump hits/reuse；首用自备的 verify 列表索引缓存（verify/.list-index.sqlite，format 键失配即全量重建）是缓存文件、非工作区数据。`kb add` 增 `--source-url`（MCP `kb add` 透传 `tags`/`source_url`；body 以等号形态转发，frontmatter 起首不再触发 bare-flag rc2）。覆盖真实路径的 spec 标题、签名/归档字段、旧格式缓存升级（含 WebUI 先准备索引）、since 边界及 CLI/MCP 往返。
 - **job 记归属：schema v14（jobs.project_id/owner）**（Refs #258，#220 phase B）。`job add` 落两列：`project_id` 取显式 `--project` 或会话所选项目，`owner` 取显式 `--owner` 或会话 actor（同 events 口径）；`job list`/`job show` 携带两列，`job list --project <name|id>` 过滤（未知名 rc=1）。doctor `job_health` 新增分类：**孤儿**＝project_id 非空但项目已删（点名＋`job show <id>` 下一步，warn 级），**unattributed**＝legacy 空 project_id（只计数不改写，绝不报孤儿）；retired 不报。SQLite v13 工作区原位升级 v14（PRAGMA user_version=14，旧行保留、空串默认）；PG `PG_UPGRADES` 同步 v14 步（`ADD COLUMN IF NOT EXISTS`）；`schema-parity` 两端列集一致。MCP 无 job 面（既有白名单排除），无新增路由。`AGENTS.md` 版本行同步 v14。
+
+门禁与文档（不改变业务判定）：
+
+- **Windows G8 子日志恢复可写**（#273，Refs #178）：子进程日志以 `openSync(path, "w")` 打开，不再使用会让 MSYS bash 静默丢输出的 O_APPEND 句柄；完整输出和原始退出码分别保留。此修复在 0.125.0 发布后合入，本版首次携带。
+- MCP 安全测试客户端使用独立 HTTP 连接，避免在同步 CLI 子进程调用之间复用失效连接；不增加重试、不放宽超时或产品判据。
 
 ## 0.125.0
 
