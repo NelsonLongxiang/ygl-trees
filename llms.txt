@@ -1,4 +1,4 @@
-# ygl-trees v0.125.0 — AI Agent Research Workbench
+# ygl-trees v0.126.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -76,12 +76,23 @@ produce export <id> <file>                                   # export artifact t
 Long-term knowledge + reuse
 
 ```bash
-kb add --title --body|-f                                     # add knowledge note
-kb import <dir|file.md>                                      # batch markdown import (>1MB skipped, --force to include)
-kb search "<q>" [--eval]                                     # FTS5 CJK search (--eval: semantic re-rank via decision model)
+kb add --title --body|-f [--scope <k>]                       # add knowledge note (#276: scope dept:<id>|bench:<id>|*|restricted)
+kb rescope <id> --scope <k>                                  # change a note grant scope (idempotent; #276)
+kb list [--scope <k>]                                        # list notes, filtered by grant scope (#276)
+kb import <dir|file.md> [--scope <k>]                        # batch markdown import (>1MB skipped, --force to include)
+kb search "<q>" [--eval] [--scope <k>]                       # FTS5 CJK search (--eval: semantic re-rank via decision model)
 kb rm <id>                                                   # remove note
-kb ingest <artifactId>                                       # sink a report into kb
+kb ingest <artifactId> [--scope <k>]                         # sink a report into kb
 kb promote <noteId>                                          # promote note to reusable skill
+```
+
+### library
+
+Market experience library (read-only feed)
+
+```bash
+library list --kind <claim|note|skill|check> [--scope <k>] [--since <iso>] [--limit 1..500] [--cursor <c>] # paged feed, contract ygl-library/1 (#275)
+library show <kind> <id>                                     # one row + body; claim adds evidence[]
 ```
 
 ### skill
@@ -195,9 +206,9 @@ config list / get / set / reset                              # registry-backed s
 Batch scheduling
 
 ```bash
-job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <old>] -- "<cmd>" # create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force)
+job add <title> [--every <min>|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <old>] [--owner <who>] [--project <name>] -- "<cmd>" # create scheduled job (a schedule or --manual is required; <60 min needs --allow-frequent; a new version needs --replaces or --force; v14 records project_id from --project or the session selection and owner from --owner or the session actor #258)
 job tick                                                     # run due jobs (drive with cron)
-job list / job show <id|title>                               # command + health, consecutive failures, last error, next due (#220)
+job list [--project <name>] / job show <id|title>            # command + health, consecutive failures, last error, next due (#220); --project narrows to that project's jobs, and rows carry project_id/owner (v14 #258)
 job retire <id|title> --reason <why>                         # disable + mark retired; history kept
 job prune-runs [--keep N] [--apply]                          # trim old run rows (dry run by default)
 ```
