@@ -270,7 +270,7 @@ ygl-trees plugin disable my-domain-plugin              # 保留安装，启动�
 ygl-trees plugin list                                  # 版本 / 状态 / config / 可解析态
 ```
 
-- 契约：`export apply(ctx, config)`（可用 `ctx.database / ctx.research / ctx.techtree / ctx.webApp`）+ `export commands = { <组名>: { run } }`
+- 契约：`export apply(ctx, config)`（可用 `ctx.database / ctx.research / ctx.ops`，base bundle 只提供这三个服务）+ `export commands = { <组名>: { run } }`
 - 逐插件隔离：单个插件加载失败不影响其余，汇总进启动诊断（报告落 `$YGL_HOME/logs/startup-<uuid>.log`）
 - 安装走文件锁；名字按依赖键差集精确解析；`YGL_PACKAGE_MANAGER` 可换包管理器
 - 示例与指南：[examples/plugin-demo](examples/plugin-demo) · [docs/plugin-authoring.md](docs/plugin-authoring.md)
@@ -349,8 +349,8 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 75 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1/T2/T3 加了 7 条科技树 golden 与并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 75 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 四段制回归：build + unit (vitest 1953 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) + demo（135 条断言）+ contract:audit（156 项）
-pnpm bench         # 性能基准七席（startup/写路径/检索/索引），每席含 RSS 内存端点 → tmp/bench-results.json
+pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 1953 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（135 条断言）→ contract:audit（156 项）→ readme:verify → skills:audit → ratchet
+pnpm bench         # 性能基准四条用户路径（startup/写路径/检索/索引），每条含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
 ygl-trees verify meta .                   # 本仓元验证（R1–R3 + R5a，meta_index_version 2）；contract-audit 12 也跑它

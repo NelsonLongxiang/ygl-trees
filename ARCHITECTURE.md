@@ -6,7 +6,7 @@
 │                                                                   │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
 │  │   CLI    │  │   MCP    │  │  WebUI   │  │   IDE Agent      │ │
-│  │ (60+cmds)│  │ (11 tools)│  │ (antd+   │  │ (Claude/Cursor/  │ │
+│  │ (60+cmds)│  │ (4 tools)│  │ (antd+   │  │ (Claude/Cursor/  │ │
 │  │          │  │          │  │  graph)  │  │  VSCode)         │ │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────┬─────────┘ │
 │       │              │              │                  │         │
@@ -23,9 +23,9 @@
 │              Cordis 框架（DSH fork，plugin 组合）                  │
 │                                                                   │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────┐ │
-│  │  database   │  │  web-app    │  │   timer     │  │ 用户层  │ │
-│  │  Service    │  │  Service    │  │  (ctx.timer)│  │ plugin │ │
-│  │(ctx.database)│ │(ctx.webApp) │  │             │  │        │ │
+│  │  database   │  │ops/research │  │   timer     │  │ 用户层  │ │
+│  │  Service    │  │  ctx.ops    │  │  (ctx.timer)│  │ plugin │ │
+│  │(ctx.database)│ │ctx.research │  │             │  │        │ │
 │  └──────┬──────┘  └─────────────┘  └─────────────┘  └────────┘ │
 │         │                                                         │
 └─────────┼─────────────────────────────────────────────────────────┘
@@ -34,7 +34,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SQLite（唯一事实源）                            │
 │                    ~/.ygl-trees/ygl-trees.db                     │
-│                    WAL 模式 · schema v13 · 30 表                  │
+│                    WAL 模式 · schema v15 · 30 表                  │
 │                    ─────────────────────────                     │
 │                    可选 PG（B7 起直连面）：                        │
 │                    YGL_DB_URL=postgres://…                        │
@@ -113,7 +113,7 @@
 │  ④ --json: 成功+失败可parse → contract 5       │
 │  ⑤ flag 校验: 裸值/枚举拒绝 → contract 6       │
 │                                                   │
-│  145 项机械断言 · pnpm contract:audit 全绿        │
+│  156 项机械断言 · pnpm contract:audit 全绿        │
 └─────────────────────────────────────────────────┘
 ```
 

@@ -5,13 +5,13 @@ description: React rich client for the ygl-trees workbench — xyflow tree view 
 
 # @ygl/web — React rich client（spec R13.5）
 
-WebUI 的富客户端家园。CLI 内嵌零依赖 dashboard（`webui export/serve`）**保留**用于离线单文件导出；本应用承载需要构建链的能力（xyflow 交互树、后续 react-markdown 报告渲染、grid-layout 面板等）。
+WebUI 的唯一前端：`webui serve` 托管本应用的构建产物（dist 缺失时拒绝服务并提示构建），原 CLI 内嵌零依赖 dashboard 与单文件 HTML 导出已退役，`webui export` 只落 JSON 快照。本应用承载需要构建链的能力（xyflow 交互树、react-markdown 报告渲染、grid-layout 面板等）。
 
 ## 用法
 
 ```bash
 ygl-trees webui serve --port 8642   # 数据面（任意工作区）
-pnpm --filter @ygl/web dev          # http://localhost:5173（/api 代理到 8642）
+pnpm --filter @ygl/web dev          # http://localhost:5173（vite.config.ts 没有配 /api 代理，数据接口不通；看真数据用 build 后的 webui serve）
 pnpm --filter @ygl/web build        # 产物 apps/web/dist（静态托管，/api 指向 serve）
 ```
 

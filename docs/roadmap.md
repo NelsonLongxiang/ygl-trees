@@ -51,7 +51,7 @@ kind: 设计
 
 1. **SDK-2 `verify tree run`**
    - 让各验证器仓库不再手写编排；是 VP-3「模式即树模板」的前置（验证器包 D6 裁定）。
-   - 出口：评审验证器改用 `tree run` 组合，连续 2 轮根结论、叶子结论与现行编排一致（K=2，属主 2026-10-27 裁定，见 #94 第零节）。
+   - 出口：评审验证器改用 `verify tree run` 组合，连续 2 轮根结论、叶子结论与现行编排一致（K=2，属主 2026-10-27 裁定，见 #94 第零节）。
 2. **PG B5 / B6 收尾**
    - verify-on-PG、webui 读 PG、D2 库内绑定记录、D4 会话 id 要求。
    - 出口：双后端矩阵在真 PG 上全绿（unit + demo + contract-audit + readme-verify + verify 链），再把 `pg-write-backend-plan.md` 护栏 ① 恢复为原始表述（self-check 双后端）。

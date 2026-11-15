@@ -12,7 +12,7 @@
 3. 改完让测量点自己说话。
 
 没有测量点的改动，只能靠评审席的记忆来守——而记忆不是门禁。
-本仓已有的测量点：`pnpm test` 四段（build / unit / demo / contract）、`pnpm readme:verify`（文档命令逐条真跑）、`node scripts/gate.js`（包结构）、`pnpm bench`（性能七席）。
+本仓已有的测量点：`pnpm test`（gate:g12 / build / unit / demo / contract / readme:verify / skills:audit / ratchet）、`pnpm readme:verify`（文档命令逐条真跑）、`node scripts/gate.js`（包结构）、`pnpm bench`（startup / research-write / knowledge-search / techtree-index 四条用户路径）。
 
 ## 二、棘轮（ratchet）：只降不升
 
@@ -39,7 +39,7 @@
 | 冻结件 | 守卫 | 变更通道 |
 |---|---|---|
 | 语料（`packages/verify/core/corpus/`） | `corpus/freeze.mjs` + `manifest.json`（129 文件 digest） | 只增不改；改=升 `corpus_version` 并写 CHANGELOG 差异表 |
-| 契约字段（`VerifySpec`/`VerifyReport`） | `tests/shape.spec.ts`（字段路径+类型快照） | 1.0 内文不动；形状变更走 1.0→1.1 |
+| 契约字段（`VerifySpec`/`VerifyReport`） | `packages/verify/core/tests/shape.spec.ts`（字段路径+类型快照） | 1.0 内文不动；形状变更走 1.0→1.1 |
 | 视觉 token（DESIGN.md） | `apps/web/tests/tokens.spec.ts`（13 色逐键 + 零裸 hex） | 改色只能从 DESIGN.md 起 |
 
 三者的共同点：**守卫是「相等比较」，不是「人工复核」**。人审会累、会漏、会看走眼；相等比较不会。

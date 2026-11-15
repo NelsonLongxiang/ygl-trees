@@ -7,7 +7,7 @@ kind: 参考
 # DSH ⇄ ygl-trees 集成：dsh-mcp-connector 配置（方案 D）
 
 > 属主裁定（2026-10-23）：不建独立插件仓、不进 apps——**扩展现有 MCP 桥**。
-> ygl-trees 0.114.26 起 `ygl-trees mcp` 提供 **11 工具** stdio 面；DSH 侧用现成
+> `ygl-trees mcp` 提供 **4 个工具**的 stdio 面（read / write / verify / doctor）；DSH 侧用现成
 > `dsh-mcp-connector`（npm ≥0.2.78）直连。集成交付物 = **本配置段**，不是代码包。
 
 ## 为什么这条路赢
@@ -42,18 +42,16 @@ ygl-trees server（以 connector 自身 config 形态为准，语义如下）：
 - **版本**：connector spawn 的就是当前安装的 ygl-trees（建议全局 `npm i -g ygl-trees` 或
   connector 环境内 pin），升级 ygl-trees 即升级工具面。
 
-## 11 工具面（0.114.26）
+## 工具面
 
-> 0.115.0 起合并为 4 个工具：`read` / `write` / `verify` / `doctor`，按 domain × action 路由。下表是 0.114.26 的历史形态，留作对照。
+四个工具，读写两类按 domain × action 路由，参数原样传给同名 CLI 命令。实际 schema 以 `tools/list` 为准（定义在 `packages/ops/tools/src/mcp.ts`）。
 
 | 工具 | 面 | 说明 |
 |---|---|---|
-| agent_brief / agent_match | 读 | 工作区定位 / 技能匹配（总从这里开始） |
-| kb_search / claim_evaluate | 读 | 中文全文检索 / 决策模型置信度 |
-| tree_state / produce_report / doctor / task_advance | 读+状态 | 树态 / 报告 / 健康检查 / 任务推进 |
-| **research_write** | 写 | query/source/evidence/claim 六动词，幂等（duplicate:true） |
-| **tree_write** | 写 | tree-new/use · node-add/link/unlock/index（改结构后必 index） |
-| **verify** | 写 | submit→prepare→run→report→archive→meta 全管线 |
+| **read** | 读 | domain：agent / kb / library / research / tree / node / task / rel / produce / project / db / skill（28 个 action）。工作区状态、知识检索、研究管线列表、树与节点状态、任务、关系、项目、技能 |
+| **write** | 写 | domain：research / kb / tree / task / rel / project / produce（33 个 action）。研究管线、知识笔记、科技树结构、任务、关系、项目；幂等（同内容重跑返回已有行，duplicate:true） |
+| **verify** | 写 | spec-validator 管线：submit / prepare / run / report / trace / archive / meta / lint-candidates / example，以及 tree-prepare / tree-run / tree-report / tree-trace |
+| **doctor** | 读+修 | 9 项工作区健康检查；`fix=true` 自动修安全项（脏索引、陈旧锁） |
 
 rc 契约全链保真：0 成功（含重复）/ 1 运行错误 / 2 用法错误——失败时 MCP 响应带
 `isError:true`，content 为机器可读 `{rc, error}` JSON。
@@ -68,7 +66,7 @@ techtree/verify/lifecycle）无需经 MCP 分发。
 
 | 面 | 验收点 |
 |---|---|
-| 工具 | connector 装配后 `tools/list` → DSH 工具可见的**映射保真**（11/11，rc 语义不丢） |
+| 工具 | connector 装配后 `tools/list` → DSH 工具可见的**映射保真**（4/4，rc 语义不丢） |
 | 技能 | 文件系统层 junction 实证 |
 | L5 真实任务 | 随 headless 环境修复后补 |
 

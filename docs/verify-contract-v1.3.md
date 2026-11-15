@@ -3,7 +3,7 @@
 > 状态：**草案，未实现**。对应 #27 方案（`docs/reviews/taste-extraction-plan.md`）§5 工作流 **T4**；
 > **T1（archive 扫描清单）已随 #32 合入**，剩余阻塞为裁定 **D3**（契约 1.3 批内容）。
 > 目标评审：K3 评审席、fdc757f6（契约持闸）、开发席（引擎维护者）。
-> 现行契约为 1.2（`CONTRACT_VERSION` / `CORPUS_VERSION` = 1.2）。
+> 现行契约为 1.3、语料 1.2（`CONTRACT_VERSION` / `CORPUS_VERSION`）。但落地的 1.3 是 #80 / #232 批准的另一组内容（glob 谓词、只读 pragma 来源、派生表与视图、归档采集器，见 [verify-contract.md](verify-contract.md) §0a）；本草案的 `semantic_scope`、`provenance` 都不在其中，引擎不产出这两个字段，`verify run` 也没有 `--source-repo` / `--source-path`。
 > 写法沿用 [verify-contract-v1.2.md](verify-contract-v1.2.md)：先问题、再形态、再版本与语料、最后明确不做什么。
 
 ## 1. 要解决的真实问题

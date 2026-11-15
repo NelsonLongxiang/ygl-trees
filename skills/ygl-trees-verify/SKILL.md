@@ -296,7 +296,7 @@ ygl-trees verify register <sealed-binary>  # footer 链 → registrations/ + bin
 
 ```bash
 ygl-trees verify self-check                  # 六环：environment → canonical 向量 → 语料摘要 → 形状
-                                            #      → 语料实跑（33 例）→ 归档重算
+                                            #      → 语料实跑（44 例）→ 归档重算
 ygl-trees verify self-check --corpus <dir>   # 发布产物无语料时显式 skip 并提示
 ygl-trees verify self-check --no-cases       # 只跑前四环（无内核环境时）
 ```

@@ -8,7 +8,7 @@ kind: "package-reference"
 M13 **spec-validator** 的 TS 参考实现：把「业务专家的一段话 + 附件」冻结成可重放的验证规范（spec），
 在数据源上跑出可审计的报告（report），零人工确认。
 
-契约真相在 [`docs/verify-contract.md`](../../../docs/verify-contract.md)（当前 v0.4，**未冻结**）；
+契约真相在 [`docs/verify-contract.md`](../../../docs/verify-contract.md)（现行契约 1.3、语料 1.2，见 `src/contract.ts` 的 `CONTRACT_VERSION` / `CORPUS_VERSION`）；
 设计叙事在 [`docs/spec-validator.md`](../../../docs/spec-validator.md)。
 
 ## 这是什么
@@ -41,9 +41,11 @@ console.log(report.overall, report.summary);        // 判定在报告里，不�
 `corpus/run.ts` 逐例物化数据库、跑引擎、与期望投影比对——七型各有至少一例，
 `tests/corpus.spec.ts` 把这条门禁钉住。
 
-> 逐字 parity（TS × Rust 四向）留到 Rust 侧存在、JCS serializer 两边共用之后（G4）。
+> 跨实现 parity：Rust 引擎 [`rust/yglverify`](../../../rust/yglverify/README.md) 对同一份语料逐例比对报告投影（`cargo test --test corpus_parity`），canonical 向量 `corpus/canonical/vectors.json` 两边逐字节一致。
 
 ## 状态
 
-M13-1 骨架：契约 v0.5（docs/verify-contract.md）、引擎 + SQLite runner + canonical JSON（JCS 子集，跨实现向量 corpus/canonical/vectors.json）+ prepare 流水线（P0–P5，含 schema 全量校验与附件 sha256 绑定）+ 语料 33 例（七型 8 + 红队 10 + compare 矩阵 12 + 聚合对账 1 + 其它边界），78 测试全绿。
-未做：prepare/自审链、命令面（CLI）、封包器（M13-1b）、Rust 二进制。
+- 契约 1.3 / 语料 1.2；语料 44 例（37 例比对报告投影 + 7 例构造期拒绝），`ygl-trees verify self-check` 的 corpus-cases 环逐例实跑。
+- 引擎 + SQLite runner（`src/engine.ts`、`src/sqlite-runner.ts`）、canonical JSON（JCS 子集，`src/canonical.ts`）、prepare 流水线（P0–P5，`src/prepare.ts`）、封包与签名（`src/signature.ts`，见 [docs/verify-signing.md](../../../docs/verify-signing.md)）、仓库准入（`src/meta.ts`）。
+- 命令面在 CLI 的 `verify` 命令组（submit / prepare / run / report / trace / archive / meta / self-check 等），MCP 经 `verify` 工具调用同一条管线。
+- Rust 二进制在 [`rust/yglverify`](../../../rust/yglverify/README.md)。

@@ -57,7 +57,7 @@ Claude Desktop 的 `claude_desktop_config.json` 加：
 }
 ```
 
-Cursor / VS Code / Windsurf 同理。8 个工具即刻可用。
+Cursor / VS Code / Windsurf 同理。4 个工具（read / write / verify / doctor）即刻可用。
 
 ## 「决策模型」是什么？
 
@@ -126,8 +126,8 @@ pnpm install && pnpm build && pnpm test
 | [ONE-PAGER.md](ONE-PAGER.md) | 30 秒了解 |
 | [BLOG-POST-CN.md](BLOG-POST-CN.md) | 为什么造它 |
 | [llms.txt](llms.txt) | Agent 一次性获取全部能力 |
-| [HANDOFF.md](HANDOFF.md) | 项目全景 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 项目全景：所有部件如何协作 |
 
 ---
 
-*v0.71.0 · 114 commits · MIT License · [GitHub](https://gitee.com/NelsonLongXiang/ygl-trees) · [npm](https://www.npmjs.com/package/ygl-trees)*
+*MIT License · [GitHub](https://github.com/NelsonLongxiang/ygl-trees)（[Gitee 镜像](https://gitee.com/NelsonLongXiang/ygl-trees)） · [npm](https://www.npmjs.com/package/ygl-trees)*

@@ -75,7 +75,7 @@ kind: 规范
 | 双实现 parity：TS/Rust 整份报告逐字节相等才算实现完成 | rust-parity 门禁（44 例，随语料增长） |
 | 新检查器能力 → 先契约草案（两席裁定）后实现 | verify-contract-vN.md 草案流 |
 | 元规格规则集（验证器仓库准入）：见 §4.4（R1–R3 首版，v1.1 修订 R2/R3 并增 R5；R4 缓行） | `verify meta`（v1 排 0.111.0；v2 挂 submit/prepare 接受面，FAIL=拒收） |
-| 提交前全门禁绿 + demo/单测覆盖新行为 | pnpm test 四段制 |
+| 提交前全门禁绿 + demo/单测覆盖新行为 | pnpm test 全门禁 |
 
 ## §2 运维规范（谁跑验证器）
 
