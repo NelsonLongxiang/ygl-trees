@@ -11,6 +11,10 @@ DB connection, schema, migration, ORM, entities, types, container, and Cordis Da
 
 Import from `@ygl/core-database` when you need db connection, schema, migration, orm, entities, types, container, and cordis databaseservice.
 
+## Configuration readers
+
+`config.ts` owns the single `CONFIG_REGISTRY`, `ConfigSpec`, `specOf`, `isSecretKey` and `configGet/configGetNumber/configGetBool` exports. Readers accept the DB type without a runtime DB import, resolve overrides against the registry defaults and perform no writes. Mutation, audit events, secret display and export filtering stay in ops/tools. Domain packages import these readers directly from this lower layer.
+
 ## PG business workspaces (B8 batch 1)
 
 `pg-workspace.ts` validates a credential-free target hash, checks `meta.backend_binding`, and atomically publishes the local `pg-binding.json` pointer after connecting to an explicitly migrated schema. PG business commands require `YGL_SESSION` or `DSH_SESSION_ID`; a bound home without its PG target refuses SQLite fallback. `getPgOrm()` stays `synchronize: false`. `requirePgColumns` checks identifier metadata required by the actual command, emits safe table.column diagnostics and never changes the schema. No ticker locking or exactly-once external effects are claimed.

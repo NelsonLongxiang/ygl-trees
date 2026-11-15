@@ -51,7 +51,7 @@ pnpm skills:audit         # 技能真值门禁：skills/*/SKILL.md 命令字面�
 pnpm ratchet              # 度量棘轮：bundle/前端体积/冷启动只降不升（基线 ratchet-baseline.json）
 pnpm test:rust            # M13-1b 二进制 parity：cargo test（44 例冻结语料：37 例报告投影 + 7 例构造期拒绝；canonical 向量 + CLI 契约）
 pnpm verify:run           # 验证器组合入口：submit → prepare → run（rc 只表达过程，判定在报告）
-pnpm contract:audit       # 契约体检（156 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道 / 舰队材料 / schema parity
+pnpm contract:audit       # 契约体检（157 项）：幂等 / duplicate / 坏引用点名 / 用法 rc=2 / JSON 通道 / 舰队材料 / schema parity
 pnpm smoke:bun            # Bun 运行时探针（当前 Windows 受阻，见 docs/bun-compat.md）
 ```
 

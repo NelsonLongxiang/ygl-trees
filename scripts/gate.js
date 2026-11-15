@@ -21,6 +21,110 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
+
+const { lstatSync, readdirSync, readFileSync } = fs;
+const { join, relative, resolve } = path;
+const SECTIONS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+
+function directories(root, path) {
+  let entries;
+  try { entries = readdirSync(path, { withFileTypes: true }); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  return entries.filter(entry => {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) return false;
+    if (entry.isSymbolicLink()) throw new Error("linked source directory: " + relative(root, join(path, entry.name)));
+    return entry.isDirectory();
+  }).map(entry => join(path, entry.name)).sort();
+}
+
+function checkSourceLayouts(root) {
+  const layouts = []; let inPackages = false;
+  for (const raw of readFileSync(join(root, "pnpm-workspace.yaml"), "utf8").split(/\r?\n/)) {
+    const line = raw.replace(/#.*/, "").trimEnd();
+    if (!line.trim()) continue;
+    if (!/^\s/.test(line)) { inPackages = line === "packages:"; continue; }
+    if (!inPackages) continue;
+    const item = /^\s+-\s+(['"]?)([^'"\s]+)\1$/.exec(line);
+    if (!item) throw new Error("unsupported workspace layout entry: " + line.trim());
+    layouts.push(item[2]);
+  }
+  if (JSON.stringify(layouts.sort()) !== JSON.stringify(["apps/*", "packages/*/*", "vendor/*"])) {
+    throw new Error("workspace layouts changed; update the source-manifest gate: " + layouts.join(", "));
+  }
+}
+
+function readWorkspaceManifests(root) {
+  root = resolve(root);
+  checkSourceLayouts(root);
+  // These are the three source layouts in pnpm-workspace.yaml, not a recursive glob.
+  const roots = ["packages", "apps", "vendor"].map(name => join(root, name));
+  for (const path of roots) {
+    try { if (lstatSync(path).isSymbolicLink()) throw new Error("linked source root: " + relative(root, path)); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  const paths = [
+    ...directories(root, roots[0]).flatMap(group => directories(root, group)),
+    ...directories(root, roots[1]),
+    ...directories(root, roots[2]),
+  ];
+  return paths.flatMap(path => {
+    const file = join(path, "package.json");
+    try {
+      if (!lstatSync(file).isFile() || lstatSync(file).isSymbolicLink()) throw new Error("non-regular manifest: " + relative(root, file));
+      const manifest = JSON.parse(readFileSync(file, "utf8"));
+      return [{ path: relative(root, file).replaceAll("\\", "/"), manifest }];
+    } catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  });
+}
+
+function checkWorkspaceGraph(entries) {
+  const packages = new Map();
+  for (const entry of entries) {
+    const name = entry.manifest?.name;
+    if (typeof name !== "string" || !name) throw new Error("missing workspace name: " + entry.path);
+    if (packages.has(name)) throw new Error("duplicate workspace name: " + name + " (" + packages.get(name).path + ", " + entry.path + ")");
+    packages.set(name, entry);
+  }
+  if (!packages.size) throw new Error("no workspace manifests found");
+  const graph = new Map([...packages.keys()].sort().map(name => [name, new Set()]));
+  for (const [name, entry] of packages) {
+    for (const section of SECTIONS) {
+      for (const [target, spec] of Object.entries(entry.manifest[section] ?? {})) {
+        if (typeof spec !== "string" || !spec.startsWith("workspace:")) continue;
+        // The repository uses named workspace ranges, not aliases or relative protocols.
+        if (!/^workspace:(?:\*|~|\^|[~^<>=\d])/.test(spec) || spec.slice(10).includes("/")) {
+          throw new Error("unsupported workspace reference: " + name + " -> " + target + " (" + spec + ")");
+        }
+        if (!packages.has(target)) throw new Error("unknown workspace: " + name + " -> " + target + " (" + section + ")");
+        graph.get(name).add(target);
+      }
+    }
+  }
+  const done = new Set(), active = new Set(), route = [];
+  function visit(name) {
+    if (active.has(name)) throw new Error("workspace cycle: " + [...route.slice(route.indexOf(name)), name].join(" -> "));
+    if (done.has(name)) return;
+    active.add(name); route.push(name);
+    for (const target of [...graph.get(name)].sort()) visit(target);
+    route.pop(); active.delete(name); done.add(name);
+  }
+  for (const name of graph.keys()) visit(name);
+  return { packages: graph.size, edges: [...graph.values()].reduce((sum, edges) => sum + edges.size, 0), cycles: 0 };
+}
+
+
+if (process.argv[2] === "--workspace-graph") {
+  try {
+    if (process.argv.length > 4) throw new Error("usage: node scripts/gate.js --workspace-graph [repository]");
+    const result = checkWorkspaceGraph(readWorkspaceManifests(process.argv[3] ?? ROOT));
+    console.log("workspace-graph: " + result.packages + " packages, " + result.edges + " edges, no cycles");
+  } catch (error) {
+    console.error("workspace-graph: " + error.message);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 const PACKAGES_DIR = path.join(ROOT, "packages");
 
 let violations = 0;

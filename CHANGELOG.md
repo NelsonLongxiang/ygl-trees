@@ -1,6 +1,10 @@
 ## Unreleased
 
+- **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增源码清单有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
+
 测试与门禁（不改变产品行为）：
+
+- **R3 行尾回归无 clone 夹具**：用项目 tmp 内独立 `GIT_INDEX_FILE` 读取 HEAD 并执行 `checkout-index`，保留 `core.autocrlf=true` 与真实 `.gitattributes` 转换、tooling 零漂移及 R3 PASS 判据；导出不建 `.git`，子进程环境收尾且真实 index 字节不变。
 
 - **Windows 失败取证**（Refs #202、#203、#209）：query attach 测试保留子进程退出码、signal、原始 error.code 与耗时，不再把 null 退出码误诊成超时。bundle 配置隔离用无 Git 元数据的源码快照替代本地 shared clone，保留父目录诱饵与 minify 反例，失败时保留步骤日志和 Git trace。watcher 生命周期测试记录事件、读取和投影顺序，失败时在清理前保存源文件/索引快照；超时、并发及产品实现不变，历史间歇失败未据此宣称根治。
 

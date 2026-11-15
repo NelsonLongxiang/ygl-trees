@@ -529,6 +529,13 @@ else
   fail "fleet fixtures lint+prepare" "$(printf '%s' "$FLEETOUT" | head -c 400)"
 fi
 
+GRAPHOUT=$(node scripts/gate.js --workspace-graph 2>&1); GRAPHRC=$?
+if [ "$GRAPHRC" = "0" ]; then
+  pass "workspace graph (source manifests have no dependency cycles)"
+else
+  fail "workspace graph" "$GRAPHOUT"
+fi
+
 # B2：SCHEMA_SQL 与 MIGRATE_DDL 列集逐表对账（schema 单一权威方向的门禁面）
 if node scripts/schema-parity.mjs >/dev/null 2>&1; then
   pass "schema parity (SCHEMA_SQL == MIGRATE_DDL column sets)"

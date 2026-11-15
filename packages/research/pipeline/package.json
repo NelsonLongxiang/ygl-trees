@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@ygl/core-database": "workspace:~",
-    "@ygl/ops-tools": "workspace:~",
     "typeorm": "^1.1.0"
   }
 }

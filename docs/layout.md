@@ -21,7 +21,7 @@ ygl-trees/
 │
 ├── vendor/               ← DSH fork 的 Cordis 全家桶（cordis / cosmokit / schemastery / timer + loader / include / group / hmr / logger-console）
 ├── packages/             ← 领域模块（库代码，每个包一个 package.json，src/ + tests/ + README.md）
-│   ├── core/database       @ygl/core-database     db / orm / entities / container / search / plugin（ctx.database）
+│   ├── core/database       @ygl/core-database     db / orm / entities / container / config 读取 / search / plugin（ctx.database）
 │   ├── core/text           @ygl/core-text         text / fmt / eventbus / flagcheck / scope
 │   ├── research/pipeline   @ygl/research-pipeline query → source → evidence → claim，predict（预测与打分）
 │   ├── research/produce    @ygl/research-produce  produce / project 命令组（报告、spec、design 产物）
@@ -49,13 +49,13 @@ ygl-trees/
 @ygl/core-text, @ygl/techtree-eval, @ygl/verify-core ──→ (无内部依赖)
 @ygl/core-database, @ygl/web-app ──→ @deepseek-ai/cordis
 @ygl/techtree-model ──→ core-database, core-text
-@ygl/research-pipeline ──→ core-database, ops-tools
+@ygl/research-pipeline ──→ core-database
 @ygl/research-produce, @ygl/knowledge-skills ──→ core-database, core-text, research-pipeline
 @ygl/ops-tools ──→ core-database, core-text, research-pipeline, techtree-model, web-app, @deepseek-ai/cordis
 @ygl/cli ──→ core-database, core-text, ops-tools, research-pipeline, techtree-model, web-app, @deepseek-ai/cordis / cordis-plugin-timer / schemastery
 ```
 
-**现存例外**：`research-pipeline` 与 `ops-tools` 互相依赖（pipeline 的 `cmds.ts` 引 `ops/tools/src/config` 的配置读取；ops-tools 的 db / doctor / job / patrol / verify 命令引 pipeline），不符合原定的「单向、无循环」。
+配置登记与只读解析位于 `core/database/src/config.ts`，四个域的命令从该层读取；ops 保留配置写入、审计和脱敏。旧 ops 配置读取导出暂作兼容，不供域包新增依赖。`scripts/gate.js --workspace-graph` 浅读 workspace 的源码清单并检查命名有向环，接入 `contract-audit`；不遍历 `node_modules` 或目录联接，workspace 布局变化须同步检查器。
 
 **铁律**：packages/ 内的域模块**不知道** apps/ 的存在；apps/ 知道 packages/ 并组装它们。vendor/ 不知道上层的任何东西。
 

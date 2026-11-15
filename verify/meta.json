@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "c4cd0dc2ece22a61ae4f2429ca9503c9b453243f2b78cb924849f5200b76ae2f",
+      "sha256": "23ae240aa3d7ce0dfc081d9adcecac94c10af392983c6138d8d03e31b264e72d",
       "role": "gate"
     },
     {
@@ -115,7 +115,7 @@
     },
     {
       "path": "scripts/gate.js",
-      "sha256": "2799c7a6263a8ea13022fd1ed72e0e26dc49f1f470030603220027a0e722fb27",
+      "sha256": "556ca2e516c35b5bcfba7f87883b2cb0ec51df0bc972e241807737c99c801542",
       "role": "gate"
     },
     {
@@ -1498,6 +1498,30 @@
       "reason": "#276: scope malformed/bare/not-found JSON rc contracts",
       "actor": "dev-seat",
       "at": "2026-11-14T03:55:48.176Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "c4cd0dc2ece22a61ae4f2429ca9503c9b453243f2b78cb924849f5200b76ae2f",
+      "new_sha256": "03b0e65c79453dbb645ff4b12fcfbf6762ac2b11a6ac26e3beb907df2e19f6c1",
+      "reason": "#234 add workspace cycle gate to contract audit",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-15T08:35:08.284Z"
+    },
+    {
+      "path": "scripts/gate.js",
+      "old_sha256": "2799c7a6263a8ea13022fd1ed72e0e26dc49f1f470030603220027a0e722fb27",
+      "new_sha256": "556ca2e516c35b5bcfba7f87883b2cb0ec51df0bc972e241807737c99c801542",
+      "reason": "#234 reuse existing package gate for source-only workspace cycles",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-15T09:04:59.455Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "03b0e65c79453dbb645ff4b12fcfbf6762ac2b11a6ac26e3beb907df2e19f6c1",
+      "new_sha256": "23ae240aa3d7ce0dfc081d9adcecac94c10af392983c6138d8d03e31b264e72d",
+      "reason": "#234 invoke graph mode of existing package gate",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-15T09:04:59.518Z"
     }
   ],
   "kind": "engine",

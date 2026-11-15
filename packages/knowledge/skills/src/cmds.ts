@@ -9,7 +9,7 @@ import { emitEvent } from "../../../core/text/src/eventbus";
 import { getOrm, getPgOrm } from "../../../core/database/src/orm";
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import * as writes from "../../../research/pipeline/src/writes";
-import { configGet, configGetNumber } from "../../../ops/tools/src/config";
+import { configGet, configGetNumber } from "../../../core/database/src/config";
 import { rejectBare } from "../../../core/text/src/flagcheck";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
