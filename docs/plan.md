@@ -46,6 +46,14 @@
 
 新基线首轮完整运行 rc1：1844 过/124 跳/1 败，共 1969；唯一失败为八进程同内容 query-add 中一个进程返回 `SqliteError: database is locked`，已建 [#286](https://github.com/NelsonLongxiang/ygl-trees/issues/286)，原红保留。三波各八进程的定额取证捕获两次事务 INSERT 的 SQLITE_BUSY，现有重试恢复；这不证明原失败根因。测试补齐所有子进程 stderr/status/signal/耗时及失败留证，仍保持八进程、300 秒及原 all-rc0/单行断言；B4/诊断定向 9/9 过，产品锁和重试策略未改。后续完整门禁不得据碰巧通过关闭 #286。
 
+## #286 SQLite 写锁候选（独立分支，未交付）
+
+#282 的冻结本地头 `25bbff5` 完整门禁 rc0，但正常 push 的 README 二次单测中，十二进程 KB 写入出现 `database is locked`；只停止本席 push 子树，远端分支仍 `598dd0f`，未跳钩子或重推碰绿，原红保留。另开 `fix/sqlite-writer-reservation-286`，不移动 #282 分支。
+
+确定性双连接交错证明一种失败机制：事务去重读取后，另一连接提交会导致 `SQLITE_BUSY_SNAPSHOT`，原五次尝试可被连续耗尽；原未取完整栈的失败进程是否同一原因仍不冒认。候选仅在 SQLite 事务内、回调前执行零行 `UPDATE meta SET value=value WHERE 0` 预留写槽，原等待／重试预算、事务原子性和 PG 路径不变。新增六例中旧代码三绿三红，修正去重拦截范围后与提交后事件测试共 10/10；相同断言移除预留语句再次三红，源码逐字恢复。构建后的原八进程去重、十二进程 KB 双写、事件及新回归共 16/16 通过，无跳过。
+
+预期完整计数 `1969+6=1975`，以本轮全链及 README 二次实测为准。非作者 WIP 评审 `direct-90bee82d` 与监督席交付顺序请求 `direct-9a4407d6` 尚未终态；不把定向绿灯当作完整验收，不将产品修复擅自混入诊断 PR，不关闭 #286、不冒称独立 master／G8 通过。 首轮全链主单测 1849 过/124 跳/2 败，共 1975，唯一失败文件为 quote-mismatch-error 的两个旧 manager mock 缺少 query 方法；没有改变产品错误语义。mock 现严格断言唯一预留 SQL 与调用次数，原 QuoteMismatchError、非 PgCapabilityError、source id 与批次物理行号断言均保留；修正后定向 12/12 通过，原红留存。第二轮完整验证以新冻结输入为准。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）
