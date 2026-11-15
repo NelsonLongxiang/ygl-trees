@@ -28,6 +28,11 @@ describe("#234 declared workspace dependency graph", () => {
   it("the declared workspace dependencies are acyclic after the config split", () => {
     const result = run(); expect(result.rc).toBe(0); expect(result.text).toMatch(/packages, \d+ edges, no cycles/);
   });
+  it("the real source graph admits only the named ORM entity-assembly exception", () => {
+    const result = run(ROOT, "--source-graph"); expect(result.rc).toBe(0);
+    expect(result.text).toContain("no cycles after 1 exact ORM assembly exception(s)");
+    expect(result.text).toContain("packages/core/database/src/orm.ts -> packages/research/pipeline/src/entities.ts [RESEARCH_ENTITIES]");
+  });
   it("accepts an acyclic app/domain/vendor graph and ignores ordinary npm dependencies", () => fixture({
     "apps/cli": { name: "@ygl/cli", dependencies: { "@ygl/domain": "workspace:~", external: "^1.0.0" } },
     "packages/research/domain": { name: "@ygl/domain", devDependencies: { framework: "workspace:*" } },
@@ -75,6 +80,8 @@ describe("#234 declared workspace dependency graph", () => {
     const gate = readFileSync(join(ROOT, "scripts/contract-audit.sh"), "utf8");
     expect(gate).toContain("node scripts/gate.js --workspace-graph");
     expect(gate).toContain('fail "workspace graph"');
+    expect(gate).toContain("node scripts/gate.js --source-graph");
+    expect(gate).toContain('fail "source graph"');
   });
 });
 
@@ -129,5 +136,61 @@ describe("#234 literal relative package-source graph", () => {
     expect(check(root).rc).toBe(0);
     symlinkSync(join(root, "packages/domain/b/src"), join(root, "packages/core/a/src/linked"), process.platform === "win32" ? "junction" : "dir");
     const result = check(root); expect(result.rc).toBe(1); expect(result.text).toContain("linked source entry");
+  }));
+});
+
+
+describe("#234 source graph complete literal forms and exact ORM assembly exception", () => {
+  const write = (root: string, file: string, text: string) => {
+    const full = join(root, file); mkdirSync(resolve(full, ".."), { recursive: true }); writeFileSync(full, text);
+  };
+  const check = (root: string) => run(root, "--source-graph");
+  it.each([
+    ["import-type", "ts", 'export type A = import("../../../domain/b/src/index").B;', 'export interface B { value: string }', false],
+    ["import-type cycle", "ts", 'export type A = import("../../../domain/b/src/index").B;', 'export interface B { a: import("../../../core/a/src/index").A }', true],
+    ["import-equals", "cts", 'import b = require("../../../domain/b/src/index"); export const a = b.b;', 'export const b = 1;', false],
+    ["import-equals cycle", "cts", 'import b = require("../../../domain/b/src/index"); export const a = 1; export const x = b.b;', 'import a = require("../../../core/a/src/index"); export const b = a.a;', true],
+  ])("counts dependencies from %s", (_name, ext, a, b, cycle) => fixture({
+    "packages/core/a": { name: "a" }, "packages/domain/b": { name: "b" },
+  }, root => {
+    write(root, "packages/core/a/src/index." + ext, String(a));
+    write(root, "packages/domain/b/src/index." + ext, String(b));
+    const result = check(root); expect(result.rc).toBe(cycle ? 1 : 0);
+    if (cycle) {
+      expect(result.text).toContain("source cycle: a -> b -> a");
+      expect(result.text).toContain("packages/core/a/src/index." + ext + ":1 -> packages/domain/b/src/index." + ext);
+    } else expect(result.text).toContain("1 references");
+    expect(run(root).rc).toBe(0); // Empty declarations do not erase literal source dependencies.
+  }));
+
+  const ORM_PACKAGES = {
+    "packages/core/database": { name: "@ygl/core-database" },
+    "packages/research/pipeline": { name: "@ygl/research-pipeline", dependencies: { "@ygl/core-database": "workspace:*" } },
+  };
+  const orm = (root: string, importLine = 'import { RESEARCH_ENTITIES } from "../../../research/pipeline/src/entities";', source = "orm", target = "entities") => {
+    write(root, "packages/core/database/src/" + source + ".ts", importLine + "\nexport const value = 1;");
+    write(root, "packages/research/pipeline/src/" + target + ".ts", "export const RESEARCH_ENTITIES = []; export interface EXTRA {}");
+    write(root, "packages/research/pipeline/src/cmds.ts", 'import { value } from "../../../core/database/src/' + source + '"; export const v = value;');
+  };
+  it("admits and names only the ruled ORM file/target/RESEARCH_ENTITIES edge", () => fixture(ORM_PACKAGES, root => {
+    orm(root); const result = check(root); expect(result.rc).toBe(0);
+    expect(result.text).toContain("no cycles after 1 exact ORM assembly exception(s)");
+    expect(result.text).toContain("packages/core/database/src/orm.ts -> packages/research/pipeline/src/entities.ts [RESEARCH_ENTITIES]");
+    expect(result.text).toContain("#285"); expect(run(root).rc).toBe(0);
+  }));
+  it.each(["second-edge", "extra-symbol", "changed-symbol", "dynamic-import", "import-type", "changed-source", "changed-target"])("refuses ORM exception mutation %s", mutation => fixture(ORM_PACKAGES, root => {
+    if (mutation === "changed-source") orm(root, undefined, "other");
+    else if (mutation === "changed-target") orm(root, 'import { RESEARCH_ENTITIES } from "../../../research/pipeline/src/other";', "orm", "other");
+    else if (mutation === "extra-symbol") orm(root, 'import { RESEARCH_ENTITIES, EXTRA } from "../../../research/pipeline/src/entities";');
+    else if (mutation === "changed-symbol") orm(root, 'import { EXTRA } from "../../../research/pipeline/src/entities";');
+    else if (mutation === "dynamic-import") orm(root, 'export const load = import("../../../research/pipeline/src/entities");');
+    else if (mutation === "import-type") orm(root, 'export type More = import("../../../research/pipeline/src/entities").EXTRA;');
+    else {
+      orm(root);
+      write(root, "packages/core/database/src/second.ts", 'import { RESEARCH_ENTITIES } from "../../../research/pipeline/src/entities"; export const more = RESEARCH_ENTITIES;');
+    }
+    const result = check(root); expect(result.rc).toBe(1);
+    expect(result.text).toMatch(/source cycle:|ORM assembly exception changed:/);
+    expect(run(root).rc).toBe(0);
   }));
 });

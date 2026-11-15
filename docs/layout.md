@@ -57,7 +57,9 @@ ygl-trees/
 
 配置登记与只读解析位于 `core/database/src/config.ts`，四个域的命令从该层读取；ops 保留配置写入、审计和脱敏。旧 ops 配置读取导出暂作兼容，不供域包新增依赖。`scripts/gate.js --workspace-graph` 浅读 workspace 清单并检查**声明依赖图**的命名有向环，接入 `contract-audit`；不遍历 `node_modules` 或目录联接，workspace 布局变化须同步检查器。它不解析源码引用，不能据此宣称源码 import 图无环。
 
-`node scripts/gate.js --source-graph` 是另一项严格诊断：解析 `packages/*/*/src` 内字面量相对 import、类型导入、重导出、require 与动态 import，解析失败或源路径链接均拒绝。当前 `core/database/src/orm.ts` 静态读取 `research/pipeline/src/entities.ts` 的 `RESEARCH_ENTITIES`，研究域又依赖 core/database，源码图因此仍有循环；ORM 同步和异步数据源均须在初始化时拥有完整实体列表。此既有装配边界尚未被裁定为架构例外，本次不改实体注册或启动顺序，不加泛化豁免。源码模式当前返回非零且未作为契约放行门；应另裁精确例外或实体装配解耦，不能用清单门的绿灯替代。
+`node scripts/gate.js --source-graph` 单独检查 `packages/*/*/src` 的字面量相对依赖，包括静态／类型导入、`import("…")` 类型节点、`import x = require("…")`、重导出和动态加载；解析失败或源路径链接均拒绝。它与声明依赖图分别接入 `contract-audit`，不会遍历安装依赖联接。
+
+**唯一具名架构例外**：`packages/core/database/src/orm.ts` 通过静态值导入从 `packages/research/pipeline/src/entities.ts` 读取唯一符号 `RESEARCH_ENTITIES`。核心 ORM 引导目前必须在数据源初始化前枚举完整研究域实体，故保留这条既有装配边；例外只按源文件、目标文件和导入符号匹配，不按行号、包对或目录豁免。结果会显式列出该例外，而不声称原始源码图本来无环。换符号、额外符号、替换导入形式、换文件或新增第二条循环边仍须判红。实体按属包注册的启动顺序解耦另见 [#285](https://github.com/NelsonLongxiang/ygl-trees/issues/285)；本修复不引入该启动契约。
 
 **铁律**：packages/ 内的域模块**不知道** apps/ 的存在；apps/ 知道 packages/ 并组装它们。vendor/ 不知道上层的任何东西。
 

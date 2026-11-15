@@ -7,6 +7,7 @@
 - **五件套**：`package.json`（workspace 成员，声明真实依赖图）+ `tsconfig.json`（extends 根 base）+ `README.md`（YAML frontmatter）+ `src/index.ts`（@module JSDoc 导出面）+ `tests/*.spec.ts`
 - **零散 .ts 禁区**：`packages/` 根与 `<group>/` 根不允许任何 loose 文件（scripts/gate.js 硬检查）
 - 依赖方向单向：`core/* → 域模块 → apps`；域间不互相 import（例外：ops/tools 跨切面可依赖 research/techtree/web——须在 package.json 如实声明；配置登记与只读解析由 core/database 提供，域包不得反向依赖 ops；contract-audit 检查全部 workspace 清单有向无环）
+- 唯一 ORM 装配边界：`core/database/src/orm.ts` 仅可静态值导入 `research/pipeline/src/entities.ts` 的 `RESEARCH_ENTITIES`，因 ORM 初始化须枚举完整实体；源码图门按源/目标文件和唯一符号匹配并显式报告，其他循环不获豁免。实体注册解耦另跟 #285，声明图与源码图不混同。
 
 ## 插件导出契约（Cordis）
 

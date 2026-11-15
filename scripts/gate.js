@@ -163,10 +163,18 @@ function checkSourceGraph(root, entries) {
     const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
     if (source.parseDiagnostics.length) throw new Error("cannot parse package source: " + relative(root, file));
     function visit(node) {
-      let literal, kind, typeOnly = false;
+      let literal, kind, typeOnly = false, importedSymbols = null;
       if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
         literal = node.moduleSpecifier; kind = ts.isImportDeclaration(node) ? "import" : "export";
         typeOnly = Boolean(node.importClause?.isTypeOnly || node.isTypeOnly);
+        const clause = ts.isImportDeclaration(node) ? node.importClause : null;
+        if (clause && !clause.name && clause.namedBindings && ts.isNamedImports(clause.namedBindings) && !clause.namedBindings.elements.some(item => item.isTypeOnly)) {
+          importedSymbols = clause.namedBindings.elements.map(item => (item.propertyName ?? item.name).text);
+        }
+      } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+        literal = node.argument.literal; kind = "import-type"; typeOnly = true;
+      } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+        literal = node.moduleReference.expression; kind = "import-equals"; typeOnly = Boolean(node.isTypeOnly);
       } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || ts.isIdentifier(node.expression) && node.expression.text === "require")) {
         literal = node.arguments[0]; kind = node.expression.kind === ts.SyntaxKind.ImportKeyword ? "dynamic-import" : "require";
       }
@@ -178,20 +186,27 @@ function checkSourceGraph(root, entries) {
           const target = choices.find(candidate => owners.has(key(candidate)));
           if (!target) throw new Error("unresolved package source import: " + relative(root, file).replaceAll("\\", "/") + " -> " + specifier);
           const to = owners.get(key(target));
-          if (to !== owner) edges.push({ from: owner, to, file: relative(root, file).replaceAll("\\", "/"), target: relative(root, target).replaceAll("\\", "/"), line: source.getLineAndCharacterOfPosition(literal.getStart()).line + 1, kind, typeOnly });
+          if (to !== owner) edges.push({ from: owner, to, file: relative(root, file).replaceAll("\\", "/"), target: relative(root, target).replaceAll("\\", "/"), line: source.getLineAndCharacterOfPosition(literal.getStart()).line + 1, kind, typeOnly, importedSymbols });
         }
       }
       ts.forEachChild(node, visit);
     }
     visit(source);
   }
+  // The approved ORM assembly boundary is keyed by files and the sole imported symbol, never by line.
+  const assembly = edges.filter(edge => edge.file === "packages/core/database/src/orm.ts" && edge.target === "packages/research/pipeline/src/entities.ts");
+  if (assembly.some(edge => edge.kind !== "import" || edge.typeOnly || edge.importedSymbols?.length !== 1 || edge.importedSymbols[0] !== "RESEARCH_ENTITIES") || assembly.length > 1) {
+    throw new Error("ORM assembly exception changed: only the single static RESEARCH_ENTITIES import is approved");
+  }
+  const exceptions = assembly.map(edge => ({ ...edge, reason: "ORM bootstrap enumerates research entities; tracked decoupling #285" }));
+  const enforcedEdges = edges.filter(edge => !assembly.includes(edge));
   const graph = new Map([...names.keys()].sort().map(name => [name, new Set()]));
-  for (const edge of edges) graph.get(edge.from).add(edge.to);
+  for (const edge of enforcedEdges) graph.get(edge.from).add(edge.to);
   const done = new Set(), active = new Set(), route = [];
   function visit(name) {
     if (active.has(name)) {
       const cycle = [...route.slice(route.indexOf(name)), name];
-      const witness = edges.find(edge => edge.from === cycle[0] && edge.to === cycle[1]);
+      const witness = enforcedEdges.find(edge => edge.from === cycle[0] && edge.to === cycle[1]);
       throw new Error("source cycle: " + cycle.join(" -> ") + " (" + witness.file + ":" + witness.line + " -> " + witness.target + ")");
     }
     if (done.has(name)) return;
@@ -200,14 +215,15 @@ function checkSourceGraph(root, entries) {
     route.pop(); active.delete(name); done.add(name);
   }
   for (const name of graph.keys()) visit(name);
-  return { packages: names.size, files: sources.length, references: edges.length, edges: [...graph.values()].reduce((n, set) => n + set.size, 0) };
+  return { packages: names.size, files: sources.length, references: edges.length, edges: [...graph.values()].reduce((n, set) => n + set.size, 0), exceptions };
 }
 
 if (process.argv[2] === "--source-graph") {
   try {
     if (process.argv.length > 4) throw new Error("usage: node scripts/gate.js --source-graph [repository]");
     const root = resolve(process.argv[3] ?? ROOT), result = checkSourceGraph(root, readWorkspaceManifests(root));
-    console.log("source-graph: " + result.packages + " packages, " + result.files + " files, " + result.references + " references, no cycles (literal relative package-source references, including type-only)");
+    console.log("source-graph: " + result.packages + " packages, " + result.files + " files, " + result.references + " references, no cycles after " + result.exceptions.length + " exact ORM assembly exception(s) (literal relative package-source references, including type-only)");
+    for (const edge of result.exceptions) console.log("source-graph exception: " + edge.file + " -> " + edge.target + " [RESEARCH_ENTITIES]; " + edge.reason);
   } catch (error) {
     console.error("source-graph: " + error.message); process.exit(1);
   }

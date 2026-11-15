@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/contract-audit.sh",
-      "sha256": "23ae240aa3d7ce0dfc081d9adcecac94c10af392983c6138d8d03e31b264e72d",
+      "sha256": "ca70d576905546cc770e89ee5c6d8178e1e59356dfd0501cb25656a389116531",
       "role": "gate"
     },
     {
@@ -115,7 +115,7 @@
     },
     {
       "path": "scripts/gate.js",
-      "sha256": "96ad2bb58694d93531386b3d4b05ed68d3d46a315c045a6f3fa8704874f18ba1",
+      "sha256": "bdf520b8ac9eafff6ac41bb56eff6d1721d28b638a0d7559993d5d237b4e7d51",
       "role": "gate"
     },
     {
@@ -1530,6 +1530,22 @@
       "reason": "#234 add strict literal-relative source graph diagnostics without implicit exemptions",
       "actor": "dsh/1c56c492",
       "at": "2026-11-15T13:45:45.796Z"
+    },
+    {
+      "path": "scripts/gate.js",
+      "old_sha256": "96ad2bb58694d93531386b3d4b05ed68d3d46a315c045a6f3fa8704874f18ba1",
+      "new_sha256": "bdf520b8ac9eafff6ac41bb56eff6d1721d28b638a0d7559993d5d237b4e7d51",
+      "reason": "#234 cover literal import types and import-equals; enforce ruled exact ORM assembly exception",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-15T19:24:45.651Z"
+    },
+    {
+      "path": "scripts/contract-audit.sh",
+      "old_sha256": "23ae240aa3d7ce0dfc081d9adcecac94c10af392983c6138d8d03e31b264e72d",
+      "new_sha256": "ca70d576905546cc770e89ee5c6d8178e1e59356dfd0501cb25656a389116531",
+      "reason": "#234 independently enforce literal source graph and declared workspace graph",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-15T19:24:45.712Z"
     }
   ],
   "kind": "engine",

@@ -531,9 +531,16 @@ fi
 
 GRAPHOUT=$(node scripts/gate.js --workspace-graph 2>&1); GRAPHRC=$?
 if [ "$GRAPHRC" = "0" ]; then
-  pass "workspace graph (source manifests have no dependency cycles)"
+  pass "workspace graph (declared dependencies have no cycles)"
 else
   fail "workspace graph" "$GRAPHOUT"
+fi
+
+SOURCE_GRAPH_OUT=$(node scripts/gate.js --source-graph 2>&1); SOURCE_GRAPH_RC=$?
+if [ "$SOURCE_GRAPH_RC" = "0" ]; then
+  pass "source graph (no cycles beyond the exact ORM entity-assembly exception)"
+else
+  fail "source graph" "$SOURCE_GRAPH_OUT"
 fi
 
 # B2：SCHEMA_SQL 与 MIGRATE_DDL 列集逐表对账（schema 单一权威方向的门禁面）
