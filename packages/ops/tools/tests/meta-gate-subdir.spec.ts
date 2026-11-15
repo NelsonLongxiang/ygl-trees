@@ -6,6 +6,7 @@
  * `verify submit` refused with `no AGENTS.md under …/sub`.
  */
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -167,17 +168,13 @@ describe.skipIf(!HAS_BIN)("#25 ③ meta gate walks up like verify meta", () => {
     expect(r.j.meta_warning).toBeUndefined();
   });
 
-  it("outside git, the nearest AGENTS.md still marks a standalone verifier dir", () => {
-    const standalone = join(base, "standalone");
-    mkdirSync(join(standalone, "sub"), { recursive: true });
-    writeFileSync(join(standalone, "AGENTS.md"), "# standalone\n", "utf8");
-    expect(jrun(["verify", "meta"], join(standalone, "sub")).j.repo).toBe(realpathSync(standalone));
-  });
+  // Standalone AGENTS-only topology is unit-tested in meta-root-topology.spec.ts;
+  // a project-local directory cannot truthfully represent an outside-Git tree.
 
   it("outside any git repo the gate still skips by design (ladder 4)", () => {
     const plain = join(base, "plain", "sub");
     mkdirSync(plain, { recursive: true });
-    const r = submit(plain, "plain");
+    const r = submit(neutralCwd(), "plain");
     expect(r.rc).toBe(0);
     expect(r.j.meta_warning).toBeUndefined();
   });

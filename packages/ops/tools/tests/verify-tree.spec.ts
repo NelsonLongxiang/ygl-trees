@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,7 +20,7 @@ let WORK = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
-    cwd: HOME, // outside the verifier repo: no meta gate dependency
+    cwd: neutralCwd(), // absolute fixture inputs/home remain project-local
     encoding: "utf8",
     timeout: 60_000,
     env: { ...process.env, YGL_HOME: HOME, YGL_SESSION: "tree-prepare" },

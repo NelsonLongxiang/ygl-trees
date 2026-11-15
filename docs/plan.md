@@ -30,13 +30,21 @@
 > 现行工作见 GitHub issues（#80 谓词 1.3 提案 / #94 A 簇）与 docs/reviews/contract-1.3-proposal.md。
 
 
-## #276 scope v15（在途）
+## 0.126.0 候选准备（未发布）
+
+从 master `17c2ac2` 建 `release/0.126.0`，包含 #273（#178）、#277（#258）、#278（#275）、#279（#276）。版本/CHANGELOG/能力清单收口后冻结候选，依次执行完整门禁、pack:check 与 exact-head G7，并在 #90 留记录。只准备候选：不创建 tag、不 publish，发布须新的属主批准；Windows 包仅供验证/跨机比对，不替代经复核的官方 tarball。
+
+## #276 scope v15（代码已合并，待发版复核）
 
 #278 已合入 master；#276 采用 merge 保留主干历史。`kb_notes/skills.scope` 使用市场精确词表（空串未归属，非公开），不从项目默认；相同内容写入保留旧 scope，只有 id 选择的 rescope 改笔记授权并记 old/new 事件。note/skill 列表、检索、MCP 与 library 过滤先于排序/分页，空与未给参数不混同。旧 SQLite/PG 工作区只加默认空列、不回填；技能普通 upsert 不清除既有授权。JSON 加法字段 scope 与历史字节黄金的例外只覆盖 note add/show 的空 legacy 值，其他字节照常钉死。验收以 #279 exact head 的单测、契约、G7 与独立复评为准；未发版不关闭 #276。
 
 ## Windows 诊断待办（#202 / #203 / #209）
 
 从 `1c05e15` 另开测试修复线，不改已审 `release/0.126.0@ee0e66b`。#203 补子进程错误类别/耗时与脱敏命令形状；#209 用 `git archive` 源码快照隔离构建，保留字节比较与诱饵/minify 反例，并保全失败日志/trace；#202 仅补事件、读取和索引投影的失败快照，不改 watcher 产品逻辑，不延长 3 秒等待。首轮定向验证发现诊断 mock 自递归及 tar 盘符解析错误，原红保留；修正后 26/26 通过。提交与交付仍须完整门禁和非作者复核；不以隔离绿灯关闭原间歇故障。
+
+监督席裁定 [#282 合入路径](https://github.com/NelsonLongxiang/ygl-trees/pull/282#issuecomment-6896891194)：开发席将已接受主干 `0186fb9` merge 入诊断分支，变更记录按并集合并且保留已发布 `0.126.0` 节字节，重新完整门禁后正常 push；监督席按新精确头和 macOS 全链复核后决定合并，旧 PASS 不外推。本次迁入已在 `da45a28` 全链验证的必要项目内临时根／仓库边界／无 clone 夹具，不带 #234 配置下沉、声明或源码图门，也不带额外日历回归。新增五项临时根反例、六项隔离定位测试并迁出一条物理仓库外断言，预期主单测 `1959+5+6-1=1969`，仍以实测和 README 二次计数为准。正式 G1/G8、产品 meta 准入与原失败断言不变；本地整合不冒称独立 master 复验。
+
+新基线首轮完整运行 rc1：1844 过/124 跳/1 败，共 1969；唯一失败为八进程同内容 query-add 中一个进程返回 `SqliteError: database is locked`，已建 [#286](https://github.com/NelsonLongxiang/ygl-trees/issues/286)，原红保留。三波各八进程的定额取证捕获两次事务 INSERT 的 SQLITE_BUSY，现有重试恢复；这不证明原失败根因。测试补齐所有子进程 stderr/status/signal/耗时及失败留证，仍保持八进程、300 秒及原 all-rc0/单行断言；B4/诊断定向 9/9 过，产品锁和重试策略未改。后续完整门禁不得据碰巧通过关闭 #286。
 
 ## 明确推迟（不进本计划）
 

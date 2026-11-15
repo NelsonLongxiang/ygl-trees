@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
@@ -24,7 +25,7 @@ const scratchTmp = hasBundle ? mkdtempSync(join(tmpdir(), "ygl-snap-tmp-")) : ""
 
 function run(args: string[], env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
-    cwd: home,
+    cwd: neutralCwd(),
     encoding: "utf8",
     env: { ...process.env, YGL_HOME: home, TEMP: scratchTmp, TMPDIR: scratchTmp, ...env },
   });

@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
+import { initFixtureRepo } from "../../../../tests/support/verification-fixtures";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,6 +36,7 @@ function jrun(args: string[]) {
 function repoFixture(name: string, agents = true): string {
   const dir = join(base, name);
   mkdirSync(dir, { recursive: true });
+  initFixtureRepo(dir);
   if (agents) writeFileSync(join(dir, "AGENTS.md"), "# fixture\n", "utf8");
   return dir;
 }

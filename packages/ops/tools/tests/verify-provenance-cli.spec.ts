@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -9,7 +10,7 @@ it.skipIf(!existsSync(BIN))("CLI provenance remains visible in reports/archives 
   mkdirSync(join(ROOT, "tmp"), { recursive: true });
   const home = mkdtempSync(join(ROOT, "tmp/producer-cli-"));
   const cli = (args: string[]) => {
-    const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { cwd: home, encoding: "utf8", timeout: 60000,
+    const r = spawnSync(process.execPath, [BIN, ...args, "--json"], { cwd: neutralCwd(), encoding: "utf8", timeout: 60000,
       env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_PG_URL: "", YGL_SESSION: "producer-test" } });
     expect(r.error, r.stderr).toBeUndefined();
     return { rc: r.status, json: JSON.parse(r.stdout), text: r.stdout + r.stderr };

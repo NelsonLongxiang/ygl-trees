@@ -4,12 +4,23 @@
 
 - **Windows 失败取证**（Refs #202、#203、#209）：query attach 测试保留子进程退出码、signal、原始 error.code 与耗时，不再把 null 退出码误诊成超时。bundle 配置隔离用无 Git 元数据的源码快照替代本地 shared clone，保留父目录诱饵与 minify 反例，失败时保留步骤日志和 Git trace。watcher 生命周期测试记录事件、读取和投影顺序，失败时在清理前保存源文件/索引快照；超时、并发及产品实现不变，历史间歇失败未据此宣称根治。
 
+- **测试夹具隔离**：临时根收敛到项目 `tmp/test-runs/`，验证器 CLI 使用中性只读 cwd 与绝对夹具路径，准入夹具以真实空 Git 仓库隔断父仓发现。R3 行尾测试改用独立临时 index 的真实 checkout 转换；离线门的合成配置探针用提交快照并保留原生链接拒绝。保留环境恢复、残留判红和原准入断言，不改产品时钟或 meta 规则，也不替代正式 G1/G8。
+
+- **并发写入失败取证**（Refs #286）：八进程同内容查询写入测试保留所有子进程的原始状态、signal、spawn 错误、双通道与耗时，失败前落项目内证据。不降低并发、不扩大超时、不重试测试；间歇 SQLite 锁失败的产品根因与修复另行跟踪。
+
+## 0.126.0
+
 用户可见行为变化：
 
 - **kb/skill 记授权范围：schema v15（kb_notes/skills.scope）**（Refs #276）。`kb add`/`kb import`/`kb ingest` 落 `scope`（`--scope` 或 import 的 frontmatter `scope:`；四值词表 `dept:<id>|bench:<id>|*|restricted`，写时校验 rc2 零写入；无 flag 存空串＝未归属，不从项目推断）。`kb rescope <id> --scope <k>` 改范围（同值重跑 duplicate rc0）；`kb list`/`kb search`/`skill list`/`library list --kind note|skill` 支持 `--scope <k>`（空串只选未归属，library 空 scope 字段缺席；无 flag 保留原列表投影）；promote 复制笔记 scope 到技能，rescope 后 re-promote 更新。MCP：`write kb add` 透传 `scope`、`write kb rescope` 新路由。SQLite v14→v15 原位升级；PG `PG_UPGRADES` v15 步；schema-parity 一致。
 
-- **library：市场经验库只读出口**（Refs #275）。新 `library` 命令组（CLI＋MCP `read` 1:1 映射）：`library list --kind <claim|note|skill|check> [--since <ISO>] [--limit 1..500] [--cursor <c>]` 游标分页＋`library show <kind> <id>`。统一行形 `{kind,id,title,summary,status,created,updated}`＋已知字段，未知字段缺席不给空串；note 的 summary 剥 `---` frontmatter 取首段截 200；claim show 带 `evidence[]`；skill 只列 promoted（bundled 天然 absent，`from_note` 点名来源）；check 汇总 verify reports＋sealed archives（复用 verify-list 索引，不新建索引文件）。每个响应带 `contract: "ygl-library/1"`。只读：不写 events、不 bump hits/reuse；首用自备的 verify 列表索引缓存（verify/.list-index.sqlite，format 键失配即全量重建）是缓存文件、非工作区数据。`kb add` 增 `--source-url`（MCP `kb add` 透传 `tags`/`source_url`；body 以等号形态转发，frontmatter 起首不再触发 bare-flag rc2）。新增 library.spec（5 例）＋demo 断言。
+- **library：市场经验库只读出口**（Refs #275）。新 `library` 命令组（CLI＋MCP `read` 1:1 映射）：`library list --kind <claim|note|skill|check> [--since <ISO>] [--limit 1..500] [--cursor <c>]` 游标分页＋`library show <kind> <id>`。统一行形 `{kind,id,title,summary,status,created,updated}`＋已知字段，未知字段缺席不给空串；note 的 summary 剥 `---` frontmatter 取首段截 200；claim show 带 `evidence[]`；skill 只列 promoted（bundled 天然 absent，`from_note` 点名来源）；check 汇总 verify reports＋sealed archives（复用 verify-list 索引，不新建索引文件）。每个响应带 `contract: "ygl-library/1"`。只读：不写 events、不 bump hits/reuse；首用自备的 verify 列表索引缓存（verify/.list-index.sqlite，format 键失配即全量重建）是缓存文件、非工作区数据。`kb add` 增 `--source-url`（MCP `kb add` 透传 `tags`/`source_url`；body 以等号形态转发，frontmatter 起首不再触发 bare-flag rc2）。覆盖真实路径的 spec 标题、签名/归档字段、旧格式缓存升级（含 WebUI 先准备索引）、since 边界及 CLI/MCP 往返。
 - **job 记归属：schema v14（jobs.project_id/owner）**（Refs #258，#220 phase B）。`job add` 落两列：`project_id` 取显式 `--project` 或会话所选项目，`owner` 取显式 `--owner` 或会话 actor（同 events 口径）；`job list`/`job show` 携带两列，`job list --project <name|id>` 过滤（未知名 rc=1）。doctor `job_health` 新增分类：**孤儿**＝project_id 非空但项目已删（点名＋`job show <id>` 下一步，warn 级），**unattributed**＝legacy 空 project_id（只计数不改写，绝不报孤儿）；retired 不报。SQLite v13 工作区原位升级 v14（PRAGMA user_version=14，旧行保留、空串默认）；PG `PG_UPGRADES` 同步 v14 步（`ADD COLUMN IF NOT EXISTS`）；`schema-parity` 两端列集一致。MCP 无 job 面（既有白名单排除），无新增路由。`AGENTS.md` 版本行同步 v14。
+
+门禁与文档（不改变业务判定）：
+
+- **Windows G8 子日志恢复可写**（#273，Refs #178）：子进程日志以 `openSync(path, "w")` 打开，不再使用会让 MSYS bash 静默丢输出的 O_APPEND 句柄；完整输出和原始退出码分别保留。此修复在 0.125.0 发布后合入，本版首次携带。
+- MCP 安全测试客户端使用独立 HTTP 连接，避免在同步 CLI 子进程调用之间复用失效连接；不增加重试、不放宽超时或产品判据。
 
 ## 0.125.0
 

@@ -8,6 +8,7 @@
  * same real materials, so "fixed for the fleet" cannot mean "gate switched off".
  */
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,7 +23,7 @@ const HAS_BIN = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf
 let HOME = "";
 
 function jrun(args: string[]) {
-  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8", cwd: HOME, env: { ...process.env, YGL_HOME: HOME } });
+  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: "utf8", cwd: neutralCwd(), env: { ...process.env, YGL_HOME: HOME } });
   let j: any = null;
   try {
     j = JSON.parse((r.stdout || "").trim());

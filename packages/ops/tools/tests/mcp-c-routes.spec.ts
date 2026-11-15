@@ -27,7 +27,7 @@ function boot(args: string[], session: string) {
 function request(body: unknown, session?: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host: "127.0.0.1", port, path: "/mcp", method: "POST", headers: { "content-type": "application/json", ...(session ? { "x-ygl-session": session } : {}) } },
+      { host: "127.0.0.1", port, path: "/mcp", method: "POST", agent: false, headers: { "content-type": "application/json", ...(session ? { "x-ygl-session": session } : {}) } },
       (res) => { let out = ""; res.on("data", (d) => (out += d)); res.on("end", () => { try { resolve(JSON.parse(out)); } catch (e) { reject(e); } }); },
     );
     req.on("error", reject);
