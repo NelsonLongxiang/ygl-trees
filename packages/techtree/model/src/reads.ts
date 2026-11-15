@@ -436,7 +436,7 @@ export class TreeStore {
 
     // conditions: required gates block, optional ones only modify cost
     const conds = this.db.all("SELECT * FROM node_conditions WHERE node_id=?", [n.id]);
-    // 0.93 T1 (direct-e487e737 lineage, .157 ops-handbook): op=telemetry reads
+    // 0.93 T1 (direct-e487e737 lineage, production ops-handbook): op=telemetry reads
     // the workspace event ledger instead of the caller's state bag. We resolve
     // counts HERE (evalCond stays pure) and inject them as telemetry:* keys.
     const telConds = conds.filter((c: Row) => String(c.op) === "telemetry");

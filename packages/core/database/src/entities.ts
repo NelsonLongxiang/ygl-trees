@@ -51,7 +51,7 @@ export class PatrolCheck {
   @Column({ name: "sql", type: "text" })
   sql!: string;
 
-  /** S1 critical | S2 warning | S3 info (.157 ops-handbook vocabulary) */
+  /** S1 critical | S2 warning | S3 info (production ops-handbook vocabulary) */
   @Column({ name: "severity", type: "text", default: "S2" })
   severity!: string;
 

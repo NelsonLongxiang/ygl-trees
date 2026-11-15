@@ -410,7 +410,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 
 -- ---------------------------------------------------------------- patrol (v12, 0.93-T2)
--- Declarative boundary assertions + disposition queue (.157 ops-handbook
+-- Declarative boundary assertions + disposition queue (production ops-handbook
 -- sop-patrol-daily productized). A check is a SELECT that returns VIOLATING
 -- rows (empty = pass); patrol run upserts findings. The iron rule this
 -- table family enforces: no finding stays undispositioned forever.
@@ -419,7 +419,7 @@ CREATE TABLE IF NOT EXISTS patrol_checks (
   name        TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   sql         TEXT NOT NULL,              -- SELECT-only (enforced at add time + read connection)
-  severity    TEXT NOT NULL DEFAULT 'S2', -- S1 critical | S2 warning | S3 info (.157 vocabulary)
+  severity    TEXT NOT NULL DEFAULT 'S2', -- S1 critical | S2 warning | S3 info (production vocabulary)
   enabled     INTEGER NOT NULL DEFAULT 1,
   created     TEXT NOT NULL,
   updated     TEXT NOT NULL,
