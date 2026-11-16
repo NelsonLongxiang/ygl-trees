@@ -5,6 +5,7 @@
  * lint-candidates sees the same views.
  */
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +20,7 @@ let home = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
-    cwd: home, encoding: "utf8", timeout: 60000,
+    cwd: neutralCwd(), encoding: "utf8", timeout: 60000,
     env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1" },
   });
   let json: any = null;

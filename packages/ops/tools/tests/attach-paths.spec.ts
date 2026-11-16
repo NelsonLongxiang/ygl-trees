@@ -4,6 +4,7 @@
  * directory argument is a usage error (rc=2), not a runtime failure.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +18,7 @@ let WORK = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
-    cwd: HOME, // outside the verifier repo: no meta-gate dependency
+    cwd: neutralCwd(), // outside the verifier repo: no meta-gate dependency
     encoding: "utf8",
     timeout: 60_000,
     env: { ...process.env, YGL_HOME: HOME, YGL_SESSION: "attach-paths" },

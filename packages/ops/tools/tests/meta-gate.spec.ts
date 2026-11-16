@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
+import { initFixtureRepo, neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -38,6 +39,7 @@ function jrun(args: string[], cwd?: string) {
 function repo(name: string, agents: boolean, extra?: (dir: string) => void): string {
   const dir = join(base, name);
   mkdirSync(dir, { recursive: true });
+  initFixtureRepo(dir);
   if (agents) writeFileSync(join(dir, "AGENTS.md"), "# fixture\n", "utf8");
   extra?.(dir);
   return dir;
@@ -143,7 +145,7 @@ describe.skipIf(!HAS_BIN)("meta gate on submit/prepare (0.111.x)", () => {
   it("ladder 4: outside git is silent (no warning, no bypass)", () => {
     const dir = join(base, "plain-dir");
     mkdirSync(dir, { recursive: true });
-    const r = jrun(["verify", "submit", "--title", "g4b", "--text", matFile, "--json"], dir);
+    const r = jrun(["verify", "submit", "--title", "g4b", "--text", matFile, "--json"], neutralCwd());
     expect(r.rc).toBe(0);
     expect(r.j.meta_warning).toBeUndefined();
     expect(r.j.meta_bypassed).toBeUndefined();

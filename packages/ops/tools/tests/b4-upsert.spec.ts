@@ -7,7 +7,8 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { subprocessDiagnostic } from "../../../../tests/support/subprocess-diagnostics";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -84,19 +85,38 @@ describe.skipIf(!HAS_BIN)("B4 concurrent idempotency — N processes, same conte
   it("8 concurrent same-content query-add → all rc0, exactly one row", async () => {
     const N = 8;
     const TEXT = "B4 并发同内容写入";
-    const runs = Array.from({ length: N }, () =>
-      new Promise<{ rc: number; out: string }>((res) => {
+    const shape = ["node", "<bundle>", "research", "query", "add", "<text>", "-p", "<project>", "--json"];
+    const runs = Array.from({ length: N }, (_, index) =>
+      new Promise<{ index: number; status: number | null; signal: NodeJS.Signals | null; error?: NodeJS.ErrnoException; stdout: string; stderr: string; elapsedMs: number }>((res) => {
+        const started = Date.now();
         const child = spawn(process.execPath, [BIN, "research", "query", "add", TEXT, "-p", "p1", "--json"], {
           env: { ...process.env, YGL_HOME: home, YGL_SESSION: "b4-conc" },
         });
-        let out = "";
-        child.stdout.on("data", (d: Buffer) => (out += d));
-        child.on("close", (code) => res({ rc: code ?? -1, out }));
+        let stdout = "", stderr = "", error: NodeJS.ErrnoException | undefined;
+        child.stdout.on("data", (d: Buffer) => (stdout += d));
+        child.stderr.on("data", (d: Buffer) => (stderr += d));
+        child.on("error", (value) => { error = value; });
+        child.on("close", (status, signal) => res({ index, status, signal, error, stdout, stderr, elapsedMs: Date.now() - started }));
       }),
     );
     const results = await Promise.all(runs);
-    // 每个进程都必须是 rc0（幂等：重复不是失败）
-    for (const r of results) expect(r.rc, r.out).toBe(0);
+    let evidence = "";
+    if (results.some(r => r.status !== 0 || r.signal !== null || r.error)) {
+      const parent = join(REPO, "tmp/b4-upsert-failures"); mkdirSync(parent, { recursive: true });
+      evidence = join(mkdtempSync(join(parent, "run-")), "children.json");
+      // All streams belong to this synthetic workspace; preserve before afterAll removes it.
+      writeFileSync(evidence, JSON.stringify({ workers: N, results: results.map(r => ({
+        ...r, error: r.error ? { name: r.error.name, code: r.error.code ?? null } : null,
+        diagnostic: JSON.parse(subprocessDiagnostic("B4 concurrent query-add", shape, r, r.elapsedMs)),
+      })) }, null, 2) + "\n", { flag: "wx" });
+    }
+    // Every process must succeed. Null status, signal and spawn failures are not reclassified as retries.
+    for (const r of results) {
+      const facts = subprocessDiagnostic("B4 concurrent query-add", shape, r, r.elapsedMs, evidence || undefined);
+      expect(r.error, facts + "\n" + r.stderr).toBeUndefined();
+      expect(r.signal, facts + "\n" + r.stderr).toBeNull();
+      expect(r.status, facts + "\n" + r.stdout + "\n" + r.stderr).toBe(0);
+    }
     // 恰好一行
     const st = spawnSync(process.execPath, [BIN, "db", "sql", `SELECT COUNT(*) AS n FROM queries WHERE text='${TEXT}'`, "--json"], {
       env: { ...process.env, YGL_HOME: home }, encoding: "utf8",

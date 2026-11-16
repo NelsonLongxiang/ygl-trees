@@ -416,7 +416,7 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
       writeFileSync(join(root, "scripts", "x.mjs"), "x" + String.fromCharCode(10));
       writeFileSync(join(root, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, orchestration: [], tooling: [] }, null, 2));
       const r = spawnSync(process.execPath, [SCRIPT, "--add", "scripts/x.mjs", "--role", "gate"], {
-        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root, HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/nonexistent" }, timeout: 60_000,
+        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root, HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/nonexistent", GIT_CONFIG_SYSTEM: "/nonexistent", GIT_CEILING_DIRECTORIES: resolve(root, "..").replaceAll("\\", "/") }, timeout: 60_000,
       });
       expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(2);
       expect((r.stdout || "") + (r.stderr || "")).toMatch(/--add needs --actor/);
@@ -437,7 +437,7 @@ describe.skipIf(!readFileSync(SCRIPT, "utf8").includes("--audit"))("#37 meta-too
       writeFileSync(join(root2, "verify", "meta.json"), JSON.stringify({ meta_index_version: 2, orchestration: [], tooling: [] }, null, 2));
       const r = spawnSync(process.execPath, [SCRIPT, "--add", "scripts/x.mjs", "--role", "gate"], {
         cwd: callerRepo,
-        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root2, HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/nonexistent", GIT_CONFIG_SYSTEM: "/nonexistent" }, timeout: 60_000,
+        encoding: "utf8", env: { ...process.env, YGL_META_ROOT: root2, HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/nonexistent", GIT_CONFIG_SYSTEM: "/nonexistent", GIT_CEILING_DIRECTORIES: resolve(root2, "..").replaceAll("\\", "/") }, timeout: 60_000,
       });
       expect(r.status, (r.stdout || "") + (r.stderr || "")).toBe(2);
       expect((r.stdout || "") + (r.stderr || "")).toMatch(/--add needs --actor/);

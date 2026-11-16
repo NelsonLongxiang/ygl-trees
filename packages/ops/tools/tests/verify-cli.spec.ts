@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -26,7 +27,7 @@ const home = hasBundle ? mkdtempSync(join(tmpdir(), "ygl-verify-cli-")) : "";
 const AS_OF = "2026-11-01T00:00:00.000Z";
 function run(args: string[], env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
-    cwd: home,
+    cwd: neutralCwd(),
     encoding: "utf8",
     env: { ...process.env, YGL_HOME: home, ...env },
   });

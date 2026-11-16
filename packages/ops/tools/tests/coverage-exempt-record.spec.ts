@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,7 +13,7 @@ const home = hasBundle ? mkdtempSync(join(tmpdir(), "ygl-exempt243-")) : "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
-    cwd: home, encoding: "utf8",
+    cwd: neutralCwd(), encoding: "utf8",
     env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" },
   });
   return { rc: r.status ?? -1, out: (r.stdout || "").trim() };

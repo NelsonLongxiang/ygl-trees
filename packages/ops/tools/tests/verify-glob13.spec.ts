@@ -3,6 +3,7 @@
  * keeps stamping 1.2 otherwise (frozen bytes unchanged for specs without 1.3 shapes). The frozen 1.3 spec then runs.
  */
 import { spawnSync } from "node:child_process";
+import { neutralCwd } from "../../../../tests/support/verification-fixtures";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,7 +17,7 @@ let home = "";
 
 function run(args: string[]) {
   const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
-    cwd: home, encoding: "utf8", timeout: 60000,
+    cwd: neutralCwd(), encoding: "utf8", timeout: 60000,
     env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1" },
   });
   let json: any = null;
