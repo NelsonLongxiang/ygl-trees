@@ -1655,7 +1655,7 @@ export async function patrolRecord(
 }
 
 /** Human disposition: ack (seen, being worked) | fp (false positive — the
- *  .157 allowlist lane) | fix (manual close without waiting for a rerun). */
+ *  production allowlist lane) | fix (manual close without waiting for a rerun). */
 export async function patrolDisposition(
   ds: DataSource,
   findingId: string,

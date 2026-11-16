@@ -1,5 +1,5 @@
 /** 0.93-T2 patrol 命令族契约（spawn 发布产物；schema v12）。
- * 依据 direct-e487e737 单3→M8→.157 ops-handbook 零未处置铁律产品化。 */
+ * 依据 direct-e487e737 单3→M8→业务实盘 ops-handbook 零未处置铁律产品化。 */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
