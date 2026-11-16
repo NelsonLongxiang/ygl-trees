@@ -1,16 +1,17 @@
+import { sqliteOrm, workspaceOrm } from "../../../core/database/src/orm-access";
 /** research group — collect → screen → extract → claim.
  *  `source fetch` is async (Node 18+ global fetch) and returns a promise.
  *  List commands run on TypeORM (src/orm.ts); search stays raw SQL (FTS5). */
 import * as fs from "node:fs";
 import { MoreThanOrEqual } from "typeorm";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C, writeResult, show } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, paint, C, writeResult, show } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
-import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
-import * as writes from "./writes";
+import { PgWriteError as writes_PgWriteError, QuoteMismatchError as writes_QuoteMismatchError, type WriteResult as writes_WriteResult, claimAdd as writes_claimAdd, claimAddBatch as writes_claimAddBatch, claimLink as writes_claimLink, claimResolve as writes_claimResolve, claimUnlink as writes_claimUnlink, claimUnresolve as writes_claimUnresolve, evidenceAdd as writes_evidenceAdd, evidenceAddBatch as writes_evidenceAddBatch, evidenceRemove as writes_evidenceRemove, queryAdd as writes_queryAdd, queryAttach as writes_queryAttach, sourceAdd as writes_sourceAdd, sourceAddBatch as writes_sourceAddBatch, sourceRemove as writes_sourceRemove } from "./writes";
 import { run as runPredictions } from "./predict-cmds";
 import { configGet, configGetNumber } from "../../../core/database/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
@@ -137,16 +138,16 @@ async function runBatch(
         engine: String(r.engine ?? ""), relevance: r.relevance === undefined ? 0 : Number(r.relevance),
         confidence: String(r.confidence ?? ""), tags: String(r.tags ?? ""),
       }));
-      results = (await writes.sourceAddBatch(ds, project.id, specs)).results;
+      results = (await writes_sourceAddBatch(ds, project.id, specs)).results;
     } else if (kind === "claim") {
       const force = flags.force === true;
       const channel = String(flags.channel ?? "");
       const rows = parsed.rows.map((r) => ({ text: String(r.text), confidence: r.confidence === undefined ? undefined : String(r.confidence) }));
-      results = (await writes.claimAddBatch(ds, project.id, rows as any, force, channel)).results;
+      results = (await writes_claimAddBatch(ds, project.id, rows as any, force, channel)).results;
     } else {
       const force = flags.force === true;
       const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? ""), __line: r.__line }));
-      results = (await writes.evidenceAddBatch(ds, project.id, rows, force, flags.unverified === true || flags.unverified === "true")).results;
+      results = (await writes_evidenceAddBatch(ds, project.id, rows, force, flags.unverified === true || flags.unverified === "true")).results;
     }
     const added = results.filter((r: any) => !r.dup).length;
     const dups = results.length - added;
@@ -156,7 +157,7 @@ async function runBatch(
       .map((r: any) => ({ line: r.__line as number, fields: unknownBatchFields(kind, r) }))
       .filter((u: any) => u.fields.length);
     if (ctx.json) {
-      console.log(JSON.stringify({
+      emitJson(ctx, {
         batch: kind + ".add", file, project: project.name,
         added, duplicates: dups,
         ...(unknowns.length ? { ignored_fields: unknowns } : {}),
@@ -167,7 +168,7 @@ async function runBatch(
           quote_verified: kind === "evidence" ? r.row.quote_verified : undefined,
           duplicate: !!r.dup,
         })),
-      }, null, 2));
+      }, 2);
     } else {
       ok(ctx, "batch " + kind + " add: " + added + " added, " + dups + " duplicates (" + parsed.rows.length + " rows from " + file + ")");
       for (const u of unknowns) {
@@ -202,10 +203,10 @@ async function mutationNotFound(env: Env, table: "claims" | "evidence" | "source
   const owner = await env.asyncStore.queryOne("SELECT p.name FROM " + table + " t JOIN projects p ON p.id=t.project_id WHERE t.id=?", [id]);
   return kind + " not found: " + id + (owner ? "  (it belongs to project '" + owner.name + "' — use -p " + owner.name + ")" : "");
 }
-function writeOrm(env: Env) { return env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path); }
-function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) && !(e instanceof writes.QuoteMismatchError) ? pgFailure() : e?.message || String(e); }
+function writeOrm(env: Env) { return workspaceOrm(env); }
+function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) && !(e instanceof writes_QuoteMismatchError) ? pgFailure() : e?.message || String(e); }
 
-function runWrite(env: Env, fn: (ds: any) => Promise<writes.WriteResult>, human: (row: any) => string): Promise<number> {
+function runWrite(env: Env, fn: (ds: any) => Promise<writes_WriteResult>, human: (row: any) => string): Promise<number> {
   const { ctx } = env;
   // F1 (0.110.x): write receipts name the target project + the selection layer;
   // a bare write riding session/global selection in a multi-project workspace
@@ -301,7 +302,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 2;
       }
       const engine = String(args.flags.engine || "");
-      return runWrite(env, (ds) => writes.queryAdd(ds, project.id, text, engine, force), (r) => `query registered: ${r.id}  ${clip(text, 60)}`);
+      return runWrite(env, (ds) => writes_queryAdd(ds, project.id, text, engine, force), (r) => `query registered: ${r.id}  ${clip(text, 60)}`);
     }
     if (subAction === "attach") {
       if (!rest[1] || !rest[2]) {
@@ -310,9 +311,9 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       const note = String(args.flags.note || "");
       return writeOrm(env)
-        .then((ds) => writes.queryAttach(ds, project.id, rest[1], rest[2], note))
+        .then((ds) => writes_queryAttach(ds, project.id, rest[1], rest[2], note))
         .then((r): number => {
-          if (ctx.json) { console.log(JSON.stringify({ query: rest[1], source: r.sourceId, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          if (ctx.json) { emitJson(ctx, { query: rest[1], source: r.sourceId, ...(r.dup ? { duplicate: true } : {}) }, 2); return 0; }
           if (r.dup) out(ctx, paint(C.yellow, `  ! already attached: ${r.sourceId}`, ctx.color));
           else ok(ctx, `attached: ${clip(r.sourceTitle || r.sourceId, 40)} → "${clip(r.queryText, 40)}"`);
           return 0;
@@ -320,7 +321,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         .catch(async (e: any): Promise<number> => {
           if (env.pgUrl) {
             let msg = writeError(env, e);
-            if (e instanceof writes.PgWriteError) {
+            if (e instanceof writes_PgWriteError) {
               const q = await env.asyncStore.queryOne("SELECT p.name FROM queries q JOIN projects p ON p.id=q.project_id WHERE q.id=? OR q.text=?", [rest[1], rest[1]]);
               const s = await env.asyncStore.queryOne("SELECT p.name FROM sources s JOIN projects p ON p.id=s.project_id WHERE s.id=?", [rest[2]]);
               const owner = msg.startsWith("query not found") ? q : s;
@@ -391,7 +392,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       await env.asyncStore.queryDone(rest[1]);
       // #78：--json 只输出一个 JSON 对象（Agent API 契约：写=单对象）
       if (ctx.json) {
-        console.log(JSON.stringify({ id: rest[1], status: "done" }));
+        emitJson(ctx, { id: rest[1], status: "done" });
       } else {
         ok(ctx, `query marked done: ${rest[1]}`);
       }
@@ -443,7 +444,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         };
         return writeOrm(env)
           .then(async (ds): Promise<number> => {
-            const r = await writes.sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
+            const r = await writes_sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
             // #83 复核②：--file 与 --batch 同形——JSON 回执带 ignored_fields（writeResult 只展开 row，故嵌进行对象）。
             writeResult(ctx, (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r) as any, (rw) => "source added: " + rw.id + "  " + clip(rw.title, 60) + "  · project " + project.name + "  (from --file " + f + ")");
             return 0;
@@ -523,11 +524,11 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       return writeOrm(env)
         .then(async (ds): Promise<number> => {
-          const r = await writes.sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
+          const r = await writes_sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
           writeResult(ctx, r as any, (row) => `source added: ${row.id}  ${clip(row.title, 60)}  · project ${project.name}`);
           if (qRef && !env.pgUrl) {
             try {
-              const at = await writes.queryAttach(ds, project.id, qRef, r.row.id);
+              const at = await writes_queryAttach(ds, project.id, qRef, r.row.id);
               if (!ctx.json && !at.dup) out(ctx, paint(C.dim, `  attached to query: "${clip(at.queryText, 40)}"`, ctx.color));
             } catch (e: any) {
               bad(ctx, `source landed as ${r.row.id} but attach failed: ${e?.message} — research query attach ${clip(qRef, 20)} ${r.row.id} to retry`);
@@ -589,8 +590,8 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
             .trim()
             .slice(0, 50_000);
           const thin = text.replace(/\s/g, "").length < 500;
-          const ds = await getOrm(env.db.path);
-          const r = await writes.sourceAdd(ds, project.id, {
+          const ds = await sqliteOrm(env);
+          const r = await writes_sourceAdd(ds, project.id, {
             title,
             url,
             abstract: metaDesc.slice(0, 500),
@@ -686,7 +687,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 1;
       }
       if (ctx.json) {
-        console.log(JSON.stringify(s, null, 2));
+        emitJson(ctx, s, 2);
         return 0;
       }
       head(ctx, s.title);
@@ -709,10 +710,10 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       const force = args.flags.force === true;
       return writeOrm(env)
-        .then((ds) => writes.sourceRemove(ds, id, force))
+        .then((ds) => writes_sourceRemove(ds, id, force))
         .then((r: any): number => {
           if (ctx.json) {
-            console.log(JSON.stringify(r, null, 2));
+            emitJson(ctx, r, 2);
           } else {
             ok(ctx, r.evidence_removed
               ? `source removed: ${r.id}  (cascade: ${r.evidence_removed} evidence row(s) dropped; ${r.claims_recomputed} claim(s) recomputed)`
@@ -745,10 +746,10 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       }
       const force = args.flags.force === true;
       return writeOrm(env)
-        .then((ds) => writes.evidenceRemove(ds, id, force))
+        .then((ds) => writes_evidenceRemove(ds, id, force))
         .then((r): number => {
           if (ctx.json) {
-            console.log(JSON.stringify({ id: r.id, unlinked: r.unlinked, forced: r.forced, cascaded: r.cascaded, statuses: r.statuses }, null, 2));
+            emitJson(ctx, { id: r.id, unlinked: r.unlinked, forced: r.forced, cascaded: r.cascaded, statuses: r.statuses }, 2);
           } else {
             ok(ctx, r.unlinked.length
               ? `evidence removed: ${r.id}  (cascade: ${r.unlinked.length} link(s) dropped; claims recomputed: ${r.unlinked.map((c) => `${c}→${r.statuses[c]}`).join(", ")})`
@@ -805,7 +806,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       const locator = String(args.flags.locator || "");
       return runWrite(
         env,
-        (ds) => writes.evidenceAdd(ds, project.id, sourceId, quote, note, locator, force, unverified),
+        (ds) => writes_evidenceAdd(ds, project.id, sourceId, quote, note, locator, force, unverified),
         (r) => `evidence added: ${r.id}  ${clip(quote, 50)}  · project ${project.name}`
       );
     }
@@ -840,14 +841,14 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         : Promise.resolve({ quality_score: null, reliability: "unavailable", reasoning: "eval service unavailable (ops plugin not loaded)" });
       return assess.then((result: any) => {
       if (ctx.json) {
-        console.log(JSON.stringify({
+        emitJson(ctx, {
           evidence_id: id,
           quote: ev.quote.slice(0, 120),
           source: ev.source_title,
           quality_score: result.quality_score,
           reliability: result.reliability,
           reasoning: result.reasoning,
-        }, null, 2));
+        }, 2);
       } else {
         head(ctx, `evidence assess: ${id}`);
         show(ctx, {
@@ -916,7 +917,7 @@ if (subAction === "show") {
         })),
       };
       if (ctx.json) {
-        console.log(JSON.stringify(payload, null, 2));
+        emitJson(ctx, payload, 2);
         return 0;
       }
       head(ctx, `evidence ${e.id} — ${project.name}`);
@@ -997,7 +998,7 @@ if (subAction === "show") {
         const channel = String(args.flags.channel || "");
         return runWrite(
           env,
-          (ds) => writes.claimAdd(ds, project.id, text, confidence, force, channel).then((r) => (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r)),
+          (ds) => writes_claimAdd(ds, project.id, text, confidence, force, channel).then((r) => (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r)),
           (r) => "claim added: " + r.id + "  " + clip(text, 60) + (channel ? "  · channel " + channel : "") + "  · project " + project.name + "  (from --file " + f + ")"
         );
       }
@@ -1026,7 +1027,7 @@ if (subAction === "show") {
       const channel = String(args.flags.channel || "");
       return runWrite(
         env,
-        (ds) => writes.claimAdd(ds, project.id, text, confidence, force, channel),
+        (ds) => writes_claimAdd(ds, project.id, text, confidence, force, channel),
         (r) => `claim added: ${r.id}  ${clip(text, 60)}${channel ? `  · channel ${channel}` : ""}  · project ${project.name}`
       );
     }
@@ -1120,7 +1121,7 @@ if (subAction === "show") {
             const statusBefore = String((await readOne(env, "SELECT status FROM claims WHERE id=?", [rest[1]]) as any)?.status ?? "");
             let linked = 0, dups = 0, status = "", autoPromote: boolean | undefined;
             for (const ev of evs) {
-              const r = await writes.claimLink(ds, rest[1], ev.id, stance);
+              const r = await writes_claimLink(ds, rest[1], ev.id, stance);
               existing.has(ev.id) ? dups++ : linked++;
               status = r.status;
               autoPromote = r.auto_promote;
@@ -1128,7 +1129,7 @@ if (subAction === "show") {
             // F2：批量路径同样落 claim.eval（此前校准数据源盲区）；全 dup 时跳过（F4）
             let model: { label?: string; score?: number } = {};
             if (linked > 0) model = await evalAndLog(rest[1], status);
-            if (ctx.json) console.log(JSON.stringify({ claim: rest[1], source: rest[2], linked, duplicates: dups, status, ...(model.label ? { model_label: model.label, model_confidence: model.score } : {}) }, null, 2));
+            if (ctx.json) emitJson(ctx, { claim: rest[1], source: rest[2], linked, duplicates: dups, status, ...(model.label ? { model_label: model.label, model_confidence: model.score } : {}) }, 2);
             else {
               ok(ctx, `linked ${linked} evidence from source ${rest[2]} (${dups} already) — claim status: ${status}`);
               if (linked > 0 && !ctx.json && (status !== statusBefore || autoPromote === false)) {
@@ -1157,7 +1158,7 @@ if (subAction === "show") {
       // F4：duplicate 检出在 link 前完成（幂等重跑跳过评估 + 回执如实标 duplicate）
       const wasDup = env.pgUrl ? false : !!await readOne(env, "SELECT 1 FROM claim_evidence WHERE claim_id=? AND evidence_id=?", [rest[1], rest[2]]);
       return writeOrm(env)
-        .then((ds) => writes.claimLink(ds, rest[1], rest[2], stance))
+        .then((ds) => writes_claimLink(ds, rest[1], rest[2], stance))
         .then(async (r): Promise<number> => {
           // R15 深度集成：链接后自动触发置信度评估。0.84.0 修复两处——
           // ① await 落地：fire-and-forget 会被 CLI 短进程退出截断（事件从未落账）；
@@ -1173,7 +1174,7 @@ if (subAction === "show") {
             ? `selection '${project.name}' owns neither end of this link; the link is cross-project because ids resolve workspace-wide — pin ownership explicitly with -p when both ends should be scoped`
             : undefined;
           if (ctx.json) {
-            console.log(JSON.stringify({ claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(duplicate ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, null, 2));
+            emitJson(ctx, { claim: rest[1], evidence: rest[2], stance, status: r.status, auto_promote: r.auto_promote, ...(duplicate ? { duplicate: true } : {}), ...(crossProject ? { cross_project: crossProject } : {}), ...(selectionNote ? { selection_note: selectionNote } : {}), ...(modelLabel ? { model_label: modelLabel, model_confidence: modelScore } : {}) }, 2);
           } else if (r.auto_promote === false) {
             const reason = await lockedReason(rest[1]);
             ok(ctx, `linked; ${reason} stays ${r.status} — auto-promote skipped (${reason === "prediction claim" ? "arbitration: claim resolve / deadline audit" : "re-derive: research claim unresolve " + rest[1]})`);
@@ -1224,9 +1225,9 @@ if (subAction === "show") {
       }
       const note = String(args.flags.note || "");
       return writeOrm(env)
-        .then((ds) => writes.claimResolve(ds, id, as, note))
+        .then((ds) => writes_claimResolve(ds, id, as, note))
         .then((): number => {
-          if (ctx.json) console.log(JSON.stringify({ id, status: as, note }, null, 2));
+          if (ctx.json) emitJson(ctx, { id, status: as, note }, 2);
           else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
           return 0;
         })
@@ -1250,9 +1251,9 @@ if (subAction === "show") {
         return 1;
       }
       return writeOrm(env)
-        .then((ds) => writes.claimUnresolve(ds, id))
+        .then((ds) => writes_claimUnresolve(ds, id))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify({ id, status: r.status, duplicate: r.duplicate }, null, 2));
+          if (ctx.json) emitJson(ctx, { id, status: r.status, duplicate: r.duplicate }, 2);
           else ok(ctx, r.duplicate
             ? `claim ${id} already unverified (no change)`
             : `claim ${id}: ${c0.status} → unverified  (back in tracking; arbitration: claim resolve)`);
@@ -1283,10 +1284,10 @@ if (subAction === "show") {
         return 1;
       }
       return writeOrm(env)
-        .then((ds) => writes.claimUnlink(ds, cid, eid))
+        .then((ds) => writes_claimUnlink(ds, cid, eid))
         .then((r): number => {
           if (ctx.json) {
-            console.log(JSON.stringify({ claim: r.claim, evidence: r.evidence, stance: r.stance, status: r.status, recalculated: r.recalculated }, null, 2));
+            emitJson(ctx, { claim: r.claim, evidence: r.evidence, stance: r.stance, status: r.status, recalculated: r.recalculated }, 2);
           } else {
             ok(ctx, `unlinked ${r.stance} ${r.evidence} from claim ${r.claim}${r.recalculated ? ` — status now: ${r.status}` : " — prediction status kept (evidence is not arbitration)"}`);
           }
@@ -1342,7 +1343,7 @@ if (subAction === "show") {
         try { emitEvent({ kind: "claim.eval", entity: "claim", entityId: id, payload: evPayload, ts: evTs }); } catch { /* audit row is the source of truth */ }
       }
       if (ctx.json) {
-        console.log(JSON.stringify({
+        emitJson(ctx, {
           claim_id: id,
           claim_text: claim.text,
           current_status: claim.status,
@@ -1351,7 +1352,7 @@ if (subAction === "show") {
           model_label: result.confidence_label,
           evidence_count: evidenceRows.length,
           reasoning: result.reasoning,
-        }, null, 2));
+        }, 2);
       } else {
         head(ctx, `claim evaluate: ${id}`);
         show(ctx, {
@@ -1416,10 +1417,10 @@ if (subAction === "show") {
       }
       const share = comparable ? +(100 * lower1 / comparable).toFixed(1) : null;
       if (ctx.json) {
-        console.log(JSON.stringify({
+        emitJson(ctx, {
           evaluated: table2.length, comparable, model_lower_1plus: lower1,
           share_pct: share, rows: table2,
-        }, null, 2));
+        }, 2);
       } else {
         head(ctx, `claim calibration${all ? " — workspace" : ` — ${project.name}`}`);
         table(ctx, table2, ["claim", "model", "human", "gap", "mode"], ["claim", "model", "human", "gap", "mode"]);
@@ -1493,7 +1494,7 @@ if (subAction === "show") {
         })),
       };
       if (ctx.json) {
-        console.log(JSON.stringify(payload, null, 2));
+        emitJson(ctx, payload, 2);
         return 0;
       }
       head(ctx, `claim ${c.id} — ${project.name}`);
@@ -1541,7 +1542,7 @@ if (subAction === "show") {
             ...(supBy.has(String(c.id)) ? { superseded_by: supBy.get(String(c.id)) } : {}),
           }));
           if (ctx.json) {
-            console.log(JSON.stringify(rows, null, 2));
+            emitJson(ctx, rows, 2);
             return 0;
           }
           table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref", "superseded"], ["id", "text", "status", "confidence", "channel", "sup", "ref", "superseded_by"]); // #241: replaced claims name their replacement

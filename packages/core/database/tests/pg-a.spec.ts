@@ -5,7 +5,10 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB, SCHEMA_VERSION } from "../src/db";
-import { getOrm, closeOrm, ormDialect } from "../src/orm";
+import { ormDialect } from "../src/orm";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 let db: DB;
 let dir: string;
@@ -16,7 +19,8 @@ beforeAll(() => {
   db = new DB(path.join(dir, "t.db"));
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await closeOrm();
   db?.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -5,7 +5,7 @@
  * packages/ops/tools/src/plugins.ts (gated, vitest-covered, doctor-shared).
  */
 import { initProfile, installPlugin, removePlugin, listPlugins, profileDir, setPluginEnabled, setPluginConfig } from "../../../packages/ops/tools/src/plugins";
-import { ok, bad, out, head, table } from "../../../packages/core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table } from "../../../packages/core/text/src/fmt";
 
 export function runPluginCommand(env: any, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx } = env;
@@ -25,7 +25,7 @@ export function runPluginCommand(env: any, action: string, rest: string[], args:
       }
       return installPlugin(home, spec).then(
         (r: any): number => {
-          if (ctx.json) console.log(JSON.stringify(r, null, 2));
+          if (ctx.json) emitJson(ctx, r, 2);
           else ok(ctx, `installed: ${r.name}  (${r.spec}) — restart any running process to load`);
           return 0;
         },
@@ -111,7 +111,7 @@ export function runPluginCommand(env: any, action: string, rest: string[], args:
         cfg: r.has_config ? "有" : "—",
       }));
       if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
+        emitJson(ctx, rows, 2);
         return 0;
       }
       head(ctx, `User plugins (${rows.length})  — profile: ${profileDir(home)}`);

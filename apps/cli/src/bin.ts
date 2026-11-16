@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { validateScope } from "../../../packages/core/text/src/scope";
+import { redactPgUrl } from "../../../packages/core/database/src/asyncdb";
+import { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns, requirePgSchemaVersion, pgTargetHash } from "../../../packages/core/database/src/pg-workspace";
 /**
  * Command-line entry for ygl-trees (DSH bin.ts shape: shebang + self-execute;
  * root package.json bin field points at the compiled dist file — the old
@@ -8,15 +11,15 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import { dbPath, SCHEMA_VERSION } from "../../../packages/core/database/src/db";
-import { Ctx, bad, out, paint, C } from "../../../packages/core/text/src/fmt";
+import { emitJson, Ctx, bad, out, paint, C } from "../../../packages/core/text/src/fmt";
 import { Args, parse, str, num, bool, Env, lastFlagOf } from "../../../packages/core/database/src/types";
 import { apply as DatabasePlugin } from "../../../packages/core/database/src/plugin";
-import { apply as ResearchPlugin } from "../../../packages/research/pipeline/src/plugin";
-import { apply as OpsPlugin } from "../../../packages/ops/tools/src/plugin";
+import { apply as ResearchPlugin, inject as researchInject } from "../../../packages/research/pipeline/src/plugin";
+import { apply as OpsPlugin, inject as opsInject } from "../../../packages/ops/tools/src/plugin";
 import TimerPlugin from "@deepseek-ai/cordis-plugin-timer";
 import { bootApp, type BootedApp } from "./profile-boot";
 import { StartupError, reportStartupFailure } from "./startup-diagnostics";
-import { createProcessShutdown } from "./process-shutdown";
+import { runWorkspaceInvocation } from "./workspace-invocation";
 import { runPluginCommand } from "./plugin";
 import { maybeNag, maybeRefresh } from "../../../packages/ops/tools/src/update-check";
 import Schema from "@deepseek-ai/schemastery";
@@ -25,10 +28,10 @@ export const HOME = process.env.YGL_HOME || path.join(os.homedir(), ".ygl-trees"
 
 // ── Declarative composition registry (spec R14 L2) ──
 // ygl.bundle.json names plugins by id; this map is the code-side "where".
-const PLUGINS: Record<string, { apply: any; config?: (file: string) => any }> = {
+const PLUGINS: Record<string, { apply: any; inject?: readonly string[]; config?: (file: string) => any }> = {
   database: { apply: DatabasePlugin, config: (file) => ({ file }) },
-  ops: { apply: OpsPlugin },
-  research: { apply: ResearchPlugin },
+  ops: { apply: OpsPlugin, inject: opsInject },
+  research: { apply: ResearchPlugin, inject: researchInject },
   timer: { apply: TimerPlugin },
 };
 
@@ -390,7 +393,7 @@ export async function main(argv: string[]): Promise<number> {
   // Fires before dispatch and before db boot: help never touches the db.
   if (args.flags.help === true && group) {
     const text = groupHelp(group, ctx.color);
-    if (ctx.json) console.log(JSON.stringify({ help: text.replace(/\u001b\[[0-9;]*m/g, "") }, null, 2));
+    if (ctx.json) emitJson(ctx, { help: text.replace(/\u001b\[[0-9;]*m/g, "") }, 2);
     else out(ctx, text);
     return 0;
   }
@@ -429,7 +432,7 @@ export async function main(argv: string[]): Promise<number> {
         if (line.startsWith("## ")) { current = line.slice(3).toLowerCase().replace(/\s+/g, "_"); sections[current] = line + "\n"; }
         else if (sections[current] !== undefined) sections[current] += line + "\n";
       }
-      console.log(JSON.stringify({ version: appVersion(), sections }, null, 2));
+      emitJson(ctx, { version: appVersion(), sections }, 2);
       return 0;
     }
     if (section) {
@@ -496,7 +499,7 @@ export async function main(argv: string[]): Promise<number> {
   }
   if ((group === "kb" || (group === "skill" && action === "list") || (group === "library" && action === "list")) && args.flags.scope !== undefined) {
     if (args.flags.scope === true) { bad(ctx, "--scope needs a value"); return 2; }
-    try { require("../../../packages/core/text/src/scope").validateScope(args.flags.scope); }
+    try { validateScope(args.flags.scope); }
     catch (e: any) { bad(ctx, e.message); return 2; }
   }
   const home = str(args, "home", HOME);
@@ -517,7 +520,6 @@ export async function main(argv: string[]): Promise<number> {
       ? [String((args.flags as Record<string, unknown>).db)]
       : [];
   const dbFlagRaw = dbFlagAll.length ? dbFlagAll[dbFlagAll.length - 1] : "";
-  const { redactPgUrl } = require("../../../packages/core/database/src/asyncdb");
   // #93-③：逐值检查**所有** --db（只查末值会被前面的 postgres:// 绕过——评审席 comment 6431183774）
   if (dbFlagAll.some((v) => PG_URL_RE.test(v))) {
     bad(ctx, "--db does not accept a postgres:// URL (credentials would land in argv history) — pass it via YGL_DB_URL instead (#93 / plan §3.5)");
@@ -551,13 +553,13 @@ export async function main(argv: string[]): Promise<number> {
       return 2;
     }
   }
-  const { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns, requirePgSchemaVersion } = require("../../../packages/core/database/src/pg-workspace");
   if (pgUrl && PG_BUSINESS && require("node:fs").existsSync(dbPath(home))) { bad(ctx, `conflicting targets: SQLite file ${dbPath(home)} present in the selected PG workspace; use a separate YGL_HOME (no SQLite fallback)`); return 2; }
   try {
     if (pgUrl || require("node:fs").existsSync(require("node:path").join(home, "pg-binding.json"))) {
       checkPgWorkspace(home, pgUrl, PG_BUSINESS ? dbPath(home) : undefined);
     }
   } catch { bad(ctx, "workspace backend binding conflicts with configured target; use the bound PG target or a separate YGL_HOME (no SQLite fallback)"); return 2; }
+  return runWorkspaceInvocation(ctx, pgUrl ? { dialect: "postgres", url: pgUrl } : { dialect: "sqlite", file }, async ({ ctx, invocation, orm, detachControl }) => {
   if (pgUrl && PG_BUSINESS) {
     if (group === "project" && action === "use" && args.flags.global !== undefined) { bad(ctx, "PG project use does not support --global; selection is session-scoped"); return 2; }
     if (group === "tree" && action === "use" && args.flags.global !== undefined) { bad(ctx, "PG tree use does not support --global; selection is session-scoped"); return 2; }
@@ -569,9 +571,8 @@ export async function main(argv: string[]): Promise<number> {
       bad(ctx, "PG business commands require YGL_SESSION or DSH_SESSION_ID for session isolation"); return 2;
     }
     try {
-      const { getPgOrm, closeOrm } = await import("../../../packages/core/database/src/orm");
-      try {
-        const ds = await getPgOrm(pgUrl);
+      {
+        const ds = await orm.getPgOrm(pgUrl);
         // #176 W5b: schema version first, before any capability probe or binding write.
         await requirePgSchemaVersion(ds, SCHEMA_VERSION);
         if (PG_RESEARCH && action === "query") {
@@ -598,9 +599,9 @@ export async function main(argv: string[]): Promise<number> {
           // Read commands do not create/update metadata or workspace files.
           const rows = await ds.query("SELECT value FROM meta WHERE key=$1", ["backend_binding"]);
           const b = JSON.parse(rows[0]?.value || "null");
-          if (b?.mode !== "pg" || b.url_hash !== require("../../../packages/core/database/src/pg-workspace").pgTargetHash(pgUrl)) throw new Error("PG binding mismatch");
+          if (b?.mode !== "pg" || b.url_hash !== pgTargetHash(pgUrl)) throw new Error("PG binding mismatch");
         }
-      } catch (e) { await closeOrm(); throw e; }
+      }
     } catch (e: any) { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; }
   }
   // #175: 用法错误（rc=2）必须先于工作区 db 门禁与开库——缺库或库打不开时，
@@ -671,14 +672,14 @@ export async function main(argv: string[]): Promise<number> {
           baseBundle: loadBundle().map((id) => {
             const entry = PLUGINS[id];
             if (!entry) throw new Error(`bundle lists unknown plugin '${id}' (known: ${Object.keys(PLUGINS).join(", ")})`);
-            return { id, apply: entry.apply, config: entry.config };
+            return { id, apply: entry.apply, inject: entry.inject, config: entry.config };
           }),
-          version: VERSION,
+          version: VERSION, invocation, orm, output: ctx,
         });
         break;
       } catch (bootErr) {
         const msg = String((bootErr as any)?.message || bootErr);
-        if (attempt < 5 && /database is locked|SQLITE_BUSY/i.test(msg)) {
+        if (attempt < 5 && (bootErr as any)?.dbOpenCleanupComplete === true && /database is locked|SQLITE_BUSY/i.test(msg)) {
           await new Promise((r) => setTimeout(r, 60 * 2 ** attempt + Math.random() * 80));
           continue;
         }
@@ -705,6 +706,7 @@ export async function main(argv: string[]): Promise<number> {
         return pluginCmds.runPluginCommand(env2, action || "list", args._.slice(2), args);
       }
       reportStartupFailure(e, home, VERSION);
+      bad(ctx, "startup failed; inspect the private startup report");
       return 1;
     }
     bad(ctx, `cannot open database ${file}: ${e?.message || e}`);
@@ -777,26 +779,14 @@ export async function main(argv: string[]): Promise<number> {
       );
     }
   }
-  const shutdown = createProcessShutdown(async () => {
-    try { db?.close(); } catch { /* best effort */ }
-    // P0-2 belt-and-suspenders: force-release the lock on any exit path —
-    // but ONLY one this process owns. Unconditional release nuked FOREIGN
-    // locks whenever a lock-less process (serve; db unlock since 0.79.1)
-    // exited next to a live holder.
-    try {
-      const { DB } = require("../../../packages/core/database/src/db");
-      if (db?.ownsLock) DB.releaseLockFor(file);
-      else if (DB.lockHolder(file) === String(process.pid)) DB.releaseLockFor(file);
-    } catch { /* */ }
-  });
-  process.on("SIGINT", () => shutdown.interrupt(0));
-  process.on("SIGTERM", () => shutdown.interrupt(0));
+  const asyncStore = pgUrl ? new AsyncResearchStore(pgUrl) : new AsyncResearchStore(db);
+  invocation.own({ name: "native-store", close: () => asyncStore.close() });
   const env: any = {
-    ctx,
+    ctx, orm, invocation, detachControl,
     cordis: app,     // Cordis Context (long-running services)
     db,              // DB instance (from ctx.database or fallback)
     store,           // Store (from ctx.research or fallback) — legacy sync face
-    asyncStore: pgUrl ? new AsyncResearchStore(pgUrl) : new AsyncResearchStore(db),  // B1 facade；B7: PG 直连形态
+    asyncStore,  // B1 facade；B7: PG 直连形态
     plugins: { loaded: loadedPlugins, commands: Object.keys(pluginCommands) },
     args, home, group, pgUrl: pgUrl || undefined,
     dbFile: file,   // resolved --db (or workspace default) for the brief payload
@@ -942,26 +932,8 @@ export async function main(argv: string[]): Promise<number> {
       bad(ctx, pgUrl ? pgFailure() : e?.message || String(e));
       if (process.env.YGL_DEBUG && !pgUrl) console.error(e);
       return 1;
-    })
-    .finally(async () => {
-      if (pgUrl) {
-        await env.asyncStore.close();
-        await (await import("../../../packages/core/database/src/orm")).closeOrm();
-      }
-      // Cordis lifecycle (0.76): Services' stop() hooks clean resources.
-      // This fork has no ctx.dispose() — we call Service.stop() explicitly.
-      // DatabaseService.stop() closes SQLite + releases .ygllock + closes ORM.
-      try {
-        if (booted?.ctx?.database?.stop) {
-          booted.ctx.database.stop(); // service-managed DB cleanup
-        }
-      } catch { /* dispose best-effort */ }
-      // Fallback path: if the service didn't take (bootApp fallback), db was
-      // constructed directly — it's not service-managed, close it here.
-      if (!booted?.ctx?.database) {
-        try { db?.close(); } catch { /* best effort */ }
-      }
     });
+  });
 }
 
 // ── llms manifest: structured capability list for LLM consumption ──

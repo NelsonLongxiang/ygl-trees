@@ -8,10 +8,13 @@ module.exports = async function runResearchWrite(root, quick) {
   const ws = freshWorkspace(root, "rwrite");
   const dbFile = path.join(ws, "bench.db");
   const { DB } = require(path.join(root, "dist/packages/core/database/src/db"));
-  const { getOrm } = require(path.join(root, "dist/packages/core/database/src/orm"));
+  const { createWorkspaceOrm } = require(path.join(root, "dist/apps/cli/src/workspace-orm"));
   const writes = require(path.join(root, "dist/packages/research/pipeline/src/writes"));
   const db = new DB(dbFile);
-  const ds = await getOrm(dbFile);
+  const orm = createWorkspaceOrm({ dialect: "sqlite", file: dbFile });
+  const close = async () => { await orm.close(); db.closeStrict(); };
+  try {
+  const ds = await orm.getOrm(dbFile);
   const proj = await writes.projectCreate(ds, "bench", "基准");
 
   await suite("claim-write", async () => {
@@ -31,5 +34,10 @@ module.exports = async function runResearchWrite(root, quick) {
     return { unit: "total", total, note: `${dups}/${texts.length} dup-hits, ${fmtUs(total / texts.length)}/op` };
   });
 
-  return { db, ws };
+  return { db, ws, close };
+  } catch (error) {
+    try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup], "benchmark initialization and cleanup failed"); }
+    require("node:fs").rmSync(ws, { recursive: true, force: true });
+    throw error;
+  }
 };

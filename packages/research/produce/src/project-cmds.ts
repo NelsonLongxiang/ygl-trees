@@ -1,12 +1,13 @@
+import { requireOrm, sqliteOrm } from "../../../core/database/src/orm-access";
 /** project group — one project = one research thread.
  *  `project show` is the TypeORM pilot (src/orm.ts): async command, output
  *  shape identical to the previous raw-SQL implementation. */
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
-import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+import { emitJson, ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
+
 import { pgFailure } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, sessionId } from "../../../core/database/src/selection";
-import * as writes from "../../pipeline/src/writes";
+import { PgWriteError as writes_PgWriteError, projectArchive as writes_projectArchive, projectCreate as writes_projectCreate, projectDeleteEmpty as writes_projectDeleteEmpty, projectRestore as writes_projectRestore, projectUsePg as writes_projectUsePg } from "../../pipeline/src/writes";
 import { Project } from "../../pipeline/src/entities";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
@@ -53,8 +54,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // multi-project workspace `project new` re-points every other sid-less
       // agent — state it in the JSON face too, not just in human output.
       const sid = sessionId();
-      return getOrm(env.db.path)
-        .then((ds) => writes.projectCreate(ds, name, question))
+      return sqliteOrm(env)
+        .then((ds) => writes_projectCreate(ds, name, question))
         .then((p): number => {
           logSelectionEvent("project.use", p.name);
           // count AFTER creation: the workspace is now multi-project if it was
@@ -176,8 +177,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         .map(([t, n]) => `${t} ${n}`)
         .join(" · ");
       if (!args.flags.force) {
-        return getOrm(env.db.path)
-          .then((ds) => writes.projectArchive(ds, resolved.name))
+        return sqliteOrm(env)
+          .then((ds) => writes_projectArchive(ds, resolved.name))
           .then((r): number => {
             // 归档即退出选择：清会话桶 **和 global 指针**（#110 P2：只清会话时，
             // `project use p --global` 残留的全局指针仍解析到归档项目，配合破坏动词成组合洞）
@@ -185,7 +186,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             if (store.db.metaGet(key) === resolved.name) store.db.metaSet(key, "");
             if (store.db.metaGet("current_project") === resolved.name) store.db.metaSet("current_project", "");
             if (ctx.json) {
-              console.log(JSON.stringify({ ...r, soft: true, remaining: counts }, null, 2));
+              emitJson(ctx, { ...r, soft: true, remaining: counts }, 2);
               return 0;
             }
             ok(ctx, `project archived: ${resolved.name}  (status=archived; assets untouched)`);
@@ -198,15 +199,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `project not empty — refusing hard delete (no cascade): ${named}. Migrate or clean them first, or use the default soft delete (drop --force)`);
         return 1;
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.projectDeleteEmpty(ds, resolved.name))
+      return sqliteOrm(env)
+        .then((ds) => writes_projectDeleteEmpty(ds, resolved.name))
         .then((r): number => {
           if ((r as any).refused) {
             bad(ctx, `project not empty — refusing hard delete (no cascade): ${Object.entries((r as any).counts || {}).filter(([, n]) => Number(n) > 0).map(([t, n]) => `${t} ${n}`).join(" · ")}`);
             return 1;
           }
           if (ctx.json) {
-            console.log(JSON.stringify({ ...r, deleted: true }, null, 2));
+            emitJson(ctx, { ...r, deleted: true }, 2);
             return 0;
           }
           ok(ctx, `project deleted: ${resolved.name}  (was empty)`);
@@ -225,11 +226,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `project not found: ${nm}`);
         return 1;
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.projectRestore(ds, found.name))
+      return sqliteOrm(env)
+        .then((ds) => writes_projectRestore(ds, found.name))
         .then((r: any): number => {
           if (ctx.json) {
-            console.log(JSON.stringify(r, null, 2));
+            emitJson(ctx, r, 2);
             return 0;
           }
           ok(ctx, `project restored: ${found.name}  (status=active; writing allowed again)`);
@@ -258,7 +259,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `project not found: ${sel.name}`);
         return 1;
       }
-      return getOrm(env.db.path)
+      return sqliteOrm(env)
         .then(async (ds): Promise<number> => {
           const proj = await ds.getRepository(Project).findOne({
             where: { id: resolved.id },
@@ -298,7 +299,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             updated: proj.updated,
           };
           if (ctx.json) {
-            console.log(JSON.stringify({ project, queries, claims, selection_source: sel.source }, null, 2));
+            emitJson(ctx, { project, queries, claims, selection_source: sel.source }, 2);
             return 0;
           }
           head(ctx, `Project ${project.name}  (selection: ${sel.source})`);
@@ -335,7 +336,7 @@ async function runPgProject(env: Env, action: string, rest: string[], args: any)
     if (action === "use") {
       if (!rest[0]) { bad(ctx, "missing project name"); return 2; }
       if (args.flags.global !== undefined) { bad(ctx, "PG project use does not support --global; selection is session-scoped"); return 2; }
-      const result = await writes.projectUsePg(await getPgOrm(env.pgUrl!), rest[0]);
+      const result = await writes_projectUsePg(await requireOrm(env).getPgOrm(env.pgUrl!), rest[0]);
       ack(ctx, result, "now using: " + rest[0] + "  (session selection — session " + sid.slice(0, 8) + ")");
       return 0;
     }
@@ -343,7 +344,7 @@ async function runPgProject(env: Env, action: string, rest: string[], args: any)
       const name = rest[0];
       if (!name) { bad(ctx, "missing project name"); return 2; }
       const prior = await asyncStore.metaGet("current_project@" + sid);
-      const p = await writes.projectCreate(await getPgOrm(env.pgUrl!), name, String(args.flags.q || args.flags.question || ""));
+      const p = await writes_projectCreate(await requireOrm(env).getPgOrm(env.pgUrl!), name, String(args.flags.q || args.flags.question || ""));
       ack(ctx, { ...p, selected: p.name, prior: prior || null, session: sid }, p.duplicate
         ? "project exists, selected: " + p.name + "  (duplicate, not re-created)"
         : "project created and selected: " + p.name);
@@ -363,10 +364,10 @@ async function runPgProject(env: Env, action: string, rest: string[], args: any)
       if (!p) { bad(ctx, "project not found: " + name); return 1; }
       const queries = await asyncStore.query("SELECT q.id,q.text,q.engine,q.status,q.created,(SELECT COUNT(*)::int FROM query_sources qs WHERE qs.query_id=q.id) AS sources FROM queries q WHERE q.project_id=? ORDER BY q.created", [p.id]);
       const claims = await asyncStore.query("SELECT c.id,c.text,c.status,c.confidence,(SELECT COUNT(*)::int FROM claim_evidence ce WHERE ce.claim_id=c.id AND ce.stance='supports') AS sup,(SELECT COUNT(*)::int FROM claim_evidence ce WHERE ce.claim_id=c.id AND ce.stance='refutes') AS ref FROM claims c WHERE c.project_id=? ORDER BY c.created", [p.id]);
-      if (ctx.json) console.log(JSON.stringify({ project: p, queries, claims, selection_source: via }, null, 2));
+      if (ctx.json) emitJson(ctx, { project: p, queries, claims, selection_source: via }, 2);
       else { head(ctx, "Project " + p.name + "  (selection: " + via + ")"); show(ctx, { id: p.id, status: p.status, question: p.question || "(none)", inclusion: p.inclusion || "-", exclusion: p.exclusion || "-", queries: queries.length, claims: claims.length }); }
       return 0;
     }
     bad(ctx, "project action is unavailable in PG mode"); return 2;
-  } catch (e) { bad(ctx, e instanceof writes.PgWriteError ? e.message : pgFailure()); return 1; }
+  } catch (e) { bad(ctx, e instanceof writes_PgWriteError ? e.message : pgFailure()); return 1; }
 }

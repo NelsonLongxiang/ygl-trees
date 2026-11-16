@@ -8,7 +8,7 @@ import { Context } from "@deepseek-ai/cordis";
 describe("Cordis lifecycle: Service.stop() cleans resources", () => {
   // spawn/lock tests need headroom under parallel suite load (was 5s default, flaked at ~5.1-9s)
   // per-test timeout headroom: 20s
-  it("DatabaseService.stop() closes db handle", () => {
+  it("DatabaseService.stop() closes db handle", async () => {
     process.env.YGL_TEST = "1"; // skip lock
     const dir = path.join(process.cwd(), "tmp", `lifecycle-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -24,7 +24,7 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
     expect(ver.user_version).toBeGreaterThanOrEqual(9);
 
     // Call stop() — should close the db
-    svc.stop();
+    await svc.stop();
 
     // After stop, querying should fail (db handle is null)
     let threw = false;
@@ -38,7 +38,7 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
     expect(threw || handleNull).toBe(true);
 
     // Double-stop is safe (idempotent)
-    svc.stop(); // should not throw
+    await svc.stop(); // should not throw
 
     // Cleanup
     fs.rmSync(dir, { recursive: true, force: true });
@@ -70,22 +70,22 @@ describe("Cordis lifecycle: Service.stop() cleans resources", () => {
     }
   }, 20000);
 
-  it("stop() is idempotent — multiple calls safe", () => {
+  it("stop() is idempotent — multiple calls safe", async () => {
     process.env.YGL_TEST = "1";
     const dir = path.join(process.cwd(), "tmp", `idem-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
     const ctx = new Context();
     const svc = new DatabaseService(ctx, path.join(dir, "t.db"));
-    svc.stop();
-    svc.stop(); // no throw
-    svc.stop(); // still no throw
+    await svc.stop();
+    await svc.stop(); // no throw
+    await svc.stop(); // still no throw
     expect(true).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   }, 20000);
 });
 
 describe("schema v14: v13 workspace upgrades in place, jobs kept intact (#258)", () => {
-  it("a v13 jobs table gains project_id/owner and reaches the current schema", () => {
+  it("a v13 jobs table gains project_id/owner and reaches the current schema", async () => {
     process.env.YGL_TEST = "1";
     const dir = path.join(process.cwd(), "tmp", `v14-upgrade-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -105,6 +105,6 @@ describe("schema v14: v13 workspace upgrades in place, jobs kept intact (#258)",
     expect(job.id).toBe("j1");
     expect(job.project_id).toBe("");
     expect(job.owner).toBe("");
-    svc.stop();
+    await svc.stop();
   });
 });

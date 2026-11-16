@@ -1,3 +1,5 @@
+import { InvocationOwner } from "../../../core/database/src/invocation";
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /**
  * WebUI — zero-dependency dashboard.
  *
@@ -10,12 +12,12 @@
 import { join } from "node:path";
 
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, paint, C, ack } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, paint, C, ack } from "../../../core/text/src/fmt";
 import { resolveDistRoot } from "../../../web/app/src/index";
 import { TreeStore } from "../../../techtree/model/src/reads";
 import { buildBrief } from "./agent-cmds";
 import { resolveId } from "./rels";
-import { getOrm } from "../../../core/database/src/orm";
+
 import { openStatic as openWebApp } from "../../../web/app/src";
 import { resolveProject, resolveTree, projectSample } from "../../../core/database/src/selection";
 // 0.91a (direct-55b4ca85): static import — same ESM-silent-death family fix
@@ -24,6 +26,23 @@ import { BLOB_LIMIT, createMaterialDraft, handleVerifyApi, openBlobUpload, uploa
 import { prepareViaHttp, runViaHttp } from "./verify-jobs";
 import { pruneIncoming } from "./blob-store";
 import { prepareListIndex, watchListIndex } from "./verify-list-index";
+
+/** Wait for a request body or abort as part of the accepted HTTP operation. */
+function requestText(req: any, limit: number): Promise<{ body: string; overflow: boolean }> {
+  return new Promise((resolve, reject) => {
+    let body = "", overflow = false, settled = false;
+    const clear = () => { req.removeListener("data", data); req.removeListener("end", end); req.removeListener("error", failed); req.removeListener("aborted", aborted); };
+    const finish = (error?: unknown) => {
+      if (settled) return; settled = true; clear();
+      if (error) reject(error); else resolve({ body, overflow });
+    };
+    const data = (chunk: any) => { if (overflow) return; body += chunk; if (body.length > limit) { overflow = true; body = ""; } };
+    const end = () => finish();
+    const failed = (error: unknown) => finish(error);
+    const aborted = () => finish(new Error("HTTP request was aborted"));
+    req.on("data", data); req.once("end", end); req.once("error", failed); req.once("aborted", aborted);
+  });
+}
 
 interface DashboardData {
   brief: any;
@@ -52,7 +71,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   // 诚实拒绝（命名 rc1）胜过半瘫启动（fingerprint/export 走 env.db 会当场崩）。
   if (env.db === null || env.db === undefined) {
     env.ctx.json
-      ? console.log(JSON.stringify({ error: "webui requires the SQLite workspace face — PG-direct mode (YGL_DB_URL) supports db stats | db path | doctor only" }))
+      ? emitJson(env.ctx, { error: "webui requires the SQLite workspace face — PG-direct mode (YGL_DB_URL) supports db stats | db path | doctor only" })
       : (env.ctx as any).bad ? (env.ctx as any).bad(env.ctx, "webui requires the SQLite workspace face — PG-direct mode (YGL_DB_URL) supports db stats | db path | doctor only") : console.error("webui requires the SQLite workspace face");
     return 1;
   }
@@ -291,6 +310,8 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
 export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; enableVerifyJobs?: boolean } = {}) {
   // 默认关闭：只有 serve 在回环地址上显式打开（或 YGL_VERIFY_ALLOW_UPLOAD=1）。
   // 嵌入方不传旗标时不该默默获得写盘能力。
+  const requests = new InvocationOwner();
+  let stopping = false;
   const allowUpload = opts.allowUpload === true;
   const enableVerifyJobs = opts.enableVerifyJobs === true;
   // command 型检查器的白名单在 serve 启动时定下（请求体永不携带 argv）：默认只放 node，
@@ -357,11 +378,10 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
   };
   // lifecycle-managed when the timer plugin is loaded (vendor ammo), else raw
   const timerCtx: any = (env as any).cordis;
-  if (timerCtx?.timer?.setInterval) timerCtx.timer.setInterval(tick, 1500);
-  else {
-    const h = setInterval(tick, 1500);
-    if (typeof h.unref === "function") h.unref();
-  }
+  const runTick = () => { if (!stopping) void requests.run(tick).catch(() => {}); };
+  const stopTick: () => void = timerCtx?.timer?.setInterval
+    ? timerCtx.timer.setInterval(runTick, 1500)
+    : (() => { const handle = setInterval(runTick, 1500); handle.unref?.(); return () => clearInterval(handle); })();
 
   // ── 0.76 Event-driven SSE / 0.86 M7-3 (Cordis P0-3): subscribe via the
   // PUBLIC Cordis channel ctx.on("ygl") — the eventbus is the internal
@@ -382,20 +402,20 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
     } catch { /* skip this frame */ }
   };
   if (typeof cordisCtx?.on === "function") {
-    unsubBus = cordisCtx.on("ygl", onYglEvent) as unknown as () => void;
+    unsubBus = cordisCtx.on("ygl", (event: any) => { if (!stopping) void requests.run(() => onYglEvent(event)).catch(() => {}); }) as unknown as () => void;
   } else {
     // 0.91a review (direct-55b4ca85): static import — the old require() form
     // silently died under ESM hosts, leaving only the fingerprint tick.
     try {
-      unsubBus = onEvent(onYglEvent);
+      unsubBus = onEvent((event) => { if (!stopping) void requests.run(() => onYglEvent(event)).catch(() => {}); });
     } catch { /* eventbus optional — fingerprint tick still covers */ }
   }
 
   const listWatch = watchListIndex(env.home);
-  const listReady = prepareListIndex(env.home).then(() => listWatch.settled());
+  const listReady = requests.run(() => prepareListIndex(env.home).then(() => listWatch.settled()));
   // Keep initialization failures observable without an unhandled rejection before the first request.
   listReady.catch(() => {});
-  const server = http.createServer(async (req: any, res: any) => {
+  const handleRequest = async (req: any, res: any) => {
     const u = new URL(req.url || "/", "http://127.0.0.1");
     const url = u.pathname;
     if (url === "/api/events") {
@@ -405,9 +425,10 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         connection: "keep-alive",
       });
       res.write("retry: 3000\n\n");
-      // initial snapshot: the client needs no separate fetch
-      res.write(`event: data\ndata: ${JSON.stringify(await gatherData(env))}\n\n`);
+      // Own the live socket before awaiting the initial snapshot so shutdown can quiesce it.
       sseClients.add(res);
+      const initial = await gatherData(env);
+      if (!stopping && !res.writableEnded) res.write(`event: data\ndata: ${JSON.stringify(initial)}\n\n`);
       const drop = () => { sseClients.delete(res); };
       req.on("close", drop);
       req.on("error", drop);
@@ -497,14 +518,8 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
       // like reads — ownership mirrors /api/artifact (authorized selection
       // must match the task's project); unselected/cross-project → 404,
       // malformed body or status → 400. Body capped (64 KB) for sanity.
-      let body = "";
-      let overflow = false;
-      req.on("data", (c: any) => {
-        body += c;
-        if (body.length > 64 * 1024) { overflow = true; try { req.destroy(); } catch { /* */ } }
-      });
-      req.on("end", () => {
-        (async () => {
+      const { body, overflow } = await requestText(req, 64 * 1024);
+
           try {
             if (overflow) throw new Error("request body too large");
             const { id, status, reason } = JSON.parse(body || "{}");
@@ -543,7 +558,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
                 res.end(JSON.stringify({ id: String(id), from: currentStatus, to: currentStatus, idempotent: true }));
                 return;
               }
-              const ds = await getOrm(env.db.path);
+              const ds = await sqliteOrm(env);
               const { taskCancel } = await import("../../../research/pipeline/src/writes");
               const r = await taskCancel(ds, String(id), String(reason));
               res.writeHead(200, { "content-type": "application/json" });
@@ -573,7 +588,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
               }));
               return;
             }
-            const ds = await getOrm(env.db.path);
+            const ds = await sqliteOrm(env);
             const { taskSetStatus } = await import("../../../research/pipeline/src/writes");
             const r = await taskSetStatus(ds, String(id), next);
             res.writeHead(200, { "content-type": "application/json" });
@@ -582,8 +597,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
             res.end(String(e?.message || e));
           }
-        })();
-      });
+
       return;
     } else if (url.startsWith("/api/verify/")) {
       // M13-2 服务面：三视图的数据源。只读为主，唯一写入面是材料草稿
@@ -603,37 +617,24 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         const name = u.searchParams.get("name") || "attachment";
         const mimeHint = u.searchParams.get("mime") || undefined;
         const sink = openBlobUpload(env);
-        let done = false;
-        req.on("data", (c: any) => {
-          if (done) return;
-          if (!sink.write(Buffer.isBuffer(c) ? c : Buffer.from(c))) {
-            // 超限：立刻回 413 JSON 并丢弃后续字节。先 destroy 会让客户端只看到断连，
-            // 与契约「失败也机器可读」相抵（r18 P3）。
-            done = true;
-            sink.abort();
-            send(413, { error: `blob too large: exceeds ${BLOB_LIMIT} bytes` });
-            try { req.resume(); } catch { /* */ }
-          }
-        });
-        req.on("end", () => {
-          if (done) return;
-          done = true;
-          if (sink.overflowed()) {
-            sink.abort();
-            return send(413, { error: `blob too large: exceeds ${BLOB_LIMIT} bytes` });
-          }
-          try {
-            const ref = sink.finish(name, mimeHint);
-            return send(200, ref);
-          } catch (e: any) {
-            sink.abort();
-            return send(400, { error: String(e?.message || e) });
-          }
-        });
-        req.on("error", () => {
-          if (done) return;
-          done = true;
-          sink.abort();
+        await new Promise<void>((resolve, reject) => {
+          let settled = false, overflow = false;
+          const clear = () => { req.removeListener("data", data); req.removeListener("end", end); req.removeListener("error", failed); req.removeListener("aborted", aborted); };
+          const finish = (error?: unknown) => { if (settled) return; settled = true; clear(); if (error) reject(error); else resolve(); };
+          const data = (chunk: any) => {
+            if (overflow) return;
+            if (!sink.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))) {
+              overflow = true; sink.abort(); send(413, { error: "blob too large: exceeds " + BLOB_LIMIT + " bytes" }); req.resume();
+            }
+          };
+          const end = () => {
+            if (overflow) { finish(); return; }
+            try { send(200, sink.finish(name, mimeHint)); finish(); }
+            catch (error: any) { sink.abort(); send(400, { error: String(error?.message || error) }); finish(); }
+          };
+          const failed = (error: unknown) => { sink.abort(); finish(error); };
+          const aborted = () => failed(new Error("HTTP upload was aborted"));
+          req.on("data", data); req.once("end", end); req.once("error", failed); req.once("aborted", aborted);
         });
         return;
       }
@@ -650,15 +651,9 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         if (!ct.includes("application/json")) {
           return send(415, { error: "content-type must be application/json" });
         }
-        let body = "";
-        let overflow = false;
-        req.on("data", (c: any) => {
-          if (overflow) return;
-          body += c;
-          if (body.length > VERIFY_BODY_LIMIT) { overflow = true; body = ""; }
-        });
-        req.on("end", () => {
-          void (async () => {
+        const { body, overflow } = await requestText(req, VERIFY_BODY_LIMIT);
+        try {
+
             if (overflow) return send(413, { error: `request body too large (limit ${VERIFY_BODY_LIMIT} bytes)` });
             let parsed: unknown;
             try {
@@ -668,8 +663,8 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             }
             const r = url === "/api/verify/prepare" ? await prepareViaHttp(env, parsed) : await runViaHttp(env, parsed, jobDeps);
             send(r.status, r.body);
-          })().catch((e: any) => send(500, { error: String(e?.message || e) }));
-        });
+
+        } catch (error: any) { send(500, { error: String(error?.message || error) }); }
         return;
       }
       if (url === "/api/verify/material" && req.method === "POST") {
@@ -678,14 +673,8 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         if (!ct.includes("application/json")) {
           return send(415, { error: "content-type must be application/json" });
         }
-        let body = "";
-        let overflow = false;
-        req.on("data", (c: any) => {
-          if (overflow) return; // 丢弃后续字节但把连接读完——直接 destroy 会让客户端看到断连而不是 JSON 错误
-          body += c;
-          if (body.length > VERIFY_BODY_LIMIT) { overflow = true; body = ""; }
-        });
-        req.on("end", () => {
+        const { body, overflow } = await requestText(req, VERIFY_BODY_LIMIT);
+
           try {
             if (overflow) return send(413, { error: `request body too large (limit ${VERIFY_BODY_LIMIT} bytes)` });
             const parsed = JSON.parse(body || "{}");
@@ -696,7 +685,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
           } catch (e: any) {
             return send(400, { error: String(e?.message || e) });
           }
-        });
+
         return;
       }
       try {
@@ -710,6 +699,14 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
     }
+  };
+  const server = http.createServer((req: any, res: any) => {
+    if (stopping) { res.writeHead(503, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "server is shutting down" })); return; }
+    void requests.run(() => handleRequest(req, res)).catch(() => {
+      if (res.destroyed || res.writableEnded) return;
+      if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "request failed" }));
+    });
   });
   // SSE clients hold the connection open — drop them on server close so the
   // process can exit (and so --json/none-mode callers never hang).
@@ -718,17 +715,29 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
     sseClients.clear();
   };
   server.on("close", dropLive);
-  const close = server.close.bind(server);
+  const nativeClose = server.close.bind(server);
+  let networkClosed: Promise<void> | undefined;
+  const stopNetwork = () => {
+    if (networkClosed) return networkClosed;
+    stopping = true; stopTick(); dropLive();
+    if (unsubBus) { unsubBus(); unsubBus = null; }
+    networkClosed = new Promise<void>((resolve, reject) => {
+      nativeClose((error?: NodeJS.ErrnoException) => error && error.code !== "ERR_SERVER_NOT_RUNNING" ? reject(error) : resolve());
+    });
+    void networkClosed.catch(() => {});
+    return networkClosed;
+  };
+  requests.own({ name: "http-listener", quiesce: () => { void stopNetwork(); }, close: stopNetwork });
+  requests.own({ name: "verify-list-watcher", close: async () => { await listWatch.close(); await listReady; } });
+  const closeAsync = () => requests.close();
+  if (env.invocation) env.invocation.own({ name: "dashboard-consumers", phase: "consumer", quiesce: () => { void closeAsync().catch(() => {}); }, close: closeAsync });
   server.close = (callback?: (error?: Error) => void) => {
-    dropLive();
-    void listWatch.close().then(() => listReady.catch(() => {})).then(() => close(callback));
-    return server;
+    void closeAsync().then(() => callback?.(), error => callback?.(error)); return server;
   };
-  Object.assign(server, { verifyListReady: listReady });
-  (server as any).closeLive = () => {
-    dropLive();
-    if (unsubBus) { try { unsubBus(); } catch { /* */ } unsubBus = null; }
-  };
+  Object.assign(server, { verifyListReady: listReady, closeAsync, closeLive: dropLive, isStopping: () => stopping,
+    runBackground: (work: () => Promise<void>) => stopping ? Promise.resolve() : requests.run(work),
+    ownBackground: (resource: Parameters<InvocationOwner["own"]>[0]) => requests.own(resource) });
+
   return server;
 }
 
@@ -759,55 +768,48 @@ function serve(env: Env, args: any): Promise<number> {
     return Promise.resolve(1);
   }
   return new Promise<number>((resolve) => {
-    const port = Number(args.flags.port || 8642);
+    const port = Number(args.flags.port ?? 8642);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
-      bad(ctx, `invalid --port: ${args.flags.port} (want 0-65535)`);
-      resolve(2);
-      return;
+      bad(ctx, "invalid --port: " + args.flags.port + " (want 0-65535)"); resolve(2); return;
     }
-    // ④ cold-user report: hardcoded 127.0.0.1 blocks LAN/WSL access.
-    // Default stays 127.0.0.1 (safe); --host 0.0.0.0 opens to the network.
     const host = String(args.flags.host || "127.0.0.1");
-    // 附件上传面随绑定地址收放：非回环地址默认关闭（写端点 + 任意字节 = 磁盘填充面）。
     const server = createDashboardServer(env, { allowUpload: uploadAllowed(host), enableVerifyJobs: args.flags["enable-verify-jobs"] === true });
-    const onErr = (e: any) => {
-      bad(ctx, `webui serve: ${e?.message || e}`);
-      (server as any).closeLive?.();
-      server.close(() => resolve(1));
+    let result = 0, finished = false;
+    const finish = () => {
+      if (finished) return; finished = true;
+      process.removeListener("SIGINT", standaloneShutdown); process.removeListener("SIGTERM", standaloneShutdown);
+      resolve(result);
     };
-    server.once("error", onErr);
-    (server as any).verifyListReady.then(() => server.listen(port, host, () => {
-      server.removeListener("error", onErr);
-      const addr = server.address();
-      const p = typeof addr === "object" && addr ? addr.port : port;
-      ok(ctx, `dashboard live at http://127.0.0.1:${p}/  (Ctrl+C to stop)`);
-      out(ctx, paint(C.dim, `  data endpoint: http://127.0.0.1:${p}/api/data`, ctx.color));
-
-      // vendored cordis-plugin-timer: lifecycle-managed heartbeat
-      // (auto-cleans on ctx dispose — no manual clearInterval needed)
-      const cordisCtx = (env as any).cordis;
-      if (cordisCtx?.timer) {
-        cordisCtx.timer.setInterval(() => {
-          void (async () => {
+    const standaloneShutdown = () => { server.close((error?: Error) => { if (error) result = 1; finish(); }); };
+    const onError = (error: any) => {
+      result = 1; bad(ctx, "webui serve: " + (error?.message || error));
+      server.close((cleanup?: Error) => { if (cleanup) console.error("webui cleanup is unconfirmed"); finish(); });
+    };
+    server.on("error", onError);
+    server.once("close", finish);
+    const timer = (env as any).cordis?.timer;
+    if (timer) {
+      const stop = timer.setInterval(() => {
+        void (server as any).runBackground(async () => {
           try {
             const stats = await env.asyncStore.stats();
-            const total = Object.values(stats).reduce((a: number, b: any) => a + Number(b), 0);
-            if (ctx.quiet !== true) {
-              out(ctx, paint(C.dim, `  [heartbeat] ${new Date().toISOString().slice(11, 19)} · ${total} rows`, ctx.color));
-            }
-          } catch { /* heartbeat best-effort */ }
-          })();
-        }, 60_000);
-      }
-    })).catch(onErr);
-    const shutdown = () => {
-      // SSE clients hold live sockets forever: server.close() alone would wait
-      // for them and never call back. Drop them, then close.
-      try { (server as any).closeLive?.(); } catch { /* */ }
-      try { (server as any).closeAllConnections?.(); } catch { /* older node */ }
-      server.close(() => resolve(0));
-    };
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
+            const total = Object.values(stats).reduce((sum: number, value: any) => sum + Number(value), 0);
+            if (!ctx.quiet) out(ctx, paint(C.dim, "  [heartbeat] " + new Date().toISOString().slice(11, 19) + " · " + total + " rows", ctx.color));
+          } catch { /* optional heartbeat diagnostics do not fail a request */ }
+        }).catch(() => {});
+      }, 60_000);
+      (server as any).ownBackground({ name: "heartbeat", quiesce: stop });
+    }
+    // The enclosing invocation owns process signals. Direct library hosts retain their own signal path.
+    if (!env.invocation) { process.on("SIGINT", standaloneShutdown); process.on("SIGTERM", standaloneShutdown); }
+    env.detachControl?.();
+    (server as any).verifyListReady.then(() => {
+      if (finished || (server as any).isStopping()) return;
+      server.listen(port, host, () => {
+        const address = server.address(); const selected = typeof address === "object" && address ? address.port : port;
+        ok(ctx, "dashboard live at http://127.0.0.1:" + selected + "/  (Ctrl+C to stop)");
+        out(ctx, paint(C.dim, "  data endpoint: http://127.0.0.1:" + selected + "/api/data", ctx.color));
+      });
+    }).catch(onError);
   });
 }

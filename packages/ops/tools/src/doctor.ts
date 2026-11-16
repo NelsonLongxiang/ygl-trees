@@ -1,3 +1,4 @@
+import { requireOrm } from "../../../core/database/src/orm-access";
 /**
  * doctor — one-stop health check for a ygl-trees workspace.
  * Checks: schema version, index freshness, FTS sync, duplicate content,
@@ -9,10 +10,10 @@
  * @module @ygl/ops-tools/doctor
  */
 import { redactPgUrl } from "../../../core/database/src/asyncdb";
-import { getPgOrm } from "../../../core/database/src/orm";
+
 import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, paint, C } from "../../../core/text/src/fmt";
 import { CONFIG_REGISTRY, configGetNumber, countSecretEvents, redactSecretEvents } from "./config";
 import { jobViews } from "./job-cmds";
 import { jobFamilies, staleTasks, taskView } from "../../../research/pipeline/src/lifecycle";
@@ -97,7 +98,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const pgUrl = String(process.env.YGL_DB_URL || "");
       if (fs.existsSync(join(env.home, "pg-binding.json"))) {
         try {
-          const ds = await getPgOrm(pgUrl);
+          const ds = await requireOrm(env).getPgOrm(pgUrl);
           await ds.query("SELECT 1");
           checks.push({ name: "pg_connectivity", status: "pass", detail: "connected" });
           const migration = await ds.query("SELECT MAX(version) AS version FROM schema_migrations WHERE backend IN ('pg','postgres')");
@@ -122,7 +123,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           checks.push({ name: "claims_fulltext", status: "skip", detail: "not implemented in either backend: claims provides base rows, events and list/show only" });
         } catch { checks.push({ name: "pg_health", status: "fail", detail: pgFailure() }); }
         for (const name of ["sqlite_fts", "sqlite_lock", "verify_on_pg"]) checks.push({ name, status: "skip", detail: "not applicable: verify remains the SQLite snapshot chain; no PG verification claim" });
-        if (ctx.json) console.log(JSON.stringify(checks, null, 2));
+        if (ctx.json) emitJson(ctx, checks, 2);
         else { head(ctx, "doctor — PG business workspace"); for (const c of checks) out(ctx, (c.status === "pass" ? "  ✓ " : c.status === "skip" ? "  - " : "  ✗ ") + c.name + ": " + c.detail); }
         return checks.some(c => c.status === "fail") ? 1 : 0;
       }
@@ -148,7 +149,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const failed = checks.filter((c) => c.status === "fail").length;
       if (ctx.json) {
-        console.log(JSON.stringify(checks, null, 2));
+        emitJson(ctx, checks, 2);
       } else {
         head(ctx, "doctor — PG direct mode");
         for (const c of checks) out(ctx, (c.status === "pass" ? "  ✓ " : c.status === "warn" ? "  · " : "  ✗ ") + c.name + ": " + c.detail);
@@ -635,7 +636,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   const passed = checks.filter((c) => c.status === "pass").length;
 
   if (ctx.json) {
-    console.log(JSON.stringify(checks, null, 2));
+    emitJson(ctx, checks, 2);
     return failed > 0 ? 1 : 0;
   }
 

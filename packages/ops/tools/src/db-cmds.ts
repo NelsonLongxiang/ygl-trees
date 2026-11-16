@@ -1,12 +1,15 @@
+import { requireOrm } from "../../../core/database/src/orm-access";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Env, lastFlagOf } from "../../../core/database/src/types";
 import { redactPgUrl } from "../../../core/database/src/asyncdb";
-import { ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
 import { clearLockDir, dbPath, pidAlive, takeoverLockDir, SCHEMA_VERSION } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg, upgradePgSchema, PgUpgradeError } from "./pgsync";
 import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { exportableRows } from "./config";
+import { skillUpsertIn, logEvent } from "../../../research/pipeline/src/writes";
+import { parseFrontmatter } from "../../../core/text/src/text";
 
 
 /**
@@ -36,17 +39,13 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<{ impo
     // Fail-loud (was silent return 0): the npm package MUST ship skills/ —
     // if we can't find them, the user deserves to know why agent match
     // returns nothing. This is a packaging bug indicator, not a valid state.
-    const { out: outFn, paint: paintFn, C: Cf } = require("../../../core/text/src/fmt");
     if (env.ctx && !env.ctx.json) {
-      outFn(env.ctx, paintFn(Cf.yellow, "  ! built-in skills: 0 found (skills/ not shipped or not in package)", env.ctx.color));
-      outFn(env.ctx, paintFn(Cf.dim, "    this is a packaging bug — skills/ should be in the npm tarball", env.ctx.color));
+      out(env.ctx, paint(C.yellow, "  ! built-in skills: 0 found (skills/ not shipped or not in package)", env.ctx.color));
+      out(env.ctx, paint(C.dim, "    this is a packaging bug — skills/ should be in the npm tarball", env.ctx.color));
     }
     return { imported: 0, failed: [], ms: 0 };
   }
-  const { getOrm } = require("../../../core/database/src/orm");
-  const writes = require("../../../research/pipeline/src/writes");
-  const { parseFrontmatter } = require("../../../core/text/src/text");
-  const ds = await getOrm(dbFile);
+  const ds = await requireOrm(env).getOrm(dbFile);
   // Parse every SKILL.md OUTSIDE the transaction (file IO must not hold it).
   const parsed: Array<{ name: string; input: any }> = [];
   for (const entry of fs2.readdirSync(skillsDir)) {
@@ -88,7 +87,7 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<{ impo
       const sp = `sk_${i}`;
       await mgr.query(`SAVEPOINT ${sp}`);
       try {
-        await writes.skillUpsertIn(mgr, cand.input, { emit: false });
+        await skillUpsertIn(mgr, cand.input, { emit: false });
         await mgr.query(`RELEASE SAVEPOINT ${sp}`);
         count++;
       } catch (e: any) {
@@ -97,7 +96,7 @@ async function autoImportBuiltinSkills(env: any, dbFile: string): Promise<{ impo
         failed.push(cand.name);
       }
     }
-    await writes.logEvent(
+    await logEvent(
       mgr,
       "skill.import",
       "skills",
@@ -119,10 +118,9 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
   switch (action) {
     case "init": {
       fs.mkdirSync(home, { recursive: true });
-      const d = new (require("../../../core/database/src/db").DB)(file);
+      const d = env.db;
       d.metaSet("created", new Date().toISOString());
       d.metaSet("schema_version", String(require("../../../core/database/src/db").SCHEMA_VERSION));
-      d.close();
       if (!ctx.json) {
         ok(ctx, `workspace ready: ${home}`);
         ok(ctx, `database:        ${file}`);
@@ -132,12 +130,10 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       // Auto-import the built-in skills that ship with this package.
       return autoImportBuiltinSkills(env, file).then(async (r: any) => {
         const secs = (r.ms / 1000).toFixed(1);
-        if (ctx.json) console.log(JSON.stringify({ created: true, db: file, imported: r.imported, failed: r.failed, ms: r.ms }));
+        if (ctx.json) emitJson(ctx, { created: true, db: file, imported: r.imported, failed: r.failed, ms: r.ms });
         else if (r.imported > 0) ok(ctx, `built-in skills:  ${r.imported} imported in ${secs}s (agent match ready)`);
         else warn(ctx, "built-in skills:  0 imported — skills/ directory not found in package");
         if (r.failed.length && !ctx.json) warn(ctx, `built-in skills:  ${r.failed.length} failed: ${r.failed.join(", ")}`);
-        // Release the ORM connection so the lock doesn't linger
-        try { const { closeOrm } = require("../../../core/database/src/orm"); await closeOrm(); } catch { /* */ }
         // Partial import is a failure signal (fdc757f6 pre-audit ④): callers
         // must not read rc=0 as "cold-start is fully ready" when skills dropped.
         return r.failed.length ? 1 : 0;
@@ -146,11 +142,11 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     case "path":
       if (pgMode) {
         const pgTarget = String(process.env.YGL_DB_URL || lastFlagOf(args.flags.db));
-        if (ctx.json) console.log(JSON.stringify({ dialect: "pg", url: redactPgUrl(pgTarget) }, null, 2));
+        if (ctx.json) emitJson(ctx, { dialect: "pg", url: redactPgUrl(pgTarget) }, 2);
         else out(ctx, "pg: " + redactPgUrl(pgTarget));
         return 0;
       }
-      if (ctx.json) console.log(JSON.stringify({ path: file }, null, 2));
+      if (ctx.json) emitJson(ctx, { path: file }, 2);
       else out(ctx, file);
       return 0;
     case "unlock": {
@@ -162,7 +158,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       let holder = "";
       try { holder = fs.readFileSync(`${lockDir}/pid`, "utf8").trim(); } catch { /* */ }
       if (!fs.existsSync(lockDir)) {
-        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder: null, cleared: false, reason: "no lock present" }, null, 2));
+        if (ctx.json) emitJson(ctx, { lock: lockDir, holder: null, cleared: false, reason: "no lock present" }, 2);
         else ok(ctx, `no lock present: ${lockDir}`);
         return 0;
       }
@@ -181,12 +177,12 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         if (self) {
           try {
             fs.rmSync(lockDir, { recursive: true, force: true });
-            if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder, cleared: true, reason: "self (acquired during boot)" }, null, 2));
+            if (ctx.json) emitJson(ctx, { lock: lockDir, holder, cleared: true, reason: "self (acquired during boot)" }, 2);
             else ok(ctx, `lock cleared: ${lockDir}  (self — acquired during boot)`);
             return 0;
           } catch { /* fall through to the generic clear below */ }
         }
-        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder, holder_cmd: holderCmd || null, cleared: false, reason: "holder alive (use --force to override)" }, null, 2));
+        if (ctx.json) emitJson(ctx, { lock: lockDir, holder, holder_cmd: holderCmd || null, cleared: false, reason: "holder alive (use --force to override)" }, 2);
         else {
           bad(ctx, msg);
           out(ctx, paint(C.yellow, `  that is a parallel CLI session (serve never takes the write lock) — retry after it exits;`, ctx.color));
@@ -197,11 +193,11 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       try {
         if (!takeoverLockDir(lockDir)) throw new Error("directory still exists after retries (Windows handle?)");
         const why = !holder || !pidAlive(holder) ? `stale (pid ${holder || "?"} dead)` : "forced";
-        if (ctx.json) console.log(JSON.stringify({ lock: lockDir, holder: holder || null, cleared: true, reason: why }, null, 2));
+        if (ctx.json) emitJson(ctx, { lock: lockDir, holder: holder || null, cleared: true, reason: why }, 2);
         else ok(ctx, `lock cleared: ${lockDir}  (${why})`);
         return 0;
       } catch (e: any) {
-        if (ctx.json) console.log(JSON.stringify({ error: `remove failed: ${e?.message || e}` }, null, 2));
+        if (ctx.json) emitJson(ctx, { error: `remove failed: ${e?.message || e}` }, 2);
         else bad(ctx, `remove failed: ${e?.message || e}`);
         return 1;
       }
@@ -235,18 +231,18 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       // 护栏④自检：payload 里不得出现会话 id / 凭证样式
       const blob = JSON.stringify(payload);
       if (/session-[0-9a-f]{8,}/.test(blob) || /(?:password|passwd|secret|token)\s*[:=]/i.test(blob)) {
-        if (ctx.json) console.log(JSON.stringify({ error: "snapshot payload tripped the desensitization guard (session id or credential-shaped field)" }));
+        if (ctx.json) emitJson(ctx, { error: "snapshot payload tripped the desensitization guard (session id or credential-shaped field)" });
         else bad(ctx, "snapshot payload tripped the desensitization guard");
         return 2;
       }
-      if (ctx.json) console.log(JSON.stringify(payload, null, 2));
+      if (ctx.json) emitJson(ctx, payload, 2);
       else ack(ctx, payload, `snapshot ${payload.sha256.slice(0, 19)}… (${(bytes.length / 1024).toFixed(1)} KB) at ${outPath}`);
       return 0;
     }
     case "stats": {
       const s = await env.asyncStore.stats();
       if (ctx.json) {
-        console.log(JSON.stringify(s, null, 2));
+        emitJson(ctx, s, 2);
         return 0;
       }
       head(ctx, "Database");
@@ -315,7 +311,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         fs.writeFileSync(outPath, md);
         ok(ctx, `markdown report saved: ${outPath} (${md.length} chars)`);
       } else {
-        if (ctx.json) { console.log(JSON.stringify({ markdown: md, chars: md.length }, null, 2)); return 0; }
+        if (ctx.json) { emitJson(ctx, { markdown: md, chars: md.length }, 2); return 0; }
         out(ctx, md);
       }
       return 0;
@@ -344,7 +340,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         ) as any;
         unlockedAt = r?.n || 0;
       } catch { /* */ }
-      if (ctx.json) { console.log(JSON.stringify({ timestamp: ts, counts, unlocked_nodes: unlockedAt }, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, { timestamp: ts, counts, unlocked_nodes: unlockedAt }, 2); return 0; }
       head(ctx, `Workspace at ${ts}`);
       const labels: Record<string, string> = {
         projects: "项目", sources: "来源", evidence: "证据", claims: "断言",
@@ -384,7 +380,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         : [];
       // F2 fix: --json outputs pure JSON (frozen contract ④)
       if (ctx.json) {
-        console.log(JSON.stringify({ timeline: days, total: days.reduce((s2: number, d: any) => s2 + d.events, 0), ...(tail.length ? { tail } : {}) }, null, 2));
+        emitJson(ctx, { timeline: days, total: days.reduce((s2: number, d: any) => s2 + d.events, 0), ...(tail.length ? { tail } : {}) }, 2);
         return 0;
       }
       const maxEvents = Math.max(...days.map(d => d.events));
@@ -658,7 +654,7 @@ ${cl.text}
         for (const r of rows) found.push({ table: t, count: r.c, content: String(r.g).replace(/\s+/g, " ").slice(0, 70) });
       }
       if (ctx.json) {
-        console.log(JSON.stringify(found, null, 2));
+        emitJson(ctx, found, 2);
         return 0;
       }
       if (!found.length) {
@@ -683,7 +679,7 @@ ${cl.text}
       return syncToPg(db, url, only)
         .then((r): number => {
           if (ctx.json) {
-            console.log(JSON.stringify(r, null, 2));
+            emitJson(ctx, r, 2);
             return 0;
           }
           ok(ctx, `mirrored ${r.tables.length} table(s) to PostgreSQL (${r.fulltext})`);
@@ -721,7 +717,7 @@ ${cl.text}
             if (binding && (binding.mode !== "pg" || binding.url_hash !== pgTargetHash(url))) throw new PgUpgradeError("PG database backend_binding belongs to a different target; no changes made");
           }
           const r = await upgradePgSchema(client, SCHEMA_VERSION);
-          if (ctx.json) console.log(JSON.stringify(r));
+          if (ctx.json) emitJson(ctx, r);
           else if (r.duplicate) ok(ctx, `PG schema already at v${r.to}; nothing to do`);
           else ok(ctx, `PG schema v${r.from} → v${r.to}: ${r.steps.length} step(s), ${r.indexes_created.length} index(es) created${r.indexes_created.length ? " (" + r.indexes_created.join(", ") + ")" : ""}`);
           return 0;
@@ -747,7 +743,7 @@ ${cl.text}
       return migrateToPg(db, url, fresh)
         .then((r): number => {
           if (ctx.json) {
-            console.log(JSON.stringify(r, null, 2));
+            emitJson(ctx, r, 2);
             return 0;
           }
           ok(ctx, `migrated ${r.tables.length} table(s) into PostgreSQL — one-time, full fidelity`);

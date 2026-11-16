@@ -1,14 +1,15 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /** produce group — evidence-backed outline → sections → report.
  *  Writes run on the TypeORM write service (src/writes.ts); reads stay on
  *  Store until their own migration batch. */
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { rejectBare } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
-import { getOrm } from "../../../core/database/src/orm";
+
 import { resolveProject, ambiguousProject, projectCount, projectSample, idNotFound } from "../../../core/database/src/selection";
-import * as writes from "../../pipeline/src/writes";
+import { TASK_STATUSES as writes_TASK_STATUSES, artifactAdd as writes_artifactAdd, taskAdd as writes_taskAdd, taskAssign as writes_taskAssign, taskCancel as writes_taskCancel, taskSetStatus as writes_taskSetStatus } from "../../pipeline/src/writes";
 import { relAdd, RelError } from "../../../ops/tools/src/rels";
 import { configGetNumber } from "../../../core/database/src/config";
 import { staleTasks, taskView, TaskView } from "../../pipeline/src/lifecycle";
@@ -31,7 +32,7 @@ function printStale(env: Env, tasks: TaskView[], args: any, scope: string): numb
   const rows = staleTasks(tasks, Date.now(), doing, todo).map((t) => ({
     ...t, last_actor: (env.db.get("SELECT actor FROM events WHERE entity_id=? ORDER BY rowid DESC LIMIT 1", [t.id]) as any)?.actor ?? "",
   }));
-  if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+  if (ctx.json) { emitJson(ctx, rows, 2); return 0; }
   head(ctx, `Stale tasks — ${scope} (doing ≥ ${doing}d, todo ≥ ${todo}d): ${rows.length}`);
   table(ctx, rows.map((r) => ({ ...r, age: `${r.age_days}d${r.status_at_source === "created" ? "*" : ""}`, who: r.owner || (r.last_actor ? `(last: ${r.last_actor})` : "—") })),
     ["id", "status", "age", "who", "title"], ["id", "status", "age", "who", "title"]);
@@ -124,10 +125,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (!ev.length) lines.push("_（尚无 evidence）_", "");
       ev.forEach((e: any, i: number) => lines.push(`- [${i + 1}] ${e.source}：${clip(e.quote, 80)}`));
       const content = lines.join("\n");
-      return getOrm(env.db.path)
-        .then((ds) => writes.artifactAdd(ds, pid, "outline", `${project.name} outline`, content))
+      return sqliteOrm(env)
+        .then((ds) => writes_artifactAdd(ds, pid, "outline", `${project.name} outline`, content))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          if (ctx.json) emitJson(ctx, r.row, 2);
           else {
             ok(ctx, `outline generated: ${r.row.id} (v${r.version})`);
             out(ctx, content);
@@ -147,10 +148,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: produce section <title> --body|-f <file>");
         return 2;
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.artifactAdd(ds, pid, "section", title, body))
+      return sqliteOrm(env)
+        .then((ds) => writes_artifactAdd(ds, pid, "section", title, body))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          if (ctx.json) emitJson(ctx, r.row, 2);
           else ok(ctx, `section saved: ${r.row.id} (v${r.version})`);
           return 0;
         })
@@ -174,10 +175,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: produce spec <title> --body|-f <file>");
         return 2;
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.artifactAdd(ds, pid, "spec", title, body))
+      return sqliteOrm(env)
+        .then((ds) => writes_artifactAdd(ds, pid, "spec", title, body))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          if (ctx.json) emitJson(ctx, r.row, 2);
           else ok(ctx, `spec saved: ${r.row.id} (v${r.version})`);
           return 0;
         })
@@ -201,10 +202,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       // R12.1a ruling: ui-ux designs follow the DESIGN.md format
       // (google-labs-code); arch/decision follow the ADR style.
-      return getOrm(env.db.path)
-        .then((ds) => writes.artifactAdd(ds, pid, "design", title, body, "markdown", JSON.stringify({ design_type: designType })))
+      return sqliteOrm(env)
+        .then((ds) => writes_artifactAdd(ds, pid, "design", title, body, "markdown", JSON.stringify({ design_type: designType })))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          if (ctx.json) emitJson(ctx, r.row, 2);
           else ok(ctx, `design saved: ${r.row.id} (v${r.version}) [${designType}]`);
           return 0;
         })
@@ -225,11 +226,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const note = String(args.flags.note || "");
       const owner = args.flags.owner !== undefined ? String(args.flags.owner).trim() : "";
       const nodeRef = args.flags.node !== undefined ? String(args.flags.node) : "";
-      return getOrm(env.db.path)
-        .then((ds) => writes.taskAdd(ds, pid, title, note, owner))
+      return sqliteOrm(env)
+        .then((ds) => writes_taskAdd(ds, pid, title, note, owner))
         .then((row): number | Promise<number> => {
           if (!nodeRef) {
-            if (ctx.json) console.log(JSON.stringify(row, null, 2));
+            if (ctx.json) emitJson(ctx, row, 2);
             else ok(ctx, `task added: ${row.id}  ${title}  · project ${project.name}`);
             return 0;
           }
@@ -238,7 +239,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           // so task lists and node timelines stop being parallel pipelines.
           return relAdd(env, `node:${nodeRef}`, `task:${row.id}`, "tracked-by")
             .then((r): number => {
-              if (ctx.json) console.log(JSON.stringify({ ...row, node: nodeRef, relation: "tracked-by" }, null, 2));
+              if (ctx.json) emitJson(ctx, { ...row, node: nodeRef, relation: "tracked-by" }, 2);
               else ok(ctx, `task added: ${row.id}  ${title}  (tracked-by node:${nodeRef})`);
               return 0;
             });
@@ -252,8 +253,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "task-list": {
       if (rejectBare(ctx, args.flags, ["status", "owner"])) return 2;
       const statusF = args.flags.status !== undefined ? String(args.flags.status) : "";
-      if (statusF && !(writes.TASK_STATUSES as readonly string[]).includes(statusF)) {
-        bad(ctx, `--status must be one of ${writes.TASK_STATUSES.join("|")}, got: ${statusF}`);
+      if (statusF && !(writes_TASK_STATUSES as readonly string[]).includes(statusF)) {
+        bad(ctx, `--status must be one of ${writes_TASK_STATUSES.join("|")}, got: ${statusF}`);
         return 2;
       }
       const ownerF = args.flags.owner !== undefined ? String(args.flags.owner) : "";
@@ -263,7 +264,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       ).map(taskView)
         .filter((r: TaskView) => (!statusF || r.status === statusF) && (!ownerF || r.owner === ownerF));
       if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
+        emitJson(ctx, rows, 2);
         return 0;
       }
       head(ctx, `Tasks (${rows.length})`);
@@ -283,10 +284,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, idNotFound(env.db, "artifacts", id, "task"));
         return 1;
       }
-      return getOrm(env.db.path)
-        .then((ds) => action === "task-cancel" ? writes.taskCancel(ds, id, String(args.flags.reason)) : writes.taskAssign(ds, id, rest[1]))
+      return sqliteOrm(env)
+        .then((ds) => action === "task-cancel" ? writes_taskCancel(ds, id, String(args.flags.reason)) : writes_taskAssign(ds, id, rest[1]))
         .then((r: any): number => {
-          if (ctx.json) console.log(JSON.stringify(r, null, 2));
+          if (ctx.json) emitJson(ctx, r, 2);
           else if (r.duplicate) out(ctx, paint(C.yellow, `  ⚠ duplicate: task ${r.id} already ${action === "task-cancel" ? "cancelled" : `owned by ${r.owner}`}`, ctx.color));
           else ok(ctx, action === "task-cancel" ? `task ${r.id}: ${r.from} → cancelled (${r.cancel_reason})` : `task ${r.id}: owner ${r.from || "—"} → ${r.owner}`);
           return 0;
@@ -311,10 +312,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         }
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.taskSetStatus(ds, id, status))
+      return sqliteOrm(env)
+        .then((ds) => writes_taskSetStatus(ds, id, status))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify(r, null, 2));
+          if (ctx.json) emitJson(ctx, r, 2);
           else if ((r as any).duplicate) out(ctx, paint(C.yellow, `  ⚠ duplicate: task ${r.id} is already ${r.to} (nothing changed)`, ctx.color));
           else ok(ctx, `task ${r.id}: ${r.from} → ${r.to}`);
           return 0;
@@ -415,10 +416,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       else for (const c of weak) L.push(`- 待补证据：${c.text}`);
 
       const content = L.join("\n");
-      return getOrm(env.db.path)
-        .then((ds) => writes.artifactAdd(ds, pid, "report", `${project.name} report`, content))
+      return sqliteOrm(env)
+        .then((ds) => writes_artifactAdd(ds, pid, "report", `${project.name} report`, content))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify(r.row, null, 2));
+          if (ctx.json) emitJson(ctx, r.row, 2);
           else {
             ok(ctx, `report generated: ${r.row.id} (v${r.version})`);
             out(ctx, content);
@@ -458,7 +459,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, idNotFound(env.db, "artifacts", a.id, "artifact"));
         return 1;
       }
-      if (ctx.json) console.log(JSON.stringify(a, null, 2));
+      if (ctx.json) emitJson(ctx, a, 2);
       else {
         head(ctx, `${a.kind}: ${a.title} (v${a.version})`);
         out(ctx, a.content);
@@ -486,7 +487,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // #46: a write command's --json success path is ONE JSON object (frozen
       // contract); the human ack was leaking into the machine channel.
       if (ctx.json) {
-        console.log(JSON.stringify({ artifact_id: a.id, path: dest, chars: a.content.length, bytes: Buffer.byteLength(a.content, "utf8") }, null, 2));
+        emitJson(ctx, { artifact_id: a.id, path: dest, chars: a.content.length, bytes: Buffer.byteLength(a.content, "utf8") }, 2);
       } else {
         ok(ctx, `written: ${dest} (${a.content.length} chars)`);
       }

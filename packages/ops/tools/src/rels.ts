@@ -1,3 +1,4 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /**
  * Relation fabric — spec R9 (0.29.0).
  *
@@ -9,9 +10,9 @@
  * @module @ygl/ops-tools/rels
  */
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { nowIso, shortId } from "../../../core/text/src/text";
-import { getOrm } from "../../../core/database/src/orm";
+
 import { resolveTree } from "../../../core/database/src/selection";
 
 export const REL_TYPES = ["node", "claim", "evidence", "source", "query", "kb", "artifact", "task", "skill"] as const;
@@ -111,7 +112,7 @@ export function resolveId(env: Env, type: string, id: string): string {
 export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "related"): Promise<{ row: any; duplicate: boolean }> {
   const src = resolveRef(env, srcRef);
   const dst = resolveRef(env, dstRef);
-  const ds = await getOrm(env.db.path);
+  const ds = await sqliteOrm(env);
   return ds.transaction(async (mgr: any) => {
     const ex = (await mgr.query(
       `SELECT id FROM relations WHERE src_type=? AND src_id=? AND dst_type=? AND dst_id=? AND rel=?`,
@@ -181,7 +182,7 @@ export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "re
 export async function relRm(env: Env, srcRef: string, dstRef: string, rel = "related"): Promise<void> {
   const src = resolveRef(env, srcRef);
   const dst = resolveRef(env, dstRef);
-  const ds = await getOrm(env.db.path);
+  const ds = await sqliteOrm(env);
   await ds.transaction(async (mgr: any) => {
     const ex = (await mgr.query(
       `SELECT id FROM relations WHERE src_type=? AND src_id=? AND dst_type=? AND dst_id=? AND rel=?`,
@@ -266,7 +267,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const dstP = projectNameOf(env.db, r.row.dst_type, r.row.dst_id);
         const crossProject = srcP && dstP && srcP !== dstP ? { src: srcP, dst: dstP } : null;
         if (ctx.json) {
-          console.log(JSON.stringify({ id: r.row.id, src: `${r.row.src_type}:${r.row.src_id}`, dst: `${r.row.dst_type}:${r.row.dst_id}`, rel: r.row.rel, duplicate: r.duplicate, ...(crossProject ? { cross_project: crossProject } : {}) }));
+          emitJson(ctx, { id: r.row.id, src: `${r.row.src_type}:${r.row.src_id}`, dst: `${r.row.dst_type}:${r.row.dst_id}`, rel: r.row.rel, duplicate: r.duplicate, ...(crossProject ? { cross_project: crossProject } : {}) });
           return 0;
         }
         if (r.duplicate) out(ctx, paint(C.yellow, `  ⚠ duplicate: ${a} ${rel} ${b} (already linked)`, ctx.color));
@@ -295,7 +296,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return (async () => {
       try {
         await relRm(env, a, b, rel);
-        if (ctx.json) console.log(JSON.stringify({ removed: `${a} -${rel}-> ${b}` }));
+        if (ctx.json) emitJson(ctx, { removed: `${a} -${rel}-> ${b}` });
         else ok(ctx, `unlinked: ${a} (${rel}) ${b}`);
         return 0;
       } catch (e: any) {
@@ -339,7 +340,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       dst_display: resolveId(env, r.dst_type, r.dst_id),
     }));
     if (ctx.json) {
-      console.log(JSON.stringify(outRows, null, 2));
+      emitJson(ctx, outRows, 2);
       return 0;
     }
     head(ctx, `Relations (${outRows.length})`);
@@ -356,12 +357,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     return (async () => {
       const dangling = orphanRelations(env);
       if (!dangling.length) {
-        if (ctx.json) console.log(JSON.stringify({ pruned: 0, dry_run: dry, rows: [] }, null, 2));
+        if (ctx.json) emitJson(ctx, { pruned: 0, dry_run: dry, rows: [] }, 2);
         else ok(ctx, "no orphan relations");
         return 0;
       }
       if (dry) {
-        if (ctx.json) console.log(JSON.stringify({ pruned: 0, dry_run: true, rows: dangling }, null, 2));
+        if (ctx.json) emitJson(ctx, { pruned: 0, dry_run: true, rows: dangling }, 2);
         else {
           head(ctx, `Would prune ${dangling.length} orphan relation(s)`);
           table(
@@ -373,7 +374,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         return 0;
       }
-      const ds = await getOrm(env.db.path);
+      const ds = await sqliteOrm(env);
       await ds.transaction(async (mgr: any) => {
         for (const r of dangling) await mgr.query("DELETE FROM relations WHERE id=?", [r.id]);
         await mgr.query(
@@ -381,7 +382,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           [shortId(["rel.prune"], 12), nowIso(), "cli", "rel.prune", "relation", "", JSON.stringify({ pruned: dangling.length }), "info"]
         );
       });
-      if (ctx.json) console.log(JSON.stringify({ pruned: dangling.length, dry_run: false, rows: dangling }, null, 2));
+      if (ctx.json) emitJson(ctx, { pruned: dangling.length, dry_run: false, rows: dangling }, 2);
       else {
         ok(ctx, `pruned ${dangling.length} orphan relation(s)`);
         table(

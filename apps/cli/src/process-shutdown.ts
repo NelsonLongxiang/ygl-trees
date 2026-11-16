@@ -14,7 +14,7 @@ export interface ProcessShutdown {
 }
 
 export function createProcessShutdown(
-  dispose: () => Promise<void>,
+  dispose: () => Promise<void | number>,
   forceExit: (code: number) => void = (code) => process.exit(code),
   complete: (code: number) => void = (code) => { process.exitCode = code; },
   timeoutMs = PROCESS_SHUTDOWN_TIMEOUT_MS,
@@ -23,6 +23,7 @@ export function createProcessShutdown(
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let completed = false;
   let forceExited = false;
+  let requestedCode = 0;
 
   const clearTimer = () => { if (timeout !== undefined) clearTimeout(timeout); };
   const forceExitOnce = (code: number) => {
@@ -38,13 +39,17 @@ export function createProcessShutdown(
     complete(code);
   };
   const start = (code: number, forceAfter: boolean): Promise<void> => {
+    if (code !== 0 || requestedCode === 0) requestedCode = code;
     if (pending !== undefined) return pending;
-    timeout = setTimeout(() => forceExitOnce(code), timeoutMs);
+    timeout = setTimeout(() => forceExitOnce(requestedCode || 1), timeoutMs);
     pending = Promise.resolve()
       .then(dispose)
       .then(
-        () => (forceAfter ? forceExitOnce(code) : completeOnce(code)),
-        () => forceExitOnce(code),
+        (result) => {
+          const finalCode = typeof result === "number" ? result : requestedCode;
+          return forceAfter ? forceExitOnce(finalCode) : completeOnce(finalCode);
+        },
+        () => forceExitOnce(requestedCode || 1),
       );
     return pending;
   };
@@ -52,7 +57,7 @@ export function createProcessShutdown(
   return {
     shutdown: (code) => start(code, false),
     interrupt: (code) => {
-      if (pending !== undefined) forceExitOnce(code); // second signal escalates
+      if (pending !== undefined) forceExitOnce(requestedCode || code || 1); // interrupted cleanup is not verified success
       else void start(code, true);
     },
   };

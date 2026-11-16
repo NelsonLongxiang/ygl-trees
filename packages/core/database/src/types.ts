@@ -11,9 +11,15 @@ export interface Ctx {
   json: boolean;
   color: boolean;
   quiet: boolean;
+  emitJson?: (payload: unknown, space?: string | number) => void;
+  failJson?: (message: string) => void;
 }
 
 export interface Env {
+  /** Explicit application composition; DB-free helper paths may omit it. */
+  orm?: import("./scoped-orm").OrmAccess;
+  invocation?: import("./invocation").InvocationAccess;
+  detachControl?: () => void;
   ctx: Ctx;
   db: any; // DB instance (import from core/db for the real type)
   store: any; // Store instance (legacy sync face — db-cmds/webui until B4)

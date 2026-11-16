@@ -2,9 +2,12 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
-import { getOrm, closeOrm } from "../../../core/database/src/orm";
+
 import { TreeStore } from "../src/reads";
 import * as treeWrites from "../src/writes";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 let db: DB;
 let dir: string;

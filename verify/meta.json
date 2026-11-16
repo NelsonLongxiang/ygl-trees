@@ -5,17 +5,17 @@
   "tooling": [
     {
       "path": "benchmarks/bench.js",
-      "sha256": "ab21178fe450e0da894be53e75565f0e473e3d5d3dd08c3bded6dfd3c8278b66",
+      "sha256": "501528f324d469596b48085e5e7606fc57b12908c570be9128de705099af51a7",
       "role": "test"
     },
     {
       "path": "benchmarks/knowledge-search/knowledge-search.bench.js",
-      "sha256": "06731d7f3d051130e7ebaa56c9bb78ae137d11a4e6f0a9d61ae56dd6224f7857",
+      "sha256": "1a1561e596ea237465a45c666ac733bc4c3fd8bc3678038e36ff8d744a351421",
       "role": "test"
     },
     {
       "path": "benchmarks/research-write/research-write.bench.js",
-      "sha256": "4a1f6e9f53d5885add878a52f291f9a7adf23e11832692ac1e11f8fb890206a3",
+      "sha256": "06b157e2430c3405e5c7a3a749372e51691063821d4a00a3ea5af9c027483571",
       "role": "test"
     },
     {
@@ -30,7 +30,7 @@
     },
     {
       "path": "benchmarks/techtree-index/techtree-index.bench.js",
-      "sha256": "6c7eb714a78c0d3f078a4f253ece4c26dddbbc93b96baee6456063b1b5abf7aa",
+      "sha256": "fccffb6d3f2886dc9853fa266a73b246c97509cd741020a79993867af1478cb3",
       "role": "test"
     },
     {
@@ -115,7 +115,7 @@
     },
     {
       "path": "scripts/gate.js",
-      "sha256": "bdf520b8ac9eafff6ac41bb56eff6d1721d28b638a0d7559993d5d237b4e7d51",
+      "sha256": "38485e53b3a87518be4a4c7443a5d575300c94c131a8190c5a522dc1fe461d2d",
       "role": "gate"
     },
     {
@@ -1546,6 +1546,46 @@
       "reason": "#234 independently enforce literal source graph and declared workspace graph",
       "actor": "dsh/1c56c492",
       "at": "2026-11-15T19:24:45.712Z"
+    },
+    {
+      "path": "benchmarks/bench.js",
+      "old_sha256": "ab21178fe450e0da894be53e75565f0e473e3d5d3dd08c3bded6dfd3c8278b66",
+      "new_sha256": "501528f324d469596b48085e5e7606fc57b12908c570be9128de705099af51a7",
+      "reason": "285 explicit ORM ownership migration and removal of architecture exception",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-16T18:32:31.732Z"
+    },
+    {
+      "path": "benchmarks/knowledge-search/knowledge-search.bench.js",
+      "old_sha256": "06731d7f3d051130e7ebaa56c9bb78ae137d11a4e6f0a9d61ae56dd6224f7857",
+      "new_sha256": "1a1561e596ea237465a45c666ac733bc4c3fd8bc3678038e36ff8d744a351421",
+      "reason": "285 explicit ORM ownership migration and removal of architecture exception",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-16T18:32:31.795Z"
+    },
+    {
+      "path": "benchmarks/research-write/research-write.bench.js",
+      "old_sha256": "4a1f6e9f53d5885add878a52f291f9a7adf23e11832692ac1e11f8fb890206a3",
+      "new_sha256": "06b157e2430c3405e5c7a3a749372e51691063821d4a00a3ea5af9c027483571",
+      "reason": "285 explicit ORM ownership migration and removal of architecture exception",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-16T18:32:31.862Z"
+    },
+    {
+      "path": "benchmarks/techtree-index/techtree-index.bench.js",
+      "old_sha256": "6c7eb714a78c0d3f078a4f253ece4c26dddbbc93b96baee6456063b1b5abf7aa",
+      "new_sha256": "fccffb6d3f2886dc9853fa266a73b246c97509cd741020a79993867af1478cb3",
+      "reason": "285 explicit ORM ownership migration and removal of architecture exception",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-16T18:32:31.929Z"
+    },
+    {
+      "path": "scripts/gate.js",
+      "old_sha256": "bdf520b8ac9eafff6ac41bb56eff6d1721d28b638a0d7559993d5d237b4e7d51",
+      "new_sha256": "38485e53b3a87518be4a4c7443a5d575300c94c131a8190c5a522dc1fe461d2d",
+      "reason": "285 explicit ORM ownership migration and removal of architecture exception",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-16T18:32:32.001Z"
     }
   ],
   "kind": "engine",

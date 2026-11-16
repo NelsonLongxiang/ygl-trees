@@ -19,6 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { withFileLock } from "@deepseek-ai/dsh-atomic-write";
+import type { Effect } from "@deepseek-ai/cordis";
 
 export interface UserPluginSpec {
   /** npm package name (resolvable from the profile's node_modules) */
@@ -33,12 +34,14 @@ export interface UserPluginSpec {
 
 export interface LoadedUserPlugin {
   name: string;
-  apply?: (ctx: any, config?: any) => void;
+  apply?: (ctx: any, config?: any) => Effect | void;
   /** Config from the bundle entry (loader Entry-option parity, adopted without the loader). */
   config?: Record<string, unknown>;
   commands?: Record<string, { run: (env: any, action: string, rest: string[], args: any) => number | Promise<number> }>;
   /** yglTrees compatibility declared by the plugin; undefined = unconstrained */
   compat?: string;
+  /** Explicit opt-in to instance-owned ORM, resource and result publication capabilities. */
+  workspaceProtocol?: "ygl-workspace/1";
 }
 
 export interface PluginIssue {
@@ -306,7 +309,7 @@ export function loadUserPlugins(home: string): UserLoadResult {
       try {
         compat = JSON.parse(fs.readFileSync(require.resolve(path.join(p.name, "package.json"), { paths: [dir] }), "utf8")).yglTrees;
       } catch { /* unconstrained */ }
-      plugins.push({ name: p.name, apply: mod.apply, config: p.config, commands: mod.commands, compat });
+      plugins.push({ name: p.name, apply: mod.apply, config: p.config, commands: mod.commands, compat, workspaceProtocol: mod.workspaceProtocol === "ygl-workspace/1" ? "ygl-workspace/1" : undefined });
     } catch (e: any) {
       issues.push({ name: p.name, error: String(e?.message || e) });
     }

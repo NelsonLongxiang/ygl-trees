@@ -3,10 +3,14 @@ import { describe,it,expect,beforeAll,afterAll,vi } from "vitest";
 import { mkdtempSync,mkdirSync,rmSync } from "node:fs";
 import { join } from "node:path";
 import { DB } from "../../../core/database/src/db";
-import { getPgOrm,closeOrm } from "../../../core/database/src/orm";
+
 import { bindPgWorkspace } from "../../../core/database/src/pg-workspace";
 import { migrateToPg } from "../../../ops/tools/src/pgsync";
 import * as writes from "../src/writes";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+import { createWorkspaceOrm } from "../../../../apps/cli/src/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 const adminUrl=process.env.B8_TEST_PG_ADMIN_URL||"";
 let admin:any,client:any,ds:any,dir="",name="",url="",project="",sid:string|undefined;
 let serial=0;
@@ -33,6 +37,16 @@ describe.skipIf(!adminUrl)("B8 batch 3 claim state service (official PG migratio
   vi.restoreAllMocks();if(sid===undefined)delete process.env.YGL_SESSION;else process.env.YGL_SESSION=sid;
   await closeOrm();await client?.end();if(admin){if(name)await admin.query('DROP DATABASE IF EXISTS "'+name+'" WITH (FORCE)');await admin.end();}
   if(dir)rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});
+ });
+ it("explicit PG composition has all12entity metadata and16closedrelations before business access",async()=>{
+  expect(ds.options.synchronize).toBe(false);
+  expect(ds.entityMetadatas.map((m:any)=>m.tableName).sort()).toEqual(["claim_evidence","claims","events","evidence","patrol_checks","patrol_findings","projects","queries","query_sources","sources","verifier_instances","verifier_runs"].sort());
+  const relations=ds.entityMetadatas.flatMap((m:any)=>m.relations);expect(relations).toHaveLength(16);expect(relations.every((r:any)=>ds.entityMetadatas.includes(r.inverseEntityMetadata))).toBe(true);
+ });
+ it("same-target PG owners have independent pools and oneclose cannot invalidate the other",async()=>{
+  const one=createWorkspaceOrm({dialect:"postgres",url}),two=createWorkspaceOrm({dialect:"postgres",url});
+  try{const first=await one.getPgOrm(url),second=await two.getPgOrm(url);expect(first).not.toBe(second);await one.close();expect((await second.query("SELECT COUNT(*)::int n FROM projects"))[0].n).toBeGreaterThanOrEqual(1);expect(ds.isInitialized).toBe(true);}
+  finally{await one.close();await two.close();}
  });
  it("stance mutation, manual lock, updated/recalculated and unresolve mirror the SQLite sequence",async()=>{
   const {c,e1,e2}=await fixture();

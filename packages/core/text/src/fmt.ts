@@ -4,6 +4,14 @@ export interface Ctx {
   json: boolean;
   color: boolean;
   quiet: boolean;
+  emitJson?: (payload: unknown, space?: string | number) => void;
+  failJson?: (message: string) => void;
+}
+
+/** Emit one machine payload through an optional invocation-local publication port. */
+export function emitJson(ctx: Ctx, payload: unknown, space?: string | number): void {
+  if (ctx.emitJson) ctx.emitJson(payload, space);
+  else console.log(JSON.stringify(payload, null, space));
 }
 
 export const C = {
@@ -37,7 +45,8 @@ export function warn(ctx: Ctx, msg: string): void {
  */
 export function bad(ctx: Ctx, msg: string): void {
   if (ctx.json) {
-    console.log(JSON.stringify({ error: msg }, null, 2));
+    if (ctx.failJson) ctx.failJson(msg);
+    else emitJson(ctx, { error: msg }, 2);
     return;
   }
   out(ctx, paint(C.red, `  ✗ ${msg}`, ctx.color));
@@ -73,7 +82,7 @@ function padEnd(s: string, width: number): string {
 /** Render rows as an aligned table (falls back to JSON when ctx.json). */
 export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[], hint?: string): void {
   if (ctx.json) {
-    console.log(JSON.stringify(rows, null, 2));
+    emitJson(ctx, rows, 2);
     return;
   }
   if (!rows.length) {
@@ -96,7 +105,7 @@ export function table(ctx: Ctx, rows: any[], headers?: string[], keys?: string[]
 
 export function show(ctx: Ctx, obj: any, title?: string): void {
   if (ctx.json) {
-    console.log(JSON.stringify(obj, null, 2));
+    emitJson(ctx, obj, 2);
     return;
   }
   if (title) head(ctx, title);
@@ -108,7 +117,7 @@ export function show(ctx: Ctx, obj: any, title?: string): void {
 }
 
 export function dump(ctx: Ctx, data: any): void {
-  if (ctx.json) console.log(JSON.stringify(data, null, 2));
+  if (ctx.json) emitJson(ctx, data, 2);
   else console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2));
 }
 
@@ -128,7 +137,7 @@ export function writeResult(
 ): void {
   if (ctx.json) {
     const payload = { ...o.row, ...(extra?.project ? { project: extra.project } : {}), ...(extra?.project_source ? { project_source: extra.project_source } : {}), ...(extra?.selection_warning ? { selection_warning: extra.selection_warning } : {}), ...(o.dup ? { duplicate: true } : {}) };
-    console.log(JSON.stringify(payload, null, 2));
+    emitJson(ctx, payload, 2);
     return;
   }
   if (o.dup) out(ctx, paint(C.yellow, `  ! duplicate, kept existing: ${o.row.id}`, ctx.color));
@@ -138,6 +147,6 @@ export function writeResult(
 /** Ack for mutating commands without a meaningful row: --json prints the
  *  payload object; tty prints a ✓ line. Keeps stdout JSON-pure. */
 export function ack(ctx: Ctx, payload: any, msg: string): void {
-  if (ctx.json) console.log(JSON.stringify(payload, null, 2));
+  if (ctx.json) emitJson(ctx, payload, 2);
   else ok(ctx, msg);
 }

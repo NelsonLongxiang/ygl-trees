@@ -62,17 +62,20 @@
 
 **async 裁决（2026-10-15）**：否决"全栈异步一步到位"——main() 已支持异步命令，传染面收敛在命令层 await + 写服务层，无需改造 Store 读方法。写命令统一经 `runWrite` 助手（6 行/命令），返回**显式 snake_case 映射对象**（输出契约冻结：实体 camelCase 属性绝不直接外泄）。事件 kind 字符串与 Store 时代逐字一致（`agent log` 历史同质）。
 
-**迁移读命令的固定动作**：`getOrm(env.db.path)` → repo.find（relations 取派生计数）→ 显式映射输出形状（含历史 clip 怪癖）→ catch 返回 rc=1 → demo 即回归。
+**迁移读命令的固定动作**：`requireOrm(env).getOrm(env.db.path)` → repo.find（relations 取派生计数）→ 显式映射输出形状（含历史 clip 怪癖）→ catch 返回 rc=1 → demo 即回归。
 
 **写迁移状态（0.12.0 收官）**：全域完成——research/kb/job（0.10.0）、produce/skill/project（0.11.0）、tree/node（0.12.0，src/writes.ts）。**例外清单**：`project use` / `tree use` 留 Store.metaSet（配置面）；`node validate` 保留 TreeStore（诊断面，buildIndex 副作用随读发生）；tree 域沿袭 TreeStore 传统**不写 events**（历史行为，保持）；produce export 的 artifact.export 事件仍经 Store.log。迁移规则不变：副作用进事务 + 黄金对账。produce 三命令（outline/section/report）自 0.11.0 起 JSON 纯净。
 
 **连接策略（0.24.0 起）**：WAL + `synchronous=NORMAL`（sqlite.org 官方推荐组合）——commit 不再逐事务 fsync（Windows 实测 ~14ms/次），同步由 WAL checkpoint 承担。**持久性语义**：断电可能回滚最后几笔事务，数据库不会损坏；本地单用户研究工作台的教科书取舍。两条连接都要设（wasm DB 构造器 + `getOrm()` initialize 后）——journal_mode 持久于文件，synchronous 是**逐连接**的。基准：claim-write 39.9→28.1ms/op（−29%）。
+
+**ORM 装配与生命周期**：core／research 的 entity-manifest 是轻量声明，各自 entities 显式绑定 constructor；应用组合所需清单，完整校验后才连接。库调用者须持有独立 ORM owner 并 await close；域命令只借用 env.orm。相同文件／URL 的不同 owner 不共享关闭权。关闭须先停止接纳并排空已接纳工作，确认连接释放后再关 DB／自有锁；未知清理保留失败，不以 isInitialized=false 视为无资源。
 
 ## 六、输出契约（Agent API）
 
 - 退出码：`0` 成功（含重复已存在）· `1` 运行错误/404 · `2` 用法错误
 - `--json` 纯净：写命令单个 JSON 对象；读命令单个 JSON 数组/对象；禁止人类文本混入
 - 输出形状是**冻结契约**：改字段名 = 破坏性变更，需在 plan.md 记录并评估 demo 断言影响
+- 一次性受管命令通过 fmt.emitJson／Ctx 结果端口暂存一个 JSON payload，清理确认后才提交；不拦截全局 stdout，不缓冲 HTTP／SSE／MCP 流。清理失败使原 rc0 变为 rc1 与单一 error 对象；已有业务 rc1／2 及错误载荷优先保留，脱敏清理诊断走 stderr。业务事务可能已提交，不能因清理失败盲重试写入。
 
 ## 七、临时文件规范（2026-10-15 用户裁定）
 

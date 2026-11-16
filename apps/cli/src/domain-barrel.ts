@@ -6,22 +6,39 @@
  *
  * @module @ygl/cli/domain-barrel
  */
-import * as dbCmds from "../../../packages/ops/tools/src/db-cmds";
-import * as configCmds from "../../../packages/ops/tools/src/config-cmds";
-import * as jobCmds from "../../../packages/ops/tools/src/job-cmds";
-import * as patrolCmds from "../../../packages/ops/tools/src/patrol-cmds";
-import * as verifyCmds from "../../../packages/ops/tools/src/verify-cmds";
-import * as agentCmds from "../../../packages/ops/tools/src/agent-cmds";
-import * as researchCmds from "../../../packages/research/pipeline/src/cmds";
-import * as projectCmds from "../../../packages/research/produce/src/project-cmds";
-import * as produceCmds from "../../../packages/research/produce/src/produce-cmds";
-import * as treeCmds from "../../../packages/techtree/model/src/cmds";
-import * as skillCmds from "../../../packages/knowledge/skills/src/skill-cmds";
-import * as kbCmds from "../../../packages/knowledge/skills/src/cmds";
-import * as webui from "../../../packages/ops/tools/src/webui";
-import * as doctor from "../../../packages/ops/tools/src/doctor";
-import * as rels from "../../../packages/ops/tools/src/rels";
-import * as libraryCmds from "../../../packages/ops/tools/src/library-cmds";
+import { run as dbCmdsRun } from "../../../packages/ops/tools/src/db-cmds";
+import { run as configCmdsRun } from "../../../packages/ops/tools/src/config-cmds";
+import { run as jobCmdsRun } from "../../../packages/ops/tools/src/job-cmds";
+import { run as patrolCmdsRun } from "../../../packages/ops/tools/src/patrol-cmds";
+import { run as verifyCmdsRun } from "../../../packages/ops/tools/src/verify-cmds";
+import { run as agentCmdsRun } from "../../../packages/ops/tools/src/agent-cmds";
+import { run as researchCmdsRun } from "../../../packages/research/pipeline/src/cmds";
+import { run as projectCmdsRun } from "../../../packages/research/produce/src/project-cmds";
+import { run as produceCmdsRun } from "../../../packages/research/produce/src/produce-cmds";
+import { run as treeCmdsRun } from "../../../packages/techtree/model/src/cmds";
+import { run as skillCmdsRun } from "../../../packages/knowledge/skills/src/skill-cmds";
+import { run as kbCmdsRun } from "../../../packages/knowledge/skills/src/cmds";
+import { run as webuiRun } from "../../../packages/ops/tools/src/webui";
+import { run as doctorRun } from "../../../packages/ops/tools/src/doctor";
+import { run as relsRun } from "../../../packages/ops/tools/src/rels";
+import { run as libraryCmdsRun } from "../../../packages/ops/tools/src/library-cmds";
+
+const dbCmds = { run: dbCmdsRun };
+const configCmds = { run: configCmdsRun };
+const jobCmds = { run: jobCmdsRun };
+const patrolCmds = { run: patrolCmdsRun };
+const verifyCmds = { run: verifyCmdsRun };
+const agentCmds = { run: agentCmdsRun };
+const researchCmds = { run: researchCmdsRun };
+const projectCmds = { run: projectCmdsRun };
+const produceCmds = { run: produceCmdsRun };
+const treeCmds = { run: treeCmdsRun };
+const skillCmds = { run: skillCmdsRun };
+const kbCmds = { run: kbCmdsRun };
+const webui = { run: webuiRun };
+const doctor = { run: doctorRun };
+const rels = { run: relsRun };
+const libraryCmds = { run: libraryCmdsRun };
 
 /** group → statically imported module (bundle-traceable) */
 export const DOMAIN_MODULES: Record<string, { run: (env: any, action: string, rest: string[], args: any) => number | Promise<number> }> = {

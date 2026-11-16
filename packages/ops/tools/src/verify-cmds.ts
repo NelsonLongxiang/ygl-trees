@@ -1,3 +1,4 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /** verify group — spec-validator 命令面（M13-1）.
  *
  * 构造面（submit / prepare / trace）在 ygl 工作区里完成，执行面（run）只碰**库快照副本**，
@@ -20,9 +21,9 @@ import { openDatabaseSync } from "../../../verify/core/src/sqlite-bindings";
 
 import { lastFlagOf } from "../../../core/database/src/types";
 import type { Env } from "../../../core/database/src/types";
-import { getOrm } from "../../../core/database/src/orm";
-import * as writes from "../../../research/pipeline/src/writes";
-import { bad, C, head, ok, out, paint, table } from "../../../core/text/src/fmt";
+
+import { jobAdd as writes_jobAdd, jobRetarget as writes_jobRetarget } from "../../../research/pipeline/src/writes";
+import { emitJson, bad, C, head, ok, out, paint, table } from "../../../core/text/src/fmt";
 import type { ReviewFinding, ReviewRunner, SpecView, VerifyReport, VerifySpec } from "../../../verify/core/src/contract";
 import { CORPUS_VERSION } from "../../../verify/core/src/contract";
 import { payloadHash, runVerify } from "../../../verify/core/src/engine";
@@ -659,7 +660,7 @@ async function treeRun(env: Env, ctx: any, spec: TreeSpec, args: any): Promise<n
       );
     } catch { /* events best effort */ }
     if (ctx.json) {
-      console.log(JSON.stringify({ ...treeReport, report_path: join(p["tree-reports"], treeRunId + ".json") }));
+      emitJson(ctx, { ...treeReport, report_path: join(p["tree-reports"], treeRunId + ".json") });
     } else {
       out(ctx, paint(verdict === "PASS" ? C.green : verdict === "FAIL" ? C.red : C.yellow, "  " + verdict + "  " + treeRunId, ctx.color));
       for (const n of nodes) out(ctx, paint(C.dim, "    " + n.node_id + " " + n.kind + " " + n.verdict, ctx.color));
@@ -1062,7 +1063,7 @@ async function selfCheckCase(env: Env, root: string, args: any): Promise<number>
     caseLimit: args.flags.limit ? Number(args.flags.limit) : undefined,
   });
   if (ctx.json) {
-    console.log(JSON.stringify(res, null, 2));
+    emitJson(ctx, res, 2);
     return res.ok ? 0 : 1;
   }
   for (const item of res.items) {
@@ -1262,7 +1263,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           bad(ctx, "tree run not found: " + runId);
           return 1;
         }
-        if (ctx.json) console.log(JSON.stringify(readJson<any>(f)));
+        if (ctx.json) emitJson(ctx, readJson<any>(f));
         else out(ctx, JSON.stringify(readJson<any>(f), null, 2));
         return 0;
       }
@@ -1276,7 +1277,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const rows = existsSync(dir)
           ? readdirSync(dir).filter((x) => x.endsWith(".json")).map((x) => readJson<any>(join(dir, x))).filter((r) => r.tree_spec_id === treeSpecId)
           : [];
-        if (ctx.json) console.log(JSON.stringify(rows));
+        if (ctx.json) emitJson(ctx, rows);
         else for (const r of rows) out(ctx, r.tree_run_id + "  " + r.verdict + "  " + r.round_id);
         return 0;
       }
@@ -1381,7 +1382,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const outFile = join(p.trees, res.spec.tree_spec_id + ".json");
       writeJson(outFile, res.spec);
       if (ctx.json) {
-        console.log(JSON.stringify({
+        emitJson(ctx, {
           tree_spec_id: res.spec.tree_spec_id,
           tree_spec_sha256: res.spec.tree_spec_sha256,
           title: res.spec.title,
@@ -1389,7 +1390,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           nodes: res.spec.nodes.length,
           pinned: Object.keys(res.spec.pinned).length,
           path: outFile,
-        }));
+        });
       } else {
         ok(ctx, "tree spec frozen: " + res.spec.tree_spec_id + "  (" + res.spec.nodes.length + " nodes, root " + res.spec.root + ")");
         out(ctx, paint(C.dim, "  sha256: " + res.spec.tree_spec_sha256, ctx.color));
@@ -1524,7 +1525,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // stored with the material and later folded into the archive manifest.
       if (gate.bypass) writeJson(join(dir, "meta-bypass.json"), gate.bypass);
       if (ctx.json) {
-        console.log(JSON.stringify({ ...record, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}) }));
+        emitJson(ctx, { ...record, ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}) });
         return 0;
       }
       out(ctx, `  ✓ material frozen: ${materialId}  (${text.length} chars${files.length ? `, ${files.length} attachment(s)` : ""})`);
@@ -1697,7 +1698,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           if (drafted) (payload as any).run = drafted.error ? { report: null, error: drafted.error } : { report: drafted.report };
           const draftRc = res.verdict !== "ready" ? 1 : drafted?.error ? 1 : 0;
           if (ctx.json) {
-            console.log(JSON.stringify(payload));
+            emitJson(ctx, payload);
             return draftRc;
           }
           out(ctx, `  · draft ${res.verdict}: ${res.units.length} candidate unit(s), ${res.rounds} round(s), ${res.rejected.length} rejected — nothing written`
@@ -1759,7 +1760,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         if (ctx.json) {
           // record：脚本要「这次尝试落在哪个文件」时直接拿，不用自己拼 attempts 时间戳（r22 P3②）
           const record = relative(paths(env).root, recordPath).split(sep).join("/");
-          console.log(JSON.stringify({ verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, ...(replaced ? { replaced } : {}), rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), coverage_exempt: res.coverage?.coverage_exempt ?? [], ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record }));
+          emitJson(ctx, { verdict: res.verdict, spec_id: res.spec?.spec_id, spec_version: res.spec?.spec_version, ...(replaced ? { replaced } : {}), rounds: res.rounds, rejected: res.rejected.length, rejected_detail: res.rejected, diagnostics: res.diagnostics, authors, ...(res.coverage ? { coverage: res.coverage } : {}), coverage_exempt: res.coverage?.coverage_exempt ?? [], ...(metaWarning ? { meta_warning: metaWarning } : {}), ...(metaBypassed ? { meta_bypassed: true } : {}), record });
           return res.verdict === "ready" ? 0 : 1;
         }
         if (res.verdict === "ready") {
@@ -1863,7 +1864,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             }
           }
           if (ctx.json) {
-            console.log(JSON.stringify({
+            emitJson(ctx, {
               run_id: report.run_id,
               spec_id: report.spec_id,
               spec_version: report.verifier.spec_version,
@@ -1876,7 +1877,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               submission_scan: scanFile
                 ? { path: scanFile, files: fileScans.reduce((n, x) => n + x.matched.length, 0), dir: submission }
                 : undefined,
-            }));
+            });
           } else {
             out(ctx, `  ${report.overall === "PASS" ? paint(C.green, "PASS", ctx.color) : report.overall === "FAIL" ? paint(C.red, "FAIL", ctx.color) : paint(C.yellow, report.overall, ctx.color)}  ${report.run_id}`);
             out(ctx, paint(C.dim, `  ${scopeLine(report)}`, ctx.color));
@@ -2030,7 +2031,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           }
         }
         if (ctx.json) {
-          console.log(JSON.stringify(payload, null, 2));
+          emitJson(ctx, payload, 2);
           return 0;
         }
         out(ctx, `  ✓ ${written.duplicate ? "already graduated" : "graduated"}: ${el.spec_id} v${el.spec_version}  (${record.run_ids.length} run(s), span ${record.span_days}d)`);
@@ -2058,14 +2059,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       if (!wantSchedule) return emit();
       const title = `verify ${specId}`;
-      return getOrm(env.db.path)
+      return sqliteOrm(env)
         .then((ds) =>
           // 已存在同名作业 → 就地改写命令（--db 重定向必须真的生效，r27 P2-1）；
           // 不存在 → 新建。jobAdd 自己按 title 幂等，这里不再叠一层 force。
-          writes.jobRetarget(ds, { title, command: cmd.command, every }).then((retargeted: any) =>
+          writes_jobRetarget(ds, { title, command: cmd.command, every }).then((retargeted: any) =>
             retargeted
               ? retargeted
-              : writes.jobAdd(ds, { title, command: cmd.command, every, at: "", force: false }).then((job: any) => ({ row: job?.row ?? job, changed: false })),
+              : writes_jobAdd(ds, { title, command: cmd.command, every, at: "", force: false }).then((job: any) => ({ row: job?.row ?? job, changed: false })),
           ),
         )
         .then((outcome: any): number => {
@@ -2082,7 +2083,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (args.flags.unarchived === true) {
         const runs = unarchivedRuns(p.root);
         if (ctx.json) {
-          console.log(JSON.stringify(runs, null, 2));
+          emitJson(ctx, runs, 2);
           return 0;
         }
         if (!runs.length) {
@@ -2103,7 +2104,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return { spec_id: spec.spec_id, version: spec.spec_version, title: spec.title, units: spec.vu.length, material: prep.material_id ?? "", runs: reports.length, last_overall: last?.overall ?? "", last_run: last?.run_id ?? "" };
         });
       if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
+        emitJson(ctx, rows, 2);
         return 0;
       }
       if (!rows.length) {
@@ -2148,7 +2149,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         else if (declared !== actual) problems.push("payload tampered: payload_sha256 does not match the file contents");
         // 形状不对就别再往下摸字段：早退，给出可读结论（rc=1）
         if (problems.length) {
-          if (ctx.json) console.log(JSON.stringify({ imported: false, problems }));
+          if (ctx.json) emitJson(ctx, { imported: false, problems });
           else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
           return 1;
         }
@@ -2195,7 +2196,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           }
         }
         if (problems.length) {
-          if (ctx.json) console.log(JSON.stringify({ imported: false, problems }));
+          if (ctx.json) emitJson(ctx, { imported: false, problems });
           else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
           return 1;
         }
@@ -2219,7 +2220,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           }
         }
         if (problems.length) {
-          if (ctx.json) console.log(JSON.stringify({ imported: false, problems }));
+          if (ctx.json) emitJson(ctx, { imported: false, problems });
           else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
           return 1;
         }
@@ -2234,7 +2235,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             ? "data_source.source is not a plain filesystem path — graduation will refuse to schedule it"
             : null;
         if (ctx.json) {
-          console.log(JSON.stringify({ imported: true, run_id: report.run_id, report_path: stored, spec_restored: specRestored, source_warning: sourceWarning }));
+          emitJson(ctx, { imported: true, run_id: report.run_id, report_path: stored, spec_restored: specRestored, source_warning: sourceWarning });
         } else {
           out(ctx, `  ✓ report imported: ${report.run_id} → ${stored}`);
           if (specRestored) out(ctx, `    spec restored from the sealed binary: ${specRestored}`);
@@ -2249,7 +2250,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const report = readJson<VerifyReport>(file);
       if (ctx.json) {
-        console.log(JSON.stringify(report, null, 2));
+        emitJson(ctx, report, 2);
         return 0;
       }
       out(ctx, `  ${report.overall}  ${report.run_id}  (spec ${report.spec_id ?? "?"} v${report.verifier.spec_version})`);
@@ -2277,7 +2278,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         const res = verifyArchiveFile(file);
         if (ctx.json) {
-          console.log(JSON.stringify({ ok: res.ok, archive_id: res.manifest?.archive_id ?? null, archive_sha256: res.manifest?.archive_sha256 ?? null, items: res.manifest?.items.length ?? 0, problems: res.problems, warnings: res.warnings }));
+          emitJson(ctx, { ok: res.ok, archive_id: res.manifest?.archive_id ?? null, archive_sha256: res.manifest?.archive_sha256 ?? null, items: res.manifest?.items.length ?? 0, problems: res.problems, warnings: res.warnings });
         } else if (res.ok) {
           out(ctx, `  ✓ archive verified: ${res.manifest?.archive_id}  (${res.manifest?.items.length} item(s), contract ${res.manifest?.contract_version})`);
         } else {
@@ -2327,7 +2328,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           with: built.manifest.with,
         });
         if (ctx.json) {
-          console.log(JSON.stringify({ run_id: runId, path: built.path, filename: built.filename, archive_id: built.manifest.archive_id, archive_sha256: built.manifest.archive_sha256, zip_sha256: built.zip_sha256, with: built.manifest.with, items: built.manifest.items.length }));
+          emitJson(ctx, { run_id: runId, path: built.path, filename: built.filename, archive_id: built.manifest.archive_id, archive_sha256: built.manifest.archive_sha256, zip_sha256: built.zip_sha256, with: built.manifest.with, items: built.manifest.items.length });
         } else {
           out(ctx, `  ✓ archived ${runId} → ${built.path}`);
           out(ctx, paint(C.dim, `    ${built.manifest.archive_id}  ${built.manifest.items.length} item(s)  with=${built.manifest.with.join(",")}`, ctx.color));
@@ -2354,7 +2355,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const repo = metaRepoRootOf(given) ?? given;
       const report = runMeta(repo);
       if (ctx.json) {
-        console.log(JSON.stringify(report));
+        emitJson(ctx, report);
         return report.verdict === "PASS" ? 0 : 1;
       }
       head(ctx, `verify meta — ${repo}`);
@@ -2398,7 +2399,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
       if (args.flags["null-ops"]) payload.null_ops = NULL_OPS_NOTE;
       if (ctx.json) {
-        console.log(JSON.stringify(payload));
+        emitJson(ctx, payload);
         return 0;
       }
       out(ctx, paint(C.dim, `  ${EXAMPLES_DERIVED_FROM} — spec VU shape (expected_from; used by run/corpus)`, ctx.color));
@@ -2443,7 +2444,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const verdict = probes.every((p) => p.verdict === "PASS") ? "PASS" : "FAIL";
         const payload = { ...report, probes, verdict };
         if (ctx.json) {
-          console.log(JSON.stringify(payload));
+          emitJson(ctx, payload);
           return verdict === "PASS" ? 0 : 1;
         }
         head(ctx, `verify probe --matrix — ${report.target}`);
@@ -2489,7 +2490,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, String(e?.message || e));
         return 1;
       }
-      if (ctx.json) console.log(JSON.stringify(res));
+      if (ctx.json) emitJson(ctx, res);
       else {
         out(ctx, `collected ${res.entries} entr${res.entries === 1 ? "y" : "ies"}, ${res.errors} error row(s) → ${res.out}`);
         out(ctx, paint(C.dim, `  sha256 ${res.sha256}${res.errors ? " · error rows make every 1.3 PASS an ERROR (archive_errors)" : ""}`, ctx.color));
@@ -2601,7 +2602,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         "`expected_from` + raw `sql` are the spec-VU face (verify example's `vu`), not a prepare candidate; use `anchor` + predicate AST.",
       ].join("\n");
       if (ctx.json) {
-        console.log(JSON.stringify(res.ok ? res : { ...res, hint: lintHint }));
+        emitJson(ctx, res.ok ? res : { ...res, hint: lintHint });
         return 0;
       }
       const skipped = [
@@ -2696,8 +2697,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         writeFileSync(copied, bytes);
       }
       if (ctx.json) {
-        console.log(
-          JSON.stringify({
+        emitJson(ctx, {
             registered: true,
             binary_sha256: sealed.binary_sha256,
             registration: regPath,
@@ -2706,8 +2706,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             spec_version: reg.spec_version,
             engine_version: reg.engine_version,
             corpus_version: reg.corpus_version,
-          }),
-        );
+          });
       } else {
         out(ctx, `  ✓ registered ${short(key)} — spec ${reg.spec_id} v${reg.spec_version}, engine ${reg.engine_version}`);
         out(ctx, `    registration: ${regPath}${copied ? `
@@ -2745,7 +2744,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         public_key_fingerprint: sealed.footer.key_id ?? null,
         problems: verdict.problems,
       };
-      if (ctx.json) console.log(JSON.stringify(payload));
+      if (ctx.json) emitJson(ctx, payload);
       else {
         out(ctx, `  ${file}`);
         out(ctx, `  binary   ${sealed.binary_sha256}`);
@@ -2789,7 +2788,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const trace = readJson<any>(file);
       if (ctx.json) {
-        console.log(JSON.stringify(trace, null, 2));
+        emitJson(ctx, trace, 2);
         return 0;
       }
       out(ctx, `  ${trace.spec_id} v${trace.spec_version}  ← material ${trace.material_id}`);
@@ -2827,7 +2826,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         const target = args.flags.out ? String(args.flags.out) : join(process.cwd(), `${specId}.yglverify.json`);
         writeFileSync(target, portableToText(bundle));
         if (ctx.json) {
-          console.log(JSON.stringify({ spec_id: bundle.spec_id, version: bundle.spec_version, material_id: bundle.material_id, path: target, sha256: sha256(readFileSync(target)), digest: bundle.digest, entries: bundle.entries.length, portable: true }));
+          emitJson(ctx, { spec_id: bundle.spec_id, version: bundle.spec_version, material_id: bundle.material_id, path: target, sha256: sha256(readFileSync(target)), digest: bundle.digest, entries: bundle.entries.length, portable: true });
         } else {
           out(ctx, `  ✓ exported portable ${bundle.spec_id} v${bundle.spec_version} (${bundle.entries.length} entries, material ${bundle.material_id}) → ${target}`);
         }
@@ -2835,7 +2834,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const target = args.flags.out ? String(args.flags.out) : join(process.cwd(), `${specId}.yglverify.json`);
       writeJson(target, spec);
-      if (ctx.json) console.log(JSON.stringify({ spec_id: spec.spec_id, version: spec.spec_version, path: target, sha256: sha256(readFileSync(target)) }));
+      if (ctx.json) emitJson(ctx, { spec_id: spec.spec_id, version: spec.spec_version, path: target, sha256: sha256(readFileSync(target)) });
       else out(ctx, `  ✓ exported ${spec.spec_id} v${spec.spec_version} → ${target}`);
       return 0;
     }
@@ -2853,7 +2852,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return res.rc;
       }
       if (ctx.json) {
-        console.log(JSON.stringify({ spec_id: res.spec_id, version: res.spec_version, material_id: res.material_id, ...(res.duplicate ? { duplicate: true } : {}) }));
+        emitJson(ctx, { spec_id: res.spec_id, version: res.spec_version, material_id: res.material_id, ...(res.duplicate ? { duplicate: true } : {}) });
       } else {
         out(ctx, `  ✓ imported ${res.spec_id} v${res.spec_version} (material ${res.material_id})${res.duplicate ? " — duplicate, nothing changed" : ""}`);
       }

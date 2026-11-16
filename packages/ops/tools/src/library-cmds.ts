@@ -1,6 +1,6 @@
 /** library 命令壳：#275 市场经验库只读出口。解析参数 → library.ts → 输出。 */
 import type { Env } from "../../../core/database/src/types";
-import { ok, bad } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad } from "../../../core/text/src/fmt";
 import { LIBRARY_KINDS, libraryList, libraryShow, LibraryUsageError, type LibraryKind } from "./library";
 
 export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
@@ -21,7 +21,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         scope: args.flags.scope !== undefined ? String(args.flags.scope) : undefined,
         project: args.flags.project !== undefined ? String(args.flags.project) : undefined,
       });
-      if (ctx.json) { console.log(JSON.stringify(page, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, page, 2); return 0; }
       ok(ctx, `${page.items.length} item(s), total ${page.total}${page.next_cursor ? ", more pages" : ""}`);
       for (const it of page.items) out(ctx, `  [${it.kind}] ${it.id}  ${it.title}`);
       return 0;
@@ -33,7 +33,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 2;
       }
       const row = await libraryShow(env, kind as LibraryKind, id);
-      if (ctx.json) { console.log(JSON.stringify(row, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, row, 2); return 0; }
       ok(ctx, `[${row.kind}] ${row.id}  ${String(row.title || "")}`);
       return 0;
     }

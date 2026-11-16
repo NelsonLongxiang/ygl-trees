@@ -3,8 +3,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
-import { getOrm, closeOrm } from "../../../core/database/src/orm";
+
 import { resolveRef, relAdd, relRm, REL_TYPES, RelError, orphanRelations, projectNameOf } from "../src/rels";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 let db: DB;
 let dir: string;
@@ -16,7 +19,7 @@ beforeAll(async () => {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, "unit.db");
   db = new DB(file);
-  env = { ctx: { json: true, color: false, quiet: true }, db, store: new Store(db), home: dir };
+  env = { orm: ormFixture, ctx: { json: true, color: false, quiet: true }, db, store: new Store(db), home: dir };
   const ds = await getOrm(file);
   const writes = await import("../../../research/pipeline/src/writes");
   const treeWrites = await import("../../../techtree/model/src/writes");

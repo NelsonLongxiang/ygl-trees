@@ -43,6 +43,9 @@ export class PgAsyncDb implements AsyncDb {
   readonly dialect = "pg" as const;
   private client: any = null;
   private connecting: Promise<void> | null = null;
+  private closing = false;
+  private closePromise?: Promise<void>;
+  private readonly active = new Set<Promise<unknown>>();
 
   /** clientFactory 可注入（测试）；默认 require("pg")。 */
   constructor(private readonly url: string, private readonly clientFactory?: (url: string) => any) {}
@@ -67,21 +70,41 @@ export class PgAsyncDb implements AsyncDb {
     return sql.replace(/\?/g, () => "$" + ++i);
   }
 
+  private query(sql: string, params: unknown[]): Promise<any> {
+    if (this.closing) return Promise.reject(new Error("PG client is closing or closed"));
+    const pending = Promise.resolve().then(async () => {
+      await this.ready();
+      return this.client.query(this.pgSql(sql), params);
+    });
+    this.active.add(pending);
+    void pending.then(() => { this.active.delete(pending); }, () => { this.active.delete(pending); });
+    return pending;
+  }
+
   async get(sql: string, params: unknown[] = []): Promise<Record<string, any> | null> {
-    await this.ready();
-    const r = await this.client.query(this.pgSql(sql), params);
-    return r.rows[0] ?? null;
+    return (await this.query(sql, params)).rows[0] ?? null;
   }
 
   async all(sql: string, params: unknown[] = []): Promise<Record<string, any>[]> {
-    await this.ready();
-    const r = await this.client.query(this.pgSql(sql), params);
-    return r.rows;
+    return (await this.query(sql, params)).rows;
   }
 
-  async close(): Promise<void> {
-    if (this.client) { try { await this.client.end(); } catch { /* */ } this.client = null; this.connecting = null; }
+  closeStrict(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    const accepted = [...this.active];
+    this.closePromise = Promise.resolve().then(async () => {
+      await Promise.allSettled(accepted);
+      if (this.connecting) { try { await this.connecting; } catch { /* query caller retains connect error */ } }
+      if (this.client) await this.client.end();
+      this.client = null;
+      this.connecting = null;
+    });
+    void this.closePromise.catch(() => {});
+    return this.closePromise;
   }
+
+  close(): Promise<void> { return this.closeStrict(); }
 }
 
 const PG_CREDENTIAL_KEYS = new Set(["user", "password", "passfile", "sslpassword", "sslkey", "sslcert"]);
