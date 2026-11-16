@@ -11,6 +11,10 @@ Research pipeline: query/source/evidence/claim entities, reads (Store), transact
 
 Import from `@ygl/research-pipeline` when you need research pipeline: query/source/evidence/claim entities, reads (store), transactional writes, and cordis researchservice.
 
+## SQLite writer reservation
+
+The write-only `runTx` boundary reserves SQLite’s single writer before invoking its callback or performing dedupe reads. A zero-row `UPDATE meta SET value=value WHERE 0` obtains the lock without changing data or emitting an event. Contention is therefore handled before the callback creates a WAL read snapshot. Base rows, FTS shadows and audit rows still commit or roll back together; bus events remain post-commit only. Existing lock waiting and the five-attempt budget are unchanged. This is not a read-path helper; nested callers still share the outer transaction’s commit and lock lifetime. PostgreSQL retains its existing transaction path and receives no SQLite reservation statement.
+
 ## PG transactional writes (B8 batch 1)
 
 `kbAdd` and `projectCreate` use the same `runTx` boundary on PG. `INSERT ... ON CONFLICT ... RETURNING` arbitrates concurrent duplicates; any lookup uses the transaction manager, not another client. Knowledge search input (`ngram`), the generated `ngram_tsv`, base rows and audit events commit or roll back together. Project selection uses only `current_project@<session>` (never the global pointer). Ordinary duplicates keep rc0; forced knowledge copies reuse contentHash(..., true) salts (the migrated PG column is NOT NULL). SQLite SQL and receipt shapes are retained.

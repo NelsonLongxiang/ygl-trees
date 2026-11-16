@@ -8,7 +8,7 @@
 
 | 树主 | 吃协议的姿势 | 入口技能 | 实战锚点 |
 |---|---|---|---|
-| **① 业务树**（agent 工作自动运维） | 研究产出 SOP 候选 → 协议保证「supported 才毕业」→ 执行归执行系统；采纳用遥测门度量（`cond --op telemetry`） | `ygl-trees-ops-patterns` | .157 跨境电商全链路（bill-audit/proc-gov 等八树在产运转）；毕业通道见 docs/graduation-protocol.md |
+| **① 业务树**（agent 工作自动运维） | 研究产出 SOP 候选 → 协议保证「supported 才毕业」→ 执行归执行系统；采纳用遥测门度量（`cond --op telemetry`） | `ygl-trees-ops-patterns` | 业务实盘跨境电商全链路（bill-audit/proc-gov 等八树在产运转）；毕业通道见 docs/graduation-protocol.md |
 | **② 仓库树**（开源项目研究） | 把外部项目建构成「作者意图树」：意图/现状/机制三层断言 + 对 t5 未来节点下可回测预测 | `ygl-trees-repo-research` | mp-skills 深读首例（2026-10-18） |
 | **③ 能力树**（面向人类的能力成长） | agent 代录证据、人只做仲裁与解锁；灰带（必检未满足）是成长态不是不及格；tier=熟练度轴 | human-capability 模式（探针已验证，技能 0.94+ 提炼） | human-agent-eng 树（11 节点，2026-10-19 落地） |
 

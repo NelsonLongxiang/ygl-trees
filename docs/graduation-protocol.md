@@ -1,13 +1,13 @@
 # 毕业通道协议（T4/T5 · 0.93 批设计，0.94 落地）
 
-> 研究结论 → 执行规则的接缝约定。ygl-trees 是认知台账（研究/预测/验证），执行归执行系统（.157 专家团 + Odoo）。本协议只定义两侧交割的握手件，不给 ygl 加执行能力——replace-esm 抵制裁定（2026-10-18，ygl-overlap 12 断言）保持有效。
+> 研究结论 → 执行规则的接缝约定。ygl-trees 是认知台账（研究/预测/验证），执行归执行系统（业务侧专家团 + Odoo）。本协议只定义两侧交割的握手件，不给 ygl 加执行能力——replace-esm 抵制裁定（2026-10-18，ygl-overlap 12 断言）保持有效。
 
 ## 一、两侧各自拥有什么
 
 | 环节 | 归属 | 载体 |
 |---|---|---|
 | 研究证据/断言/仲裁 | ygl-trees | sources / evidence / claims |
-| 意图解析→本体→SOP 渲染 | 执行侧（.157 ontology：intention_parser → sop-renderer → migrate_to_odoo） | 本体库 / pi-web-sop-bindings.json |
+| 意图解析→本体→SOP 渲染 | 执行侧（业务侧 ontology：intention_parser → sop-renderer → migrate_to_odoo） | 本体库 / pi-web-sop-bindings.json |
 | 执行与执法 | 执行侧 | Odoo / SOP 引擎 |
 | 毕业裁决 | **人**（claim resolve 即人审仲裁） | ygl events |
 
@@ -36,7 +36,7 @@ ygl 不产出 SOP 工件：`produce` 只有 outline / section / report / spec / 
 
 - demo 断言：毕业三件套全序列（resolve → source --tags sop → rel executes → rel list 复核）——**0.95 已落**（demo.sh §9g ×3 断言；顺带修复 source list/search 投影漏 tags 的读面缺口）。
 - skills/ygl-trees-relating 增 executes 词条。
-- .157 侧一次真实试点（候选：bill-audit 树某 supported 断言 → SOP 草案 → 专家团渲染）。
+- 业务侧一次真实试点（候选：bill-audit 树某 supported 断言 → SOP 草案 → 专家团渲染）。
 
 ## 决策记录
 

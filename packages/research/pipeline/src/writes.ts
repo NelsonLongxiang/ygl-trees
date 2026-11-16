@@ -49,6 +49,11 @@ export async function runTx<T>(ds: DataSource, fn: (mgr: EntityManager) => Promi
     const pending: YglEvent[] = [];
     try {
       const result = await ds.transaction(async (mgr) => {
+        if (ormDialect(mgr) === "sqlite") {
+          // Reserve the single writer before dedupe reads establish a WAL snapshot.
+          // This updates no rows; contention is handled before the callback has effects.
+          await mgr.query("UPDATE meta SET value=value WHERE 0");
+        }
         (mgr as any).__yglPendingEvents = pending;
         return fn(mgr);
       });
@@ -1650,7 +1655,7 @@ export async function patrolRecord(
 }
 
 /** Human disposition: ack (seen, being worked) | fp (false positive — the
- *  .157 allowlist lane) | fix (manual close without waiting for a rerun). */
+ *  production allowlist lane) | fix (manual close without waiting for a rerun). */
 export async function patrolDisposition(
   ds: DataSource,
   findingId: string,

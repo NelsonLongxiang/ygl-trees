@@ -2,6 +2,8 @@
 
 - **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增 workspace 清单声明依赖的有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。该门不证明源码 import 图无环。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
 
+- **SQLite 写事务先预留写锁**（Refs #286）：research／kb／job 的事务服务在去重读取之前执行零行更新，避免读取后的 WAL 快照因竞争提交而无法升级为写事务。零行更新不改变配置数据；基表、FTS 和审计仍在同一事务中，事件只在提交后发布。锁等待与五次尝试预算不变，PG 路径不发送 SQLite 预留语句。
+
 测试与门禁（不改变产品行为）：
 
 - **生命周期测试不依赖日历日期**（Refs #283）：真实 CLI 读取的相对年龄种子使用实时基准，新增当前日期和向前 60 天的子进程隔离时钟回归；覆盖年龄、阈值覆盖、legacy created 回退与 doctor 告警。恢复旧固定日期种子时，两组新用例均判红；不改产品时钟或超时。
@@ -10,6 +12,15 @@
 - **R3 行尾回归无 clone 夹具**：用项目 tmp 内独立 `GIT_INDEX_FILE` 读取 HEAD 并执行 `checkout-index`，保留 `core.autocrlf=true` 与真实 `.gitattributes` 转换、tooling 零漂移及 R3 PASS 判据；导出不建 `.git`，子进程环境收尾且真实 index 字节不变。
 
 - **Windows 失败取证**（Refs #202、#203、#209）：query attach 测试保留子进程退出码、signal、原始 error.code 与耗时，不再把 null 退出码误诊成超时。bundle 配置隔离用无 Git 元数据的源码快照替代本地 shared clone，保留父目录诱饵与 minify 反例，失败时保留步骤日志和 Git trace。watcher 生命周期测试记录事件、读取和投影顺序，失败时在清理前保存源文件/索引快照；超时、并发及产品实现不变，历史间歇失败未据此宣称根治。
+
+- **测试夹具隔离**：临时根收敛到项目 `tmp/test-runs/`，验证器 CLI 使用中性只读 cwd 与绝对夹具路径，准入夹具以真实空 Git 仓库隔断父仓发现。R3 行尾测试改用独立临时 index 的真实 checkout 转换；离线门的合成配置探针用提交快照并保留原生链接拒绝。保留环境恢复、残留判红和原准入断言，不改产品时钟或 meta 规则，也不替代正式 G1/G8。
+
+- **并发写入失败取证**（Refs #286）：八进程同内容查询写入测试保留所有子进程的原始状态、signal、spawn 错误、双通道与耗时，失败前落项目内证据。不降低并发、不扩大超时、不重试测试；间歇 SQLite 锁失败的产品根因与修复另行跟踪。
+
+开发与内部：
+
+- **`apps/web` 开发服务器恢复 `/api` 代理**：0.67.0（`bda42e6`）加代码分包时把 `vite.config.ts` 的 `server` 配置整块替换掉了，`pnpm --filter @ygl/web dev` 从此拿不到数据。现在 `/api`（含 `/api/events` 实时推送）重新代理到 `webui serve` 的 8642 端口。
+- 删除误提交的 `bash.exe.stackdump`，`.gitignore` 忽略 `*.stackdump`；现行文档、技能与代码注释中的部署主机代号改为中性说法（归档与评审记录按治理规则不动）。
 
 ## 0.126.0
 

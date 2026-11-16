@@ -1,6 +1,6 @@
 /** patrol group — boundary assertions + disposition queue (0.93-T2).
  *
- * Productizes .157's ops-handbook sop-patrol-daily: a patrol check is a
+ * Productizes the production ops-handbook sop-patrol-daily: a patrol check is a
  * declarative SELECT that returns VIOLATING rows (empty = pass); `patrol run`
  * re-evaluates every enabled check and upserts a findings queue. The iron
  * rule: no finding stays undispositioned — open findings age visibly, ack/fp/
