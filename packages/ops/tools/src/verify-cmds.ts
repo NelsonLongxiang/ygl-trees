@@ -2152,7 +2152,21 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
           return 1;
         }
+        // Reports supply artifact identifiers, never filesystem paths. Match the read-side ID boundary.
+        for (const [name, value] of [["run_id", report.run_id], ["spec_id", report.spec_id]] as const) {
+          if (value != null && (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value))) {
+            problems.push(`malformed report: ${name} must be a safe artifact id (1–128 ASCII letters, digits, _ or -)`);
+          }
+        }
         const bin = report.verifier.binary_sha256;
+        if (bin != null && bin !== "" && (typeof bin !== "string" || !/^(?:sha256:)?[0-9a-fA-F]{64}$/.test(bin))) {
+          problems.push("malformed report: verifier.binary_sha256 must be a SHA-256 digest");
+        }
+        if (problems.length) {
+          if (ctx.json) console.log(JSON.stringify({ imported: false, problems }));
+          else for (const pr of problems) out(ctx, paint(C.red, `  ✗ ${pr}`, ctx.color));
+          return 1;
+        }
         const regFile = join(p.registrations, `${bin ? binaryKey(bin) : "unsigned"}.json`);
         if (bin) {
           if (!existsSync(regFile)) problems.push(`unknown verifier: binary ${String(bin).slice(0, 16)}… has no build registration`);
