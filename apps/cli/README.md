@@ -10,7 +10,7 @@ description: CLI 应用入口——参数解析、组合启动（profile-boot �
 ## 结构（对齐 DSH apps/cli）
 
 ```
-index.ts                 入口面（dist/apps/cli/index.js，bin/ygl-trees.js 引用此稳定路径）
+index.ts                 库入口面（dist/apps/cli/index.js，根 package.json 的 main 指向此稳定路径）
 src/
   bin.ts                 可执行入口：parse args → boot → dispatch → shutdown（DSH bin.ts）
   profile-boot.ts        组合启动：base bundle → user layer → 服务沉降 + StartupError（DSH profile-boot）
@@ -23,10 +23,10 @@ tests/                   vitest 单测（package.json vitest include 覆盖 apps
 
 | 面 | DSH | 本目录 |
 |---|---|---|
-| 入口 | `bin.ts` 自执行分发 | `bin.ts` 导出 `main()`；自执行在 `bin/ygl-trees.js`（rc 契约由 wrapper 保管） |
+| 入口 | `bin.ts` 自执行分发 | 同：`src/bin.ts` 带 shebang、导出 `main()` 并在 `require.main === module` 时自执行，rc 契约在入口内（0.36.1 起，原 `bin/` 包装已并入）；打包成 `dist/bundle/bin.cjs`，根 package.json 的 bin 指向它 |
 | 源码 | `src/`，concern-per-file | 同（profile-boot / startup-diagnostics / process-shutdown 同名） |
 | 导入扩展名 | 显式 `.ts`（NodeNext） | **分歧**：仓库根 tsconfig 为 CJS classic 解析，扩展名导入被拒；保持无扩展名（0.36 记录，迁移需整体切 moduleResolution） |
-| 构建 | tsdown | 根 tsc（`pnpm build`） |
+| 构建 | tsdown | 根 tsc 产出 `dist/apps/`，再由 tsdown 把 `src/bin.ts` 打成 `dist/bundle/bin.cjs`（都在 `pnpm build` 里） |
 | 插件管理 | `src/plugin.ts`（launcher 自有） | 库在 `packages/ops/tools/src/plugins.ts`（gate+vitest 覆盖），命令组 plugin-cmds 同包——apps 不反向依赖保持分层 |
 
 ## 关键契约
