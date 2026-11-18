@@ -4,6 +4,8 @@
 
 - **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增 workspace 清单声明依赖的有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。该门不证明源码 import 图无环。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
 
+- **报告导入的文件定位字段拒绝路径**：`verify report import` 在读取构建登记、恢复规范或写报告前，校验非缺省的 `run_id`／`spec_id` 为 1–128 个 ASCII 字母、数字、下划线或短横线；二进制身份须为有效 SHA-256 形式。拒绝报告仍 rc1 且 JSON 点名，合法报告、payload 校验、封包规范恢复和历史缺 run-id 回退保持；本修复不改变同 run-id 替换语义或引入 S2 租约。
+
 - **SQLite 写事务先预留写锁**（Refs #286）：research／kb／job 的事务服务在去重读取之前执行零行更新，避免读取后的 WAL 快照因竞争提交而无法升级为写事务。零行更新不改变配置数据；基表、FTS 和审计仍在同一事务中，事件只在提交后发布。锁等待与五次尝试预算不变，PG 路径不发送 SQLite 预留语句。
 
 测试与门禁（不改变产品行为）：

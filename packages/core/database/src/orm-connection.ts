@@ -6,17 +6,18 @@ export interface OrmConnection { readonly dataSource: DataSource; close(): Promi
 
 function withCleanup(primary: unknown, errors: readonly unknown[]): unknown {
   if (!errors.length) return primary;
-  if (primary && (typeof primary === "object" || typeof primary === "function") && Object.isExtensible(primary)) {
-    Object.defineProperty(primary, "ormCleanupErrors", { value: Object.freeze([...errors]), configurable: true });
-    return primary;
-  }
-  const wrapped = new Error("ORM initialization failed; cleanup is unknown", { cause: primary });
-  Object.defineProperty(wrapped, "ormCleanupErrors", { value: Object.freeze([...errors]) });
-  return wrapped;
+  const extensible = !!primary && (typeof primary === "object" || typeof primary === "function") && Object.isExtensible(primary);
+  const result = extensible ? primary : new Error("ORM initialization failed; cleanup is unknown", { cause: primary });
+  Object.defineProperty(result, "ormCleanupErrors", { value: Object.freeze([...errors]), configurable: extensible });
+  return result;
+}
+
+function assertOwnerOpen(cancelled: () => boolean): void {
+  if (cancelled()) throw new Error("ORM owner closed before connection creation");
 }
 
 function nativeResources(target: OrmTarget) {
-  const closers: Array<() => Promise<void>> = [];
+  const closers: Array<() => void | Promise<void>> = [];
   let driver: any;
   if (target.dialect === "sqlite") {
     const Native = require("better-sqlite3");
@@ -34,7 +35,7 @@ function nativeResources(target: OrmTarget) {
         };
         // TypeORM can close during metadata failure; the fallback below joins the same native close result.
         database.close = close;
-        closers.push(async () => { close(); });
+        closers.push(close);
         return database;
       },
     });
@@ -44,8 +45,7 @@ function nativeResources(target: OrmTarget) {
       #endPromise?: Promise<void>;
       constructor(options: any) {
         super(options);
-        const end = this.end.bind(this);
-        closers.push(() => end());
+        closers.push(this.end.bind(this));
       }
       end(callback?: (error?: Error) => void): any {
         if (!this.#endPromise) {
@@ -65,10 +65,10 @@ function nativeResources(target: OrmTarget) {
 
 async function createConnection(target: OrmTarget, catalog: EntityCatalog, cancelled: () => boolean): Promise<OrmConnection> {
   assertEntityCatalogUnchanged(catalog);
-  if (cancelled()) throw new Error("ORM owner closed before connection creation");
+  assertOwnerOpen(cancelled);
   const { DataSource } = await import("typeorm");
   assertEntityCatalogUnchanged(catalog);
-  if (cancelled()) throw new Error("ORM owner closed before connection creation");
+  assertOwnerOpen(cancelled);
   const resources = nativeResources(target);
   const entities = [...catalog.entities];
   const ds = new DataSource(target.dialect === "sqlite"
@@ -84,21 +84,22 @@ async function createConnection(target: OrmTarget, catalog: EntityCatalog, cance
   let starting = true;
   let destroyPromise: Promise<void> | undefined;
   const cleanupErrors: unknown[] = [];
+  const retain = (error: unknown) => { if (!cleanupErrors.includes(error)) cleanupErrors.push(error); };
   const rawDestroy = ds.destroy.bind(ds);
   ds.destroy = () => {
     if (!destroyPromise) { destroyPromise = Promise.resolve().then(rawDestroy); void destroyPromise.catch(() => {}); }
     // TypeORM calls destroy inside initialize's catch. Retain the primary metadata error if destroy also fails.
-    return starting ? destroyPromise.catch(error => { if (!cleanupErrors.includes(error)) cleanupErrors.push(error); }) : destroyPromise;
+    return starting ? destroyPromise.catch(retain) : destroyPromise;
   };
   let closing: Promise<void> | undefined;
   const close = () => {
     if (closing) return closing;
     closing = Promise.resolve().then(async () => {
       if (ds.isInitialized || destroyPromise) {
-        try { await ds.destroy(); } catch (error) { if (!cleanupErrors.includes(error)) cleanupErrors.push(error); }
+        try { await ds.destroy(); } catch (error) { retain(error); }
       }
       for (const release of resources.closers) {
-        try { await release(); } catch (error) { if (!cleanupErrors.includes(error)) cleanupErrors.push(error); }
+        try { await release(); } catch (error) { retain(error); }
       }
       if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "ORM native resources could not be confirmed closed");
     });
@@ -124,7 +125,7 @@ async function createConnection(target: OrmTarget, catalog: EntityCatalog, cance
 /** Existing six-attempt SQLite lock budget; no retry if cleanup cannot be confirmed. */
 export async function openOrmConnection(target: OrmTarget, catalog: EntityCatalog, cancelled: () => boolean): Promise<OrmConnection> {
   for (let attempt = 0; ; attempt++) {
-    if (cancelled()) throw new Error("ORM owner closed before connection creation");
+    assertOwnerOpen(cancelled);
     try { return await createConnection(target, catalog, cancelled); }
     catch (error: any) {
       if (target.dialect !== "sqlite" || error?.ormCleanupErrors?.length || attempt === 5 || !/database is locked|SQLITE_BUSY/i.test(String(error?.message ?? error))) throw error;

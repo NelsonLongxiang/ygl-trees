@@ -7,6 +7,48 @@ function barrier() {
   return { promise, resolve };
 }
 describe("invocation-owned quiesce, drain and release", () => {
+  it.each(["control", "run", "use"] as const)("preserves the accepting %s callback receiver and detach argument", async method => {
+    const owner = new InvocationOwner();
+    try {
+      const observed = await owner[method](function (this: unknown) { return { receiver: this, args: [...arguments] }; });
+      expect(observed.receiver).toBeUndefined(); expect(observed.args).toHaveLength(1); expect(observed.args[0]).toBeTypeOf("function");
+    } finally { await owner.close(); }
+  });
+  it("preserves the null receiver and zero arguments of an accepted dependency-use callback during shutdown", async () => {
+    const owner = new InvocationOwner(), started = barrier(), gate = barrier();
+    const work = owner.run(async () => {
+      started.resolve(); await gate.promise;
+      return owner.use(function (this: unknown) { return { receiver: this, args: [...arguments] }; });
+    });
+    await started.promise;
+    const closing = owner.close(); gate.resolve();
+    try {
+      const observed = await work;
+      expect(observed.receiver).toBeNull(); expect(observed.args).toEqual([]);
+    } finally { await closing; }
+  });
+  it("preserves a strict native cleanup callback receiver before releasing its dependencies", async () => {
+    const owner = new InvocationOwner(), entered = barrier(), gate = barrier(), events: string[] = [];
+    let observed: { receiver: unknown; count: number } | undefined;
+    const cleanup = owner.cleanup("native", function (this: unknown) {
+      observed = { receiver: this, count: arguments.length }; entered.resolve();
+      if (this !== null || arguments.length !== 0) throw new Error("native cleanup callback contract changed");
+      return gate.promise.then(() => { events.push("native-closed"); });
+    });
+    owner.own({ name: "native", phase: "consumer", close: cleanup });
+    owner.own({ name: "dependency", close: () => { events.push("dependency-closed"); } });
+    const unloading = cleanup(), closing = owner.close();
+    const pending = Promise.allSettled([unloading, closing]);
+    try {
+      await entered.promise;
+      expect(events).not.toContain("dependency-closed");
+      expect(observed).toEqual({ receiver: null, count: 0 });
+      expect(cleanup()).toBe(unloading);
+      gate.resolve();
+      expect((await pending).every(item => item.status === "fulfilled")).toBe(true);
+      expect(events).toEqual(["native-closed", "dependency-closed"]);
+    } finally { gate.resolve(); await pending; }
+  });
   it("stops admission immediately and drains accepted work before any connection or database release", async () => {
     const owner = new InvocationOwner(), gate = barrier(), entered = barrier(), events: string[] = [];
     owner.own({ name: "server", quiesce: () => { events.push("quiesce"); }, close: () => { events.push("server-closed"); } });

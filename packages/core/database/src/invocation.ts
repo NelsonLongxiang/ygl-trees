@@ -48,40 +48,31 @@ export class InvocationOwner implements InvocationAccess {
     const pending = Promise.resolve(result).catch(cause => { this.failures.push({ phase: "quiesce", name: resource.name, cause }); }).finally(() => { token.live = false; });
     this.stopping.push(pending);
   }
-  private enter(): () => void {
-    if (this.state !== "accepting" || this.failures.length) throw new Error("invocation is not accepting new work; cleanup failed or shutdown started");
+  private track<T>(work: (detach: () => void) => T | Promise<T>): Promise<T> {
     this.active++;
     let finished = false;
-    return () => {
+    const finish = () => {
       if (finished) return;
       finished = true;
       this.active--;
       if (this.active === 0) { this.drained?.(); this.drained = undefined; }
     };
-  }
-  /** A long-lived control waiter can detach without revoking its completion context. */
-  control<T>(work: (detach: () => void) => T | Promise<T>): Promise<T> {
-    let finish: () => void;
-    try { finish = this.enter(); } catch (error) { return Promise.reject(error); }
     const token = { live: true };
     const pending = Promise.resolve().then(() => this.completion.run(token, () => work(finish))).finally(() => { token.live = false; finish(); });
     void pending.catch(() => {});
     return pending;
+  }
+  /** A long-lived control waiter can detach without revoking its completion context. */
+  control<T>(work: (detach: () => void) => T | Promise<T>): Promise<T> {
+    if (this.state !== "accepting" || this.failures.length) return Promise.reject(new Error("invocation is not accepting new work; cleanup failed or shutdown started"));
+    return this.track(work);
   }
   run<T>(work: () => T | Promise<T>): Promise<T> { return this.control(work); }
   /** Only a live accepted operation or owned cleanup may use dependencies after admission closes. */
   use<T>(work: () => T | Promise<T>): Promise<T> {
     if (this.state === "accepting" && !this.failures.length) return this.run(work);
     if (!this.completion.getStore()?.live || this.state === "closed" || this.state === "poisoned") return Promise.reject(new Error("invocation is not accepting new work"));
-    this.active++;
-    const token = { live: true };
-    const pending = Promise.resolve().then(() => this.completion.run(token, work)).finally(() => {
-      token.live = false;
-      this.active--;
-      if (!this.active) { this.drained?.(); this.drained = undefined; }
-    });
-    void pending.catch(() => {});
-    return pending;
+    return this.track(() => Reflect.apply(work, null, []));
   }
   /** Register an exact native disposer's first execution, including an externally started unload. */
   cleanup(name: string, dispose: () => unknown): () => Promise<void> {
@@ -89,15 +80,10 @@ export class InvocationOwner implements InvocationAccess {
     return () => {
       if (pending) return pending;
       if (this.state === "closed" || this.state === "poisoned") return Promise.reject(new Error("invocation is closed"));
-      this.active++;
-      const token = { live: true };
-      pending = Promise.resolve().then(() => this.completion.run(token, dispose)).then(() => {}, cause => {
-        this.failures.push({ phase: "release", name, cause }); throw cause;
-      }).finally(() => {
-        token.live = false; this.active--;
-        if (!this.active) { this.drained?.(); this.drained = undefined; }
+      pending = this.track(async () => {
+        try { await Reflect.apply(dispose, null, []); }
+        catch (cause) { this.failures.push({ phase: "release", name, cause }); throw cause; }
       });
-      void pending.catch(() => {});
       return pending;
     };
   }

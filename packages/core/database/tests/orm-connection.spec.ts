@@ -73,6 +73,25 @@ describe("owned native ORM connections", () => {
       expect(close).toHaveBeenCalledTimes(1); expect(close.mock.instances[0].open).toBe(true);
     } finally { for (const native of close.mock.instances) if (native.open) nativeClose.call(native); close.mockRestore(); }
   });
+  it.each(["mutable", "frozen", "primitive"])("preserves %s initialization failure and exact cleanup receipt attributes", async shape => {
+    const file = fixture(), primary = shape === "mutable" ? new Error("primary initialization")
+      : shape === "frozen" ? Object.freeze(new Error("primary initialization")) : "primary initialization";
+    const secondary = new Error("native close unknown"), realClose = Native.prototype.close;
+    vi.spyOn(Native.prototype, "pragma").mockImplementationOnce(() => { throw primary; });
+    const close = vi.spyOn(Native.prototype, "close").mockImplementation(() => { throw secondary; });
+    try {
+      const failure: any = await openOrmConnection({ dialect: "sqlite", file }, catalog(), () => false).then(() => undefined, error => error);
+      if (shape === "mutable") expect(failure).toBe(primary);
+      else { expect(failure).toBeInstanceOf(Error); expect(failure.cause).toBe(primary); }
+      expect(failure.ormCleanupErrors).toEqual([secondary]); expect(Object.isFrozen(failure.ormCleanupErrors)).toBe(true);
+      const descriptor = Object.getOwnPropertyDescriptor(failure, "ormCleanupErrors")!;
+      expect(descriptor).toMatchObject({ configurable: shape === "mutable", enumerable: false, writable: false });
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      for (const native of close.mock.instances) if (native.open) realClose.call(native);
+      close.mockRestore();
+    }
+  });
   it("does not retry a failed native close when destroy and owner cleanup both join it", async () => {
     const file = fixture(), nativeClose = Native.prototype.close;
     const close = vi.spyOn(Native.prototype, "close").mockImplementation(() => { throw new Error("release refused"); });
