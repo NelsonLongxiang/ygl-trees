@@ -37,6 +37,10 @@ Tree group reports use ordinary four-value VUs: tree-only `STALE`, `INFRA_BLOCKE
 
 `verify list` counts every report for each spec while reading the latest report without removing it from the in-memory list. `last_run` and `last_overall` keep the existing finished-time ordering and stable file-order tie behavior; no-report rows return zero runs and empty latest fields. Listing does not rewrite spec/report bytes. The CLI count fix does not change the HTTP paging/index contract.
 
+## Imported report artifact identifiers
+
+`verify report import` treats supplied `run_id` and `spec_id` as artifact identifiers, not paths: present values use 1–128 ASCII letters, digits, `_` or `-`. A supplied nonempty `verifier.binary_sha256` must be 64 hexadecimal digits with an optional `sha256:` prefix. Invalid values return rc1 with `{imported:false, problems}` before registration lookup, embedded-spec restoration or report writes. Missing/null run IDs keep the existing content-derived filename fallback. Normal payload/build/version/signature checks remain required. This input boundary does not make legacy report import append-only or provide lease authorization; an S2 hand-back needs its own accepted-run identity and transaction.
+
 ## Verifier engine provenance
 
 CLI and HTTP prepare/run, and newly executed tree leaves, pass the running application `env.version` to the verifier, matching tree G8. A frozen spec records its preparing engine while each new report records its executing engine; running a legacy spec does not rewrite its original version or earlier reports. Archives retain and verify the report version. The standalone verify-core library and deterministic corpus keep their own0.1.0 default; an embedding application should inject its version. This change does not migrate frozen specs, add provenance flags, change as_of or enforce reviewer independence.

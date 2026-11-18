@@ -373,6 +373,8 @@ verify list                        # 规范清单与状态
 
 1. **构建登记**：`yglverify build` 完成时，同步往 workspace 写一条登记 artifact（kind=verify-binary）：`{spec_id, spec_version, engine_version, corpus_version, platform, binary_sha256, build_at, signature?}`——**这份登记就是封包的外部期望值**，与二进制分开发布（登记进 ygl 工作区/服务端，二进制交给业务方）。
 2. **import 校验**：`verify report import <report.json>` 必须做三件事才入库——①`binary_sha256` 命中登记；②`spec_version` 与登记一致；③报告 `payload_sha256` 与文件内容一致（防 import 前被手改）。任一不符 → 拒绝入库并点名「unknown verifier / version mismatch / payload tampered」，落进报告审计环。
+
+   报告中的文件定位字段不接受路径：非缺省 `run_id`／`spec_id` 只收 1–128 个 ASCII 字母、数字、`_` 或 `-`；非空二进制摘要须为 64 位十六进制（可带 `sha256:` 前缀）。非法值在构建登记查找、规范恢复或报告写入前 rc1，并以 `{imported:false, problems}` 点名。缺失／null run-id 的内容摘要文件名回退保持。此输入约束不代表历史导入命令具备租约校验或不可覆盖的 run 受理语义。
 3. **尾纹计算域（footer 定义，防循环）**：文件布局 = `[engine 字节][spec 字节][footer]`；footer = `magic("YGLVF1") | offset(uint64) | length(uint64) | spec_sha256 | engine_version | corpus_version | build_sha256`，其中 **`build_sha256 = H(engine || spec)`——不含 footer 自身**（含自身即自指循环）。`self-check` 重算这三段并对质，任何一段改动即 ERROR。
 4. **签名（可选更高门槛）**：`--key ed25519.pem` 对 `build_sha256` 签名，公钥带外分发；登记条目带 signature，import 时验签。无签名时 tamper-evidence 靠 ①+③ 与带外哈希比对。
 
