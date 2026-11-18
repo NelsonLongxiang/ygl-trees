@@ -3,7 +3,7 @@
  * doing/todo, unlinked done tasks, failing enabled jobs, unscheduled jobs and "version families". These tests pin
  * the derivations (pure) and the CLI faces that now expose and maintain them.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -155,6 +155,43 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
     cli(["project", "use", "p1"]);
   });
 
+  it.each([0, 60])("task stale ages survive a %i-day calendar shift (#283)", (offsetDays) => {
+    const isolated = mkdtempSync(join(ROOT, "tmp/lifecycle-calendar-"));
+    try {
+      const hook = join(isolated, "clock.cjs"), now = Date.now() + offsetDays * DAY;
+      // The clock belongs only to this test's child processes, not the product or host.
+      writeFileSync(hook, 'const RealDate=Date;const now=Number(process.env.YGL_TEST_CLOCK_MS);if(!Number.isFinite(now))throw Error("missing fixture clock");globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}};');
+      const invoke = (args: string[]) => {
+        const r = spawnSync(process.execPath, ["--require", hook, BIN, ...args, "--json"], {
+          cwd: ROOT, encoding: "utf8", timeout: 60000,
+          env: { ...process.env, YGL_HOME: isolated, YGL_DB_URL: "", YGL_PG_URL: "", YGL_SESSION: "calendar-test", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1", YGL_TEST_CLOCK_MS: String(now) },
+        });
+        expect(r.error, r.stderr).toBeUndefined(); expect(r.signal, r.stderr).toBeNull();
+        expect(r.status, r.stdout + r.stderr).toBe(0);
+        return JSON.parse(r.stdout);
+      };
+      invoke(["db", "init"]); invoke(["project", "new", "calendar"]);
+      const doing = invoke(["task", "add", "doing-20"]), todo = invoke(["task", "add", "todo-45"]), legacy = invoke(["task", "add", "legacy-60"]);
+      invoke(["task", "doing", doing.id]);
+      let times: string[];
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      try { times = [20, 45, 60].map(agoNow); } finally { clock.mockRestore(); }
+      invoke(["db", "sql", "UPDATE artifacts SET meta=json_set(meta,'$.status_at','" + times[0] + "') WHERE id='" + doing.id + "'"]);
+      invoke(["db", "sql", "UPDATE artifacts SET meta=json_set(meta,'$.status_at','" + times[1] + "') WHERE id='" + todo.id + "'"]);
+      invoke(["db", "sql", "UPDATE artifacts SET meta='{\"status\":\"todo\"}',created='" + times[2] + "' WHERE id='" + legacy.id + "'"]);
+      const rows = invoke(["task", "stale"]);
+      expect(rows.find((r: any) => r.id === doing.id)).toMatchObject({ age_days: 20, threshold_days: 14, status_at_source: "status_at" });
+      expect(rows.find((r: any) => r.id === todo.id)).toMatchObject({ age_days: 45, threshold_days: 30 });
+      expect(rows.find((r: any) => r.id === legacy.id)).toMatchObject({ age_days: 60, threshold_days: 30, status_at_source: "created" });
+      const overridden = invoke(["task", "stale", "--doing-days", "30"]);
+      expect(overridden.map((r: any) => r.id)).not.toContain(doing.id);
+      expect(overridden.map((r: any) => r.id)).toEqual(expect.arrayContaining([todo.id, legacy.id]));
+      const hygiene = invoke(["doctor"]).find((r: any) => r.name === "task_hygiene");
+      expect(hygiene).toMatchObject({ status: "warn", detail: expect.stringMatching(/stale doing/) });
+      expect(hygiene.detail).toMatch(/stale todo/);
+    } finally { rmSync(isolated, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+  });
+
   it("job add guards: a schedule (or --manual) is required; cadences below the floor need --allow-frequent", () => {
     expect(cli(["job", "add", "no-schedule", "--", "echo hi"]).json.error).toMatch(/needs a schedule/);
     expect(cli(["job", "add", "both", "--manual", "--every", "60", "--", "echo hi"]).rc).toBe(2);
@@ -262,7 +299,7 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
   it("streak and last_ok come from the whole history: one old success, then 30 failures (review of f45596b)", () => {
     cli(["job", "add", "old-ok", "--every", "1440", "--", "echo x"]);
     const id = cli(["job", "list"]).json.find((j: any) => j.title === "old-ok").id;
-    const okAt = "2026-10-01T00:00:00.000Z";
+    const okAt = agoNow(40);
     const fails = Array.from({ length: 30 }, (_, i) => `('oo-${i}','${id}','${agoNow(30 - i)}','${agoNow(30 - i)}',1,'fail ${i}')`).join(",");
     sql(`INSERT INTO runs(id,job_id,started,finished,rc,output) VALUES ('oo-ok','${id}','${okAt}','${okAt}',0,'ok'),${fails}`);
     sql(`UPDATE jobs SET status='failed', runs=31, last_run='${agoNow(1)}' WHERE id='${id}'`);
@@ -277,7 +314,7 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
   });
 
   it("ties on started are split by id exactly as job show orders runs (review of 008acc4)", () => {
-    const at = "2026-11-05T00:00:00.000Z";
+    const at = agoNow(0);
     const mk = (title: string, rows: Array<[string, number | null]>) => {
       cli(["job", "add", title, "--every", "1440", "--", "echo x"]);
       const id = cli(["job", "list"]).json.find((j: any) => j.title === title).id;
@@ -301,9 +338,9 @@ describe.skipIf(!existsSync(BIN))("task and job lifecycle CLI (real bundle, #220
   it("the failing streak is counted past 20 when job.failing_runs is higher (review of f509022)", () => {
     cli(["job", "add", "long-red", "--every", "1440", "--", "echo x"]);
     const id = cli(["job", "list"]).json.find((j: any) => j.title === "long-red").id;
-    const values = Array.from({ length: 25 }, (_, i) => `('lr-${i}','${id}','${ago(30 - i)}','${ago(30 - i)}',1,'boom')`).join(",");
+    const values = Array.from({ length: 25 }, (_, i) => `('lr-${i}','${id}','${agoNow(30 - i)}','${agoNow(30 - i)}',1,'boom')`).join(",");
     sql(`INSERT INTO runs(id,job_id,started,finished,rc,output) VALUES ${values}`);
-    sql(`UPDATE jobs SET status='failed', runs=25, last_run='${ago(6)}' WHERE id='${id}'`);
+    sql(`UPDATE jobs SET status='failed', runs=25, last_run='${agoNow(6)}' WHERE id='${id}'`);
     expect(cli(["config", "set", "job.failing_runs", "25"]).rc).toBe(0);
     try {
       expect(cli(["job", "list"]).json.find((j: any) => j.id === id)).toMatchObject({ consecutive_failures: 25, health: "failing" });

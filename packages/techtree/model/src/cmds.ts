@@ -27,7 +27,7 @@ import {
   DEFAULT_ENDPOINT, evalBoolean, evalChoice, evalMixed, evalScore, evalToken,
   mapChoiceOutcome, mapOutcome, mapScoreOutcome, packEvalChoiceSpec, packEvalScoreSpec, parseEvalSpec,
 } from "../../eval/src/eval";
-import { configGet, configGetBool, configGetNumber } from "../../../ops/tools/src/config";
+import { configGet, configGetBool, configGetNumber } from "../../../core/database/src/config";
 import { clip, nowIso, shortId } from "../../../core/text/src/text";
 // 0.91a: selection/eval bare INSERTs gain bus emission — static import per
 // direct-032bf3b4 (require-in-catch silently dies under ESM hosts).

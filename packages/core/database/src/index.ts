@@ -12,3 +12,5 @@ export { Container } from "./container";
 export type { ServiceName } from "./container";
 export { DatabaseService, apply } from "./plugin";
 export type { DatabaseConfig } from "./plugin";
+export { CONFIG_REGISTRY, specOf, isSecretKey, configGet, configGetNumber, configGetBool } from "./config";
+export type { ConfigSpec } from "./config";

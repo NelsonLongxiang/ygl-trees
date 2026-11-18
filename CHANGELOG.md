@@ -1,10 +1,17 @@
 ## Unreleased
 
+- **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增 workspace 清单声明依赖的有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。该门不证明源码 import 图无环。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
+
 - **报告导入的文件定位字段拒绝路径**：`verify report import` 在读取构建登记、恢复规范或写报告前，校验非缺省的 `run_id`／`spec_id` 为 1–128 个 ASCII 字母、数字、下划线或短横线；二进制身份须为有效 SHA-256 形式。拒绝报告仍 rc1 且 JSON 点名，合法报告、payload 校验、封包规范恢复和历史缺 run-id 回退保持；本修复不改变同 run-id 替换语义或引入 S2 租约。
 
 - **SQLite 写事务先预留写锁**（Refs #286）：research／kb／job 的事务服务在去重读取之前执行零行更新，避免读取后的 WAL 快照因竞争提交而无法升级为写事务。零行更新不改变配置数据；基表、FTS 和审计仍在同一事务中，事件只在提交后发布。锁等待与五次尝试预算不变，PG 路径不发送 SQLite 预留语句。
 
 测试与门禁（不改变产品行为）：
+
+- **生命周期测试不依赖日历日期**（Refs #283）：真实 CLI 读取的相对年龄种子使用实时基准，新增当前日期和向前 60 天的子进程隔离时钟回归；覆盖年龄、阈值覆盖、legacy created 回退与 doctor 告警。恢复旧固定日期种子时，两组新用例均判红；不改产品时钟或超时。
+- **源码依赖图与声明图分别守门**（Refs #234、#285）：包结构入口的 `--source-graph` 使用 TypeScript 解析字面量相对依赖，包含 import 类型表达式及 import-equals，拒绝未解析引用、源码链接和额外循环。源码图仅保留 `orm.ts` 静态导入研究实体 `RESEARCH_ENTITIES` 的精确装配例外，按源/目标文件与符号匹配并显式报告；其余依赖仍须无环，实体注册解耦另跟 #285。两图独立接入契约门。既有项目内临时根、验证器夹具隔离与无 clone 合成配置探针保持原判据，正式 G1/G8 的验收语义不变。
+
+- **R3 行尾回归无 clone 夹具**：用项目 tmp 内独立 `GIT_INDEX_FILE` 读取 HEAD 并执行 `checkout-index`，保留 `core.autocrlf=true` 与真实 `.gitattributes` 转换、tooling 零漂移及 R3 PASS 判据；导出不建 `.git`，子进程环境收尾且真实 index 字节不变。
 
 - **Windows 失败取证**（Refs #202、#203、#209）：query attach 测试保留子进程退出码、signal、原始 error.code 与耗时，不再把 null 退出码误诊成超时。bundle 配置隔离用无 Git 元数据的源码快照替代本地 shared clone，保留父目录诱饵与 minify 反例，失败时保留步骤日志和 Git trace。watcher 生命周期测试记录事件、读取和投影顺序，失败时在清理前保存源文件/索引快照；超时、并发及产品实现不变，历史间歇失败未据此宣称根治。
 

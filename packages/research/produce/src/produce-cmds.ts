@@ -10,7 +10,7 @@ import { getOrm } from "../../../core/database/src/orm";
 import { resolveProject, ambiguousProject, projectCount, projectSample, idNotFound } from "../../../core/database/src/selection";
 import * as writes from "../../pipeline/src/writes";
 import { relAdd, RelError } from "../../../ops/tools/src/rels";
-import { configGetNumber } from "../../../ops/tools/src/config";
+import { configGetNumber } from "../../../core/database/src/config";
 import { staleTasks, taskView, TaskView } from "../../pipeline/src/lifecycle";
 
 const TASK_USAGE = 'usage: task add "<title>" [--note ...] [--owner <who>] | list [--status todo|doing|done|cancelled] [--owner <who>] | ' +

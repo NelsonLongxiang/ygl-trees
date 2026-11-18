@@ -11,6 +11,10 @@ Operational tools: config registry, PG sync/migrate, db/job/agent/config CLI han
 
 Import from `@ygl/ops-tools` when you need operational tools: config registry, pg sync/migrate, db/job/agent/config cli handlers.
 
+## Configuration ownership
+
+The registry and pure readers live in core/database; this package retains `configSet/configReset`, audit events, secret masking and export filtering. Existing reader exports from `src/config.ts` and the package entry remain transition-compatible re-exports of the same functions and registry, not a second source of defaults. Domain packages depend on core/database rather than importing ops for configuration.
+
 ## Agent brief selection
 
 `agent brief -p <project>` and `--project <project>` use the same resolved selection for admission and payload construction. Explicit selection overrides environment/session pointers without changing them; missing projects return rc1. The multi-project strict gate remains rc2. `buildBrief(env)` keeps its ungated default for dashboard callers.

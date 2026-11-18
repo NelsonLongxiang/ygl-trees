@@ -12,7 +12,7 @@ import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-work
 import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
 import * as writes from "./writes";
 import { run as runPredictions } from "./predict-cmds";
-import { configGet, configGetNumber } from "../../../ops/tools/src/config";
+import { configGet, configGetNumber } from "../../../core/database/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
 // direct-032bf3b4 (require-in-catch silently dies under ESM hosts).
 import { emitEvent } from "../../../core/text/src/eventbus";
