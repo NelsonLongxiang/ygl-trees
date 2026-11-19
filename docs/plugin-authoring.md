@@ -79,7 +79,7 @@ exports.commands = {
 
 `run(work)` 跟踪已接纳任务；`own({name, quiesce, close})` 立即登记资源。停止时先 quiesce 再排空并 await close。插件只借用 getOrm／getPgOrm，没有应用 ORM.close 权限；单个插件失败或卸载不能关闭其他实例。直接持有 DataSource 的工作仍须在插件作用域内跟踪并等待，不声称自动追踪外部任意事务。
 
-受管的一次性命令只提交一个有界 JSON payload，不直接 console.log 成功 JSON。成功结果待清理确认后发布；清理失败时原 rc0 变 rc1 和单一 `{"error":"workspace cleanup failed"}`，stderr 说明业务事务可能已经提交。已有业务错误及 rc1／2 优先保留。HTTP／SSE／MCP 流不进入此缓冲，也不修改全局 stdout。
+受管的一次性命令只提交一个有界 JSON payload，不直接 console.log 成功 JSON。空结果同样不得 `console.log("[]")`，统一 `emitJson(env.ctx, [])`；命令组内 JSON 面都应经 `emitJson(env.ctx, …)`，不绕开调用级结果与清理边界。成功结果待清理确认后发布；清理失败时原 rc0 变 rc1 和单一 `{"error":"workspace cleanup failed"}`，stderr 说明业务事务可能已经提交。已有业务错误及 rc1／2 优先保留。HTTP／SSE／MCP 流不进入此缓冲，也不修改全局 stdout。
 
 未声明协议的旧插件保留原输出责任，但不会自动得到受管 ORM capability；无实例 getOrm／getPgOrm／closeOrm 在开库前明确拒绝。任意插件已经写出的 raw stdout 无法撤回。库嵌入方显式装配 owner 并 await close；`DatabaseService.stop()` 同样是异步收尾契约。
 

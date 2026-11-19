@@ -34,6 +34,30 @@ afterEach(async () => {
 });
 
 describe("owned native ORM connections", () => {
+  it.each([false, true])("retries a locked initialization only when its native cleanup is confirmed (cleanup unknown=%s)", async unknown => {
+    const file = fixture(), primary = new Error("database is locked: SQLITE_BUSY"), secondary = new Error("native cleanup unknown"), realClose = Native.prototype.close;
+    const pragma = vi.spyOn(Native.prototype, "pragma").mockImplementationOnce(() => { throw primary; });
+    const close = vi.spyOn(Native.prototype, "close").mockImplementation(function (this: any) {
+      if (unknown) throw secondary;
+      return realClose.call(this);
+    });
+    let lease: OrmConnection | undefined;
+    try {
+      const failure: any = await openOrmConnection({ dialect: "sqlite", file }, catalog(), () => false).then(value => { lease = value; }, error => error);
+      if (unknown) {
+        expect(failure).toBe(primary); expect(failure.ormCleanupErrors).toEqual([secondary]);
+        expect(pragma).toHaveBeenCalledTimes(1); expect(close).toHaveBeenCalledTimes(1);
+        expect(close.mock.instances[0].open).toBe(true);
+      } else {
+        expect(failure).toBeUndefined(); expect(lease?.dataSource.isInitialized).toBe(true);
+        expect(close).toHaveBeenCalledTimes(1); expect(close.mock.instances[0].open).toBe(false);
+      }
+    } finally {
+      await lease?.close().catch(() => {});
+      for (const native of close.mock.instances) if (native?.open) realClose.call(native);
+      close.mockRestore(); pragma.mockRestore();
+    }
+  });
   it("opens the explicit SQLite catalog without synchronizing or altering schema and closes the actual handle", async () => {
     const file = fixture(), lease = await openOrmConnection({ dialect: "sqlite", file }, catalog(), () => false); leases.push(lease);
     const ds = lease.dataSource, native = (ds.driver as any).databaseConnection;

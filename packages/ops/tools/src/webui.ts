@@ -303,6 +303,11 @@ export function nodeDetail(env: Env, treeName: string, key: string): Record<stri
   };
 }
 
+function sendJsonResponse(res: import("node:http").ServerResponse, payload: unknown): void {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify(payload));
+}
+
 /** node:http dashboard server. Routes:
  *  / and /index.html → live HTML; /api/data → dashboard JSON;
  *  /api/events → SSE stream (server-side change detection, pushes fresh
@@ -480,8 +485,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         res.end(`node not found: ${tree}/${key}`);
         return;
       }
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(detail));
+      sendJsonResponse(res, detail);
     } else if (url === "/api/artifact") {
       // 0.35: full artifact text for the markdown renderer.
       // R16.4: by id direct — artifacts.project_id is NOT NULL (db.ts:147).
@@ -510,8 +514,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
         return;
       }
       const { project_id, ...pub } = row as any;
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(pub));
+      sendJsonResponse(res, pub);
     } else if (url === "/api/task" && req.method === "POST") {
       // R12: advance a task along its state machine from the dashboard.
       // 0.90.1 P1-1 (review direct-a35d58ae): write endpoints are fail-closed
@@ -554,15 +557,13 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             // #220 item 2: the HTTP face cancels like the CLI — a reason is required; cancelling twice is idempotent.
             if (cancelling) {
               if (currentStatus === "cancelled") {
-                res.writeHead(200, { "content-type": "application/json" });
-                res.end(JSON.stringify({ id: String(id), from: currentStatus, to: currentStatus, idempotent: true }));
+                sendJsonResponse(res, { id: String(id), from: currentStatus, to: currentStatus, idempotent: true });
                 return;
               }
               const ds = await sqliteOrm(env);
               const { taskCancel } = await import("../../../research/pipeline/src/writes");
               const r = await taskCancel(ds, String(id), String(reason));
-              res.writeHead(200, { "content-type": "application/json" });
-              res.end(JSON.stringify(r));
+              sendJsonResponse(res, r);
               return;
             }
             // #220: cancelled is closed — the dashboard cannot step it; reopening is a CLI act (task reopen <id>).
@@ -574,8 +575,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             if (requested === currentStatus) {
               // #70: TRUE idempotent — same status means no state change, no
               // write, no event. Return the current row as-is.
-              res.writeHead(200, { "content-type": "application/json" });
-              res.end(JSON.stringify({ id: String(id), from: currentStatus, to: currentStatus, idempotent: true }));
+              sendJsonResponse(res, { id: String(id), from: currentStatus, to: currentStatus, idempotent: true });
               return;
             }
             const next = FORWARD[currentStatus];
@@ -591,8 +591,7 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
             const ds = await sqliteOrm(env);
             const { taskSetStatus } = await import("../../../research/pipeline/src/writes");
             const r = await taskSetStatus(ds, String(id), next);
-            res.writeHead(200, { "content-type": "application/json" });
-            res.end(JSON.stringify(r));
+            sendJsonResponse(res, r);
           } catch (e: any) {
             res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
             res.end(String(e?.message || e));
@@ -700,13 +699,26 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
       res.end("not found");
     }
   };
+  const connections = new Map<import("node:net").Socket, (change: number) => void>();
   const server = http.createServer((req: any, res: any) => {
+    connections.get(req.socket)!(1);
+    res.once("close", () => connections.get(req.socket)?.(-1));
     if (stopping) { res.writeHead(503, { "content-type": "application/json" }); res.end(JSON.stringify({ error: "server is shutting down" })); return; }
     void requests.run(() => handleRequest(req, res)).catch(() => {
       if (res.destroyed || res.writableEnded) return;
       if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "request failed" }));
     });
+  });
+  server.on("connection", (socket: import("node:net").Socket) => {
+    let pending = 0;
+    connections.set(socket, change => {
+      pending += change;
+      // Flush completed responses without waiting for a peer FIN or a version-specific idle scan.
+      if (stopping && !pending) socket.destroySoon();
+    });
+    socket.once("close", () => { connections.delete(socket); });
+    if (stopping) socket.destroySoon();
   });
   // SSE clients hold the connection open — drop them on server close so the
   // process can exit (and so --json/none-mode callers never hang).
@@ -720,9 +732,10 @@ export function createDashboardServer(env: Env, opts: { allowUpload?: boolean; e
   const stopNetwork = () => {
     if (networkClosed) return networkClosed;
     stopping = true; stopTick(); dropLive();
-    if (unsubBus) { unsubBus(); unsubBus = null; }
+    unsubBus?.(); unsubBus = null;
     networkClosed = new Promise<void>((resolve, reject) => {
       nativeClose((error?: NodeJS.ErrnoException) => error && error.code !== "ERR_SERVER_NOT_RUNNING" ? reject(error) : resolve());
+      for (const activity of connections.values()) activity(0);
     });
     void networkClosed.catch(() => {});
     return networkClosed;
