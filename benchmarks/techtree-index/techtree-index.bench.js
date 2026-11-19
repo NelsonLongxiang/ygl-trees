@@ -9,12 +9,15 @@ module.exports = async function runTechtreeIndex(root, quick) {
   const dbFile = path.join(ws, "bench.db");
   const { DB } = require(path.join(root, "dist/packages/core/database/src/db"));
   const { TreeStore } = require(path.join(root, "dist/packages/techtree/model/src/reads"));
-  const { getOrm } = require(path.join(root, "dist/packages/core/database/src/orm"));
+  const { createWorkspaceOrm } = require(path.join(root, "dist/apps/cli/src/workspace-orm"));
   const treeWrites = require(path.join(root, "dist/packages/techtree/model/src/writes"));
   const { ngram } = require(path.join(root, "dist/packages/core/text/src/text"));
   const db = new DB(dbFile);
   const trees = new TreeStore(db);
-  const ds = await getOrm(dbFile);
+  const orm = createWorkspaceOrm({ dialect: "sqlite", file: dbFile });
+  const close = async () => { await orm.close(); db.closeStrict(); };
+  try {
+  const ds = await orm.getOrm(dbFile);
   const tree = await treeWrites.treeCreate(ds, "bt", "", "");
   const NODE_N = scale(quick, 300, 100);
 
@@ -62,5 +65,10 @@ module.exports = async function runTechtreeIndex(root, quick) {
     return { unit: "per-op", ...st, note: `tree=${NODE_N} nodes` };
   });
 
-  return { db, ws };
+  return { db, ws, close };
+  } catch (error) {
+    try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup], "benchmark initialization and cleanup failed"); }
+    require("node:fs").rmSync(ws, { recursive: true, force: true });
+    throw error;
+  }
 };

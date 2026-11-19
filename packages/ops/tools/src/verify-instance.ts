@@ -1,3 +1,4 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /**
  * #206 (verifier scale S0): `verify instance` — the registry entry point.
  *
@@ -14,9 +15,9 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Env } from "../../../core/database/src/types";
-import { getOrm } from "../../../core/database/src/orm";
-import { bad, head, out, paint, C, table } from "../../../core/text/src/fmt";
-import * as writes from "../../../research/pipeline/src/writes";
+
+import { emitJson, bad, head, out, paint, C, table } from "../../../core/text/src/fmt";
+import { verifierInstanceCreate as writes_verifierInstanceCreate, verifierInstanceRetire as writes_verifierInstanceRetire, verifierRunRecord as writes_verifierRunRecord } from "../../../research/pipeline/src/writes";
 import { jcsCanonical } from "./jcs";
 import { strictIsoTimestamp } from "./as-of";
 
@@ -253,14 +254,14 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
   if (sub === "create") {
     const p = parseCreate(args.flags ?? {}) as Exclude<ReturnType<typeof parseCreate>, string>;
     const ids = instanceIdentity(p.pack, p.version, p.binding);
-    return getOrm(env.db.path)
-      .then((ds) => writes.verifierInstanceCreate(ds, {
+    return sqliteOrm(env)
+      .then((ds) => writes_verifierInstanceCreate(ds, {
         ...ids, kind: "pack", pack: p.pack, pack_version: p.version, binding: jcsCanonical(p.binding),
         owner: p.owner, schedule: p.schedule, state: p.state,
       }))
       .then((r): number => {
         const row = present(env.store.db.get(`${SELECT_INSTANCE} WHERE i.id=?`, [r.row.id]) ?? r.row);
-        if (ctx.json) console.log(JSON.stringify(r.dup ? { ...row, duplicate: true, updated: r.updated } : row, null, 2));
+        if (ctx.json) emitJson(ctx, r.dup ? { ...row, duplicate: true, updated: r.updated } : row, 2);
         else if (r.dup) out(ctx, paint(C.yellow, `  ⚠ duplicate: ${row.id} already registered (${row.pack}@${row.pack_version})${r.updated.length ? ` — updated: ${r.updated.join(", ")}` : ""}`, ctx.color));
         else out(ctx, `  ✓ verifier instance registered: ${row.id}  ${row.pack}@${row.pack_version} → ${p.binding.target}  [${row.state}]`);
         return 0;
@@ -278,7 +279,7 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     const scope = args.flags?.scope === undefined ? null : String(args.flags.scope).trim();
     const rows = env.store.db.all(`${SELECT_INSTANCE}${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY i.created, i.id`, params)
       .map(present).filter((r: Record<string, any>) => scope === null || r.scope === scope);
-    if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+    if (ctx.json) { emitJson(ctx, rows, 2); return 0; }
     head(ctx, `Verifier instances (${rows.length})`);
     table(ctx, rows.map((r: Record<string, any>) => ({ ...r, target: r.binding?.target ?? "", pack_ref: `${r.pack}@${r.pack_version}`, last: r.last_verdict ?? "—" })),
       ["id", "scope", "pack", "target", "owner", "state", "last"], ["id", "scope", "pack_ref", "target", "owner", "state", "last"]);
@@ -293,7 +294,7 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     const runs = env.store.db.all(`SELECT id, verdict, judged_at, target_sha, payload_sha256, archive_sha256, executor, engine_version, created
       FROM verifier_runs WHERE instance_id=? ORDER BY judged_at DESC, id DESC LIMIT ${SHOW_RUNS}`, [id]);
     const shown = { ...present(row), runs };
-    if (ctx.json) { console.log(JSON.stringify(shown, null, 2)); return 0; }
+    if (ctx.json) { emitJson(ctx, shown, 2); return 0; }
     for (const [k, v] of Object.entries(present(row))) out(ctx, `  ${k.padEnd(16)} ${typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "—")}`);
     out(ctx, `  ${"runs".padEnd(16)} ${runs.length ? "" : "—"}`);
     for (const r of runs as Array<Record<string, any>>) out(ctx, `    ${r.judged_at}  ${String(r.verdict).padEnd(14)} ${r.id}  ${String(r.target_sha).slice(0, 12)}${r.archive_sha256 ? "" : "  (no archive)"}`);
@@ -311,14 +312,14 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
     if (!gitRepoName(p.binding.target)) { bad(ctx, `${file}: target ${p.binding.target} names no GitHub project, so it cannot be attributed to one — set target.repo_url, or an origin remote on the checkout (#213 P3)`); return 1; }
     const ids = instanceIdentity(p.verifier, "legacy", p.binding);
     const archiveSha = fileSha(p.archive);
-    return getOrm(env.db.path)
-      .then((ds) => writes.verifierRunRecord(ds,
+    return sqliteOrm(env)
+      .then((ds) => writes_verifierRunRecord(ds,
         { ...ids, kind: "legacy-repo", pack: p.verifier, pack_version: "legacy", binding: jcsCanonical(p.binding), owner: flag(args.flags.owner), schedule: "", state: "active" },
         { ...p.run, payload_sha256: fileSha(p.result_file), archive_sha256: archiveSha, executor: `legacy-repo:${p.repo || p.verifier}`, engine_version: "" }))
       .then((r): number => {
         const inst = present(env.store.db.get(`${SELECT_INSTANCE} WHERE i.id=?`, [r.instance.id]) ?? r.instance);
         const payload = { instance: inst, instance_created: r.instance_created, run: r.run, archive_ok: archiveSha !== "", ...(r.run_dup ? { duplicate: true } : {}) };
-        if (ctx.json) console.log(JSON.stringify(payload, null, 2));
+        if (ctx.json) emitJson(ctx, payload, 2);
         else if (r.run_dup) out(ctx, paint(C.yellow, `  ⚠ duplicate: run ${r.run.id} already recorded for ${inst.id}`, ctx.color));
         else out(ctx, `  ✓ ${r.instance_created ? "registered" : "updated"} ${inst.id} (${p.verifier}) ← ${r.run.id} ${r.run.verdict}${archiveSha ? "" : "  [archive not found: archive_ok=false]"}`);
         return 0;
@@ -329,11 +330,11 @@ export function runInstance(env: Env, rest: string[], args: any): number | Promi
   if (sub === "retire") {
     const id = rest[1];
     const reason = flag(args.flags?.reason);
-    return getOrm(env.db.path)
-      .then((ds) => writes.verifierInstanceRetire(ds, id, reason))
+    return sqliteOrm(env)
+      .then((ds) => writes_verifierInstanceRetire(ds, id, reason))
       .then((r): number => {
         const row = present(env.store.db.get(`${SELECT_INSTANCE} WHERE i.id=?`, [id]) ?? r.row);
-        if (ctx.json) console.log(JSON.stringify(r.dup ? { ...row, duplicate: true } : row, null, 2));
+        if (ctx.json) emitJson(ctx, r.dup ? { ...row, duplicate: true } : row, 2);
         else out(ctx, r.dup ? paint(C.yellow, `  ⚠ duplicate: ${id} was already retired`, ctx.color) : `  ✓ verifier instance retired: ${id}  (${reason})`);
         return 0;
       })

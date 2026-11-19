@@ -12,10 +12,13 @@ import { createHash } from "node:crypto";
 
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
-import { closeOrm } from "../../../core/database/src/orm";
+
 import { createDashboardServer } from "../src/webui";
 import { createMaterialDraft, verifyPaths } from "../src/verify-web";
 import { putBlob } from "../src/blob-store";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 const REPO = path.resolve(__dirname, "../../../..");
 /** #171 建议 4：非 draft 的 prepare 必须显式给 as_of（快照所描述的时刻）。 */
@@ -71,7 +74,7 @@ beforeAll(async () => {
   fs.mkdirSync(home, { recursive: true });
   const db = new DB(path.join(dir, "unit.db"));
   const store = new Store(db);
-  const env = { home, db, store, version: "9.8.7-http-fixture" } as any;
+  const env = { orm: ormFixture, home, db, store, version: "9.8.7-http-fixture" } as any;
   testEnv = env;
 
   const draft = createMaterialDraft(env, { title: "作业面材料", text: "账单金额不得为负。\n" });

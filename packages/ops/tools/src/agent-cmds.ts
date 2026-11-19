@@ -5,7 +5,7 @@
  *   where am I, what exists, what should I do next.
  */
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, paint, C } from "../../../core/text/src/fmt";
 import { clip } from "../../../core/text/src/text";
 import { resolveProject, ambiguousProject, projectCount, projectSample, sessionId } from "../../../core/database/src/selection";
 import { UNLOCKED_WITHOUT_EVIDENCE_SQL, attachEvidenceAction, groupByTree } from "../../../techtree/model/src/evidence-gap";
@@ -198,15 +198,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           const self = process.argv[1];
           try {
             const result = execSync(
-              `${JSON.stringify(process.execPath)} ${JSON.stringify(self)} --no-color ${cmdParts.map(c => JSON.stringify(c)).join(" ")}`,
+              `${JSON.stringify(process.execPath)} ${JSON.stringify(self)} --no-color ${ctx.json ? "--json " : ""}${cmdParts.map(c => JSON.stringify(c)).join(" ")}`,
               { env: { ...process.env, YGL_TEST: "1" }, encoding: "utf8", timeout: 10000 }
             );
             // F2 fix: --json mode outputs only the inner result (contract ④)
-            if (ctx.json) { console.log(result.trim()); return 0; }
+            if (ctx.json) {
+              const payload = JSON.parse(result.trim());
+              if (!payload || typeof payload !== "object") throw new Error("routed command did not return a JSON object or array");
+              emitJson(ctx, payload); return 0;
+            }
             out(ctx, result.trim());
             return 0;
           } catch (e: any) {
-            if (ctx.json) { console.log(JSON.stringify({ error: String(e?.message || e).slice(0, 200) })); return 1; }
+            if (ctx.json) { emitJson(ctx, { error: String(e?.message || e).slice(0, 200) }); return 1; }
             bad(ctx, String(e?.stdout || e?.message || e).slice(0, 200));
             return 1;
           }
@@ -215,7 +219,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // Default: brief
       if (!ctx.json) out(ctx, paint(C.dim, "  → agent brief (no specific match)", ctx.color));
       const payload = buildBrief(env);
-      if (ctx.json) { console.log(JSON.stringify(payload, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, payload, 2); return 0; }
       // Reuse brief rendering
       return run(env, "brief", [], args);
     }
@@ -295,7 +299,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       };
 
       if (ctx.json) {
-        console.log(JSON.stringify(metrics, null, 2));
+        emitJson(ctx, metrics, 2);
         return 0;
       }
       head(ctx, "ygl-trees metrics");
@@ -332,7 +336,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
 
       if (ctx.json) {
-        console.log(JSON.stringify(payload, null, 2));
+        emitJson(ctx, payload, 2);
         return 0;
       }
 
@@ -366,7 +370,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const hits = store.skillMatch(q, Number(args.flags.limit || 3));
       const payload = { query: q, matches: hits.map((h: any) => ({ name: h.name, score: h.score, description: h.description })) };
       if (ctx.json) {
-        console.log(JSON.stringify(payload, null, 2));
+        emitJson(ctx, payload, 2);
         return 0;
       }
       if (!hits.length) {
@@ -406,7 +410,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         const summary = { calls, inputTokens, outputTokens };
         if (ctx.json) {
-          console.log(JSON.stringify(summary, null, 2));
+          emitJson(ctx, summary, 2);
           return 0;
         }
         head(ctx, "eval token spend");
@@ -427,7 +431,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       params.push(Number(args.flags.limit || 30));
       const rows = env.db.all(sql, params);
       if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
+        emitJson(ctx, rows, 2);
         return 0;
       }
       table(ctx, rows, ["ts", "level", "kind", "entity", "id", "payload"], [

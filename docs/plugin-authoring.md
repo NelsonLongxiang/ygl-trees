@@ -58,6 +58,33 @@ ygl-trees plugin list                         # state（启用/停用）+ cfg（
 | `commands` | 否 | `{ <组名>: { run(env, action, rest, args) → rc } }`——贡献 CLI 命令组；dispatch 顺序：插件命令 → 内建 DOMAIN_ROUTES → unknown |
 | `package.json` 的 `yglTrees` | 否 | 兼容声明（如 `"^0.36"`）；主版本不符启动时 stderr 警告（不拒绝） |
 
+### 受管 ORM／资源协议
+
+需要应用 ORM、资源排空或调用局部机器结果提交的插件须导出 `workspaceProtocol = "ygl-workspace/1"`。它在 apply 中取得 `ctx.workspace`，在命令中取得 `env.orm`、`env.invocation` 和 `env.ctx` 的局部结果端口：
+
+```js
+exports.workspaceProtocol = "ygl-workspace/1";
+exports.apply = async (ctx) => {
+  ctx.workspace.own({ name: "listener", quiesce: () => stopAccepting(), close: () => awaitStopped() });
+};
+exports.commands = {
+  example: { run: async (env) => {
+    const ds = await env.orm.getOrm(env.db.path);
+    const rows = await ds.query("SELECT name FROM projects");
+    env.ctx.emitJson(rows, 2);
+    return 0;
+  } },
+};
+```
+
+`run(work)` 跟踪已接纳任务；`own({name, quiesce, close})` 立即登记资源。停止时先 quiesce 再排空并 await close。插件只借用 getOrm／getPgOrm，没有应用 ORM.close 权限；单个插件失败或卸载不能关闭其他实例。直接持有 DataSource 的工作仍须在插件作用域内跟踪并等待，不声称自动追踪外部任意事务。
+
+受管的一次性命令只提交一个有界 JSON payload，不直接 console.log 成功 JSON。成功结果待清理确认后发布；清理失败时原 rc0 变 rc1 和单一 `{"error":"workspace cleanup failed"}`，stderr 说明业务事务可能已经提交。已有业务错误及 rc1／2 优先保留。HTTP／SSE／MCP 流不进入此缓冲，也不修改全局 stdout。
+
+未声明协议的旧插件保留原输出责任，但不会自动得到受管 ORM capability；无实例 getOrm／getPgOrm／closeOrm 在开库前明确拒绝。任意插件已经写出的 raw stdout 无法撤回。库嵌入方显式装配 owner 并 await close；`DatabaseService.stop()` 同样是异步收尾契约。
+
+实现边界：原生 Cordis 没有 Effect 返回值转换钩子，受管作用域对当前 vendored fiber 的 `_runner.execute` 作局部桥接；不改 callback／registry 身份或全局 prototype。每次子 setup 有独立工作租约，清理失败立即拒绝该作用域的新 generation 和业务；最终卸载仅还原自己仍持有的桥，restart 不提前消耗最终还原。此处依赖当前 vendored 生命周期合同，不承诺未来版本的私有 API 稳定；升级须复核 restart、未等待子 setup、外部卸载重叠和最终还原。未等待子 setup 的主错误仍由该 child.await 接收，清理副错误由 owner 收据阻止依赖释放，不自动把每个未等待子主错改成全应用启动失败。
+
 ### run 的参数与旗标（当前实现，unstable）
 
 以下为 **v0.117.x 当前实现行为，非冻结契约；解析细节可能变更**。四参数签名 `run(env, action, rest, args)` 是已声明接口；布尔键集合、重复键处理等细节没有因此成为冻结面。退出码与 `--json` 输出仍遵守仓库的冻结 Agent API 契约。实现定位：[Args / parse](../packages/core/database/src/types.ts) 与 [插件分发](../apps/cli/src/bin.ts)。

@@ -33,7 +33,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Ctx } from "../../../core/database/src/types";
-import { bad, C, head, out, paint, table } from "../../../core/text/src/fmt";
+import { emitJson, bad, C, head, out, paint, table } from "../../../core/text/src/fmt";
 import { dropFromListIndex } from "./verify-list-index";
 
 export const PRUNE_FLAGS = ["keep-last", "keep-flips", "keep-runs-in", "min-age-minutes", "repo", "apply"];
@@ -640,7 +640,7 @@ export function runPruneCommand(ctx: Ctx, home: string, rest: string[], flags: R
   });
   if (ctx.json) {
     const body = opts.repos.length ? { apply: opts.apply, repos: rows.map(face), bytes_total: rows.reduce((n, r) => n + r.bytes, 0) } : { apply: opts.apply, ...face(rows[0]) };
-    console.log(JSON.stringify(body, null, 2));
+    emitJson(ctx, body, 2);
     return failed ? 1 : 0;
   }
   head(ctx, opts.apply ? "Verify prune — applied" : "Verify prune — dry run (nothing deleted; pass --apply to delete)");

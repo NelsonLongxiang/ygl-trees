@@ -10,11 +10,14 @@ module.exports = async function runKnowledgeSearch(root, quick) {
   const dbFile = path.join(ws, "bench.db");
   const { DB } = require(path.join(root, "dist/packages/core/database/src/db"));
   const { Store } = require(path.join(root, "dist/packages/research/pipeline/src/reads"));
-  const { getOrm } = require(path.join(root, "dist/packages/core/database/src/orm"));
+  const { createWorkspaceOrm } = require(path.join(root, "dist/apps/cli/src/workspace-orm"));
   const writes = require(path.join(root, "dist/packages/research/pipeline/src/writes"));
   const db = new DB(dbFile);
   const store = new Store(db);
-  const ds = await getOrm(dbFile);
+  const orm = createWorkspaceOrm({ dialect: "sqlite", file: dbFile });
+  const close = async () => { await orm.close(); db.closeStrict(); };
+  try {
+  const ds = await orm.getOrm(dbFile);
   const proj = await writes.projectCreate(ds, "bench", "检索基准");
 
   await suite("kb-import-batch", async () => {
@@ -42,5 +45,10 @@ module.exports = async function runKnowledgeSearch(root, quick) {
     return { unit: "per-op", ...st, note: `corpus=${ROWS}` };
   });
 
-  return { db, ws };
+  return { db, ws, close };
+  } catch (error) {
+    try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup], "benchmark initialization and cleanup failed"); }
+    require("node:fs").rmSync(ws, { recursive: true, force: true });
+    throw error;
+  }
 };

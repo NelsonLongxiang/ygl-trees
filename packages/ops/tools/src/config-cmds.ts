@@ -1,7 +1,7 @@
 /** config group — user-tunable settings (schema v6, src/config.ts registry).
  *  meta = runtime state the tool writes; config = what the user tunes. */
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, paint, C, ack } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, paint, C, ack } from "../../../core/text/src/fmt";
 import { configAll, configGet, configReset, configSet, displayValue } from "./config";
 
 export function run(env: Env, action: string, rest: string[], args: any): number {
@@ -12,7 +12,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "": {
       const rows = configAll(db);
       if (ctx.json) {
-        console.log(JSON.stringify(rows, null, 2));
+        emitJson(ctx, rows, 2);
         return 0;
       }
       head(ctx, `Config (${rows.length} keys)`);

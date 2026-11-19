@@ -10,7 +10,7 @@
  */
 import { DB, EDGE_RELS, EDGE_MODES, COND_KINDS } from "../../../core/database/src/db";
 import { resolveTree } from "../../../core/database/src/selection";
-import { nowIso, shortId } from "../../../core/text/src/text";
+import { nowIso, shortId, ngram } from "../../../core/text/src/text";
 import { parseEvalSpec } from "../../eval/src/eval";
 
 export type Row = Record<string, any>;
@@ -677,7 +677,7 @@ export class TreeStore {
    *  rows (same ranking semantics as kb/skill/source search). */
   nodeSearch(treeId: string, q: string, limit = 20): Row[] {
     const tokens: string[] = Array.from(
-      new Set(String(require("../../../core/text/src/text").ngram(q) || "").split(/\s+/).filter(Boolean))
+      new Set(String(ngram(q) || "").split(/\s+/).filter(Boolean))
     );
     if (!tokens.length) return [];
     const agg = new Map<string, { row: Row; hits: number; score: number; boost: number }>();

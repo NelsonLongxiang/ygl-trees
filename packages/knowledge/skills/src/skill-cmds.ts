@@ -1,13 +1,14 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /** skill group — the L1/L2/L3 registry agents query before acting.
  *  Writes run on the TypeORM write service (src/writes.ts). */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, show, paint, C, ack } from "../../../core/text/src/fmt";
 import { parseFrontmatter } from "../../../core/text/src/text";
 import { rejectBare } from "../../../core/text/src/flagcheck";
-import { getOrm } from "../../../core/database/src/orm";
-import * as writes from "../../../research/pipeline/src/writes";
+
+import { skillDel as writes_skillDel, skillEnabled as writes_skillEnabled, skillRefAdd as writes_skillRefAdd, skillUpsert as writes_skillUpsert, validateScope as writes_validateScope } from "../../../research/pipeline/src/writes";
 
 export function run(env: Env, action: string, rest: string[], args: any): number | Promise<number> {
   const { ctx, store } = env;
@@ -34,10 +35,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         version: meta.version || "0.1.0",
         origin: name,
       };
-      return getOrm(env.db.path)
-        .then((ds) => writes.skillUpsert(ds, spec))
+      return sqliteOrm(env)
+        .then((ds) => writes_skillUpsert(ds, spec))
         .then((row): number => {
-          if (ctx.json) console.log(JSON.stringify(row, null, 2));
+          if (ctx.json) emitJson(ctx, row, 2);
           else {
             ok(ctx, `imported skill: ${row.name} (${row.version})`);
             out(ctx, paint(C.dim, `  L1: ${String(row.description).slice(0, 120)}`, ctx.color));
@@ -70,8 +71,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
 (concrete command examples)
 `);
       const tags = String(args.flags.tags || "");
-      return getOrm(env.db.path)
-        .then((ds) => writes.skillUpsert(ds, { name, description: desc, body, tags, version: "0.1.0" }))
+      return sqliteOrm(env)
+        .then((ds) => writes_skillUpsert(ds, { name, description: desc, body, tags, version: "0.1.0" }))
         .then((r: any) => {
           ok(ctx, `skill created: ${name} v0.1.0`);
           out(ctx, paint(C.dim, `  edit: ygl-trees skill show ${name}`, ctx.color));
@@ -102,8 +103,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           : args.flags.f
           ? fs.readFileSync(String(args.flags.f), "utf8")
           : "";
-        return getOrm(env.db.path)
-          .then((ds) => writes.skillRefAdd(ds, skillName, p, content))
+        return sqliteOrm(env)
+          .then((ds) => writes_skillRefAdd(ds, skillName, p, content))
           .then((): number => {
             ack(ctx, { skill: skillName, path: p }, `ref saved: ${skillName}/${p}`);
             return 0;
@@ -125,7 +126,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         }
         const r = store.db.get("SELECT content FROM skill_refs WHERE skill_id=? AND path=?", [(skill as any).id, rest[2]]);
         if (ctx.json) {
-          console.log(JSON.stringify({ skill: rest[1], path: rest[2], content: r?.content ?? null }, null, 2));
+          emitJson(ctx, { skill: rest[1], path: rest[2], content: r?.content ?? null }, 2);
           return 0;
         }
         out(ctx, r ? r.content : paint(C.red, "  ref not found", ctx.color));
@@ -144,7 +145,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const refs = env.db.all("SELECT * FROM skill_refs WHERE skill_id=? ORDER BY path", [(sk as any).id]) as any[];
       if (ctx.json) {
-        console.log(JSON.stringify(refs, null, 2));
+        emitJson(ctx, refs, 2);
         return 0;
       }
       head(ctx, `Skill: ${skillName}`);
@@ -175,8 +176,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         tags: String(args.flags.tags || ""),
         version: String(args.flags.version || "0.1.0"),
       };
-      return getOrm(env.db.path)
-        .then((ds) => writes.skillUpsert(ds, spec))
+      return sqliteOrm(env)
+        .then((ds) => writes_skillUpsert(ds, spec))
         .then((row): number => {
           ack(ctx, row, `skill saved: ${row.name}`);
           return 0;
@@ -190,7 +191,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (rejectBare(ctx, args.flags, ["scope"])) return 2;
       let scope: string | undefined;
       if (args.flags.scope !== undefined) {
-        try { scope = writes.validateScope(args.flags.scope); } catch (e: any) { bad(ctx, e.message); return 2; }
+        try { scope = writes_validateScope(args.flags.scope); } catch (e: any) { bad(ctx, e.message); return 2; }
       }
       table(ctx, store.skillList(scope), ["name", "ver", "on", "hits", "tags", "updated"], [
         "name",
@@ -283,7 +284,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
 
       if (ctx.json) {
-        console.log(JSON.stringify({ target: targetDir, linked, skipped }, null, 2));
+        emitJson(ctx, { target: targetDir, linked, skipped }, 2);
         return 0;
       }
       head(ctx, `skill link → ${targetDir}`);
@@ -309,7 +310,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       const refs = store.skillRefs(s.id);
       if (ctx.json) {
-        console.log(JSON.stringify({ ...s, refs }, null, 2));
+        emitJson(ctx, { ...s, refs }, 2);
         return 0;
       }
       head(ctx, `SKILL ${s.name}  v${s.version}`);
@@ -330,7 +331,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (!need(q, "query")) return 2;
       const hits = store.skillMatch(q, Number(args.flags.limit || 5));
       if (ctx.json) {
-        console.log(JSON.stringify(hits, null, 2));
+        emitJson(ctx, hits, 2);
         return 0;
       }
       if (!hits.length) {
@@ -349,8 +350,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: skill rm <name>");
         return 2;
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.skillDel(ds, name))
+      return sqliteOrm(env)
+        .then((ds) => writes_skillDel(ds, name))
         .then((): number => {
           ack(ctx, { removed: name }, `removed skill: ${name}`);
           return 0;
@@ -366,8 +367,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const on = action === "enable";
-      return getOrm(env.db.path)
-        .then((ds) => writes.skillEnabled(ds, name, on))
+      return sqliteOrm(env)
+        .then((ds) => writes_skillEnabled(ds, name, on))
         .then((hit): number => {
           if (!hit) {
             bad(ctx, `skill not found: ${name}`);

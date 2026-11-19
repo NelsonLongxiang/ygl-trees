@@ -1,12 +1,13 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /** job group — batch + schedule. `job tick` is what cron/systemctl drives.
  *  Writes (add) run on the TypeORM write service (src/writes.ts). */
 import { execSync } from "node:child_process";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, table, paint, C, writeResult } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, table, paint, C, writeResult } from "../../../core/text/src/fmt";
 import { nowIso } from "../../../core/text/src/text";
-import { getOrm } from "../../../core/database/src/orm";
+
 import { resolveProject, eventActor } from "../../../core/database/src/selection";
-import * as writes from "../../../research/pipeline/src/writes";
+import { jobAdd as writes_jobAdd, jobPruneRuns as writes_jobPruneRuns, jobRetire as writes_jobRetire } from "../../../research/pipeline/src/writes";
 import { configGetNumber } from "./config";
 import { sessionId } from "../../../core/database/src/selection";
 import { jobFamilyStem, jobHealth, JobRunFacts, JobRunRow } from "../../../research/pipeline/src/lifecycle";
@@ -158,17 +159,15 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if ((args.flags.project || sel.name) && !sel.id) { bad(ctx, "project not found: " + (args.flags.project || sel.name)); return 1; }
       // #258 review①: the fallback is the event actor — same as events record (selection.ts eventActor, "cli" default).
       const owner = args.flags.owner ? String(args.flags.owner) : eventActor();
-      return getOrm(env.db.path)
-        .then((ds) => writes.jobAdd(ds, { title, command, every, at, force, replaces, projectId: sel.id || "", owner }))
+      return sqliteOrm(env)
+        .then((ds) => writes_jobAdd(ds, { title, command, every, at, force, replaces, projectId: sel.id || "", owner }))
         .then((r): number => {
           if (ctx.json) {
-            console.log(
-              JSON.stringify({
+            emitJson(ctx, {
                 ...r.row,
                 ...(r.dup ? { duplicate: true } : {}),
                 ...(scheduleDiagnostics.length ? { diagnostics: scheduleDiagnostics } : {}),
-              }, null, 2),
-            );
+              }, 2);
             return 0;
           }
           writeResult(ctx, r as any, (row) => `job registered: ${row.id}  ${row.title}`);
@@ -192,7 +191,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         listProject = sel.id;
       }
       const rows = jobViews(env, listProject);
-      if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, rows, 2); return 0; }
       table(ctx, rows, ["id", "title", "every", "at", "on", "runs", "last_run", "health"], [
         "id",
         "title",
@@ -211,7 +210,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       if (!j) { bad(ctx, `job not found: ${rest[0]}`); return 1; }
       const recent = store.db.all("SELECT id, started, finished, rc, substr(output,1,200) AS output FROM runs WHERE job_id=? ORDER BY started DESC, id DESC LIMIT 10", [j.id]);
       const shown: Record<string, any> = { ...j, last_actor: lastActor(env, j.id) };
-      if (ctx.json) { console.log(JSON.stringify({ ...shown, recent_runs: recent }, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, { ...shown, recent_runs: recent }, 2); return 0; }
       for (const k of ["id", "title", "command", "every", "at", "enabled", "status", "health", "consecutive_failures", "last_ok", "last_error", "next_due", "runs", "last_run", "last_actor", "project_id", "owner"])
         out(ctx, `  ${k.padEnd(21)} ${shown[k] === "" || shown[k] === undefined ? "—" : String(shown[k])}`);
       out(ctx, `  recent runs`);
@@ -223,10 +222,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `job retire needs <id|title> and --reason "<why>" — ${JOB_USAGE}`);
         return 2;
       }
-      return getOrm(env.db.path)
-        .then((ds) => writes.jobRetire(ds, rest[0], String(args.flags.reason)))
+      return sqliteOrm(env)
+        .then((ds) => writes_jobRetire(ds, rest[0], String(args.flags.reason)))
         .then((r): number => {
-          if (ctx.json) { console.log(JSON.stringify({ ...r.row, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          if (ctx.json) { emitJson(ctx, { ...r.row, ...(r.dup ? { duplicate: true } : {}) }, 2); return 0; }
           writeResult(ctx, r as any, (row) => `job retired: ${row.id}  ${row.title}  (disabled; history kept)`);
           return 0;
         })
@@ -237,10 +236,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const keep = keepRaw === undefined ? configGetNumber(env.db, "job.keep_runs") : Number(keepRaw);
       if (!Number.isInteger(keep) || keep < 1) { bad(ctx, `--keep must be a whole number ≥ 1 — ${JOB_USAGE}`); return 2; }
       const apply = args.flags.apply === true || args.flags.apply === "true";
-      return getOrm(env.db.path)
-        .then((ds) => writes.jobPruneRuns(ds, keep, apply))
+      return sqliteOrm(env)
+        .then((ds) => writes_jobPruneRuns(ds, keep, apply))
         .then((r): number => {
-          if (ctx.json) { console.log(JSON.stringify({ keep, apply, ...r }, null, 2)); return 0; }
+          if (ctx.json) { emitJson(ctx, { keep, apply, ...r }, 2); return 0; }
           const total = r.jobs.reduce((n, j) => n + j.prune, 0);
           table(ctx, r.jobs, ["id", "title", "total", "prune"], ["id", "title", "total", "prune"]);
           if (apply) ok(ctx, `deleted ${r.deleted} run row(s) beyond the newest ${keep} per job`);

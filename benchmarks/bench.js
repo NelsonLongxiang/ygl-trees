@@ -21,6 +21,7 @@ const BIN = require("node:fs").existsSync(BUNDLE) ? BUNDLE : path.join(ROOT, "di
 
   const handles = [];
 
+  try {
   // startup (subprocess; no db handle to clean)
   await require("./startup/startup.bench")(ROOT, BIN, QUICK);
 
@@ -36,17 +37,16 @@ const BIN = require("node:fs").existsSync(BUNDLE) ? BUNDLE : path.join(ROOT, "di
   const ti = await require("./techtree-index/techtree-index.bench")(ROOT, QUICK);
   handles.push(ti);
 
-  // cleanup (EPERM-safe: Windows may hold handles past closeOrm)
-  for (const h of handles) {
-    try { h.db?.close(); } catch { /* */ }
-  }
-  const { closeOrm } = require(path.join(ROOT, "dist/packages/core/database/src/orm"));
-  await closeOrm();
-  for (const h of handles) {
-    if (h.ws) { try { require("node:fs").rmSync(h.ws, { recursive: true, force: true }); } catch { /* EPERM: handle may linger on Windows */ } }
+  } finally {
+    const results = await Promise.allSettled(handles.map(async handle => {
+      await handle.close();
+      require("node:fs").rmSync(handle.ws, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }));
+    const errors = results.filter(result => result.status === "rejected").map(result => result.reason);
+    if (errors.length) throw new AggregateError(errors, "benchmark cleanup failed");
   }
 
   const out = writeArtifact(ROOT);
   console.log(`  ${failures.length ? `⚠ ${failures.length} suite(s) failed` : "all suites ok"} · artifact: ${out}`);
   process.exitCode = failures.length ? 1 : 0;
-})();
+})().catch(error => { console.error(error); process.exitCode = 1; });

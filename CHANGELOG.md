@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **显式 ORM 装配与实例级生命周期**（Refs #285）：core／research 各持轻量实体清单，应用首次 ORM 需求时加载并校验完整实体／关系，再打开 SQLite 或 PG；不再保留 core→研究域装配边或全局连接缓存。库调用者须显式传入 ORM 实例并等待关闭；旧无实例调用在开库前明确拒绝。受管插件通过 `workspaceProtocol="ygl-workspace/1"` 取得借用的 ORM／资源／输出能力，插件卸载不关闭其他实例。调用关闭先停接纳并排空已接纳工作，再确认连接与本实例句柄／锁释放；清理未知不继续接单或提前放锁。一次性受管命令成功 JSON 待清理确认后提交，清理失败使原 rc0 变 rc1 与单 error 对象；业务原错误与非零码保持，事务可能已提交，不可盲重试。正常载荷、字段、schema v15、幂等、有限重试及 version/help 惰性加载边界不变；不拦截全局 stdout，不缓冲 HTTP／SSE／MCP 流。
+
 - **消除 workspace 配置依赖环**（Refs #234）：配置登记与只读解析下沉到已有 core/database，research、produce、knowledge、techtree 从底层读取；ops 保留写入、审计与脱敏，旧读取导出过渡兼容，不新增运行时依赖。移除 research-pipeline → ops-tools 的 workspace 依赖并同步锁文件；契约门新增 workspace 清单声明依赖的有向环检查，点名重复包名、未知引用、自环与环路径，不遍历 node_modules 联接。该门不证明源码 import 图无环。配置值、默认值和退出码不变；发布后复核尚未执行，issue 不据此关闭。
 
 - **报告导入的文件定位字段拒绝路径**：`verify report import` 在读取构建登记、恢复规范或写报告前，校验非缺省的 `run_id`／`spec_id` 为 1–128 个 ASCII 字母、数字、下划线或短横线；二进制身份须为有效 SHA-256 形式。拒绝报告仍 rc1 且 JSON 点名，合法报告、payload 校验、封包规范恢复和历史缺 run-id 回退保持；本修复不改变同 run-id 替换语义或引入 S2 租约。
@@ -9,7 +11,7 @@
 测试与门禁（不改变产品行为）：
 
 - **生命周期测试不依赖日历日期**（Refs #283）：真实 CLI 读取的相对年龄种子使用实时基准，新增当前日期和向前 60 天的子进程隔离时钟回归；覆盖年龄、阈值覆盖、legacy created 回退与 doctor 告警。恢复旧固定日期种子时，两组新用例均判红；不改产品时钟或超时。
-- **源码依赖图与声明图分别守门**（Refs #234、#285）：包结构入口的 `--source-graph` 使用 TypeScript 解析字面量相对依赖，包含 import 类型表达式及 import-equals，拒绝未解析引用、源码链接和额外循环。源码图仅保留 `orm.ts` 静态导入研究实体 `RESEARCH_ENTITIES` 的精确装配例外，按源/目标文件与符号匹配并显式报告；其余依赖仍须无环，实体注册解耦另跟 #285。两图独立接入契约门。既有项目内临时根、验证器夹具隔离与无 clone 合成配置探针保持原判据，正式 G1/G8 的验收语义不变。
+- **源码依赖图与声明图分别守门**（Refs #234、#285）：包结构入口的 `--source-graph` 使用 TypeScript 解析字面量相对依赖，包含 import 类型表达式及 import-equals，拒绝未解析引用、源码链接、core→域引用和有向环，不保留 ORM 装配豁免。两图独立接入契约门；既有项目内临时根、验证器夹具隔离与无 clone 合成配置探针保持原判据，正式 G1/G8 的验收语义不变。
 
 - **R3 行尾回归无 clone 夹具**：用项目 tmp 内独立 `GIT_INDEX_FILE` 读取 HEAD 并执行 `checkout-index`，保留 `core.autocrlf=true` 与真实 `.gitattributes` 转换、tooling 零漂移及 R3 PASS 判据；导出不建 `.git`，子进程环境收尾且真实 index 字节不变。
 

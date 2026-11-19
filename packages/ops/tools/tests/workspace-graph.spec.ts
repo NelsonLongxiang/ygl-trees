@@ -28,10 +28,10 @@ describe("#234 declared workspace dependency graph", () => {
   it("the declared workspace dependencies are acyclic after the config split", () => {
     const result = run(); expect(result.rc).toBe(0); expect(result.text).toMatch(/packages, \d+ edges, no cycles/);
   });
-  it("the real source graph admits only the named ORM entity-assembly exception", () => {
+  it("the real source graph has no core-to-domain reference or architecture exception", () => {
     const result = run(ROOT, "--source-graph"); expect(result.rc).toBe(0);
-    expect(result.text).toContain("no cycles after 1 exact ORM assembly exception(s)");
-    expect(result.text).toContain("packages/core/database/src/orm.ts -> packages/research/pipeline/src/entities.ts [RESEARCH_ENTITIES]");
+    expect(result.text).toContain("no architecture exceptions");
+    expect(result.text).not.toContain("source-graph exception:");
   });
   it("accepts an acyclic app/domain/vendor graph and ignores ordinary npm dependencies", () => fixture({
     "apps/cli": { name: "@ygl/cli", dependencies: { "@ygl/domain": "workspace:~", external: "^1.0.0" } },
@@ -108,8 +108,9 @@ describe("#234 literal relative package-source graph", () => {
     source(root, "packages/core/a/src/index.ts", text);
     source(root, "packages/domain/b/src/index.ts", 'export { a } from "../../../core/a/src/index"; export const value = 1; export interface B {}');
     const result = check(root); expect(result.rc).toBe(1);
-    expect(result.text).toContain("source cycle: a -> b -> a");
-    expect(result.text).toContain("packages/core/a/src/index.ts:1 -> packages/domain/b/src/index.ts");
+    expect(result.text).toMatch(/source cycle: a -> b -> a|core source must not depend on a domain:/);
+    expect(result.text).toContain("packages/core/a/src/index.ts");
+    expect(result.text).toContain("packages/domain/b/src/index.ts");
     // The manifest graph is deliberately empty: it must not hide this distinct source cycle.
     expect(run(root).rc).toBe(0);
   }));
@@ -140,25 +141,25 @@ describe("#234 literal relative package-source graph", () => {
 });
 
 
-describe("#234 source graph complete literal forms and exact ORM assembly exception", () => {
+describe("#234 source graph complete literal forms and retired ORM exception", () => {
   const write = (root: string, file: string, text: string) => {
     const full = join(root, file); mkdirSync(resolve(full, ".."), { recursive: true }); writeFileSync(full, text);
   };
   const check = (root: string) => run(root, "--source-graph");
   it.each([
     ["import-type", "ts", 'export type A = import("../../../domain/b/src/index").B;', 'export interface B { value: string }', false],
-    ["import-type cycle", "ts", 'export type A = import("../../../domain/b/src/index").B;', 'export interface B { a: import("../../../core/a/src/index").A }', true],
+    ["import-type cycle", "ts", 'export type A = import("../../../domain/b/src/index").B;', 'export interface B { a: import("../../../domain/a/src/index").A }', true],
     ["import-equals", "cts", 'import b = require("../../../domain/b/src/index"); export const a = b.b;', 'export const b = 1;', false],
-    ["import-equals cycle", "cts", 'import b = require("../../../domain/b/src/index"); export const a = 1; export const x = b.b;', 'import a = require("../../../core/a/src/index"); export const b = a.a;', true],
+    ["import-equals cycle", "cts", 'import b = require("../../../domain/b/src/index"); export const a = 1; export const x = b.b;', 'import a = require("../../../domain/a/src/index"); export const b = a.a;', true],
   ])("counts dependencies from %s", (_name, ext, a, b, cycle) => fixture({
-    "packages/core/a": { name: "a" }, "packages/domain/b": { name: "b" },
+    "packages/domain/a": { name: "a" }, "packages/domain/b": { name: "b" },
   }, root => {
-    write(root, "packages/core/a/src/index." + ext, String(a));
+    write(root, "packages/domain/a/src/index." + ext, String(a));
     write(root, "packages/domain/b/src/index." + ext, String(b));
     const result = check(root); expect(result.rc).toBe(cycle ? 1 : 0);
     if (cycle) {
-      expect(result.text).toContain("source cycle: a -> b -> a");
-      expect(result.text).toContain("packages/core/a/src/index." + ext + ":1 -> packages/domain/b/src/index." + ext);
+      expect(result.text).toMatch(/source cycle: a -> b -> a|core source must not depend on a domain:/);
+      expect(result.text).toContain("packages/domain/a/src/index." + ext + ":1 -> packages/domain/b/src/index." + ext);
     } else expect(result.text).toContain("1 references");
     expect(run(root).rc).toBe(0); // Empty declarations do not erase literal source dependencies.
   }));
@@ -172,11 +173,10 @@ describe("#234 source graph complete literal forms and exact ORM assembly except
     write(root, "packages/research/pipeline/src/" + target + ".ts", "export const RESEARCH_ENTITIES = []; export interface EXTRA {}");
     write(root, "packages/research/pipeline/src/cmds.ts", 'import { value } from "../../../core/database/src/' + source + '"; export const v = value;');
   };
-  it("admits and names only the ruled ORM file/target/RESEARCH_ENTITIES edge", () => fixture(ORM_PACKAGES, root => {
-    orm(root); const result = check(root); expect(result.rc).toBe(0);
-    expect(result.text).toContain("no cycles after 1 exact ORM assembly exception(s)");
-    expect(result.text).toContain("packages/core/database/src/orm.ts -> packages/research/pipeline/src/entities.ts [RESEARCH_ENTITIES]");
-    expect(result.text).toContain("#285"); expect(run(root).rc).toBe(0);
+  it("rejects the former ORM assembly edge even when its files and symbol match the retired exception", () => fixture(ORM_PACKAGES, root => {
+    orm(root); const result = check(root); expect(result.rc).toBe(1);
+    expect(result.text).toContain("core source must not depend on a domain: packages/core/database/src/orm.ts -> packages/research/pipeline/src/entities.ts");
+    expect(run(root).rc).toBe(0);
   }));
   it.each(["second-edge", "extra-symbol", "changed-symbol", "dynamic-import", "import-type", "changed-source", "changed-target"])("refuses ORM exception mutation %s", mutation => fixture(ORM_PACKAGES, root => {
     if (mutation === "changed-source") orm(root, undefined, "other");
@@ -190,7 +190,7 @@ describe("#234 source graph complete literal forms and exact ORM assembly except
       write(root, "packages/core/database/src/second.ts", 'import { RESEARCH_ENTITIES } from "../../../research/pipeline/src/entities"; export const more = RESEARCH_ENTITIES;');
     }
     const result = check(root); expect(result.rc).toBe(1);
-    expect(result.text).toMatch(/source cycle:|ORM assembly exception changed:/);
+    expect(result.text).toMatch(/source cycle:|core source must not depend on a domain:/);
     expect(run(root).rc).toBe(0);
   }));
 });

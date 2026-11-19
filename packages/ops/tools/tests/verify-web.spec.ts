@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
-import { closeOrm } from "../../../core/database/src/orm";
+
 import { createDashboardServer } from "../src/webui";
 import {
   createMaterialDraft,
@@ -17,6 +17,9 @@ import {
   specDetail,
   verifyPaths,
 } from "../src/verify-web";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 let dir: string;
 let home: string;
@@ -86,7 +89,7 @@ beforeAll(async () => {
     archives: [{ archive_id: "arc_1", filename: "a.yglverify.zip" }],
   });
 
-  server = createDashboardServer({ ctx: { json: true, color: false, quiet: true }, db, store, home } as any, { allowUpload: true });
+  server = createDashboardServer({ orm: ormFixture, ctx: { json: true, color: false, quiet: true }, db, store, home } as any, { allowUpload: true });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   await (server as any).verifyListReady;
   const addr: any = server.address();

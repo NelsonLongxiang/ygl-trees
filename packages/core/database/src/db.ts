@@ -8,6 +8,7 @@
 import NativeDatabase from "better-sqlite3";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import { sha1, nowIso } from "../../text/src/text";
 
 export const SCHEMA_VERSION = 15;
@@ -58,10 +59,6 @@ class SqliteDatabase {
   }
 }
 
-/** Shared ORM-opened signal: orm.ts flips this when a DataSource settles.
- * plugin.ts stop() reads it WITHOUT importing orm (which pulls typeorm) so
- * shutdown stays cheap for runs that never touched the ORM. 0.87. */
-export const ormState = { opened: false };
 
 export const SCHEMA_SQL = `
 -- ---------------------------------------------------------------- meta
@@ -515,6 +512,13 @@ export class DB {
   /** True when THIS instance acquired the .ygllock (0.79.1) — lock-less
    *  instances (serve, db unlock) never release a foreign lock. */
   ownsLock = false;
+  private readonly lockIdentity = randomUUID();
+  private readonly managed: boolean;
+  private lockCleanup?: () => void;
+  private strictAttempted = false;
+  private strictFailure: unknown;
+  private strictFailed = false;
+  private handleClosed = false;
   /** Set when opening an EXISTING workspace changed journal_mode (#53): the
    *  first native-driver open converts DELETE→WAL, which ≤0.114.11 cannot
    *  reopen. CLI surfaces one stderr line; YGL_LEGACY_JOURNAL=1 opts out. */
@@ -522,7 +526,8 @@ export class DB {
   /** Requested mode could NOT be applied (another connection keeps WAL open). */
   journalBlocked: { want: string; actual: string } | null = null;
 
-  constructor(file: string, opts?: { lock?: boolean }) {
+  constructor(file: string, opts?: { lock?: boolean; managed?: boolean }) {
+    this.managed = opts?.managed === true;
     const existed = fs.existsSync(file) && (() => { try { return fs.statSync(file).size > 0; } catch { return false; } })();
     // #18: DB-free surfaces (verify example / lint-candidates / probe) must not
     // silently CREATE a workspace db. YGL_DB_NO_CREATE=1 → missing file opens
@@ -556,6 +561,8 @@ export class DB {
     if (useLock && fs.existsSync(lockDir)) {
       let holder = "unknown";
       try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
+      // A token-bearing same-process owner may still be using the DB. Synchronous waiting cannot let it finish.
+      if (holder === String(process.pid) && fs.existsSync(path.join(lockDir, "owner"))) throw new Error("database is locked by an active instance in this process");
       // PID liveness (P1 cold-user report): the 15-minute mtime window was a
       // blunt proxy — on Windows the exit-time rmSync can silently fail (EBUSY
       // from an un-released handle), leaving an orphaned lock whose mtime is
@@ -646,6 +653,7 @@ export class DB {
     if (useLock) try {
       fs.mkdirSync(lockDir, { recursive: true });
       fs.writeFileSync(path.join(lockDir, "pid"), String(process.pid));
+      fs.writeFileSync(path.join(lockDir, "owner"), this.lockIdentity);
       acquired = true;
       // 0.79.1: self-reported holder identity — the collision error and
       // `db unlock` read this back instead of guessing who holds the lock.
@@ -660,10 +668,12 @@ export class DB {
       //   2. PID liveness check (above) makes any residual lock self-healing —
       //      the NEXT process sees a dead PID and clears it immediately.
       const cleanup = () => {
-        for (let i = 0; i < 3; i++) { // retry: Windows may need a tick
-          try { fs.rmSync(lockDir, { recursive: true, force: true }); return; } catch { /* */ }
+        if (this.managed || this.strictAttempted || !this.lockBelongsToThisInstance()) return;
+        for (let i = 0; i < 3; i++) {
+          try { fs.rmSync(lockDir, { recursive: true, force: true }); return; } catch { /* legacy exit cleanup */ }
         }
       };
+      this.lockCleanup = cleanup;
       process.on("beforeExit", cleanup);
       process.on("exit", cleanup);
     } catch { /* lock creation failure is non-fatal (read-only scenarios) */ }
@@ -671,45 +681,76 @@ export class DB {
     // never release a FOREIGN lock on close/exit (latent since serve existed,
     // made acute by lock-free `db unlock`).
     this.ownsLock = acquired;
-    this.db = new SqliteDatabase(file);
-    {
-      const desired = journalModeDesired();
-      const cur = String((this.db.prepare("PRAGMA journal_mode").get() as any)?.journal_mode || "").toLowerCase();
-      if (cur && cur !== desired) {
-        const apply = () => String((this.db.prepare(`PRAGMA journal_mode=${desired}`).get() as any)?.journal_mode || "").toLowerCase();
-        let to = apply();
-        // Leaving WAL needs an exclusive moment; a concurrently open connection
-        // (another CLI/serve/probe tool) makes SQLite return the old mode. Try a
-        // checkpoint first, then surface a BLOCKED warning instead of a silent
-        // no-op (user report: legacy switch looked dead with no stderr).
-        if (to !== desired && cur === "wal") {
-          try { this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* best effort */ }
-          to = apply();
+    let opened: SqliteDatabase | undefined;
+    try {
+      this.db = opened = new SqliteDatabase(file);
+      {
+        const desired = journalModeDesired();
+        const cur = String((this.db.prepare("PRAGMA journal_mode").get() as any)?.journal_mode || "").toLowerCase();
+        if (cur && cur !== desired) {
+          const apply = () => String((this.db.prepare(`PRAGMA journal_mode=${desired}`).get() as any)?.journal_mode || "").toLowerCase();
+          let to = apply();
+          // Leaving WAL needs an exclusive moment; a concurrently open connection
+          // (another CLI/serve/probe tool) makes SQLite return the old mode. Try a
+          // checkpoint first, then surface a BLOCKED warning instead of a silent
+          // no-op (user report: legacy switch looked dead with no stderr).
+          if (to !== desired && cur === "wal") {
+            try { this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* best effort */ }
+            to = apply();
+          }
+          if (existed && to !== cur) this.journalMigration = { from: cur, to };
+          else if (existed && to !== desired) this.journalBlocked = { want: desired, actual: to || cur };
         }
-        if (existed && to !== cur) this.journalMigration = { from: cur, to };
-        else if (existed && to !== desired) this.journalBlocked = { want: desired, actual: to || cur };
       }
+      // 0.90.1 P1-2 (review direct-a35d58ae): readers wait instead of failing
+      // instantly when another process holds the write lock — the serve panel
+      // must survive concurrent CLI writes (same family as the 0.83 DB.close
+      // flake). Batch-16: high-concurrency kb imports (hundreds/day, several
+      // workers) need a wider window than 2s; runTx also retries SQLITE_BUSY.
+      this.db.exec("PRAGMA busy_timeout=10000");
+      // WAL + NORMAL (sqlite.org recommended pairing): commits skip the per-tx
+      // fsync (~14ms on Windows) and sync at WAL checkpoints instead. A power
+      // loss may roll back the last transactions; the database cannot corrupt.
+      this.db.exec("PRAGMA synchronous=NORMAL");
+      this.db.exec("PRAGMA foreign_keys=ON");
+      this.migrate();
+    } catch (primary) {
+      this.removeExitCleanup();
+      const cleanupErrors: unknown[] = [];
+      if (opened) { try { opened.close(); this.handleClosed = true; } catch (error) { cleanupErrors.push(error); } }
+      if (!cleanupErrors.length && this.lockBelongsToThisInstance()) {
+        try { fs.rmSync(`${this.path}.ygllock`, { recursive: true, force: true }); this.ownsLock = false; } catch (error) { cleanupErrors.push(error); }
+      }
+      if (primary && typeof primary === "object" && Object.isExtensible(primary)) {
+        Object.defineProperty(primary, "dbOpenCleanupComplete", { value: cleanupErrors.length === 0 });
+        if (cleanupErrors.length) Object.defineProperty(primary, "dbOpenCleanupErrors", { value: cleanupErrors });
+      }
+      throw primary;
     }
-    // 0.90.1 P1-2 (review direct-a35d58ae): readers wait instead of failing
-    // instantly when another process holds the write lock — the serve panel
-    // must survive concurrent CLI writes (same family as the 0.83 DB.close
-    // flake). Batch-16: high-concurrency kb imports (hundreds/day, several
-    // workers) need a wider window than 2s; runTx also retries SQLITE_BUSY.
-    this.db.exec("PRAGMA busy_timeout=10000");
-    // WAL + NORMAL (sqlite.org recommended pairing): commits skip the per-tx
-    // fsync (~14ms on Windows) and sync at WAL checkpoints instead. A power
-    // loss may roll back the last transactions; the database cannot corrupt.
-    this.db.exec("PRAGMA synchronous=NORMAL");
-    this.db.exec("PRAGMA foreign_keys=ON");
-    this.migrate();
   }
 
   /** Release the write lock (called by close() and process exit).
    *  Ownership-guarded since 0.79.1: a lock-less instance (serve, db unlock)
    *  shares the workspace with a foreign holder — its close() must not nuke
    *  that holder's lock. */
+  private lockBelongsToThisInstance(): boolean {
+    if (!this.ownsLock) return false;
+    try {
+      const dir = `${this.path}.ygllock`;
+      return fs.readFileSync(path.join(dir, "pid"), "utf8").trim() === String(process.pid) &&
+        fs.readFileSync(path.join(dir, "owner"), "utf8") === this.lockIdentity;
+    } catch { return false; }
+  }
+
+  private removeExitCleanup(): void {
+    if (!this.lockCleanup) return;
+    process.removeListener("beforeExit", this.lockCleanup);
+    process.removeListener("exit", this.lockCleanup);
+    this.lockCleanup = undefined;
+  }
+
   private releaseLock(): void {
-    if (!this.ownsLock) return;
+    if (!this.lockBelongsToThisInstance()) return;
     try {
       const lockDir = `${this.path}.ygllock`;
       if (fs.existsSync(lockDir)) fs.rmSync(lockDir, { recursive: true, force: true });
@@ -1002,11 +1043,26 @@ export class DB {
     ]);
   }
 
-  close(): void {
+  /** Managed cleanup: preserve failure and retain the owned lock unless the handle is confirmed closed. */
+  closeStrict(): void {
+    if (this.strictAttempted) { if (this.strictFailed) throw this.strictFailure; return; }
+    this.strictAttempted = true;
+    this.removeExitCleanup();
     try {
       this.db.close();
-    } catch {
-      /* ignore */
+      this.handleClosed = true;
+      if (this.lockBelongsToThisInstance()) {
+        fs.rmSync(`${this.path}.ygllock`, { recursive: true, force: true });
+        this.ownsLock = false;
+      }
+    } catch (error) { this.strictFailed = true; this.strictFailure = error; throw error; }
+  }
+
+  close(): void {
+    if (this.managed) { this.closeStrict(); return; }
+    this.removeExitCleanup();
+    if (!this.handleClosed) {
+      try { this.db.close(); this.handleClosed = true; } catch { /* legacy best effort */ }
     }
     this.releaseLock();
   }

@@ -11,6 +11,10 @@ Research pipeline: query/source/evidence/claim entities, reads (Store), transact
 
 Import from `@ygl/research-pipeline` when you need research pipeline: query/source/evidence/claim entities, reads (store), transactional writes, and cordis researchservice.
 
+## Entity composition
+
+`entity-manifest.ts` declares the seven research entity keys and tables without loading TypeORM. `entities.ts` binds every declared key to its constructor and exports the registrations for application composition. Core owns only its cross-cutting entities; it never imports this package to discover research metadata. Disabling a research command plugin does not silently shrink the workspace ORM catalog. Direct library consumers explicitly assemble and close their own ORM instance; command handlers borrow `env.orm`.
+
 ## SQLite writer reservation
 
 The write-only `runTx` boundary reserves SQLite’s single writer before invoking its callback or performing dedupe reads. A zero-row `UPDATE meta SET value=value WHERE 0` obtains the lock without changing data or emitting an event. Contention is therefore handled before the callback creates a WAL read snapshot. Base rows, FTS shadows and audit rows still commit or roll back together; bus events remain post-commit only. Existing lock waiting and the five-attempt budget are unchanged. This is not a read-path helper; nested callers still share the outer transaction’s commit and lock lifetime. PostgreSQL retains its existing transaction path and receives no SQLite reservation statement.

@@ -10,6 +10,8 @@
  *    stay raw SQL in store.ts (see docs/plan.md TypeORM boundaries).
  */
 import "reflect-metadata";
+import { registerEntityOwner } from "../../../core/database/src/entity-catalog";
+import { RESEARCH_ENTITY_MANIFEST } from "./entity-manifest";
 import {
   Column,
   Entity,
@@ -266,4 +268,5 @@ export class ClaimEvidence {
   evidence?: Evidence;
 }
 
-export const RESEARCH_ENTITIES = [Project, Query, Source, QuerySource, Evidence, Claim, ClaimEvidence];
+export const RESEARCH_ENTITY_REGISTRATIONS = registerEntityOwner(RESEARCH_ENTITY_MANIFEST, { Project, Query, Source, QuerySource, Evidence, Claim, ClaimEvidence });
+export const RESEARCH_ENTITIES = Object.freeze(RESEARCH_ENTITY_REGISTRATIONS.map(registration => registration.target));

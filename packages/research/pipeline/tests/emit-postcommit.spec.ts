@@ -14,10 +14,13 @@ import { mkdtempSync, rmSync, accessSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DataSource } from "typeorm";
-import { getOrm, closeOrm } from "../../../core/database/src/orm";
+
 import { onEvent, YglEvent } from "../../../core/text/src/eventbus";
 import { runTx, queryAdd } from "../src/writes";
 import * as treeWrites from "../../../techtree/model/src/writes";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 const BIN = resolve(__dirname, "../../../../dist/bundle/bin.cjs");
 const HAS_BIN = (() => { try { accessSync(BIN); return true; } catch { return false; } })();

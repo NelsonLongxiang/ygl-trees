@@ -13,10 +13,10 @@ describe("OpsService（ctx.ops）eval services", () => {
   process.env.YGL_EVAL_OFFLINE = "1"; // deterministic: no gateway calls
   process.env.YGL_TEST = "1";         // skip dir-lock in unit context
 
-  const close = (app: Context) => {
+  const close = async (app: Context) => {
     // #51 single native driver: an open better-sqlite3 handle keeps the file
     // (and therefore its tmp dir) locked on Windows.
-    try { (app as any).database?.stop?.(); } catch { /* already stopped */ }
+    try { await (app as any).database?.stop?.(); } catch { /* already stopped */ }
   };
   const boot = () => {
     const dir = path.join(process.cwd(), "tmp", `ops-svc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
@@ -27,7 +27,7 @@ describe("OpsService（ctx.ops）eval services", () => {
     return { app, svc, dir };
   };
 
-  it("服务面：evalClaim / assessEvidence / semanticRank 均经 ctx.ops 暴露", () => {
+  it("服务面：evalClaim / assessEvidence / semanticRank 均经 ctx.ops 暴露", async () => {
     const { svc, app, dir } = boot();
     try {
       expect(typeof svc.evalClaim).toBe("function");
@@ -35,7 +35,7 @@ describe("OpsService（ctx.ops）eval services", () => {
       expect(typeof svc.semanticRank).toBe("function");
       expect(typeof (app as any).ops?.evalClaim).toBe("function"); // name registration (ctx.ops)
     } finally {
-      close(app);
+      await close(app);
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
@@ -47,7 +47,7 @@ describe("OpsService（ctx.ops）eval services", () => {
       expect(r.ok).toBe(false);
       expect(typeof r.reasoning).toBe("string");
     } finally {
-      close(app);
+      await close(app);
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
@@ -64,7 +64,7 @@ describe("OpsService（ctx.ops）eval services", () => {
       expect(ranked.map((r: any) => r.id)).toEqual(["k1", "k2"]);
       expect(ranked.every((r: any) => r.semantic_relevance == null)).toBe(true);
     } finally {
-      close(app);
+      await close(app);
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
@@ -91,7 +91,7 @@ describe("OpsService（ctx.ops）eval services", () => {
       off();
       expect(got.some((e: any) => e.kind === "probe.test")).toBe(true);
     } finally {
-      (app as any).database?.stop?.();
+      await (app as any).database?.stop?.();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

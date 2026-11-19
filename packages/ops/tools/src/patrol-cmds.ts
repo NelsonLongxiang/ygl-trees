@@ -1,3 +1,4 @@
+import { sqliteOrm } from "../../../core/database/src/orm-access";
 /** patrol group — boundary assertions + disposition queue (0.93-T2).
  *
  * Productizes the production ops-handbook sop-patrol-daily: a patrol check is a
@@ -13,9 +14,9 @@
  * the transactional write service; a hand-crafted write smuggled past the
  * gates would still need a ';' to run. */
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, table, paint, C } from "../../../core/text/src/fmt";
-import { getOrm } from "../../../core/database/src/orm";
-import * as writes from "../../../research/pipeline/src/writes";
+import { emitJson, ok, bad, out, table, paint, C } from "../../../core/text/src/fmt";
+
+import { patrolAdd as writes_patrolAdd, patrolDisposition as writes_patrolDisposition, patrolRecord as writes_patrolRecord, patrolRm as writes_patrolRm } from "../../../research/pipeline/src/writes";
 
 const SEVERITIES = ["S1", "S2", "S3"] as const;
 
@@ -54,16 +55,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       if (!assertSelectGate(ctx, sql)) return 2;
-      return getOrm(env.db.path)
-        .then((ds) => writes.patrolAdd(ds, { name, sql, severity: sev, description: String(args.flags.desc || "") }))
+      return sqliteOrm(env)
+        .then((ds) => writes_patrolAdd(ds, { name, sql, severity: sev, description: String(args.flags.desc || "") }))
         .then((r: any): number => {
           const row = r.row ?? r;
           if (r.dup) {
-            if (ctx.json) console.log(JSON.stringify({ ...row, duplicate: true }));
+            if (ctx.json) emitJson(ctx, { ...row, duplicate: true });
             else out(ctx, paint(C.yellow, `  ⚠ duplicate: patrol check '${row.name}' exists — sql unchanged (remove first: patrol rm ${row.name})`, ctx.color));
             return 0;
           }
-          if (ctx.json) console.log(JSON.stringify(row));
+          if (ctx.json) emitJson(ctx, row);
           else out(ctx, `  ✓ patrol check added: ${row.name}  [${row.severity}]`);
           return 0;
         })
@@ -76,10 +77,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "rm": {
       const name = rest[0];
       if (!name) { bad(ctx, "usage: patrol rm <name>"); return 2; }
-      return getOrm(env.db.path)
-        .then((ds) => writes.patrolRm(ds, name))
+      return sqliteOrm(env)
+        .then((ds) => writes_patrolRm(ds, name))
         .then((r: any): number => {
-          if (ctx.json) console.log(JSON.stringify(r));
+          if (ctx.json) emitJson(ctx, r);
           else out(ctx, `  ✓ patrol check removed: ${r.name}  (findings cleared: ${r.findings})`);
           return 0;
         })
@@ -92,7 +93,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
                 (SELECT count(*) FROM patrol_findings f WHERE f.check_id=c.id AND f.status IN ('open','ack')) AS open
            FROM patrol_checks c ORDER BY c.name`
       ) as any[];
-      if (ctx.json) { console.log(JSON.stringify(checks, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, checks, 2); return 0; }
       table(ctx, checks, ["id", "name", "severity", "on", "open", "description"], ["id", "name", "severity", "enabled", "open", "description"]); // #239: header "on" shows the enabled column
       return 0;
     }
@@ -110,7 +111,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       return (async (): Promise<number> => {
         const results: any[] = [];
         let failedCheck = "";
-        const ds = await getOrm(env.db.path);
+        const ds = await sqliteOrm(env);
         for (const c of checks) {
           let rows: any[] = [];
           try {
@@ -120,14 +121,14 @@ export function run(env: Env, action: string, rest: string[], args: any): number
             rows = [{ check_error: String(e?.message || e).slice(0, 500) }];
             failedCheck = c.name;
           }
-          const r = await writes.patrolRecord(ds, c.id, c.severity, rows);
+          const r = await writes_patrolRecord(ds, c.id, c.severity, rows);
           results.push({ name: c.name, severity: c.severity, ...r });
         }
         const openTotal = (store.db.get(
           `SELECT count(*) AS n FROM patrol_findings WHERE status IN ('open','ack')`
         ) as any)?.n ?? 0;
         if (ctx.json) {
-          console.log(JSON.stringify({ checks: results, open_total: openTotal, ...(failedCheck ? { failed_check: failedCheck } : {}) }, null, 2));
+          emitJson(ctx, { checks: results, open_total: openTotal, ...(failedCheck ? { failed_check: failedCheck } : {}) }, 2);
         } else {
           for (const r of results) {
             const flag = r.violations ? paint(C.red, String(r.violations), ctx.color) : paint(C.green, "0", ctx.color);
@@ -150,7 +151,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           ${status ? "WHERE f.status=?" : ""} ORDER BY f.last_seen DESC LIMIT 200`,
         status ? [status] : []
       ) as any[];
-      if (ctx.json) { console.log(JSON.stringify(findings, null, 2)); return 0; }
+      if (ctx.json) { emitJson(ctx, findings, 2); return 0; }
       { const cols = ["id", "check_name", "severity", "status", "row_key", "last_seen", "note"]; table(ctx, findings, cols, cols); }
       return 0;
     }
@@ -161,10 +162,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const id = rest[0];
       const note = String(args.flags.note || "");
       if (!id) { bad(ctx, `usage: patrol ${action} <finding-id> [--note "..."]`); return 2; }
-      return getOrm(env.db.path)
-        .then((ds) => writes.patrolDisposition(ds, id, action as "ack" | "fp" | "fix", note))
+      return sqliteOrm(env)
+        .then((ds) => writes_patrolDisposition(ds, id, action as "ack" | "fp" | "fix", note))
         .then((f: any): number => {
-          if (ctx.json) console.log(JSON.stringify(f));
+          if (ctx.json) emitJson(ctx, f);
           else out(ctx, `  ✓ ${id} → ${f.status}${note ? `  · ${note}` : ""}`);
           return 0;
         })

@@ -4,8 +4,11 @@ import * as path from "node:path";
 import { DB } from "../../../core/database/src/db";
 import { Store } from "../../../research/pipeline/src/reads";
 import { AsyncResearchStore } from "../../../research/pipeline/src/async-store";
-import { getOrm, closeOrm } from "../../../core/database/src/orm";
+
 import { gatherData, createDashboardServer, run } from "../src/webui";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 let db: DB;
 let dir: string;
@@ -36,15 +39,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await closeOrm();
   if (server) await new Promise((r) => server.close(r));
+  await closeOrm();
   db?.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
 function env() {
   // 顶层 import（vitest ESM 解析）— require 相对路径在测试包布局下不可靠
-  return { home: dir, ctx: { json: true, color: false, quiet: true }, db, store, asyncStore: new AsyncResearchStore(db) } as any;
+  return { home: dir, orm: ormFixture, ctx: { json: true, color: false, quiet: true }, db, store, asyncStore: new AsyncResearchStore(db) } as any;
 }
 
 describe("webui gatherData", () => {

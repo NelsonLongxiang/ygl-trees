@@ -1,3 +1,4 @@
+import { pgOrm, workspaceOrm } from "../../../core/database/src/orm-access";
 /**
  * tree / node commands — the tech-tree node model.
  *
@@ -16,12 +17,12 @@
 import * as fs from "node:fs";
 import { Env } from "../../../core/database/src/types";
 import { AsyncTreeStore } from "./async-store";
-import { ok, bad, out, head, table, show, paint, C, ack, warn } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, show, paint, C, ack, warn } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
-import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { currentSelectionVia, resolveProject, selectionChangeWarning, sessionId } from "../../../core/database/src/selection";
-import * as treeWrites from "./writes";
+import { condAdd as treeWrites_condAdd, condRemove as treeWrites_condRemove, importTree as treeWrites_importTree, isDomainError as treeWrites_isDomainError, link as treeWrites_link, nodeAdd as treeWrites_nodeAdd, nodeDel as treeWrites_nodeDel, nodeMove as treeWrites_nodeMove, rebuildIndex as treeWrites_rebuildIndex, stateSet as treeWrites_stateSet, treeCreate as treeWrites_treeCreate, unlink as treeWrites_unlink, validateTree as treeWrites_validateTree } from "./writes";
 import { NODE_HAS_EVIDENCE_SQL, UNLOCKED_WITHOUT_EVIDENCE_IN_TREE_SQL, attachEvidenceAction, reindexActions } from "./evidence-gap";
 import {
   DEFAULT_ENDPOINT, evalBoolean, evalChoice, evalMixed, evalScore, evalToken,
@@ -64,14 +65,14 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
   /** tree-domain write through the transactional service (async command). */
   function runTreeWrite<T>(fn: (ds: any) => Promise<T>, print: (r: T) => number | Promise<number>): Promise<number> {
     // #176 W1-T1: PG business mode writes through the PG ORM; driver errors stay masked (pgFailure).
-    return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
+    return (workspaceOrm(env))
       .then(fn)
       .then(print)
       .catch(async (e: any): Promise<number> => {
         const msg = e?.message || String(e);
         // #176 W1-T2: on PG only driver/ORM errors are masked; the service's own refusals (cycle, self-loop,
         // enum, not found) are identifier-only and must read the same as on SQLite.
-        bad(ctx, env.pgUrl && !treeWrites.isDomainError(e) && !(e instanceof PgCapabilityError) ? pgFailure() : await enrichNodeNotFound(msg));
+        bad(ctx, env.pgUrl && !treeWrites_isDomainError(e) && !(e instanceof PgCapabilityError) ? pgFailure() : await enrichNodeNotFound(msg));
         return 1;
       });
   }
@@ -156,7 +157,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
           return 2;
         }
       }
-      return runTreeWrite((ds) => treeWrites.treeCreate(ds, name, proj?.id || ""), async (t): Promise<number> => {
+      return runTreeWrite((ds) => treeWrites_treeCreate(ds, name, proj?.id || ""), async (t): Promise<number> => {
         // R16.2: session-scoped selection — global pointer untouched.
         if (env.pgUrl) {
           await trees.metaSet(`current_tree@${sessionId()}`, t.name);
@@ -209,7 +210,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         selection_source: selT.source,
       };
       if (ctx.json) {
-        console.log(JSON.stringify(payload, null, 2));
+        emitJson(ctx, payload, 2);
         return 0;
       }
       head(ctx, `Tree ${t.name}  (selection: ${selT.source})`);
@@ -309,7 +310,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
     }
     due.sort((a: any, b: any) => a.days_left - b.days_left);
     if (args?.flags?.eval !== true) {
-      if (ctx.json) console.log(JSON.stringify(due, null, 2));
+      if (ctx.json) emitJson(ctx, due, 2);
       else {
         head(ctx, `临期 eval 门槛 × ${due.length}（${days} 天窗口）`);
         if (!due.length) out(ctx, paint(C.dim, "  (无临期 eval 条件)", ctx.color));
@@ -348,7 +349,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
           : mapOutcome(r, passT, failT);
         rows.push({ ...d, ...m });
       }
-      if (ctx.json) console.log(JSON.stringify(rows, null, 2));
+      if (ctx.json) emitJson(ctx, rows, 2);
       else {
         head(ctx, `临期 eval 门槛 — 已判定 × ${rows.length}`);
         table(
@@ -375,7 +376,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       if (rows.length) per.push({ tree: t.name, ready: rows });
     }
     if (ctx.json) {
-      console.log(JSON.stringify(per, null, 2));
+      emitJson(ctx, per, 2);
       return 0;
     }
     head(ctx, `Ready across ${all.length} trees`);
@@ -474,18 +475,18 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         payload: flagStr("payload"),
         tags: flagStr("tags"),
       };
-      return runTreeWrite((ds) => treeWrites.nodeAdd(ds, tid, spec), async (r): Promise<number> => {
+      return runTreeWrite((ds) => treeWrites_nodeAdd(ds, tid, spec), async (r): Promise<number> => {
         const next = r.created ? await indexHint() : [];
         const withNext = (row: any) => (next.length ? { ...row, next_actions: next } : row);
         const warning = env.pgUrl ? undefined : selectionChangeWarning(env.db, "tree", (currentSelectionVia() || "none") as any);
         if (warning) {
           process.stderr.write(`  note: ${warning}\n`);
           if (ctx.json) {
-            console.log(JSON.stringify({ ...withNext(r.created ? r.row : { ...r.row, duplicate: true }), selection_warning: warning }, null, 2));
+            emitJson(ctx, { ...withNext(r.created ? r.row : { ...r.row, duplicate: true }), selection_warning: warning }, 2);
             return 0;
           }
         }
-        if (ctx.json) console.log(JSON.stringify(withNext(r.created ? r.row : { ...r.row, duplicate: true }), null, 2));
+        if (ctx.json) emitJson(ctx, withNext(r.created ? r.row : { ...r.row, duplicate: true }), 2);
         else if (!r.created) out(ctx, paint(C.yellow, `  ! node already exists: ${key}`, ctx.color));
         else ok(ctx, `node added: ${key}${r.row.name !== key ? `  (${r.row.name})` : ""}`);
         printNext(next);
@@ -501,7 +502,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       }
       return runTreeWrite(
         (ds) =>
-          treeWrites.link(ds, tid, key, child, {
+          treeWrites_link(ds, tid, key, child, {
             rel: flagStr("rel", "prereq"),
             mode: flagStr("mode", "AND"),
             required: !flagBool("optional"),
@@ -531,7 +532,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         return 2;
       }
       const relU = flagStr("rel", "prereq");
-      return runTreeWrite((ds) => treeWrites.unlink(ds, tid, key, rest[1], relU), async (): Promise<number> => {
+      return runTreeWrite((ds) => treeWrites_unlink(ds, tid, key, rest[1], relU), async (): Promise<number> => {
         const next = await indexHint();
         ack(ctx, { unlinked: `${key} -> ${rest[1]}`, ...(next.length ? { next_actions: next } : {}) }, `unlinked ${key} → ${rest[1]}`);
         printNext(next);
@@ -554,7 +555,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
           return 2;
         }
         return runTreeWrite(
-          (ds) => treeWrites.condRemove(ds, tid, cKey!, name),
+          (ds) => treeWrites_condRemove(ds, tid, cKey!, name),
           (r): number => {
             // --json write receipt (#176 W1-T3 golden on #194 caught the bare text here): the removed row + node key
             ack(ctx, { node: cKey, ...r }, `condition removed: ${cKey} · ${name}  (was ${r.required ? "必检" : "可选"}/${r.effect})`);
@@ -634,7 +635,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       }
       return runTreeWrite(
         (ds) =>
-          treeWrites.condAdd(ds, tid, k, {
+          treeWrites_condAdd(ds, tid, k, {
             name,
             kind: flagStr("kind", "flag"),
             expr: flagStr("expr") || undefined,
@@ -659,7 +660,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
     }
 
     if (sub === "index") {
-      return runTreeWrite((ds) => treeWrites.rebuildIndex(ds, tid), async (r): Promise<number> => {
+      return runTreeWrite((ds) => treeWrites_rebuildIndex(ds, tid), async (r): Promise<number> => {
         ack(ctx, { nodes: r.nodes, closure_rows: r.closureRows }, `index rebuilt: ${r.nodes} nodes, closure ${r.closureRows} rows`);
         if (!ctx.json) {
           const st = env.pgUrl ? await trees.queryOne("SELECT tiers FROM node_index WHERE tree_id=?", [tid]) : db.get("SELECT tiers FROM node_index WHERE tree_id=?", [tid]);
@@ -796,7 +797,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         for (const k of keys) results.push(await judgeOne(k));
         if (ctx.json) {
           // single key → object (frozen shape); batch → array
-          console.log(JSON.stringify(batch ? results : results[0], null, 2));
+          emitJson(ctx, batch ? results : results[0], 2);
           return results.some((r) => r.error) ? 1 : 0;
         }
         if (!batch) {
@@ -895,7 +896,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       if (!flagBool("eval")) {
         const rows = await trees.ready(tid, ctxName, state);
         if (ctx.json) {
-          console.log(JSON.stringify(rows, null, 2));
+          emitJson(ctx, rows, 2);
           return 0;
         }
         head(ctx, `Ready to unlock (${rows.length})`);
@@ -908,7 +909,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       const rows = await trees.ready(tid, ctxName, state);
       const candidates = await trees.evalCandidates(tid, ctxName, state);
       if (!candidates.length) {
-        if (ctx.json) console.log(JSON.stringify({ ready: rows, eval_pending: [] }, null, 2));
+        if (ctx.json) emitJson(ctx, { ready: rows, eval_pending: [] }, 2);
         else {
           head(ctx, `Ready to unlock (${rows.length})`);
           table(ctx, rows, ["key", "name", "tier", "cost"], ["key", "name", "tier", "cost"]);
@@ -981,7 +982,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
           emitEvent({ kind: "eval.ready", entity: "tree", entityId: tid, payload: evPayload, ts: evTs });
         } catch { /* audit best-effort */ }
         if (ctx.json) {
-          console.log(JSON.stringify({ ready: all, eval_pending: evalPending }, null, 2));
+          emitJson(ctx, { ready: all, eval_pending: evalPending }, 2);
           return 0;
         }
         head(ctx, `Ready to unlock (${all.length}${promoted.length ? `，含 ${promoted.length} 个经决策模型放行` : ""})`);
@@ -1011,7 +1012,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         return 1;
       }
       if (ctx.json) {
-        console.log(JSON.stringify(p, null, 2));
+        emitJson(ctx, p, 2);
         return 0;
       }
       head(ctx, `Unlock order to ${key}`);
@@ -1090,11 +1091,11 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       }
       const st = await trees.nodeStateOf(tid, key);
       if (ctx.json) {
-        console.log(JSON.stringify({
+        emitJson(ctx, {
           node: { ...n, state: st.state, unlocked_at: st.unlocked_at },
           parents: await trees.parents(tid, key),
           conditions: await trees.condList(tid, key),
-        }, null, 2));
+        }, 2);
         return 0;
       }
       head(ctx, `${n.key}  (${n.name})`);
@@ -1128,7 +1129,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       }
       const status = sub === "unlock" ? "unlocked" : "locked";
       const ctxName = flagStr("context", "default");
-      return runTreeWrite((ds) => treeWrites.stateSet(ds, tid, key, status, ctxName, flagNum("level", 1)), async (): Promise<number> => {
+      return runTreeWrite((ds) => treeWrites_stateSet(ds, tid, key, status, ctxName, flagNum("level", 1)), async (): Promise<number> => {
         // #233: an unlock with no evidence, claim, source, artifact or kb behind it gets the same-round step named.
         let next: string[] = [];
         if (status === "unlocked") {
@@ -1147,14 +1148,14 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       if (env.pgUrl) {
         // #176 W1-T2: validate refreshes the derived index, so on PG it runs as a locked transaction.
         try {
-          issues = await treeWrites.validateTree(await getPgOrm(env.pgUrl), tid);
+          issues = await treeWrites_validateTree(await pgOrm(env), tid);
         } catch (e: any) {
           bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure());
           return 1;
         }
       } else issues = await trees.validate(tid);
       if (ctx.json) {
-        console.log(JSON.stringify({ issues }, null, 2));
+        emitJson(ctx, { issues }, 2);
         return issues.length ? 1 : 0;
       }
       if (!issues.length) {
@@ -1172,7 +1173,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
       if (dest) {
         fs.writeFileSync(dest, JSON.stringify(data, null, 2), "utf8");
         ack(ctx, { written: dest, nodes: data.nodes.length, edges: data.edges.length }, `exported to ${dest}`);
-      } else console.log(JSON.stringify(data, null, 2));
+      } else emitJson(ctx, data, 2);
       return 0;
     }
 
@@ -1190,7 +1191,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         return 1;
       }
       return runTreeWrite(
-        (ds) => treeWrites.importTree(ds, spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") }),
+        (ds) => treeWrites_importTree(ds, spec, { name: flagStr("tree") || undefined, merge: flagBool("merge") }),
         async (r): Promise<number> => {
           // #233: an imported model arrives with its unlocked state but none of the evidence behind it. Say how many,
           // so the importer attaches the source or records the tree as an unverified model (lifecycle skill, import row).
@@ -1227,9 +1228,9 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         [tid]
       );
       if (ctx.json) {
-        console.log(JSON.stringify(rows.map((r: any) => ({
+        emitJson(ctx, rows.map((r: any) => ({
           ts: r.ts, kind: r.kind, ...(JSON.parse(r.payload || "{}") as any),
-        })), null, 2));
+        })), 2);
         return 0;
       }
       head(ctx, `Timeline — tree '${tree.name}' (last ${rows.length})`);
@@ -1255,14 +1256,14 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         return 2;
       }
       return runTreeWrite(
-        (ds) => treeWrites.nodeMove(ds, tid, key, to),
+        (ds) => treeWrites_nodeMove(ds, tid, key, to),
         (r): number => {
           if (!r.moved) {
-            if (ctx.json) console.log(JSON.stringify({ ...r.row, moved: false, duplicate: true, from_tree: r.from_tree, to_tree: r.to_tree }, null, 2));
+            if (ctx.json) emitJson(ctx, { ...r.row, moved: false, duplicate: true, from_tree: r.from_tree, to_tree: r.to_tree }, 2);
             else out(ctx, paint(C.yellow, `  ! node already in tree '${r.to_tree}'`, ctx.color));
             return 0;
           }
-          if (ctx.json) console.log(JSON.stringify({ ...r.row, moved: true, from_tree: r.from_tree, to_tree: r.to_tree, state_rows: r.state_rows, closure_rows: r.closure_rows }, null, 2));
+          if (ctx.json) emitJson(ctx, { ...r.row, moved: true, from_tree: r.from_tree, to_tree: r.to_tree, state_rows: r.state_rows, closure_rows: r.closure_rows }, 2);
           else {
             ack(ctx, r.row, `node moved: ${key}  ${r.from_tree} → ${r.to_tree}`);
             if (r.state_rows) out(ctx, `  state rows carried over: ${r.state_rows}`);
@@ -1278,7 +1279,7 @@ async function runWith(env: Env, trees: AsyncTreeStore, action: string, rest: st
         bad(ctx, "usage: node rm <key>");
         return 2;
       }
-      return runTreeWrite((ds) => treeWrites.nodeDel(ds, tid, key), async (): Promise<number> => {
+      return runTreeWrite((ds) => treeWrites_nodeDel(ds, tid, key), async (): Promise<number> => {
         const next = await indexHint();
         ack(ctx, { removed: key, ...(next.length ? { next_actions: next } : {}) }, `node removed: ${key}`);
         printNext(next);

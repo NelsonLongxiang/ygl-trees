@@ -1,6 +1,7 @@
-/** Cross-cutting entities (audit trail). Research-domain entities live in
- *  research.ts; both are registered in src/orm.ts. */
+/** Cross-cutting entities, explicitly bound to this package's lightweight manifest. */
 import "reflect-metadata";
+import { registerEntityOwner } from "./entity-catalog";
+import { CORE_ENTITY_MANIFEST } from "./entity-manifest";
 import { Column, Entity, PrimaryColumn } from "typeorm";
 
 @Entity({ name: "events" })
@@ -177,4 +178,5 @@ export class VerifierRun {
   created!: string;
 }
 
-export const CORE_ENTITIES = [Event, PatrolCheck, PatrolFinding, VerifierInstance, VerifierRun];
+export const CORE_ENTITY_REGISTRATIONS = registerEntityOwner(CORE_ENTITY_MANIFEST, { Event, PatrolCheck, PatrolFinding, VerifierInstance, VerifierRun });
+export const CORE_ENTITIES = Object.freeze(CORE_ENTITY_REGISTRATIONS.map(registration => registration.target));

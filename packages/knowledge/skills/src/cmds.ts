@@ -1,14 +1,15 @@
+import { sqliteOrm, pgOrm, workspaceOrm } from "../../../core/database/src/orm-access";
 /** kb group — long-term knowledge: store, retrieve, connect, promote to skill.
  *  Writes (add/ingest) run on the TypeORM write service (src/writes.ts). */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Env } from "../../../core/database/src/types";
-import { ok, bad, out, head, table, show, paint, C, writeResult, ack } from "../../../core/text/src/fmt";
+import { emitJson, ok, bad, out, head, table, show, paint, C, writeResult, ack } from "../../../core/text/src/fmt";
 import { clip, parseFrontmatter } from "../../../core/text/src/text";
 import { emitEvent } from "../../../core/text/src/eventbus";
-import { getOrm, getPgOrm } from "../../../core/database/src/orm";
+
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
-import * as writes from "../../../research/pipeline/src/writes";
+import { type KbImportItem as writes_KbImportItem, kbAdd as writes_kbAdd, kbImportBulk as writes_kbImportBulk, kbIngestArtifact as writes_kbIngestArtifact, kbLinkPg as writes_kbLinkPg, kbPromote as writes_kbPromote, kbRemove as writes_kbRemove, kbRescope as writes_kbRescope, validateScope as writes_validateScope } from "../../../research/pipeline/src/writes";
 import { configGet, configGetNumber } from "../../../core/database/src/config";
 import { rejectBare } from "../../../core/text/src/flagcheck";
 
@@ -25,7 +26,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   let scope: string | undefined;
   if (args.flags.scope !== undefined) {
     if (rejectBare(ctx, args.flags, ["scope"])) return 2;
-    try { scope = writes.validateScope(args.flags.scope); }
+    try { scope = writes_validateScope(args.flags.scope); }
     catch (e: any) { bad(ctx, e.message); return 2; }
   }
 
@@ -38,9 +39,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb add --title \"...\" --body|-f <file>");
         return 2;
       }
-      return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
+      return (workspaceOrm(env))
         .then(async (ds) =>
-          writes.kbAdd(ds, {
+          writes_kbAdd(ds, {
             title,
             body,
             tags: String(args.flags.tags || ""),
@@ -62,12 +63,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           //      kb search/list use — a miss is printed loudly, not silently
           const verify = env.pgUrl ? await env.asyncStore.kbGet(row.id) : store.kbGet(row.id);
           if (ctx.json) {
-            console.log(JSON.stringify({
+            emitJson(ctx, {
               ...row,
               ...((r as any).dup ? { duplicate: true } : {}),
               verified: !!verify,
               workspace: env.home,
-            }, null, 2));
+            }, 2);
           } else {
             writeResult(ctx, r as any, (rw) => `note stored: ${rw.id}  ${clip(title, 50)}`);
             out(ctx, paint(C.dim, `  @ ${env.home}`, ctx.color));
@@ -112,7 +113,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
               conf: orig.confidence,
             };
           });
-          if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+          if (ctx.json) { emitJson(ctx, rows, 2); return 0; }
           head(ctx, `kb search "${q}"  (语义重排)`);
           table(ctx, rows, ["id", "title", "semantic", "orig_rank", "tags", "conf"],
                           ["id", "title", "semantic", "orig_rank", "tags", "conf"]);
@@ -158,8 +159,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // #49/批十六: base row + FTS shadow + links + kb.rm event commit together.
       // The previous two autocommit DELETEs could leave kb_fts out of sync when
       // a crash/busy error landed between them (the doctor-visible seam).
-      return getOrm(env.db.path)
-        .then((ds) => writes.kbRemove(ds, id))
+      return sqliteOrm(env)
+        .then((ds) => writes_kbRemove(ds, id))
         .then((r): number => {
           try {
             emitEvent({
@@ -187,7 +188,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       }
       if (env.pgUrl) return env.asyncStore.kbGet(rest[0]).then((n) => {
         if (!n) { bad(ctx, "note not found: " + rest[0]); return 1; }
-        if (ctx.json) console.log(JSON.stringify(n, null, 2));
+        if (ctx.json) emitJson(ctx, n, 2);
         else { head(ctx, n.title); show(ctx, { id: n.id, tags: n.tags || "-", confidence: n.confidence, reuse: n.reuse, origin: n.origin || "-" }); out(ctx, ""); out(ctx, n.body); }
         return 0;
       });
@@ -197,7 +198,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       if (ctx.json) {
-        console.log(JSON.stringify(n, null, 2));
+        emitJson(ctx, n, 2);
         return 0;
       }
       head(ctx, n.title);
@@ -216,7 +217,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb link <note-a> <note-b> [--rel <type>]");
         return 2;
       }
-      if (env.pgUrl) return getPgOrm(env.pgUrl).then(ds => writes.kbLinkPg(ds, rest[0], rest[1], String(args.flags.rel || "related"))).then(r => { ack(ctx, r, `linked ${r.a.title} --${r.rel}--> ${r.b.title}`); return 0; }).catch(e => { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; });
+      if (env.pgUrl) return pgOrm(env).then(ds => writes_kbLinkPg(ds, rest[0], rest[1], String(args.flags.rel || "related"))).then(r => { ack(ctx, r, `linked ${r.a.title} --${r.rel}--> ${r.b.title}`); return 0; }).catch(e => { bad(ctx, e instanceof PgCapabilityError ? e.message : pgFailure()); return 1; });
       const a = store.kbGet(rest[0]);
       const b = store.kbGet(rest[1]);
       if (!a || !b) {
@@ -234,8 +235,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 2;
       }
       const forceKb = args.flags.force === true || args.flags.force === "true";
-      return getOrm(env.db.path)
-        .then((ds) => writes.kbIngestArtifact(ds, rest[0], forceKb, scope))
+      return sqliteOrm(env)
+        .then((ds) => writes_kbIngestArtifact(ds, rest[0], forceKb, scope))
         .then((r): number => {
           writeResult(ctx, r as any, (row) => `artifact ingested into kb: ${row.id}  ${clip(row.title, 50)}`);
           return 0;
@@ -250,10 +251,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb rescope <id> --scope <dept:id|bench:id|*|restricted|empty>");
         return 2;
       }
-      return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
-        .then(ds => writes.kbRescope(ds, rest[0], args.flags.scope))
+      return (workspaceOrm(env))
+        .then(ds => writes_kbRescope(ds, rest[0], args.flags.scope))
         .then((r): number => {
-          if (ctx.json) { console.log(JSON.stringify({ ...r.row, ...(r.dup ? { duplicate: true } : {}) }, null, 2)); return 0; }
+          if (ctx.json) { emitJson(ctx, { ...r.row, ...(r.dup ? { duplicate: true } : {}) }, 2); return 0; }
           out(ctx, `rescoped: ${r.row.title} -> ${r.row.scope || "(unattributed)"}`);
           return 0;
         })
@@ -264,8 +265,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "usage: kb promote <noteId> [--name <skill>] [--force]");
         return 2;
       }
-      return getOrm(env.db.path)
-        .then(ds => writes.kbPromote(ds, rest[0], { name: args.flags.name ? String(args.flags.name) : undefined, force }))
+      return sqliteOrm(env)
+        .then(ds => writes_kbPromote(ds, rest[0], { name: args.flags.name ? String(args.flags.name) : undefined, force }))
         .then((s): number => {
           ack(
             ctx,
@@ -325,7 +326,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         return 1;
       }
       // parse everything first, then ONE bulk transaction (writes.kbImportBulk)
-      const items: writes.KbImportItem[] = importable.map((f) => {
+      const items: writes_KbImportItem[] = importable.map((f) => {
         const raw = fs.readFileSync(f, "utf8");
         const { meta, body } = parseFrontmatter(raw);
         const heading = /^#\s+(.+)\s*$/m.exec(body)?.[1]?.trim();
@@ -340,10 +341,10 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           origin: `import:${f}`,
         };
       });
-      return (env.pgUrl ? getPgOrm(env.pgUrl) : getOrm(env.db.path))
-        .then((ds) => writes.kbImportBulk(ds, items))
+      return (workspaceOrm(env))
+        .then((ds) => writes_kbImportBulk(ds, items))
         .then((r): number => {
-          if (ctx.json) console.log(JSON.stringify({ added: r.added, duplicates: r.dups, files: files.length, target }, null, 2));
+          if (ctx.json) emitJson(ctx, { added: r.added, duplicates: r.dups, files: files.length, target }, 2);
           else ok(ctx, `kb import: ${r.added} added, ${r.dups} duplicate(s) kept — ${files.length} file(s) from ${target}`);
           return 0;
         })

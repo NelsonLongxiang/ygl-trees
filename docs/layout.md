@@ -59,7 +59,7 @@ ygl-trees/
 
 `node scripts/gate.js --source-graph` 单独检查 `packages/*/*/src` 的字面量相对依赖，包括静态／类型导入、`import("…")` 类型节点、`import x = require("…")`、重导出和动态加载；解析失败或源路径链接均拒绝。它与声明依赖图分别接入 `contract-audit`，不会遍历安装依赖联接。
 
-**唯一具名架构例外**：`packages/core/database/src/orm.ts` 通过静态值导入从 `packages/research/pipeline/src/entities.ts` 读取唯一符号 `RESEARCH_ENTITIES`。核心 ORM 引导目前必须在数据源初始化前枚举完整研究域实体，故保留这条既有装配边；例外只按源文件、目标文件和导入符号匹配，不按行号、包对或目录豁免。结果会显式列出该例外，而不声称原始源码图本来无环。换符号、额外符号、替换导入形式、换文件或新增第二条循环边仍须判红。实体按属包注册的启动顺序解耦另见 [#285](https://github.com/NelsonLongxiang/ygl-trees/issues/285)；本修复不引入该启动契约。
+实体装配归应用层：[workspace-orm](../apps/cli/src/workspace-orm.ts) 显式选择 core 与 research 的轻量清单，在首次真实 ORM 需求时加载其 constructor、验证完整成员／表／关系，再初始化连接。core 不发现域实体，不持有全局连接缓存；源码图门拒绝 core→域引用且不提供架构豁免。每个调用与插件作用域分别拥有工作和资源，先停接纳、排空，再关闭连接及自有 DB／锁。
 
 **铁律**：packages/ 内的域模块**不知道** apps/ 的存在；apps/ 知道 packages/ 并组装它们。vendor/ 不知道上层的任何东西。
 

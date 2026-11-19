@@ -3,8 +3,11 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB, SCHEMA_VERSION } from "../../../core/database/src/db";
-import { getOrm, closeOrm } from "../../../core/database/src/orm";
+
 import { Store } from "../../../research/pipeline/src/reads";
+import { createWorkspaceOrmFixture } from "../../../../tests/support/workspace-orm";
+const ormFixture = createWorkspaceOrmFixture();
+const { getOrm, getPgOrm, closeOrm } = ormFixture;
 
 let db: DB;
 let dir: string;

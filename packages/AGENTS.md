@@ -7,7 +7,7 @@
 - **五件套**：`package.json`（workspace 成员，声明真实依赖图）+ `tsconfig.json`（extends 根 base）+ `README.md`（YAML frontmatter）+ `src/index.ts`（@module JSDoc 导出面）+ `tests/*.spec.ts`
 - **零散 .ts 禁区**：`packages/` 根与 `<group>/` 根不允许任何 loose 文件（scripts/gate.js 硬检查）
 - 依赖方向单向：`core/* → 域模块 → apps`；域间不互相 import（例外：ops/tools 跨切面可依赖 research/techtree/web——须在 package.json 如实声明；配置登记与只读解析由 core/database 提供，域包不得反向依赖 ops；contract-audit 检查全部 workspace 清单有向无环）
-- 唯一 ORM 装配边界：`core/database/src/orm.ts` 仅可静态值导入 `research/pipeline/src/entities.ts` 的 `RESEARCH_ENTITIES`，因 ORM 初始化须枚举完整实体；源码图门按源/目标文件和唯一符号匹配并显式报告，其他循环不获豁免。实体注册解耦另跟 #285，声明图与源码图不混同。
+- 实体由归属包的轻量 manifest 与显式 constructor 绑定提供，应用在首次 ORM 需求时装配并验证完整 catalog，再初始化 SQLite／PG；core 不导入或重导出域实体。声明图与源码图分别校验，源码图无 ORM 豁免。库调用者显式持有 ORM owner；域 handler 通过 `env.orm` 借用，不持有全局缓存或应用关闭权。
 
 ## 插件导出契约（Cordis）
 
@@ -29,7 +29,7 @@
 ## 测试纪律
 
 - 测试在包级 `tests/`，不在 `src/__tests__/`；vitest include = `packages/*/*/tests/**` + `apps/*/tests/**`
-- **scratch 自清理**：beforeAll 建 tmp 目录 → afterAll `closeOrm()` + `db.close()` + `rmSync`（Windows 句柄占用目录删不掉 = EPERM，0.34 教训）
+- **scratch 自清理**：beforeAll 建私有 tmp 目录并显式装配 ORM → afterAll 先停止并排空 server／作业，再 await 本 fixture 的 ORM.close，关 DB，最后 rmSync；不得调用无实例的全局 closeOrm 或吞掉清理失败（Windows 句柄占用目录删不掉 = EPERM）。
 - 新行为必须有 demo 断言或单测；demo 断言 grep 的字段名以实际 JSON 输出为准（`rel list` 输出 `dst` 拼串而非 `dst_type`——0.32 教训）
 
 ## README 纪律
