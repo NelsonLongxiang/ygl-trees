@@ -157,6 +157,20 @@ CLI project sync 要求明确 home/to、已初始化同 schema 的静止 SQLite 
 
 最终静态补审 direct-2fc93e98 两P1保原：F1恢复校验到rename之间普通DB可能取走死锁；F2 table_info漏generated列。P1-red39五条准确红后，普通DB与sync共享原子准入闸（非非原子复读），table_xinfo完整比较生成/隐藏列。新回归48/48，后继独立child接管补例49/49零skip；初版闸持有过长造成真实exit37恢复红已修为普通sync发布锁后释放准入，恢复仍独占；Windows不安全整数ino误同文件拒绝改bigint。full36因版本失效主动中断并保原，不计PASS。遵后继裁定 direct-aa0092fbf7b6不再re-sign，原已签868631保持；修复后bundle869369，比实测master855847增13522，≤硬上界870847。修后正常完整pnpm test（full44）自然rc0：261文件/2381条＝2251通过＋130条件skip，独立串行计数复验2381；perf10/10、demo145、contract158、README62/62、skills371零拒绝，ratchet869369/web1401666/cold84全部held。原补审席direct-60838748在绑定三文件SHA上给STATIC_F1_F2_CLOSED、0新增必修，动态NOT_RUN，不迁作监督准确提交终审。下一步独立功能与归因窄提交、正常带钩子GitHub push/Refs #295 PR；监督仍须精确头与副本115条独立复验，本席不代合并发布。
 
+## #303 监督验收后继：准入门死亡回收与完整项目关系（在途）
+
+监督对准确头 `4e65f78` 的 [review5998219078](https://github.com/NelsonLongxiang/ygl-trees/pull/303#pullrequestreview-5998219078) 已独立 macOS 完整 pnpm test rc0（2297通过＋84条件skip＝2381，体积869369）并完成115条副本复制，但 REQUEST_CHANGES 两阻塞：准入门崩溃遗留后无pid回收/诊断出口；真实替代链为8条supersedes原向原词关系，旧仅复制superseded-by使verify误报完整。旧通过与副本结果不迁作新版本验收，#295判据7按监督更新。
+
+B1门记录owner/pid/task，仅ESRCH确认死亡；原子rename至owner寻址、保留非空的代际墓碑，防迟到回收者抢移新门。普通open自动回收，db unlock/doctor --fix识别清死门，活/未知即使force仍拒绝；doctor lockfree以报告而非自锁。B2按原ID/原词/原向复制本项目claims之间全部关系，旧supersession步与计数键覆盖这些内边；外端关系以skipped列表（id/rel/src/dst/reason）及skipped_count显式列出，proof包含所有内边，superseded-by原校验保留。
+
+反例：red01 B1目标红，B2夹具SQL arity错单列保留；修夹具后B2-red02准确缺内关系红。并发回收由独立子进程在观察死门后、rename前屏障交错，随机隔离路径变异被准确杀死；原构建文件逐字恢复。子进程tsx缓存导致断言58绿但全rc1的记录保留，改用正式dist入口后rc0。最终五spec62/62零skip，含真实exit37残门、live/unknown诊断、原F1/F2/ordinary-lock等。代码格式换行经emitJS相等核验。尚待新正常完整链与限定静态补审，不冒全链PASS。
+
+build03体积871299超过870847后已依原单停报；后继裁定 direct-db6b5eeb0333仅准触及sync投影/门元数据/诊断出口内去重，原签868631不再动。当前bundle870827，比master855847增14980，硬界内余20；不改baseline/容差/minify/keepNames/deps/vendor、无无关verify/PGDDL改造、无检查或测试删除。README2394为先前完整2381及本次13个新增病例并集，待新完整运行据实确认。
+
+限定补审 direct-da0dafcd 将B1核心与B2关系静态关闭，但新增无锁doctor的人类fix应用锁清理有C1活锁换主竞态；原报告不回写。独立子进程在第二次pid读取后屏障、普通DB活接后旧doctor误删准确红（C1-red17），修为候选死pid→取得shared admission→重读当前同pid且仍死才删，finally放门。五spec63/63自然rc0零skip，direct-5ff033da在精确三文件SHA上给STATIC_C1_CLOSED、0新增必修，动态NOT_RUN。full15因版本失效主动中断，不算PASS。
+
+C1修复后870887超过旧监督上界40 B，已停报；新裁定 direct-1c643c29869c 将监督上界扩为870947（master855847+15100），明确保持现870887、不再精简/重签、不删检查测试；原签868631和全部容差不变。新正常pnpm test（full16）自然rc0：262文件/2395条＝2265通过＋130条件skip，perf10/10、demo145、contract158、README62/62（独立串行2395）、skills371零拒绝、ratchet870887/web1401666/cold83全部held。README预估2394少C1一例，已仅据此次完整实测修为2395，初输入与修正字节单列保留；源和测试未变。后续同PR303追加窄提交、正常带钩子GitHub push，交监督新准确SHA独立复验与115条副本关系验收，不作者合并/发布/生产操作。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

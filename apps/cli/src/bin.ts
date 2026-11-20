@@ -376,7 +376,7 @@ export async function main(argv: string[]): Promise<number> {
   // another process holds the lock — otherwise its live-holder refusal and
   // --force paths are unreachable (boot would collide first). It only touches
   // the lock dir on the filesystem, never the DB, so boot lock-free.
-  if (group === "db" && action === "unlock") {
+  if ((group === "db" && action === "unlock") || group === "doctor") {
     process.env.YGL_SERVE = "1";
   }
 

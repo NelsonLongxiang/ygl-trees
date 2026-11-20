@@ -1371,25 +1371,32 @@ export interface ProjectSyncStep {
   table: "projects" | "sources" | "evidence" | "claims" | "claim_evidence" | "relations";
   row: Record<string, any>;
   key: string[];
-  event?: { kind: string; payload: string };
+  event?: {
+    kind: string;
+    payload: string;
+  };
 }
+
 /** Each replay step commits its row, search shadow and audit together; the caller reports only committed steps. */
 export async function projectSyncStep(ds: DataSource, step: ProjectSyncStep, guard?: (mgr: EntityManager) => Promise<void>): Promise<void> {
-  return runTx(ds, async mgr => {
-    if (ormDialect(mgr) !== "sqlite") throw new Error("project sync writes require SQLite");
+  return runTx(ds, async (mgr) => {
+    if (ormDialect(mgr) !== "sqlite")
+      throw new Error("project sync writes require SQLite");
     await guard?.(mgr);
     const { row, kind } = step;
     if (kind === "resolution") {
-      await mgr.query("UPDATE claims SET status=?,updated=? WHERE id=?", [row.status,row.updated,row.id]);
+      await mgr.query("UPDATE claims SET status=?,updated=? WHERE id=?", [row.status, row.updated, row.id]);
       await logEvent(mgr, step.event?.kind ?? "claim.sync-state", "claim", row.id, step.event?.payload ?? row.status);
       return;
     }
     const columns = Object.keys(row);
     await mgr.query("INSERT INTO " + step.table + " (" + columns.map(k => '"' + k + '"').join(",") + ") VALUES(" + columns.map(() => "?").join(",") + ")", columns.map(k => row[k]));
-    if (kind === "source") await ftsShadow(mgr,"INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)",[row.id,row.title,row.abstract,row.content,ngram(row.title+" "+row.abstract+" "+row.content+" "+row.tags)]);
-    if (kind === "evidence") await ftsShadow(mgr,"INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)",[row.id,row.quote,ngram(row.quote)]);
-    const event = ({ project:"project.create", source:"source.add", evidence:"evidence.add", claim:"claim.add", link:"claim.link", supersession:"rel.add" } as const)[kind];
-    await logEvent(mgr,event,kind === "link" ? "claim" : kind === "supersession" ? "relation" : kind,row.id??row.claim_id,{sync:true});
+    if (kind === "source")
+      await ftsShadow(mgr, "INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)", [row.id, row.title, row.abstract, row.content, ngram(row.title + " " + row.abstract + " " + row.content + " " + row.tags)]);
+    if (kind === "evidence")
+      await ftsShadow(mgr, "INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [row.id, row.quote, ngram(row.quote)]);
+    const event = ({ project: "project.create", source: "source.add", evidence: "evidence.add", claim: "claim.add", link: "claim.link", supersession: "rel.add" } as const)[kind];
+    await logEvent(mgr, event, kind === "link" ? "claim" : kind === "supersession" ? "relation" : kind, row.id ?? row.claim_id, { sync: true });
   });
 }
 

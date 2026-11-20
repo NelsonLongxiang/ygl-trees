@@ -246,7 +246,7 @@ ygl-trees project sync <name> --home <source-home> --to <target-home> --json
 ygl-trees project sync <name> --home <source-home> --to <target-home> --verify --json
 ```
 
-复制来源→证据→断言（scope）→stance→superseded-by→当前仲裁；保留源 ID，不合并冲突、不改选择。信封 ygl-project-sync/1 含两端 counts/hash；重复全 duplicate 零写入，dry-run/verify 严格只读。缺库/锁/schema冲突 rc1，不自动建库迁移；PG 环境变量 rc2。正常异常给 partial 已提交前缀，原因排除后原命令重跑。崩溃残留同任务死进程锁/WAL 时才显式用 `--resume`（不能与只读模式混用）；清理未知的 rerunnable:false 必须先检查资源和锁，不强清活 holder。不是全工作区备份，不复制 query/task/report/kb/tree 或完整审计历史。
+复制来源→证据→断言（scope）→stance→项目 claim 之间全部原向原 rel 关系→当前仲裁；外端关系在 skipped/skipped_count 中列出，superseded-by 校验不放宽；保留源 ID，不合并冲突、不改选择。信封 ygl-project-sync/1 含两端 counts/hash；重复全 duplicate 零写入，dry-run/verify 严格只读。缺库/锁/schema冲突 rc1，不自动建库迁移；PG 环境变量 rc2。正常异常给 partial 已提交前缀，原因排除后原命令重跑。崩溃残留同任务死进程锁/WAL 时才显式用 `--resume`（不能与只读模式混用）；清理未知的 rerunnable:false 必须先检查资源和锁，不强清活 holder。不是全工作区备份，不复制 query/task/report/kb/tree 或完整审计历史。
 
 **PostgreSQL 直连（B8，详见 `docs/pg-compat.md`）要点：**
 

@@ -742,8 +742,8 @@ export class DB {
     if (!this.ownsLock) return false;
     try {
       const dir = `${this.path}.ygllock`;
-      return fs.readFileSync(path.join(dir, "pid"), "utf8").trim() === String(process.pid) &&
-        fs.readFileSync(path.join(dir, "owner"), "utf8") === this.lockIdentity;
+      return gateValue(dir, "pid").trim() === String(process.pid) &&
+        gateValue(dir, "owner") === this.lockIdentity;
     } catch { return false; }
   }
 
@@ -1017,21 +1017,59 @@ export const EDGE_MODES = ["AND", "OR", "XOR", "NOT"] as const;
 /** Condition kinds for non-structural gates. */
 export const COND_KINDS = ["flag", "resource", "level", "quest", "time", "expr"] as const;
 
-/** Serializes ordinary lock admission with sync recovery; unknown orphaned gates fail closed. */
-export function acquireLockAdmission(file: string) {
+function gateValue(dir: string, key: string): string {
+  return fs.readFileSync(path.join(dir, key), "utf8");
+}
+
+/** A missing or malformed owner stays unknown, never inferred dead. */
+export function admissionGate(file: string) {
+  const dir = file + ".ygllock.recovery";
+  let state: "absent" | "unknown" | "live" | "dead" = "absent", pid = "", owner = "", task = "";
+  if (fs.existsSync(dir)) {
+    state = "unknown";
+    try {
+      owner = gateValue(dir, "owner");
+      pid = gateValue(dir, "pid").trim();
+      task = gateValue(dir, "task");
+      if (owner && owner === gateValue(dir, "owner") && task && /^[1-9][0-9]*$/.test(pid) && Number.isSafeInteger(Number(pid))) {
+        try { process.kill(Number(pid), 0); state = "live"; }
+        catch (error: any) { state = error.code === "ESRCH" ? "dead" : "unknown"; }
+      }
+    } catch { /* Incomplete publication is not a dead owner. */ }
+  }
+  return { dir, state, pid, owner, task };
+}
+
+/** The retained, token-addressed tombstone fences delayed reclaimers of the same generation. */
+export function clearDeadAdmission(file: string): boolean {
+  const gate = admissionGate(file);
+  if (gate.state !== "dead") return false;
+  const retired = gate.dir + ".stale-" + sha1(gate.owner);
+  try { fs.renameSync(gate.dir, retired); return true; }
+  catch (error: any) {
+    if (error.code === "ENOENT" || fs.existsSync(retired)) return false;
+    throw error;
+  }
+}
+
+/** Serializes normal lock publication and explicit sync recovery; dead gates can be reclaimed. */
+export function acquireLockAdmission(file: string, task = "DB open") {
   const dir = file + ".ygllock.recovery", token = randomUUID();
   const raw = Number(process.env.YGL_LOCK_RETRY_MS), deadline = Date.now() + (Number.isFinite(raw) && raw >= 0 ? raw : 8000);
   for (;;) {
     try { fs.mkdirSync(dir); break; }
     catch (error: any) {
       if (error.code !== "EEXIST") throw error;
+      if (clearDeadAdmission(file)) continue;
       if (Date.now() >= deadline) throw new Error("database is locked by another admission/recovery: " + file);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
     }
   }
-  fs.writeFileSync(path.join(dir, "owner"), token, { flag: "wx" });
+  for (const [key, value] of [["owner", token], ["pid", String(process.pid)], ["task", task]]) {
+    fs.writeFileSync(path.join(dir, key), value, { flag: "wx" });
+  }
   return { dir, token, release() {
-    if (fs.readFileSync(path.join(dir, "owner"), "utf8") !== token) throw new Error("database admission lock ownership changed");
+    if (gateValue(dir, "owner") !== token) throw new Error("database admission lock ownership changed");
     fs.rmSync(dir, { recursive: true });
   } };
 }

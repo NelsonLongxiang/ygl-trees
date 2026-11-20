@@ -225,6 +225,19 @@ describe("supported SQLite project sync",()=>{
    expect(attempted).toBe(true);expect(writer).toBeUndefined();expect(String(rejected)).toMatch(/locked|admission|recovery/);expect(rc).toBe(0);expect(output[0].verify.ok).toBe(true);
   }finally{spy.mockRestore();writer?.closeStrict();if(prior===undefined)delete process.env.YGL_LOCK_RETRY_MS;else process.env.YGL_LOCK_RETRY_MS=prior;}
  });
+ it("copies all internal claim relations as recorded and declares skipped external endpoints",()=>{
+  native(source,db=>{
+   db.prepare("INSERT INTO kb_notes(id,title,body,content_hash,created,updated) VALUES('kb1','context','body','kb1','old','old')").run();
+   for(const [id,from,to,rel] of [["s31","c3","c1","supersedes"],["s32","c3","c2","supersedes"],["s21","c2","c1","supersedes"],["custom","c1","c3","depends-on"]])db.prepare("INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created) VALUES(?,'claim',?,'claim',?,?,?,'old')").run(id,from,to,rel,0.5);
+   db.prepare("INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,created) VALUES('external','claim','c1','kb','kb1','evidenced-by','old')").run();
+  });
+  const before=snapshot(source),empty=snapshot(target),dry=cli(["--dry-run"]);expect(dry.skipped_count).toBe(1);expect(dry.steps.filter((row:any)=>row.kind==="supersession")).toHaveLength(6);expect(snapshot(target)).toEqual(empty);
+  const copied=cli();
+  expect(native(target,db=>db.prepare("SELECT id,src_type,src_id,dst_type,dst_id,rel,weight,created FROM relations ORDER BY id").all())).toEqual(native(source,db=>db.prepare("SELECT id,src_type,src_id,dst_type,dst_id,rel,weight,created FROM relations WHERE id<>'external' ORDER BY id").all()));
+  expect(copied.skipped).toEqual([expect.objectContaining({id:"external",rel:"evidenced-by",src:"claim:c1",dst:"kb:kb1",reason:expect.any(String)})]); expect(copied.skipped_count).toBe(1); expect(copied.verify.ok).toBe(true); expect(snapshot(source)).toEqual(before);
+  const second=cli(); expect(second.written).toBe(0);expect(second.steps.every((row:any)=>row.action==="duplicate")).toBe(true);expect(second.skipped).toEqual(copied.skipped);
+  native(target,db=>db.prepare("DELETE FROM relations WHERE id='s31'").run());const targetBefore=snapshot(target);expect(cli(["--verify"],1).error).toMatch(/verification|relation/);expect(snapshot(target)).toEqual(targetBefore);
+ });
  it("requires explicit source and target and rejects same-file aliases before write",()=>{
   const before=snapshot(source);expect(cli([],1,source,source).error).toMatch(/same/);expect(snapshot(source)).toEqual(before);
  });

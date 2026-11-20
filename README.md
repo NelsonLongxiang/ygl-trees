@@ -226,7 +226,7 @@ ygl-trees project sync <name> --home <source-home> --to <target-home> --json
 ygl-trees project sync <name> --home <source-home> --to <target-home> --verify --json
 ```
 
-按来源→证据→断言→stance 链→替代链→当前仲裁状态回放，保留源 ID、scope、superseded-by 链及末次 resolve/unresolve 载荷；不合并冲突身份、不改选择指针。重复执行全 duplicate、零写入；dry-run 和 verify 不开写连接、不建目录或清锁。信封 `ygl-project-sync/1` 返回逐项 action、written，以及两端业务投影的 counts/SHA-256（不比较审计 ID/时间戳）。缺库、锁、未 checkpoint WAL、schema 或内容冲突 rc1；缺参和 PG 环境变量 rc2，不回退默认 home。部分提交失败报告已提交前缀，正常异常清理后可原命令重跑；进程崩溃留下锁/WAL 时，同一源快照与项目用 `--resume` 显式恢复，只接管已确认死亡的同任务锁。清理未知则 `rerunnable:false/recovery_required:true`，先检查资源与锁，不强清活锁。详见 [复制边界](packages/ops/tools/README.md#project-copy)。
+按来源→证据→断言→stance 链→替代链→当前仲裁状态回放，保留源 ID、scope、项目 claims 之间全部关系的原方向/原 rel（含 supersedes、superseded-by）及末次 resolve/unresolve 载荷；外端关系在 skipped/skipped_count 中具名列出，不静默丢弃；不合并冲突身份、不改选择指针。重复执行全 duplicate、零写入；dry-run 和 verify 不开写连接、不建目录或清锁。信封 `ygl-project-sync/1` 返回逐项 action、written，以及两端业务投影的 counts/SHA-256（不比较审计 ID/时间戳）。缺库、锁、未 checkpoint WAL、schema 或内容冲突 rc1；缺参和 PG 环境变量 rc2，不回退默认 home。部分提交失败报告已提交前缀，正常异常清理后可原命令重跑；进程崩溃留下锁/WAL 时，同一源快照与项目用 `--resume` 显式恢复，只接管已确认死亡的同任务锁。清理未知则 `rerunnable:false/recovery_required:true`，先检查资源与锁，不强清活锁。详见 [复制边界](packages/ops/tools/README.md#project-copy)。
 
 ### library：经验库的只读分页出口
 
@@ -372,7 +372,7 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 82 条真库用例（十份 spec；含 claims.scope v16 的迁移、旧镜像、CLI 与受控并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 82 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2381 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（145 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
+pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2395 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（145 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
 pnpm bench         # 性能基准四条用户路径（startup/写路径/检索/索引），每条含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
