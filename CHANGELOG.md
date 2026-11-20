@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **显式项目复制**（Refs #295，Item 3）：CLI `project sync <name> --home <source-home> --to <target-home>` 对静止、已初始化且同 schema 的 SQLite 副本有序回放来源、证据、断言、stance、superseded-by 与当前仲裁状态，保留 scope 和源 ID；不改选择、不覆盖冲突。dry-run/verify 严格只读，信封含两端业务计数与哈希；重复全 duplicate 零写入。逐事务失败报告已提交前缀，显式 resume 仅恢复同快照/项目的死进程同步锁与 WAL，清理未知保留锁并拒绝盲重跑。claim 查重增加哈希快路与项目/文本索引，异 scope 冲突仍先拒绝。
+
 - **断言授权键**（Refs #295，Item 2）：schema v16 增加 claims.scope，旧行默认空串未归属。claim add/file/batch 与 MCP 支持严格 scope 校验；同项目文本同 scope 幂等，异 scope 点名 rc1 并指向显式 rescope，force 不绕过。rescope 与 old_scope/new_scope 审计原子提交，同值无写；claim show/list 与 library 行/详情携带 scope，library 精确筛选先于分页。导出回放、PG 显式升级与旧镜像刷新保留该列，不推断项目授权或自动升级业务 PG。
 
 - **经验库项目过滤**（Refs #295，Item 1）：`library list --kind claim --project <name>` 显式按项目筛选计数与分页，未知项目保持原分页信封空结果 rc0；缺值／空值 rc2。note、skill、check 没有权威项目归属，带项目筛选具名拒绝 rc2。MCP 透传同一项目名，游标继续绑定项目及完整筛选条件，不新增 schema、授权映射或写入。

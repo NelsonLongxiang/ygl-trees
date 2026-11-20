@@ -316,6 +316,7 @@ const MIGRATE_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_sources_project  ON sources(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id);
 CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
+CREATE INDEX IF NOT EXISTS idx_claims_project_text ON claims(project_id, text);
 CREATE INDEX IF NOT EXISTS idx_artifacts_proj   ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts        ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_kind_entity ON events(kind, entity_id, ts);  -- #176 W5a: parity with SCHEMA_SQL (found by the structural gate)

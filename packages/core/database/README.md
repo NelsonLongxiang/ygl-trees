@@ -37,3 +37,7 @@ Schema v16 extends the same grant contract to `claims`. SQLite v15 and version-z
 
 - [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
 - [docs/conventions.md](../../../docs/conventions.md) — data model conventions
+
+## Lock admission
+
+Ordinary `DB(...,{lock:true})` acquisition and explicit project-copy recovery share an exclusive `.ygllock.recovery` admission directory. It serializes stale-owner inspection through new-owner publication, not the lifetime of ordinary DB use. Recovery keeps the gate through stale-lock rename and checkpoint. Its owner token must match before removal; an unknown orphaned gate fails closed for inspection. Live-holder waiting keeps the existing `YGL_LOCK_RETRY_MS` budget; no business table, transaction retry or backend binding is changed.

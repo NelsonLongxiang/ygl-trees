@@ -143,6 +143,8 @@ ${paint(C.bold, "skill", color)}        L1 description / L2 body / L3 references
 ${paint(C.bold, "project", color)}
   new <name> -q "<question>"  create + select
   list | use <name> | show
+  sync <name> --home <source-home> --to <target-home> [--dry-run|--verify|--resume]
+                             explicit checkpointed SQLite copies; preserve IDs; no selection changes
 
 ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   query add "<text>"          register a search query
@@ -511,6 +513,10 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (group === "library" && action === "list") validateLibraryProject(args.flags.project);
   } catch (e: any) { bad(ctx, e.message); return 2; }
+  if (group === "project" && action === "sync") {
+    const { runProjectSync, createWorkspaceOrm } = await import("./domain-barrel");
+    return runProjectSync(ctx, args, file => createWorkspaceOrm({ dialect: "sqlite", file }));
+  }
   const home = str(args, "home", HOME);
   // verify 组（r15 P1-1）：`--db` 是业务库快照，不是工作区库——把它当工作区库会让
   // `verify run/prepare` 就地给业务库跑 ygl schema 迁移（实测灌入 57 张表、user_version 0→12），
@@ -1124,6 +1130,7 @@ export function generateLlmsManifest(): string {
     ["project", "Project management", [
       ["project new <name> -q \"<question>\"", "create + select (session-scoped)"],
       ["project use <name> [--global] / list / show", "switch / browse (selection_source shown)"],
+      ["project sync <name> --home <source-home> --to <target-home> [--dry-run|--verify|--resume]", "copy checkpointed SQLite project IDs and rulings; dry-run/verify are read-only; resume only the same dead sync"],
     ]],
   ];
 

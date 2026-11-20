@@ -157,6 +157,19 @@ $Y research claim rescope "$CLAIM_SCOPE_ID" --scope= --json > "$YGL_HOME/claim-s
 $Y research claim show "$CLAIM_SCOPE_ID" --json > "$YGL_HOME/claim-scope-show.json"
 node -e 'const a=require("node:assert/strict"),f=require("node:fs"),read=p=>JSON.parse(f.readFileSync(p,"utf8"));a.equal(read(process.argv[1]).scope,"");a.equal(read(process.argv[2]).duplicate,true);a.equal(read(process.argv[3]).scope,"")' "$YGL_HOME/claim-scope-change.json" "$YGL_HOME/claim-scope-rescope-dup.json" "$YGL_HOME/claim-scope-show.json"
 echo "  ✓ claim rescope keeps explicit empty scope and same-value idempotency"
+# Copy the synthetic project into a separate, explicitly initialized target.
+SYNC_TARGET="$YGL_HOME/sync-target"
+$Y db init --home "$SYNC_TARGET" >/dev/null
+$Y project sync techtree --home "$YGL_HOME" --to "$SYNC_TARGET" --dry-run --json > "$YGL_HOME/sync-dry.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),r=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.equal(r.contract,"ygl-project-sync/1");a.equal(r.written,0);a.equal(r.verify.target.counts.project,0);a.ok(r.steps.some(s=>s.action==="add"))' "$YGL_HOME/sync-dry.json"
+echo "  ✓ project sync dry-run plans with zero writes"
+$Y project sync techtree --home "$YGL_HOME" --to "$SYNC_TARGET" --json > "$YGL_HOME/sync-copy.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),r=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.equal(r.verify.ok,true);a.deepEqual(r.verify.source,r.verify.target);a.ok(r.written>0)' "$YGL_HOME/sync-copy.json"
+echo "  ✓ project sync preserves full project count/hash proof"
+$Y project sync techtree --home "$YGL_HOME" --to "$SYNC_TARGET" --json > "$YGL_HOME/sync-duplicate.json"
+$Y project sync techtree --home "$YGL_HOME" --to "$SYNC_TARGET" --verify --json > "$YGL_HOME/sync-verify.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),read=p=>JSON.parse(f.readFileSync(p,"utf8")),r=read(process.argv[1]);a.equal(r.written,0);a.ok(r.steps.every(s=>s.action==="duplicate"));a.equal(read(process.argv[2]).verify.ok,true)' "$YGL_HOME/sync-duplicate.json" "$YGL_HOME/sync-verify.json"
+echo "  ✓ project sync rerun is all duplicate and readonly verify succeeds"
 # Grant filters are exact and duplicates do not broaden a note's audience.
 $Y kb add --title "scope-demo" --body "scope-demo-material" --scope dept:ops --json > "$YGL_HOME/scope-add.json"
 SCOPE_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id' "$YGL_HOME/scope-add.json")

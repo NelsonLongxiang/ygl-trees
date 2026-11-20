@@ -138,11 +138,24 @@ Item 1 仅使用 claim 的 project_id→项目名作为项目归属；note、pro
 
 RSI：本轮复用既有九触点与正式验证入口，未造登记平台；PR正文自动关单会忽略否定语义，故后继提交与PR只写 Refs #295，发布前检查真实文本，避免重演PR299合入时的误关单（监督已重开）。当前未提交/推送本项PR，无作者合并或发布授权；Item1的一次传输例外不用于本项。远端主干后继PR300仅两历史文档修正，本项不动那两文件。Item3项目sync待v16合入后独立开工，115条macOS副本演练由监督执行，不操作生产数据/全局安装/retention/DSH。
 
-## #202 后继：轮询不能挤掉 watcher I/O 诊断（候选）
+## #202 后继：轮询不能挤掉 watcher I/O 诊断（PR302 已合并，根因未修）
 
 按监督队列 `direct-058556cdc0c1` 的 B 项及 [取证缺口说明](https://github.com/NelsonLongxiang/ygl-trees/issues/202#issuecomment-7036632889)，在 Item2 PR301 交付后的空档，初始从 `2c75ddb` 建独立 `test/watcher-io-trace-202`；后依监督新单 `direct-034b751c0d4d` 将旧基线验证停止并保原，从已合入 v16 的实际主干 `2ae9851` 重新验证。两共享席已交回本阶段窗口，Item2 精确头与旧 refs 保留。原测试 256 条环形记录会被 settled/projection 轮询挤掉关键事件；原快照用例加入确定性注入，先观察目标失败，再分离 `io_trace/io_dropped`，普通 trace/dropped 保持。两缓冲各限256条；3000条轮询不挤掉创建/改写的 filename/read/stat、错误及时间戳，I/O 自身溢出如实计数，已取快照不随后续记录改变，序列化仍含原序信息。
 
-原快照的源 PASS／索引 FAIL、revision、脏标记和“不修复索引”断言保留；实际生命周期失败继续在清理前落盘同一快照。定向16/16零跳过（反例筛选阶段另有15条未选，不算跳过通过）。只改测试诊断，不改产品、3000ms等待或20ms间隔，不新增用例总数，不将定向绿当产品根因已修复；#202 仍待真实失败证据判别事件未到与索引 revision 未提交。当前进入正常完整门禁，尚未准确提交、独立验收或发布本诊断 PR。原队列 A/#178 的 G8 因执行边界冲突未运行，监督已撤销本次队列，复核并入后续属主批准的发布；不改 G8 脚本。
+原快照的源 PASS／索引 FAIL、revision、脏标记和“不修复索引”断言保留；实际生命周期失败继续在清理前落盘同一快照。PR302 精确头 `6baa42f` 已经监督席 macOS 正常完整链 rc0、三变异杀死及非作者 PASS，合入实际主干 `134c56d`。仅测试诊断，不改产品或超时，#202 仍开放等待真实失败证据；不迁作根因修复。本地正常完整链与带钩子 push 亦 rc0。原队列 A/#178 的 G8 已被监督撤销为 CANCELLED/NOT_RUN，合入 #295 后留待属主批准的发布复核，不改 G8 脚本。
+
+## #295 T6 Item 3：显式项目副本（在途）
+
+从实际主干 `134c56d` 开始，Item1/2 已分别通过监督验收合并；本项独立 Refs #295，不合并、发布或关闭 issue。保留十一条既有 ref，并与两共享席协调独占运行窗口。
+
+CLI project sync 要求明确 home/to、已初始化同 schema 的静止 SQLite 副本，禁 PG 环境回退。先脱离磁盘的只读 image 规划；来源→证据→断言→stance→superseded-by→当前仲裁逐事务重放，保源 ID/scope，目标身份或内容冲突预写拒绝，不推断授权、不修改选择。dry-run/verify/全 duplicate 不启动写 ORM、不改目录或锁；核验读取完整项目图的计数/哈希，不按计划行数推算。正常异常保全已提交前缀；真实子进程 exit 后未checkpoint WAL 用显式 resume，在同源快照/项目且 holder 确认死亡时独占恢复。清理未知保留锁、拒绝盲重跑。
+
+负控已定位并修复：额外目标行漏核验、schema列与unique/FK漂移、多对一误PASS、首写前变动、事务间外部写入、SQLite仲裁同时间戳rowid顺序、仲裁状态矛盾、真实崩溃WAL恢复、原生close未知和恢复锁所有权。原红和可选ID映射收敛记录保留；最小additive-copy不提供自动merge/remap。claim查询先异scope拒绝，再hash快路/项目文本索引回退，forced-first幂等保留。source/evidence同形写事务去重后固定npm0.117.1黄金1/1、隔离PG85/85（82真库＋3离线）零skip；本次容器与匿名卷均移除并确认不存在。相关七spec99/99，后继恢复guard34/34；这些不是最终完整工程PASS。
+
+体积探索原证据保留，未改minify/keepNames/deps/vendor。监督原单 `direct-9b171543236b` 允许最终源码相对实际master134c56d增量≤15000 B后一次归因重签，独立提交；仅bundle与归因note，不改web/cold原值或任何容差。同Windows/Node24.12.0实测master855847 B、最终候选868631 B（+12784），一次归因重签已按原单执行，web/cold原值与所有容差保持；原超门证据保留。构建33与最终受影响64/64零跳过、原两worker完整unit31＝261文件/2373条（2243通过＋130条件skip）自然rc0，之后新增2条PG-home绑定反例先红后绿；README2375待正常完整链实测核对，demo145和skills371已实测rc0。现在跑正常pnpm test，不以定向通过替代本准确源码完整验收。115条真实rulings的macOS演练仅由监督在明确副本执行，本席未触生产、npm/tag、retention或DSH。
+
+
+最终静态补审 direct-2fc93e98 两P1保原：F1恢复校验到rename之间普通DB可能取走死锁；F2 table_info漏generated列。P1-red39五条准确红后，普通DB与sync共享原子准入闸（非非原子复读），table_xinfo完整比较生成/隐藏列。新回归48/48，后继独立child接管补例49/49零skip；初版闸持有过长造成真实exit37恢复红已修为普通sync发布锁后释放准入，恢复仍独占；Windows不安全整数ino误同文件拒绝改bigint。full36因版本失效主动中断并保原，不计PASS。遵后继裁定 direct-aa0092fbf7b6不再re-sign，原已签868631保持；修复后bundle869369，比实测master855847增13522，≤硬上界870847。修后正常完整pnpm test（full44）自然rc0：261文件/2381条＝2251通过＋130条件skip，独立串行计数复验2381；perf10/10、demo145、contract158、README62/62、skills371零拒绝，ratchet869369/web1401666/cold84全部held。原补审席direct-60838748在绑定三文件SHA上给STATIC_F1_F2_CLOSED、0新增必修，动态NOT_RUN，不迁作监督准确提交终审。下一步独立功能与归因窄提交、正常带钩子GitHub push/Refs #295 PR；监督仍须精确头与副本115条独立复验，本席不代合并发布。
 
 ## 明确推迟（不进本计划）
 

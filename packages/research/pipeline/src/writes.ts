@@ -176,53 +176,34 @@ export interface SourceSpec {
 }
 
 /** #83 单事务体：sourceAdd 与 sourceAddBatch（--batch jsonl）共用。 */
-async function sourceAddCore(mgr: EntityManager, projectId: string, o: SourceSpec): Promise<WriteResult & { created: boolean }> {
-  const url = o.url || "";
-  const urlHash = sha1(url || o.title || "");
+/** Fixed-column rows share insertion across dialects; SQLite dedupe remains before id/time generation. */
+async function insertResearch(mgr: EntityManager, table: string, row: Record<string, any>, conflictCols: string[]) {
+  const cols = Object.keys(row), values = Object.values(row);
   if (ormDialect(mgr) === "postgres") {
-    await assertPgWriteTarget(mgr);
-    await assertPgProjectWritable(mgr, projectId);
-    await assertPgSearch(mgr, "sources");
-    const now = nowIso();
-    const r = await insertOrFetch({
-      table: "sources",
-      cols: ["id", "project_id", "url", "title", "url_hash", "content_hash", "abstract", "content", "engine", "relevance", "confidence", "tags", "retrieved_at", "created", "ngram"],
-      values: [shortId(["src", projectId, urlHash], 10), projectId, url, o.title || url || "untitled", urlHash, sha1(o.content || o.abstract || ""), o.abstract || "", o.content || "", o.engine || "", o.relevance ?? 0, o.confidence || "B", o.tags || "", now, now, ngram((o.title || url || "untitled") + " " + (o.abstract || "") + " " + (o.content || "") + " " + (o.tags || ""))],
-      conflictCols: ["project_id", "url_hash"],
-    }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
-    if (!r.row) throw new Error("source upsert returned no row");
-    if (!r.duplicate) await logEvent(mgr, "source.add", "source", r.row.id, r.row.title);
-    const s = r.row;
-    const row = { id: s.id, project_id: s.project_id, url: s.url, title: s.title, url_hash: s.url_hash, content_hash: s.content_hash, abstract: s.abstract, content: s.content, engine: s.engine, relevance: s.relevance, confidence: s.confidence, tags: s.tags, retrieved_at: s.retrieved_at };
-    return { row, created: !r.duplicate, dup: r.duplicate };
+    const result = await insertOrFetch({ table, cols, values, conflictCols }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
+    if (!result.row) throw new Error(table + " upsert returned no row");
+    return result as { row: Record<string, any>; duplicate: boolean };
   }
-  const ex = await mgr.findOne(Source, { where: { projectId, urlHash } });
-  if (ex) return { row: mapSource(ex), created: false, dup: true };
-  const title = o.title || url || "untitled";
-  const abstract_ = o.abstract || "";
-  const content = o.content || "";
-  const s = new Source();
-  s.id = shortId(["src", projectId, urlHash], 10);
-  s.projectId = projectId;
-  s.url = url;
-  s.title = title;
-  s.urlHash = urlHash;
-  s.contentHash = sha1(content || abstract_);
-  s.abstract = abstract_;
-  s.content = content;
-  s.engine = o.engine || "";
-  s.relevance = o.relevance ?? 0;
-  s.confidence = o.confidence || "B";
-  s.tags = o.tags || "";
-  s.retrievedAt = nowIso();
-  // v9: creation timestamp (distinct from retrievedAt which is fetch time)
-  s.created = nowIso();
-  await mgr.save(s);
-  await ftsShadow(mgr, "INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)", [
-    s.id, title, abstract_, content, ngram(title + " " + abstract_ + " " + content + " " + (o.tags || "")),
-  ]);
-  await logEvent(mgr, "source.add", "source", s.id, title);
-  return { row: mapSource(s), created: true, dup: false };
+  await mgr.query("INSERT INTO " + table + " (" + cols.join(",") + ") VALUES (" + cols.map(() => "?").join(",") + ")", values);
+  return { row, duplicate: false };
+}
+
+async function sourceAddCore(mgr: EntityManager, projectId: string, o: SourceSpec): Promise<WriteResult & { created: boolean }> {
+  const pg = ormDialect(mgr) === "postgres", url = o.url || "", urlHash = sha1(url || o.title || "");
+  if (pg) { await assertPgWriteTarget(mgr); await assertPgProjectWritable(mgr, projectId); await assertPgSearch(mgr, "sources"); }
+  else {
+    const found = (await mgr.query("SELECT * FROM sources WHERE project_id=? AND url_hash=?", [projectId, urlHash]))[0];
+    if (found) return { row: sourceReceipt(found), created: false, dup: true };
+  }
+  const title = o.title || url || "untitled", abstract = o.abstract || "", content = o.content || "", tags = o.tags || "";
+  const pgNow = pg ? nowIso() : "", id = shortId(["src", projectId, urlHash], 10), retrieved = pgNow || nowIso(), created = pgNow || nowIso();
+  const row = { id, project_id: projectId, url, title, url_hash: urlHash, content_hash: sha1(content || abstract), abstract, content, engine: o.engine || "", relevance: o.relevance ?? 0, confidence: o.confidence || "B", tags, retrieved_at: retrieved, created };
+  const result = await insertResearch(mgr, "sources", pg ? { ...row, ngram: ngram(title + " " + abstract + " " + content + " " + tags) } : row, ["project_id", "url_hash"]);
+  if (!result.duplicate) {
+    await ftsShadow(mgr, "INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)", [id, title, abstract, content, ngram(title + " " + abstract + " " + content + " " + tags)]);
+    await logEvent(mgr, "source.add", "source", result.row.id, result.row.title);
+  }
+  return { row: sourceReceipt(result.row), created: !result.duplicate, dup: result.duplicate };
 }
 
 export async function sourceAdd(
@@ -257,12 +238,8 @@ export async function sourceAddBatch(
   });
 }
 
-function mapSource(s: Source): Record<string, any> {
-  return {
-    id: s.id, project_id: s.projectId, url: s.url, title: s.title, url_hash: s.urlHash,
-    content_hash: s.contentHash, abstract: s.abstract, content: s.content, engine: s.engine,
-    relevance: s.relevance, confidence: s.confidence, tags: s.tags, retrieved_at: s.retrievedAt,
-  };
+function sourceReceipt(s: Record<string, any>): Record<string, any> {
+  return { id: s.id, project_id: s.project_id, url: s.url, title: s.title, url_hash: s.url_hash, content_hash: s.content_hash, abstract: s.abstract, content: s.content, engine: s.engine, relevance: s.relevance, confidence: s.confidence, tags: s.tags, retrieved_at: s.retrieved_at };
 }
 
 // ================================================================ evidence
@@ -291,50 +268,26 @@ async function previousQuoteVerification(mgr: EntityManager, evidenceId: string,
 }
 
 function evidenceReceipt(e: Record<string, any>, quote_verified: boolean): Record<string, any> {
-  return { id: e.id, project_id: e.project_id, source_id: e.source_id, quote: e.quote, note: e.note, locator: e.locator, content_hash: e.content_hash, created: e.created, quote_verified };
+  return { id: e.id, project_id: e.project_id ?? e.projectId, source_id: e.source_id ?? e.sourceId, quote: e.quote, note: e.note, locator: e.locator, content_hash: e.content_hash ?? e.contentHash, created: e.created, quote_verified };
 }
 
 /** Single transaction body shared by individual and all-or-nothing batch writes. */
 async function evidenceAddCore(mgr: EntityManager, projectId: string, sourceId: string, quote: string, note: string, locator: string, force: boolean, unverified: boolean): Promise<WriteResult> {
-  const hash = contentHash(quote, force);
-  if (ormDialect(mgr) === "postgres") {
-    await assertPgWriteTarget(mgr);
-    await assertPgProjectWritable(mgr, projectId);
-    await assertPgSearch(mgr, "evidence");
-    await requirePgColumns(mgr, { sources: ["id", "project_id", "content"] });
-    const source = await mgr.query("SELECT id,project_id,content FROM sources WHERE id=$1 FOR SHARE", [sourceId]);
-    if (!source.length || source[0].project_id !== projectId) throw new PgWriteError("source not found in selected project: " + sourceId);
-    const existing = await mgr.query("SELECT * FROM evidence WHERE source_id=$1 AND content_hash=$2", [sourceId, hash]);
-    if (existing.length) return { row: evidenceReceipt(existing[0], await previousQuoteVerification(mgr, existing[0].id, unverified)), dup: true };
-    const quote_verified = verifyQuote(source[0].content, quote, sourceId, unverified);
-    const result = await insertOrFetch({
-      table: "evidence", cols: ["id", "project_id", "source_id", "quote", "note", "locator", "content_hash", "created", "ngram"],
-      values: [shortId(["ev", sourceId, quote], 10), projectId, sourceId, quote, note, locator, hash, nowIso(), ngram(quote)],
-      conflictCols: ["source_id", "content_hash"],
-    }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
-    if (!result.row) throw new Error("evidence upsert returned no row");
-    const e = result.row;
-    if (!result.duplicate) await logEvent(mgr, "evidence.add", "evidence", e.id, { payload_version: 1, evidence_id: e.id, source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
-    return { row: evidenceReceipt(e, result.duplicate ? await previousQuoteVerification(mgr, e.id, unverified) : quote_verified), dup: result.duplicate };
+  const hash = contentHash(quote, force), pg = ormDialect(mgr) === "postgres";
+  if (pg) { await assertPgWriteTarget(mgr); await assertPgProjectWritable(mgr, projectId); await assertPgSearch(mgr, "evidence"); await requirePgColumns(mgr, { sources: ["id", "project_id", "content"] }); }
+  const src = pg ? (await mgr.query("SELECT id,project_id,content FROM sources WHERE id=$1 FOR SHARE", [sourceId]))[0] : await mgr.findOne(Source, { where: { id: sourceId, projectId } });
+  if (!src || (pg && src.project_id !== projectId)) throw pg ? new PgWriteError("source not found in selected project: " + sourceId) : new Error("source not found: " + sourceId);
+  const existing = pg ? (await mgr.query("SELECT * FROM evidence WHERE source_id=$1 AND content_hash=$2", [sourceId, hash]))[0] : await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
+  if (existing) return { row: evidenceReceipt(existing, await previousQuoteVerification(mgr, existing.id, unverified)), dup: true };
+  const quote_verified = verifyQuote(src.content, quote, sourceId, unverified), id = shortId(["ev", sourceId, quote], 10);
+  const row = { id, project_id: projectId, source_id: sourceId, quote, note, locator, content_hash: hash, created: nowIso() };
+  const result = await insertResearch(mgr, "evidence", pg ? { ...row, ngram: ngram(quote) } : row, ["source_id", "content_hash"]);
+  const e = result.row;
+  if (!result.duplicate) {
+    await ftsShadow(mgr, "INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [e.id, quote, ngram(quote)]);
+    await logEvent(mgr, "evidence.add", "evidence", e.id, { payload_version: 1, evidence_id: e.id, source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
   }
-  const src = await mgr.findOne(Source, { where: { id: sourceId, projectId } });
-  if (!src) throw new Error("source not found: " + sourceId);
-  const ex = await mgr.findOne(Evidence, { where: { sourceId, contentHash: hash } });
-  if (ex) return { row: { ...mapEvidence(ex), quote_verified: await previousQuoteVerification(mgr, ex.id, unverified) }, dup: true };
-  const quote_verified = verifyQuote(src.content, quote, sourceId, unverified);
-  const e = new Evidence();
-  e.id = shortId(["ev", sourceId, quote], 10);
-  e.projectId = projectId;
-  e.sourceId = sourceId;
-  e.quote = quote;
-  e.note = note;
-  e.locator = locator;
-  e.contentHash = hash;
-  e.created = nowIso();
-  await mgr.save(e);
-  await ftsShadow(mgr, "INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)", [e.id, quote, ngram(quote)]);
-  await logEvent(mgr, "evidence.add", "evidence", e.id, { payload_version: 1, evidence_id: e.id, source_id: sourceId, quote: quote.slice(0, 60), quote_verified, unverified });
-  return { row: { ...mapEvidence(e), quote_verified }, dup: false };
+  return { row: evidenceReceipt(e, result.duplicate ? await previousQuoteVerification(mgr, e.id, unverified) : quote_verified), dup: result.duplicate };
 }
 
 export async function evidenceAdd(
@@ -371,13 +324,6 @@ export async function evidenceAddBatch(
   });
 }
 
-function mapEvidence(e: Evidence): Record<string, any> {
-  return {
-    id: e.id, project_id: e.projectId, source_id: e.sourceId, quote: e.quote,
-    note: e.note, locator: e.locator, content_hash: e.contentHash, created: e.created,
-  };
-}
-
 // ================================================================ claims
 
 
@@ -391,10 +337,13 @@ async function lockClaimScope(mgr: EntityManager, projectId: string, text: strin
 }
 
 async function claimAddCore(mgr: EntityManager, projectId: string, text: string, confidence: string, force: boolean, channel: string, scope: string): Promise<WriteResult> {
-  const existing = await mgr.find(Claim, { where: { projectId, text }, order: { created: "ASC", id: "ASC" } });
-  const conflict = existing.find(row => row.scope !== scope);
+  const conflict = (await stateRows(mgr, "SELECT id FROM claims WHERE project_id=? AND text=? AND scope<>? LIMIT 1", [projectId, text, scope]))[0];
   if (conflict) throw Object.assign(new PgWriteError("claim " + conflict.id + " already has this text with a different scope; use research claim rescope " + conflict.id + " --scope <s>"), { rc: 1 });
-  if (!force && existing.length) return { row: mapClaim(existing[0]), dup: true };
+  if (!force) {
+    const existing = await mgr.findOne(Claim, { where: { projectId, contentHash: sha1(text) } })
+      ?? await mgr.findOne(Claim, { where: { projectId, text }, order: { created: "ASC", id: "ASC" } });
+    if (existing) return { row: mapClaim(existing), dup: true };
+  }
   const c = mgr.create(Claim, {
     id: shortId(["cl", projectId, text], 10), projectId, text, status: "unverified", confidence,
     channel: channel || "", scope, contentHash: contentHash(text, force), created: nowIso(), updated: nowIso(),
@@ -1413,6 +1362,34 @@ export async function projectCreate(ds: DataSource, name: string, question = "")
     await logEvent(mgr, "project.create", "project", id, name);
     const rows = (await mgr.query(`SELECT * FROM projects WHERE id=?`, [id])) as any[];
     return rows[0];
+  });
+}
+
+
+export interface ProjectSyncStep {
+  kind: "project" | "source" | "evidence" | "claim" | "link" | "supersession" | "resolution";
+  table: "projects" | "sources" | "evidence" | "claims" | "claim_evidence" | "relations";
+  row: Record<string, any>;
+  key: string[];
+  event?: { kind: string; payload: string };
+}
+/** Each replay step commits its row, search shadow and audit together; the caller reports only committed steps. */
+export async function projectSyncStep(ds: DataSource, step: ProjectSyncStep, guard?: (mgr: EntityManager) => Promise<void>): Promise<void> {
+  return runTx(ds, async mgr => {
+    if (ormDialect(mgr) !== "sqlite") throw new Error("project sync writes require SQLite");
+    await guard?.(mgr);
+    const { row, kind } = step;
+    if (kind === "resolution") {
+      await mgr.query("UPDATE claims SET status=?,updated=? WHERE id=?", [row.status,row.updated,row.id]);
+      await logEvent(mgr, step.event?.kind ?? "claim.sync-state", "claim", row.id, step.event?.payload ?? row.status);
+      return;
+    }
+    const columns = Object.keys(row);
+    await mgr.query("INSERT INTO " + step.table + " (" + columns.map(k => '"' + k + '"').join(",") + ") VALUES(" + columns.map(() => "?").join(",") + ")", columns.map(k => row[k]));
+    if (kind === "source") await ftsShadow(mgr,"INSERT INTO sources_fts(id,title,abstract,content,ngram) VALUES(?,?,?,?,?)",[row.id,row.title,row.abstract,row.content,ngram(row.title+" "+row.abstract+" "+row.content+" "+row.tags)]);
+    if (kind === "evidence") await ftsShadow(mgr,"INSERT INTO evidence_fts(id,quote,ngram) VALUES(?,?,?)",[row.id,row.quote,ngram(row.quote)]);
+    const event = ({ project:"project.create", source:"source.add", evidence:"evidence.add", claim:"claim.add", link:"claim.link", supersession:"rel.add" } as const)[kind];
+    await logEvent(mgr,event,kind === "link" ? "claim" : kind === "supersession" ? "relation" : kind,row.id??row.claim_id,{sync:true});
   });
 }
 

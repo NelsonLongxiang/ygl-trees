@@ -475,6 +475,7 @@ CREATE INDEX IF NOT EXISTS idx_verifier_runs_instance ON verifier_runs(instance_
 CREATE INDEX IF NOT EXISTS idx_sources_project  ON sources(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence(project_id);
 CREATE INDEX IF NOT EXISTS idx_claims_project   ON claims(project_id);
+CREATE INDEX IF NOT EXISTS idx_claims_project_text ON claims(project_id, text);
 CREATE INDEX IF NOT EXISTS idx_artifacts_proj   ON artifacts(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts        ON events(ts);
 -- Q3 (r29): claim arbitration lock reads the latest resolve/unresolve
@@ -559,6 +560,9 @@ export class DB {
       try { fs.rmSync(legacyLockDir, { recursive: true, force: true }); } catch { /* */ }
     }
     const lockDir = `${file}.ygllock`;
+    const admission = useLock ? acquireLockAdmission(file) : undefined;
+    let acquired = false;
+    try {
     if (useLock && fs.existsSync(lockDir)) {
       let holder = "unknown";
       try { holder = fs.readFileSync(path.join(lockDir, "pid"), "utf8").trim(); } catch { /* */ }
@@ -644,7 +648,6 @@ export class DB {
       }
     }
     // acquire the lock (best-effort; crash cleanup via stale detection above)
-    let acquired = false;
     if (useLock && fs.existsSync(lockDir)) {
       // Defensive: a dir that survived the clears above must not be reused.
       if (!takeoverLockDir(lockDir)) {
@@ -682,6 +685,7 @@ export class DB {
     // never release a FOREIGN lock on close/exit (latent since serve existed,
     // made acute by lock-free `db unlock`).
     this.ownsLock = acquired;
+    } finally { admission?.release(); }
     let opened: SqliteDatabase | undefined;
     try {
       this.db = opened = new SqliteDatabase(file);
@@ -839,6 +843,7 @@ export class DB {
         [SCHEMA_VERSION, nowIso(), 'v16: claims.scope (grant key) · v13: verifier_instances/verifier_runs (verifier registry, #206) · v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
       );
     }
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_claims_project_text ON claims(project_id, text)");
     // Q3 (r29) hot-path index for the arbitration lookup. Existing workspaces
     // are already at SCHEMA_VERSION, so the version-gated SCHEMA_SQL replay
     // above would never create it; CREATE INDEX IF NOT EXISTS is idempotent and
@@ -1011,6 +1016,25 @@ export const EDGE_RELS = ["prereq", "unlock", "excludes", "enables"] as const;
 export const EDGE_MODES = ["AND", "OR", "XOR", "NOT"] as const;
 /** Condition kinds for non-structural gates. */
 export const COND_KINDS = ["flag", "resource", "level", "quest", "time", "expr"] as const;
+
+/** Serializes ordinary lock admission with sync recovery; unknown orphaned gates fail closed. */
+export function acquireLockAdmission(file: string) {
+  const dir = file + ".ygllock.recovery", token = randomUUID();
+  const raw = Number(process.env.YGL_LOCK_RETRY_MS), deadline = Date.now() + (Number.isFinite(raw) && raw >= 0 ? raw : 8000);
+  for (;;) {
+    try { fs.mkdirSync(dir); break; }
+    catch (error: any) {
+      if (error.code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) throw new Error("database is locked by another admission/recovery: " + file);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  fs.writeFileSync(path.join(dir, "owner"), token, { flag: "wx" });
+  return { dir, token, release() {
+    if (fs.readFileSync(path.join(dir, "owner"), "utf8") !== token) throw new Error("database admission lock ownership changed");
+    fs.rmSync(dir, { recursive: true });
+  } };
+}
 
 /** PID liveness probe (shared by lock acquisition, `db unlock`, and doctor).
  *  signal 0 = pure existence check (does NOT kill the process)
