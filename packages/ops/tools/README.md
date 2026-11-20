@@ -45,6 +45,11 @@ Tree group reports use ordinary four-value VUs: tree-only `STALE`, `INFRA_BLOCKE
 
 `verify report import` treats supplied `run_id` and `spec_id` as artifact identifiers, not paths: present values use 1–128 ASCII letters, digits, `_` or `-`. A supplied nonempty `verifier.binary_sha256` must be 64 hexadecimal digits with an optional `sha256:` prefix. Invalid values return rc1 with `{imported:false, problems}` before registration lookup, embedded-spec restoration or report writes. Missing/null run IDs keep the existing content-derived filename fallback. Normal payload/build/version/signature checks remain required. This input boundary does not make legacy report import append-only or provide lease authorization; an S2 hand-back needs its own accepted-run identity and transaction.
 
+## WebUI shutdown and verifier output ownership
+
+- `webui serve` 按每条连接的未完成响应跟踪停机，不依赖 Node 18 各版本不一致的 parser-idle 分类或 `closeIdleConnections` API。停止接纳后，无未完成响应的连接经 `destroySoon()` 排空写缓冲后关闭；活跃 HTTP 响应（含流水线）完成后才结束其连接，SSE 先结束流，再排空实际业务工作。半关闭或中途断连的客户端不改变已接纳工作的依赖排空次序。
+- `refuseMeta` 的 JSON 拒绝面走 `emitJson`，与受管 invocation 的单对象结果边界一致。
+
 ## Verifier engine provenance
 
 CLI and HTTP prepare/run, and newly executed tree leaves, pass the running application `env.version` to the verifier, matching tree G8. A frozen spec records its preparing engine while each new report records its executing engine; running a legacy spec does not rewrite its original version or earlier reports. Archives retain and verify the report version. The standalone verify-core library and deterministic corpus keep their own0.1.0 default; an embedding application should inject its version. This change does not migrate frozen specs, add provenance flags, change as_of or enforce reviewer independence.

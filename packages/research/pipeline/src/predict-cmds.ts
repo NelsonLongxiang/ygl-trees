@@ -1,5 +1,5 @@
 import type { Env } from "../../../core/database/src/types";
-import { out, head, table, paint, C, bad } from "../../../core/text/src/fmt";
+import { out, head, table, paint, C, bad, emitJson } from "../../../core/text/src/fmt";
 import { parsePrediction, auditPredictions, loadStateSource } from "./predict";
 import { predictionScore, summarizePredictions } from "./predict-score";
 
@@ -25,8 +25,10 @@ export async function run(env: Env, project: any, args: any, action: string): Pr
     "SELECT id,text,status,confidence,created,channel FROM claims WHERE " + (workspace ? "" : "project_id=? AND ") + "text LIKE '[预测·%' ORDER BY created",
     workspace ? [] : [project.id]
   ) as any[];
-  const empty = () => { if (ctx.json) console.log("[]"); else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color)); return 0; };
-  if (!claims.length && action !== "score") return empty();
+  if (!claims.length && action !== "score") {
+    if (ctx.json) emitJson(ctx, []); else out(ctx, paint(C.dim, "  no [预测·…] claims in this project", ctx.color));
+    return 0;
+  }
   const today = new Date().toISOString().slice(0, 10);
   const daysLeft = (deadline: string) => /^\d{4}-\d{2}-\d{2}$/.test(deadline)
     ? Math.floor((Date.parse(deadline + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86400000) : null;
@@ -41,7 +43,7 @@ export async function run(env: Env, project: any, args: any, action: string): Pr
     const count = (key: string, value: string) => rows.filter(r => (r as any)[key] === value).length;
     const resolved = count("verdict", "resolved");
     const visible = flags.due ? rows.filter(r => r.bucket === "due") : flags.all ? rows : rows.filter(r => r.verdict !== "resolved");
-    if (ctx.json) { console.log(JSON.stringify(flags.due ? visible : rows, null, 2)); return 0; }
+    if (ctx.json) { emitJson(ctx, flags.due ? visible : rows, 2); return 0; }
     if (!visible.length) { out(ctx, paint(C.dim, "  全部 " + rows.length + " 条预测已结案（resolved）——--all 查看终态表", ctx.color)); return 0; }
     head(ctx, "prediction audit — " + project.name + " (" + visible.length + "/" + rows.length + " · due " + count("bucket", "due") + " / near " + count("bucket", "near") + " / future " + count("bucket", "future") + (resolved && !flags.all && !flags.due ? " · " + resolved + " resolved 隐藏 (--all)" : "") + ")");
     table(ctx, visible, ["claim", "horizon", "deadline", "判据", "实测", "判定", "days"], ["claim_id", "horizon", "deadline", "criterion", "actual", "verdict", "days_left"]);
@@ -72,7 +74,7 @@ export async function run(env: Env, project: any, args: any, action: string): Pr
   }
   const dueOnly = flags.due === true;
   if (dueOnly) rows = rows.filter(r => r.due);
-  if (ctx.json) { console.log(JSON.stringify(rows, null, 2)); return 0; }
+  if (ctx.json) { emitJson(ctx, rows, 2); return 0; }
   const visible = flags.all ? rows : rows.filter(r => r.outcome === "未结算");
   head(ctx, "predict list — " + (workspace ? "workspace" : project.name) + " (" + visible.length + "/" + rows.length + (dueOnly ? " · due" : rows.length !== visible.length ? " · 已结案隐藏 (--all)" : "") + ")");
   table(ctx, visible.map(r => ({ ...r, score_check: r.brier_mismatch ? "≠" : "" })), ["claim", "deadline", "days", "outcome", "p", "brier", "brier_calc", "check", "settler", "channel"], ["claim_id", "deadline", "days_left", "outcome", "p", "brier", "brier_calc", "score_check", "settler", "channel"]);

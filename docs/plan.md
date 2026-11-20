@@ -102,6 +102,16 @@ scope v15 随 #279 合入并进入 0.126.0；监督席已在发布包/tag 复核
 
 原本地候选 `1e8b693` 已完成完整工程、真实 PG/G7、clean-pack、benchmark、非作者精确绑定与指定验收席六判据独立 PASS，原分支和红／中断原证保全。#291 随后以 `457f5ea`、#290 以 `2ffda8a` 普通合入 master；监督席对 #290 的新头 `1e90b73` 完成 macOS 全链 rc0。按属主“继续”，本轮另建 `fix/orm-bootstrap-285-delivery`，从原验收头普通 merge 真实主干 `2ffda8a`；原验收结论不迁为本新头 PASS。新增报告导入路径准入须接入既有局部 JSON 结果端口，保持 #291 的拒绝／替换语义与旧手工 Env 输出，补清理屏障与主副错误回归；README 总数仅按本新候选完整执行更新。本整合首版完整单测自然 rc0：246 文件／2201 用例，2075 通过、126 条件跳过、0 失败；其后非作者评审 D1 指出活动租约抽取改变停工 use／cleanup 的严格回调接收者，原 REQUEST_CHANGES 与 16 通过／2 失败反例保全。仅恢复两条旧 ALS 直接调用的 this=null／零参数，并保持接纳期 this=undefined／一个 detach；D1 后继获 WIP_DELTA_ACCEPTABLE_STATIC、无新增必修。修复版完整单测再次自然 rc0：246 文件／2205 用例，2079 通过、126 条件跳过、0 失败，README 据此更新；被 D1 替代的在途 full01 已停止，不算正常全链 PASS。导入拒绝分支的 6 个真实清理屏障反例先红后绿，原 42 项导入测试语义保持；最终 D1 与原生命周期矩阵 78/78、零跳过。构建通过，bundle 为 856072 字节，不超过原 856077 上限，基线／keepNames 不改。当前尚无本整合头的正常完整链／精确新提交／独立验收结论；不合并、发布、部署或关闭 #234／#285，关单保留发布后复核门。
 
+## #293 监督后继：清理守卫与 HTTP 响应排空（新候选）
+
+监督席对 #293 精确头 `10879da` 完成 macOS 全链（首轮原 watcher #202 rewrite 失败保全，未变字节再跑自然 rc0）及变异探针后，以普通合并落主干 `390dfa8`。两项清理未知不重试守卫、残留 JSON 端口、Node 18 连接收尾另 PR 跟进；runner 私有桥作为已知版本维护成本保留，未擅改实现或声称新跑 unknown-shape 反例。#234／#285 仍开放至发布后复核；#202 的同尺寸改写旧 revision stamp 是独立待定位问题，不在此宣称修复。
+
+从实际主干 `390dfa8` 建 `fix/orm-cleanup-followups-293`，原七保护分支保全。两处 no-retry 新测试分别杀死去掉 ORM／CLI 守卫的变异（1／2 条目标红），恢复源字节后通过；预测空数组、list／audit 和 meta 拒绝 JSON 改走既有局部端口，保 payload／space／rc 与手工 Env fallback。10 形清理屏障先红后绿，夹具误带 audit-only flag 的原失败单列保留，不计假覆盖。
+
+首版单次 closeIdleConnections 经非作者 F1／P1 判定不完整，原 REQUEST_CHANGES 和归档保全；三种 Node 18 语义的真实 TCP／HTTP 模拟回归暴露 API 缺失、误关完整请求但未完响应、活跃后转 idle 三边界共 4 条目标红。后继按每条连接未完成 ServerResponse 数跟踪，原生 response.close 后减计数，停止后仅零计数连接 destroySoon 排空写缓冲再销毁，不改 engines、keepAliveTimeout 或原 5 秒停机预算；流水线、晚到 body、handler 先结束但 response 未 end、半关闭和中途断连末次 DB 使用均有回归。只 end 的半开连接两红、流水线夹具超时／帧断言探索记录均保原，不冒产品根因结论。
+
+最终定向 58/58、零跳过；相同实现的两独立测试进程各 dashboard 14/14，证明夹具隔离，不当两个独立验收。保原 cap 所需的本文件六处相同 HTTP 200 JSON 回应去重，状态码／content-type／序列化及既有提前 writeHead 时序不变。完整构建通过，bundle 855973 字节 ≤ 原 856077，baseline／keepNames／依赖／vendor／schema／事务不改。非作者 `direct-9770c93a` 对准确 candidate-02 给 F1 CLOSED_STATIC／WIP_ACCEPTABLE_STATIC、0 必修；原 73 行裁定前缀保留。完整两 worker unit 自然 rc0：248 文件／2232 用例＝2106 通过＋126 条件跳过，README 据实更新。原生 Node 18 实跑 NOT_RUN，仅版本语义模拟与源码核对；当前进入正常完整链，尚无本后继精确提交／独立运行验收／PR，不合并发布或关闭既有 issue。retention 原单为另线未实施，不混此候选。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

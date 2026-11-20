@@ -45,6 +45,8 @@ Existing evidence is not retroactively checked: duplicate receipts preserve prio
 
 ## Prediction audit metrics
 
+- `predict list`／`audit` 的 JSON 面（含空数组）都经 `emitJson(env.ctx, …)` 发布；受管 invocation 内结果等待清理确认，不直接 `console.log`。
+
 `measureCriterion` measures complete `key≥N` clauses, where `N` is a nonnegative safe integer. The reserved keys `树` and `kb` count all workspace trees and knowledge notes; other explicit keys bind to `--state` by exact key, then shallowest suffix. Whitespace around `≥` is optional. Multiple clauses may use whitespace-delimited ` 或 ` (any) or ` 且 ` (all), but not both operators in one criterion. Every clause must be recognized and measurable.
 
 Subject-qualified prose such as `adoption 树 ≥4/6 叶节点解锁`, fractions, decimal thresholds, extra requirements or unknown clauses return `null` and project as `manual`; no workspace count is substituted for their intended subject. The registry probe likewise requires the complete `npm 再发≥N个版本` criterion. Audit leaves stored claim text/status/updated unchanged and never arbitrates or unlocks. Existing resolved predictions remain resolved in the projection.

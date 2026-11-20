@@ -24,6 +24,7 @@ import { dirname, join, resolve } from "node:path";
 import { canonicalStringify } from "../../../verify/core/src/canonical";
 
 import type { Env } from "../../../core/database/src/types";
+import { emitJson } from "../../../core/text/src/fmt";
 import { runMeta } from "../../../verify/core/src/meta";
 
 /** Machine-readable default policy (contract-audit keys its version assertion on it). */
@@ -207,7 +208,7 @@ export function metaGate(env: Env, args: any, command: "submit" | "prepare"): Me
 export function refuseMeta(env: Env, gate: MetaGateResult): number {
   const { ctx } = env;
   if (ctx.json) {
-    console.log(JSON.stringify({ error: gate.message, meta_error: gate.meta_error, ...(gate.report ? { meta: gate.report } : {}) }, null, 2));
+    emitJson(ctx, { error: gate.message, meta_error: gate.meta_error, ...(gate.report ? { meta: gate.report } : {}) }, 2);
   } else {
     console.error(`error: ${gate.message || "meta gate failed"}`);
   }
