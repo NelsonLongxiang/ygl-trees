@@ -124,6 +124,20 @@ Item 1 仅使用 claim 的 project_id→项目名作为项目归属；note、pro
 
 首次完整两 worker unit 自然 rc1：252 文件／2271 条＝2144 通过＋1 失败＋126 条件跳过；唯一失败为未改动 dashboard-owner 末例的 SSE fixture list-ready 三秒阶段超时，原报告及冻结输入保全。一次透明计时诊断保持原 worker／门限，dashboard 与原同期 dist-manifest 共 19/19 通过，prepareListIndex 40–56ms、watcher 排空不足 1ms；诊断未复现整轮负载，根因仍未知，原测试及全 1149 源文件按字节恢复。依监督裁定 `direct-58aeb0f4f567`，该失败单独建 [#298](https://github.com/NelsonLongxiang/ygl-trees/issues/298)，不阻塞 Item 1 交 PR，不加入 timeout／retry／fallback，也不混 watcher 产品修复。本轮 README 只据实同步总数 2271 和 demo 实测 138，并明确本地完整 unit 非全绿；后继直接窄提交、正常带钩子推送并开 Refs #295 的 Item 1 PR，最终完整测试判定以监督席 macOS 对 PR 精确头的运行结果为准。当前本段只记录交付准入例外，不声称本地完整工程通过、精确提交已被非作者审过或 PR 已落地。
 
+## #295 T6 Item 2：断言授权键（v16，在途候选）
+
+前项 PR299 精确头 `8db72e2` 已由监督席 macOS 完整 pnpm test rc0（2191 通过、80 条件跳过，共2271；contract158、README62、tooling52/0、六变异全杀）独立 PASS，实际合入 `fe1aa5c`；只作前序准入，不迁作本项通过。Item2 自该主干建 `feat/claim-scope-v16-295`，两共享席原单 `direct-fe18178a`／`direct-3341addb` 交回窗口。保护八旧分支及 Item1 头，不混前项红的修复。README 旧 Item1 注记按监督原单删除，但原两红报告与独立 issue298 保留。
+
+九触点：SQLite SCHEMA_SQL 与有数据 v15/版本零回放走 v16 非空空串列；实体同改且 synchronize=false；claims 不新增 FTS。事务服务在显式 scope 校验后判重，同项目/文本同 scope duplicate，异 scope rc1 点名 rescope，force 不能跨 scope；同 scope force 仍保留重复，普通重跑也识别最初加盐的行。claimRescope 与 kbRescope 共用授权键变更事务，实际变化才更新 scope/updated 并记 old_scope/new_scope；PG 按项目/文本取事务锁，批量键稳定排序，状态/证据不改。show/list、Store 与 library 投影携带含空串的 scope，library 项目与 scope 筛选先于分页且游标绑定。导出数据表/镜像表/统计表集合不增，原通用导出及 copyTable 保列；MIGRATE_DDL、PG_UPGRADES v16 和已有 claim 镜像的加列路径均接通，doctor/版本准入仍取 SCHEMA_VERSION。
+
+验证先红后绿：迁移/写入27目标红零跳过；命令入口1过10红、MCP1过14红，首次force身份及显式置信度惰性读取的回归均有独立反例。首次真PG镜像夹具漏迁移账表的错误不计产品反例；修夹具后取得真实旧镜像缺scope列红并修复。最终定向136/136（修配置惰性读取前），后继受影响62/62；完整PG85/85＝82真库＋3离线原语，零跳过，含有数据v15升级、旧镜像刷新、CLI与屏障控制同文本异scope并发。固定npm0.117.1黄金1过零跳过：只逐项允许空scope与既有quote_verified/attach约定，其余字节比较；黄金捕获的旧file冲突诊断变化已恢复，原红保留。
+
+正常两worker完整unit首轮自然rc1，259文件／2337条＝2202通过＋5失败＋130条件跳过，无suite加载错；失败是两旧v15断言、PG目录9份断言及规格超92字节引发的两门禁。只改对应版本/目录断言和精简新R2.6规格，不抬预算或门限；受影响44/44通过。README总数2337据该真实收集结果、demo142据原运行实测，技能审计366条零拒绝，不用加法猜数量。当前所有产品测试与原红保全，待本准确输入正常完整工程链。
+
+体积原上限856077未改，baseline SHA256仍1b98df930a7f43d7e0faea1ec1972732744286e5d19523f5afd5981810c0ddd7；本次通过复用迁移加列、文件校验、claim输入/投影、rescope与同形错误出口消除重复，不改minify/keepNames/vendor/deps或事务重试预算。PG测试容器曾因Docker模板引号适配失败而清理未确认，先实核原ID/标签再复用，最后已按ID移除容器和匿名卷并确认不存在；不留闲置服务。
+
+RSI：本轮复用既有九触点与正式验证入口，未造登记平台；PR正文自动关单会忽略否定语义，故后继提交与PR只写 Refs #295，发布前检查真实文本，避免重演PR299合入时的误关单（监督已重开）。当前未提交/推送本项PR，无作者合并或发布授权；Item1的一次传输例外不用于本项。远端主干后继PR300仅两历史文档修正，本项不动那两文件。Item3项目sync待v16合入后独立开工，115条macOS副本演练由监督执行，不操作生产数据/全局安装/retention/DSH。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

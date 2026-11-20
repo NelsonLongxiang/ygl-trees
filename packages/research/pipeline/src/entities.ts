@@ -226,6 +226,9 @@ export class Claim {
   @Column({ name: "channel", type: "text", nullable: true })
   channel?: string;
 
+  @Column({ name: "scope", type: "text", default: "" })
+  scope = "";
+
   @Column({ name: "content_hash", type: "text" })
   contentHash!: string;
 

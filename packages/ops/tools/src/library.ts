@@ -81,25 +81,32 @@ export function firstParagraph(body: string, cut = 200): string {
   return para.length > cut ? para.slice(0, cut) : para;
 }
 
-function claimRows(db: any, since: string | null, projectFilter?: string): LibraryRow[] {
+function claimRows(db: any, since: string | null, projectFilter?: string, scope?: string): LibraryRow[] {
   const clauses: string[] = []; const params: string[] = [];
   if (since) { clauses.push("c.updated >= ?"); params.push(since); }
   if (projectFilter) { clauses.push("p.name = ?"); params.push(projectFilter); }
+  if (scope !== undefined) { clauses.push("c.scope = ?"); params.push(scope); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
   return (db.all(
-    "SELECT c.id,c.text,c.status,c.confidence,c.channel,c.created,c.updated,p.name AS project FROM claims c LEFT JOIN projects p ON p.id=c.project_id" + where + " ORDER BY c.updated DESC, c.id DESC",
+    "SELECT c.id,c.text,c.status,c.confidence,c.channel,c.scope,c.created,c.updated,p.name AS project FROM claims c LEFT JOIN projects p ON p.id=c.project_id" + where + " ORDER BY c.updated DESC, c.id DESC",
     params) as any[]).map((r) => {
-    const row: LibraryRow = {
-      kind: "claim", id: r.id, title: r.text,
-      // review②：channel 属 never-exposed——summary 用首条 evidence note（无则空串）
-      summary: (() => { const e0 = db.get("SELECT e.note FROM claim_evidence ce JOIN evidence e ON e.id=ce.evidence_id WHERE ce.claim_id=? ORDER BY e.created LIMIT 1", [r.id]) as any; return (e0?.note && String(e0.note).trim()) || ""; })(),
-      status: r.status === "unverified" ? "open" : r.status,
-      created: r.created, updated: r.updated,
-    };
-    if (r.project) row.project = r.project; // absent when unknown, never ""
-    if (typeof r.confidence === "string" && r.confidence.trim()) row.confidence = r.confidence;
-    return row;
+    const e0 = db.get("SELECT e.note FROM claim_evidence ce JOIN evidence e ON e.id=ce.evidence_id WHERE ce.claim_id=? ORDER BY e.created LIMIT 1", [r.id]) as any;
+    return claimRow(r, (e0?.note && String(e0.note).trim()) || "");
   });
+}
+
+function claimRow(r: any, summary: string, evidence?: unknown[]): LibraryRow {
+  const row: LibraryRow = {
+    kind: "claim", id: r.id, title: r.text, summary,
+    status: evidence === undefined && r.status === "unverified" ? "open" : r.status,
+    created: r.created, updated: r.updated,
+  };
+  if (evidence !== undefined) row.evidence = evidence;
+  else if (r.project) row.project = r.project;
+  if (typeof r.confidence === "string" && r.confidence.trim()) row.confidence = r.confidence;
+  if (evidence !== undefined && r.project) row.project = r.project;
+  row.scope = r.scope;
+  return row;
 }
 
 function noteRow(r: any, full = false): LibraryRow {
@@ -202,7 +209,7 @@ export async function libraryList(env: Env, o: {
 }): Promise<LibraryPage> {
   validateLibraryProject(o.project);
   if (o.project !== undefined && o.kind !== "claim") throw new LibraryUsageError(`project filter is unavailable for ${o.kind}: this kind has no project ownership`);
-  if (o.scope !== undefined && o.kind !== "note" && o.kind !== "skill") throw new LibraryUsageError("scope filter applies only to note and skill");
+  if (o.scope !== undefined && o.kind === "check") throw new LibraryUsageError("scope filter applies only to claim, note and skill");
   const scope = o.scope === undefined ? undefined : validateScope(o.scope);
   const since = parseSince(o.since);
   const scopeKey = JSON.stringify([o.kind, o.since ?? null, scope ?? null, o.project ?? null]);
@@ -215,7 +222,7 @@ export async function libraryList(env: Env, o: {
     all = readListIndex(env.home, db => checkRows(db, since, specTitles));
   } else {
     const db = env.db;
-    all = o.kind === "claim" ? claimRows(db, since, o.project) : knowledgeRows(db, o.kind, since, scope);
+    all = o.kind === "claim" ? claimRows(db, since, o.project, scope) : knowledgeRows(db, o.kind, since, scope);
   }
   const filtered = after ? all.filter(r => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
   return pageEnvelope(filtered, all.length, limit, scopeKey);
@@ -234,11 +241,7 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
     }));
     // review⑧：show = {...row, body}——补 summary 与 body；confidence 空则缺席（review⑦）
     const firstEv = evidence[0];
-    const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.text, summary: (firstEv?.note || "").trim(), status: r.status, created: r.created, updated: r.updated, evidence };
-    if (typeof r.confidence === "string" && r.confidence.trim()) out.confidence = r.confidence;
-    if (r.project) out.project = r.project;
-    out.body = r.text;
-    return out;
+    return { contract: LIBRARY_CONTRACT, ...claimRow(r, (firstEv?.note || "").trim(), evidence), body: r.text };
   }
   if (kind === "note") {
     const r = env.db.get("SELECT * FROM kb_notes WHERE id=? OR title=?", [id, id]) as any;

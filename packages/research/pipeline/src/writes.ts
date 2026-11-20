@@ -380,64 +380,43 @@ function mapEvidence(e: Evidence): Record<string, any> {
 
 // ================================================================ claims
 
-/** #83 单事务体：claimAdd 与 claimAddBatch 共用。 */
-async function claimAddCore(mgr: EntityManager, projectId: string, text: string, confidence: string, force: boolean, channel: string): Promise<WriteResult> {
-  const hash = contentHash(text, force);
-  if (ormDialect(mgr) === "postgres") {
-    await assertPgWriteTarget(mgr);
-    await assertPgProjectWritable(mgr, projectId);
-    const now = nowIso();
-    const r = await insertOrFetch({
-      table: "claims", cols: ["id", "project_id", "text", "status", "confidence", "channel", "content_hash", "created", "updated"],
-      values: [shortId(["cl", projectId, text], 10), projectId, text, "unverified", confidence, channel || "", hash, now, now],
-      conflictCols: ["project_id", "content_hash"],
-    }, { dialect: "pg", all: (sql, params) => mgr.query(sql, params) });
-    if (!r.row) throw new Error("claim upsert returned no row");
-    if (!r.duplicate) await logEvent(mgr, "claim.add", "claim", r.row.id, text.slice(0, 60));
-    const c = r.row;
-    return { row: { id: c.id, project_id: c.project_id, text: c.text, status: c.status, confidence: c.confidence, content_hash: c.content_hash, created: c.created, channel: c.channel || "" }, dup: r.duplicate };
-  }
-  const ex = await mgr.findOne(Claim, { where: { projectId, contentHash: hash } });
-  if (ex) return { row: mapClaim(ex), dup: true };
-  const c = new Claim();
-  c.id = shortId(["cl", projectId, text], 10);
-  c.projectId = projectId;
-  c.text = text;
-  c.status = "unverified";
-  c.confidence = confidence;
-  // always assign: TypeORM binds explicit NULL for unset entity props,
-  // bypassing the SQL DEFAULT and tripping claims.channel NOT NULL.
-  c.channel = channel || "";
-  c.contentHash = hash;
-  c.created = nowIso(); (c as any).updated = nowIso();
+
+async function lockClaimScope(mgr: EntityManager, projectId: string, text: string): Promise<void> {
+  if (ormDialect(mgr) !== "postgres") return;
+  await requirePgColumns(mgr, { claims: ["id", "project_id", "text", "scope", "updated"] });
+  await assertPgWriteTarget(mgr);
+  await assertPgProjectWritable(mgr, projectId);
+  // Cover absent rows and forced hashes as well as ordinary unique-key duplicates.
+  await mgr.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [projectId, text]);
+}
+
+async function claimAddCore(mgr: EntityManager, projectId: string, text: string, confidence: string, force: boolean, channel: string, scope: string): Promise<WriteResult> {
+  const existing = await mgr.find(Claim, { where: { projectId, text }, order: { created: "ASC", id: "ASC" } });
+  const conflict = existing.find(row => row.scope !== scope);
+  if (conflict) throw Object.assign(new PgWriteError("claim " + conflict.id + " already has this text with a different scope; use research claim rescope " + conflict.id + " --scope <s>"), { rc: 1 });
+  if (!force && existing.length) return { row: mapClaim(existing[0]), dup: true };
+  const c = mgr.create(Claim, {
+    id: shortId(["cl", projectId, text], 10), projectId, text, status: "unverified", confidence,
+    channel: channel || "", scope, contentHash: contentHash(text, force), created: nowIso(), updated: nowIso(),
+  });
   await mgr.save(c);
   await logEvent(mgr, "claim.add", "claim", c.id, text.slice(0, 60));
   return { row: mapClaim(c), dup: false };
 }
 
-export async function claimAdd(
-  ds: DataSource,
-  projectId: string,
-  text: string,
-  confidence = "B",
-  force = false,
-  channel = ""
-): Promise<WriteResult> {
-  return runTx(ds, async (mgr) => claimAddCore(mgr, projectId, text, confidence, force, channel));
+export async function claimAdd(ds: DataSource, projectId: string, text: string, confidence = "B", force = false, channel = "", scopeRaw?: unknown): Promise<WriteResult> {
+  return (await claimAddBatch(ds, projectId, [{ text, confidence, scope: scopeRaw }], force, channel)).results[0];
 }
 
-/** #83：--batch jsonl 全批拒——单个事务；重复行按 duplicate 计数（幂等语义，非错误）。 */
-export async function claimAddBatch(
-  ds: DataSource,
-  projectId: string,
-  rows: { text: string; confidence?: string }[],
-  force = false,
-  channel = "",
-  defaultConfidence = "B"
-): Promise<{ results: WriteResult[] }> {
-  return runTx(ds, async (mgr) => {
+/** Validate every grant before the atomic batch opens its transaction. */
+export async function claimAddBatch(ds: DataSource, projectId: string, rows: { text: string; confidence?: string; scope?: unknown }[], force = false, channel = "", defaultConfidence = "B", scopeRaw?: unknown): Promise<{ results: WriteResult[] }> {
+  const fallback = validateScope(scopeRaw);
+  const checked = rows.map(row => ({ ...row, scope: row.scope === undefined ? fallback : validateScope(row.scope) }));
+  return runTx(ds, async mgr => {
+    // Match the lock order across batches whose input order differs.
+    for (const text of [...new Set(checked.map(row => row.text))].sort()) await lockClaimScope(mgr, projectId, text);
     const results: WriteResult[] = [];
-    for (const r of rows) results.push(await claimAddCore(mgr, projectId, r.text, r.confidence || defaultConfidence, force, channel));
+    for (const row of checked) results.push(await claimAddCore(mgr, projectId, row.text, row.confidence || defaultConfidence, force, channel, row.scope));
     return { results };
   });
 }
@@ -446,9 +425,33 @@ function mapClaim(c: Claim): Record<string, any> {
   return {
     id: c.id, project_id: c.projectId, text: c.text, status: c.status,
     confidence: c.confidence, content_hash: c.contentHash, created: c.created,
-    channel: c.channel || "",
+    channel: c.channel || "", scope: c.scope,
   };
 }
+
+async function rescope(ds: DataSource, id: string, scopeRaw: unknown, table: "claims" | "kb_notes"): Promise<WriteResult> {
+  if (scopeRaw === undefined) throw Object.assign(new Error("rescope requires an explicit scope"), { rc: 2 });
+  const scope = validateScope(scopeRaw), claim = table === "claims", kind = claim ? "claim" : "kb";
+  return runTx(ds, async mgr => {
+    const pg = ormDialect(mgr) === "postgres";
+    const missing = () => Object.assign(pg ? new PgWriteError((claim ? "claim" : "kb note") + " not found: " + id) : new Error((claim ? "claim" : "kb note") + " not found: " + id), { rc: 1 });
+    if (claim) {
+      const initial = (await stateRows(mgr, "SELECT project_id,text FROM claims WHERE id=?", [id]))[0];
+      if (!initial) throw missing();
+      await lockClaimScope(mgr, initial.project_id, initial.text);
+    } else if (pg) { await requirePgColumns(mgr, { kb_notes: ["id", "scope", "updated"] }); await assertPgWriteTarget(mgr); }
+    const found = (await stateRows(mgr, "SELECT * FROM " + table + " WHERE id=?" + (pg ? " FOR UPDATE" : ""), [id]))[0];
+    if (!found) throw missing();
+    const { ngram: _ngram, ngram_tsv: _tsv, ...row } = found;
+    if (row.scope === scope) return { row, dup: true };
+    const updated = nowIso();
+    await stateRows(mgr, "UPDATE " + table + " SET scope=?,updated=? WHERE id=?", [scope, updated, id]);
+    await logEvent(mgr, kind + ".rescope", claim ? "claim" : "kb_note", id, { old_scope: row.scope, new_scope: scope });
+    return { row: { ...row, scope, updated }, dup: false };
+  });
+}
+
+export function claimRescope(ds: DataSource, id: string, scope: unknown): Promise<WriteResult> { return rescope(ds, id, scope, "claims"); }
 
 export async function claimLink(
   ds: DataSource,
@@ -832,22 +835,7 @@ async function kbAddPgCore(mgr: EntityManager, o: { title: string; body: string;
 
 
 /** #276: 改一条笔记的 grant scope（rescope）。校验同写入面；同步 FTS 不需要（scope 不入 fts）。 */
-export async function kbRescope(ds: DataSource, id: string, scopeRaw: unknown): Promise<WriteResult> {
-  if (scopeRaw === undefined) throw Object.assign(new Error("rescope requires an explicit scope"), { rc: 2 });
-  const scope = validateScope(scopeRaw);
-  return runTx(ds, async (mgr) => {
-    const pg = ormDialect(mgr) === "postgres";
-    if (pg) { await requirePgColumns(mgr, { kb_notes: ["id", "scope", "updated"] }); await assertPgWriteTarget(mgr); }
-    const ex = await stateRows(mgr, "SELECT * FROM kb_notes WHERE id=?" + (pg ? " FOR UPDATE" : ""), [id]);
-    if (!ex.length) throw Object.assign(pg ? new PgWriteError("kb note not found: " + id) : new Error("kb note not found: " + id), { rc: 1 });
-    const { ngram: _ngram, ngram_tsv: _tsv, ...row } = ex[0];
-    if (row.scope === scope) return { row, dup: true };
-    const updated = nowIso();
-    await stateRows(mgr, "UPDATE kb_notes SET scope=?, updated=? WHERE id=?", [scope, updated, id]);
-    await logEvent(mgr, "kb.rescope", "kb_note", id, { old_scope: row.scope, new_scope: scope });
-    return { row: { ...row, scope, updated }, dup: false };
-  });
-}
+export function kbRescope(ds: DataSource, id: string, scope: unknown): Promise<WriteResult> { return rescope(ds, id, scope, "kb_notes"); }
 
 export async function kbAdd(
   ds: DataSource,

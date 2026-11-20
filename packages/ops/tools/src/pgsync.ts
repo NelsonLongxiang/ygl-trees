@@ -111,6 +111,7 @@ export async function syncToPg(db: DB, url: string, only?: string[]): Promise<Sy
       if (NGRAM_INPUT[t]) defs.push(`"ngram" text NOT NULL DEFAULT ''`);
       const pk = pkCols.length ? `, PRIMARY KEY (${pkCols.map((c) => `"${c}"`).join(",")})` : "";
       await client.query(`CREATE TABLE IF NOT EXISTS "${t}" (${defs.join(", ")}${pk})`);
+      if (t === "claims") await client.query("ALTER TABLE claims ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT ''");
       if (NGRAM_INPUT[t] && verNum >= 120000) {
         // Punctuation normalization BEFORE tsvector: slash/dot/colon-joined
         // latin runs (docker/mongo, bin/bash, hosts) parse as compound
@@ -203,6 +204,7 @@ CREATE TABLE claims (
   content_hash text NOT NULL DEFAULT '', created text NOT NULL,
   updated text NOT NULL DEFAULT '',                -- v9
   channel text NOT NULL DEFAULT '',                -- v11 prediction ledger channel
+  scope text NOT NULL DEFAULT '',
   UNIQUE (project_id, content_hash));
 CREATE TABLE claim_evidence (
   claim_id text NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
@@ -512,6 +514,7 @@ export const PG_UPGRADES: PgUpgradeStep[] = [
   { version: 14, note: "v14: jobs.project_id/owner (job attribution, #258)", sql: `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT ''; ALTER TABLE jobs ADD COLUMN IF NOT EXISTS owner text NOT NULL DEFAULT '';` },
   // v15 (#276): kb_notes/skills market grant scope — same empty-string legacy default.
   { version: 15, note: "v15: kb_notes/skills.scope (market grant scope, #276)", sql: `ALTER TABLE kb_notes ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT ''; ALTER TABLE skills ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT '';` },
+  { version: 16, note: "v16: claims.scope (grant key)", sql: `ALTER TABLE claims ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT '';` },
 ];
 
 /** CREATE TABLE IF NOT EXISTS statements for the named tables, taken from MIGRATE_DDL — the one PG DDL text, so an

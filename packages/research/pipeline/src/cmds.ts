@@ -8,10 +8,11 @@ import { Env } from "../../../core/database/src/types";
 import { emitJson, ok, bad, out, head, table, paint, C, writeResult, show } from "../../../core/text/src/fmt";
 import { rejectBare, validateEnum } from "../../../core/text/src/flagcheck";
 import { clip } from "../../../core/text/src/text";
+import { validateScope } from "../../../core/text/src/scope";
 
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
 import { resolveProject, ambiguousProject, projectSample, projectCount, currentSelectionVia, selectionChangeWarning, idNotFound, ownerProjectName } from "../../../core/database/src/selection";
-import { PgWriteError as writes_PgWriteError, QuoteMismatchError as writes_QuoteMismatchError, type WriteResult as writes_WriteResult, claimAdd as writes_claimAdd, claimAddBatch as writes_claimAddBatch, claimLink as writes_claimLink, claimResolve as writes_claimResolve, claimUnlink as writes_claimUnlink, claimUnresolve as writes_claimUnresolve, evidenceAdd as writes_evidenceAdd, evidenceAddBatch as writes_evidenceAddBatch, evidenceRemove as writes_evidenceRemove, queryAdd as writes_queryAdd, queryAttach as writes_queryAttach, sourceAdd as writes_sourceAdd, sourceAddBatch as writes_sourceAddBatch, sourceRemove as writes_sourceRemove } from "./writes";
+import { PgWriteError as writes_PgWriteError, QuoteMismatchError as writes_QuoteMismatchError, type WriteResult as writes_WriteResult, claimAdd as writes_claimAdd, claimAddBatch as writes_claimAddBatch, claimRescope as writes_claimRescope, claimLink as writes_claimLink, claimResolve as writes_claimResolve, claimUnlink as writes_claimUnlink, claimUnresolve as writes_claimUnresolve, evidenceAdd as writes_evidenceAdd, evidenceAddBatch as writes_evidenceAddBatch, evidenceRemove as writes_evidenceRemove, queryAdd as writes_queryAdd, queryAttach as writes_queryAttach, sourceAdd as writes_sourceAdd, sourceAddBatch as writes_sourceAddBatch, sourceRemove as writes_sourceRemove } from "./writes";
 import { run as runPredictions } from "./predict-cmds";
 import { configGet, configGetNumber } from "../../../core/database/src/config";
 // 0.91a: bare claim.eval INSERTs gain bus emission — static import per
@@ -52,7 +53,7 @@ function batchRows(file: string): { rows: any[] } | { error: string } {
 
 const BATCH_ROW_FIELDS: Record<"source" | "claim" | "evidence", Set<string>> = {
   source: new Set(["title", "url", "abstract", "content", "engine", "relevance", "confidence", "tags"]),
-  claim: new Set(["text", "confidence"]),
+  claim: new Set(["text", "confidence", "scope"]),
   evidence: new Set(["source_id", "quote", "note", "locator"]),
 };
 
@@ -69,6 +70,7 @@ function validateBatchRow(kind: "source" | "claim" | "evidence", row: any): stri
     }
   } else if (kind === "claim") {
     if (!String(row.text ?? "")) return L + "need text";
+    try { validateScope(row.scope); } catch (e: any) { return L + e.message; }
   } else {
     if (!String(row.source_id ?? "")) return L + "need source_id";
     if (!String(row.quote ?? "")) return L + "need quote";
@@ -91,6 +93,30 @@ function validateBatchRow(kind: "source" | "claim" | "evidence", row: any): stri
 function unknownBatchFields(kind: "source" | "claim" | "evidence", row: any): string[] {
   const allowed = BATCH_ROW_FIELDS[kind];
   return Object.keys(row).filter((k) => k !== "__line" && !allowed.has(k));
+}
+
+function fileRow(ctx: Env["ctx"], file: string, kind: "source" | "claim"): { row: any; unknown: string[] } | { rc: number } {
+  let raw: string, row: any;
+  try { raw = fs.readFileSync(file, "utf8"); }
+  catch (e: any) { bad(ctx, "cannot read --file: " + (e?.message || e)); return { rc: 1 }; }
+  try { row = JSON.parse(raw); }
+  catch (e: any) { bad(ctx, "line 1: invalid JSON (" + (e?.message || e) + ")"); return { rc: 2 }; }
+  if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "line 1: row must be a JSON object (--file takes exactly one)"); return { rc: 2 }; }
+  row.__line = 1;
+  const problem = validateBatchRow(kind, row);
+  if (problem) { bad(ctx, problem); return { rc: 2 }; }
+  const unknown = unknownBatchFields(kind, row);
+  if (unknown.length && !ctx.json) out(ctx, paint(C.yellow, "  note: ignored unknown field(s): " + unknown.join(", "), ctx.color));
+  return { row, unknown };
+}
+
+function sourceSpec(row: any) {
+  return {
+    title: String(row.title ?? ""), url: String(row.url ?? ""),
+    abstract: String(row.abstract ?? ""), content: String(row.content ?? ""),
+    engine: String(row.engine ?? ""), relevance: row.relevance === undefined ? 0 : Number(row.relevance),
+    confidence: String(row.confidence ?? ""), tags: String(row.tags ?? ""),
+  };
 }
 
 /** 校验 → 单事务落库 → 回执。写失败整批回滚（runTx 语义），rc1。 */
@@ -128,22 +154,17 @@ async function runBatch(
       return 2;
     }
   }
-  const ds = await writeOrm(env);
+  const ds = await workspaceOrm(env);
   try {
     let results: any[];
     if (kind === "source") {
-      const specs = parsed.rows.map((r) => ({
-        title: String(r.title ?? ""), url: String(r.url ?? ""),
-        abstract: String(r.abstract ?? ""), content: String(r.content ?? ""),
-        engine: String(r.engine ?? ""), relevance: r.relevance === undefined ? 0 : Number(r.relevance),
-        confidence: String(r.confidence ?? ""), tags: String(r.tags ?? ""),
-      }));
+      const specs = parsed.rows.map(sourceSpec);
       results = (await writes_sourceAddBatch(ds, project.id, specs)).results;
     } else if (kind === "claim") {
       const force = flags.force === true;
       const channel = String(flags.channel ?? "");
-      const rows = parsed.rows.map((r) => ({ text: String(r.text), confidence: r.confidence === undefined ? undefined : String(r.confidence) }));
-      results = (await writes_claimAddBatch(ds, project.id, rows as any, force, channel)).results;
+      const rows = parsed.rows.map((r) => ({ text: String(r.text), confidence: r.confidence === undefined ? undefined : String(r.confidence), scope: r.scope }));
+      results = (await writes_claimAddBatch(ds, project.id, rows, force, channel, undefined, flags.scope)).results;
     } else {
       const force = flags.force === true;
       const rows = parsed.rows.map((r) => ({ source_id: String(r.source_id), quote: String(r.quote), note: String(r.note ?? ""), locator: String(r.locator ?? ""), __line: r.__line }));
@@ -164,6 +185,7 @@ async function runBatch(
         rows: results.map((r: any, i: number) => ({
           line: parsed.rows[i].__line, id: r.row.id, title: r.row.title ?? "",
           text: kind === "claim" ? r.row.text : undefined,
+          scope: kind === "claim" ? r.row.scope : undefined,
           quote: kind === "evidence" ? String(r.row.quote).slice(0, 50) : undefined,
           quote_verified: kind === "evidence" ? r.row.quote_verified : undefined,
           duplicate: !!r.dup,
@@ -203,7 +225,7 @@ async function mutationNotFound(env: Env, table: "claims" | "evidence" | "source
   const owner = await env.asyncStore.queryOne("SELECT p.name FROM " + table + " t JOIN projects p ON p.id=t.project_id WHERE t.id=?", [id]);
   return kind + " not found: " + id + (owner ? "  (it belongs to project '" + owner.name + "' — use -p " + owner.name + ")" : "");
 }
-function writeOrm(env: Env) { return workspaceOrm(env); }
+function reportFailure(env: Env, message: string): number { bad(env.ctx, message); return 1; }
 function writeError(env: Env, e: any): string { return env.pgUrl && !(e instanceof PgCapabilityError) && !(e instanceof writes_QuoteMismatchError) ? pgFailure() : e?.message || String(e); }
 
 function runWrite(env: Env, fn: (ds: any) => Promise<writes_WriteResult>, human: (row: any) => string): Promise<number> {
@@ -223,7 +245,7 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes_WriteResult>, human:
       console.error(`  note: writing to project '${projectName}' via ${via} selection (cwd=${process.cwd()}) — pass -p <name> to bind the target explicitly`);
     }
   }
-  return writeOrm(env)
+  return workspaceOrm(env)
     .then(fn)
     .then((r) => {
       writeResult(ctx, r as any, human, {
@@ -232,16 +254,17 @@ function runWrite(env: Env, fn: (ds: any) => Promise<writes_WriteResult>, human:
       });
       return 0;
     })
-    .catch((e: any) => {
-      bad(ctx, writeError(env, e));
-      return 1;
-    });
+    .catch(e => reportFailure(env, writeError(env, e)));
 }
 
 export async function run(env: Env, action: string, rest: string[], args: any): Promise<number> {
   const { ctx, store } = env;
   const sub = action;
   const subAction = rest[0];
+  if (sub === "claim" && ["add", "rescope"].includes(subAction)) {
+    if (subAction === "rescope" && (!rest[1] || rest.length !== 2 || args.flags.scope === undefined)) { bad(ctx, "usage: research claim rescope <id> --scope <s>"); return 2; }
+    try { validateScope(args.flags.scope); } catch (e: any) { bad(ctx, e.message); return 2; }
+  }
 
   // -- project resolution (R16: flag > env > session > global; strict gate) --
   // R16.3 exemption: `claim calibration --all` and `predict list|score --all` are
@@ -310,7 +333,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 2;
       }
       const note = String(args.flags.note || "");
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_queryAttach(ds, project.id, rest[1], rest[2], note))
         .then((r): number => {
           if (ctx.json) { emitJson(ctx, { query: rest[1], source: r.sourceId, ...(r.dup ? { duplicate: true } : {}) }, 2); return 0; }
@@ -347,7 +370,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         });
     }
         if (subAction === "list" || subAction === undefined) {
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then(async (ds): Promise<number> => {
           const qs = await ds.getRepository(Query).find({
             where: { projectId: project.id },
@@ -415,41 +438,18 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           bad(ctx, "--file cannot combine with per-field flags (title/url/abstract/...)");
           return 2;
         }
-        // #83 复核③：读取失败 rc1（404 类）与内容畸形 rc2（用法）分流；错误统一 line 1: 前缀。
-        let row: any;
-        let rawText = "";
-        try {
-          rawText = fs.readFileSync(f, "utf8");
-        } catch (e: any) {
-          bad(ctx, "cannot read --file: " + (e?.message || e));
-          return 1;
-        }
-        try {
-          row = JSON.parse(rawText);
-        } catch (e: any) {
-          bad(ctx, "line 1: invalid JSON (" + (e?.message || e) + ")");
-          return 2;
-        }
-        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "line 1: row must be a JSON object (--file takes exactly one)"); return 2; }
-        row.__line = 1;
-        const problem = validateBatchRow("source", row);
-        if (problem) { bad(ctx, problem); return 2; }
-        const unknown = unknownBatchFields("source", row);
-        if (unknown.length && !ctx.json) out(ctx, paint(C.yellow, "  note: ignored unknown field(s): " + unknown.join(", "), ctx.color));
-        const spec = {
-          title: String(row.title ?? ""), url: String(row.url ?? ""),
-          abstract: String(row.abstract ?? ""), content: String(row.content ?? ""),
-          engine: String(row.engine ?? ""), relevance: row.relevance === undefined ? 0 : Number(row.relevance),
-          confidence: String(row.confidence ?? ""), tags: String(row.tags ?? ""),
-        };
-        return writeOrm(env)
+        const input = fileRow(ctx, f, "source");
+        if ("rc" in input) return input.rc;
+        const { row, unknown } = input;
+        const spec = sourceSpec(row);
+        return workspaceOrm(env)
           .then(async (ds): Promise<number> => {
             const r = await writes_sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
             // #83 复核②：--file 与 --batch 同形——JSON 回执带 ignored_fields（writeResult 只展开 row，故嵌进行对象）。
             writeResult(ctx, (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r) as any, (rw) => "source added: " + rw.id + "  " + clip(rw.title, 60) + "  · project " + project.name + "  (from --file " + f + ")");
             return 0;
           })
-          .catch((e: any): number => { bad(ctx, writeError(env, e)); return 1; });
+          .catch(e => reportFailure(env, writeError(env, e)));
       }
       // R284 fix: relevance is INTEGER 0-5 (screening score band); a REAL like
       // 0.95 passes SQLite's weak typing but explodes in PG migration
@@ -522,7 +522,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           return 1;
         }
       }
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then(async (ds): Promise<number> => {
           const r = await writes_sourceAdd(ds, project.id, spec, env.pgUrl ? String(args.flags.query || "") : "");
           writeResult(ctx, r as any, (row) => `source added: ${row.id}  ${clip(row.title, 60)}  · project ${project.name}`);
@@ -537,10 +537,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           }
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, writeError(env, e));
-          return 1;
-        });
+        .catch(e => reportFailure(env, writeError(env, e)));
     }
     if (subAction === "fetch") {
       const url = rest[1];
@@ -620,7 +617,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
     }
     if (subAction === "list") {
       const min = Number(args.flags.min || -1);
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then(async (ds): Promise<number> => {
           const srcs = await ds.getRepository(Source).find({
             where: { projectId: project.id, relevance: MoreThanOrEqual(Number.isFinite(min) ? min : -1) },
@@ -646,10 +643,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           ]);
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`);
-          return 1;
-        });
+        .catch(e => reportFailure(env, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`));
     }
     if (subAction === "search") {
       const q = rest.slice(1).join(" ");
@@ -709,7 +703,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 1;
       }
       const force = args.flags.force === true;
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_sourceRemove(ds, id, force))
         .then((r: any): number => {
           if (ctx.json) {
@@ -721,10 +715,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           }
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, writeError(env, e));
-          return 1;
-        });
+        .catch(e => reportFailure(env, writeError(env, e)));
     }
   }
 
@@ -745,7 +736,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
         return 1;
       }
       const force = args.flags.force === true;
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_evidenceRemove(ds, id, force))
         .then((r): number => {
           if (ctx.json) {
@@ -757,10 +748,7 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
           }
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, writeError(env, e));
-          return 1;
-        });
+        .catch(e => reportFailure(env, writeError(env, e)));
     }
 
     if (subAction === "add") {
@@ -934,7 +922,7 @@ if (subAction === "show") {
     }
 
     if (subAction === "list" || subAction === undefined) {
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then(async (ds): Promise<number> => {
           const evs = await ds.getRepository(Evidence).find({
             where: { projectId: project.id },
@@ -951,84 +939,48 @@ if (subAction === "show") {
           table(ctx, rows, ["id", "source", "locator", "quote", "used_by"], ["id", "source", "locator", "quote", "used_by"]);
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`);
-          return 1;
-        });
+        .catch(e => reportFailure(env, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`));
     }
   }
 
   if (sub === "claim") {
+    if (subAction === "rescope") {
+      const id = rest[1];
+      const claim = await readOne(env, "SELECT project_id FROM claims WHERE id=?", [id]);
+      if (!claim || claim.project_id !== project.id) { bad(ctx, await mutationNotFound(env, "claims", id, "claim")); return 1; }
+      return runWrite(env, ds => writes_claimRescope(ds, id, args.flags.scope), row => "claim scope updated: " + row.id + " → " + JSON.stringify(row.scope));
+    }
     if (subAction === "add") {
       if (rejectBare(ctx, args.flags, ["confidence", "text"])) return 2;
-      // #83: --batch jsonl（--force/--channel 为整批命令级开关，逐行 confidence 可覆写）。
       if (args.flags.batch !== undefined) return runBatch(env, project, args.flags, "claim");
-      // #83 余项②：--file <json> 单对象入参（{text, confidence?}；与位置参数/逐字段互斥）。
-      if (args.flags.file !== undefined) {
-        const f = String(args.flags.file || "");
+      let text: string, rawConfidence: unknown = args.flags.confidence, scope = args.flags.scope, unknown: string[] = [];
+      const file = args.flags.file;
+      if (file !== undefined) {
+        const f = String(file || "");
         if (!f) { bad(ctx, "flag needs a value: --file <json>"); return 2; }
-        if (rest.slice(1).join(" ") || args.flags.text !== undefined || args.flags.confidence !== undefined) {
-          bad(ctx, "--file cannot combine with positional text / --text / --confidence");
-          return 2;
+        if (rest.slice(1).join(" ") || args.flags.text !== undefined || args.flags.confidence !== undefined || scope !== undefined) {
+          bad(ctx, "--file cannot combine with positional text / --text / --confidence" + (scope === undefined ? "" : " / --scope")); return 2;
         }
-        // #83 复核③：读取失败 rc1（404 类）与内容畸形 rc2（用法）分流；错误统一 line 1: 前缀。
-        let row: any;
-        let rawText = "";
-        try {
-          rawText = fs.readFileSync(f, "utf8");
-        } catch (e: any) {
-          bad(ctx, "cannot read --file: " + (e?.message || e));
-          return 1;
-        }
-        try {
-          row = JSON.parse(rawText);
-        } catch (e: any) {
-          bad(ctx, "line 1: invalid JSON (" + (e?.message || e) + ")");
-          return 2;
-        }
-        if (row === null || typeof row !== "object" || Array.isArray(row)) { bad(ctx, "line 1: row must be a JSON object (--file takes exactly one)"); return 2; }
-        row.__line = 1;
-        const problem = validateBatchRow("claim", row);
-        if (problem) { bad(ctx, problem); return 2; }
-        const unknown = unknownBatchFields("claim", row);
-        if (unknown.length && !ctx.json) out(ctx, paint(C.yellow, "  note: ignored unknown field(s): " + unknown.join(", "), ctx.color));
-        const text = String(row.text);
-        const rowConfidence = String(row.confidence ?? "");
-        const confidence = rowConfidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence"));
-        const channel = String(args.flags.channel || "");
-        return runWrite(
-          env,
-          (ds) => writes_claimAdd(ds, project.id, text, confidence, force, channel).then((r) => (unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r)),
-          (r) => "claim added: " + r.id + "  " + clip(text, 60) + (channel ? "  · channel " + channel : "") + "  · project " + project.name + "  (from --file " + f + ")"
-        );
-      }
-      // 0.81: confidence accepts the letter grades (A|B|C) OR a numeric
-      // level — 0-1 decimal (0.92) or 0-100 percentage (92, 85%). Column
-      // stays TEXT; raw input is stored as given.
-      {
-        const raw = String(args.flags.confidence ?? "");
+        const input = fileRow(ctx, f, "claim");
+        if ("rc" in input) return input.rc;
+        text = String(input.row.text); rawConfidence = input.row.confidence; scope = input.row.scope; unknown = input.unknown;
+      } else {
+        const raw = String(rawConfidence ?? "");
         if (raw !== "" && !/^[ABC]$/.test(raw)) {
           const n = Number(raw.replace(/%$/, ""));
           if (!Number.isFinite(n) || n < 0 || n > 100) {
-            bad(ctx, `--confidence must be A|B|C or a number 0-1 / 0-100(%) (got: "${clip(raw, 20)}")`);
-            return 2;
+            bad(ctx, '--confidence must be A|B|C or a number 0-1 / 0-100(%) (got: "' + clip(raw, 20) + '")'); return 2;
           }
         }
+        text = rest.slice(1).join(" ") || String(args.flags.text || "");
+        if (!text) { bad(ctx, 'missing claim text: research claim add "<text>"'); return 2; }
       }
-      const text = rest.slice(1).join(" ") || String(args.flags.text || "");
-      if (!text) {
-        bad(ctx, 'missing claim text: research claim add "<text>"');
-        return 2;
-      }
-      const confidence = String(args.flags.confidence || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence")));
-      // 0.90 (direct-ce9eaf7a): predictions register the ledger channel they
-      // settle against — free string, suggested vocabulary
-      // github-issues|review-rounds|npm-registry|downloads-api|manual.
+      const supplied = file === undefined ? rawConfidence : String(rawConfidence ?? "");
+      const confidence = String(supplied || (env.pgUrl ? await env.asyncStore.configValue("default_confidence", "B") : configGet(env.db, "default_confidence")));
       const channel = String(args.flags.channel || "");
-      return runWrite(
-        env,
-        (ds) => writes_claimAdd(ds, project.id, text, confidence, force, channel),
-        (r) => `claim added: ${r.id}  ${clip(text, 60)}${channel ? `  · channel ${channel}` : ""}  · project ${project.name}`
+      return runWrite(env,
+        ds => writes_claimAdd(ds, project.id, text, confidence, force, channel, scope).then(r => unknown.length ? { ...r, row: { ...r.row, ignored_fields: unknown } } : r),
+        row => "claim added: " + row.id + "  " + clip(text, 60) + (channel ? "  · channel " + channel : "") + "  · project " + project.name + (file === undefined ? "" : "  (from --file " + String(file) + ")")
       );
     }
     if (subAction === "link") {
@@ -1111,7 +1063,7 @@ if (subAction === "show") {
             : await mutationNotFound(env, "sources", rest[2], "source"));
           return 1;
         }
-        return writeOrm(env)
+        return workspaceOrm(env)
           .then(async (ds): Promise<number> => {
             const existing = new Set(
               (await readRows(env, "SELECT evidence_id FROM claim_evidence WHERE claim_id=?", [rest[1]]) as any[])
@@ -1141,10 +1093,7 @@ if (subAction === "show") {
             }
             return 0;
           })
-          .catch(async (e: any): Promise<number> => {
-            bad(ctx, writeError(env, e));
-            return 1;
-          });
+          .catch(e => reportFailure(env, writeError(env, e)));
       }
       // F4 (0.110.x): cross-project link hint — the stored project_id is the
       // criterion (a link-time snapshot, not dynamic visibility); either end
@@ -1157,7 +1106,7 @@ if (subAction === "show") {
       })();
       // F4：duplicate 检出在 link 前完成（幂等重跑跳过评估 + 回执如实标 duplicate）
       const wasDup = env.pgUrl ? false : !!await readOne(env, "SELECT 1 FROM claim_evidence WHERE claim_id=? AND evidence_id=?", [rest[1], rest[2]]);
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_claimLink(ds, rest[1], rest[2], stance))
         .then(async (r): Promise<number> => {
           // R15 深度集成：链接后自动触发置信度评估。0.84.0 修复两处——
@@ -1224,17 +1173,14 @@ if (subAction === "show") {
         return 1;
       }
       const note = String(args.flags.note || "");
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_claimResolve(ds, id, as, note))
         .then((): number => {
           if (ctx.json) emitJson(ctx, { id, status: as, note }, 2);
           else ok(ctx, `claim ${id}: ${c0.status} → ${as}  (manual arbitration; new evidence links re-derive)`);
           return 0;
         })
-        .catch(async (e: any): Promise<number> => {
-          bad(ctx, writeError(env, e));
-          return 1;
-        });
+        .catch(e => reportFailure(env, writeError(env, e)));
     }
     // 0.82.1 (user report ③): the repair channel for link side effects —
     // resets a claim to unverified. Covers predictions auto-promoted before
@@ -1250,7 +1196,7 @@ if (subAction === "show") {
         bad(ctx, await mutationNotFound(env, "claims", id, "claim"));
         return 1;
       }
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_claimUnresolve(ds, id))
         .then((r): number => {
           if (ctx.json) emitJson(ctx, { id, status: r.status, duplicate: r.duplicate }, 2);
@@ -1259,10 +1205,7 @@ if (subAction === "show") {
             : `claim ${id}: ${c0.status} → unverified  (back in tracking; arbitration: claim resolve)`);
           return 0;
         })
-        .catch(async (e: any): Promise<number> => {
-          bad(ctx, writeError(env, e));
-          return 1;
-        });
+        .catch(e => reportFailure(env, writeError(env, e)));
     }
     // Batch-nine P2-1 (user report): remove ONE claim↔evidence link. Before
     // this the only repair path was a raw `db sql` DELETE — it left the claim
@@ -1283,7 +1226,7 @@ if (subAction === "show") {
         bad(ctx, await mutationNotFound(env, "evidence", eid, "evidence"));
         return 1;
       }
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then((ds) => writes_claimUnlink(ds, cid, eid))
         .then((r): number => {
           if (ctx.json) {
@@ -1293,10 +1236,7 @@ if (subAction === "show") {
           }
           return 0;
         })
-        .catch(async (e: any): Promise<number> => {
-          bad(ctx, writeError(env, e));
-          return 1;
-        });
+        .catch(e => reportFailure(env, writeError(env, e)));
     }
     // R15.2: claim evaluate — decision model evaluates confidence from linked evidence
     if (subAction === "evaluate") {
@@ -1441,7 +1381,7 @@ if (subAction === "show") {
         return 2;
       }
       const c = await readOne(env,
-        "SELECT id, project_id, text, status, confidence, channel, created, updated FROM claims WHERE id=? AND project_id=?",
+        "SELECT id, project_id, text, status, confidence, channel, scope, created, updated FROM claims WHERE id=? AND project_id=?",
         [id, project.id]
       ) as any;
       if (!c) {
@@ -1480,6 +1420,7 @@ if (subAction === "show") {
         status: c.status,
         confidence: c.confidence,
         channel: c.channel || "",
+        scope: c.scope,
         created: c.created,
         updated: c.updated || "",
         ...(supersededBy ? { superseded_by: supersededBy } : {}),
@@ -1511,7 +1452,7 @@ if (subAction === "show") {
     }
 
     if (subAction === "list" || subAction === undefined) {
-      return writeOrm(env)
+      return workspaceOrm(env)
         .then(async (ds): Promise<number> => {
           const cls = await ds.getRepository(Claim).find({
             where: { projectId: project.id },
@@ -1537,6 +1478,7 @@ if (subAction === "show") {
             // ledger's classification axis; hiding it here leaves the ledger
             // half-blind (null explicit, snake_case frozen).
             channel: (c as any).channel ?? null,
+            scope: c.scope,
             sup: (c.claimEvidence ?? []).filter((ce) => ce.stance === "supports").length,
             ref: (c.claimEvidence ?? []).filter((ce) => ce.stance === "refutes").length,
             ...(supBy.has(String(c.id)) ? { superseded_by: supBy.get(String(c.id)) } : {}),
@@ -1548,10 +1490,7 @@ if (subAction === "show") {
           table(ctx, rows, ["id", "text", "status", "conf", "channel", "sup", "ref", "superseded"], ["id", "text", "status", "confidence", "channel", "sup", "ref", "superseded_by"]); // #241: replaced claims name their replacement
           return 0;
         })
-        .catch((e: any): number => {
-          bad(ctx, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`);
-          return 1;
-        });
+        .catch(e => reportFailure(env, env.pgUrl ? pgFailure() : `orm query failed: ${e?.message || e}`));
     }
   }
 

@@ -34,6 +34,7 @@
 - **R2.3** 重复时输出 `! duplicate, kept existing: <id>`（与 `source add` 现有格式一致），退出码 0
 - **R2.4** `--force` 强制新建重复行（保留"同一引用录两条不同 locator 证据"类场景的逃生口）
 - **R2.5** 验收：demo 中每条写命令连跑两遍，第二遍全部 `! duplicate`，各表计数不翻倍
+- **R2.6 授权键（v16，Refs #295 Item 2）**：claims.scope 沿 validateScope 校验，旧行默认空串未归属，不推断项目授权。同项目文本同 scope 幂等，异 scope 点名 rc1 指向 claim rescope，force 不绕过。rescope 原子修改 scope/updated 并记 old_scope/new_scope，同值无写；show/list 与 library claim 携带 scope，过滤先于分页。dump 回放及 PG 升级/镜像保留该列。
 
 ### R3 树可移植闭环（修 P1-1）
 

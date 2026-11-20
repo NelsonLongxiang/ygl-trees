@@ -11,7 +11,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { sha1, nowIso } from "../../text/src/text";
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 /** #51: ONE SQLite driver for every write path. The wasm driver's Node VFS
  *  implements its own lock protocol that native SQLite (better-sqlite3, used
@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS claims (
   status       TEXT NOT NULL DEFAULT 'unverified', -- unverified|supported|refuted|contested
   confidence   TEXT NOT NULL DEFAULT 'B',
   content_hash TEXT NOT NULL DEFAULT '',           -- sha1(text): idempotent writes
+  scope        TEXT NOT NULL DEFAULT '',
   channel      TEXT NOT NULL DEFAULT '',           -- 0.90 prediction ledger channel (github-issues|review-rounds|npm-registry|downloads-api|manual…)
   created      TEXT NOT NULL,
   updated      TEXT NOT NULL DEFAULT ''
@@ -818,23 +819,24 @@ export class DB {
       );
       // ALTER + backfill BEFORE SCHEMA_SQL creates its unique indexes
       // (they would fail on empty-hash duplicates).
-      if (v > 0 || tablesPreExist) this.upgrade2to3();
-      if ((v > 0 && v < 7) || (v === 0 && tablesPreExist)) this.upgrade6to7();
-      if ((v > 0 && v < 8) || (v === 0 && tablesPreExist)) this.upgrade7to8();
-      if ((v > 0 && v < 9) || (v === 0 && tablesPreExist)) this.upgrade8to9();
-      if ((v > 0 && v < 10) || (v === 0 && tablesPreExist)) this.upgrade9to10();
-      if ((v > 0 && v < 11) || (v === 0 && tablesPreExist)) this.upgrade10to11();
-      if ((v > 0 && v < 12) || (v === 0 && tablesPreExist)) this.upgrade11to12();
-      if ((v > 0 && v < 13) || (v === 0 && tablesPreExist)) this.upgrade12to13();
-      if ((v > 0 && v < 14) || (v === 0 && tablesPreExist)) this.upgrade13to14();
-      if ((v > 0 && v < 15) || (v === 0 && tablesPreExist)) this.upgrade14to15();
+      if (v > 0 || tablesPreExist) {
+        this.upgrade2to3();
+        if (v < 7) this.upgrade6to7();
+        if (v < 8) this.upgrade7to8();
+        if (v < 9) this.upgrade8to9();
+        if (v < 10) this.addColumns("events", ["seq"], "INTEGER");
+        if (v < 11) this.addColumns("claims", ["channel"]);
+        if (v < 14) this.addColumns("jobs", ["project_id", "owner"]);
+        if (v < 15) for (const table of ["kb_notes", "skills"]) this.addColumns(table, ["scope"]);
+        this.addColumns("claims", ["scope"]);
+      }
       this.db.exec(SCHEMA_SQL);
       this.db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
       // PG-A③: seed the ledger every open (INSERT OR IGNORE — one row per
       // applied version; replay-safe)
       this.db.run(
         `INSERT OR IGNORE INTO schema_migrations(backend,version,applied_at,note) VALUES('sqlite',?,?,?)`,
-        [SCHEMA_VERSION, nowIso(), 'v13: verifier_instances/verifier_runs (verifier registry, #206) · v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
+        [SCHEMA_VERSION, nowIso(), 'v16: claims.scope (grant key) · v13: verifier_instances/verifier_runs (verifier registry, #206) · v12: patrol_checks/patrol_findings (boundary assertions + disposition queue, 0.93-T2) · v11: claims.channel (direct-ce9eaf7a) · v10: events.seq + ledger']
       );
     }
     // Q3 (r29) hot-path index for the arbitration lookup. Existing workspaces
@@ -848,81 +850,22 @@ export class DB {
     }
   }
 
-  /** v9 -> v10 (PG-A foundation, 单5): events gains a nullable seq column
-   * (PG-side BIGSERIAL; SQLite keeps rowid as native order) and the
-   * schema_migrations ledger table lands on both backends. */
-  private upgrade9to10(): void {
-    const hasSeq = this.get("SELECT 1 FROM pragma_table_info('events') WHERE name='seq'");
-    if (!hasSeq) this.db.exec(`ALTER TABLE events ADD COLUMN seq INTEGER`);
-  }
-
-  /** v10 -> v11 (0.90 通道字段, direct-ce9eaf7a): predictions register the
-   *  ledger channel they settle against (github-issues|review-rounds|…) so
-   *  settlement can't count the wrong feed — the 39c93624f6 mismatch class. */
-  private upgrade10to11(): void {
-    const has = this.get("SELECT 1 FROM pragma_table_info('claims') WHERE name='channel'");
-    if (!has) this.db.exec(`ALTER TABLE claims ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
-  }
-
-  /** v11 -> v12 (0.93-T2): patrol family — pure additive CREATE TABLE IF NOT
-   *  EXISTS (both tables live in SCHEMA_SQL), so the upgrade is a no-op guard
-   *  kept for ledger symmetry with the other steps. */
-  private upgrade11to12(): void {
-    /* SCHEMA_SQL exec below creates patrol_checks/patrol_findings */
-  }
-
-  /** v12 -> v13 (#206): verifier registry — pure additive CREATE TABLE IF NOT
-   *  EXISTS (both tables live in SCHEMA_SQL); no-op guard kept for ledger symmetry. */
-  private upgrade12to13(): void {
-    /* SCHEMA_SQL exec below creates verifier_instances/verifier_runs */
-  }
-
-  /** v13 -> v14 (#258): jobs gain project attribution and an owner, so orphaned
-   *  jobs can be named and doctor can say whose job is failing. Legacy rows
-   *  keep the empty-string default = unattributed, never rewritten. */
-  private upgrade13to14(): void {
-    const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='jobs'");
-    if (!hasTable) return;
-    const hasProject = this.get("SELECT 1 FROM pragma_table_info('jobs') WHERE name='project_id'");
-    if (!hasProject) this.db.exec(`ALTER TABLE jobs ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`);
-    const hasOwner = this.get("SELECT 1 FROM pragma_table_info('jobs') WHERE name='owner'");
-    if (!hasOwner) this.db.exec(`ALTER TABLE jobs ADD COLUMN owner TEXT NOT NULL DEFAULT ''`);
-  }
-
-  /** v14 -> v15 (#276): kb_notes and skills gain a market grant scope. Legacy rows keep the
-   *  empty-string default = unattributed; nothing is backfilled or guessed. */
-  private upgrade14to15(): void {
-    for (const t of ["kb_notes", "skills"]) {
-      const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name=?", [t]);
-      if (!hasTable) continue;
-      const has = this.get(`SELECT 1 FROM pragma_table_info('${t}') WHERE name='scope'`);
-      if (!has) this.db.exec(`ALTER TABLE ${t} ADD COLUMN scope TEXT NOT NULL DEFAULT ''`);
+  /** Additive columns share existence checks on old databases and dump replays. */
+  private addColumns(table: string, columns: string[], definition = "TEXT NOT NULL DEFAULT ''"): void {
+    if (!this.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [table])) return;
+    for (const column of columns) {
+      if (!this.get("SELECT 1 FROM pragma_table_info(?) WHERE name=?", [table, column]))
+        this.db.exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
     }
   }
 
-  /** v7 -> v8: engineering artifact envelope (spec R12) — task status machine
-   *  and design_type ride in a JSON meta column on artifacts. */
-  private upgrade7to8(): void {
-    const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='artifacts'");
-    if (!hasTable) return;
-    const has = this.get("SELECT 1 FROM pragma_table_info('artifacts') WHERE name='meta'");
-    if (!has) this.db.exec(`ALTER TABLE artifacts ADD COLUMN meta TEXT NOT NULL DEFAULT ''`);
-  }
+  private upgrade7to8(): void { this.addColumns("artifacts", ["meta"]); }
 
   /** v8 -> v9 (0.58): time is a critical dimension — six tables gain
    *  created/updated columns, backfilled from events when possible. */
   private upgrade8to9(): void {
     const now = new Date().toISOString();
-    const addCol = (table: string, col: string) => {
-      const has = this.get(`SELECT 1 FROM pragma_table_info('${table}') WHERE name='${col}'`);
-      if (!has) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
-    };
-    addCol("sources", "created");
-    addCol("claims", "updated");
-    addCol("artifacts", "updated");
-    addCol("node_edges", "created");
-    addCol("node_conditions", "created");
-    addCol("relations", "created");
+    for (const [table, column] of [["sources", "created"], ["claims", "updated"], ["artifacts", "updated"], ["node_edges", "created"], ["node_conditions", "created"], ["relations", "created"]]) this.addColumns(table, [column]);
     // Backfill from events where traceable; fall back to created/current time
     try {
       this.db.exec(`UPDATE sources SET created=COALESCE((SELECT MIN(e.ts) FROM events e WHERE e.kind='source.add' AND e.entity_id=sources.id),'${now}') WHERE created='' OR created IS NULL`);
@@ -934,14 +877,7 @@ export class DB {
     } catch { /* best-effort backfill */ }
   }
 
-  /** v6 -> v7: telemetry severity on events (spec R10.2). Existing rows are
-   *  info by definition — the audit ledger has only ever carried outcomes. */
-  private upgrade6to7(): void {
-    const hasTable = this.get("SELECT 1 AS hit FROM sqlite_master WHERE type='table' AND name='events'");
-    if (!hasTable) return; // SCHEMA_SQL below creates it fresh (with level)
-    const has = this.get("SELECT 1 FROM pragma_table_info('events') WHERE name='level'");
-    if (!has) this.db.exec(`ALTER TABLE events ADD COLUMN level TEXT NOT NULL DEFAULT 'info'`);
-  }
+  private upgrade6to7(): void { this.addColumns("events", ["level"], "TEXT NOT NULL DEFAULT 'info'"); }
 
   /**
    * v2 -> v3: add content_hash to claims / evidence / queries / kb_notes and

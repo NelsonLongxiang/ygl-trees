@@ -209,9 +209,13 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
     "evidence-add": (a) => a.batch_file
       ? ["research", "evidence", "add", "--batch", String(a.batch_file), ...opt("-p", a.project)]
       : ["research", "evidence", "add", String(a.text), "--quote", String(a.quote ?? ""), ...opt("-p", a.project)],
-    "claim-add": (a) => a.batch_file
-      ? ["research", "claim", "add", "--batch", String(a.batch_file), ...opt("-p", a.project)]
-      : ["research", "claim", "add", String(a.text), ...opt("-p", a.project)],
+    "claim-add": (a) => [...(a.batch_file
+      ? ["research", "claim", "add", "--batch", String(a.batch_file)]
+      : ["research", "claim", "add", String(a.text)]), ...opt("-p", a.project), ...scopeOpt(a.scope)],
+    "claim-rescope": (a) => {
+      if (!a.id || a.scope === undefined) throw usageError("claim rescope requires id and scope");
+      return ["research", "claim", "rescope", String(a.id), ...opt("-p", a.project), ...scopeOpt(a.scope)];
+    },
     "claim-link": (a) => ["research", "claim", "link", String(a.text), String(a.b), "--stance", String(a.stance ?? "supports"), ...opt("-p", a.project)],
     "claim-resolve": (a) => ["research", "claim", "resolve", String(a.text), "--as", String(a.as ?? "supported"), ...opt("-p", a.project)],
     // #257 C 类：source fetch（有网络副作用，默认拒绝；YGL_MCP_SOURCE_FETCH=1 才放行）
@@ -336,7 +340,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           since: { type: "string", description: "ISO-8601 lower bound on updated (library list)" },
           limit: { type: "number", description: "page size 1..500 (library list)" },
           cursor: { type: "string", description: "opaque next_cursor from the previous page" },
-          scope: { type: "string", description: "kb list/search, skill list and library note/skill: exact grant key (dept:<id>, bench:<id>, *, restricted); empty selects unattributed rows; omitted leaves the list unfiltered" },
+          scope: { type: "string", description: "kb list/search, skill list and library claim/note/skill: exact grant key (dept:<id>, bench:<id>, *, restricted); empty selects unattributed rows; omitted leaves the list unfiltered" },
           name: { type: "string", description: "entity name (skill show, project show)" },
           tree: { type: "string", description: "tree name filter" },
           node: { type: "string", description: "node key (rel list)" },
@@ -381,7 +385,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           batch_file: { type: "string", description: "#83 source-add/claim-add/evidence-add: jsonl batch file path (all-or-nothing; bad row names line+field rc=2, file missing rc=1, nothing written on failure)" },
           source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
           name: { type: "string", description: "kb name / node name / project name" },
-          scope: { type: "string", description: "kb add/ingest/rescope: dept:<id>, bench:<id>, *, restricted or empty (unattributed); ids match [A-Za-z0-9._-]{1,64}; rescope requires an explicit value" },
+          scope: { type: "string", description: "claim add/rescope and kb add/ingest/rescope: dept:<id>, bench:<id>, *, restricted or empty (unattributed); ids match [A-Za-z0-9._-]{1,64}; rescope requires an explicit value" },
           body: { type: "string", description: "kb add: note body; produce section/spec/design: artifact body (与 file 互斥)" },
           description: { type: "string", description: "kb add: compatibility alias for body; mutually exclusive with file" },
           file: { type: "string", description: "kb add: markdown file path; produce section/spec/design: body file (-f)" },
@@ -409,7 +413,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           answer: { type: "string", description: "eval-choice: expected option key" },
           levels: { type: "string", description: "eval-score: comma-separated level descriptions" },
           min_score: { type: "number", description: "eval-score: minimum acceptable level" },
-          id: { type: "string", description: "task advance: task id" },
+          id: { type: "string", description: "task advance or claim-rescope: entity id" },
           to: { type: "string", enum: ["doing", "done", "todo"], description: "task advance target" },
           reason: { type: "string", description: "task cancel: why the task is closed without being done (required)" },
           node: { type: "string", description: "rel attach: node key" },

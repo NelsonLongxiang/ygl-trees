@@ -31,6 +31,8 @@ Applications choose lightweight entity manifests and supply literal lazy constru
 
 Schema v15 stores `scope TEXT NOT NULL DEFAULT ''` on `kb_notes` and `skills`. SQLite v14 and version-zero dump replays upgrade in place without inferring grants. PG uses the v15 `PG_UPGRADES` step; export/mirror paths retain the added column and no ORM synchronization is enabled.
 
+Schema v16 extends the same grant contract to `claims`. SQLite v15 and version-zero replays retain existing rows and audit history with `scope = ''`. The v16 PG step is explicit and idempotent; no business command auto-upgrades PG. The shared additive-column helper preserves ordered legacy version gates and defaults; `SCHEMA_VERSION` remains the engine and doctor source of truth.
+
 ## Further Exploration
 
 - [docs/plan.md](../../../docs/plan.md) — architecture decisions and version history
