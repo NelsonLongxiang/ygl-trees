@@ -30,24 +30,73 @@ function cli(args: string[]) {
 }
 describe("admission gate crash recovery", () => {
   it("human doctor fix cannot delete a live application lock installed by an ordinary writer", async () => {
-    const lock=file+".ygllock";mkdirSync(lock);writeFileSync(join(lock,"owner"),"dead-lock");writeFileSync(join(lock,"pid"),deadPid);
-    const script=[
-      'const fs=require("node:fs"),{DB}=require('+JSON.stringify(join(repo,"dist/packages/core/database/src/db.js"))+'),doctor=require('+JSON.stringify(join(repo,"dist/packages/ops/tools/src/doctor.js"))+');',
-      'const file=process.argv[1],home=process.argv[2],lock=file+".ygllock",read=fs.readFileSync,db=new DB(file,{lock:false,managed:true});let reads=0;',
-      'fs.readFileSync=function(name,...args){const value=read.call(this,name,...args);if(String(name).replaceAll("\\\\","/")===lock.replaceAll("\\\\","/")+"/pid"&&new Error().stack.includes("doctor")&&++reads===2){fs.writeSync(1,"paused\\n");const b=Buffer.alloc(1);if(fs.readSync(0,b,0,1,null)!==1)throw Error("barrier closed");}return value;};',
-      'try{const rc=doctor.run({db,home,ctx:{json:false,color:false,quiet:false},args:{flags:{fix:true},_:[]},store:{}},"",[],{flags:{fix:true},_:[]});if(rc&&typeof rc.then==="function")throw Error("unexpected async doctor");}finally{db.closeStrict();}',
+    const lock = file + ".ygllock";
+    mkdirSync(lock); writeFileSync(join(lock, "owner"), "dead-lock"); writeFileSync(join(lock, "pid"), deadPid);
+    const doctorFile = join(repo, "dist/packages/ops/tools/src/doctor.js");
+    // Resolve the outer-holder callsite in the loaded implementation; earlier diagnostic reads are irrelevant.
+    const script = [
+      "const fs = require(\"node:fs\"), assert = require(\"node:assert/strict\");",
+      "const [file, home, deadPid, doctorFile, coreFile] = process.argv.slice(1);",
+      "const core = require(coreFile), doctor = require(doctorFile);",
+      "const read = fs.readFileSync, normalize = value => String(value).split(String.fromCharCode(92)).join(\"/\");",
+      "const lines = read(doctorFile, \"utf8\").split(/\\r?\\n/);",
+      "const sites = lines.flatMap((line, index) => /^\\s*holder = fs\\.readFileSync\\(pidFile, \"utf8\"\\)\\.trim\\(\\);$/.test(line) ? [index] : []);",
+      "assert.equal(sites.length, 1, \"outer holder read must be unique\");",
+      "const site = sites[0], frame = normalize(doctorFile) + \":\" + (site + 1) + \":\";",
+      "assert.match(lines.slice(site + 1, site + 8).join(\"\\n\"), /const admission = gate\\(dbPath, \"doctor --fix\"\\)/, \"outer holder read must precede admission\");",
+      "const db = new core.DB(file, { lock: false, managed: true });",
+      "let paused = false;",
+      "const acquire = core.acquireLockAdmission;",
+      "core.acquireLockAdmission = function(target, task) {",
+      "  if (target === file && task === \"doctor --fix\") {",
+      "    assert.equal(paused, true, \"admission reached without outer-holder barrier\");",
+      "    fs.writeSync(1, \"admission-after-barrier\\n\");",
+      "  }",
+      "  return acquire.apply(this, arguments);",
+      "};",
+      "fs.readFileSync = function(name, ...args) {",
+      "  const value = read.call(this, name, ...args);",
+      "  if (!paused && normalize(name) === normalize(file) + \".ygllock/pid\" && String(value).trim() === deadPid && normalize(new Error().stack).includes(frame)) {",
+      "    paused = true;",
+      "    fs.writeSync(1, \"outer-holder:\" + JSON.stringify({ pid: String(value).trim(), line: site + 1 }) + \"\\n\");",
+      "    const byte = Buffer.alloc(1);",
+      "    assert.equal(fs.readSync(0, byte, 0, 1, null), 1, \"barrier closed\");",
+      "  }",
+      "  return value;",
+      "};",
+      "try {",
+      "  const rc = doctor.run({ db, home, ctx: { json: false, color: false, quiet: false }, args: { flags: { fix: true }, _: [] }, store: {} }, \"\", [], { flags: { fix: true }, _: [] });",
+      "  assert.equal(typeof rc, \"number\", \"unexpected async doctor\");",
+      "} finally { db.closeStrict(); }",
     ].join("\n");
-    const child=spawn(process.execPath,["-e",script,file,home],{cwd:repo,stdio:["pipe","pipe","pipe"],env:{...process.env,YGL_LOCK_RETRY_MS:"0",YGL_NO_UPDATE_CHECK:"1"}});
-    let stdout="",stderr="",timer:ReturnType<typeof setTimeout>|undefined,writer:DB|undefined;
-    const closed=new Promise<{code:number|null;signal:NodeJS.Signals|null}>((resolve,reject)=>{child.once("error",reject);child.once("close",(code,signal)=>resolve({code,signal}));});
-    child.stderr.on("data",d=>{stderr+=d;});
-    const ready=new Promise<void>((resolve,reject)=>{timer=setTimeout(()=>reject(Error("doctor barrier not reached "+stdout+stderr)),15000);child.stdout.on("data",d=>{stdout+=d;if(stdout.includes("paused\n")){clearTimeout(timer);resolve();}});child.once("error",reject);child.once("close",()=>reject(Error("doctor exited before barrier "+stdout+stderr)));});
+    const child = spawn(process.execPath, ["-e", script, file, home, deadPid, doctorFile, join(repo, "dist/packages/core/database/src/db.js")], {
+      cwd: repo, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, YGL_LOCK_RETRY_MS: "0", YGL_NO_UPDATE_CHECK: "1" },
+    });
+    let stdout = "", stderr = "", timer: ReturnType<typeof setTimeout> | undefined, writer: DB | undefined;
+    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      child.once("error", reject); child.once("close", (code, signal) => resolve({ code, signal }));
+    });
+    child.stderr.on("data", data => { stderr += data; });
+    const ready = new Promise<void>((resolve, reject) => {
+      timer = setTimeout(() => reject(Error("doctor barrier not reached " + stdout + stderr)), 15000);
+      child.stdout.on("data", data => { stdout += data; if (/outer-holder:[^\n]+\n/.test(stdout)) { clearTimeout(timer); resolve(); } });
+      child.once("error", reject); child.once("close", () => reject(Error("doctor exited before barrier " + stdout + stderr)));
+    });
     try {
-      await ready;writer=new DB(file,{lock:true,managed:true});const owner=readFileSync(join(lock,"owner"),"utf8");
-      child.stdin.end("x");const result=await closed;expect(result.signal,stderr).toBeNull();expect(result.code,stdout+stderr).toBe(0);
-      expect(readFileSync(join(lock,"owner"),"utf8")).toBe(owner);expect(readFileSync(join(lock,"pid"),"utf8")).toBe(String(process.pid));
+      await ready;
+      const barrier = JSON.parse(stdout.match(/outer-holder:([^\n]+)\n/)![1]);
+      expect(barrier.pid).toBe(deadPid); expect(barrier.line).toBeGreaterThan(0);
+      writer = new DB(file, { lock: true, managed: true });
+      const owner = readFileSync(join(lock, "owner"), "utf8");
+      child.stdin.end("x"); const result = await closed;
+      expect(result.signal, stderr).toBeNull(); expect(result.code, stdout + stderr).toBe(0);
+      expect(stdout).toContain("admission-after-barrier\n");
+      expect(readFileSync(join(lock, "owner"), "utf8")).toBe(owner);
+      expect(readFileSync(join(lock, "pid"), "utf8")).toBe(String(process.pid));
     } finally {
-      if(timer)clearTimeout(timer);child.stdin.end();if(child.exitCode===null&&child.signalCode===null)child.kill();await closed;writer?.closeStrict();
+      if (timer) clearTimeout(timer);
+      child.stdin.end(); if (child.exitCode === null && child.signalCode === null) child.kill();
+      await closed; writer?.closeStrict();
     }
   });
 
