@@ -15,7 +15,22 @@ import {promisify} from 'node:util';
 vi.mock('node:fs/promises',{spy:true});
 vi.mock('node:fs',{spy:true});
 type WatchTrace = { elapsed_ms: number; phase: string; event: string; [key: string]: unknown };
-function watcherSnapshot(home: string, phase: string, trace: WatchTrace[], dropped: number) {
+function watcherTrace(phase:()=>string,now:()=>number=()=>performance.now()) {
+ const started=now(),trace:WatchTrace[]=[],ioTrace:WatchTrace[]=[];let dropped=0,ioDropped=0;
+ return {
+  mark(event:string,facts:Record<string,unknown>={}) {
+   if(trace.length===256){trace.shift();dropped++;}
+   const row={elapsed_ms:Math.round(now()-started),phase:phase(),event,...facts};
+   trace.push(row);
+   if(!['settled-start','settled-end','projection'].includes(event)){
+    if(ioTrace.length===256){ioTrace.shift();ioDropped++;}
+    ioTrace.push(row);
+   }
+  },
+  snapshot:()=>({trace:trace.slice(),dropped,io_trace:ioTrace.slice(),io_dropped:ioDropped}),
+ };
+}
+function watcherSnapshot(home: string, phase: string, history: ReturnType<ReturnType<typeof watcherTrace>["snapshot"]>) {
  const root=join(home,'verify'),file=join(root,'reports/external.json');
  let source: Record<string,unknown>={exists:false};
  try {const s=nativeFs.statSync(file);let overall:unknown='invalid json';try{overall=JSON.parse(nativeFs.readFileSync(file,'utf8')).overall;}catch{}source={exists:true,bytes:s.size,mtime_ms:s.mtimeMs,ctime_ms:s.ctimeMs,overall};}
@@ -23,7 +38,7 @@ function watcherSnapshot(home: string, phase: string, trace: WatchTrace[], dropp
  let index:Record<string,unknown>={};let db:any;
  try{db=new Sqlite(listIndexPath(root),{readonly:true});index={revision:db.prepare("SELECT stamp FROM files WHERE kind='reports' AND id='external'").get()??null,projection:db.prepare("SELECT run_id,overall FROM reports WHERE run_id='external'").get()??null,excluded:db.prepare("SELECT reason,stamp FROM excluded WHERE kind='reports' AND id='external'").get()??null,metadata:db.prepare("SELECT key,value FROM metadata WHERE key IN ('format','ready') ORDER BY key").all()};}
  catch(e:any){index={error_name:e.name,error_code:e.code??null};}finally{db?.close();}
- return {phase,trace,dropped,source,index,dirty_marker:nativeFs.existsSync(join(root,'.list-index-dirty'))};
+ return {phase,...history,source,index,dirty_marker:nativeFs.existsSync(join(root,'.list-index-dirty'))};
 }
 
 describe('#125 durable index requirements',()=>{
@@ -49,8 +64,7 @@ describe('#125 durable index requirements',()=>{
  });
  it('filename watcher maintains external edits and deletions and closes without handles',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-watch-'));let watcher:ReturnType<typeof watchListIndex>|undefined;
-  const started=performance.now(),trace:WatchTrace[]=[];let phase='prepare',dropped=0;
-  const mark=(event:string,facts:Record<string,unknown>={})=>{if(trace.length===256){trace.shift();dropped++;}trace.push({elapsed_ms:Math.round(performance.now()-started),phase,event,...facts});};
+  let phase='prepare';const history=watcherTrace(()=>phase),{mark}=history;
   const file=join(home,'verify/reports/external.json');
   const actual=await vi.importActual<typeof import('node:fs')>('node:fs');
   const readOriginal=promisify(actual.readFile),statOriginal=promisify(actual.stat);
@@ -76,25 +90,43 @@ describe('#125 durable index requirements',()=>{
    phase='delete';mark('source-delete');rmSync(file);
    await vi.waitFor(async()=>{await settled();const r:any=await handleVerifyApi({home}as any,'GET',new URL('http://local/api/verify/reports?spec=watched'));mark('projection',{total:r.body.total});expect(r.body.total).toBe(0);},{timeout:3000,interval:20});
   }catch(error){
-   const snapshot=watcherSnapshot(home,phase,trace,dropped);
+   const snapshot=watcherSnapshot(home,phase,history.snapshot());
    const root=join(process.cwd(),'tmp/windows-test-diagnostics-202-203-209');mkdirSync(root,{recursive:true});
    const retained=join(mkdtempSync(join(root,'watcher-failure-')),'state.json');writeFileSync(retained,JSON.stringify(snapshot,null,2)+'\n');
    throw new Error('watcher lifecycle failed at '+phase+'; diagnostics='+retained+'; state='+JSON.stringify(snapshot),{cause:error});
   }finally{try{await watcher?.close();}finally{reads.mockRestore();stats.mockRestore();rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}}
  });
- it('failure snapshot distinguishes source, indexed revision and projection without repairing them',async()=>{
+ it('failure snapshot retains causal I/O through polling without repairing source or index',async()=>{
   mkdirSync('tmp',{recursive:true});const home=mkdtempSync(join(process.cwd(),'tmp/durable-watch-diagnostic-'));
   try{
    await prepareListIndex(home);const file=join(home,'verify/reports/external.json');
    writeJson(file,{run_id:'external',spec_id:'watched',overall:'FAIL'});
    writeFileSync(file,JSON.stringify({run_id:'external',spec_id:'watched',overall:'PASS'}));
-   const trace:WatchTrace[]=[{elapsed_ms:1,phase:'rewrite',event:'source-write',overall:'PASS'}];
-   const snapshot=watcherSnapshot(home,'rewrite',trace,0)as any;
+   let phase='create',tick=0;const history=watcherTrace(()=>phase,()=>tick++);
+   history.mark('source-write',{overall:'FAIL'});
+   history.mark('filename-event',{kind:'reports',notification:'rename',filename:'external.json'});
+   history.mark('read-start');history.mark('stat',{bytes:58,mtime_ms:1,ctime_ms:1});history.mark('read-end',{bytes:58,overall:'FAIL'});
+   phase='rewrite';history.mark('source-write',{overall:'PASS'});
+   history.mark('filename-event',{kind:'reports',notification:'change',filename:'external.json'});
+   history.mark('read-start');history.mark('stat',{bytes:58,mtime_ms:2,ctime_ms:2});history.mark('read-end',{bytes:58,overall:'PASS'});
+   history.mark('read-error',{error_name:'Error',error_code:'ENOENT'});history.mark('stat-error',{error_code:'ENOENT'});
+   const causal=history.snapshot().trace;
+   for(let n=0;n<1000;n++)for(const event of ['settled-start','settled-end','projection'])history.mark(event,{poll:n});
+   const snapshot=watcherSnapshot(home,phase,history.snapshot())as any;
+   expect(snapshot.trace).toHaveLength(256);expect(snapshot.dropped).toBe(causal.length+3000-256);
+   expect(snapshot.trace.every((row:WatchTrace)=>['settled-start','settled-end','projection'].includes(row.event))).toBe(true);
+   expect(snapshot.io_trace).toEqual(causal);expect(snapshot.io_dropped).toBe(0);
+   expect(JSON.parse(JSON.stringify(snapshot)).io_trace).toEqual(causal);
+   for(let n=0;n<300;n++)history.mark('stat',{sample:n});
+   const saturated=history.snapshot();
+   expect(saturated.io_trace).toHaveLength(256);expect(saturated.io_dropped).toBe(causal.length+300-256);
+   expect(saturated.io_trace[0]).toMatchObject({phase:'rewrite',event:'stat',sample:44});
+   expect(saturated.io_trace.at(-1)).toMatchObject({sample:299});
+   expect(snapshot.io_trace).toEqual(causal);
    expect(snapshot.source).toMatchObject({exists:true,overall:'PASS'});
    expect(snapshot.index.projection).toEqual({run_id:'external',overall:'FAIL'});
    expect(snapshot.index.revision.stamp).toMatch(/^hook:/);
-   expect(snapshot.trace).toEqual(trace);expect(snapshot.dropped).toBe(0);
-   const next=watcherSnapshot(home,'rewrite',trace,0)as any;expect(next.index).toEqual(snapshot.index);
+   expect(watcherSnapshot(home,phase,history.snapshot()).index).toEqual(snapshot.index);
   }finally{rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
  it('legacy preparation is explicit; missing index never silently scans in a list request',async()=>{
