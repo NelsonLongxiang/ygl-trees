@@ -28,7 +28,7 @@
 | 27 | Self-Evolving Analysis | = automating this session's human loop; 5/7 components ready |
 | 28 | Absolute Final State | All green · all published · all verified |
 | 29 | ONE-PAGER.md | 30-second pitch for new users |
-| 30 | HANDOFF.md | Everything you need returning in 6 months |
+| 30 | HANDOFF.md | Everything you need returning in 6 months (file removed in 0.110.0 for privacy; see CHANGELOG) |
 | 31 | Adoption Strategy | 0→100 users in 3 weeks (seed→feedback→ecosystem) |
 | 32 | Time Capsule | 5 falsifiable predictions · check 2027-01-17 |
 | 33 | Session Close | release-gate unlocked · 95% final state |
@@ -51,7 +51,7 @@ Events:     3,300+
 | Document | For | Purpose |
 |---|---|---|
 | ONE-PAGER.md | Never heard of ygl-trees | 30-second pitch + quick start |
-| HANDOFF.md | You, in 6 months | State + decisions + what's left + why |
+| ~~HANDOFF.md~~ | You, in 6 months | Removed in 0.110.0 (it held private network details); current state lives in CHANGELOG and docs/ |
 | This file | You, right now | 35 rounds in 2 minutes |
 
 ## What needs YOU
