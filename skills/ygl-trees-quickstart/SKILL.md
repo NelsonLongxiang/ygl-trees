@@ -30,7 +30,7 @@ tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 
 ```
 read   → 一切读面：{domain: "agent|kb|tree|node|task|rel|research|produce|project|db|skill|library", action: "brief|search|state|list|can|ready|path|ancestors|descendants|validate|...", ...}
-# library（#275）：市场经验库只读出口——library list --kind <claim|note|skill|check> [--since|--limit|--cursor]，contract "ygl-library/1"
+# library：library list --kind <claim|note|skill|check> [--project <name>] [--since|--limit|--cursor]，contract "ygl-library/1"
 # scope（#276）：read kb list/search、skill list、library note/skill list 支持 scope；write kb add/ingest/rescope 支持同名键；""=未归属，非 public
 write  → 一切写面：{domain: "research|kb|tree|task|rel|project|produce", action: "query-add|source-add|node-add|node-unlock|node-lock|attach|outline|section|spec|design|export|promote|ingest|...", ...}
 verify → 验证管线：{action: "submit|prepare|run|report|trace|archive|meta|lint-candidates|example|tree-prepare|tree-run|tree-report|tree-trace", a: ..., b: ..., c: ..., db: ...}
@@ -40,6 +40,8 @@ doctor → 健康检查：{fix: true|false}
 
 **MCP 与 CLI 的映射规则**：`domain` = CLI 命令组，`action` = CLI 子命令（`-` 连接），其余参数透传。
 例：`read {domain:"research", action:"source-search", query:"供应商"}` ≈ `research source search "供应商" --json`。
+
+`library list --kind claim --project <name>`（MCP `read {domain:"library",action:"list",kind:"claim",project:"<name>"}`）按精确项目名过滤；未知名返回原形空页 rc0。省略 project 不筛项目，缺值／空值 rc2；note／skill／check 无项目归属，带 project 具名拒绝 rc2。游标不能跨项目或其他过滤条件复用。
 
 **安全边界**：MCP 写面是枚举闭集（action 只能取 schema 中列出的值）；管理面（db reset/sql、plugin、config、job、patrol）物理排除在 MCP 之外——agent 只能通过本地 CLI 执行管理操作。
 

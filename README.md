@@ -213,6 +213,14 @@ agent brief               状态 + 建议动作 + 健康度（脏索引、存量
 
 闭环：**报告 → 笔记 → skill → 下次自动命中**。
 
+### library：经验库的只读分页出口
+
+```bash
+ygl-trees library list --kind claim --project techtree --json
+```
+
+`--project` 按精确项目名过滤 claim，并在计数、分页前生效；未知项目 rc0，仍返回 `ygl-library/1` 的 `items:[]`、`total:0`、`next_cursor:null`。缺值／空值 rc2。note、skill、check 无权威项目归属，带该参数时具名拒绝 rc2，不静默忽略或从 scope 推断。省略参数列出全部项目；游标绑定完整过滤条件，不可跨项目复用。MCP `read` 的 library/list 同样支持 `project`。
+
 ### skill：L1/L2/L3 渐进披露
 
 - L1 `description`：常驻上下文，写"做什么 + 何时触发 + 同义词"
@@ -349,7 +357,7 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 78 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1/T2/T3 加了 7 条科技树 golden 与并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 78 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2232 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（135 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
+pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2271 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（138 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
 pnpm bench         # 性能基准四条用户路径（startup/写路径/检索/索引），每条含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
@@ -370,6 +378,8 @@ ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实�
 ygl-trees webui serve --help   # 打印用法即退出，不启服务（0.79.1：--help 短路）
 ygl-trees webui export --out d.json     # 服务形态快照（与 /api/data 同载荷；HTML 仪表盘已于 0.88 退役）
 ```
+
+**Item 1 验证注记（#295）**：Windows 本地完整 unit 实测 2271 条＝2144 通过、1 失败、126 条件跳过，尚非全绿；未改动的 dashboard-owner SSE 初始就绪超时单独跟踪于 [#298](https://github.com/NelsonLongxiang/ygl-trees/issues/298)。一次透明计时诊断已恢复原测试字节，19/19 通过不当修复或完整门禁通过；本项最终完整测试由监督席对 PR 精确头在 macOS 执行。
 
 **锁身份（0.79.1）**：`.ygllock` 里除 pid 外记录**持有者命令行**；撞锁报错、`db unlock`、`doctor`
 三处都会回显真实持有者（如 `node bin.cjs node unlock trend-collector`），不再把 CLI 会话误标成

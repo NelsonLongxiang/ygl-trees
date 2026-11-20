@@ -9,6 +9,8 @@ import type { Env } from "../../../core/database/src/types";
 import { readListIndex, prepareListIndex } from "./verify-list-index";
 import { strictIsoTimestamp, AsOfError } from "./as-of";
 import { validateScope } from "../../../core/text/src/scope";
+import { LibraryUsageError, validateLibraryProject } from "./library-usage";
+export { LibraryUsageError } from "./library-usage";
 
 export const LIBRARY_CONTRACT = "ygl-library/1";
 
@@ -31,8 +33,6 @@ export interface LibraryRow {
 export interface LibraryPage { contract: string; items: LibraryRow[]; total: number; next_cursor: string | null }
 export interface LibraryShow { contract: string; kind: LibraryKind; id: string; body?: string; [key: string]: unknown }
 
-export class LibraryUsageError extends Error {}
-
 const CURSOR_SCOPE_MAX = 512;
 
 /** Strict ISO, same acceptance as verify prepare --as-of (#171). */
@@ -48,9 +48,8 @@ function pagination(limitRaw: string | undefined, cursor: string | undefined, sc
   if (!/^[0-9]+$/.test(raw) || Number(raw) < 1 || Number(raw) > 500) throw new LibraryUsageError("limit must be an integer from 1 to 500");
   let after: [string, string] | undefined;
   if (cursor !== undefined) {
-    if (cursor.length > 4096) throw new LibraryUsageError("invalid cursor for this list");
     let k: any;
-    try { k = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")); } catch {}
+    try { if (cursor.length <= 4096) k = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")); } catch {}
     if (!Array.isArray(k) || k.length !== 3 || k[0] !== scopeKey || typeof k[1] !== "string" || typeof k[2] !== "string")
       throw new LibraryUsageError("invalid cursor for this list");
     after = [k[1], k[2]];
@@ -82,9 +81,6 @@ export function firstParagraph(body: string, cut = 200): string {
   return para.length > cut ? para.slice(0, cut) : para;
 }
 
-/** Empty grants are unattributed and omitted from the library projection. */
-function noteScope(row: any): string | undefined { return row.scope || undefined; }
-
 function claimRows(db: any, since: string | null, projectFilter?: string): LibraryRow[] {
   const clauses: string[] = []; const params: string[] = [];
   if (since) { clauses.push("c.updated >= ?"); params.push(since); }
@@ -101,48 +97,42 @@ function claimRows(db: any, since: string | null, projectFilter?: string): Libra
       created: r.created, updated: r.updated,
     };
     if (r.project) row.project = r.project; // absent when unknown, never ""
-    const conf = typeof r.confidence === "string" && r.confidence.trim() ? r.confidence : undefined; if (conf) row.confidence = conf; // review⑦：空则缺席
+    if (typeof r.confidence === "string" && r.confidence.trim()) row.confidence = r.confidence;
     return row;
   });
 }
 
-function noteRows(db: any, since: string | null, scope?: string): LibraryRow[] {
-  const clauses: string[] = []; const params: string[] = [];
-  if (since) { clauses.push("updated >= ?"); params.push(since); }
-  if (scope !== undefined) { clauses.push("scope = ?"); params.push(scope); }
-  const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  return (db.all("SELECT id,title,body,tags,confidence,source_url,scope,created,updated FROM kb_notes" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
-    const row: LibraryRow = {
-      kind: "note", id: r.id, title: r.title,
-      summary: firstParagraph(r.body),
-      status: "open",
-      created: r.created, updated: r.updated,
-    };
-    if (r.tags) row.tags = r.tags;
-    if (typeof r.confidence === "string" && r.confidence.trim()) row.confidence = r.confidence; // review⑦
-    if (r.source_url) row.source_url = r.source_url;
-    const scope = noteScope(r); if (scope) row.scope = scope;
-    return row;
-  });
+function noteRow(r: any, full = false): LibraryRow {
+  const row: LibraryRow = {
+    kind: "note", id: r.id, title: r.title, summary: firstParagraph(r.body),
+    status: "open", created: r.created, updated: r.updated,
+  };
+  if (full) row.body = r.body;
+  if (r.tags) row.tags = r.tags;
+  if (typeof r.confidence === "string" && r.confidence.trim()) row.confidence = r.confidence;
+  if (r.source_url) row.source_url = r.source_url;
+  if (r.scope) row.scope = r.scope;
+  return row;
 }
 
-function skillRows(db: any, since: string | null, scope?: string): LibraryRow[] {
-  // bundled 技能在表内（origin=builtin:*，db init 预置）；只暴露 promoted（origin=kb:<noteId>）。
-  const clauses: string[] = ["origin LIKE 'kb:%'"]; const params: string[] = [];
+function knowledgeRows(db: any, kind: "note" | "skill", since: string | null, scope?: string): LibraryRow[] {
+  const note = kind === "note";
+  const clauses: string[] = note ? [] : ["origin LIKE 'kb:%'"], params: string[] = [];
   if (since) { clauses.push("updated >= ?"); params.push(since); }
   if (scope !== undefined) { clauses.push("scope = ?"); params.push(scope); }
   const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
-  return (db.all("SELECT id,name,version,description,tags,origin,enabled,hits,scope,created,updated FROM skills" + where + " ORDER BY updated DESC, id DESC", params) as any[]).map((r) => {
+  const columns = note ? "id,title,body,tags,confidence,source_url,scope,created,updated FROM kb_notes" :
+    "id,name,version,description,tags,origin,enabled,hits,scope,created,updated FROM skills";
+  return (db.all("SELECT " + columns + where + " ORDER BY updated DESC, id DESC", params) as any[]).map(r => {
+    if (note) return noteRow(r);
     const m = /^kb:(.+)$/.exec(r.origin || "");
     const row: LibraryRow = {
-      kind: "skill", id: r.id, title: r.name,
-      summary: r.description || "",
-      status: r.enabled ? "enabled" : "disabled",
-      created: r.created, updated: r.updated,
+      kind: "skill", id: r.id, title: r.name, summary: r.description || "",
+      status: r.enabled ? "enabled" : "disabled", created: r.created, updated: r.updated,
       from_note: m ? m[1] : null,
     };
-    const scope = noteScope(r); if (scope) row.scope = scope;
-    if (r.version) row.version = r.version; // review⑥
+    if (r.scope) row.scope = r.scope;
+    if (r.version) row.version = r.version;
     if (r.tags) row.tags = r.tags;
     return row;
   });
@@ -210,32 +200,25 @@ async function ensureIndex(env: Env): Promise<void> {
 export async function libraryList(env: Env, o: {
   kind: LibraryKind; limit?: string; cursor?: string; since?: string; scope?: string; project?: string;
 }): Promise<LibraryPage> {
+  validateLibraryProject(o.project);
+  if (o.project !== undefined && o.kind !== "claim") throw new LibraryUsageError(`project filter is unavailable for ${o.kind}: this kind has no project ownership`);
   if (o.scope !== undefined && o.kind !== "note" && o.kind !== "skill") throw new LibraryUsageError("scope filter applies only to note and skill");
   const scope = o.scope === undefined ? undefined : validateScope(o.scope);
   const since = parseSince(o.since);
   const scopeKey = JSON.stringify([o.kind, o.since ?? null, scope ?? null, o.project ?? null]);
   const { limit, after } = pagination(o.limit, o.cursor, scopeKey);
-  let total: number;
-  const count = (r: LibraryRow[]) => r.length; // in-memory counts are fine for workspace scale
+  let all: LibraryRow[];
   if (o.kind === "check") {
-    // check 走 verify 列表索引（与 verify-list 同一事实源，不新建索引文件）。CLI 面必须自备索引（review①）。
+    // Read the verifier's existing summary index; prepare it only on this CLI face.
     await ensureIndex(env);
     const specTitles = await specTitleMap(env.home);
-    return readListIndex(env.home, (db) => {
-      const all = checkRows(db, since, specTitles);
-      const filtered = after ? all.filter((r) => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
-      total = count(all);
-      return pageEnvelope(filtered, total, limit, scopeKey);
-    });
+    all = readListIndex(env.home, db => checkRows(db, since, specTitles));
+  } else {
+    const db = env.db;
+    all = o.kind === "claim" ? claimRows(db, since, o.project) : knowledgeRows(db, o.kind, since, scope);
   }
-  const db = env.db as any;
-  const all =
-    o.kind === "claim" ? claimRows(db, since, o.project) :
-    o.kind === "note" ? noteRows(db, since, scope) :
-    skillRows(db, since, scope);
-  const filtered = after ? all.filter((r) => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
-  total = all.length;
-  return pageEnvelope(filtered, total, limit, scopeKey);
+  const filtered = after ? all.filter(r => r.updated < after[0] || (r.updated === after[0] && r.id < after[1])) : all;
+  return pageEnvelope(filtered, all.length, limit, scopeKey);
 }
 
 export async function libraryShow(env: Env, kind: LibraryKind, id: string): Promise<LibraryShow> {
@@ -260,12 +243,7 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
   if (kind === "note") {
     const r = env.db.get("SELECT * FROM kb_notes WHERE id=? OR title=?", [id, id]) as any;
     if (!r) fail(`note not found: ${id}`);
-    const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.title, summary: firstParagraph(r.body), status: "open", created: r.created, updated: r.updated, body: r.body };
-    if (r.tags) out.tags = r.tags;
-    if (typeof r.confidence === "string" && r.confidence.trim()) out.confidence = r.confidence;
-    if (r.source_url) out.source_url = r.source_url;
-    const scope = noteScope(r); if (scope) out.scope = scope;
-    return out;
+    return { contract: LIBRARY_CONTRACT, ...noteRow(r, true) };
   }
   if (kind === "skill") {
     // review⑤：show 与 list 同规则——只认 promoted（origin LIKE kb:%）；bundled/未知 rc 1
@@ -274,7 +252,7 @@ export async function libraryShow(env: Env, kind: LibraryKind, id: string): Prom
     const m = /^kb:(.+)$/.exec(r.origin || "");
     const out: LibraryShow = { contract: LIBRARY_CONTRACT, kind, id: r.id, title: r.name, status: r.enabled ? "enabled" : "disabled", created: r.created, updated: r.updated, body: r.body, from_note: m ? m[1] : null };
     if (r.tags) out.tags = r.tags;
-    const scope = noteScope(r); if (scope) out.scope = scope;
+    if (r.scope) out.scope = r.scope;
     return out;
   }
   // check show：run 行（一 run 一行）；body=row_json 去掉本地路径（review①：data_source.source 不出口）

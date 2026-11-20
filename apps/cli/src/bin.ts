@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { validateScope } from "../../../packages/core/text/src/scope";
+import { LIBRARY_LIST_USAGE, LIBRARY_PROJECT_HELP, validateLibraryProject } from "../../../packages/ops/tools/src/library-usage";
 import { redactPgUrl } from "../../../packages/core/database/src/asyncdb";
 import { checkPgWorkspace, bindPgWorkspace, pgFailure, PgCapabilityError, requirePgColumns, requirePgSchemaVersion, pgTargetHash } from "../../../packages/core/database/src/pg-workspace";
 /**
@@ -225,6 +226,11 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   link <a> <b> [--rel]
   ingest <artifactId>        import a finished artifact
   promote <noteId> [--name]  turn a note into a reusable skill
+
+${paint(C.bold, "library", color)}     market experience feed
+  ${LIBRARY_LIST_USAGE}
+                            ${LIBRARY_PROJECT_HELP}
+  show <kind> <id|title>
 
 ${paint(C.bold, "job", color)}         batch + schedule (drive with cron: job tick)
   add <title> [--every <min> [--allow-frequent]|--at "YYYY-MM-DD HH:MM"|--manual] [--replaces <id|title>|--force] [--owner <who>] [--project <name>] -- <command>   options before --
@@ -497,11 +503,13 @@ export async function main(argv: string[]): Promise<number> {
     if (args._.length !== 2) { bad(ctx, "db init takes no positional arguments"); return 2; }
     if (["home", "db"].some(k => args.flags[k] === true || (Array.isArray(args.flags[k]) && (args.flags[k] as unknown[]).some(v => v === true)))) { bad(ctx, "db init --home and --db require a path value"); return 2; }
   }
-  if ((group === "kb" || (group === "skill" && action === "list") || (group === "library" && action === "list")) && args.flags.scope !== undefined) {
-    if (args.flags.scope === true) { bad(ctx, "--scope needs a value"); return 2; }
-    try { validateScope(args.flags.scope); }
-    catch (e: any) { bad(ctx, e.message); return 2; }
-  }
+  try {
+    if ((group === "kb" || (group === "skill" && action === "list") || (group === "library" && action === "list")) && args.flags.scope !== undefined) {
+      if (args.flags.scope === true) { bad(ctx, "--scope needs a value"); return 2; }
+      validateScope(args.flags.scope);
+    }
+    if (group === "library" && action === "list") validateLibraryProject(args.flags.project);
+  } catch (e: any) { bad(ctx, e.message); return 2; }
   const home = str(args, "home", HOME);
   // verify 组（r15 P1-1）：`--db` 是业务库快照，不是工作区库——把它当工作区库会让
   // `verify run/prepare` 就地给业务库跑 ygl schema 迁移（实测灌入 57 张表、user_version 0→12），
@@ -1007,7 +1015,7 @@ export function generateLlmsManifest(): string {
       ["kb promote <noteId>", "promote note to reusable skill"],
     ]],
     ["library", "Market experience library (read-only feed)", [
-      ["library list --kind <claim|note|skill|check> [--scope <k>] [--since <iso>] [--limit 1..500] [--cursor <c>]", "paged feed, contract ygl-library/1 (#275)"],
+      [LIBRARY_LIST_USAGE, "paged feed, contract ygl-library/1; " + LIBRARY_PROJECT_HELP],
       ["library show <kind> <id>", "one row + body; claim adds evidence[]"],
     ]],
     ["skill", "Skill registry (L1/L2/L3)", [

@@ -25,6 +25,10 @@ MCP write maps kb add to `--title` plus exactly one body/file source, rel attach
 
 HTTP MCP snapshots its startup environment and derives a separate child environment per request. `X-YGL-Session` overrides only that request; absent headers use the startup session. The handler never assigns process.env. Legitimate PG credentials remain in the controlled child environment, not argv, JSON or diagnostics; request isolation and argv safety are separate checks.
 
+## Library project filtering
+
+`library list --kind claim --project <name>` filters by the exact project name before totals and paging; an unknown name returns the unchanged `ygl-library/1` empty page with rc0. Omitting the flag lists all projects, independent of session selection. Bare, empty and whitespace-only values return rc2. `note`, promoted `skill` and `check` have no authoritative project ownership, so a project filter returns rc2 naming the kind; scope grants and relations are not inferred as ownership. Cursors remain bound to kind, since, scope and project. MCP `read {domain:"library", action:"list", kind:"claim", project:"<name>"}` forwards the same value without turning flag-like names into options.
+
 ## Scope-filtered knowledge
 
 MCP `read kb list/search`, `read skill list` and `read library list` (note/skill) forward an exact `scope`. Omitted leaves the list unfiltered; empty remains an explicit unattributed filter. `write kb add/ingest/rescope` use the same syntax validation and exit categories as the CLI. Library responses omit empty scope rather than presenting it as public, and cursors are bound to the selected kind, scope and since filter.
