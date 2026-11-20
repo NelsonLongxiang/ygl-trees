@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "fba37f1053703a32150dcc5c6435c5cfd7c23f38654d73bfe4fce5750001d564",
+      "sha256": "ce12de570f194e897f1f298d8f8da41145e01552941cad60cd2845145e66c495",
       "role": "test"
     },
     {
@@ -215,7 +215,7 @@
     },
     {
       "path": "scripts/skills-audit.mjs",
-      "sha256": "058e8ce1e43cb3ead5f4d2179089fa4b9ce23ac0b5e77ec503df21942a408344",
+      "sha256": "6269c09b45572f022662afacebd8dcac3ad77fa0b266d01baf345c3b9f246fbc",
       "role": "gate"
     },
     {
@@ -1586,6 +1586,22 @@
       "reason": "285 explicit ORM ownership migration and removal of architecture exception",
       "actor": "dsh/1c56c492",
       "at": "2026-11-16T18:32:32.001Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "fba37f1053703a32150dcc5c6435c5cfd7c23f38654d73bfe4fce5750001d564",
+      "new_sha256": "ce12de570f194e897f1f298d8f8da41145e01552941cad60cd2845145e66c495",
+      "reason": "Refs #295 item1: claim project filter, unknown empty page, and unsupported kind refusals",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-20T06:10:06.023Z"
+    },
+    {
+      "path": "scripts/skills-audit.mjs",
+      "old_sha256": "058e8ce1e43cb3ead5f4d2179089fa4b9ce23ac0b5e77ec503df21942a408344",
+      "new_sha256": "6269c09b45572f022662afacebd8dcac3ad77fa0b266d01baf345c3b9f246fbc",
+      "reason": "Refs #295 item1: audit library command literals instead of silently skipping them",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-20T06:28:35.669Z"
     }
   ],
   "kind": "engine",

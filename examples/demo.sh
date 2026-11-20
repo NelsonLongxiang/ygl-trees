@@ -125,6 +125,19 @@ case "$KBV" in ok) echo "  ✓ kb add receipt self-verified (verified:true)";; *
 # #275: market experience library — paged read-only feed over the four kinds; contract pinned in the envelope
 LIB=$($Y library list --kind note --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const p=JSON.parse(s);console.log(p.contract==='ygl-library/1'&&p.items.length>0&&p.items[0].kind==='note'?'ok':'bad')})")
 [ "$LIB" = "ok" ] && echo "  ✓ library feed: contract ygl-library/1 + note rows (#275)" || { echo "  ✗ library feed: $LIB"; exit 1; }
+$Y library list --kind claim --project techtree --json > "$YGL_HOME/library-project.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.equal(p.contract,"ygl-library/1");a.ok(p.total>0);a.ok(p.items.every(r=>r.project==="techtree"))' "$YGL_HOME/library-project.json"
+echo "  ✓ library claim project filter preserves the paged contract"
+$Y library list --kind claim --project no-such-library-project --json > "$YGL_HOME/library-project-empty.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.deepEqual(p,{contract:"ygl-library/1",items:[],total:0,next_cursor:null})' "$YGL_HOME/library-project-empty.json"
+echo "  ✓ library unknown project returns an empty page rc0"
+for kind in note skill check; do
+  rc=0
+  $Y library list --kind "$kind" --project techtree --json > "$YGL_HOME/library-project-refusal.json" || rc=$?
+  [ "$rc" = 2 ] || { echo "  ✗ library $kind project filter rc=$rc, expected 2"; exit 1; }
+  node -e 'const a=require("node:assert/strict"),f=require("node:fs"),p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.match(p.error,/project/);a.ok(p.error.includes(process.argv[2]))' "$YGL_HOME/library-project-refusal.json" "$kind"
+done
+echo "  ✓ library kinds without project ownership refuse rather than ignore the filter"
 # Grant filters are exact and duplicates do not broaden a note's audience.
 $Y kb add --title "scope-demo" --body "scope-demo-material" --scope dept:ops --json > "$YGL_HOME/scope-add.json"
 SCOPE_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id' "$YGL_HOME/scope-add.json")

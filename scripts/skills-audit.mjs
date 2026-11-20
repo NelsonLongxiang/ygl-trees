@@ -20,7 +20,7 @@ const asJson = argv.includes("--json");
 if (!fs.existsSync(bin)) { console.error(`skills-audit: ${bin} missing — run pnpm build first`); process.exit(2); }
 
 const GROUPS = new Set(["config", "db", "skill", "project", "research", "verify", "produce", "task", "kb", "job",
-  "patrol", "tree", "node", "webui", "rel", "plugin", "agent", "doctor", "llms",
+  "patrol", "tree", "node", "webui", "rel", "plugin", "agent", "doctor", "llms", "library",
   // not groups: the bare research actions a skill might wrongly teach without their group
   "source", "query", "evidence", "claim", "predict", "promote"]);
 const REF_TYPES = new Set(["node", "claim", "evidence", "source", "query", "kb", "artifact", "task", "skill"]);

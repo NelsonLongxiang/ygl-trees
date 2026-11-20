@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **经验库项目过滤**（Refs #295，Item 1）：`library list --kind claim --project <name>` 显式按项目筛选计数与分页，未知项目保持原分页信封空结果 rc0；缺值／空值 rc2。note、skill、check 没有权威项目归属，带项目筛选具名拒绝 rc2。MCP 透传同一项目名，游标继续绑定项目及完整筛选条件，不新增 schema、授权映射或写入。
+
 - **监督后续修复**：补齐 ORM 与 CLI 启动锁重试的“清理未确认即不重试”红绿反例，确保锁失败后仅在原生关闭确认后重试；`predict list/audit` 与 meta 拒绝路径改走调用级 JSON 端口，输出仅在清理确认后发布；`webui serve` 按实际响应完成状态回收 keep-alive 连接，停止接纳时保留活跃／流水线响应，完成后及时结束连接，不依赖 Node 18 的版本相关 idle API。清理失败时业务错误码与单 error 对象保持，不拦截全局 stdout。
 
 - **显式 ORM 装配与实例级生命周期**（Refs #285）：core／research 各持轻量实体清单，应用首次 ORM 需求时加载并校验完整实体／关系，再打开 SQLite 或 PG；不再保留 core→研究域装配边或全局连接缓存。库调用者须显式传入 ORM 实例并等待关闭；旧无实例调用在开库前明确拒绝。受管插件通过 `workspaceProtocol="ygl-workspace/1"` 取得借用的 ORM／资源／输出能力，插件卸载不关闭其他实例。调用关闭先停接纳并排空已接纳工作，再确认连接与本实例句柄／锁释放；清理未知不继续接单或提前放锁。一次性受管命令成功 JSON 待清理确认后提交，清理失败使原 rc0 变 rc1 与单 error 对象；业务原错误与非零码保持，事务可能已提交，不可盲重试。正常载荷、字段、schema v15、幂等、有限重试及 version/help 惰性加载边界不变；不拦截全局 stdout，不缓冲 HTTP／SSE／MCP 流。

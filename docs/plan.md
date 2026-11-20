@@ -112,6 +112,18 @@ scope v15 随 #279 合入并进入 0.126.0；监督席已在发布包/tag 复核
 
 最终定向 58/58、零跳过；相同实现的两独立测试进程各 dashboard 14/14，证明夹具隔离，不当两个独立验收。保原 cap 所需的本文件六处相同 HTTP 200 JSON 回应去重，状态码／content-type／序列化及既有提前 writeHead 时序不变。完整构建通过，bundle 855973 字节 ≤ 原 856077，baseline／keepNames／依赖／vendor／schema／事务不改。非作者 `direct-9770c93a` 对准确 candidate-02 给 F1 CLOSED_STATIC／WIP_ACCEPTABLE_STATIC、0 必修；原 73 行裁定前缀保留。完整两 worker unit 自然 rc0：248 文件／2232 用例＝2106 通过＋126 条件跳过，README 据实更新。原生 Node 18 实跑 NOT_RUN，仅版本语义模拟与源码核对；当前进入正常完整链，尚无本后继精确提交／独立运行验收／PR，不合并发布或关闭既有 issue。retention 原单为另线未实施，不混此候选。
 
+## #295 T6 Item 1：经验库项目筛选（独立候选，待完整验收）
+
+属主 observer rollout T6 经监督席 #295 明确派发，1→2→3 各独立 PR，均 Refs #295；监督非作者 PASS 后由监督席以 match-head-commit 正常合并，开发不代合并。#294 已合入实际主干 `62559ef`，其 macOS 全链与六个变异结果仅作原头历史，不迁作本候选通过。本轮从该主干建 `feat/library-project-295`，与两共享席协调后独占运行窗口，八个旧候选保护 ref 不移动。
+
+Item 1 仅使用 claim 的 project_id→项目名作为项目归属；note、promoted skill、check 无权威项目字段，带 project 时在列表/索引读取前具名拒绝 rc2，不从 scope 或关系推断。缺值/空值由 CLI 在开库前拒绝，API 与 MCP 共用纯项目值校验；MCP 项目值用内联旗标传递，保留看似选项的项目名，不静默丢参。原 ygl-library/1 信封、参数化 claim 筛选、计数、since 与稳定游标格式保留，未知项目为空页 rc0，游标不跨项目。
+
+干净 API/CLI 红基线 6 通过/17 失败/零跳过，MCP 原路由 1 通过/11 失败/零跳过；修复后新增和原 library 回归 53/53，零跳过，含真实发布 CLI 与 MCP child。最初夹具缺 content_hash 唯一值导致 suite error/跳过、it.each 数组展开均保原记录，不算产品反例。技能审计此前跳过 library 命令的独立反例先红（checked0）后绿（实际执行两例）；已将 library 纳入既有审计入口，demo 与该入口均在提交前显式重登记。新增 demo 项目页/未知空页/三 kind 拒绝通过，完整技能审计实测 364 命令零拒绝。
+
+原体积上限保持 856077：收敛 library 命令形状/纯项目校验、知识投影及共用分页等重复代码，保持已计算字段顺序与 promoted-only 条件、scope 空值/拒绝、cursor 长度拒绝和手工 Env 输出。完整构建与原回归通过，当前 bundle856076，baseline/keepNames/依赖/vendor/引擎/schema v15/事务写路径未改；体积探索原件不丢。下一步对本准确输入跑正常完整单测，以实测更新 README，正常全链及准确提交由监督非作者与指定验收另门确认；当前尚未提交、推送或开本项 PR。Item 2 scope v16、Item 3 sync 与 macOS 副本115条演练、retention 和 #202 均不在本候选，不作生产数据操作、发布部署或关单。
+
+首次完整两 worker unit 自然 rc1：252 文件／2271 条＝2144 通过＋1 失败＋126 条件跳过；唯一失败为未改动 dashboard-owner 末例的 SSE fixture list-ready 三秒阶段超时，原报告及冻结输入保全。一次透明计时诊断保持原 worker／门限，dashboard 与原同期 dist-manifest 共 19/19 通过，prepareListIndex 40–56ms、watcher 排空不足 1ms；诊断未复现整轮负载，根因仍未知，原测试及全 1149 源文件按字节恢复。依监督裁定 `direct-58aeb0f4f567`，该失败单独建 [#298](https://github.com/NelsonLongxiang/ygl-trees/issues/298)，不阻塞 Item 1 交 PR，不加入 timeout／retry／fallback，也不混 watcher 产品修复。本轮 README 只据实同步总数 2271 和 demo 实测 138，并明确本地完整 unit 非全绿；后继直接窄提交、正常带钩子推送并开 Refs #295 的 Item 1 PR，最终完整测试判定以监督席 macOS 对 PR 精确头的运行结果为准。当前本段只记录交付准入例外，不声称本地完整工程通过、精确提交已被非作者审过或 PR 已落地。
+
 ## 明确推迟（不进本计划）
 
 - ~~claim 仲裁工作流、query↔source 关联、markdown 批量导入、调度并发锁~~（0.5.0 已交付）

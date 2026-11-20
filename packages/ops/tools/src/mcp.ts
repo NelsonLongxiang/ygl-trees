@@ -25,6 +25,7 @@
  */
 import * as readline from "node:readline";
 import { validateScope } from "../../../core/text/src/scope";
+import { validateLibraryProject } from "./library-usage";
 
 export interface McpTool {
   name: string;
@@ -137,7 +138,10 @@ const READ_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   },
   // #275: market experience library — read-only feed, contract ygl-library/1
   library: {
-    list: (a) => [...opt("--kind", a.kind), ...opt("--since", a.since), ...opt("--limit", a.limit), ...opt("--cursor", a.cursor), ...scopeOpt(a.scope), "library", "list"],
+    list: (a) => {
+      try { validateLibraryProject(a.project); } catch (e: any) { throw usageError(e.message); }
+      return [...(a.project === undefined ? [] : ["--project=" + a.project]), ...opt("--kind", a.kind), ...opt("--since", a.since), ...opt("--limit", a.limit), ...opt("--cursor", a.cursor), ...scopeOpt(a.scope), "library", "list"];
+    },
     show: (a) => ["library", "show", String(a.kind), String(a.id)],
   },
   research: {
@@ -339,7 +343,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           key: { type: "string", description: "node key (can)" },
           context: { type: "string", description: "node can/ready: named state context, default is default" },
           state: { type: "string", description: "node can/ready: temporary state using the CLI key=value,key2=value2 syntax" },
-          project: { type: "string", description: "explicit project (overrides the session selection)" },
+          project: { type: "string", description: "project name; library list filters claim only (other kinds reject); elsewhere overrides session selection" },
           all: { type: "boolean", description: "include all (ready/predict)" },
           eval: { type: "boolean", description: "enable semantic re-ranking (kb search)" },
           actor: { type: "string", description: "actor filter (db timeline)" },
