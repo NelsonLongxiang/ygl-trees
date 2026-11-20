@@ -99,7 +99,7 @@ describe.skipIf(!adminUrl)("#176 W5b PG upgrade replay (real PG)", () => {
     expect(await structure(baseline)).toEqual(before);
   }, 60000);
 
-  it("v14 notes and skills survive v15; PG scope filters and rescope match the CLI contract", async () => {
+  it("v14 notes and skills survive the ordered upgrades; PG scope filters and rescope match the CLI contract", async () => {
     const target = await newDb("scope15");
     await withClient(target, async c => {
       await c.query(BASELINE);
@@ -110,7 +110,7 @@ describe.skipIf(!adminUrl)("#176 W5b PG upgrade replay (real PG)", () => {
     const scopeHome = join(dir, "scope15-home");
     const upgraded = cli(target, scopeHome, ["db", "upgrade", "--json"]);
     expect(upgraded.rc, upgraded.text).toBe(0);
-    expect(JSON.parse(upgraded.out)).toMatchObject({ from: 14, to: 15, steps: [15], duplicate: false });
+    expect(JSON.parse(upgraded.out)).toMatchObject({ from: 14, to: SCHEMA_VERSION, steps: Array.from({ length: SCHEMA_VERSION - 14 }, (_, i) => 15 + i), duplicate: false });
     await withClient(target, async c => {
       expect((await c.query("SELECT id,body,scope FROM kb_notes WHERE id='legacy-note'")).rows).toEqual([{id:"legacy-note",body:"old body",scope:""}]);
       expect((await c.query("SELECT id,body,scope FROM skills WHERE id='legacy-skill'")).rows).toEqual([{id:"legacy-skill",body:"old skill",scope:""}]);

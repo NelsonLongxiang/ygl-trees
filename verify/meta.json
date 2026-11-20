@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "ce12de570f194e897f1f298d8f8da41145e01552941cad60cd2845145e66c495",
+      "sha256": "96010d5232447fc98e1d2aad09e5fb39788956e1221f8005517259ce77478dc8",
       "role": "test"
     },
     {
@@ -1602,6 +1602,14 @@
       "reason": "Refs #295 item1: audit library command literals instead of silently skipping them",
       "actor": "dsh/1c56c492",
       "at": "2026-11-20T06:28:35.669Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "ce12de570f194e897f1f298d8f8da41145e01552941cad60cd2845145e66c495",
+      "new_sha256": "96010d5232447fc98e1d2aad09e5fb39788956e1221f8005517259ce77478dc8",
+      "reason": "Refs #295 Item2: claim scope identity conflicts, library filtering and explicit rescope",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-20T09:08:55.541Z"
     }
   ],
   "kind": "engine",

@@ -120,6 +120,12 @@ it.skipIf(!baseline)("B8 SQLite CLI bytes remain identical to the pre-B8 bundle"
         expect(row.out).toBe(fixed);
         expect([legacy,fixed]).toContain(old.out);
         expect({...row,out:undefined}).toEqual({...old,out:undefined});
+      } else if (row.args[0] === "research" && row.args[1] === "claim" && ["add", "show", "list"].includes(row.args[2]) && row.args.includes("--json") && row.rc === 0) {
+        const current = JSON.parse(row.out), legacy = JSON.parse(old.out);
+        const receipts = Array.isArray(current) ? current : row.args.includes("--batch") ? current.rows : [current];
+        for (const receipt of receipts) { expect(receipt.scope).toBe(""); delete receipt.scope; }
+        expect(JSON.stringify(current, null, 2) + String.fromCharCode(10)).toBe(old.out);
+        expect({ ...row, out: undefined }).toEqual({ ...old, out: undefined });
       } else if (row.args[0] === "kb" && ["add", "show"].includes(row.args[1]) && row.args.includes("--json") && row.rc === 0) {
         // The frozen baseline predates the additive scope column; only its empty legacy value is allowed here.
         const current = JSON.parse(row.out);

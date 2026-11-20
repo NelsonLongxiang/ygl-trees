@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join, resolve } from "node:path";
 import Sqlite from "better-sqlite3";
 import { validateScope } from "../../../core/text/src/scope";
+import { SCHEMA_VERSION } from "../../../core/database/src/db";
 import { buildTools } from "../src/mcp";
 
 const ROOT = resolve(__dirname, "../../../..");
@@ -146,7 +147,7 @@ describe("scope v15", () => {
     expect(run(["library", "show", "note", a.id]).scope).toBe("dept:ops");
     expect(run(["library", "show", "note", u.id])).not.toHaveProperty("scope");
     expect(run(["library", "list", "--kind", "skill", "--scope=dept:ops"]).items.map((r: any) => r.title)).toEqual(["ops-skill"]);
-    run(["library", "list", "--kind", "claim", "--scope="], 2);
+    expect(run(["library", "list", "--kind", "claim", "--scope="]).items.every((r: any) => r.scope === "")).toBe(true);
     run(["library", "list", "--kind", "note", "--scope"], 2);
   }, 120000);
 
@@ -202,7 +203,7 @@ describe("scope v15", () => {
       try { db.exec("ALTER TABLE kb_notes DROP COLUMN scope; ALTER TABLE skills DROP COLUMN scope; PRAGMA user_version=" + version); } finally { db.close(); }
       expect(run(["kb", "show", note.id]).scope).toBe("");
       expect(run(["skill", "show", "legacy-skill"]).scope).toBe("");
-      expect(sql("PRAGMA user_version")[0].user_version).toBe(15);
+      expect(sql("PRAGMA user_version")[0].user_version).toBe(SCHEMA_VERSION);
     }
     const dump = join(home, "export.sql");
     run(["db", "export", dump]);
@@ -216,6 +217,6 @@ describe("scope v15", () => {
     expect(run(["kb", "show", note.id], 0, replayHome).scope).toBe("");
     expect(run(["skill", "show", "legacy-skill"], 0, replayHome).scope).toBe("");
     const upgraded = new Sqlite(join(replayHome, "ygl-trees.db"));
-    try { expect(upgraded.pragma("user_version", { simple: true })).toBe(15); } finally { upgraded.close(); }
+    try { expect(upgraded.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION); } finally { upgraded.close(); }
   }, 120000);
 });

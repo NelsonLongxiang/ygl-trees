@@ -25,7 +25,8 @@ tags: ygl-trees,research,evidence,claim,report
 | `research query add "..."` | `write {domain:"research", action:"query-add", text:"..."}` |
 | `research source add --title t --url u` | `write {domain:"research", action:"source-add", text:"t", b:"u"}` |
 | `research evidence add <id> --quote q` | `write {domain:"research", action:"evidence-add", text:"<id>", quote:"q"}` |
-| `research claim add "..."` | `write {domain:"research", action:"claim-add", text:"..."}` |
+| `research claim add "..." --scope dept:ops` | `write {domain:"research", action:"claim-add", text:"...", scope:"dept:ops"}` |
+| `research claim rescope <id> --scope restricted` | `write {domain:"research", action:"claim-rescope", id:"<id>", scope:"restricted"}` |
 | `research claim link <c> <e>` | `write {domain:"research", action:"claim-link", text:"<c>", b:"<e>"}` |
 | `research claim resolve <c> --as s` | `write {domain:"research", action:"claim-resolve", text:"<c>", as:"supported"}` |
 | `research source search "..."` | `read {domain:"research", action:"source-search", query:"..."}` |
@@ -56,10 +57,11 @@ ygl-trees research evidence add <sourceId> --quote "原文片段" --locator "§2
 ygl-trees research evidence add <sourceId> --file quotes.md         # 长摘录免转义
 ygl-trees research evidence add <sourceId> --quote "明确的改写或翻译" --unverified  # 显式未核引文并留痕
 ygl-trees research source add --batch sources.jsonl -p <项目>        # #83 批量：每行一个 JSON 对象（整批拒：坏行点名行号 rc2、文件缺失 rc1、重复计 duplicate）
-ygl-trees research claim add --batch claims.jsonl -p <项目>          # 行={text, confidence?}；confidence 同 CLI 形（A|B|C 或 0.92/85%）
+ygl-trees research claim add --batch claims.jsonl -p <项目>          # 行={text, confidence?, scope?}；confidence 同 CLI 形（A|B|C 或 0.92/85%）
 ygl-trees research evidence add --batch evidence.jsonl -p <项目>     # 行={source_id, quote, note?, locator?}
 ygl-trees research source add --file one.json -p <项目>              # 单对象入参（与逐字段互斥；claim 同形）
-ygl-trees research claim add "断言文本" --confidence A               # 档位
+ygl-trees research claim add "断言文本" --confidence A --scope dept:ops  # 显式授权键
+ygl-trees research claim rescope <claimId> --scope restricted     # 同值幂等；空串为未归属
 ygl-trees research claim add "断言文本" --confidence 0.92            # 数值档（0.81：0-1 或 0-100%）
 ygl-trees research claim link <claimId> <evidenceId> [--stance refutes]   # 状态自动推导（普通断言）+ 自动模型评估落账（0.84）
 ygl-trees research claim resolve <claimId> --as contested --note "矛盾待查"  # 人工仲裁出口
@@ -86,7 +88,8 @@ ygl-trees research claim calibration [--all]   # 模型 vs 人工档差读出（
 predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `research claim unresolve <cid>` 归位（幂等 duplicate:true）
 - `research predict score --all --json` 按 channel 汇总，`--channel <c>` 精确过滤。默认仅当前项目，`--all` 跨工作区，与 list 一致。`settled` 计 1/0 终态，`nd`/`open` 分别计不可决/未结算，缺数值概率另计 `no_p`（可能与状态计数重叠）。两项均值只用有 P 的 1/0 行：ND、open、no_p 均不进分母，空分母返回 null，不用 0 冒充。数值置信度沿既有 0–1 / 0–100（可带%）语义归一，A/B/C 档位没有 P。
 - **判定史可对账（0.84）**：link 自动评估与手动 evaluate 都落 `claim.eval` 事件（mode: auto-on-link|manual）；`calibration` 按"每断言最新评估胜出"汇总模型档位 vs 人工仲裁档位——巡检"决策模型置信度"预测时先跑它，别手工数事件
-- 全部命令幂等：同内容重跑返回已存在行（`duplicate: true`，rc=0）
+- claim 的 scope 接受 dept:<id>、bench:<id>、*、restricted 或空串，省略/旧行均空串，不从项目猜授权。相同项目文本同 scope 为 duplicate；异 scope rc1 并指向 rescope，force 不绕过。rescope 留 old_scope/new_scope 审计，实际变化才写事件。file 内 scope 与命令 --scope 互斥；batch 行值覆盖命令默认值，显式空串可清空默认。show/list 及 library claim 始终携带 scope；library --scope 先筛后分页。
+- 全部命令幂等：同内容且授权键一致时重跑返回已存在行（`duplicate: true`，rc=0）
 
 ## 3. 产出
 
@@ -107,4 +110,4 @@ ygl-trees produce export <reportId> report.md
   桥接外部计数（裸键名后缀匹配 `counts.y_imported`）；已 resolve 的默认隐藏（`--all` 查看终态表，
   `--json` 始终含全量行含终态——机器读全量、人看增量）
 - `--json` 输出可直接 parse 拿 id；列表命令字段：source(id,title,url,relevance,…)、
-  claim(id,text,status,confidence,sup,ref)、evidence(id,source,locator,quote,used_by)
+  claim(id,text,status,confidence,scope,sup,ref)、evidence(id,source,locator,quote,used_by)

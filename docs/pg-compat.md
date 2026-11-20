@@ -114,6 +114,10 @@ ygl-trees db sync pg <url> [--tables a,b] [--json]
 
 检索范围以官方迁移为准：sources/evidence 有 ngram + GENERATED ALWAYS ngram_tsv + GIN，输入与基表/events 同事务。claims 原来在两个后端都没有全文检索，只提供基表/events/list/show；不声称检索 PASS、不新加检索 schema。doctor 的 claims_fulltext 与 verify_on_pg 明确 skip 并给原因；verify 仍走 SQLite 快照链。
 
+### 断言授权键（schema v16）
+
+`claim add --scope` 和 `claim rescope <id> --scope` 在 SQLite 与 PG 共用事务写服务及 validateScope。旧行默认空串，不推断项目授权。同项目文本同 scope 为 duplicate，异 scope 点名 rc1 并指向 rescope，force 不绕过；同值 rescope 不更新行或事件。PG 按项目/文本取事务级锁，批量键按稳定顺序获取；scope、updated 与 old_scope/new_scope 审计同提交/回滚。show/list JSON 携带 scope。库版本必须显式升级到 v16；PG 镜像刷新为已有 claims 表补齐非空空串列，SQL dump 回放与复制均保留授权键。
+
 ### 研究闭环状态与删除边界
 
 claim 状态复用完整 SQLite 规则：预测挂证不自动结算；人工仲裁锁保留 status/updated；unlink 返回 recalculated；unresolve 事件保留。既有边界也镜像：resolve 为 unverified 后再 unresolve 返回 duplicate 且不发解除事件，后续挂证仍受人工锁约束。命令可用不构成授权 agent 仲裁现库断言或结算预测。单条 link 可跨项目（workspace-wide，并给 cross_project 提示），unlink/resolve/unresolve/删除各按原项目边界，不统一收窄。duplicate 表示关系已存在，不保证 stance 改写为 no-op。

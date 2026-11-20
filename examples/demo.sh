@@ -138,6 +138,25 @@ for kind in note skill check; do
   node -e 'const a=require("node:assert/strict"),f=require("node:fs"),p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.match(p.error,/project/);a.ok(p.error.includes(process.argv[2]))' "$YGL_HOME/library-project-refusal.json" "$kind"
 done
 echo "  ✓ library kinds without project ownership refuse rather than ignore the filter"
+# Claim grants are explicit; a different scope requires the rescope mutation.
+$Y research claim add "claim-scope-demo" --scope dept:ops --json > "$YGL_HOME/claim-scope-add.json"
+CLAIM_SCOPE_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id' "$YGL_HOME/claim-scope-add.json")
+$Y research claim add "claim-scope-demo" --scope dept:ops --json > "$YGL_HOME/claim-scope-dup.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),r=JSON.parse(f.readFileSync(process.argv[1],"utf8"));a.equal(r.id,process.argv[2]);a.equal(r.scope,"dept:ops");a.equal(r.duplicate,true)' "$YGL_HOME/claim-scope-dup.json" "$CLAIM_SCOPE_ID"
+echo "  ✓ claim scope same-text/same-grant duplicate preserves identity"
+rc=0
+$Y research claim add "claim-scope-demo" --scope restricted --json > "$YGL_HOME/claim-scope-conflict.json" || rc=$?
+[ "$rc" = 1 ] || { echo "  ✗ claim scope conflict rc=$rc, expected 1"; exit 1; }
+node -e 'const a=require("node:assert/strict"),r=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));a.ok(r.error.includes("rescope "+process.argv[2]))' "$YGL_HOME/claim-scope-conflict.json" "$CLAIM_SCOPE_ID"
+echo "  ✓ claim scope conflict names the explicit rescope repair"
+$Y library list --kind claim --project techtree --scope dept:ops --json > "$YGL_HOME/claim-scope-page.json"
+node -e 'const a=require("node:assert/strict"),r=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));a.equal(r.total,1);a.equal(r.items[0].id,process.argv[2]);a.equal(r.items[0].scope,"dept:ops")' "$YGL_HOME/claim-scope-page.json" "$CLAIM_SCOPE_ID"
+echo "  ✓ library claim scope filters before project totals and paging"
+$Y research claim rescope "$CLAIM_SCOPE_ID" --scope= --json > "$YGL_HOME/claim-scope-change.json"
+$Y research claim rescope "$CLAIM_SCOPE_ID" --scope= --json > "$YGL_HOME/claim-scope-rescope-dup.json"
+$Y research claim show "$CLAIM_SCOPE_ID" --json > "$YGL_HOME/claim-scope-show.json"
+node -e 'const a=require("node:assert/strict"),f=require("node:fs"),read=p=>JSON.parse(f.readFileSync(p,"utf8"));a.equal(read(process.argv[1]).scope,"");a.equal(read(process.argv[2]).duplicate,true);a.equal(read(process.argv[3]).scope,"")' "$YGL_HOME/claim-scope-change.json" "$YGL_HOME/claim-scope-rescope-dup.json" "$YGL_HOME/claim-scope-show.json"
+echo "  ✓ claim rescope keeps explicit empty scope and same-value idempotency"
 # Grant filters are exact and duplicates do not broaden a note's audience.
 $Y kb add --title "scope-demo" --body "scope-demo-material" --scope dept:ops --json > "$YGL_HOME/scope-add.json"
 SCOPE_ID=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id' "$YGL_HOME/scope-add.json")

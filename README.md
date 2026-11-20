@@ -146,8 +146,9 @@ source add      收来源，按 (project, url_hash) 去重；--query 顺带关�
 source fetch <url>  直接抓取网页入库：title/meta description/去标签正文；15s 超时、非 html 拒收、失败零副作用，正文过薄自动打 needs_review
 evidence add    从来源摘原文片段，带 locator（页码/章节）；长摘录用 --file <path> 免转义；--batch <file.jsonl> 批量（行={source_id,quote,note?,locator?}，全批拒）
 evidence rm     删除证据：仍被任一断言链接时默认拒绝（点名先 claim unlink）；--force 级联删链并重算状态
-claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）；--file <json> 单对象、--batch <file.jsonl> 全批拒批量（行={text,confidence?}）
+claim add       写下断言；--confidence 收 A|B|C 或数值档（0.92 / 85% 原样入库）；--file <json> 单对象、--batch <file.jsonl> 全批拒批量（行={text,confidence?,scope?}）
                 --channel <台账通道>（0.90）：预测注册时登记结算数据通道（github-issues|review-rounds|npm-registry|manual…），结算防通道错配
+claim rescope   显式改授权键：<id> --scope <s>；实际变化留 claim.rescope 的 old_scope/new_scope，重跑幂等
 claim link      断言 ↔ 证据，自动算 supported / refuted / contested
                 --by-source：传来源 id 一次挂齐其全部证据；误传来源 id 会列出该来源的证据 id
                 [预测·…] 断言不自动晋升（0.82.1）：挂证据≠仲裁，状态保持 unverified 直到显式 resolve / 到期回测
@@ -187,6 +188,8 @@ ygl-trees research claim add --file one-claim.json -p myproject
 引号/Unicode 注意：jsonl 内嵌双引号需 `\"` 转义；中文/emoji 按 UTF-8 字节原样冻结（sha 不做归一化）；
 Windows PowerShell 下引号转义最易踩坑——统一走 `--file/--batch` 文件入参可完全避开 shell 引号地狱。
 
+**断言授权键（schema v16）**：`claim add --scope <s>` 接受 `dept:<id>`、`bench:<id>`、`*`、`restricted` 或空串；省略及旧行均为未归属空串，不按项目猜授权。相同项目、文本和 scope 重跑返回 duplicate；同文本异 scope 返回 rc1 并点名 `claim rescope`，`--force` 也不能绕过。文件对象的 scope 与命令行 `--scope` 互斥；批量逐行 scope 覆盖命令默认值，空串可显式覆盖。show/list JSON 始终含 scope；scope 不改变证据或仲裁状态。
+
 断言的状态**由证据链接自动推导**：有支持有反对 → `contested`，只有支持 → `supported`，都没有 → `unverified`。
 
 ### produce：从证据生成报告
@@ -219,7 +222,7 @@ agent brief               状态 + 建议动作 + 健康度（脏索引、存量
 ygl-trees library list --kind claim --project techtree --json
 ```
 
-`--project` 按精确项目名过滤 claim，并在计数、分页前生效；未知项目 rc0，仍返回 `ygl-library/1` 的 `items:[]`、`total:0`、`next_cursor:null`。缺值／空值 rc2。note、skill、check 无权威项目归属，带该参数时具名拒绝 rc2，不静默忽略或从 scope 推断。省略参数列出全部项目；游标绑定完整过滤条件，不可跨项目复用。MCP `read` 的 library/list 同样支持 `project`。
+`--project` 按精确项目名过滤 claim，并在计数、分页前生效；未知项目 rc0，仍返回 `ygl-library/1` 的 `items:[]`、`total:0`、`next_cursor:null`。缺值／空值 rc2。note、skill、check 无权威项目归属，带该参数时具名拒绝 rc2，不静默忽略或从 scope 推断。省略参数列出全部项目；游标绑定完整过滤条件，不可跨项目复用。MCP `read` 的 library/list 同样支持 `project`。claim 行与详情始终携带 `scope`（含空串）；claim、note、skill 列表的 `--scope` 精确筛选在分页前生效，省略不筛、空串只选未归属；check 不支持 scope。
 
 ### skill：L1/L2/L3 渐进披露
 
@@ -354,10 +357,10 @@ SQLite 仍为默认。对已完成显式迁移的 PG 库，在独立 `YGL_HOME` 
 
 SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN` 时计入 1 条环境跳过；发布必跑 G7 会从固定 npm `ygl-trees@0.117.1`（tarball/bundle 均验 SHA-256）设置基线并执行，报告 `b8_sqlite_golden: 1 passed, 0 skipped`。缺基线、哈希不符或 skip 都失败，默认 unit 的 skip 不算黄金验证通过。
 
-PG 测试分开计数：B8 的 78 条真库用例（九份 spec；#176 W5b 加了 4 条 PG 升级回放，W1-T1/T2/T3 加了 7 条科技树 golden 与并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 78 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
+PG 测试分开计数：B8 的 82 条真库用例（十份 spec；含 claims.scope v16 的迁移、旧镜像、CLI 与受控并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 82 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2271 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（138 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
+pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2337 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（142 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
 pnpm bench         # 性能基准四条用户路径（startup/写路径/检索/索引），每条含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加
@@ -378,8 +381,6 @@ ygl-trees webui serve  # React 富客户端（http://127.0.0.1:8642/，SSE 实�
 ygl-trees webui serve --help   # 打印用法即退出，不启服务（0.79.1：--help 短路）
 ygl-trees webui export --out d.json     # 服务形态快照（与 /api/data 同载荷；HTML 仪表盘已于 0.88 退役）
 ```
-
-**Item 1 验证注记（#295）**：Windows 本地完整 unit 实测 2271 条＝2144 通过、1 失败、126 条件跳过，尚非全绿；未改动的 dashboard-owner SSE 初始就绪超时单独跟踪于 [#298](https://github.com/NelsonLongxiang/ygl-trees/issues/298)。一次透明计时诊断已恢复原测试字节，19/19 通过不当修复或完整门禁通过；本项最终完整测试由监督席对 PR 精确头在 macOS 执行。
 
 **锁身份（0.79.1）**：`.ygllock` 里除 pid 外记录**持有者命令行**；撞锁报错、`db unlock`、`doctor`
 三处都会回显真实持有者（如 `node bin.cjs node unlock trend-collector`），不再把 CLI 会话误标成

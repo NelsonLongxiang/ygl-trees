@@ -62,7 +62,7 @@ describe("library feed (#275)", () => {
     expect(claims.items).toHaveLength(1);
     expect(claims.items[0].status).toBe("supported");
     expect(claims.items[0].project).toBe("proj1");
-    expect(claims.items[0].scope).toBeUndefined();
+    expect(claims.items[0].scope).toBe("");
     const cshow = cli(["library", "show", "claim", cl.id]).json;
     expect(cshow.contract).toBe("ygl-library/1");
     expect(Array.isArray(cshow.evidence)).toBe(true);

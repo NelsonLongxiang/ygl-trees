@@ -108,7 +108,7 @@ export class Store {
   // ================================================================ claims
   claimList(projectId: string): Row[] {
     return this.db.all(
-      `SELECT c.id, c.text, c.status, c.confidence,
+      `SELECT c.id, c.text, c.status, c.confidence, c.scope,
               (SELECT COUNT(*) FROM claim_evidence e WHERE e.claim_id=c.id AND e.stance='supports') AS sup,
               (SELECT COUNT(*) FROM claim_evidence e WHERE e.claim_id=c.id AND e.stance='refutes')  AS ref
          FROM claims c WHERE c.project_id=? ORDER BY c.created`,

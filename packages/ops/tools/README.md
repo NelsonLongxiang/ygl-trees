@@ -31,7 +31,7 @@ HTTP MCP snapshots its startup environment and derives a separate child environm
 
 ## Scope-filtered knowledge
 
-MCP `read kb list/search`, `read skill list` and `read library list` (note/skill) forward an exact `scope`. Omitted leaves the list unfiltered; empty remains an explicit unattributed filter. `write kb add/ingest/rescope` use the same syntax validation and exit categories as the CLI. Library responses omit empty scope rather than presenting it as public, and cursors are bound to the selected kind, scope and since filter.
+MCP `read kb list/search`, `read skill list` and `read library list` (claim/note/skill) forward an exact `scope`. Omitted leaves the list unfiltered; empty selects unattributed rows. `write claim-add/claim-rescope` and `write kb add/ingest/rescope` share CLI syntax and exit categories. Claim rows always carry scope, including empty; note/skill projections keep their existing omission of empty scope. Cursors bind the selected kind, scope, since and project filters. SQL exports and replay preserve claims.scope; fresh PG migration, explicit v15→v16 upgrade and refresh of existing claim mirrors retain the column and default.
 
 ## Verifier HTTP lists
 

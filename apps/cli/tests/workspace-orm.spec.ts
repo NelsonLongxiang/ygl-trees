@@ -37,7 +37,7 @@ describe("explicit workspace ORM composition", () => {
     const b = sealEntityCatalog(createEntitySelection([RESEARCH_ENTITY_MANIFEST, CORE_ENTITY_MANIFEST]), [...RESEARCH_ENTITY_REGISTRATIONS, ...CORE_ENTITY_REGISTRATIONS].reverse());
     expect(a.entities).toEqual(b.entities); expect(a.entities).toHaveLength(12);
   });
-  it("opens all 12 entity metadata entries with 16 closed relations, preserving schema v15", async () => {
+  it("opens all 12 entity metadata entries with 16 closed relations at schema v16", async () => {
     const { file, db } = fixture(), owner = createWorkspaceOrm({ dialect: "sqlite", file }); resources.push(() => owner.close());
     const [first, second] = await Promise.all([owner.getOrm(file), owner.getOrm(file)]);
     expect(first).toBe(second); expect(first.options.synchronize).toBe(false);
@@ -46,7 +46,7 @@ describe("explicit workspace ORM composition", () => {
     expect(relations).toHaveLength(16);
     expect(relations.every(r => first.entityMetadatas.includes(r.inverseEntityMetadata))).toBe(true);
     expect(db.get("PRAGMA user_version")).toEqual({ user_version: SCHEMA_VERSION });
-    expect(SCHEMA_VERSION).toBe(15);
+    expect(SCHEMA_VERSION).toBe(16);
   });
   it("old no-owner adapters refuse before closing another owner", async () => {
     const { file } = fixture(), owner = createWorkspaceOrm({ dialect: "sqlite", file }); resources.push(() => owner.close());

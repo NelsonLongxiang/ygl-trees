@@ -156,7 +156,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
              evidence add --batch <file.jsonl>   #83 全批拒批量（行={source_id,quote,note?,locator?}）
   evidence list | show <id> | assess <id>
   evidence rm <id> [--force]           delete; refuses while claims link it (--force = cascade + recompute)
-  claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>]
+  claim add "<text>" [--confidence A|B|C] [--channel <台账通道：预测登记用>] [--scope <s>]
              claim add --file <json> | --batch <file.jsonl>   #83：单对象入参 / 整批拒批量（重复按 duplicate 计数）
   claim link <claimId> <evidenceId> [--stance supports|refutes]
                                       --by-source <claimId> <sourceId>: link ALL evidence under a source
@@ -165,6 +165,7 @@ ${paint(C.bold, "research", color)}    collect → screen → extract → claim
   claim unresolve <claimId>   reset to unverified (undo auto-promote / early arbitration)
   claim evaluate <claimId>    decision-model confidence from linked evidence (persisted)
   claim calibration [--all]   model-vs-human grade gap readout (校准预测判据)
+  claim rescope <id> --scope <s>     change the grant scope; empty is unattributed
   claim list | show <id>
   predict list [--all] [--due]   P / Brier / settlement; ≠ marks note drift
   predict score [--all] [--channel <c>]   channel scores; ND/open/no_p excluded
@@ -504,7 +505,7 @@ export async function main(argv: string[]): Promise<number> {
     if (["home", "db"].some(k => args.flags[k] === true || (Array.isArray(args.flags[k]) && (args.flags[k] as unknown[]).some(v => v === true)))) { bad(ctx, "db init --home and --db require a path value"); return 2; }
   }
   try {
-    if ((group === "kb" || (group === "skill" && action === "list") || (group === "library" && action === "list")) && args.flags.scope !== undefined) {
+    if ((group === "kb" || (group === "skill" && action === "list") || (group === "library" && action === "list") || (group === "research" && action === "claim" && ["add", "rescope"].includes(args._[2] || ""))) && args.flags.scope !== undefined) {
       if (args.flags.scope === true) { bad(ctx, "--scope needs a value"); return 2; }
       validateScope(args.flags.scope);
     }
@@ -542,7 +543,7 @@ export async function main(argv: string[]): Promise<number> {
   }
   // verify self-check is corpus-driven and does not initialize a PG or SQLite business workspace.
   const PG_DB_ACTIONS = new Set(["stats", "path", "upgrade"]);
-  const PG_RESEARCH = group === "research" && ((["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "")) || (action === "query" && ["add", "attach", "list"].includes(args._[2] || "")) || (action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) || (["source", "evidence"].includes(action || "") && args._[2] === "rm"));
+  const PG_RESEARCH = group === "research" && ((["source", "evidence", "claim"].includes(action || "") && ["add", "list", "show"].includes(args._[2] || "")) || (action === "query" && ["add", "attach", "list"].includes(args._[2] || "")) || (action === "claim" && ["link", "unlink", "resolve", "unresolve", "rescope"].includes(args._[2] || "")) || (["source", "evidence"].includes(action || "") && args._[2] === "rm"));
   // #176 W1-T1: techtree on PG — tree new/list/show/use, node add/list/show (bare `node` = list).
   // #176 W1-T2: + structure — node link/unlink/rm/move/index/validate.
   const PG_TECHTREE_WRITES = ["add", "link", "unlink", "rm", "move", "index", "validate", "unlock", "lock"];
@@ -556,7 +557,7 @@ export async function main(argv: string[]): Promise<number> {
   if (pgUrl) {
     const refused = !(PG_BUSINESS || PG_DIRECT.has(group) || VERIFY_PG_FREE || (group === "db" && (!action || PG_DB_ACTIONS.has(action))));
     if (refused) {
-      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import/rescope | project new/use/list/show | tree new/list/show/use | node add/list/show/link/unlink/rm/move/index/validate/cond/unlock/lock/can/ready/path/parents/children/ancestors/descendants (no --eval, no cond --due) | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve`);
+      bad(ctx, `PG mode (YGL_DB_URL=${redactPgUrl(pgUrl)}): this command needs the SQLite workspace face; PG-direct faces: db stats | db path | db upgrade | doctor | verify self-check | webui; B8: kb add/list/show/link/import/rescope | project new/use/list/show | tree new/list/show/use | node add/list/show/link/unlink/rm/move/index/validate/cond/unlock/lock/can/ready/path/parents/children/ancestors/descendants (no --eval, no cond --due) | research query add/attach/list | source/evidence add/list/show/rm | claim add/list/show/link/unlink/resolve/unresolve/rescope`);
       if (!ctx.json) out(ctx, paint(C.dim, "  drop YGL_DB_URL for the normal SQLite workspace, or point it at a PG mirror for read/maintenance faces (B7)", ctx.color));
       return 2;
     }
@@ -581,27 +582,28 @@ export async function main(argv: string[]): Promise<number> {
     try {
       {
         const ds = await orm.getPgOrm(pgUrl);
+        const eventColumns = ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"];
         // #176 W5b: schema version first, before any capability probe or binding write.
         await requirePgSchemaVersion(ds, SCHEMA_VERSION);
         if (PG_RESEARCH && action === "query") {
-          await requirePgColumns(ds, { queries: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], query_sources: ["query_id", "source_id", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+          await requirePgColumns(ds, { queries: ["id", "project_id", "text", "engine", "status", "note", "content_hash", "created"], query_sources: ["query_id", "source_id", "note", "created"], events: eventColumns });
         }
         if (group === "kb" && ["link", "import"].includes(action || "")) {
           await requirePgColumns(ds, action === "link" ? { kb_notes: ["id", "title"], kb_links: ["from_id", "to_id", "rel"] } : { kb_notes: ["id", "title", "body", "source_url", "origin", "tags", "confidence", "reuse", "content_hash", "created", "updated", "ngram", "ngram_tsv"] });
         }
         if (PG_RESEARCH && action === "claim") {
-          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "confidence", "content_hash", "created", "updated", "channel"] });
+          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "confidence", "content_hash", "created", "updated", "channel", "scope"] });
         }
         if (PG_RESEARCH && ["source", "evidence"].includes(action || "") && args._[2] === "rm") {
-          await requirePgColumns(ds, { sources: ["id", "project_id", "title", "ngram", "ngram_tsv"], evidence: ["id", "project_id", "source_id", "quote", "ngram", "ngram_tsv"], claims: ["id", "project_id", "text", "status", "updated"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+          await requirePgColumns(ds, { sources: ["id", "project_id", "title", "ngram", "ngram_tsv"], evidence: ["id", "project_id", "source_id", "quote", "ngram", "ngram_tsv"], claims: ["id", "project_id", "text", "status", "updated"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: eventColumns });
         }
         if (PG_RESEARCH && action === "claim" && ["link", "unlink", "resolve", "unresolve"].includes(args._[2] || "")) {
-          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "updated", "channel"], evidence: ["id", "project_id", "source_id"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+          await requirePgColumns(ds, { claims: ["id", "project_id", "text", "status", "updated", "channel"], evidence: ["id", "project_id", "source_id"], claim_evidence: ["claim_id", "evidence_id", "stance"], events: eventColumns });
         }
         if (PG_TECHTREE) {
-          await requirePgColumns(ds, { trees: ["id", "project_id", "name", "note", "created"], nodes: ["id", "tree_id", "key", "name", "kind", "tier", "cost", "cost_unit", "payload", "tags", "created", "ngram"], node_edges: ["id", "tree_id", "parent_id", "child_id", "rel", "mode", "required", "min_level", "weight", "note", "created"], node_state: ["tree_id", "node_id", "context", "status", "updated"], node_index: ["tree_id", "built_at", "dirty", "topo_order", "tiers", "in_degree"], node_closure: ["tree_id", "ancestor", "descendant", "depth"], node_conditions: ["id", "node_id", "name", "kind", "expr", "op", "value", "required", "effect", "weight", "note", "created"], events: ["id", "ts", "actor", "kind", "entity", "entity_id", "payload", "level", "seq"] });
+          await requirePgColumns(ds, { trees: ["id", "project_id", "name", "note", "created"], nodes: ["id", "tree_id", "key", "name", "kind", "tier", "cost", "cost_unit", "payload", "tags", "created", "ngram"], node_edges: ["id", "tree_id", "parent_id", "child_id", "rel", "mode", "required", "min_level", "weight", "note", "created"], node_state: ["tree_id", "node_id", "context", "status", "updated"], node_index: ["tree_id", "built_at", "dirty", "topo_order", "tiers", "in_degree"], node_closure: ["tree_id", "ancestor", "descendant", "depth"], node_conditions: ["id", "node_id", "name", "kind", "expr", "op", "value", "required", "effect", "weight", "note", "created"], events: eventColumns });
         }
-        if ((PG_TECHTREE && ((group === "tree" && ["new", "use"].includes(action || "")) || (group === "node" && (PG_TECHTREE_WRITES.includes(action || "") || PG_TECHTREE_COND_WRITE)))) || (PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import", "rescope"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
+        if ((PG_TECHTREE && ((group === "tree" && ["new", "use"].includes(action || "")) || (group === "node" && (PG_TECHTREE_WRITES.includes(action || "") || PG_TECHTREE_COND_WRITE)))) || (PG_RESEARCH && ["add", "attach", "link", "unlink", "resolve", "unresolve", "rescope", "rm"].includes(args._[2] || "")) || (group === "kb" && ["add", "link", "import", "rescope"].includes(action || "")) || (group === "project" && ["new", "use"].includes(action || ""))) {
           await bindPgWorkspace(ds, home, pgUrl, appVersion());
         } else {
           // Read commands do not create/update metadata or workspace files.
@@ -995,6 +997,7 @@ export function generateLlmsManifest(): string {
       ["research evidence rm <eid> [--force]", "delete evidence (refuse if linked)"],
       ["research claim unlink <cid> <eid>", "remove one claim-evidence link"],
       ["research claim show <cid> [--json]", "full claim row + linked evidence + source summary"],
+      ["research claim rescope <id> --scope <s>", "change claim grant; explicit empty scope is unattributed"],
     ]],
     ["produce", "Reports + engineering artifacts", [
       ["produce outline", "auto-outline from claims"],
