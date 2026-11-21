@@ -181,7 +181,7 @@ function sh(cmd, argv, opts = {}) {
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
     timeout: opts.timeoutMs ?? 30 * 60_000,
-    env: { ...process.env, YGL_DB_URL: "", ...(opts.env || {}) },
+    env: { ...process.env, YGL_PG_URL: "", YGL_DB_URL: "", ...(opts.env || {}) },
   });
   const out = (r.stdout || "") + (r.stderr || "");
   const log = join(LOG_DIR, `${opts.leg || "step"}-${opts.name || cmd}.log`);
