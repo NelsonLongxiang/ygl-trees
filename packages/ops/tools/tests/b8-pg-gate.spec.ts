@@ -1,6 +1,6 @@
 /** #124: release gate cannot count env-skipped or partial PG suites as passed. */
 import {describe,it,expect} from "vitest";
-import {readFileSync, mkdirSync, mkdtempSync, rmSync} from "node:fs";
+import {readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync} from "node:fs";
 import {resolve, join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {spawnSync} from "node:child_process";
@@ -20,6 +20,40 @@ describe("#124 B8 release gate wiring",()=>{
   expect(m.match(/sh\(cmd\[0\], cmd\.slice\(1\), \{ \.\.\.opts, leg: "(sqlite|pg)", name \}\)/g)?.length).toBe(2);
   expect(m).toMatch(/full log: \$\{relative\(ROOT, s\.log\)\}/);
   expect(m).toMatch(/s\.tail\.split\("\\n"\)\.slice\(-30\)/);
+ });
+ it("matrix child environments isolate backend URLs from the caller",()=>{
+  mkdirSync(join(root,"tmp"),{recursive:true});
+  const dir=mkdtempSync(join(root,"tmp/g7-environment-")),preload=join(dir,"capture.cjs");
+  const capture=[
+   'const fs=require("node:fs"),path=require("node:path"),cp=require("node:child_process"),assert=require("node:assert/strict");',
+   'const dir=process.env.G7_ENV_FIXTURE,root=process.cwd(),mkdir=fs.mkdirSync,write=fs.writeFileSync,mkdtemp=fs.mkdtempSync;let logs;',
+   'fs.mkdirSync=function(p,...args){if(String(p).startsWith(path.join(root,"tmp","dual-backend-matrix-"))){logs=String(p);return mkdir.call(this,path.join(dir,"logs"),...args);}return mkdir.call(this,p,...args);};',
+   'fs.writeFileSync=function(p,...args){if(logs&&path.dirname(String(p))===logs)p=path.join(dir,"logs",path.basename(String(p)));return write.call(this,p,...args);};',
+   'fs.mkdtempSync=function(prefix,...args){assert.equal(path.basename(String(prefix)),"ygl-b6-");return mkdtemp.call(this,path.join(dir,"home-"),...args);};',
+   'cp.spawnSync=function(cmd,argv,options){const env=options.env;fs.appendFileSync(path.join(dir,"children.jsonl"),JSON.stringify({cmd,argv,db:env.YGL_DB_URL,pg:env.YGL_PG_URL,sentinel:env.G7_ENV_SENTINEL})+"\\n");return {status:argv[1]==="db"&&argv[2]==="init"&&env.YGL_DB_URL?2:0,signal:null,stdout:"",stderr:""};};',
+   'require("node:module").syncBuiltinESMExports();',
+  ].join("\n");
+  writeFileSync(preload,capture);
+  const callerPG="postgres://pg-input@127.0.0.1:1/unused",callerDB="postgres://db-input@127.0.0.1:1/unused";
+  try{
+   for(const [name,pg,db,selected]of [["pg-wins",callerPG,callerDB,callerPG],["db-fallback","",callerDB,callerDB],["no-target","","",""]]){
+    const fixture=join(dir,name);mkdirSync(fixture);
+    const r=spawnSync(process.execPath,["--require",preload,resolve(root,"scripts/dual-backend-matrix.mjs"),"--strict","--json"],{
+     cwd:root,encoding:"utf8",timeout:15000,
+     env:{...process.env,YGL_PG_URL:pg,YGL_DB_URL:db,G7_ENV_FIXTURE:fixture,G7_ENV_SENTINEL:"keep-me"},
+    });
+    expect(r.error).toBeUndefined();expect(r.signal).toBeNull();expect(r.status,r.stdout+r.stderr).toBe(selected?0:1);
+    const report=JSON.parse(r.stdout),children=readFileSync(join(fixture,"children.jsonl"),"utf8").trim().split("\n").map(line=>JSON.parse(line));
+    expect(children).toHaveLength(selected?10:5);
+    for(const child of children.slice(0,5))expect(child).toMatchObject({db:"",pg:"",sentinel:"keep-me"});
+    expect(report.legs[0].status).toBe("pass");
+    if(selected){
+     for(const index of [5,6,8])expect(children[index]).toMatchObject({db:selected,pg:"",sentinel:"keep-me"});
+     for(const index of [7,9])expect(children[index]).toMatchObject({db:"",pg:"",sentinel:"keep-me"});
+     expect(report.legs[1].status).toBe("pass");expect(report.overall).toBe("pass");
+    }else{expect(report.legs[1].status).toBe("skipped");expect(report.overall).toBe("fail");}
+   }
+  }finally{rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:50});}
  });
  it("G7 builds the checked-out head after PG is ready and before any suite runs (no stale dist)",()=>{
   const g=readFileSync(resolve(root,"scripts/pg-gate.sh"),"utf8");

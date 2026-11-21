@@ -110,7 +110,7 @@
     },
     {
       "path": "scripts/dual-backend-matrix.mjs",
-      "sha256": "64c350092c58b1554da03fe903788a7f23f703ae6a4fc7c30ec684da8d651494",
+      "sha256": "5e7a9b71ed2e6dd6c8c592750e133988180e97d94d1ec532d8403cd9ddaefdc9",
       "role": "gate"
     },
     {
@@ -1618,6 +1618,14 @@
       "reason": "#295 Item3 explicit project copy dry-run count-hash and duplicate demo",
       "actor": "dsh/1c56c492",
       "at": "2026-11-20T16:22:26.194Z"
+    },
+    {
+      "path": "scripts/dual-backend-matrix.mjs",
+      "old_sha256": "64c350092c58b1554da03fe903788a7f23f703ae6a4fc7c30ec684da8d651494",
+      "new_sha256": "5e7a9b71ed2e6dd6c8c592750e133988180e97d94d1ec532d8403cd9ddaefdc9",
+      "reason": "direct-343fa5bc6a8e: SQLite leg must not inherit YGL_PG_URL; PG target only from explicit step env",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-21T04:44:30.376Z"
     }
   ],
   "kind": "engine",
