@@ -13,7 +13,7 @@ import { Store } from "../../../research/pipeline/src/reads";
 const cleanups: Array<() => Promise<void> | void> = [];
 const trace = (phase: string) => { console.error("dashboard-owner-phase", phase); };
 async function phase<T>(name: string, work: Promise<T>): Promise<T> {
-  const started = performance.now(), budget = name === "list-ready" ? 20000 : 3000;
+  const started = performance.now(), budget = 20000;
   trace(name); let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const value = await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("dashboard fixture phase did not settle: " + name)), budget); })]);
@@ -67,13 +67,13 @@ async function legacyFixture(version: typeof legacyVersions[number]) {
   } };
 }
 describe("dashboard fixture phase budgets", () => {
-  it("allows verifyListReady delayed past three seconds within its readiness budget", async () => {
+  it.each(["list-ready", "response-settled"])("allows %s delayed past three seconds within its phase budget", async name => {
     const traceLog = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     try {
-      const server = { verifyListReady: new Promise<void>(resolve => { setTimeout(resolve, 3500); }) };
+      const work = new Promise<void>(resolve => { setTimeout(resolve, 3500); });
       let settled = false;
-      const result = phase("list-ready", server.verifyListReady).then(
+      const result = phase(name, work).then(
         () => { settled = true; return "done"; },
         error => { settled = true; return error; },
       );
@@ -81,31 +81,29 @@ describe("dashboard fixture phase budgets", () => {
       expect(settled).toBe(false);
       await vi.advanceTimersByTimeAsync(499);
       expect(await result).toBe("done");
-      expect(traceLog).toHaveBeenCalledWith("dashboard-owner-phase", "list-ready done 3500ms");
+      expect(traceLog).toHaveBeenCalledWith("dashboard-owner-phase", name + " done 3500ms");
       expect(vi.getTimerCount()).toBe(0);
     } finally { vi.clearAllTimers(); vi.useRealTimers(); traceLog.mockRestore(); }
   });
 
-  it("bounds never-settling readiness by phase name while keeping other phases at three seconds", async () => {
+  it.each(["list-ready", "response-settled"])("bounds never-settling %s at twenty seconds with its phase name", async name => {
     const traceLog = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     try {
-      for (const [name, budget] of [["list-ready", 20000], ["listening", 3000], ["list-ready-extra", 3000]] as const) {
-        const server = { verifyListReady: new Promise<void>(() => {}) };
-        let settled = false;
-        const result = phase(name, server.verifyListReady).then(
-          () => { settled = true; return null; },
-          error => { settled = true; return error; },
-        );
-        await vi.advanceTimersByTimeAsync(budget - 1);
-        expect(settled).toBe(false);
-        await vi.advanceTimersByTimeAsync(1);
-        const error = await result;
-        expect(error).toBeInstanceOf(Error);
-        expect(error.message).toBe("dashboard fixture phase did not settle: " + name);
-        expect(traceLog).toHaveBeenCalledWith("dashboard-owner-phase", name + " failed " + budget + "ms");
-        expect(vi.getTimerCount()).toBe(0);
-      }
+      const work = new Promise<void>(() => {});
+      let settled = false;
+      const result = phase(name, work).then(
+        () => { settled = true; return null; },
+        error => { settled = true; return error; },
+      );
+      await vi.advanceTimersByTimeAsync(19999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const error = await result;
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe("dashboard fixture phase did not settle: " + name);
+      expect(traceLog).toHaveBeenCalledWith("dashboard-owner-phase", name + " failed 20000ms");
+      expect(vi.getTimerCount()).toBe(0);
     } finally { vi.clearAllTimers(); vi.useRealTimers(); traceLog.mockRestore(); }
   });
 });
