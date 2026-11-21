@@ -18,7 +18,7 @@ import { CONFIG_REGISTRY, configGetNumber, countSecretEvents, redactSecretEvents
 import { jobViews } from "./job-cmds";
 import { jobFamilies, staleTasks, taskView } from "../../../research/pipeline/src/lifecycle";
 import { parseEvalSpec } from "../../../techtree/eval/src/eval";
-import { SCHEMA_VERSION, pidAlive } from "../../../core/database/src/db";
+import { SCHEMA_VERSION, pidAlive, admissionGate, clearDeadAdmission } from "../../../core/database/src/db";
 import { resolveProject, projectSessionKey, projectCount, sessionId } from "../../../core/database/src/selection";
 import { listPlugins, profileDir } from "./plugins";
 import * as fs from "node:fs";
@@ -478,6 +478,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
   //   live holder → PASS (a live write-lock is a legitimate parallel session)
   const dbPath = db.path;
   const lockPath = `${dbPath}.ygllock`;
+  const gate = admissionGate(dbPath);
+  if (gate.state !== "absent") {
+    const cleared = args.flags.fix && clearDeadAdmission(dbPath);
+    checks.push({ name: "admission_gate", status: cleared ? "pass" : gate.state === "dead" ? "warn" : "fail", detail: cleared ? "dead admission gate cleared" : "admission owner " + gate.state + " (pid " + (gate.pid || "?") + ")" });
+  }
   {
     // Report ②: a foreign LIVE holder is normal multi-session usage; only a
     // DEAD holder is stale residue (db unlock / doctor --fix clear it).
@@ -675,12 +680,19 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     // to nuke ANY non-self lock — including a live parallel session's, which
     // reintroduced exactly the double-writer corruption the lock prevents)
     {
-      const { pidAlive } = require("../../../core/database/src/db");
-      const lockDir = `${env.db.path}.ygllock`;
+      const { pidAlive: probe, acquireLockAdmission: gate } = require("../../../core/database/src/db");
+      const pidFile = `${dbPath}.ygllock/pid`;
       let holder = "";
-      try { holder = fs.readFileSync(`${lockDir}/pid`, "utf8").trim(); } catch { /* */ }
-      if (fs.existsSync(lockDir) && holder !== String(process.pid) && !pidAlive(holder)) {
-        try { fs.rmSync(lockDir, { recursive: true, force: true }); fixes.push("stale lock removed (holder pid dead)"); } catch { /* */ }
+      try { holder = fs.readFileSync(pidFile, "utf8").trim(); } catch { /* Unknown owners are not cleared. */ }
+      if (/^[1-9][0-9]*$/.test(holder) && !probe(holder)) {
+        const admission = gate(dbPath, "doctor --fix");
+        try {
+          const current = fs.readFileSync(pidFile, "utf8").trim();
+          if (current === holder && !probe(current)) {
+            fs.rmSync(`${dbPath}.ygllock`, { recursive: true });
+            fixes.push("stale lock removed (holder pid dead)");
+          }
+        } finally { admission.release(); }
       }
     }
     // 0.82 ①: phantom write events → mark reconciled. The operator looked at

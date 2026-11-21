@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import { Env, lastFlagOf } from "../../../core/database/src/types";
 import { redactPgUrl } from "../../../core/database/src/asyncdb";
 import { emitJson, ok, bad, warn, out, head, table, paint, C, show, ack } from "../../../core/text/src/fmt";
-import { clearLockDir, dbPath, pidAlive, takeoverLockDir, SCHEMA_VERSION } from "../../../core/database/src/db";
+import { admissionGate, clearDeadAdmission, clearLockDir, dbPath, pidAlive, takeoverLockDir, SCHEMA_VERSION } from "../../../core/database/src/db";
 import { syncToPg, migrateToPg, upgradePgSchema, PgUpgradeError } from "./pgsync";
 import { pgTargetHash, pgFailure } from "../../../core/database/src/pg-workspace";
 import { exportableRows } from "./config";
@@ -150,6 +150,14 @@ export async function run(env: Env, action: string, rest: string[], args: any): 
       else out(ctx, file);
       return 0;
     case "unlock": {
+      const gate = admissionGate(file);
+      if (gate.state !== "absent") {
+        const cleared = clearDeadAdmission(file);
+        const result = { lock: gate.dir, holder: gate.pid || null, cleared, reason: "admission owner " + gate.state };
+        if (ctx.json) emitJson(ctx, result, 2);
+        else out(ctx, JSON.stringify(result));
+        return cleared ? 0 : 1;
+      }
       // Real-user report ②: residual .ygllock after a crash left users with
       // an "rmdir" instruction and no safety net. `db unlock` checks pid
       // liveness — dead/absent holder clears, a LIVE holder is refused

@@ -56,6 +56,7 @@ MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排�
 | `db reset` | 删库——提示注入可诱导 agent 自毁工作区 |
 | `db sql "..."` | 任意 SQL——绕过写服务的事务化/幂等/坏引用保护 |
 | `db init / export / sync / migrate` | 工作区生命周期管理——部署者操作，非 agent 面 |
+| `project sync` | 显式跨工作区副本写入／恢复，只开放本地 CLI，不经 MCP |
 | `plugin install / enable / disable` | 代码执行面——插件可跑任意 JS |
 | `config set / reset` | 系统配置变更——影响引擎行为 |
 | `job add / list / show / retire / tick` | 调度器管理——可触发任意已注册 job（退役不删行；`job show` 看健康）；v14 起 job 记 project_id/owner（`--owner`/`--project` 可显式指定，`job list --project <name>` 过滤，doctor 点名孤儿，#258） |
@@ -234,6 +235,18 @@ ygl-trees db migrate pg <url> [--fresh] # 一次性完整保真迁移
 ygl-trees job add <title> --every 60 -- <cmd>      # 选项写在 -- 之前；cron 每分钟跑 job tick
 ygl-trees job add "闸门探针" --every 30 -- node probe.mjs   # 树节奏化监控：任意命令皆可（0.79.1 实证）
 ```
+
+### SQLite 项目副本（CLI 管理面）
+
+先备份并关闭两端写入者、checkpoint；目标须已初始化且 schema 匹配。仅用明确副本，不对在线库运行。
+
+```bash
+ygl-trees project sync <name> --home <source-home> --to <target-home> --dry-run --json
+ygl-trees project sync <name> --home <source-home> --to <target-home> --json
+ygl-trees project sync <name> --home <source-home> --to <target-home> --verify --json
+```
+
+复制来源→证据→断言（scope）→stance→项目 claim 之间全部原向原 rel 关系→当前仲裁；外端关系在 skipped/skipped_count 中列出，superseded-by 校验不放宽；保留源 ID，不合并冲突、不改选择。信封 ygl-project-sync/1 含两端 counts/hash；重复全 duplicate 零写入，dry-run/verify 严格只读。缺库/锁/schema冲突 rc1，不自动建库迁移；PG 环境变量 rc2。正常异常给 partial 已提交前缀，原因排除后原命令重跑。崩溃残留同任务死进程锁/WAL 时才显式用 `--resume`（不能与只读模式混用）；清理未知的 rerunnable:false 必须先检查资源和锁，不强清活 holder。不是全工作区备份，不复制 query/task/report/kb/tree 或完整审计历史。
 
 **PostgreSQL 直连（B8，详见 `docs/pg-compat.md`）要点：**
 

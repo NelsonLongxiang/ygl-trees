@@ -91,6 +91,10 @@ predict audit 才不会把刚挂证据的预测误判已结案；误晋升用 `r
 - claim 的 scope 接受 dept:<id>、bench:<id>、*、restricted 或空串，省略/旧行均空串，不从项目猜授权。相同项目文本同 scope 为 duplicate；异 scope rc1 并指向 rescope，force 不绕过。rescope 留 old_scope/new_scope 审计，实际变化才写事件。file 内 scope 与命令 --scope 互斥；batch 行值覆盖命令默认值，显式空串可清空默认。show/list 及 library claim 始终携带 scope；library --scope 先筛后分页。
 - 全部命令幂等：同内容且授权键一致时重跑返回已存在行（`duplicate: true`，rc=0）
 
+## 跨工作区复制
+
+研究项目只能通过本地 CLI 管理面的 `project sync <name> --home <source-home> --to <target-home>` 复制；先备份并停止两端写入者、checkpoint，目标已初始化同 schema。先 `--dry-run`，再复制，最后 `--verify`；scope、stance、替代链和当前仲裁随项目保留，重复零写入，不复制全部历史。冲突拒绝而不合并。中断按 partial 前缀恢复；进程崩溃的同任务死锁/WAL 才显式 `--resume`，只读模式不恢复。详细边界见 quickstart 的 SQLite 项目副本节。
+
 ## 3. 产出
 
 ```bash

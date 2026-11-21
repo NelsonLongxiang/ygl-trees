@@ -31,6 +31,18 @@ describe("claim grant scope writes and projection", () => {
     const second = await add("forced first", "dept:ops", true); expect(second.dup).toBe(false); expect(second.row.id).not.toBe(first.row.id);
     await expect(add("forced first", "*", true)).rejects.toMatchObject({ rc: 1 });
   });
+  it("uses the unique content hash for ordinary duplicates without loading all text copies", async () => {
+    const first = await add("hash ruling", "dept:ops"), calls: any[] = [];
+    const wrapped = { transaction: (work: any) => ds.transaction((mgr: any) => work(new Proxy(mgr, {
+      get(target, key) {
+        if (key === "find") return () => { throw new Error("full text-copy materialization is forbidden"); };
+        if (key === "findOne") return (entity: any, options: any) => { calls.push(options); return target.findOne(entity, options); };
+        const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value;
+      },
+    }))) };
+    expect(await writes.claimAdd(wrapped as any, "p", "hash ruling", "B", false, "review", "dept:ops")).toMatchObject({ dup: true, row: { id: first.row.id } });
+    expect(calls.some(options => typeof options.where?.contentHash === "string" && options.where.projectId === "p")).toBe(true);
+  });
   it("returns a same-text same-scope duplicate without another event", async () => {
     const one = await add("same ruling", "dept:ops"), events = db.all("SELECT * FROM events");
     expect(await add("same ruling", "dept:ops")).toMatchObject({ dup: true, row: { id: one.row.id, scope: "dept:ops" } });

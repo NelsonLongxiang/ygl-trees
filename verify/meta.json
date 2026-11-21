@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "96010d5232447fc98e1d2aad09e5fb39788956e1221f8005517259ce77478dc8",
+      "sha256": "4e4453f4c28170089e10fdf811a26ccaa387785f6a5936d2101db528d6b73d32",
       "role": "test"
     },
     {
@@ -1610,6 +1610,14 @@
       "reason": "Refs #295 Item2: claim scope identity conflicts, library filtering and explicit rescope",
       "actor": "dsh/1c56c492",
       "at": "2026-11-20T09:08:55.541Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "96010d5232447fc98e1d2aad09e5fb39788956e1221f8005517259ce77478dc8",
+      "new_sha256": "4e4453f4c28170089e10fdf811a26ccaa387785f6a5936d2101db528d6b73d32",
+      "reason": "#295 Item3 explicit project copy dry-run count-hash and duplicate demo",
+      "actor": "dsh/1c56c492",
+      "at": "2026-11-20T16:22:26.194Z"
     }
   ],
   "kind": "engine",

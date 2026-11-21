@@ -262,6 +262,7 @@ Project management
 ```bash
 project new <name> -q "<question>"                           # create + select (session-scoped)
 project use <name> [--global] / list / show                  # switch / browse (selection_source shown)
+project sync <name> --home <source-home> --to <target-home> [--dry-run|--verify|--resume] # checkpointed SQLite copies; preserve IDs; readonly plan/verify; same-task dead-owner recovery
 ```
 
 ## Checker Selection (prepare candidates)

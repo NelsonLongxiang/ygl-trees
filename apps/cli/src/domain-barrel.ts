@@ -23,6 +23,9 @@ import { run as doctorRun } from "../../../packages/ops/tools/src/doctor";
 import { run as relsRun } from "../../../packages/ops/tools/src/rels";
 import { run as libraryCmdsRun } from "../../../packages/ops/tools/src/library-cmds";
 
+export { runProjectSync } from "../../../packages/ops/tools/src/project-sync";
+export { createWorkspaceOrm } from "./workspace-orm";
+
 const dbCmds = { run: dbCmdsRun };
 const configCmds = { run: configCmdsRun };
 const jobCmds = { run: jobCmdsRun };

@@ -320,7 +320,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "":
-      out(ctx, paint(C.dim, "  project: new <name> [-q question] | list | use <name> [--global] [--archived] | show | rm <name> [--force] | restore <name>", ctx.color));
+      out(ctx, paint(C.dim, "  project: new <name> [-q question] | list | use <name> [--global] [--archived] | show | rm <name> [--force] | restore <name> | sync <name> --home <source-home> --to <target-home> [--dry-run|--verify|--resume]", ctx.color));
       return 0;
     default:
       bad(ctx, `unknown project action: ${action}`);

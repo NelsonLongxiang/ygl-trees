@@ -29,6 +29,12 @@ Schema v15 adds empty-default `scope` to notes and skills in SQLite and the expl
 
 Schema v16 adds `claims.scope` with the same empty default and exact validation. `claimAdd` and batch input preserve scope; repeated project/text with the same grant is a duplicate, while a different grant returns a named rc1 error directing the caller to `claimRescope`. Force permits explicit copies only within the same grant. Rescope changes scope/updated and `claim.rescope {old_scope,new_scope}` atomically; repeating the same grant writes nothing. PG serializes same-text adds and rescope with a transaction advisory lock, taking batch keys in sorted order. Claim list/show and library rows carry even empty scope; library filtering precedes totals/paging. No grant is inferred from project selection.
 
+Ordinary claim duplicates use the unique content-hash lookup, with an indexed project/text fallback for forced-first rows. A separate project/text scope-conflict check runs before returning duplicates or allowing force. SQLite opens add the nonunique project/text lookup index for existing v16 files without a schema bump; PG migration/explicit upgrade install the matching index.
+
+## Project replay transactions
+
+`projectSyncStep` is the SQLite-only transaction boundary for a prevalidated project-copy step. Source/evidence FTS and replay audit commit with the base row; claim rows start unverified, links and replacement chains precede the final status/resolve-or-unresolve event. It does not invoke eval or recompute away the supplied ruling. The caller owns locking, conflict/schema checks, progress receipts and final whole-project count/hash verification.
+
 ## PG research writes (B8 batch 2)
 
 `sourceAdd`, `evidenceAdd`, `claimAdd` and their batch variants share the existing transaction service and input validation. A batch is one transaction: bad input is rejected before business writes; runtime failure rolls back the entire batch. Source/evidence `ngram` and generated `ngram_tsv` commit with base rows and events. Claims has no fulltext surface in either backend; no extra search columns or migration are introduced. `source add --query` validates and attaches in the same PG transaction; query add/attach/list are available in batch 3; query done stays unavailable. Scoped list/show remain read-only.
