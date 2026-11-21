@@ -13,9 +13,16 @@ import { Store } from "../../../research/pipeline/src/reads";
 const cleanups: Array<() => Promise<void> | void> = [];
 const trace = (phase: string) => { console.error("dashboard-owner-phase", phase); };
 async function phase<T>(name: string, work: Promise<T>): Promise<T> {
+  const started = performance.now(), budget = name === "list-ready" ? 20000 : 3000;
   trace(name); let timer: ReturnType<typeof setTimeout> | undefined;
-  try { return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("dashboard fixture phase did not settle: " + name)), 3000); })]); }
-  finally { if (timer) clearTimeout(timer); }
+  try {
+    const value = await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("dashboard fixture phase did not settle: " + name)), budget); })]);
+    trace(name + " done " + Math.round(performance.now() - started) + "ms");
+    return value;
+  } catch (error) {
+    trace(name + " failed " + Math.round(performance.now() - started) + "ms");
+    throw error;
+  } finally { if (timer) clearTimeout(timer); }
 }
 function gate() { let resolve!: () => void; const promise = new Promise<void>(yes => { resolve = yes; }); return { promise, resolve }; }
 afterEach(async () => { try { for (const close of cleanups.splice(0).reverse()) await close(); } finally { vi.unstubAllEnvs(); vi.restoreAllMocks(); } });
@@ -59,6 +66,50 @@ async function legacyFixture(version: typeof legacyVersions[number]) {
     } finally { nativeClose.mockRestore(); }
   } };
 }
+describe("dashboard fixture phase budgets", () => {
+  it("allows verifyListReady delayed past three seconds within its readiness budget", async () => {
+    const traceLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    try {
+      const server = { verifyListReady: new Promise<void>(resolve => { setTimeout(resolve, 3500); }) };
+      let settled = false;
+      const result = phase("list-ready", server.verifyListReady).then(
+        () => { settled = true; return "done"; },
+        error => { settled = true; return error; },
+      );
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(499);
+      expect(await result).toBe("done");
+      expect(traceLog).toHaveBeenCalledWith("dashboard-owner-phase", "list-ready done 3500ms");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.clearAllTimers(); vi.useRealTimers(); traceLog.mockRestore(); }
+  });
+
+  it("bounds never-settling readiness by phase name while keeping other phases at three seconds", async () => {
+    const traceLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    try {
+      for (const [name, budget] of [["list-ready", 20000], ["listening", 3000], ["list-ready-extra", 3000]] as const) {
+        const server = { verifyListReady: new Promise<void>(() => {}) };
+        let settled = false;
+        const result = phase(name, server.verifyListReady).then(
+          () => { settled = true; return null; },
+          error => { settled = true; return error; },
+        );
+        await vi.advanceTimersByTimeAsync(budget - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const error = await result;
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toBe("dashboard fixture phase did not settle: " + name);
+        expect(traceLog).toHaveBeenCalledWith("dashboard-owner-phase", name + " failed " + budget + "ms");
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally { vi.clearAllTimers(); vi.useRealTimers(); traceLog.mockRestore(); }
+  });
+});
+
 describe("dashboard quiescent ownership", () => {
   it.each(legacyVersions)("closes a pre-existing idle keep-alive socket without a timer (%s)", async version => {
     const f = await legacyFixture(version), agent = new http.Agent({ keepAlive: true });
