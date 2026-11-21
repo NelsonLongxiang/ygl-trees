@@ -28,15 +28,37 @@ function cli(args: string[]) {
   expect(result.error).toBeUndefined(); expect(result.signal).toBeNull();
   return { rc: result.status, value: JSON.parse(result.stdout), text: result.stderr };
 }
+// Child stdin may be nonblocking on POSIX; barrier failures must not escape into product catches.
+const stdinBarrier = [
+  "function waitForStdin() {",
+  "  try {",
+  "    const byte = Buffer.alloc(1), wait = new Int32Array(new SharedArrayBuffer(4)), deadline = Date.now() + 15000;",
+  "    for (;;) {",
+  "      if (Date.now() >= deadline) throw Object.assign(Error(\"barrier deadline exceeded\"), { code: \"ETIMEDOUT\" });",
+  "      try {",
+  "        if (fs.readSync(0, byte, 0, 1, null) === 1 && byte[0] === 120) return;",
+  "        throw Object.assign(Error(\"barrier closed or invalid release\"), { code: \"EOF\" });",
+  "      } catch (error) {",
+  "        if (error.code !== \"EAGAIN\") throw error;",
+  "        Atomics.wait(wait, 0, 0, 10);",
+  "      }",
+  "    }",
+  "  } catch (error) {",
+  "    fs.writeSync(2, \"barrier-fatal:\" + JSON.stringify({ code: error.code, message: error.message }) + \"\\n\");",
+  "    process.exit(97);",
+  "  }",
+  "}",
+].join("\n");
+
 describe("admission gate crash recovery", () => {
   it("human doctor fix cannot delete a live application lock installed by an ordinary writer", async () => {
-    const lock = file + ".ygllock";
-    mkdirSync(lock); writeFileSync(join(lock, "owner"), "dead-lock"); writeFileSync(join(lock, "pid"), deadPid);
-    const doctorFile = join(repo, "dist/packages/ops/tools/src/doctor.js");
-    // Resolve the outer-holder callsite in the loaded implementation; earlier diagnostic reads are irrelevant.
+    const lock = file + ".ygllock", doctorFile = join(repo, "dist/packages/ops/tools/src/doctor.js");
+    const seedLock = () => { mkdirSync(lock); writeFileSync(join(lock, "owner"), "dead-lock"); writeFileSync(join(lock, "pid"), deadPid); };
+    // Resolve the actual outer read instead of counting unrelated diagnostic reads.
     const script = [
+      stdinBarrier,
       "const fs = require(\"node:fs\"), assert = require(\"node:assert/strict\");",
-      "const [file, home, deadPid, doctorFile, coreFile] = process.argv.slice(1);",
+      "const [file, home, deadPid, doctorFile, coreFile, mode] = process.argv.slice(1);",
       "const core = require(coreFile), doctor = require(doctorFile);",
       "const read = fs.readFileSync, normalize = value => String(value).split(String.fromCharCode(92)).join(\"/\");",
       "const lines = read(doctorFile, \"utf8\").split(/\\r?\\n/);",
@@ -45,7 +67,19 @@ describe("admission gate crash recovery", () => {
       "const site = sites[0], frame = normalize(doctorFile) + \":\" + (site + 1) + \":\";",
       "assert.match(lines.slice(site + 1, site + 8).join(\"\\n\"), /const admission = gate\\(dbPath, \"doctor --fix\"\\)/, \"outer holder read must precede admission\");",
       "const db = new core.DB(file, { lock: false, managed: true });",
-      "let paused = false;",
+      "const rawReadSync = fs.readSync;",
+      "let injected = 0, paused = false;",
+      "fs.readSync = function(fd, ...args) {",
+      "  if (fd === 0) {",
+      "    if (mode === \"eagain\" && injected++ < 2) {",
+      "      fs.writeSync(2, \"barrier-retry:EAGAIN\\n\");",
+      "      throw Object.assign(Error(\"simulated nonblocking stdin\"), { code: \"EAGAIN\" });",
+      "    }",
+      "    if (mode === \"eof\") return 0;",
+      "    if (mode === \"read-error\") throw Object.assign(Error(\"injected barrier read failure\"), { code: \"EIO\" });",
+      "  }",
+      "  return rawReadSync.call(this, fd, ...args);",
+      "};",
       "const acquire = core.acquireLockAdmission;",
       "core.acquireLockAdmission = function(target, task) {",
       "  if (target === file && task === \"doctor --fix\") {",
@@ -59,8 +93,8 @@ describe("admission gate crash recovery", () => {
       "  if (!paused && normalize(name) === normalize(file) + \".ygllock/pid\" && String(value).trim() === deadPid && normalize(new Error().stack).includes(frame)) {",
       "    paused = true;",
       "    fs.writeSync(1, \"outer-holder:\" + JSON.stringify({ pid: String(value).trim(), line: site + 1 }) + \"\\n\");",
-      "    const byte = Buffer.alloc(1);",
-      "    assert.equal(fs.readSync(0, byte, 0, 1, null), 1, \"barrier closed\");",
+      "    waitForStdin();",
+      "    fs.writeSync(1, \"outer-resumed:\" + JSON.stringify({ holder: String(value).trim(), valid: /^[1-9][0-9]*$/.test(String(value).trim()), alive: core.pidAlive(String(value).trim()) }) + \"\\n\");",
       "  }",
       "  return value;",
       "};",
@@ -69,34 +103,50 @@ describe("admission gate crash recovery", () => {
       "  assert.equal(typeof rc, \"number\", \"unexpected async doctor\");",
       "} finally { db.closeStrict(); }",
     ].join("\n");
-    const child = spawn(process.execPath, ["-e", script, file, home, deadPid, doctorFile, join(repo, "dist/packages/core/database/src/db.js")], {
-      cwd: repo, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, YGL_LOCK_RETRY_MS: "0", YGL_NO_UPDATE_CHECK: "1" },
-    });
-    let stdout = "", stderr = "", timer: ReturnType<typeof setTimeout> | undefined, writer: DB | undefined;
-    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
-      child.once("error", reject); child.once("close", (code, signal) => resolve({ code, signal }));
-    });
-    child.stderr.on("data", data => { stderr += data; });
-    const ready = new Promise<void>((resolve, reject) => {
-      timer = setTimeout(() => reject(Error("doctor barrier not reached " + stdout + stderr)), 15000);
-      child.stdout.on("data", data => { stdout += data; if (/outer-holder:[^\n]+\n/.test(stdout)) { clearTimeout(timer); resolve(); } });
-      child.once("error", reject); child.once("close", () => reject(Error("doctor exited before barrier " + stdout + stderr)));
-    });
-    try {
-      await ready;
-      const barrier = JSON.parse(stdout.match(/outer-holder:([^\n]+)\n/)![1]);
-      expect(barrier.pid).toBe(deadPid); expect(barrier.line).toBeGreaterThan(0);
-      writer = new DB(file, { lock: true, managed: true });
-      const owner = readFileSync(join(lock, "owner"), "utf8");
-      child.stdin.end("x"); const result = await closed;
-      expect(result.signal, stderr).toBeNull(); expect(result.code, stdout + stderr).toBe(0);
-      expect(stdout).toContain("admission-after-barrier\n");
-      expect(readFileSync(join(lock, "owner"), "utf8")).toBe(owner);
-      expect(readFileSync(join(lock, "pid"), "utf8")).toBe(String(process.pid));
-    } finally {
-      if (timer) clearTimeout(timer);
-      child.stdin.end(); if (child.exitCode === null && child.signalCode === null) child.kill();
-      await closed; writer?.closeStrict();
+    const argv = (mode: string) => ["-e", script, file, home, deadPid, doctorFile, join(repo, "dist/packages/core/database/src/db.js"), mode];
+    for (const mode of ["native", "eagain"]) {
+      seedLock();
+      const child = spawn(process.execPath, argv(mode), {
+        cwd: repo, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, YGL_LOCK_RETRY_MS: "0", YGL_NO_UPDATE_CHECK: "1" },
+      });
+      let stdout = "", stderr = "", timer: ReturnType<typeof setTimeout> | undefined, writer: DB | undefined;
+      const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        child.once("error", reject); child.once("close", (code, signal) => resolve({ code, signal }));
+      });
+      child.stderr.on("data", data => { stderr += data; });
+      const ready = new Promise<void>((resolve, reject) => {
+        timer = setTimeout(() => reject(Error("doctor barrier not reached " + stdout + stderr)), 15000);
+        child.stdout.on("data", data => { stdout += data; if (/outer-holder:[^\n]+\n/.test(stdout)) { clearTimeout(timer); resolve(); } });
+        child.once("error", reject); child.once("close", () => reject(Error("doctor exited before barrier " + stdout + stderr)));
+      });
+      try {
+        await ready;
+        const barrier = JSON.parse(stdout.match(/outer-holder:([^\n]+)\n/)![1]);
+        expect(barrier.pid).toBe(deadPid); expect(barrier.line).toBeGreaterThan(0);
+        writer = new DB(file, { lock: true, managed: true });
+        const owner = readFileSync(join(lock, "owner"), "utf8");
+        child.stdin.end("x"); const result = await closed;
+        expect(result.signal, stderr).toBeNull(); expect(result.code, stdout + stderr).toBe(0);
+        if (mode === "eagain") expect(stderr.match(/barrier-retry:EAGAIN/g)).toHaveLength(2);
+        expect(JSON.parse(stdout.match(/outer-resumed:([^\n]+)\n/)![1])).toEqual({ holder: deadPid, valid: true, alive: false });
+        expect(stdout).toContain("admission-after-barrier\n");
+        expect(readFileSync(join(lock, "owner"), "utf8")).toBe(owner);
+        expect(readFileSync(join(lock, "pid"), "utf8")).toBe(String(process.pid));
+      } finally {
+        if (timer) clearTimeout(timer);
+        child.stdin.end(); if (child.exitCode === null && child.signalCode === null) child.kill();
+        await closed; writer?.closeStrict();
+      }
+    }
+    for (const [mode, code] of [["eof", "EOF"], ["read-error", "EIO"]]) {
+      seedLock();
+      try {
+        const child = spawnSync(process.execPath, argv(mode), { cwd: repo, encoding: "utf8", timeout: 15000, input: "x" });
+        expect(child.error).toBeUndefined(); expect(child.signal).toBeNull(); expect(child.status, child.stdout + child.stderr).toBe(97);
+        expect(child.stderr).toContain('barrier-fatal:{"code":"' + code + '"');
+        expect(child.stdout).toContain("outer-holder:"); expect(child.stdout).not.toContain("admission-after-barrier");
+        expect(readFileSync(join(lock, "owner"), "utf8")).toBe("dead-lock");
+      } finally { rmSync(lock, { recursive: true, force: true }); }
     }
   });
 
@@ -105,7 +155,8 @@ describe("admission gate crash recovery", () => {
     const script = [
       'const fs=require("node:fs"),{clearDeadAdmission}=require('+JSON.stringify(join(repo,"dist/packages/core/database/src/db.js"))+');',
       'const file=process.argv[1],gate=file+".ygllock.recovery",rename=fs.renameSync;',
-      'fs.renameSync=function(from,to){if(from===gate){fs.writeSync(1,"paused\\n");const b=Buffer.alloc(1);if(fs.readSync(0,b,0,1,null)!==1)throw Error("barrier closed");}return rename.apply(this,arguments);};',
+      stdinBarrier,
+      "fs.renameSync=function(from,to){if(from===gate){fs.writeSync(1,\"paused\\n\");waitForStdin();}return rename.apply(this,arguments);};",
       'try{const cleared=clearDeadAdmission(file);process.stdout.write(JSON.stringify({cleared})+"\\n");}catch(error){process.stderr.write(String(error));process.exitCode=1;}',
     ].join("\n");
     const child = spawn(process.execPath, ["-e", script, file], { cwd: repo, stdio: ["pipe", "pipe", "pipe"] });
