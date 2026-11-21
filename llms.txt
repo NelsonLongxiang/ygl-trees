@@ -1,4 +1,4 @@
-# ygl-trees v0.126.0 — AI Agent Research Workbench
+# ygl-trees v0.127.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -56,6 +56,7 @@ research evidence assess <eid>                               # decision model qu
 research evidence rm <eid> [--force]                         # delete evidence (refuse if linked)
 research claim unlink <cid> <eid>                            # remove one claim-evidence link
 research claim show <cid> [--json]                           # full claim row + linked evidence + source summary
+research claim rescope <id> --scope <s>                      # change claim grant; explicit empty scope is unattributed
 ```
 
 ### produce
@@ -91,7 +92,7 @@ kb promote <noteId>                                          # promote note to r
 Market experience library (read-only feed)
 
 ```bash
-library list --kind <claim|note|skill|check> [--scope <k>] [--since <iso>] [--limit 1..500] [--cursor <c>] # paged feed, contract ygl-library/1 (#275)
+library list --kind <claim|note|skill|check> [--project <name>] [--scope <s>] [--since <iso>] [--limit 1..500] [--cursor <c>] # paged feed, contract ygl-library/1; --project filters claim; note/skill/check have no project (rc2)
 library show <kind> <id>                                     # one row + body; claim adds evidence[]
 ```
 
@@ -262,7 +263,7 @@ Project management
 ```bash
 project new <name> -q "<question>"                           # create + select (session-scoped)
 project use <name> [--global] / list / show                  # switch / browse (selection_source shown)
-project sync <name> --home <source-home> --to <target-home> [--dry-run|--verify|--resume] # checkpointed SQLite copies; preserve IDs; readonly plan/verify; same-task dead-owner recovery
+project sync <name> --home <source-home> --to <target-home> [--dry-run|--verify|--resume] # copy checkpointed SQLite project IDs and rulings; dry-run/verify are read-only; resume only the same dead sync
 ```
 
 ## Checker Selection (prepare candidates)

@@ -1,5 +1,12 @@
 ## Unreleased
 
+## 0.127.0
+
+发布候选（未 tag／publish）：携带 schema v16 断言 scope、经验库项目过滤与显式 SQLite 项目复制，按次版本推进。包含已接受的 PR299／301／302／303 及已合并修复 #283／#285／#286／#288／#203／#209；PR302 仅改善 watcher 失败诊断，不宣称 #202 根因修复。正式 npm 包与准确 tag 的发布复核尚未执行，Refs #295。
+
+- **G7 后端环境隔离**（PR304）：矩阵子进程默认清空两个后端 URL，PG 步骤仅通过显式步骤环境取得目标；产品目标优先级、SQLite 拒绝边界和 strict 判定保持。
+- **dashboard 阶段预算与耗时**（PR305／308，Refs #298）：所有测试 `phase()` 使用 20 秒预算，保留完成／失败耗时；测试与钩子全局预算仍为 60 秒。受控检查覆盖 list-ready 与 response-settled 的延迟完成和永久等待；原所有权断言、fixture、产品与 watcher 不变。旧 3 秒阶段超时、串行 watcher 与锁耗时红灯仍单独保留，不据修订关闭 #202／#298／#307。
+
 - **项目复制验收修复**（Refs #295）：复制所有项目内 claim→claim 关系的原词与方向（含 supersedes），跨域/跨项目边在 skipped/skipped_count 中列出，计数哈希覆盖全部内边；superseded-by 约束保留。准入门持久记录 pid/task/owner，确认死进程后原子隔离且保留代际墓碑防迟到回收；普通 open、db unlock、doctor --fix 可恢复死门，活/未知门拒绝。doctor 不再因取门而自锁，清理未知仍不声称可重跑。
 
 - **显式项目复制**（Refs #295，Item 3）：CLI `project sync <name> --home <source-home> --to <target-home>` 对静止、已初始化且同 schema 的 SQLite 副本有序回放来源、证据、断言、stance、superseded-by 与当前仲裁状态，保留 scope 和源 ID；不改选择、不覆盖冲突。dry-run/verify 严格只读，信封含两端业务计数与哈希；重复全 duplicate 零写入。逐事务失败报告已提交前缀，显式 resume 仅恢复同快照/项目的死进程同步锁与 WAL，清理未知保留锁并拒绝盲重跑。claim 查重增加哈希快路与项目/文本索引，异 scope 冲突仍先拒绝。

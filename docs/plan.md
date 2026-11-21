@@ -30,6 +30,24 @@
 > 现行工作见 GitHub issues（#80 谓词 1.3 提案 / #94 A 簇）与 docs/reviews/contract-1.3-proposal.md。
 
 
+## 0.127.0 发布候选 R4（未 tag／publish）
+
+按监督原单 `direct-d572f99df362` 从已验收主干 `5587f6f62a105562cb71eb29e93f15dd5a383065` 建立 `release/0.127.0-r4`。只改根版本、[变更记录](../CHANGELOG.md)、正式 CLI 生成的[能力清单](../llms.txt)及本计划；不带新产品、测试、依赖或基线变化。前置 [PR308](https://github.com/NelsonLongxiang/ygl-trees/pull/308) 准确头 `47023b9` 经监督 macOS 全链 rc0（2316＋84＝2400）及恢复 split 预算使两项 response-settled 判红后合入。所有 phase 现为 20 秒，elapsed 保留、test/hook 仍 60 秒，原 ownership 用例和 fixture 不变；验收不外推为历史超时根因已查明。
+
+#295 Items 1–3 已分别经 PR299／301／303 准确头验收合入 `fe1aa5c`／`2ae9851`／`0f55a77`，开发通过不等于发版复核；#295 仍待正式 npm 包和准确 tag 复查后由监督关闭。PR302 仅诊断；#202 根因另行研究。原候选及原始日志、快照、封包均保全，不将前一任务 PASS 拼成 R4 通过。
+
+R1 `6fb6811` 的真实 G7 中，PG 82／0 加 3 离线及 SQLite 黄金通过，strict SQLite 腿因继承 PG URL 出现 8 个 handler 红与 demo 红；同头环境对照 8 红／8 绿，独立 PR304 在监督验收后合入 `d71ba79`。R2 原 full02 在 README 内嵌串行单测的 selector 初始化子进程 `project use alpha` 遇 30 秒 spawn ETIMEDOUT，原 full-rerun04 又遇 dashboard list-ready 三秒超时，两个 rc1 及原四文件快照保留。PR305 仅就绪阶段 20 秒及计时修订合入 `9c6ce53`，不是 watcher 根因修复。
+
+R3 `767403e` 原真实 G7 的 research evidence-add rc1：81／82 真 PG 通过、0 skip，加 3 离线通过；泛化错误未取到底层原因。监督准许的新隔离 PG 单文件诊断 21／21 rc0 未复现，临时 compiled 插桩逐字恢复后，唯一完整 G7 重验 rc0（PG 82／0、黄金 1／0、strict SQLite／PG 通过）；原红不被后绿覆盖。之后正常 pre-push 在 response-settled 原三秒阶段实测 3036ms 超时 rc1，真 list-ready 在 G7 strict 曾以 4706ms 完成。原 R3 两封包逐字相同：2005151B／272 条目，SHA256 `cfe5a0ad4e935b3082132f3121ca25868afcc29002cd246fdbad656c702cc110`，仍保留为旧候选，不用作 R4 包身份。
+
+独立 PR308 线路的 full03 原红来自未改的串行 watcher create 等待，#202 原快照显示 settled-start 后未记录 settled-end，但 catch 时已有新投影，根因仍未知。获准同输入重跑中断且无终态，保留 UNKNOWN 与 partial SHA；本人 PowerShell 探针产生的字面缓存目录经明确裁定 MOVE 隔离、未删除。替代独立进程全链 rc0 后提交 `47023b9`，首轮正常钩子因原锁测试 3100ms 未满足 <3000ms 而 rc1；[原红记录](https://github.com/NelsonLongxiang/ygl-trees/issues/307#issuecomment-7067368469)及后续唯一正常钩子重推 rc0 均留在 PR308，监督已按准确头复验。
+
+R4 依次运行：完整 pnpm test → meta check／audit against-git → G4 → pack:check → 原真实 G7（pinned PG、固定 SQLite 黄金、strict 双后端）→ clean tree／dist → 两次 pack:repro 字节／SHA256／条目校验 → 正常钩子推送与候选 PR。每步记录 UTC、原 rc／signal／error及日志；真实 list-ready 与所有 phase 计时按主单测、内嵌串行、strict 矩阵来源逐项保留。嵌套串行不另算独立完整运行。仅 #202／#298／#307 已跟踪用例可在同一冻结输入、同一门禁原红保留并记 issue／PR 后重跑一次；同门禁第二红或其他红停止。#298／#307 关单与发布复核条件仍独立，本段不预填 R4 门禁 PASS。
+
+G4 仅用裁定 `direct-0faa1934cf2d` 及本次续准的唯一 `--allow docs/reviews`：历史提交 `5e08738` 的否定未改说明触发路径 token 检查；原红与语境保留，不重写历史、不改门禁或扩其他路径例外。
+
+Windows G8/#178 仅提案、当前 NOT_RUN：正式发布与独占窗口另准后，WORK 使用项目 `tmp/release-0.127.0/g8/<UTC-attempt>`；最小私有 npm-install 清单、隔离 YGL_HOME／session、后端 URL 清空、调用方 home 哨兵。tag 源码只用现有真实 Git 检出，准确核对远端 tag／批准提交／主干祖先；不 clone／worktree／stash，不把无历史导出冒充完整 tag 验证。切换前后核对 clean/index/保护引用，无他席在途才能执行；意外变化停报，不强制恢复。逐步保存完整双通道、UTC、rc／signal／error、源码／包／dist 身份。正式 [post-release-check](../scripts/post-release-check.mjs) 当前含 clone，兼容执行方式需另准，手工替代链不冒正式 G8 PASS。候选与合并不授 tag／publish，本轮在这些动作前停止。
+
 ## 0.126.0 已发布（发布后验证分立）
 
 精确候选/tag `ee0e66b` 由监督席合入主干 `2a03f4b`。属主批准后，发布席在本机 remote/tag/ancestor guard rc0 后只发布原始 tgz 一次，`npm publish` rc0；公网 0.126.0 与 latest、shasum、integrity 均核对一致，详见 [#90 发布记录](https://github.com/NelsonLongxiang/ygl-trees/issues/90#issuecomment-6894396367)。未重打包或部署。Windows G8 在本席 NOT_RUN：正式入口包含与上级纪律冲突的独立 clone；发布成功不代替 G8。#178 保持开放，监督席 macOS G8 的测试时钟失败另由 #283/#284 修复。
