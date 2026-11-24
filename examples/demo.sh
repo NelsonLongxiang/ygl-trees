@@ -34,7 +34,7 @@ $Y db init
 # 0.48：冷启动内置技能自动导入——全新工作区的 agent match 必须立即可用
 sleep 2  # auto-import is async
 NS=$($Y agent brief --json 2>/dev/null | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).counts.skills')
-if [ "$NS" -ge 9 ]; then echo "  ✓ 冷启动内置技能自动导入（$NS 个，agent match 即可用）"; else echo "  ✗ 冷启动技能数：$NS（期望 ≥9）"; exit 1; fi
+if [ "$NS" -ge 9 ]; then echo "  ✓ 冷启动内置技能自动导入（$NS 个，agent match 即可用）"; else echo "  ✗ 冷启动技能数：${NS}（期望 ≥9）"; exit 1; fi
 $Y project new techtree -q "科技树数据模型如何建模与索引"
 $Y config set search.limit 5 >/dev/null
 CL=$($Y config get search.limit --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).value))")
@@ -430,7 +430,7 @@ $Y doctor >/dev/null 2>&1 && echo "  ✓ 工作区级命令豁免（doctor 未�
 # ③ 会话内选择后放行：claim list rc=0，选择来源可对账
 $Y project use techtree >/dev/null 2>&1
 SRC=$($Y project show --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{console.log(JSON.parse(s).selection_source||'')})")
-$Y research claim list --json >/dev/null 2>&1 && [ "$SRC" = "session" ] && echo "  ✓ project use 写会话键放行（selection_source=$SRC）" || { echo "  ✗ use/select: src=$SRC"; exit 1; }
+$Y research claim list --json >/dev/null 2>&1 && [ "$SRC" = "session" ] && echo "  ✓ project use 写会话键放行（selection_source=${SRC}）" || { echo "  ✗ use/select: src=$SRC"; exit 1; }
 # ④ 收尾：移除第二项目，恢复单项目演示态
 $Y db sql "DELETE FROM projects WHERE name='demo-b'" >/dev/null 2>&1
 echo "  ✓ 演示态恢复（第二项目已移除）"
@@ -613,7 +613,7 @@ set +e
 $Y definitely-not-a-group >/dev/null 2>&1
 UG=$?
 set -e
-if [ "$UG" = "2" ]; then echo "  ✓ 未知组退出码契约 rc=2（干净用法错误）"; else echo "  ✗ 未知组 rc=$UG（期望 2）"; exit 1; fi
+if [ "$UG" = "2" ]; then echo "  ✓ 未知组退出码契约 rc=2（干净用法错误）"; else echo "  ✗ 未知组 rc=${UG}（期望 2）"; exit 1; fi
 
 # 0.40：用户层 Entry-option 等价能力（config / enabled），无 loader 依赖
 $Y plugin install "$REPO_ROOT/examples/plugin-demo" >/dev/null 2>&1
@@ -626,7 +626,7 @@ set +e
 $Y demo hello >/dev/null 2>&1
 DG=$?
 set -e
-if [ "$DG" = "2" ]; then echo "  ✓ plugin disable 后命令组不可达（且仍是干净 rc=2）"; else echo "  ✗ disable 后 rc=$DG（期望 2）"; exit 1; fi
+if [ "$DG" = "2" ]; then echo "  ✓ plugin disable 后命令组不可达（且仍是干净 rc=2）"; else echo "  ✗ disable 后 rc=${DG}（期望 2）"; exit 1; fi
 $Y plugin enable ygl-plugin-demo >/dev/null 2>&1
 EN=$($Y demo hello 2>&1)
 case "$EN" in *"hello from the user layer"*) echo "  ✓ plugin enable 恢复挂载";; *) echo "  ✗ enable: $EN"; exit 1;; esac

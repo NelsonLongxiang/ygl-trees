@@ -35,7 +35,7 @@
     },
     {
       "path": "examples/demo.sh",
-      "sha256": "4e4453f4c28170089e10fdf811a26ccaa387785f6a5936d2101db528d6b73d32",
+      "sha256": "48947c16054a47b4c9ed7200ac83187ca0e0823f6202e580d751c3d39730db56",
       "role": "test"
     },
     {
@@ -1642,6 +1642,14 @@
       "reason": "Brace PV UNIT_RC ACTUAL before UTF-8 diagnostic punctuation; preserve refusal behavior",
       "actor": "ygl-trees-evaluation",
       "at": "2026-11-24T21:44:15.086Z"
+    },
+    {
+      "path": "examples/demo.sh",
+      "old_sha256": "4e4453f4c28170089e10fdf811a26ccaa387785f6a5936d2101db528d6b73d32",
+      "new_sha256": "48947c16054a47b4c9ed7200ac83187ca0e0823f6202e580d751c3d39730db56",
+      "reason": "Brace NS SRC UG DG before UTF-8 diagnostic punctuation; preserve demo branch semantics",
+      "actor": "ygl-trees-evaluation",
+      "at": "2026-11-24T22:33:36.108Z"
     }
   ],
   "kind": "engine",
