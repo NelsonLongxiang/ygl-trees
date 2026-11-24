@@ -103,7 +103,7 @@ chk "verify prune 用法 rc=2" 2 -- $Y verify prune --keep-last 0
 # llms.txt 发布面新鲜度（0.84 评审 #6：版本头必须与 package.json 同步）
 N=$((N+1))
 PV=$(node -p "require('./package.json').version")
-if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV"; else echo "  ✗ llms.txt 版本头 ≠ v$PV（run: ygl-trees llms 刷新后提交）"; F=$((F+1)); fi
+if head -1 llms.txt | grep -q "v$PV"; then echo "  ✓ llms.txt 版本头 = v$PV"; else echo "  ✗ llms.txt 版本头 ≠ v${PV}（run: ygl-trees llms 刷新后提交）"; F=$((F+1)); fi
 # #75: unit 计数门锚（0.114.31 修）——README "vitest N 例" 与实测一致。
 # 修三件：a) grep -P → POSIX sed（macOS 兼容）b) 取 total 非 passed（含 skipped）
 # c) 发布路径（pack:check）默认开；日常 readme:verify 跳过避免双跑 vitest。
@@ -127,7 +127,7 @@ if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   SUMMARY=$(sed 's/\x1b\[[0-9;]*m//g' "$UNIT_LOG" | grep -E '^[[:space:]]*Tests[[:space:]]' | tail -1)
   ACTUAL=$(printf '%s\n' "$SUMMARY" | sed -n 's/.*(\([0-9][0-9]*\)).*/\1/p')
   if [ "$UNIT_RC" != "0" ]; then
-    echo "  ✗ unit 计数门：内嵌 vitest rc=$UNIT_RC（${SUMMARY# *}）README=$README_NUM vitest=$ACTUAL；失败用例："
+    echo "  ✗ unit 计数门：内嵌 vitest rc=${UNIT_RC}（${SUMMARY# *}）README=$README_NUM vitest=${ACTUAL}；失败用例："
     sed 's/\x1b\[[0-9;]*m//g' "$UNIT_LOG" | grep -E '^[[:space:]]*FAIL[[:space:]]' | head -10 | sed 's/^[[:space:]]*/      /'
     echo "      完整输出：$UNIT_LOG"
     F=$((F+1))
