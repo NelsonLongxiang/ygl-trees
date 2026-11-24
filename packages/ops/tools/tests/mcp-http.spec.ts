@@ -104,11 +104,11 @@ describe.skipIf(!HAS_BIN)("MCP HTTP transport (StreamableHTTP stateless, taste-m
     expect(r.body.result.serverInfo.version).toBeTruthy();
   }, 15_000);
 
-  it("POST tools/list → 4 tools (0.115.0 domain×action consolidation)", async () => {
+  it("POST tools/list → trees plus four transition tools", async () => {
     const r = await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     expect(r.status).toBe(200);
     const names = r.body.result.tools.map((t: any) => t.name);
-    expect(names).toEqual(["read", "write", "verify", "doctor"]);
+    expect(names).toEqual(["trees", "read", "write", "verify", "doctor"]);
   }, 15_000);
 
   it("GET /mcp → 405 (stateless contract, taste-mcp precedent)", async () => {

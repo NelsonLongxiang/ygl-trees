@@ -331,7 +331,11 @@ db obsidian [dir]           # 导出 Obsidian markdown vault
 
 ---
 
-### MCP 参数与 HTTP 会话
+### MCP 渐进式披露与过渡
+
+首选 `trees {action:"help"}` 查看领域，再用 `trees {domain:"kb",action:"help",params:{action:"add"}}` 查看参数；执行统一为 `{domain,action,params}`。原 read/write/verify/doctor 保留一个发布版本过渡。动作读写表由 `_meta["ygl-trees/dispatch"]` 和 help 暴露，契约 `ygl-trees/1`；宿主须按角色策略判权并拒绝未知动作；access 标副作用、legacy_tool 标原工具归属，不能将整个 trees 当作只读。doctor/check 不修复，doctor/fix 才修复。详见 [MCP trees 契约](docs/mcp-trees.md)。
+
+### MCP 参数与 HTTP 会话（旧工具过渡形状）
 
 MCP `write` 的 `kb/add` 使用 `name` 加 `body` 或 `file`（二选一）；`rel/attach` 的 `node` 为节点引用、`type` 为关系词、`target` 必须带实体前缀（如 `kb:<id>`）；`tree/node-cond` 必须提供 `op/value`，不会再创建空值门槛。`read node/can`、`read node/ready`、`write tree/node-unlock` 支持 `context`；can/ready 的 `state` 使用 `budget=2,flag=1` 字符串。HTTP 的 `X-YGL-Session` 仅覆盖本请求；无头使用服务启动时 session，不改全局 process.env。合法连接凭据保留在受控子进程环境中，不放入 argv 或回执。
 
@@ -372,7 +376,7 @@ SQLite 字节黄金 `b8-sqlite-golden.spec.ts` 默认无 `B8_SQLITE_BASELINE_BIN
 PG 测试分开计数：B8 的 82 条真库用例（十份 spec；含 claims.scope v16 的迁移、旧镜像、CLI 与受控并发）默认无 `B8_TEST_PG_ADMIN_URL` 时在 `pnpm test` 中跳过，另有 3 条离线 primitives 照常运行；跳过不算 PG 验收。发版必跑 `bash scripts/pg-gate.sh`：自己的 pinned Docker 容器提供 admin URL，先跑真库测试并输出 `b8_pg: 82 passed, 0 skipped`（数量以当次报告为准），再跑双后端 strict 矩阵。缺 Docker/PG、缺报告或任一 skip 均失败；发布记录需同时保存 passed/skipped、报告路径及镜像。
 
 ```bash
-pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2400 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（145 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
+pnpm test          # 全量回归，依次：gate:g12 → build → unit (vitest 2424 例，含 skip；另串行跑 perf 10 例；基准机口径见 docs/reviews/unit-count-baseline.md) → demo（145 条断言）→ contract:audit（158 项）→ readme:verify → skills:audit → ratchet
 pnpm bench         # 性能基准四条用户路径（startup/写路径/检索/索引），每条含 RSS 内存端点 → tmp/bench-results.json
 pnpm verify:run    # 验证器组合入口：submit → prepare → run 串接（rc 只表达过程错误，overall 不进退出码）
 node scripts/meta-tooling.mjs [--check]   # verify/meta.json tooling[] 登记维护（charter R3 登记制）：刷新/比对 sha256，--add <path> --role <role> 追加

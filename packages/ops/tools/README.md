@@ -19,6 +19,12 @@ The registry and pure readers live in core/database; this package retains `confi
 
 `agent brief -p <project>` and `--project <project>` use the same resolved selection for admission and payload construction. Explicit selection overrides environment/session pointers without changing them; missing projects return rc1. The multi-project strict gate remains rc2. `buildBrief(env)` keeps its ungated default for dashboard callers.
 
+## MCP trees and transition
+
+The preferred tool is `trees {domain, action, params}`. `trees {action:"help"}` returns the domain directory; domain help lists actions/access, and `params:{action:"<verb>"}` requests parameter detail. `tools/list` exposes the versioned `ygl-trees/1` route contract in `_meta["ygl-trees/dispatch"]`. Hosts must enforce roles before dispatch: unknown routes deny; mixed trees is not globally read-only. Counters, evaluation events and node index refreshes count as writes. Doctor uses separate check/fix actions; params.fix cannot override check. See [MCP contract](../../../docs/mcp-trees.md).
+
+The old read/write/verify/doctor tools retain their schemas, results and request environment behavior for one transition release. They carry replacement metadata, and remain subject to the host role policy; they are not an authorization fallback.
+
 ## MCP routing and request environment
 
 MCP write maps kb add to `--title` plus exactly one body/file source, rel attach to `rel add node:<ref> <typed-target> --rel <type>`, and node-cond to explicit op/value and the existing condition flags. Node can/ready/node-unlock forward a named `context`; can/ready accept the CLI state string. No new lock/path/unlock-enforcement behavior is added.
