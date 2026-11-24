@@ -134,7 +134,7 @@ if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
   elif [ -n "$README_NUM" ] && [ -n "$ACTUAL" ] && [ "$README_NUM" = "$ACTUAL" ]; then
     echo "  ✓ unit 计数门锚: README $README_NUM == vitest $ACTUAL"
   else
-    echo "  ✗ unit 计数漂移: README=$README_NUM vitest=$ACTUAL（run: pnpm readme:count）"
+    echo "  ✗ unit 计数漂移: README=$README_NUM vitest=${ACTUAL}（run: pnpm readme:count）"
     F=$((F+1))
   fi
 fi
