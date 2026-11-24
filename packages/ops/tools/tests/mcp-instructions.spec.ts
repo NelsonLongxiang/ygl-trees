@@ -44,8 +44,8 @@ describe("MCP instructions (#237 channel A)", () => {
   });
 
   it("tells the agent when to call match, kb search and brief (existence is checked live below)", () => {
-    const named = [...MCP_INSTRUCTIONS.matchAll(/read \{domain:"([a-z-]+)", action:"([a-z-]+)"/g)].map((m) => `${m[1]}/${m[2]}`);
-    expect(new Set(named)).toEqual(new Set(["agent/match", "kb/search", "agent/brief"]));
+    const named = [...MCP_INSTRUCTIONS.matchAll(/trees \{domain:"([a-z-]+)", action:"([a-z-]+)"/g)].map((m) => `${m[1]}/${m[2]}`);
+    expect(new Set(named)).toEqual(new Set(["kb/help", "agent/match", "kb/search", "agent/brief"]));
   });
 
   it("over stdio: a workspace with a project and a 「你必须」 title leaks neither into the text", async () => {
@@ -71,12 +71,11 @@ describe("MCP instructions (#237 channel A)", () => {
       expect(text).not.toContain("secret-title-777");
       expect(text).not.toContain("next_actions");
 
-      // every read {domain, action} the text tells the agent to call is in the live tools/list enums
+      // Every documented domain/action is present in the live trees dispatch contract.
       const list = await send(2, "tools/list");
-      const read = list.result.tools.find((t: any) => t.name === "read").inputSchema.properties;
-      for (const m of text.matchAll(/read \{domain:"([a-z-]+)", action:"([a-z-]+)"/g)) {
-        expect(read.domain.enum).toContain(m[1]);
-        expect(read.action.enum).toContain(m[2]);
+      const routes = list.result.tools.find((t: any) => t.name === "trees")._meta["ygl-trees/dispatch"].routes;
+      for (const m of text.matchAll(/trees \{domain:"([a-z-]+)", action:"([a-z-]+)"/g)) {
+        expect(routes.some((r: any) => r.domain === m[1] && (m[2] === "help" || r.action === m[2]))).toBe(true);
       }
     } finally {
       child.kill();

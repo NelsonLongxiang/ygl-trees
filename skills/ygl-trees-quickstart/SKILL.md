@@ -26,7 +26,9 @@ tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 | **MCP 工具** | AI agent（Claude/DSH/市场网关） | `ygl-trees mcp`（stdio）或 `ygl-trees mcp --http --port 9820`（HTTP） |
 | **技能面** | agent 自学 | 你正在读的这个 |
 
-**MCP 4 工具**（0.115.0 收敛，domain×action 路由——少工具、富参数）：
+**MCP 首选单工具 trees**：`{action:"help"}` → `{domain:"kb",action:"help"}` → `{domain:"kb",action:"help",params:{action:"add"}}` 渐进披露；执行用 `{domain,action,params}`。详见 `docs/mcp-trees.md`。标准 annotations 不把混合读写的 trees 标为只读；`_meta["ygl-trees/dispatch"]` 的 `ygl-trees/1` 精确动作表供宿主按角色拦截写面，未知动作拒绝。计数/评估/索引副作用标 write，doctor/check 与 doctor/fix 分开。
+
+**旧四工具保留一版过渡**（参数和返回不变，下列为旧调用形状；trees 将路由以外的参数移入 params）：
 
 ```
 read   → 一切读面：{domain: "agent|kb|tree|node|task|rel|research|produce|project|db|skill|library", action: "brief|search|state|list|can|ready|path|ancestors|descendants|validate|...", ...}

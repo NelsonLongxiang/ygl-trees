@@ -55,12 +55,12 @@ describe("MCP 4-tool surface (0.115.0 domain×action router)", () => {
   });
   afterAll(() => rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
-  it("tools/list exposes exactly 4 tools", async () => {
+  it("tools/list exposes trees plus four transition tools", async () => {
     const c = mcpCall();
     await c.send("initialize");
     const r = await c.send("tools/list");
     const names = r.result.tools.map((t: any) => t.name);
-    expect(names).toEqual(["read", "write", "verify", "doctor"]);
+    expect(names).toEqual(["trees", "read", "write", "verify", "doctor"]);
     c.kill();
   }, 60_000);
 
