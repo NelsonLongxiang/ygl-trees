@@ -200,7 +200,7 @@
     },
     {
       "path": "scripts/readme-verify.sh",
-      "sha256": "0dbee8008fc93b66fd91e05879722c40b7886dc1e609edb08ba9fa679f58cce6",
+      "sha256": "6b025534787f74f2c1d7c2a16f7fafcea83610152cb32d22f93b43429a11e87c",
       "role": "gate"
     },
     {
@@ -1634,6 +1634,14 @@
       "reason": "Brace ACTUAL before non-ASCII count-drift diagnostic; preserve gate semantics",
       "actor": "ygl-trees-evaluation",
       "at": "2026-11-24T20:17:23.575Z"
+    },
+    {
+      "path": "scripts/readme-verify.sh",
+      "old_sha256": "0dbee8008fc93b66fd91e05879722c40b7886dc1e609edb08ba9fa679f58cce6",
+      "new_sha256": "6b025534787f74f2c1d7c2a16f7fafcea83610152cb32d22f93b43429a11e87c",
+      "reason": "Brace PV UNIT_RC ACTUAL before UTF-8 diagnostic punctuation; preserve refusal behavior",
+      "actor": "ygl-trees-evaluation",
+      "at": "2026-11-24T21:44:15.086Z"
     }
   ],
   "kind": "engine",
