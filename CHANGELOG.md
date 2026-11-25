@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **MCP task advance 透传 project**（#306）：`task advance` 与 `add`／`cancel`／`reopen` 一样把 `project` 转成 `-p`；多项目工作区里指名项目即可推进，不再答 ambiguous project。未指名且会话未选项目时仍 rc2；指名另一个项目时 CLI 照旧以 not found rc1 拒绝、任务不变。旧 write 工具与 trees 入口同一映射，端到端测试覆盖两者。
+
 ## 0.128.0
 
 发布候选（未 tag／publish）：交付 0.127.0 之后已逐项经非作者精确头验收并合入主干的六个 PR（#311–#316），按次版本推进。不含新 schema、ORM 或依赖迁移；旧四个 MCP 工具按约再保留一版。#306（MCP task advance 丢 project）另开独立 PR，不在本版。按现行做法由 .156 只核 `origin/master` 精确提交独立打包发布。

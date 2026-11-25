@@ -272,7 +272,9 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
   },
   task: {
     add: (a) => ["task", "add", String(a.text), ...opt("-p", a.project)],
-    advance: (a) => ["task", String(a.to ?? "doing"), String(a.id)],
+    // #306: advance passes project through as -p like add/cancel/reopen; without it a multi-project workspace answers
+    // "ambiguous project" even when the caller named one. The CLI still refuses a task from another project (rc1).
+    advance: (a) => ["task", String(a.to ?? "doing"), String(a.id), ...opt("-p", a.project)],
     // #220: closing without doing it needs a reason; reopening brings a done/cancelled task back to todo
     cancel: (a) => {
       if (!a.id || typeof a.reason !== "string" || !a.reason.trim()) throw usageError("task cancel requires id and a non-empty reason");
