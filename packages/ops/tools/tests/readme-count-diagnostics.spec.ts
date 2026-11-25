@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -29,12 +29,16 @@ describe.skipIf(process.platform === "win32")("README count diagnostics under /b
       expect(result.error).toBeUndefined(); expect(result.signal).toBeNull();
       expect(result.stderr).not.toContain("unbound variable");
       expect(result.status, result.stdout + result.stderr).toBe(status);
+      const logs = readdirSync(join(home, "tmp")).filter(n => n.startsWith("readme-count-vitest-"));
       if (status) {
         expect(result.stdout).toContain("unit 计数漂移: README=2 vitest=1（run: pnpm readme:count）");
+        expect(result.stdout).toContain("完整输出：tmp/readme-count-vitest-");
         expect(result.stdout).toContain("readme-verify: 0/1 通过");
+        expect(logs).toHaveLength(1); // drift keeps the round's log for diagnosis
       } else {
         expect(result.stdout).toContain("unit 计数门锚: README 1 == vitest 1");
         expect(result.stdout).toContain("readme-verify: 1/1 通过");
+        expect(logs).toEqual([]); // a passing gate leaves nothing under tmp/
       }
     } finally { rmSync(home, { recursive: true, force: true }); }
   });
