@@ -30,6 +30,12 @@
 > 现行工作见 GitHub issues（#80 谓词 1.3 提案 / #94 A 簇）与 docs/reviews/contract-1.3-proposal.md。
 
 
+## 0.128.0 发布候选（未 tag／publish）
+
+按属主 2026-11-25 决策（评估票 1bc731c9 推荐 A）从主干 `a5e9c4fd15d4f17575c48b48881f70109952819d` 建 `chore/release-0.128.0`。只改根版本、[变更记录](../CHANGELOG.md)、正式 CLI 生成的[能力清单](../llms.txt)及本计划；不带新产品、测试、依赖或基线变化。范围 PR311–316，各有绑定精确头的非作者 PASS：311 `210a0ebd`、312 `69480922`、313 `faaec1ec`、314 `5d82ffa9`、315 `e6ea67ed`、316 `df599396`。#306 另开独立 PR，不混入本版；Windows #307／#202 不在本版修复，0.127.0 的一次重跑特许不继承。
+
+门禁：完整 pnpm test、tmp-diff 新增 0、pack:check 在本机跑；G7 真 PG 矩阵需 docker（pinned postgres:16.4-alpine），本机没有容器运行时，记 NOT_RUN，须在具备 docker 的机器上对准确头补跑并贴记录，不以本机结果代替。发布由 .156 核 `origin/master` 等于合入提交后独立打包发布，不传 tgz；G8 发布后另行复跑。
+
 ## 0.127.0 发布候选 R4（未 tag／publish）
 
 按监督原单 `direct-d572f99df362` 从已验收主干 `5587f6f62a105562cb71eb29e93f15dd5a383065` 建立 `release/0.127.0-r4`。只改根版本、[变更记录](../CHANGELOG.md)、正式 CLI 生成的[能力清单](../llms.txt)及本计划；不带新产品、测试、依赖或基线变化。前置 [PR308](https://github.com/NelsonLongxiang/ygl-trees/pull/308) 准确头 `47023b9` 经监督 macOS 全链 rc0（2316＋84＝2400）及恢复 split 预算使两项 response-settled 判红后合入。所有 phase 现为 20 秒，elapsed 保留、test/hook 仍 60 秒，原 ownership 用例和 fixture 不变；验收不外推为历史超时根因已查明。
