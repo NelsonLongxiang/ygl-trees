@@ -240,7 +240,16 @@ const WRITE_ROUTES: Record<string, Record<string, ArgvBuilder>> = {
       if (!a.id || a.scope === undefined) throw usageError("kb rescope requires id and scope");
       return ["kb", "rescope", String(a.id), ...scopeOpt(a.scope)];
     },
-    link: (a) => ["kb", "link", String(a.note), String(a.evidence_id)],
+    // kb link joins two notes (CLI: kb link <note-a> <note-b>). other_note is the second note id; evidence_id is its old
+    // name, kept for compatibility (it always carried a second note id, never an evidence id). source_id is not read here.
+    link: (a) => {
+      if (a.source_id !== undefined) throw usageError("kb link joins two notes: pass the second note id as other_note (source_id is not a kb link parameter)");
+      if (a.other_note !== undefined && a.evidence_id !== undefined && String(a.other_note) !== String(a.evidence_id))
+        throw usageError("kb link: other_note and its old name evidence_id differ; pass one");
+      const other = a.other_note ?? a.evidence_id;
+      if (!a.note || !other) throw usageError("kb link requires note and other_note (two note ids; evidence_id is the old name for other_note)");
+      return ["kb", "link", String(a.note), String(other)];
+    },
     // #257 C 类：知识收口（promote 幂等；ingest 导入已完成 artifact）
     promote: (a) => ["kb", "promote", String(a.id), ...opt("--name", a.name)],
     ingest: (a) => ["kb", "ingest", String(a.id), ...scopeOpt(a.scope)],
@@ -388,7 +397,7 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           as: { type: "string", enum: ["supported", "refuted", "contested"], description: "claim-resolve verdict" },
           query_id: { type: "string", description: "query-attach: query id" },
           batch_file: { type: "string", description: "#83 source-add/claim-add/evidence-add: jsonl batch file path (all-or-nothing; bad row names line+field rc=2, file missing rc=1, nothing written on failure)" },
-          source_id: { type: "string", description: "query-attach/kb-link: source/evidence id" },
+          source_id: { type: "string", description: "query-attach: source id" },
           name: { type: "string", description: "kb name / node name / project name" },
           scope: { type: "string", description: "claim add/rescope and kb add/ingest/rescope: dept:<id>, bench:<id>, *, restricted or empty (unattributed); ids match [A-Za-z0-9._-]{1,64}; rescope requires an explicit value" },
           body: { type: "string", description: "kb add: note body; produce section/spec/design: artifact body (与 file 互斥)" },
@@ -401,8 +410,9 @@ export function buildTools(env: NodeJS.ProcessEnv = process.env): McpTool[] {
           checker: { type: "string", description: "verify example: checker type filter" },
           reviews: { type: "string", description: "verify lint-candidates: reviews file" },
           no_archive: { type: "boolean", description: "verify tree-run: skip archive (--no-archive)" },
-          note: { type: "string", description: "kb link: note id" },
-          evidence_id: { type: "string", description: "kb link: evidence id" },
+          note: { type: "string", description: "kb link: first note id" },
+          other_note: { type: "string", description: "kb link: second note id (kb link joins two notes)" },
+          evidence_id: { type: "string", description: "kb link: old name for other_note; a second note id, not an evidence id" },
           tree: { type: "string", description: "tree name" },
           key: { type: "string", description: "node key" },
           child: { type: "string", description: "node-link: child key" },

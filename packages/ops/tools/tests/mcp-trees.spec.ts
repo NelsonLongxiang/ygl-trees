@@ -87,6 +87,19 @@ describe("trees progressive disclosure and transition contract", () => {
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
   });
 
+  it("kb link help names two notes, and trees passes other_note to the write face unchanged", async () => {
+    const ts = tools(), tree = ts[0], write = ts.find(t => t.name === "write")!;
+    const detail: any = await tree.execute({ domain: "kb", action: "help", params: { action: "link" } });
+    const props = detail.params_schema.properties;
+    expect(props.other_note.description).toMatch(/second note id/);
+    expect(props.evidence_id.description).toMatch(/old name for other_note/);
+    expect(props.evidence_id.description).not.toMatch(/^kb link: evidence id$/);
+    expect(props.source_id.description).not.toMatch(/kb/i);
+    const spy = vi.spyOn(write, "execute").mockResolvedValue({ ok: true } as any);
+    await tree.execute({ domain: "kb", action: "link", params: { note: "n1", other_note: "n2" } });
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ domain: "kb", action: "link", note: "n1", other_note: "n2" }));
+  });
+
   it("preserves booleans, numeric condition values, explicit empty scope and the legacy error object", async () => {
     const ts = tools(), write = ts.find(t => t.name === "write")!;
     const spy = vi.spyOn(write, "execute").mockResolvedValue({ duplicate: true });
