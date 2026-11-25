@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync } from "node:fs";
+// Remove a fixed scratch parent once it is empty. Another spec may still be using it (ENOTEMPTY) or have removed it
+// already (ENOENT); any other error is a real cleanup failure and surfaces.
+function removeIfEmpty(dir: string): void {
+  try { rmdirSync(dir); } catch (e: any) { if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e; }
+}
+
 import { join, resolve } from "node:path";
 import { DB } from "../../../core/database/src/db";
 import * as core from "../../../core/database/src/config";
@@ -10,7 +16,7 @@ function database(probe: (db: DB) => void) {
   const parent = join(ROOT, "tmp/workspace-cycle-234"); mkdirSync(parent, { recursive: true });
   const home = mkdtempSync(join(parent, "config-")); let db: DB | undefined;
   try { db = new DB(join(home, "config.db")); probe(db); }
-  finally { db?.close(); rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); }
+  finally { db?.close(); rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); removeIfEmpty(parent); }
 }
 
 describe("#234 configuration layer compatibility", () => {

@@ -1,7 +1,13 @@
 /** Scope is a grant key, not a project name or an implicit public permission. */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+// Remove a fixed scratch parent once it is empty. Another spec may still be using it (ENOTEMPTY) or have removed it
+// already (ENOENT); any other error is a real cleanup failure and surfaces.
+function removeIfEmpty(dir: string): void {
+  try { rmdirSync(dir); } catch (e: any) { if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e; }
+}
+
 import { join, resolve } from "node:path";
 import Sqlite from "better-sqlite3";
 import { validateScope } from "../../../core/text/src/scope";
@@ -43,6 +49,7 @@ describe("scope v15", () => {
     run(["project", "new", "scope-fixture"]);
   }, 60000);
   afterEach(() => rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  afterAll(() => { removeIfEmpty(SCRATCH); removeIfEmpty(join(ROOT, "tmp", "276-scope")); });
 
   it("validates exact syntax without trimming, coercion, or interpreting ids", () => {
     for (const good of [undefined, "", "*", "restricted", "dept:ops", "bench:x", "dept:" + "a".repeat(64), "bench:A.b_1-2"]) {

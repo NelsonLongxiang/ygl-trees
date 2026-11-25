@@ -37,6 +37,18 @@ describe("#108 计数门（无开关 + 负例必红）", () => {
     // #216 ⑤：日志按轮唯一（时间戳 + $$），不是固定文件名
     expect(block).toMatch(/UNIT_LOG="tmp\/readme-count-vitest-\$\(date -u [^)]*\)-\$\$\.log"/);
     expect(block).not.toContain('UNIT_LOG="tmp/readme-count-vitest.log"');
+    // 日志去留：通过分支删掉本轮日志，失败与漂移分支保留并点名（完整测试套件不在 tmp/ 留残留）
+    // 以三条分支各自的 echo 行为界（注释里也出现「计数漂移」，不能按词切）
+    const passAt = block.indexOf("✓ unit 计数门锚"), driftAt = block.indexOf("✗ unit 计数漂移"), failAt = block.indexOf('$UNIT_RC" != "0"');
+    expect(failAt).toBeGreaterThan(0); expect(passAt).toBeGreaterThan(failAt); expect(driftAt).toBeGreaterThan(passAt);
+    const pass = block.slice(passAt, driftAt);
+    expect(pass).toContain('rm -f "$UNIT_LOG"');
+    const failing = block.slice(failAt, passAt);
+    expect(failing).not.toContain("rm -f");
+    expect(failing).toContain("完整输出：$UNIT_LOG");
+    const drift = block.slice(driftAt);
+    expect(drift).not.toContain("rm -f");
+    expect(drift).toContain("完整输出：$UNIT_LOG");
   });
 
   it("release 路径不依赖任何关闸变量", () => {

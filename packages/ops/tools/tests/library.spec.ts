@@ -1,7 +1,13 @@
 /** #275 library: market experience library read-only feed (CLI + MCP parity). */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+// Remove a fixed scratch parent once it is empty. Another spec may still be using it (ENOTEMPTY) or have removed it
+// already (ENOENT); any other error is a real cleanup failure and surfaces.
+function removeIfEmpty(dir: string): void {
+  try { rmdirSync(dir); } catch (e: any) { if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e; }
+}
+
 // @ts-ignore — runtime dependency has no in-repo type declarations.
 import Sqlite from "better-sqlite3";
 import { prepareListIndex, readListIndex } from "../src/verify-list-index";
@@ -270,6 +276,7 @@ describe("library feed (#275)", () => {
       }
     } finally {
       rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      removeIfEmpty(scratchRoot);
     }
   }, 120000);
 
