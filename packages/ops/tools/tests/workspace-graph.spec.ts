@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+// Remove a fixed scratch parent once it is empty. Another spec may still be using it (ENOTEMPTY) or have removed it
+// already (ENOENT); any other error is a real cleanup failure and surfaces.
+function removeIfEmpty(dir: string): void {
+  try { rmdirSync(dir); } catch (e: any) { if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e; }
+}
+
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(__dirname, "../../../..");
@@ -16,7 +22,7 @@ function fixture(packages: Record<string, any>, probe: (root: string) => void) {
       writeFileSync(join(root, path, "package.json"), JSON.stringify(manifest));
     }
     probe(root);
-  } finally { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); }
+  } finally { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); removeIfEmpty(parent); }
 }
 function run(root = ROOT, mode = "--workspace-graph") {
   const result = spawnSync(process.execPath, [SCRIPT, mode, root], { encoding: "utf8", timeout: 10000 });
