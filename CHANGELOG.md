@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **MCP kb link 参数修正**：`kb link` 连接两条笔记，第二条笔记的正式参数为 `other_note`；旧名 `evidence_id` 保留兼容（它一直装的是第二条笔记 id，从不是证据 id），两者同时给且不同时 rc2。误传 `source_id` 或缺少第二条笔记时在 MCP 层以 rc2 点名 `other_note`，不再把 `undefined` 当笔记 id 交给 CLI；`source_id` 描述收窄为 query-attach。旧 write 与 trees help 共用同一 schema，文案一致。不新增 MCP 工具。
+
 ## 0.127.0
 
 发布候选（未 tag／publish）：携带 schema v16 断言 scope、经验库项目过滤与显式 SQLite 项目复制，按次版本推进。包含已接受的 PR299／301／302／303 及已合并修复 #283／#285／#286／#288／#203／#209；PR302 仅改善 watcher 失败诊断，不宣称 #202 根因修复。正式 npm 包与准确 tag 的发布复核尚未执行，Refs #295。

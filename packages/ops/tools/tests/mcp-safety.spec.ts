@@ -77,6 +77,17 @@ describe("#119 MCP argv and request-session safety",()=>{
   const note=await good("write",{domain:"kb",action:"add",name:"linked-note",body:"reference"});
   const r=await good("write",{domain:"rel",action:"attach",node:"relations/node-a",type:"evidenced-by",target:"kb:"+note.id});expect(r).toMatchObject({src:"node:"+n.id,dst:"kb:"+note.id,rel:"evidenced-by"});
  });
+ it("kb link joins two notes via other_note, keeps evidence_id as its old name, and refuses evidence or source ids",async()=>{
+  const a=await good("write",{domain:"kb",action:"add",name:"link-a",body:"first"}),b=await good("write",{domain:"kb",action:"add",name:"link-b",body:"second"}),c=await good("write",{domain:"kb",action:"add",name:"link-c",body:"third"});
+  expect(await good("write",{domain:"kb",action:"link",note:a.id,other_note:b.id})).toMatchObject({a:{id:a.id},b:{id:b.id},rel:"related"});
+  expect(await good("write",{domain:"kb",action:"link",note:a.id,evidence_id:c.id})).toMatchObject({a:{id:a.id},b:{id:c.id},rel:"related"});
+  const src=await good("write",{domain:"research",action:"source-add",text:"kb link source",b:"https://example.org/kb-link"});
+  const ev=await good("write",{domain:"research",action:"evidence-add",text:src.id,quote:"kb link quote"});
+  const asEvidence=await call("write",{domain:"kb",action:"link",note:a.id,evidence_id:ev.id});expect(asEvidence.isError).toBe(true);expect(JSON.parse(asEvidence.content[0].text)).toMatchObject({rc:1,error:expect.stringContaining("both notes must exist")});
+  const asSource=await call("write",{domain:"kb",action:"link",note:a.id,source_id:src.id});expect(asSource.isError).toBe(true);expect(JSON.parse(asSource.content[0].text)).toMatchObject({rc:2,error:expect.stringMatching(/other_note/)});
+  const conflict=await call("write",{domain:"kb",action:"link",note:a.id,other_note:b.id,evidence_id:c.id});expect(conflict.isError).toBe(true);expect(JSON.parse(conflict.content[0].text)).toMatchObject({rc:2});
+  const missing=await call("write",{domain:"kb",action:"link",note:a.id});expect(missing.isError).toBe(true);expect(JSON.parse(missing.content[0].text)).toMatchObject({rc:2,error:expect.stringMatching(/other_note/)});
+ });
  it("node-cond exposes op/value and creates a gate that can actually be satisfied",async()=>{
   await good("write",{domain:"tree",action:"tree-new",tree:"gates"});await good("write",{domain:"tree",action:"node-add",tree:"gates",key:"b"});
   const c=await good("write",{domain:"tree",action:"node-cond",tree:"gates",key:"b",name:"budget",kind:"resource",op:">=",value:"2"});expect(c).toMatchObject({name:"budget",op:">=",value:"2"});
