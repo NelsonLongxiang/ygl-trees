@@ -106,5 +106,6 @@ describe("schema v14: v13 workspace upgrades in place, jobs kept intact (#258)",
     expect(job.project_id).toBe("");
     expect(job.owner).toBe("");
     await svc.stop();
+    fs.rmSync(dir, { recursive: true, force: true }); // DB closed by stop(); leave nothing under tmp/
   });
 });

@@ -133,8 +133,10 @@ if [ "${README_UNIT_COUNT_GATE:-1}" != "0" ]; then
     F=$((F+1))
   elif [ -n "$README_NUM" ] && [ -n "$ACTUAL" ] && [ "$README_NUM" = "$ACTUAL" ]; then
     echo "  ✓ unit 计数门锚: README $README_NUM == vitest $ACTUAL"
+    rm -f "$UNIT_LOG"  # 通过时不留日志（tmp/ 无残留）；失败与漂移时保留并点名
   else
     echo "  ✗ unit 计数漂移: README=$README_NUM vitest=${ACTUAL}（run: pnpm readme:count）"
+    echo "      完整输出：$UNIT_LOG"
     F=$((F+1))
   fi
 fi

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmdirSync, rmSync } from "node:fs";
+// Remove a fixed scratch parent once it is empty. Another spec may still be using it (ENOTEMPTY) or have removed it
+// already (ENOENT); any other error is a real cleanup failure and surfaces.
+function removeIfEmpty(dir: string): void {
+  try { rmdirSync(dir); } catch (e: any) { if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e; }
+}
+
 import { join, resolve } from "node:path";
 // @ts-ignore — runtime dependency has no bundled declarations.
 import NativeDatabase from "better-sqlite3";
@@ -30,7 +36,7 @@ async function fixture(probe: (ds: DataSource, other: any) => Promise<void>) {
     try { if (ds?.isInitialized) await ds.destroy(); }
     finally {
       try { other?.close(); }
-      finally { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+      finally { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); removeIfEmpty(parent); }
     }
   }
 }

@@ -1,7 +1,13 @@
 /** R3 tooling hashes must survive Git checkout conversion with autocrlf=true. */
 import { describe, it, expect, afterAll } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmdirSync, rmSync, existsSync, readFileSync } from "node:fs";
+// Remove a fixed scratch parent once it is empty. Another spec may still be using it (ENOTEMPTY) or have removed it
+// already (ENOENT); any other error is a real cleanup failure and surfaces.
+function removeIfEmpty(dir: string): void {
+  try { rmdirSync(dir); } catch (e: any) { if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e; }
+}
+
 import { join, resolve } from "node:path";
 
 const REPO = execFileSync("git", ["rev-parse", "--show-toplevel"], {
@@ -14,6 +20,7 @@ const scratch: string[] = [];
 describe.skipIf(!HAS_BIN)("R3 platform-stability regression (autocrlf=true)", () => {
   afterAll(() => {
     for (const d of scratch) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeIfEmpty(join(REPO, "tmp/r3-checkout-fixture"));
   });
 
   it("checkout export with core.autocrlf=true keeps R3 PASS without cloning the repository", () => {

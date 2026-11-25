@@ -8,16 +8,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { DB, pidAlive } from "../../../core/database/src/db";
 
-let dir = "";
+// Every scratch directory is recorded: each call makes a new one, and all of them are removed after the suite.
+const dirs: string[] = [];
 
 function scratch(): string {
-  dir = path.join(process.cwd(), "tmp", `fb079-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+  const dir = path.join(process.cwd(), "tmp", `fb079-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
   fs.mkdirSync(dir, { recursive: true });
+  dirs.push(dir);
   return dir;
 }
 
 afterAll(() => {
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 });
 
 describe("pidAlive", () => {
