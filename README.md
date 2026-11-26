@@ -335,6 +335,15 @@ db obsidian [dir]           # 导出 Obsidian markdown vault
 
 首选 `trees {action:"help"}` 查看领域，再用 `trees {domain:"kb",action:"help",params:{action:"add"}}` 查看参数；执行统一为 `{domain,action,params}`。原 read/write/verify/doctor 保留一个发布版本过渡。动作读写表由 `_meta["ygl-trees/dispatch"]` 和 help 暴露，契约 `ygl-trees/1`；宿主须按角色策略判权并拒绝未知动作；access 标副作用、legacy_tool 标原工具归属，不能将整个 trees 当作只读。doctor/check 不修复，doctor/fix 才修复。详见 [MCP trees 契约](docs/mcp-trees.md)。
 
+0.128.0 候选的两项写入兼容约定：
+
+| 动作 | `trees.params` / 旧 `write` 的参数 |
+|---|---|
+| `kb/link`（#316） | `note` 与 `other_note` 都是笔记 ID，可带 `rel`。`evidence_id` 仅为旧参数名，`source_id` 拒绝。 |
+| `task/advance`（#318） | `id`、`to`，可传 `project`，与 `task add/cancel/reopen` 一样交给 CLI `-p`。跨项目错配返回 rc1，省略项目且任务歧义返回 rc2。 |
+
+#312–#314 修复 Bash 3.2 诊断输出，#315 修复测试目录残留，均未新增命令。单测计数沿用 #318 的 2,444（含 skip）。
+
 ### MCP 参数与 HTTP 会话（旧工具过渡形状）
 
 MCP `write` 的 `kb/add` 使用 `name` 加 `body` 或 `file`（二选一）；`rel/attach` 的 `node` 为节点引用、`type` 为关系词、`target` 必须带实体前缀（如 `kb:<id>`）；`tree/node-cond` 必须提供 `op/value`，不会再创建空值门槛。`read node/can`、`read node/ready`、`write tree/node-unlock` 支持 `context`；can/ready 的 `state` 使用 `budget=2,flag=1` 字符串。HTTP 的 `X-YGL-Session` 仅覆盖本请求；无头使用服务启动时 session，不改全局 process.env。合法连接凭据保留在受控子进程环境中，不放入 argv 或回执。
