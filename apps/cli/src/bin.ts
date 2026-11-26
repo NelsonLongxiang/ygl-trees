@@ -229,6 +229,7 @@ ${paint(C.bold, "kb", color)}          long-term knowledge
   link <a> <b> [--rel]
   ingest <artifactId>        import a finished artifact
   promote <noteId> [--name]  turn a note into a reusable skill
+  rm <id>                    delete a note (writes a kb.rm event)
 
 ${paint(C.bold, "library", color)}     market experience feed
   ${LIBRARY_LIST_USAGE}

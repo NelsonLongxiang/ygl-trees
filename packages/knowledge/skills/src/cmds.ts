@@ -354,7 +354,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "":
-      out(ctx, paint(C.dim, "  kb: add | import <dir|file> | search | list | show | link | ingest <artifactId> | promote <noteId>", ctx.color));
+      out(ctx, paint(C.dim, "  kb: add | import <dir|file> | search | list | show | link | ingest <artifactId> | promote <noteId> | rm <id> (writes a kb.rm event)", ctx.color));
       return 0;
     default:
       bad(ctx, `unknown kb action: ${action}`);
