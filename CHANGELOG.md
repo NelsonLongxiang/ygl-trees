@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **测试临时目录隔离（0.128.0 G1 排障）**：config-layer-compat 与 workspace-graph 原来共用 `tmp/workspace-cycle-234`，各自结束时又删掉这个父目录；两个文件并行跑时，一方可能在另一方建库之前把目录删掉。现在每个文件、每个 worker 进程（按 pid）各用自己的父目录，每个用例另建 mkdtemp 目录，先关库再删。新增 `tests-scratch-parents.spec.ts`：两个会删除固定 tmp 父目录的 spec 共用同一个父目录时即红（在 ea967f3a 上红）。不改产品行为。
+
 ## 0.128.0
 
 发布候选（未 tag／publish）：交付 0.127.0 之后已逐项经非作者精确头验收并合入主干的 PR（#311–#316、#318，以及文档与技能 #319、#320），按次版本推进。不含新 schema、ORM 或依赖迁移；旧四个 MCP 工具按约再保留一版。#306（MCP task advance 丢 project）由 PR318 修复，随本版发布。按现行做法由 .156 只核 `origin/master` 精确提交独立打包发布。
