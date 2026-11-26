@@ -8,23 +8,31 @@ description: >-
   触发词：验证器、spec-validator、yglverify、submit、prepare、run、report、trace、archive、
   self-check、sealed、封包、签名、ed25519、黄金语料、corpus、contract_version、NEEDS-MATERIAL、
   P0-P5、红队、盲审、判据、检查器、witness、报告看板、WebUI 三视图、verify:run。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,verify,spec-validator,sealed,archive,corpus,signature
 ---
 
 # ygl-trees spec-validator（验证器）
 
-## MCP 等价面（AI agent 用 verify 代替 CLI verify 命令组）
+## MCP 等价面
 
-| CLI 命令 | MCP 调用 |
+宿主提供 `mcp__ygl__trees` 时按下表。先用 help 核对路由及参数。0.128.0 仍保留旧工具一版，迁移与权限边界见 [Quickstart](../ygl-trees-quickstart/SKILL.md)。
+
+| CLI 命令 | `mcp__ygl__trees` 入参 |
 |---|---|
-| `verify submit --title t --text f` | `verify {action:"submit", a:"t", b:"<file>"}` |
-| `verify prepare <mat-id> --candidates c --reviews r --db d` | `verify {action:"prepare", a:"<mat-id>", b:"<cand>", c:"<rev>", db:"<db>"}` |
-| `verify run <spec-id> --db d` | `verify {action:"run", a:"<spec-id>", b:"<db>"}` |
-| `verify report <run-id>` | `verify {action:"report", a:"<run-id>"}` |
-| `verify archive verify <file>` | `verify {action:"archive", a:"<file>"}` |
-| `verify meta <repo>` | `verify {action:"meta", a:"<repo>"}` |
-| `verify tree prepare/run/report/trace` | **无 MCP 路由**（CLI-only；C 类路由缺口） |
+| `verify submit --title t --text f` | `{"domain":"verify","action":"submit","params":{"a":"t","b":"<material-file>"}}` |
+| `verify prepare <mat-id> --candidates c --reviews r --db d --as-of <ISO-8601>` | `{"domain":"verify","action":"prepare","params":{"a":"<mat-id>","b":"<cand>","c":"<rev>","db":"<db>","as_of":"2026-11-26T00:00:00Z"}}` |
+| `verify run <spec-id> --db d` | `{"domain":"verify","action":"run","params":{"a":"<spec-id>","b":"<db>"}}` |
+| `verify trace <spec-id> --spec-version 1` | `{"domain":"verify","action":"trace","params":{"a":"<spec-id>","spec_version":1}}` |
+| `verify report <run-id>` | `{"domain":"verify","action":"report","params":{"a":"<run-id>"}}` |
+| `verify archive verify <file>` | `{"domain":"verify","action":"archive","params":{"a":"<file>"}}` |
+| `verify meta <repo>` | `{"domain":"verify","action":"meta","params":{"a":"<repo>"}}` |
+| `verify tree prepare <mat-id>` | `{"domain":"verify","action":"tree-prepare","params":{"a":"<mat-id>"}}` |
+| `verify tree run <tree-spec-id> --db d --no-archive` | `{"domain":"verify","action":"tree-run","params":{"a":"<tree-spec-id>","db":"<db>","no_archive":true}}` |
+| `verify tree report <run-id>` | `{"domain":"verify","action":"tree-report","params":{"a":"<run-id>"}}` |
+| `verify tree trace <tree-spec-id>` | `{"domain":"verify","action":"tree-trace","params":{"a":"<tree-spec-id>"}}` |
+
+树验证的 MCP 路由已开放。草稿试跑、采集、便携件和实例管理仍走本地 CLI。`run` 执行完成的 rc=0 不代表结论通过，仍看报告 verdict。
 
 ## 1. 何时用
 

@@ -10,7 +10,7 @@ description: >-
   PostgreSQL、sync、migrate、镜像、job、tick、定时、doctor、健康检查、任务、task、
   关联、rel、插件、plugin、WebUI、webui、仪表盘、dashboard、bench、基准、bundle、
   MCP、mcp、read、write、verify、doctor、domain、action、工具、tool。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 ---
 
@@ -25,6 +25,8 @@ tags: ygl-trees,quickstart,backup,postgres,schedule,doctor,plugin,webui,bench
 | **CLI 直调** | 本地开发/脚本/运维 | `ygl-trees <group> <action> [args] --json` |
 | **MCP 工具** | AI agent（Claude/DSH/市场网关） | `ygl-trees mcp`（stdio）或 `ygl-trees mcp --http --port 9820`（HTTP） |
 | **技能面** | agent 自学 | 你正在读的这个 |
+
+当前文档基线为 0.128.0。包升级与宿主会话刷新是两步：宿主可见 `mcp__ygl__trees` 时优先使用它，只有旧工具时按旧参数和宿主授权操作。旧四工具在本版保留过渡，权限拒绝不能用旧入口绕过。#312–#314 的 Bash 3.2 修复只恢复 UTF-8 诊断；#315 的清理只覆盖测试自建临时物，失败仍留证。README 计数与技能命令由仓内门禁核对。
 
 **MCP 首选单工具 trees**：`{action:"help"}` → `{domain:"kb",action:"help"}` → `{domain:"kb",action:"help",params:{action:"add"}}` 渐进披露；执行用 `{domain,action,params}`。详见 `docs/mcp-trees.md`。标准 annotations 不把混合读写的 trees 标为只读；`_meta["ygl-trees/dispatch"]` 的 `ygl-trees/1` 精确动作表供宿主按角色拦截写面，未知动作拒绝。计数/评估/索引副作用标 write，doctor/check 与 doctor/fix 分开。
 

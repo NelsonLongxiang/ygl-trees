@@ -10,7 +10,7 @@ description: >-
   keep in sync、同步、漂移、stale、脏索引、收口、会话结束、下次做什么、lifecycle。
   事件触发（#233）：刚 unlock、刚解锁、刚 link、刚加节点、刚删节点、导入后、node import、
   会话开始、会话结束、next_actions、node_evidence、没挂证据。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,lifecycle,cadence,maintenance,timing
 ---
 
@@ -67,6 +67,8 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | 一件事**不做了**（换方案、被取代、放弃） | `task cancel <id> --reason "<为什么>"`——不要硬标 done，也不要留在 todo 挂账；要捡回来用 `task reopen <id>` |
 | 任务**换人** | `task assign <id> <owner>` |
 | 资产与树节点**有关系了** | `rel add node:<key> <type>:<ref> --rel <词>`（词汇表与"何时挂"决策树见 relating 技能） |
+
+通过 MCP 推进任务时，`mcp__ygl__trees` 的 `{"domain":"task","action":"advance","params":{"id":"<任务 ID>","to":"done","project":"<项目名>"}}` 会把显式项目传给 CLI `-p`（#318）。多项目场景优先传项目，错配返回 rc1、任务不变，省略项目且有歧义返回 rc2。旧 `write` 同样支持该字段。健康检查在 trees 中使用 `doctor/check`，获准修复才选 `doctor/fix`，两者权限独立。
 
 ## 2b. 事件 → 动作触发表（作业 job，#220）
 

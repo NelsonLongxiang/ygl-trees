@@ -7,7 +7,7 @@ description: >-
   （produce outline/section/report/export）。
   触发词：研究、调研、evidence、证据、claim、断言、来源、source、引文、仲裁、resolve、
   报告、report、文献、抓取、fetch。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,research,evidence,claim,report
 ---
 
@@ -18,19 +18,23 @@ tags: ygl-trees,research,evidence,claim,report
 
 > **什么时候动这些命令**（时机而非机制）见 `ygl-trees-lifecycle` 技能。
 
-## MCP 等价面（AI agent 用 write / read 代替 CLI）
+## MCP 等价面
+
+宿主提供 `mcp__ygl__trees` 时按下表。先用 help 核对路由及参数。0.128.0 仍保留旧工具一版，迁移与权限边界见 [Quickstart](../ygl-trees-quickstart/SKILL.md)。
 
 | CLI 命令 | MCP 调用 |
 |---|---|
-| `research query add "..."` | `write {domain:"research", action:"query-add", text:"..."}` |
-| `research source add --title t --url u` | `write {domain:"research", action:"source-add", text:"t", b:"u"}` |
-| `research evidence add <id> --quote q` | `write {domain:"research", action:"evidence-add", text:"<id>", quote:"q"}` |
-| `research claim add "..." --scope dept:ops` | `write {domain:"research", action:"claim-add", text:"...", scope:"dept:ops"}` |
-| `research claim rescope <id> --scope restricted` | `write {domain:"research", action:"claim-rescope", id:"<id>", scope:"restricted"}` |
-| `research claim link <c> <e>` | `write {domain:"research", action:"claim-link", text:"<c>", b:"<e>"}` |
-| `research claim resolve <c> --as s` | `write {domain:"research", action:"claim-resolve", text:"<c>", as:"supported"}` |
-| `research source search "..."` | `read {domain:"research", action:"source-search", query:"..."}` |
-| `research claim evaluate <id>` | `read {domain:"research", action:"claim-evaluate", id:"<id>"}` |
+| `research query add "..."` | `{"domain":"research","action":"query-add","params":{"text":"..."}}` |
+| `research source add --title t --url u` | `{"domain":"research","action":"source-add","params":{"text":"t", "b":"u"}}` |
+| `research evidence add <id> --quote q` | `{"domain":"research","action":"evidence-add","params":{"text":"<id>", "quote":"q"}}` |
+| `research claim add "..." --scope dept:ops` | `{"domain":"research","action":"claim-add","params":{"text":"...", "scope":"dept:ops"}}` |
+| `research claim rescope <id> --scope restricted` | `{"domain":"research","action":"claim-rescope","params":{"id":"<id>", "scope":"restricted"}}` |
+| `research claim link <c> <e>` | `{"domain":"research","action":"claim-link","params":{"text":"<c>", "b":"<e>"}}` |
+| `research claim resolve <c> --as s` | `{"domain":"research","action":"claim-resolve","params":{"text":"<c>", "as":"supported"}}` |
+| `research source search "..."` | `{"domain":"research","action":"source-search","params":{"query":"..."}}` |
+| `research claim evaluate <id>` | `{"domain":"research","action":"claim-evaluate","params":{"id":"<id>"}}` |
+
+多项目取证对来源、证据、断言详情显式传 `params.project`。来源拉取默认关闭，模型评估可能写审计，不能因旧工具名 read 就推断无副作用。
 
 ## 1. 采集
 
