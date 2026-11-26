@@ -339,7 +339,7 @@ db obsidian [dir]           # 导出 Obsidian markdown vault
 
 | 动作 | `trees.params` / 旧 `write` 的参数 |
 |---|---|
-| `kb/link`（#316） | `note` 与 `other_note` 都是笔记 ID，可带 `rel`。`evidence_id` 仅为旧参数名，`source_id` 拒绝。 |
+| `kb/link`（#316） | `note` 与 `other_note` 都是笔记 ID。自定义关系使用 CLI 的 `--rel`，MCP 不接收该字段。`evidence_id` 仅为旧参数名，`source_id` 拒绝。 |
 | `task/advance`（#318） | `id`、`to`，可传 `project`，与 `task add/cancel/reopen` 一样交给 CLI `-p`。跨项目错配返回 rc1，省略项目且任务歧义返回 rc2。 |
 
 #312–#314 修复 Bash 3.2 诊断输出，#315 修复测试目录残留，均未新增命令。单测计数沿用 #318 的 2,444（含 skip）。
