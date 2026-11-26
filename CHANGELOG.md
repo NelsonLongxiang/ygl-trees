@@ -1,13 +1,12 @@
 ## Unreleased
 
-- **MCP task advance 透传 project**（#306）：`task advance` 与 `add`／`cancel`／`reopen` 一样把 `project` 转成 `-p`；多项目工作区里指名项目即可推进，不再答 ambiguous project。未指名且会话未选项目时仍 rc2；指名另一个项目时 CLI 照旧以 not found rc1 拒绝、任务不变。旧 write 工具与 trees 入口同一映射，端到端测试覆盖两者。
-
 ## 0.128.0
 
-发布候选（未 tag／publish）：交付 0.127.0 之后已逐项经非作者精确头验收并合入主干的六个 PR（#311–#316），按次版本推进。不含新 schema、ORM 或依赖迁移；旧四个 MCP 工具按约再保留一版。#306（MCP task advance 丢 project）另开独立 PR，不在本版。按现行做法由 .156 只核 `origin/master` 精确提交独立打包发布。
+发布候选（未 tag／publish）：交付 0.127.0 之后已逐项经非作者精确头验收并合入主干的 PR（#311–#316、#318，以及文档与技能 #319、#320），按次版本推进。不含新 schema、ORM 或依赖迁移；旧四个 MCP 工具按约再保留一版。#306（MCP task advance 丢 project）由 PR318 修复，随本版发布。按现行做法由 .156 只核 `origin/master` 精确提交独立打包发布。
 
 - **MCP 渐进入口 `trees`**（PR311）：新增单一入口 `trees`（domain＋action，参数放 params），按需 help 与访问分类；服务端仍同时登记旧四个工具（read／write／verify／doctor），兼容保留一版。节省上下文取决于宿主只选单入口并刷新会话工具，只更新包不会让现有会话自动多出新工具；角色授权由宿主执行，元数据不是认证。
 - **MCP kb link 参数修正**：`kb link` 连接两条笔记，第二条笔记的正式参数为 `other_note`；旧名 `evidence_id` 保留兼容（它一直装的是第二条笔记 id，从不是证据 id），两者同时给且不同时 rc2。误传 `source_id` 或缺少第二条笔记时在 MCP 层以 rc2 点名 `other_note`，不再把 `undefined` 当笔记 id 交给 CLI；`source_id` 描述收窄为 query-attach。旧 write 与 trees help 共用同一 schema，文案一致。不新增 MCP 工具。
+- **MCP task advance 透传 project**（#306，PR318）：`task advance` 与 `add`／`cancel`／`reopen` 一样把 `project` 转成 `-p`；多项目工作区里指名项目即可推进，不再答 ambiguous project。未指名且会话未选项目时仍 rc2；指名另一个项目时 CLI 照旧以 not found rc1 拒绝、任务不变。旧 write 工具与 trees 入口同一映射，端到端测试覆盖两者。
 
 
 测试与门禁（不改变产品行为）：
