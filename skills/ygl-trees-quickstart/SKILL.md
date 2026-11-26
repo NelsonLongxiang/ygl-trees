@@ -40,6 +40,8 @@ verify → 验证管线：{action: "submit|prepare|run|report|trace|archive|meta
 doctor → 健康检查：{fix: true|false}
 ```
 
+0.128.0：`kb/link` 的 `params` 使用 `{note,other_note}`（两个笔记 ID，MCP 不接收 `rel`）；`evidence_id` 是旧名兼容，`source_id` 拒绝。`task/advance` 的 `params` 使用 `{id,to,project?}`；显式项目传给 CLI `-p`，与任务创建、取消、重开一致。
+
 **MCP 与 CLI 的映射规则**：`domain` = CLI 命令组，`action` = CLI 子命令（`-` 连接），其余参数透传。
 例：`read {domain:"research", action:"source-search", query:"供应商"}` ≈ `research source search "供应商" --json`。
 
