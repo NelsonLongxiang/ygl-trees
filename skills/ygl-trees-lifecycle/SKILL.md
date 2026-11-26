@@ -62,6 +62,7 @@ tags: ygl-trees,lifecycle,cadence,maintenance,timing
 | 需要**可交付结论** | `produce outline` → `section` → `report`（或 `export` 落盘） |
 | 需要**固化需求/设计** | `produce spec`；设计用 `produce design --design-type ui-ux|arch|decision` |
 | 出现**可复用知识**（换任务还有用） | `kb add` / `kb ingest <artifactId>`；成模式再 `kb promote <noteId> --name <skill>` 成 skill |
+| **笔记重复或过时**（kb 里有两条说同一件事，或旧结论被新的取代） | `kb supersede <旧id> <新id> --reason "<为什么>"` 标记，不删；没有替代者就 `kb deprecate <id> --reason`；撤回用 `kb unsupersede` / `kb undeprecate`。只有确认写错、而且有删权时才 `kb rm` |
 | 出现**行动项** | `task add "<title>" --owner <谁>` → `task doing <id>` → `task done <id>`（不建 task 的"待办"只活在本轮上下文；负责人进字段，不写进标题） |
 | 任务**做完了** | `task done <id>` 同轮 `rel add task:<id> <产出/证据>`——done 却没有任何关联，doctor `task_hygiene` 会点名 |
 | 一件事**不做了**（换方案、被取代、放弃） | `task cancel <id> --reason "<为什么>"`——不要硬标 done，也不要留在 todo 挂账；要捡回来用 `task reopen <id>` |

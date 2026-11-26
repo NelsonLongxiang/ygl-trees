@@ -1,0 +1,171 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+/**
+ * #321 item 2-4: kb notes get the supersede semantics claims have (#241), plus
+ * the commands that need only write access. A superseded / deprecated note is
+ * kept but hidden from search, list and the brief (--all shows it, marked);
+ * promote refuses it and names the replacement; the chain is guarded against
+ * self-reference, a second replacement, cycles and scope crossing.
+ */
+const REPO = resolve(__dirname, "../../../..");
+const BIN = join(REPO, "dist/bundle/bin.cjs");
+const hasBundle = existsSync(BIN);
+const home = hasBundle ? mkdtempSync(join(tmpdir(), "ygl-sup321-")) : "";
+
+function run(args: string[]) {
+  const r = spawnSync(process.execPath, [BIN, ...args, "--json"], {
+    cwd: home, encoding: "utf8",
+    env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1" },
+  });
+  return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
+}
+const j = (r: { out: string }) => JSON.parse(r.out);
+const text = (r: { out: string; err: string }) => r.out + "\n" + r.err;
+const addNote = (title: string, body: string, scope?: string) =>
+  j(run(["kb", "add", "--title", title, "--body", body, ...(scope ? ["--scope", scope] : [])]));
+// a body that starts with `---` (promote frontmatter) must go through -f: as --body it parses as a flag
+const addNoteFile = (title: string, body: string) => {
+  const f = join(home, `body-${Math.random().toString(36).slice(2)}.md`);
+  writeFileSync(f, body);
+  return j(run(["kb", "add", "--title", title, "-f", f]));
+};
+const ids = (rows: any[]) => rows.map((r) => r.id);
+
+beforeAll(() => {
+  if (!hasBundle) return;
+  expect(run(["db", "init"]).rc).toBe(0);
+});
+afterAll(() => { if (home && existsSync(home)) rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
+
+describe.skipIf(!hasBundle)("kb supersede / deprecate (#321)", () => {
+  it("supersede hides the old note from search/list/brief, --all marks it, show names both ends, unsupersede restores", () => {
+    const oldN = addNote("旧写法蓝鲸索引", "蓝鲸索引的旧写法，已经过时");
+    const newN = addNote("新写法蓝鲸索引", "蓝鲸索引的新写法，现行");
+    const before = j(run(["kb", "search", "蓝鲸索引"]));
+    expect(ids(before)).toContain(oldN.id);
+
+    const sup = run(["kb", "supersede", oldN.id, newN.id, "--reason", "重复条目"]);
+    expect(sup.rc).toBe(0);
+    expect(j(sup).new).toBe(newN.id);
+
+    // default: only the live note
+    expect(ids(j(run(["kb", "search", "蓝鲸索引"])))).toEqual([newN.id]);
+    expect(ids(j(run(["kb", "list"])))).not.toContain(oldN.id);
+    expect(ids(j(run(["kb", "list"])))).toContain(newN.id);
+    // --all: both, the old one marked with its replacement
+    const all = j(run(["kb", "search", "蓝鲸索引", "--all"]));
+    expect(ids(all)).toEqual(expect.arrayContaining([oldN.id, newN.id]));
+    expect(all.find((r: any) => r.id === oldN.id).retired).toContain(newN.id);
+    expect(j(run(["kb", "list", "--all"])).find((r: any) => r.id === oldN.id).retired).toContain(newN.id);
+    // show: both ends
+    expect(j(run(["kb", "show", oldN.id])).superseded_by).toBe(newN.id);
+    expect(j(run(["kb", "show", newN.id])).supersedes).toEqual([oldN.id]);
+    // brief's recent notes skip the retired one
+    expect(ids(j(run(["agent", "brief"])).recent_notes)).not.toContain(oldN.id);
+    // the supersede left an event with the reason
+    const log = text(run(["agent", "log", "--limit", "50"]));
+    expect(log).toMatch(/kb\.supersede/);
+
+    // undo
+    expect(run(["kb", "unsupersede", oldN.id]).rc).toBe(0);
+    expect(ids(j(run(["kb", "search", "蓝鲸索引"])))).toEqual(expect.arrayContaining([oldN.id, newN.id]));
+    expect(j(run(["kb", "show", oldN.id])).superseded_by).toBeUndefined();
+    // undoing twice names the problem
+    expect(run(["kb", "unsupersede", oldN.id]).rc).toBe(1);
+  }, 180000);
+
+  it("--all keeps the live note inside --limit even when retired notes outrank it", () => {
+    const a = addNote("限额探针 甲", "限额探针词 限额探针词 限额探针词");
+    const b = addNote("限额探针 乙", "限额探针词");
+    expect(run(["kb", "supersede", a.id, b.id]).rc).toBe(0);
+    const one = j(run(["kb", "search", "限额探针", "--limit", "1"]));
+    expect(ids(one)).toEqual([b.id]);
+  }, 120000);
+
+  it("promote refuses a superseded note and names the replacement; works again after unsupersede", () => {
+    const oldN = addNoteFile("提升探针旧", "---\ncue: x\nlesson: y\nevidence: z\n---\n正文旧");
+    const newN = addNoteFile("提升探针新", "---\ncue: x\nlesson: y2\nevidence: z\n---\n正文新");
+    expect(run(["kb", "supersede", oldN.id, newN.id]).rc).toBe(0);
+    const p = run(["kb", "promote", oldN.id, "--name", "promote-probe-old"]);
+    expect(p.rc).not.toBe(0);
+    expect(text(p)).toContain(newN.id);
+    expect(text(p)).toMatch(/superseded/);
+    expect(run(["kb", "unsupersede", oldN.id]).rc).toBe(0);
+    expect(run(["kb", "promote", oldN.id, "--name", "promote-probe-old"]).rc).toBe(0);
+  }, 120000);
+
+  it("guards: self, a second replacement, cycles (direct and through rel add) and scope crossing all name the ids", () => {
+    const a = addNote("链节点A", "链节点A正文");
+    const b = addNote("链节点B", "链节点B正文");
+    const c = addNote("链节点C", "链节点C正文");
+    const self = run(["kb", "supersede", a.id, a.id]);
+    expect(self.rc).toBe(2);
+    expect(text(self)).toContain(a.id);
+
+    expect(run(["kb", "supersede", a.id, b.id]).rc).toBe(0);
+    // same pair again is idempotent
+    expect(run(["kb", "supersede", a.id, b.id]).rc).toBe(0);
+    const second = run(["kb", "supersede", a.id, c.id]);
+    expect(second.rc).toBe(2);
+    expect(text(second)).toContain(a.id);
+    expect(text(second)).toContain(b.id);
+
+    // b→c, then c→a would close a→b→c→a
+    expect(run(["kb", "supersede", b.id, c.id]).rc).toBe(0);
+    const cyc = run(["kb", "supersede", c.id, a.id]);
+    expect(cyc.rc).toBe(2);
+    expect(text(cyc)).toMatch(/cycle/);
+    // the generic rel path is guarded the same way
+    const cyc2 = run(["rel", "add", "kb:" + c.id, "kb:" + a.id, "--rel", "superseded-by"]);
+    expect(cyc2.rc).toBe(2);
+    expect(text(cyc2)).toMatch(/cycle/);
+    const second2 = run(["rel", "add", "kb:" + a.id, "kb:" + c.id, "--rel", "superseded-by"]);
+    expect(second2.rc).toBe(2);
+
+    const s1 = addNote("范围甲", "范围甲正文", "dept:ops");
+    const s2 = addNote("范围乙", "范围乙正文", "dept:sales");
+    const cross = run(["kb", "supersede", s1.id, s2.id]);
+    expect(cross.rc).toBe(2);
+    expect(text(cross)).toContain(s1.id);
+    expect(text(cross)).toContain(s2.id);
+    expect(text(cross)).toMatch(/scope/);
+  }, 240000);
+
+  it("rel add kb:<old> kb:<new> --rel superseded-by is honoured by search like the command", () => {
+    const o = addNote("关系入口旧", "关系入口探针词");
+    const n = addNote("关系入口新", "关系入口探针词");
+    expect(run(["rel", "add", "kb:" + o.id, "kb:" + n.id, "--rel", "superseded-by"]).rc).toBe(0);
+    const hits = ids(j(run(["kb", "search", "关系入口探针词"])));
+    expect(hits).toContain(n.id);
+    expect(hits).not.toContain(o.id);
+  }, 120000);
+
+  it("deprecate retires a note with no replacement; needs a reason; undeprecate restores; rm still works", () => {
+    const n = addNote("作废探针", "作废探针词正文");
+    const noReason = run(["kb", "deprecate", n.id]);
+    expect(noReason.rc).toBe(2);
+    expect(run(["kb", "deprecate", n.id, "--reason", "结论已被推翻"]).rc).toBe(0);
+    expect(ids(j(run(["kb", "search", "作废探针词"])))).not.toContain(n.id);
+    const all = j(run(["kb", "search", "作废探针词", "--all"]));
+    expect(all.find((r: any) => r.id === n.id).retired).toMatch(/作废/);
+    expect(j(run(["kb", "show", n.id])).deprecated).toBe(true);
+    expect(run(["kb", "promote", n.id, "--name", "deprecated-probe"]).rc).not.toBe(0);
+    expect(run(["kb", "undeprecate", n.id]).rc).toBe(0);
+    expect(ids(j(run(["kb", "search", "作废探针词"])))).toContain(n.id);
+    expect(run(["kb", "undeprecate", n.id]).rc).toBe(1);
+    expect(run(["kb", "rm", n.id]).rc).toBe(0);
+  }, 180000);
+
+  it("unknown notes and missing arguments fail cleanly", () => {
+    const real = addNote("存在的笔记", "存在的笔记正文");
+    expect(run(["kb", "supersede", "nope-id", real.id]).rc).toBe(1);
+    expect(run(["kb", "supersede", real.id, "nope-id"]).rc).toBe(1);
+    expect(run(["kb", "supersede", real.id]).rc).toBe(2);
+    expect(run(["kb", "unsupersede"]).rc).toBe(2);
+    expect(run(["kb", "deprecate", "nope-id", "--reason", "x"]).rc).toBe(1);
+  }, 120000);
+});

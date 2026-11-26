@@ -225,11 +225,13 @@ ${paint(C.bold, "task", color)}          任务清单（todo|doing|done|cancelle
 ${paint(C.bold, "kb", color)}          long-term knowledge
   add --title --body|-f [--tags --confidence]
   import <dir|file.md>       batch markdown (frontmatter, idempotent, single tx)
-  search "<q>" | list | show <id>
+  search "<q>" [--all] | list [--all] | show <id>   (--all also shows superseded / deprecated notes)
   link <a> <b> [--rel]
   ingest <artifactId>        import a finished artifact
   promote <noteId> [--name]  turn a note into a reusable skill
-  rm <id>                    delete a note (writes a kb.rm event)
+  supersede <old> <new> [--reason]   mark a duplicate / outdated note as replaced (kept, hidden from search/list; undo: unsupersede <old>)
+  deprecate <id> --reason    retire a note that has no replacement (undo: undeprecate <id>)
+  rm <id>                    delete a note (writes a kb.rm event; prefer supersede / deprecate)
 
 ${paint(C.bold, "library", color)}     market experience feed
   ${LIBRARY_LIST_USAGE}
@@ -1017,10 +1019,14 @@ export function generateLlmsManifest(): string {
     ["kb", "Long-term knowledge + reuse", [
       ["kb add --title --body|-f [--scope <k>]", "add knowledge note (#276: scope dept:<id>|bench:<id>|*|restricted)"],
       ["kb rescope <id> --scope <k>", "change a note grant scope (idempotent; #276)"],
-      ["kb list [--scope <k>]", "list notes, filtered by grant scope (#276)"],
+      ["kb list [--scope <k>] [--all]", "list notes, filtered by grant scope (#276); --all includes superseded / deprecated (#321)"],
       ["kb import <dir|file.md> [--scope <k>]", "batch markdown import (>1MB skipped, --force to include)"],
-      ["kb search \"<q>\" [--eval] [--scope <k>]", "FTS5 CJK search (--eval: semantic re-rank via decision model)"],
-      ["kb rm <id>", "remove note"],
+      ["kb search \"<q>\" [--eval] [--scope <k>] [--all]", "FTS5 CJK search (--eval: semantic re-rank via decision model; --all: include superseded / deprecated, #321)"],
+      ["kb supersede <old> <new> [--reason]", "mark a note as replaced by another (kept, hidden from search/list; #321)"],
+      ["kb unsupersede <old>", "undo kb supersede"],
+      ["kb deprecate <id> --reason", "retire a note with no replacement (#321)"],
+      ["kb undeprecate <id>", "undo kb deprecate"],
+      ["kb rm <id>", "remove note (needs delete rights; prefer supersede / deprecate)"],
       ["kb ingest <artifactId> [--scope <k>]", "sink a report into kb"],
       ["kb promote <noteId>", "promote note to reusable skill"],
     ]],

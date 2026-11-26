@@ -9,7 +9,7 @@ import { clip, parseFrontmatter } from "../../../core/text/src/text";
 import { emitEvent } from "../../../core/text/src/eventbus";
 
 import { pgFailure, PgCapabilityError } from "../../../core/database/src/pg-workspace";
-import { type KbImportItem as writes_KbImportItem, kbAdd as writes_kbAdd, kbImportBulk as writes_kbImportBulk, kbIngestArtifact as writes_kbIngestArtifact, kbLinkPg as writes_kbLinkPg, kbPromote as writes_kbPromote, kbRemove as writes_kbRemove, kbRescope as writes_kbRescope, validateScope as writes_validateScope } from "../../../research/pipeline/src/writes";
+import { type KbImportItem as writes_KbImportItem, kbAdd as writes_kbAdd, kbImportBulk as writes_kbImportBulk, kbIngestArtifact as writes_kbIngestArtifact, kbLinkPg as writes_kbLinkPg, kbPromote as writes_kbPromote, kbRemove as writes_kbRemove, kbSupersede as writes_kbSupersede, kbUnsupersede as writes_kbUnsupersede, kbDeprecate as writes_kbDeprecate, kbUndeprecate as writes_kbUndeprecate, kbRescope as writes_kbRescope, validateScope as writes_validateScope } from "../../../research/pipeline/src/writes";
 import { configGet, configGetNumber } from "../../../core/database/src/config";
 import { rejectBare } from "../../../core/text/src/flagcheck";
 
@@ -90,7 +90,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, "missing query");
         return 2;
       }
-      const raw = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit")), scope);
+      // #321: superseded / deprecated notes are hidden unless --all
+      const includeRetired = args.flags.all === true || args.flags.all === "true";
+      const raw = store.kbSearch(q, Number(args.flags.limit || configGetNumber(env.db, "search.limit")), scope, includeRetired);
       // R15.1: semantic re-ranking via decision model (--eval)
       // 0.86 M7-1: re-rank goes through ctx.ops.semanticRank (Cordis service);
       // service missing (crash-safety boot) → fall back to raw FTS order.
@@ -120,6 +122,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 0;
         });
       }
+      const anyRetired = raw.some((r: any) => r.superseded_by || r.deprecated);
       const rows = raw.map((r: any) => ({
         id: r.id,
         title: clip(r.title, 46),
@@ -127,22 +130,32 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         conf: r.confidence,
         reuse: r.reuse,
         score: typeof r.score === "number" ? r.score.toFixed(2) : "-",
+        ...(anyRetired ? { retired: r.superseded_by ? `已被 ${r.superseded_by} 取代` : r.deprecated ? "已作废" : "" } : {}),
       }));
-      table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "score"], ["id", "title", "tags", "conf", "reuse", "score"]);
+      if (anyRetired) table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "score", "retired"], ["id", "title", "tags", "conf", "reuse", "score", "retired"]);
+      else table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "score"], ["id", "title", "tags", "conf", "reuse", "score"]);
       return 0;
     }
     case "list":
       if (env.pgUrl) return env.asyncStore.kbList(scope).then((rows) => {
         table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "updated"], ["id", "title", "tags", "confidence", "reuse", "updated"]); return 0;
       });
-      table(ctx, store.kbList(scope), ["id", "title", "tags", "conf", "reuse", "updated"], [
-        "id",
-        "title",
-        "tags",
-        "confidence",
-        "reuse",
-        "updated",
-      ], "kb add --title ... --body ... | kb import <dir>");
+      {
+        const listRows = store.kbList(scope, args.flags.all === true || args.flags.all === "true").map((r: any) => ({
+          ...r,
+          ...(r.superseded_by || r.deprecated ? { retired: r.superseded_by ? `已被 ${r.superseded_by} 取代` : "已作废" } : {}),
+        }));
+        const withRetired = listRows.some((r: any) => r.retired);
+        table(ctx, listRows, ["id", "title", "tags", "conf", "reuse", "updated", ...(withRetired ? ["retired"] : [])], [
+          "id",
+          "title",
+          "tags",
+          "confidence",
+          "reuse",
+          "updated",
+          ...(withRetired ? ["retired"] : []),
+        ], "kb add --title ... --body ... | kb import <dir>");
+      }
       return 0;
     case "rm":
     case "remove": {
@@ -181,6 +194,76 @@ export function run(env: Env, action: string, rest: string[], args: any): number
           return 1;
         });
     }
+    // #321 item 3: retire a note without deleting it. Only needs write access.
+    case "supersede": {
+      if (rejectBare(ctx, args.flags, ["reason"])) return 2;
+      if (!rest[0] || !rest[1]) {
+        bad(ctx, "usage: kb supersede <old> <new> [--reason \"...\"]");
+        return 2;
+      }
+      const oldN = store.kbGet(rest[0]);
+      const newN = store.kbGet(rest[1]);
+      if (!oldN || !newN) {
+        bad(ctx, `note not found: ${!oldN ? rest[0] : rest[1]}`);
+        return 1;
+      }
+      return sqliteOrm(env)
+        .then((ds) => writes_kbSupersede(ds, String(oldN.id), String(newN.id), String(args.flags.reason || "")))
+        .then((r): number => {
+          ack(ctx, r.row, `${r.dup ? "already superseded" : "superseded"}: ${r.row.old} → ${r.row.new}  (${clip(String(r.row.old_title), 30)} → ${clip(String(r.row.new_title), 30)})`);
+          return 0;
+        })
+        .catch((e: any): number => {
+          bad(ctx, e instanceof PgCapabilityError ? e.message : env.pgUrl ? pgFailure() : e?.message || String(e));
+          return typeof e?.rc === "number" ? e.rc : 1;
+        });
+    }
+    case "unsupersede": {
+      if (!rest[0]) {
+        bad(ctx, "usage: kb unsupersede <old>");
+        return 2;
+      }
+      const n0 = store.kbGet(rest[0]);
+      if (!n0) { bad(ctx, `note not found: ${rest[0]}`); return 1; }
+      return sqliteOrm(env)
+        .then((ds) => writes_kbUnsupersede(ds, String(n0.id)))
+        .then((r): number => { ack(ctx, r.row, `supersede undone: ${r.row.id}  ${clip(String(r.row.title), 40)}`); return 0; })
+        .catch((e: any): number => {
+          bad(ctx, e instanceof PgCapabilityError ? e.message : env.pgUrl ? pgFailure() : e?.message || String(e));
+          return typeof e?.rc === "number" ? e.rc : 1;
+        });
+    }
+    case "deprecate": {
+      if (rejectBare(ctx, args.flags, ["reason"])) return 2;
+      if (!rest[0] || !args.flags.reason) {
+        bad(ctx, "usage: kb deprecate <id> --reason \"...\"  (retire a note that has no replacement; use kb supersede when one exists)");
+        return 2;
+      }
+      const n0 = store.kbGet(rest[0]);
+      if (!n0) { bad(ctx, `note not found: ${rest[0]}`); return 1; }
+      return sqliteOrm(env)
+        .then((ds) => writes_kbDeprecate(ds, String(n0.id), String(args.flags.reason)))
+        .then((r): number => { ack(ctx, r.row, `${r.dup ? "already deprecated" : "deprecated"}: ${r.row.id}  ${clip(String(r.row.title), 40)}`); return 0; })
+        .catch((e: any): number => {
+          bad(ctx, e instanceof PgCapabilityError ? e.message : env.pgUrl ? pgFailure() : e?.message || String(e));
+          return typeof e?.rc === "number" ? e.rc : 1;
+        });
+    }
+    case "undeprecate": {
+      if (!rest[0]) {
+        bad(ctx, "usage: kb undeprecate <id>");
+        return 2;
+      }
+      const n0 = store.kbGet(rest[0]);
+      if (!n0) { bad(ctx, `note not found: ${rest[0]}`); return 1; }
+      return sqliteOrm(env)
+        .then((ds) => writes_kbUndeprecate(ds, String(n0.id)))
+        .then((r): number => { ack(ctx, r.row, `deprecation undone: ${r.row.id}  ${clip(String(r.row.title), 40)}`); return 0; })
+        .catch((e: any): number => {
+          bad(ctx, e instanceof PgCapabilityError ? e.message : env.pgUrl ? pgFailure() : e?.message || String(e));
+          return typeof e?.rc === "number" ? e.rc : 1;
+        });
+    }
     case "show": {
       if (!rest[0]) {
         bad(ctx, "usage: kb show <note-key> [--json]");
@@ -197,12 +280,22 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, `note not found: ${rest[0]}`);
         return 1;
       }
+      const retiredHit = store.kbRetired().get(String(n.id));
+      const replaces = store.kbSupersedes(String(n.id));
       if (ctx.json) {
-        emitJson(ctx, n, 2);
+        emitJson(ctx, {
+          ...n,
+          ...(retiredHit?.by ? { superseded_by: retiredHit.by } : {}),
+          ...(retiredHit && !retiredHit.by ? { deprecated: true } : {}),
+          ...(replaces.length ? { supersedes: replaces } : {}),
+        }, 2);
         return 0;
       }
       head(ctx, n.title);
       show(ctx, { id: n.id, tags: n.tags || "-", confidence: n.confidence, reuse: n.reuse, origin: n.origin || "-" });
+      if (retiredHit?.by) out(ctx, paint(C.yellow, `  已被 ${retiredHit.by} 取代 (superseded-by) — 请改用替代者`, ctx.color));
+      else if (retiredHit) out(ctx, paint(C.yellow, "  已作废 (deprecated)", ctx.color));
+      if (replaces.length) out(ctx, paint(C.dim, `  取代了: ${replaces.join(", ")}`, ctx.color));
       out(ctx, "");
       out(ctx, n.body);
       const links = store.kbLinks(n.id);
@@ -354,7 +447,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         });
     }
     case "":
-      out(ctx, paint(C.dim, "  kb: add | import <dir|file> | search | list | show | link | ingest <artifactId> | promote <noteId> | rm <id> (writes a kb.rm event)", ctx.color));
+      out(ctx, paint(C.dim, "  kb: add | import <dir|file> | search | list | show | link | ingest <artifactId> | promote <noteId> | supersede <old> <new> | unsupersede <old> | deprecate <id> | undeprecate <id> | rm <id> (writes a kb.rm event)", ctx.color));
       return 0;
     default:
       bad(ctx, `unknown kb action: ${action}`);

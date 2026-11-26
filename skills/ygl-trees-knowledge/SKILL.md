@@ -36,7 +36,11 @@ ygl-trees kb search "闭包表 索引"            # 中文分词检索（标题�
 ygl-trees kb search "闭包表 索引" --eval     # 语义重排：决策模型逐条评估相关性（无凭证回落原序）
 ygl-trees kb list
 ygl-trees kb show <id>
-ygl-trees kb rm <id>                         # 删除笔记
+ygl-trees kb supersede <旧id> <新id> --reason "重复/过时"   # 标记被取代：旧笔记保留，search/list 默认不再出（#321）
+ygl-trees kb deprecate <id> --reason "已失效"               # 没有替代者、只是作废
+ygl-trees kb search "关键词" --all           # 连被取代/作废的也列出，带「已被 <新id> 取代」
+ygl-trees kb unsupersede <旧id>              # 撤回取代；作废用 kb undeprecate <id>
+ygl-trees kb rm <id>                         # 删除笔记（需要删除权；重复或过时优先用 supersede）
 ygl-trees kb add --title t --body b --scope dept:ops   # 授权范围（#276：dept:<id>|bench:<id>|*|restricted；空=未归属）
 ygl-trees kb rescope <id> --scope restricted           # 改范围（同值重跑 duplicate）
 ygl-trees kb list --scope ""                           # 只看未归属
@@ -46,6 +50,8 @@ ygl-trees library list --kind note --scope dept:ops --json # 同一范围过滤�
 ygl-trees library list --kind note --json   # 市场经验库只读出口（#275，contract ygl-library/1；四类 claim|note|skill|check，游标分页 + --since）
 ygl-trees db obsidian [dir]                  # 导出为 Obsidian vault
 ```
+
+**重复或过时的笔记不要删，标记取代。** `kb supersede` 只需要写权限：一条笔记只能有一个替代者，不能指向自己、不能成环、不能跨 scope；被取代的笔记 `kb show` 显示 `superseded_by`，`kb search`/`kb list`/`agent brief` 默认不再出，`kb promote` 拒绝提升它并提示改用替代者。`rel add kb:<旧> kb:<新> --rel superseded-by` 与它等价（同样的校验）。只有确认写错、且有删权时才 `kb rm`。
 
 排序语义：命中 token 数降序 → **标题含 token 优先** → bm25。写查询词时把最独特的关键词
 放进去；返回字段含 title_matched（标题命中数）。

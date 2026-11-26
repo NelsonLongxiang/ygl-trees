@@ -149,7 +149,7 @@ ygl-trees llms --json              # 结构化 JSON
 ygl-trees doctor           # 健康检查（共 18 项，含任务卫生 task_hygiene 与作业健康 job_health、锁 pid 存活、幻影写入对账；--json 看全部项名）
 ygl-trees doctor --fix     # 一键安全修复（脏索引 + 死 pid 陈旧锁 + 幻影事件标记 reconciled；活 holder 不动）
 ygl-trees db unlock        # 清残留 .ygllock（死 pid 直清；活 holder 回显其命令行并拒绝，--force 强清）
-ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称）
+ygl-trees kb rm <id>       # 删除笔记（与 skill rm 对称；重复或过时的优先 kb supersede / kb deprecate，不需要删除权）
 ygl-trees webui serve --host 0.0.0.0 --port 8642  # LAN/WSL 可访问
 ygl-trees webui serve --help   # 只打印用法不启服务（0.79.1 短路）
 ygl-trees webui export --out snap.json  # 服务形态 JSON 快照（0.88：HTML 仪表盘退役，React 唯一前端）
