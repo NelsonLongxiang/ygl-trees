@@ -6,7 +6,7 @@ description: >-
   技能命中。让研究报告沉淀为可被下次任务自动命中的技能。
   触发词：知识库、knowledge、kb、笔记、note、批量导入、import、search、检索、promote、
   技能、skill、复用、agent match。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,knowledge,kb,skill,reuse
 ---
 
@@ -15,6 +15,8 @@ tags: ygl-trees,knowledge,kb,skill,reuse
 ## PG 首批边界（B8）
 
 在显式迁移好的 PG 库与独立工作目录上，`kb add` 走 TypeORM 事务写（幂等/基表/ngram/审计事件同事务），`kb list/show` 可读回。用户先配置 `YGL_DB_URL` 与独立 session；不把 URL 放进 argv，不创建 SQLite 业务文件。PG import/search/link/ingest/promote 等尚未接线，不尝试借同步 store 回落。
+
+笔记之间的链接使用 `kb/link`。在 `mcp__ygl__trees` 中传 `{"domain":"kb","action":"link","params":{"note":"<第一条笔记 ID>","other_note":"<第二条笔记 ID>"}}`。旧 `evidence_id` 仍可作第二个笔记 ID；它不接受证据 ID，`source_id` 也不属于该动作（#316）。笔记挂实际证据走下文 `rel add`。其他调用形状见 [Quickstart 的 MCP 用法](../ygl-trees-quickstart/SKILL.md)。
 
 ## 1. 入库
 

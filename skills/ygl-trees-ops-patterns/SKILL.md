@@ -36,6 +36,8 @@ version: 1.0.0
 - doctor 挂钩：open S1>0 → doctor fail——S1 未处置 = 工作区不健康。
 - 巡检示例：僵尸任务（`SELECT id FROM artifacts WHERE kind='task' AND meta LIKE '%todo%' AND created < date('now','-30 days')`）。
 
+**版本规则**：本技能的 1.0.0 是运维模式自身版本，本轮核对的 CLI 基线为 ygl-trees 0.128.0。`job`、`patrol` 继续走本地 CLI，树工具不会因单入口迁移而开放管理面。周期作业始终查 `project_id`、`owner` 与实际运行回执；旧未归属作业列为未归属，先确认归属再处置。
+
 ## 共同纪律
 
 - 三个模式都是**日节奏**（every 1440）配 DSH schedule 晨间推进——运维不是实时监控，是有节奏的回顾。

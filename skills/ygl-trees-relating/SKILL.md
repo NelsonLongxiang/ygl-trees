@@ -6,7 +6,7 @@ description: >-
   节点↔artifact/spec/design（产出）。rel 词汇表与方向语义；防止"两条平行流水线"反模式。
   触发词：关联、挂接、rel、evidenced-by、decided-by、tracked-by、关联织物、
   relation fabric、cross-linking、研究资产挂节点。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,methodology,relations,fabric
 ---
 
@@ -32,6 +32,8 @@ tags: ygl-trees,methodology,relations,fabric
 | `derived-from` | 节点从某知识/报告衍生 | node → kb / report artifact |
 | `executes` | 节点的能力由该 SOP 承接执行（毕业协议） | node → source(tags=sop) |
 | `related` | 兜底弱关联（能起更specific的rel就别用） | 任意 |
+
+节点挂接可用 `mcp__ygl__trees` 的 `rel/attach`，把 `node`、`type`、`target` 放进 `params`，通过 help 核对字段。下面 CLI `rel add` 仍用于任意类型的两端关联。笔记对笔记链接和真实证据挂接分别见 [知识复用技能](../ygl-trees-knowledge/SKILL.md)，避免把 #316 的旧 `evidence_id` 当证据。
 
 ## 3. 引用语法与验证
 

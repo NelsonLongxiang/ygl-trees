@@ -6,7 +6,7 @@ description: >-
   三段（上下文/决策/后果）。produce design 命令 + design_type 信封 + rel 挂节点 + DESIGN.md
   单一事实源纪律。触发词：design 捕获、设计决策、ADR、DESIGN.md、ui-ux、架构决策、
   design_type、produce design、设计沉淀。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,methodology,design,adr,design-md
 ---
 
@@ -47,6 +47,8 @@ ygl-trees rel add node:<tree>/<key> artifact:<id> --rel decided-by   # 挂到树
 ```
 
 design_type 存 artifacts.meta JSON 信封（schema v8）；`produce list` 可按 kind 检索。
+
+用 MCP 捕获设计时，可选 `mcp__ygl__trees` 的 `produce/design`，`params` 传 `title`、`design_type`、正文 `body` 或文件 `file`，多项目时传 `project`。这是写入动作，先按宿主权限确认。跨项目消费使用显式项目和真实产物 ID，不靠标题猜测；本地 CLI 捕获格式如上。
 
 ## 5. 纪律
 

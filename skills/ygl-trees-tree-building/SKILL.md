@@ -6,7 +6,7 @@ description: >-
   语义门槛挂 eval 三题型、未来节点用真实条件锁定而非空缺。防止"三节点演示链"反模式。
   触发词：树构建、领域分解、节点设计、tier 规划、衍生、子节点、反模式、演示链、
   tree building、decomposition、node design、derivation。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,methodology,tree,decomposition
 ---
 
@@ -29,6 +29,8 @@ tags: ygl-trees,methodology,tree,decomposition
 - key 用短横线小写复合（`eval-mixed`、`webui-serve`），name 放中文全称
 - 一个节点 = 一个可独立陈述的里程碑（"采用 TypeORM" ✓；"数据库" ✗ 太泛）
 - 粒度判据：**这个节点的完成日期能被唯一回答吗**？
+
+支持 MCP 的宿主可以按 [科技树技能](../ygl-trees-techtree/SKILL.md) 查 `tree`、`node` 动作。结构修改产生脏索引时按回执的 `next_actions` 完成 index/validate；节点解锁但没有证据时同轮挂真实依据，任务或其他节点的链接不算证据（0.123.0 起回执会点名缺项）。
 
 ## 4. 建树命令节奏
 

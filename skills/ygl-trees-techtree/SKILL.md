@@ -7,7 +7,7 @@ description: >-
   （node unlock/export/import）。
   触发词：科技树、技能树、依赖图、DAG、tech tree、skill tree、解锁、unlock、前置、
   prerequisite、拓扑、闭包、closure、互斥、节点、node。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,techtree,dag,unlock,gate
 ---
 
@@ -32,19 +32,23 @@ tags: ygl-trees,techtree,dag,unlock,gate
 | `node rm <key>` | `node index` + `node validate`。节点身上的 rel 不会级联删除，用 `rel prune --dry-run` 看残留 |
 | `node import --file <tree.json>` | 看回执里的 `unlocked_without_evidence`。不是 0，就给这些节点挂来源，或者按 lifecycle 技能的「导入」一行处理 |
 
-## MCP 等价面（AI agent 用 write / read 代替 CLI）
+## MCP 等价面
+
+宿主提供 `mcp__ygl__trees` 时按下表。先用 help 核对路由及参数。0.128.0 仍保留旧工具一版，迁移与权限边界见 [Quickstart](../ygl-trees-quickstart/SKILL.md)。
 
 | CLI 命令 | MCP 调用 |
 |---|---|
-| `tree new <name>` | `write {domain:"tree", action:"tree-new", tree:"..."}` |
-| `node add <key>` | `write {domain:"tree", action:"node-add", key:"..."}` |
-| `node link <a> <b>` | `write {domain:"tree", action:"node-link", key:"<a>", child:"<b>"}` |
-| `node unlock <key> --context c1` | `write {domain:"tree", action:"node-unlock", key:"...", context:"c1"}` |
-| `node cond <key> --name budget --op ">=" --value 2` | `write {domain:"tree", action:"node-cond", key:"...", name:"budget", op:">=", value:2}` |
-| `node index` | `write {domain:"tree", action:"node-index"}` |
-| `node list` | `read {domain:"tree", action:"state"}` |
-| `node can <key> --context c1 --state budget=2` | `read {domain:"node", action:"can", key:"...", context:"c1", state:"budget=2"}` |
-| `node ready --all --context c1` | `read {domain:"node", action:"ready", all:true, context:"c1"}` |
+| `tree new <name>` | `{"domain":"tree","action":"tree-new","params":{"tree":"..."}}` |
+| `node add <key>` | `{"domain":"tree","action":"node-add","params":{"key":"..."}}` |
+| `node link <a> <b>` | `{"domain":"tree","action":"node-link","params":{"key":"<a>", "child":"<b>"}}` |
+| `node unlock <key> --context c1` | `{"domain":"tree","action":"node-unlock","params":{"key":"...", "context":"c1"}}` |
+| `node cond <key> --name budget --op ">=" --value 2` | `{"domain":"tree","action":"node-cond","params":{"key":"...", "name":"budget", "op":">=", "value":2}}` |
+| `node index` | `{"domain":"tree","action":"node-index","params":{}}` |
+| `node list` | `{"domain":"tree","action":"state","params":{}}` |
+| `node can <key> --context c1 --state budget=2` | `{"domain":"node","action":"can","params":{"key":"...", "context":"c1", "state":"budget=2"}}` |
+| `node ready --all --context c1` | `{"domain":"node","action":"ready","params":{"all":true, "context":"c1"}}` |
+
+`tree/node-lock` 可收回无证据的解锁态，`node/validate` 会刷新派生索引。MCP 使用宿主授权的闭集动作，本地 CLI 各后端的能力边界仍以实际版本为准。
 
 ## 1. 建树
 

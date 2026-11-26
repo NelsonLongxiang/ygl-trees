@@ -1,12 +1,14 @@
 ---
 name: ygl-trees-repo-research
 description: 用 ygl-trees 研究一个开源项目（主推场景②）：从仓库/发布史/社区证据建「作者意图树」——作者要解决什么问题、走到哪一步、下一步大概率是什么。给到一个开源项目要做系统性研究、写项目分析报告、或建项目科技树时使用。触发词：开源项目研究、作者意图、项目分析、repo research、项目科技树、竞品研究。
-version: 0.118.0
+version: 0.128.0
 ---
 
 # 开源项目研究树（repo-research 标准形）
 
 把一个外部开源项目建模成研究项目 + 一棵「作者意图树」。产出不是读后感，是可回测的判断。
+
+多项目取证时，`agent/brief` 及来源、证据、断言详情显式传 `project`，避免读到会话先前选择的项目。选用 `mcp__ygl__trees` 时，路由留在顶层，`id`、`project` 放进 `params`（见 [Quickstart 的 MCP 用法](../ygl-trees-quickstart/SKILL.md)）。发布史以实际标签、制品和回执判断；候选主干和尚未发布的说明可保留为源码证据。
 
 ## 五步标准形
 

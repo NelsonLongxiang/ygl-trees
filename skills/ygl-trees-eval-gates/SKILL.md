@@ -7,7 +7,7 @@ description: >-
   AI Gateway）。三态映射 P≥0.7 通过 / P≤0.4 未通过 / 灰带 pending。离线安全：无凭证回落 pending。
   触发词：决策模型、布尔判定、多选、评分、evaluation、P(true)、灰带、gray band、pending、
   eval gate、语义门槛、quest 条件、AI 判定、jev、gateway、choice、score。
-version: 0.118.0
+version: 0.128.0
 tags: ygl-trees,eval,gate,decision-model,choice,score
 ---
 
@@ -18,6 +18,8 @@ tags: ygl-trees,eval,gate,decision-model,choice,score
 确定性条件（等级≥3、资源≥100、flag 有无）用普通 op（>=/==/has…），本地判定。
 **语义型门槛**——"前置任务完成了吗""情境是否满足"——状态袋里没有对应键，用 eval 题型：
 value 写判定问题（与上下文字面对齐，模型严格按字面读、不脑补；空 value 回落用条件名）。
+
+以下 CLI 示例对应门槛写入与带评估的读取。MCP 先按 [Quickstart 的 MCP 用法](../ygl-trees-quickstart/SKILL.md) 查 `tree/node-cond` 的可用参数，只有宿主提供动作时才调用；`node/can` 的 MCP 形状不提供 CLI 的 `--eval`，显式评估用下文 CLI。门槛模型不可用时保留 pending，不能当作通过或代替人工仲裁。
 
 ## 2. 三种题型
 
