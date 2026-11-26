@@ -49,9 +49,9 @@ doctor → 健康检查：{fix: true|false}
 
 **安全边界**：MCP 写面是枚举闭集（action 只能取 schema 中列出的值）；管理面（db reset/sql、plugin、config、job、patrol）物理排除在 MCP 之外——agent 只能通过本地 CLI 执行管理操作。
 
-## 0b. MCP 覆盖边界（哪些 CLI 动作不在 MCP 里，为什么）
+## 0b. MCP 覆盖与 CLI 边界
 
-MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排除**，不是遗漏：
+0.128.0 以 `trees` 的领域和动作 help 为当前目录。A、B 列有意留在本地的操作，C 标明常见的已开放动作和仍需走 CLI 的动作。
 
 ### A 类：物理排除——安全边界（不可协商，永不进 MCP）
 
@@ -80,28 +80,20 @@ MCP 覆盖 agent 研究工作面约 80%；其余 CLI 动作分两类**刻意排�
 
 **原则**：MCP 写面全部幂等（同内容重跑=已存在，安全重试）；删除不幂等——被注入的 agent 删了就没了。创建走 agent，销毁走人。
 
-### C 类：路由缺口（可加但未加，逐步补）
+### C 类：0.128.0 已开放或仍走 CLI 的动作
 
-| CLI 面 | 状态 | 何时加 |
-|---|---|---|
-| `research source fetch <url>` | 网络副作用读 | 可加 |
-| `research predict audit` | 读面但复杂 | 可加 |
-| `produce outline / section / export` | 报告子命令 | 可加 |
-| `verify tree prepare/run/report` | A1 递归验证 | 随 0.115.0 契约落定 |
-| `verify self-check / probe / example` | 专用工具面 | 低优先 |
-| `verify lint-candidates` | lint 无仪式版 | 可加 |
-| `skill add / import / refs` | 技能创建 | 可加 |
-| `node export / import` | 树导入导出 | 可加 |
+| CLI 面 | 0.128.0 MCP 状态 |
+|---|---|
+| `research source fetch <url>` | 已有 `research/source-fetch`。涉及联网，服务端默认拒绝，须配置 `YGL_MCP_SOURCE_FETCH=1` 并符合宿主授权。 |
+| `produce outline / section / spec / design / export` | 由 `produce` 下对应的同名动作提供。`export` 遵守服务端导出路径限制。 |
+| `verify tree prepare / run / report / trace` | 已有 `verify/tree-prepare`、`verify/tree-run`、`verify/tree-report`、`verify/tree-trace`。MCP 使用受支持的参数子集，见[验证器技能](../ygl-trees-verify/SKILL.md)。 |
+| `verify example / lint-candidates` | 已有 `verify/example`、`verify/lint-candidates`。 |
+| `research predict audit`、`verify self-check / probe` | 当前没有对应 MCP 动作，在本地 CLI 使用。 |
+| `skill add / import / refs`、`node export / import` | 当前没有对应 MCP 动作，在本地 CLI 使用。 |
 
 ### 汇总
 
-| 类别 | 数量 | 原因 | 处置 |
-|---|---|---|---|
-| A 物理排除 | ~18 个动作 | 安全边界（不可协商） | 永不进 MCP |
-| B 破坏性写 | ~6 个动作 | agent 可建不可毁 | 永不进 MCP |
-| C 路由缺口 | ~12 个动作 | 还没来得及 | 逐步补入 |
-
-**判断口诀**：看到一条 CLI 命令想通过 MCP 调——先问「删东西吗？动基础设施吗？」都是→不在 MCP，走本地 CLI；否→应该在 MCP 里，若不在查上面 C 类表。
+A 类管理操作和 B 类破坏性操作留在本地。C 类按运行目录逐项判断。先用 `{"action":"help"}` 找领域，再用领域 help 找动作和参数。未列出的 CLI 命令走本地授权入口。已列出的动作仍要符合宿主权限及服务端配置。
 
 ## 1. 冷启动三步
 
