@@ -13,7 +13,11 @@ import * as ops from "../src/config";
 
 const ROOT = resolve(__dirname, "../../../..");
 function database(probe: (db: DB) => void) {
-  const parent = join(ROOT, "tmp/workspace-cycle-234"); mkdirSync(parent, { recursive: true });
+  // Own scratch parent: a parent shared with another spec file can be removed by that file's removeIfEmpty while
+  // this one sits between mkdirSync and mkdtempSync/opening the database (parallel workers; tests-scratch-parents.spec.ts).
+  // Per worker process (pid) as well, so two runs of this file can never share it either; each case gets its own
+  // mkdtemp directory below it, and the database is closed before anything is removed.
+  const parent = join(ROOT, `tmp/config-layer-compat-234-${process.pid}`); mkdirSync(parent, { recursive: true });
   const home = mkdtempSync(join(parent, "config-")); let db: DB | undefined;
   try { db = new DB(join(home, "config.db")); probe(db); }
   finally { db?.close(); rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); removeIfEmpty(parent); }

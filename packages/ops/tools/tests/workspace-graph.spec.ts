@@ -13,7 +13,8 @@ const ROOT = resolve(__dirname, "../../../..");
 const SCRIPT = join(ROOT, "scripts/gate.js");
 const LAYOUT = "packages:\n  - packages/*/*\n  - apps/*\n  - vendor/*\nneverBuiltDependencies:\n  - better-sqlite3\n";
 function fixture(packages: Record<string, any>, probe: (root: string) => void) {
-  const parent = join(ROOT, "tmp/workspace-cycle-234"); mkdirSync(parent, { recursive: true });
+  // Own scratch parent, never shared with another spec file (see tests-scratch-parents.spec.ts).
+  const parent = join(ROOT, `tmp/workspace-graph-234-${process.pid}`); mkdirSync(parent, { recursive: true });
   const root = mkdtempSync(join(parent, "graph-"));
   try {
     writeFileSync(join(root, "pnpm-workspace.yaml"), LAYOUT);
