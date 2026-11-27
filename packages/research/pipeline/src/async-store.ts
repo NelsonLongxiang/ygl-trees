@@ -103,7 +103,7 @@ export class AsyncResearchStore {
   // ================================================================ skills
   async skillList(scope?: string): Promise<Row[]> { this.guard(); return this.sync!.skillList(scope); }
   async skillGet(name: string): Promise<Row | null> { this.guard(); return this.sync!.skillGet(name); }
-  async skillMatch(q: string, limit?: number): Promise<Row[]> { this.guard(); return this.sync!.skillMatch(q, limit); }
+  async skillMatch(q: string, limit?: number, includeRetired?: boolean): Promise<Row[]> { this.guard(); return this.sync!.skillMatch(q, limit, includeRetired); }
 
   // ================================================================ events
   async tail(limit?: number): Promise<Row[]> { this.guard(); return this.sync!.tail(limit); }

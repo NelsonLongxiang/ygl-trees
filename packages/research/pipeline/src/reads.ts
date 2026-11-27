@@ -143,8 +143,35 @@ export class Store {
     return { ...skill, support_refs };
   }
 
-  /** L1 match: full-text search over skills, used by agents to pick a skill. */
-  skillMatch(q: string, limit = 5): Row[] {
+  /**
+   * #321: skills promoted from a kb note carry `origin = 'kb:<note id>'`. When
+   * that note is later superseded / deprecated, the skill is retired with it
+   * (no state of its own: `kb unsupersede` / `kb undeprecate` brings it back).
+   * Returns skill name → { by } (by = the note's replacement id, '' = deprecated).
+   */
+  skillRetired(): Map<string, { by: string; reason?: string }> {
+    const m = new Map<string, { by: string; reason?: string }>();
+    const retired = this.kbRetired();
+    if (!retired.size) return m;
+    const rows = (this.db.all("SELECT name, origin FROM skills WHERE origin LIKE 'kb:%'") ?? []) as Row[];
+    for (const r of rows) {
+      const hit = retired.get(String(r.origin).slice(3));
+      if (hit) m.set(String(r.name), hit);
+    }
+    return m;
+  }
+
+  /**
+   * L1 match: full-text search over skills, used by agents to pick a skill.
+   * #321: skills whose origin note is retired are hidden unless `includeRetired`
+   * (--all), where they stay in the result marked `superseded_by` / `deprecated`.
+   * The raw limit is widened by the retired-skill count so a hidden hit never
+   * costs a live one.
+   */
+  skillMatch(q: string, limit = 5, includeRetired = false): Row[] {
+    const retired = this.skillRetired();
+    const want = limit;
+    const raw = includeRetired ? limit : limit + retired.size;
     const rows = this.fts({
       table: "skills_fts",
       join: "skills s ON s.id=f.id",
@@ -154,20 +181,27 @@ export class Store {
       params: [],
       boostExpr: "s.name", // name hits outrank same-hit rows (see fts doc)
       q,
-      limit,
+      limit: raw,
       fallback: () =>
         this.db.all(
           "SELECT id,name,description FROM skills WHERE enabled=1 AND (name LIKE ? OR description LIKE ?) LIMIT ?",
-          [`%${q}%`, `%${q}%`, limit]
+          [`%${q}%`, `%${q}%`, raw]
         ),
     });
+    const out = (includeRetired ? rows : rows.filter((r) => !retired.has(String(r.name)))).slice(0, want);
     // single-statement hits bump (per-row UPDATEs = N implicit txns = N VFS
-    // fsyncs — same write-amp class kbSearch had before 0.23.0)
-    if (rows.length) {
-      const ids: string[] = rows.map((r) => r.id);
+    // fsyncs — same write-amp class kbSearch had before 0.23.0); only the rows
+    // actually returned count as hits
+    if (out.length) {
+      const ids: string[] = out.map((r) => r.id);
       this.db.run(`UPDATE skills SET hits=hits+1 WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
     }
-    return rows;
+    return includeRetired
+      ? out.map((r) => {
+          const hit = retired.get(String(r.name));
+          return !hit ? r : hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true, ...(hit.reason ? { deprecated_reason: hit.reason } : {}) };
+        })
+      : out;
   }
 
   skillEnabled(name: string, on: boolean): boolean {
@@ -182,7 +216,76 @@ export class Store {
     ]);
   }
 
-  kbSearch(q: string, limit = 20, scope?: string): Row[] {
+  /**
+   * kb retirement (#321 item 2): a note is retired when it has a
+   * `superseded-by` relation to another note, or a self-relation `deprecated`
+   * (no replacement). Returns id → { by } (by = replacement id, '' for
+   * deprecated). Reads the relations table the claim superseded-by (#241) uses.
+   */
+  kbRetired(): Map<string, { by: string; reason?: string }> {
+    const m = new Map<string, { by: string; reason?: string }>();
+    // `deprecated` means retired only in its declared self-form (kb:<id> → kb:<id>); a `deprecated` relation between
+    // two different notes is an ordinary tag and retires nothing.
+    const rows = (this.db.all(
+      "SELECT src_id, dst_id, rel, created FROM relations WHERE src_type='kb' AND dst_type='kb' AND (rel='superseded-by' OR (rel='deprecated' AND src_id=dst_id)) ORDER BY created, id"
+    ) ?? []) as Row[];
+    const deprecatedAt = new Map<string, string>();
+    for (const r of rows) {
+      const id = String(r.src_id);
+      if (r.rel === "superseded-by") m.set(id, { by: String(r.dst_id) });
+      else if (!m.has(id)) { m.set(id, { by: "" }); deprecatedAt.set(id, String(r.created)); }
+    }
+    // The reason a note was deprecated lives on its kb.deprecate event (latest wins). Only an event not older than the
+    // current deprecated relation counts, so a reason from an earlier deprecation that was since undone never shows;
+    // only read when some note is deprecated.
+    if (deprecatedAt.size) {
+      const evs = (this.db.all("SELECT ts, entity_id, payload FROM events WHERE kind='kb.deprecate' ORDER BY ts, id") ?? []) as Row[];
+      for (const e of evs) {
+        const id = String(e.entity_id);
+        const hit = m.get(id);
+        if (!hit || hit.by || String(e.ts) < (deprecatedAt.get(id) ?? "")) continue;
+        try { const reason = String(JSON.parse(String(e.payload))?.reason ?? "").trim(); if (reason) hit.reason = reason; } catch { /* payload is not JSON: no reason */ }
+      }
+    }
+    return m;
+  }
+
+  /** Notes that `id` replaced (reverse of superseded-by). */
+  kbSupersedes(id: string): string[] {
+    return ((this.db.all(
+      "SELECT src_id FROM relations WHERE src_type='kb' AND dst_type='kb' AND rel='superseded-by' AND dst_id=? ORDER BY created, id",
+      [id]
+    ) ?? []) as Row[]).map((r) => String(r.src_id));
+  }
+
+  /**
+   * `includeRetired` (kb search --all): retired notes stay in the result,
+   * marked with `superseded_by` / `deprecated`. Default hides them; the limit is
+   * widened by the number of retired notes so a hidden hit never costs a live one.
+   */
+  kbSearch(q: string, limit = 20, scope?: string, includeRetired = false): Row[] {
+    const retired = this.kbRetired();
+    const want = limit;
+    if (!includeRetired) limit = limit + retired.size;
+    const rows = this.kbSearchRaw(q, limit, scope);
+    const out = (includeRetired ? rows : rows.filter((r) => !retired.has(String(r.id)))).slice(0, want);
+    if (out.length) {
+      const ids: string[] = out.map((r) => r.id);
+      this.db.run(
+        `UPDATE kb_notes SET reuse=reuse+1 WHERE id IN (${ids.map(() => "?").join(",")})`,
+        ids
+      );
+    }
+    return includeRetired ? out.map((r) => this.markRetired(r, retired)) : out;
+  }
+
+  private markRetired(r: Row, retired: Map<string, { by: string; reason?: string }>): Row {
+    const hit = retired.get(String(r.id));
+    if (!hit) return r;
+    return hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true, ...(hit.reason ? { deprecated_reason: hit.reason } : {}) };
+  }
+
+  private kbSearchRaw(q: string, limit: number, scope?: string): Row[] {
     const rows = this.fts({
       table: "kb_fts",
       join: "kb_notes k ON k.id=f.id",
@@ -196,29 +299,24 @@ export class Store {
       fallback: () =>
         this.db.all("SELECT id,title,tags,confidence" + (scope === undefined ? "" : ",scope") + " FROM kb_notes WHERE title LIKE ?" + (scope === undefined ? "" : " AND scope=?") + " LIMIT ?", scope === undefined ? [`%${q}%`, limit] : [`%${q}%`, scope, limit]),
     });
-    // single-statement reuse bump: N per-row UPDATEs would mean N implicit
-    // transactions (N VFS fsyncs) per search — benchmarked 20x slower (0.23.0)
-    if (rows.length) {
-      const ids: string[] = rows.map((r) => r.id);
-      this.db.run(
-        `UPDATE kb_notes SET reuse=reuse+1 WHERE id IN (${ids.map(() => "?").join(",")})`,
-        ids
-      );
-    }
+    // single-statement reuse bump (done in kbSearch on the rows actually
+    // returned): N per-row UPDATEs would mean N implicit transactions (N VFS
+    // fsyncs) per search — benchmarked 20x slower (0.23.0)
     return rows;
   }
 
-  /** #276: --scope 过滤（''=未归属行）；无 flag 输出与旧版逐字节一致。 */
-  kbList(scope?: string): Row[] {
-    if (scope === undefined) {
-      return this.db.all(
-        "SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC"
-      );
-    }
-    return this.db.all(
-      "SELECT id,title,tags,confidence,reuse,updated,scope FROM kb_notes WHERE scope=? ORDER BY reuse DESC, updated DESC",
-      [scope]
-    );
+  /** #276: --scope 过滤（''=未归属行）；无 flag 输出与旧版逐字节一致。
+   *  #321: retired notes (superseded / deprecated) are hidden unless includeRetired. */
+  kbList(scope?: string, includeRetired = false): Row[] {
+    const rows = scope === undefined
+      ? this.db.all("SELECT id,title,tags,confidence,reuse,updated FROM kb_notes ORDER BY reuse DESC, updated DESC")
+      : this.db.all(
+          "SELECT id,title,tags,confidence,reuse,updated,scope FROM kb_notes WHERE scope=? ORDER BY reuse DESC, updated DESC",
+          [scope]
+        );
+    const retired = this.kbRetired();
+    if (!retired.size) return rows;
+    return includeRetired ? rows.map((r) => this.markRetired(r, retired)) : rows.filter((r) => !retired.has(String(r.id)));
   }
 
   kbGet(id: string): Row | null {
