@@ -335,7 +335,9 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       const payload = buildBrief(env, gate);
       const cur = payload.current_project;
       const stats = payload.counts;
-      const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
+      // #321: the human view lists the same skills the JSON payload does — none whose source note is superseded / deprecated
+      const retiredForBrief = store.skillRetired();
+      const skills = store.skillList().filter((sk: any) => !retiredForBrief.has(String(sk.name))).slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
 
       if (ctx.json) {
         emitJson(ctx, payload, 2);

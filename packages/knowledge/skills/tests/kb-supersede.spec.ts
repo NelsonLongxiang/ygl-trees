@@ -23,6 +23,14 @@ function run(args: string[]) {
   });
   return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
 }
+// the human (non-JSON) rendering of a command: same env, no --json
+function runHuman(args: string[]) {
+  const r = spawnSync(process.execPath, [BIN, ...args], {
+    cwd: home, encoding: "utf8",
+    env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_NO_UPDATE_CHECK: "1", NO_COLOR: "1" },
+  });
+  return { rc: r.status ?? -1, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
+}
 const j = (r: { out: string }) => JSON.parse(r.out);
 const text = (r: { out: string; err: string }) => r.out + "\n" + r.err;
 const addNote = (title: string, body: string, scope?: string) =>
@@ -184,6 +192,11 @@ describe.skipIf(!hasBundle)("kb supersede / deprecate (#321)", () => {
     expect(allSkill.find((m: any) => m.name === "retire-probe-old").superseded_by).toBe(newN.id);
     // brief does not recommend the retired skill
     expect(j(run(["agent", "brief"])).top_skills.map((s: any) => s.name)).not.toContain("retire-probe-old");
+    // review R4: the human rendering must agree with the JSON one
+    const human = runHuman(["agent", "brief"]);
+    expect(human.rc).toBe(0);
+    expect(human.out).not.toContain("retire-probe-old");
+    expect(human.out).toContain("retire-probe-new");
 
     // undo: the skill is back, nothing else to restore
     expect(run(["kb", "unsupersede", oldN.id]).rc).toBe(0);
