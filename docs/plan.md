@@ -30,6 +30,12 @@
 > 现行工作见 GitHub issues（#80 谓词 1.3 提案 / #94 A 簇）与 docs/reviews/contract-1.3-proposal.md。
 
 
+## 0.129.0 发布候选
+
+发布范围为 `v0.128.0` 到 `master` `6af8b2f880ebb278d96d0fedd5225045b35dec75`，包括 #322 的 `kb rm` 帮助、#325 的笔记取代及作废语义和 #326 的离线 stdio 测试支持。#321 已结单，#326 已经非作者最终复核并合入，落地树 `4a47c7b223a29328661b85971ea71b5a009a95c1` 与受验树一致。 [#321 结单回执](https://github.com/NelsonLongxiang/ygl-trees/issues/321#issuecomment-7226106916) · [#326 最终复核](https://github.com/NelsonLongxiang/ygl-trees/pull/326#issuecomment-7228709777)
+
+发布候选按 [发布流程](release.md) 执行 G1、完整 `pnpm test`、封包校验、提交声明核对及 G7。G7 由获准的非作者席在同一候选上执行真 PostgreSQL、固定 SQLite 黄金和 strict 双后端。验收检查点为 2026-11-30 12:00 UTC，拟发为 18:00 UTC。候选经独立验收及属主批准合入后，才进入实际标签、npm 和 G8 回读。
+
 ## 0.128.0 发布候选（未 tag／publish）
 
 按属主 2026-11-25 决策（评估票 1bc731c9 推荐 A）从主干 `a5e9c4fd15d4f17575c48b48881f70109952819d` 建 `chore/release-0.128.0`。只改根版本、[变更记录](../CHANGELOG.md)、正式 CLI 生成的[能力清单](../llms.txt)及本计划；不带新产品、测试、依赖或基线变化。范围 PR311–316，各有绑定精确头的非作者 PASS：311 `210a0ebd`、312 `69480922`、313 `faaec1ec`、314 `5d82ffa9`、315 `e6ea67ed`、316 `df599396`。#306 另开独立 PR，不混入本版；Windows #307／#202 不在本版修复，0.127.0 的一次重跑特许不继承。
