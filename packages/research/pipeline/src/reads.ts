@@ -149,8 +149,8 @@ export class Store {
    * (no state of its own: `kb unsupersede` / `kb undeprecate` brings it back).
    * Returns skill name → { by } (by = the note's replacement id, '' = deprecated).
    */
-  skillRetired(): Map<string, { by: string }> {
-    const m = new Map<string, { by: string }>();
+  skillRetired(): Map<string, { by: string; reason?: string }> {
+    const m = new Map<string, { by: string; reason?: string }>();
     const retired = this.kbRetired();
     if (!retired.size) return m;
     const rows = (this.db.all("SELECT name, origin FROM skills WHERE origin LIKE 'kb:%'") ?? []) as Row[];
@@ -199,7 +199,7 @@ export class Store {
     return includeRetired
       ? out.map((r) => {
           const hit = retired.get(String(r.name));
-          return !hit ? r : hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true };
+          return !hit ? r : hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true, ...(hit.reason ? { deprecated_reason: hit.reason } : {}) };
         })
       : out;
   }
@@ -222,15 +222,30 @@ export class Store {
    * (no replacement). Returns id → { by } (by = replacement id, '' for
    * deprecated). Reads the relations table the claim superseded-by (#241) uses.
    */
-  kbRetired(): Map<string, { by: string }> {
-    const m = new Map<string, { by: string }>();
+  kbRetired(): Map<string, { by: string; reason?: string }> {
+    const m = new Map<string, { by: string; reason?: string }>();
+    // `deprecated` means retired only in its declared self-form (kb:<id> → kb:<id>); a `deprecated` relation between
+    // two different notes is an ordinary tag and retires nothing.
     const rows = (this.db.all(
-      "SELECT src_id, dst_id, rel FROM relations WHERE src_type='kb' AND dst_type='kb' AND rel IN ('superseded-by','deprecated') ORDER BY created, id"
+      "SELECT src_id, dst_id, rel, created FROM relations WHERE src_type='kb' AND dst_type='kb' AND (rel='superseded-by' OR (rel='deprecated' AND src_id=dst_id)) ORDER BY created, id"
     ) ?? []) as Row[];
+    const deprecatedAt = new Map<string, string>();
     for (const r of rows) {
       const id = String(r.src_id);
       if (r.rel === "superseded-by") m.set(id, { by: String(r.dst_id) });
-      else if (!m.has(id)) m.set(id, { by: "" });
+      else if (!m.has(id)) { m.set(id, { by: "" }); deprecatedAt.set(id, String(r.created)); }
+    }
+    // The reason a note was deprecated lives on its kb.deprecate event (latest wins). Only an event not older than the
+    // current deprecated relation counts, so a reason from an earlier deprecation that was since undone never shows;
+    // only read when some note is deprecated.
+    if (deprecatedAt.size) {
+      const evs = (this.db.all("SELECT ts, entity_id, payload FROM events WHERE kind='kb.deprecate' ORDER BY ts, id") ?? []) as Row[];
+      for (const e of evs) {
+        const id = String(e.entity_id);
+        const hit = m.get(id);
+        if (!hit || hit.by || String(e.ts) < (deprecatedAt.get(id) ?? "")) continue;
+        try { const reason = String(JSON.parse(String(e.payload))?.reason ?? "").trim(); if (reason) hit.reason = reason; } catch { /* payload is not JSON: no reason */ }
+      }
     }
     return m;
   }
@@ -264,10 +279,10 @@ export class Store {
     return includeRetired ? out.map((r) => this.markRetired(r, retired)) : out;
   }
 
-  private markRetired(r: Row, retired: Map<string, { by: string }>): Row {
+  private markRetired(r: Row, retired: Map<string, { by: string; reason?: string }>): Row {
     const hit = retired.get(String(r.id));
     if (!hit) return r;
-    return hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true };
+    return hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true, ...(hit.reason ? { deprecated_reason: hit.reason } : {}) };
   }
 
   private kbSearchRaw(q: string, limit: number, scope?: string): Row[] {

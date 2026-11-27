@@ -51,7 +51,7 @@ ygl-trees library list --kind note --json   # 市场经验库只读出口（#275
 ygl-trees db obsidian [dir]                  # 导出为 Obsidian vault
 ```
 
-**重复或过时的笔记不要删，标记取代。** `kb supersede` 只需要写权限：一条笔记只能有一个替代者，不能指向自己、不能成环、不能跨 scope；被取代的笔记 `kb show` 显示 `superseded_by`，`kb search`/`kb list`/`agent brief` 默认不再出，`kb promote` 拒绝提升它并提示改用替代者。已经从它提升出来的技能（`origin` 为 `kb:<旧id>`）跟着退役：`agent match`／`skill match`／`agent brief` 默认不再推荐，`--all` 才出并标「来源笔记已被 <新id> 取代／已作废」；`kb unsupersede`／`kb undeprecate` 后自动恢复，技能本身不另设状态。`rel add kb:<旧> kb:<新> --rel superseded-by` 与它等价（同样的校验）。只有确认写错、且有删权时才 `kb rm`。
+**重复或过时的笔记不要删，标记取代。** `kb supersede` 只需要写权限：一条笔记只能有一个替代者，不能指向自己、不能成环、不能跨 scope，也不能跨已知的不同项目（笔记由 `kb ingest` 的 artifact 带出项目；手写或导入、项目未知的笔记不当作属于任何项目）；有取代关系的两条笔记不能单独 `kb rescope`（会把一端留在原授权外，先 `kb unsupersede`，两条都改完再取代）；被取代的笔记 `kb show` 显示 `superseded_by`，`kb search`/`kb list`/`agent brief` 默认不再出，`kb promote` 拒绝提升它并提示改用替代者。已经从它提升出来的技能（`origin` 为 `kb:<旧id>`）跟着退役：`agent match`／`skill match`／`agent brief` 默认不再推荐，`--all` 才出并标「来源笔记已被 <新id> 取代／已作废」；`kb unsupersede`／`kb undeprecate` 后自动恢复，技能本身不另设状态。`rel add kb:<旧> kb:<新> --rel superseded-by` 与它等价（同样的校验）。只有确认写错、且有删权时才 `kb rm`。
 
 排序语义：命中 token 数降序 → **标题含 token 优先** → bm25。写查询词时把最独特的关键词
 放进去；返回字段含 title_matched（标题命中数）。

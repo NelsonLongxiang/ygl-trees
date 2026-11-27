@@ -130,7 +130,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         conf: r.confidence,
         reuse: r.reuse,
         score: typeof r.score === "number" ? r.score.toFixed(2) : "-",
-        ...(anyRetired ? { retired: r.superseded_by ? `已被 ${r.superseded_by} 取代` : r.deprecated ? "已作废" : "" } : {}),
+        ...(anyRetired ? { retired: r.superseded_by ? `已被 ${r.superseded_by} 取代` : r.deprecated ? (r.deprecated_reason ? `已作废：${r.deprecated_reason}` : "已作废") : "" } : {}),
       }));
       if (anyRetired) table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "score", "retired"], ["id", "title", "tags", "conf", "reuse", "score", "retired"]);
       else table(ctx, rows, ["id", "title", "tags", "conf", "reuse", "score"], ["id", "title", "tags", "conf", "reuse", "score"]);
@@ -143,7 +143,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       {
         const listRows = store.kbList(scope, args.flags.all === true || args.flags.all === "true").map((r: any) => ({
           ...r,
-          ...(r.superseded_by || r.deprecated ? { retired: r.superseded_by ? `已被 ${r.superseded_by} 取代` : "已作废" } : {}),
+          ...(r.superseded_by || r.deprecated ? { retired: r.superseded_by ? `已被 ${r.superseded_by} 取代` : (r.deprecated_reason ? `已作废：${r.deprecated_reason}` : "已作废") } : {}),
         }));
         const withRetired = listRows.some((r: any) => r.retired);
         table(ctx, listRows, ["id", "title", "tags", "conf", "reuse", "updated", ...(withRetired ? ["retired"] : [])], [
@@ -286,7 +286,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         emitJson(ctx, {
           ...n,
           ...(retiredHit?.by ? { superseded_by: retiredHit.by } : {}),
-          ...(retiredHit && !retiredHit.by ? { deprecated: true } : {}),
+          ...(retiredHit && !retiredHit.by ? { deprecated: true, ...(retiredHit.reason ? { deprecated_reason: retiredHit.reason } : {}) } : {}),
           ...(replaces.length ? { supersedes: replaces } : {}),
         }, 2);
         return 0;
@@ -294,7 +294,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       head(ctx, n.title);
       show(ctx, { id: n.id, tags: n.tags || "-", confidence: n.confidence, reuse: n.reuse, origin: n.origin || "-" });
       if (retiredHit?.by) out(ctx, paint(C.yellow, `  已被 ${retiredHit.by} 取代 (superseded-by) — 请改用替代者`, ctx.color));
-      else if (retiredHit) out(ctx, paint(C.yellow, "  已作废 (deprecated)", ctx.color));
+      else if (retiredHit) out(ctx, paint(C.yellow, `  已作废 (deprecated)${retiredHit.reason ? `：${retiredHit.reason}` : ""}`, ctx.color));
       if (replaces.length) out(ctx, paint(C.dim, `  取代了: ${replaces.join(", ")}`, ctx.color));
       out(ctx, "");
       out(ctx, n.body);

@@ -372,7 +372,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       // #321: skills promoted from a superseded / deprecated note are hidden unless --all
       const includeRetired = args.flags.all === true || args.flags.all === "true";
       const hits = store.skillMatch(q, Number(args.flags.limit || 3), includeRetired);
-      const retiredText = (h: any): string => (h.superseded_by ? `来源笔记已被 ${h.superseded_by} 取代` : h.deprecated ? "来源笔记已作废" : "");
+      const retiredText = (h: any): string => (h.superseded_by ? `来源笔记已被 ${h.superseded_by} 取代` : h.deprecated ? `来源笔记已作废${h.deprecated_reason ? `：${h.deprecated_reason}` : ""}` : "");
       const payload = { query: q, matches: hits.map((h: any) => ({ name: h.name, score: h.score, description: h.description, ...(retiredText(h) ? { retired: retiredText(h) } : {}) })) };
       if (ctx.json) {
         emitJson(ctx, payload, 2);

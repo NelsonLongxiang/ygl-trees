@@ -342,7 +342,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       head(ctx, `Skills matching: ${q}`);
       for (const h of hits) {
         out(ctx, `  ${paint(C.bold, h.name, ctx.color)}  ${paint(C.dim, `score ${(h.score ?? 0).toFixed(2)}`, ctx.color)}`);
-        if (h.superseded_by || h.deprecated) out(ctx, paint(C.yellow, h.superseded_by ? `  来源笔记已被 ${h.superseded_by} 取代` : "  来源笔记已作废", ctx.color));
+        if (h.superseded_by || h.deprecated) out(ctx, paint(C.yellow, h.superseded_by ? `  来源笔记已被 ${h.superseded_by} 取代` : `  来源笔记已作废${h.deprecated_reason ? `：${h.deprecated_reason}` : ""}`, ctx.color));
         out(ctx, wrap(h.description, 6));
       }
       return 0;

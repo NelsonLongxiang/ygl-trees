@@ -393,6 +393,22 @@ async function rescope(ds: DataSource, id: string, scopeRaw: unknown, table: "cl
     if (!found) throw missing();
     const { ngram: _ngram, ngram_tsv: _tsv, ...row } = found;
     if (row.scope === scope) return { row, dup: true };
+    if (!claim && !pg) {
+      // #321: a superseded-by pair must stay inside one scope; rescoping one end would strand the other (the old note
+      // stays hidden while its replacement leaves the grant). Undo the pair first (kb unsupersede), then rescope.
+      const pairs = (await mgr.query(
+        `SELECT r.src_id AS old, r.dst_id AS new, k.scope AS other_scope, CASE WHEN r.src_id=? THEN r.dst_id ELSE r.src_id END AS other
+           FROM relations r JOIN kb_notes k ON k.id = CASE WHEN r.src_id=? THEN r.dst_id ELSE r.src_id END
+          WHERE r.src_type='kb' AND r.dst_type='kb' AND r.rel='superseded-by' AND r.src_id<>r.dst_id AND (r.src_id=? OR r.dst_id=?) AND k.scope<>?`,
+        [id, id, id, id, scope]
+      )) as Array<{ old: string; new: string; other: string; other_scope: string }>;
+      if (pairs.length) {
+        const p = pairs[0];
+        throw Object.assign(new Error(
+          `kb rescope would split a superseded-by pair: kb ${p.old} → kb ${p.new}, but kb ${p.other} is in scope ${p.other_scope || "(unattributed)"} and ${id} would move to ${scope || "(unattributed)"} — a replacement must stay inside one scope (undo with: ygl-trees kb unsupersede ${p.old}, rescope both, then supersede again)`
+        ), { rc: 2 });
+      }
+    }
     const updated = nowIso();
     await stateRows(mgr, "UPDATE " + table + " SET scope=?,updated=? WHERE id=?", [scope, updated, id]);
     await logEvent(mgr, kind + ".rescope", claim ? "claim" : "kb_note", id, { old_scope: row.scope, new_scope: scope });
@@ -851,11 +867,22 @@ export async function kbRemove(ds: DataSource, id: string): Promise<WriteResult>
  * (#241). Guards (all raise rc=2 and name both endpoints):
  *  1. a note cannot supersede itself;
  *  2. both notes live in one scope (a reader without the replacement's scope
- *     would otherwise lose the old note and gain nothing);
+ *     would otherwise lose the old note and gain nothing), and — when both
+ *     projects are known from the artifact a note was ingested from — in one project;
  *  3. one replacement per note (swap: rel rm, then add);
  *  4. no cycle through the replacement chain (every successor is walked).
  * Shared by `kb supersede` and `rel add kb:<old> kb:<new> --rel superseded-by`.
  */
+/** The project a note is known to belong to: via the artifact it was ingested from (`origin = artifact:<id>`); else unknown. */
+async function kbNoteProject(mgr: EntityManager, noteId: string): Promise<string | undefined> {
+  const n = (await mgr.query(`SELECT origin FROM kb_notes WHERE id=?`, [noteId])) as Array<{ origin: string }>;
+  const origin = String(n[0]?.origin ?? "");
+  if (!origin.startsWith("artifact:")) return undefined;
+  const a = (await mgr.query(`SELECT project_id FROM artifacts WHERE id=?`, [origin.slice("artifact:".length)])) as Array<{ project_id: string }>;
+  const p = a[0]?.project_id;
+  return p === undefined || p === null || String(p) === "" ? undefined : String(p);
+}
+
 export async function kbSupersedeGuard(mgr: EntityManager, srcId: string, dstId: string): Promise<void> {
   const fail = (msg: string): never => { throw Object.assign(new Error(msg), { rc: 2 }); };
   if (srcId === dstId) fail(`kb note ${srcId} cannot supersede itself`);
@@ -864,6 +891,14 @@ export async function kbSupersedeGuard(mgr: EntityManager, srcId: string, dstId:
   const a = scopeOf.get(srcId), b = scopeOf.get(dstId);
   if (a !== undefined && b !== undefined && a !== b) {
     fail(`superseded-by crosses scopes: kb ${srcId} (scope ${a || "(unattributed)"}) → kb ${dstId} (scope ${b || "(unattributed)"}) — a replacement must stay inside one scope`);
+  }
+  // Scope is a grant key, not a project identity: two notes can share a scope and still come from different
+  // projects. A note ingested from an artifact keeps `origin = artifact:<id>`, and that artifact has a project —
+  // when both projects are known and differ, refuse. A note with no known project (hand-written, imported) is
+  // not assumed to belong to any.
+  const pa = await kbNoteProject(mgr, srcId), pb = await kbNoteProject(mgr, dstId);
+  if (pa !== undefined && pb !== undefined && pa !== pb) {
+    fail(`superseded-by crosses projects: kb ${srcId} (project ${pa}) → kb ${dstId} (project ${pb}) — a replacement must stay inside one project`);
   }
   const existing = (await mgr.query(
     `SELECT dst_id FROM relations WHERE src_type='kb' AND src_id=? AND dst_type='kb' AND rel='superseded-by' AND dst_id<>?`,
@@ -1305,7 +1340,7 @@ export async function kbPromote(ds: DataSource, ref: string, options: { name?: s
     if (!note) throw new Error("kb note not found: " + ref);
     // #321: a retired note must not become a skill — point at the live one.
     const retiredRel = (await mgr.query(
-      `SELECT dst_id, rel FROM relations WHERE src_type='kb' AND src_id=? AND dst_type='kb' AND rel IN ('superseded-by','deprecated') ORDER BY (rel='superseded-by') DESC LIMIT 1`,
+      `SELECT dst_id, rel FROM relations WHERE src_type='kb' AND src_id=? AND dst_type='kb' AND (rel='superseded-by' OR (rel='deprecated' AND dst_id=src_id)) ORDER BY (rel='superseded-by') DESC LIMIT 1`,
       [note.id]
     )) as Array<{ dst_id: string; rel: string }>;
     if (retiredRel.length) {

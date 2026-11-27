@@ -171,6 +171,11 @@ export async function relAdd(env: Env, srcRef: string, dstRef: string, rel = "re
       try { await kbSupersedeGuard(mgr, String(src.id), String(dst.id)); }
       catch (e: any) { throw new RelError(e?.rc === 1 ? 1 : 2, e?.message || String(e)); }
     }
+    // #321: `deprecated` retires a note only as a self-relation (kb:<id> → kb:<id>, what `kb deprecate` writes); between two
+    // different notes it would be read as nothing, so it is refused rather than stored as a misleading tag.
+    if (rel === "deprecated" && src.type === "kb" && dst.type === "kb" && String(src.id) !== String(dst.id)) {
+      throw new RelError(2, `deprecated is a self-relation (kb:<id> → kb:<id>): to retire note ${src.id} use \`ygl-trees kb deprecate ${src.id} --reason "<why>"\``);
+    }
     const id = shortId(["rel", src.id, dst.id, rel], 10);
     await mgr.query(
       `INSERT INTO relations(id,src_type,src_id,dst_type,dst_id,rel,weight,created) VALUES(?,?,?,?,?,?,1,?)`,

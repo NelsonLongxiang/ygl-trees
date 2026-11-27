@@ -218,6 +218,90 @@ describe.skipIf(!hasBundle)("kb supersede / deprecate (#321)", () => {
     expect(j(run(["skill", "match", "鳍骨壹号", "--all"])).map((m: any) => m.name)).toContain("scoped-old-skill");
   }, 240000);
 
+  it("review #325 R1: a replacement may not cross two known projects even inside one shared scope", () => {
+    const mkNote = (project: string, title: string) => {
+      expect(run(["project", "new", project, "-q", "探针问题"]).rc).toBe(0);
+      const art = j(run(["produce", "section", title, "--body", `${title} 的正文`]));
+      return j(run(["kb", "ingest", art.id, "--scope=bench:shared"]));
+    };
+    const a = mkNote("proj-r1-a", "跨项目探针甲");
+    const b = mkNote("proj-r1-b", "跨项目探针乙");
+    const viaCmd = run(["kb", "supersede", a.id, b.id]);
+    expect(viaCmd.rc).toBe(2);
+    expect(text(viaCmd)).toMatch(/project/);
+    expect(text(viaCmd)).toContain(a.id);
+    expect(text(viaCmd)).toContain(b.id);
+    // the generic relation path is guarded the same way
+    const viaRel = run(["rel", "add", "kb:" + a.id, "kb:" + b.id, "--rel", "superseded-by"]);
+    expect(viaRel.rc).toBe(2);
+    expect(text(viaRel)).toMatch(/project/);
+    // two notes of ONE project (both ingested there) are fine, and so are notes with no known project
+    expect(run(["project", "use", "proj-r1-a"]).rc).toBe(0);
+    const a2 = j(run(["kb", "ingest", j(run(["produce", "section", "跨项目探针丙", "--body", "跨项目探针丙正文"])).id, "--scope=bench:shared"]));
+    expect(run(["kb", "supersede", a.id, a2.id]).rc).toBe(0);
+    const h1 = addNote("无项目甲", "无项目甲正文", "bench:shared");
+    const h2 = addNote("无项目乙", "无项目乙正文", "bench:shared");
+    expect(run(["kb", "supersede", h1.id, h2.id]).rc).toBe(0);
+  }, 240000);
+
+  it("review #325 R2: rescope may not split a superseded-by pair; undo the pair, rescope, supersede again", () => {
+    const a = addNote("改范围甲", "改范围甲正文", "bench:alpha");
+    const b = addNote("改范围乙", "改范围乙正文", "bench:alpha");
+    expect(run(["kb", "supersede", a.id, b.id]).rc).toBe(0);
+    for (const end of [a.id, b.id]) {
+      const r = run(["kb", "rescope", end, "--scope=bench:beta"]);
+      expect(r.rc).toBe(2);
+      expect(text(r)).toContain(a.id);
+      expect(text(r)).toContain(b.id);
+      expect(text(r)).toMatch(/scope/);
+    }
+    // nothing moved: the live note is still in the original grant
+    expect(ids(j(run(["kb", "list", "--scope=bench:alpha"])))).toContain(b.id);
+    // rescoping a note that is in no pair is unchanged
+    const lone = addNote("改范围独", "改范围独正文", "bench:alpha");
+    expect(run(["kb", "rescope", lone.id, "--scope=bench:beta"]).rc).toBe(0);
+    // the documented way out
+    expect(run(["kb", "unsupersede", a.id]).rc).toBe(0);
+    expect(run(["kb", "rescope", a.id, "--scope=bench:beta"]).rc).toBe(0);
+    expect(run(["kb", "rescope", b.id, "--scope=bench:beta"]).rc).toBe(0);
+    expect(run(["kb", "supersede", a.id, b.id]).rc).toBe(0);
+  }, 240000);
+
+  it("review #325 R3: deprecated retires a note only as the self-relation; generic non-self insertion is refused and reads nothing", () => {
+    const a = addNote("泛关系甲", "泛关系甲正文", "bench:alpha");
+    const b = addNote("泛关系乙", "泛关系乙正文", "bench:beta");
+    const r = run(["rel", "add", "kb:" + a.id, "kb:" + b.id, "--rel", "deprecated"]);
+    expect(r.rc).toBe(2);
+    expect(text(r)).toMatch(/self-relation/);
+    expect(text(r)).toContain(a.id);
+    expect(j(run(["kb", "show", a.id])).deprecated).toBeUndefined();
+    expect(ids(j(run(["kb", "list"])))).toContain(a.id);
+    // the declared self-form through the generic path is the same state `kb deprecate` writes
+    expect(run(["rel", "add", "kb:" + a.id, "kb:" + a.id, "--rel", "deprecated"]).rc).toBe(0);
+    expect(j(run(["kb", "show", a.id])).deprecated).toBe(true);
+    expect(ids(j(run(["kb", "list"])))).not.toContain(a.id);
+    expect(run(["kb", "undeprecate", a.id]).rc).toBe(0);
+  }, 240000);
+
+  it("--all names the deprecate reason on notes, in show, and on a promoted skill in agent match / skill match", () => {
+    const fm = (w: string) => `---\ncue: ${w}\nlesson: l\nevidence: z\n---\n${w}正文`;
+    const n = addNoteFile("作废原因探针", fm("绯鲤叁号"));
+    expect(run(["kb", "promote", n.id, "--name", "reason-probe-skill"]).rc).toBe(0);
+    expect(run(["kb", "deprecate", n.id, "--reason", "结论被新数据推翻"]).rc).toBe(0);
+    const note = j(run(["kb", "search", "绯鲤叁号", "--all"])).find((r: any) => r.id === n.id);
+    expect(note.retired).toContain("结论被新数据推翻");
+    expect(j(run(["kb", "show", n.id])).deprecated_reason).toBe("结论被新数据推翻");
+    expect(j(run(["kb", "list", "--all"])).find((r: any) => r.id === n.id).retired).toContain("结论被新数据推翻");
+    const agent = j(run(["agent", "match", "绯鲤叁号", "--all"])).matches.find((m: any) => m.name === "reason-probe-skill");
+    expect(agent.retired).toContain("结论被新数据推翻");
+    expect(j(run(["skill", "match", "绯鲤叁号", "--all"])).find((m: any) => m.name === "reason-probe-skill").deprecated_reason).toBe("结论被新数据推翻");
+    // a note deprecated with no reason on record still reads as deprecated
+    expect(run(["kb", "undeprecate", n.id]).rc).toBe(0);
+    expect(run(["rel", "add", "kb:" + n.id, "kb:" + n.id, "--rel", "deprecated"]).rc).toBe(0);
+    const bare = j(run(["agent", "match", "绯鲤叁号", "--all"])).matches.find((m: any) => m.name === "reason-probe-skill");
+    expect(bare.retired).toBe("来源笔记已作废");
+  }, 240000);
+
   it("unknown notes and missing arguments fail cleanly", () => {
     const real = addNote("存在的笔记", "存在的笔记正文");
     expect(run(["kb", "supersede", "nope-id", real.id]).rc).toBe(1);
