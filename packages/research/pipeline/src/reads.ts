@@ -143,8 +143,35 @@ export class Store {
     return { ...skill, support_refs };
   }
 
-  /** L1 match: full-text search over skills, used by agents to pick a skill. */
-  skillMatch(q: string, limit = 5): Row[] {
+  /**
+   * #321: skills promoted from a kb note carry `origin = 'kb:<note id>'`. When
+   * that note is later superseded / deprecated, the skill is retired with it
+   * (no state of its own: `kb unsupersede` / `kb undeprecate` brings it back).
+   * Returns skill name → { by } (by = the note's replacement id, '' = deprecated).
+   */
+  skillRetired(): Map<string, { by: string }> {
+    const m = new Map<string, { by: string }>();
+    const retired = this.kbRetired();
+    if (!retired.size) return m;
+    const rows = (this.db.all("SELECT name, origin FROM skills WHERE origin LIKE 'kb:%'") ?? []) as Row[];
+    for (const r of rows) {
+      const hit = retired.get(String(r.origin).slice(3));
+      if (hit) m.set(String(r.name), hit);
+    }
+    return m;
+  }
+
+  /**
+   * L1 match: full-text search over skills, used by agents to pick a skill.
+   * #321: skills whose origin note is retired are hidden unless `includeRetired`
+   * (--all), where they stay in the result marked `superseded_by` / `deprecated`.
+   * The raw limit is widened by the retired-skill count so a hidden hit never
+   * costs a live one.
+   */
+  skillMatch(q: string, limit = 5, includeRetired = false): Row[] {
+    const retired = this.skillRetired();
+    const want = limit;
+    const raw = includeRetired ? limit : limit + retired.size;
     const rows = this.fts({
       table: "skills_fts",
       join: "skills s ON s.id=f.id",
@@ -154,20 +181,27 @@ export class Store {
       params: [],
       boostExpr: "s.name", // name hits outrank same-hit rows (see fts doc)
       q,
-      limit,
+      limit: raw,
       fallback: () =>
         this.db.all(
           "SELECT id,name,description FROM skills WHERE enabled=1 AND (name LIKE ? OR description LIKE ?) LIMIT ?",
-          [`%${q}%`, `%${q}%`, limit]
+          [`%${q}%`, `%${q}%`, raw]
         ),
     });
+    const out = (includeRetired ? rows : rows.filter((r) => !retired.has(String(r.name)))).slice(0, want);
     // single-statement hits bump (per-row UPDATEs = N implicit txns = N VFS
-    // fsyncs — same write-amp class kbSearch had before 0.23.0)
-    if (rows.length) {
-      const ids: string[] = rows.map((r) => r.id);
+    // fsyncs — same write-amp class kbSearch had before 0.23.0); only the rows
+    // actually returned count as hits
+    if (out.length) {
+      const ids: string[] = out.map((r) => r.id);
       this.db.run(`UPDATE skills SET hits=hits+1 WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
     }
-    return rows;
+    return includeRetired
+      ? out.map((r) => {
+          const hit = retired.get(String(r.name));
+          return !hit ? r : hit.by ? { ...r, superseded_by: hit.by } : { ...r, deprecated: true };
+        })
+      : out;
   }
 
   skillEnabled(name: string, on: boolean): boolean {

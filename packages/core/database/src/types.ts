@@ -40,7 +40,7 @@ export interface Env {
     artifactGet(id: string): Promise<any | null>;
     skillList(scope?: string): Promise<any[]>;
     skillGet(name: string): Promise<any | null>;
-    skillMatch(q: string, limit?: number): Promise<any[]>;
+    skillMatch(q: string, limit?: number, includeRetired?: boolean): Promise<any[]>;
     tail(limit?: number): Promise<any[]>;
     queryDone(id: string): Promise<void>;
     stats(): Promise<Record<string, number>>;

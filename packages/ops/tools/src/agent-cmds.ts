@@ -45,7 +45,9 @@ export function buildBrief(env: Env, sel = resolveProject(env.store.db)): any {
   const { store } = env;
   const cur = sel.name || null;
   const stats = store.stats();
-  const skills = store.skillList().slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
+  // #321: skills promoted from a superseded / deprecated kb note are not recommended
+  const retiredSkills = store.skillRetired();
+  const skills = store.skillList().filter((sk: any) => !retiredSkills.has(String(sk.name))).slice(0, 5).map((sk: any) => ({...sk, description: String(sk.description||"").slice(0, 60) + (String(sk.description||"").length > 60 ? "…" : "")}));
   const notes = store.kbList().slice(0, 5);
 
   const payload: any = {
@@ -367,8 +369,11 @@ export function run(env: Env, action: string, rest: string[], args: any): number
         bad(ctx, 'usage: agent match "<task description>"');
         return 2;
       }
-      const hits = store.skillMatch(q, Number(args.flags.limit || 3));
-      const payload = { query: q, matches: hits.map((h: any) => ({ name: h.name, score: h.score, description: h.description })) };
+      // #321: skills promoted from a superseded / deprecated note are hidden unless --all
+      const includeRetired = args.flags.all === true || args.flags.all === "true";
+      const hits = store.skillMatch(q, Number(args.flags.limit || 3), includeRetired);
+      const retiredText = (h: any): string => (h.superseded_by ? `来源笔记已被 ${h.superseded_by} 取代` : h.deprecated ? "来源笔记已作废" : "");
+      const payload = { query: q, matches: hits.map((h: any) => ({ name: h.name, score: h.score, description: h.description, ...(retiredText(h) ? { retired: retiredText(h) } : {}) })) };
       if (ctx.json) {
         emitJson(ctx, payload, 2);
         return 0;
@@ -380,11 +385,12 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       head(ctx, `Best skill for: ${q}`);
       const top = hits[0];
       out(ctx, `  ${paint(C.bold, top.name, ctx.color)}`);
+      if (retiredText(top)) out(ctx, paint(C.yellow, `  ${retiredText(top)}`, ctx.color));
       out(ctx, `  ${top.description}`);
       out(ctx, paint(C.dim, `\n  load L2:  ygl-trees skill show ${top.name}`, ctx.color));
       if (hits.length > 1) {
         out(ctx, paint(C.dim, "  runners-up:", ctx.color));
-        for (const h of hits.slice(1)) out(ctx, `    ${h.name} (${(h.score ?? 0).toFixed(2)})`);
+        for (const h of hits.slice(1)) out(ctx, `    ${h.name} (${(h.score ?? 0).toFixed(2)})${retiredText(h) ? `  [${retiredText(h)}]` : ""}`);
       }
       return 0;
     }

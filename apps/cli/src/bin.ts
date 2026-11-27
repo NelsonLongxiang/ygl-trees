@@ -985,7 +985,7 @@ export function generateLlmsManifest(): string {
     ]],
     ["agent", "Agent-facing views (START HERE)", [
       ["agent brief", "current state + next actions"],
-      ["agent match \"<task>\"", "which skill handles this task"],
+      ["agent match \"<task>\" [--limit N] [--all]", "which skill handles this task (--all: also skills whose source note is superseded / deprecated, #321)"],
       ["agent log [--level] [--run]", "recent events with filters"],
     ]],
     ["research", "Evidence-first research pipeline", [
@@ -1036,7 +1036,7 @@ export function generateLlmsManifest(): string {
     ]],
     ["skill", "Skill registry (L1/L2/L3)", [
       ["skill list", "all skills with hits"],
-      ["skill match \"<query>\"", "full-text match for agent"],
+      ["skill match \"<query>\" [--limit N] [--all]", "full-text match for agent (--all: include skills whose source note is superseded / deprecated, #321)"],
       ["skill show <name>", "full skill body"],
       ["skill link [--global]", "junction to .agents/skills/ (or ~/.agents/skills/)"],
     ]],

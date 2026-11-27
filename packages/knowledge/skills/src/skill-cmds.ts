@@ -329,7 +329,8 @@ export function run(env: Env, action: string, rest: string[], args: any): number
     case "match": {
       const q = rest.join(" ");
       if (!need(q, "query")) return 2;
-      const hits = store.skillMatch(q, Number(args.flags.limit || 5));
+      // #321: skills promoted from a superseded / deprecated note are hidden unless --all
+      const hits = store.skillMatch(q, Number(args.flags.limit || 5), args.flags.all === true || args.flags.all === "true");
       if (ctx.json) {
         emitJson(ctx, hits, 2);
         return 0;
@@ -341,6 +342,7 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       head(ctx, `Skills matching: ${q}`);
       for (const h of hits) {
         out(ctx, `  ${paint(C.bold, h.name, ctx.color)}  ${paint(C.dim, `score ${(h.score ?? 0).toFixed(2)}`, ctx.color)}`);
+        if (h.superseded_by || h.deprecated) out(ctx, paint(C.yellow, h.superseded_by ? `  来源笔记已被 ${h.superseded_by} 取代` : "  来源笔记已作废", ctx.color));
         out(ctx, wrap(h.description, 6));
       }
       return 0;

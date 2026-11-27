@@ -160,6 +160,64 @@ describe.skipIf(!hasBundle)("kb supersede / deprecate (#321)", () => {
     expect(run(["kb", "rm", n.id]).rc).toBe(0);
   }, 180000);
 
+  it("a skill promoted from a note retires with it: agent/skill match hide it by default, --all marks it, limit stays full, unsupersede brings it back", () => {
+    const fm = (word: string) => `---\ncue: ${word}\nlesson: ${word}已过时\nevidence: z\n---\n${word}正文`;
+    const oldN = addNoteFile("技能退役旧", fm("鲸脊零号"));
+    const newN = addNoteFile("技能退役新", fm("鲸脊零号"));
+    expect(run(["kb", "promote", oldN.id, "--name", "retire-probe-old"]).rc).toBe(0);
+    expect(run(["kb", "promote", newN.id, "--name", "retire-probe-new"]).rc).toBe(0);
+    const names = (r: { out: string }) => (j(r).matches ?? j(r)).map((m: any) => m.name);
+    expect(names(run(["agent", "match", "鲸脊零号"]))).toEqual(expect.arrayContaining(["retire-probe-old", "retire-probe-new"]));
+
+    expect(run(["kb", "supersede", oldN.id, newN.id]).rc).toBe(0);
+    // default: only the live skill, in both commands
+    expect(names(run(["agent", "match", "鲸脊零号"]))).toEqual(["retire-probe-new"]);
+    expect(names(run(["skill", "match", "鲸脊零号"]))).toEqual(["retire-probe-new"]);
+    // the limit is not eaten by the hidden one
+    expect(names(run(["agent", "match", "鲸脊零号", "--limit", "1"]))).toEqual(["retire-probe-new"]);
+    // --all: both, the retired one marked with the replacement
+    const all = j(run(["agent", "match", "鲸脊零号", "--all"])).matches;
+    expect(all.map((m: any) => m.name)).toEqual(expect.arrayContaining(["retire-probe-old", "retire-probe-new"]));
+    expect(all.find((m: any) => m.name === "retire-probe-old").retired).toContain(newN.id);
+    expect(all.find((m: any) => m.name === "retire-probe-new").retired).toBeUndefined();
+    const allSkill = j(run(["skill", "match", "鲸脊零号", "--all"]));
+    expect(allSkill.find((m: any) => m.name === "retire-probe-old").superseded_by).toBe(newN.id);
+    // brief does not recommend the retired skill
+    expect(j(run(["agent", "brief"])).top_skills.map((s: any) => s.name)).not.toContain("retire-probe-old");
+
+    // undo: the skill is back, nothing else to restore
+    expect(run(["kb", "unsupersede", oldN.id]).rc).toBe(0);
+    expect(names(run(["agent", "match", "鲸脊零号"]))).toEqual(expect.arrayContaining(["retire-probe-old", "retire-probe-new"]));
+
+    // deprecate (no replacement) retires the skill too, marked deprecated under --all
+    expect(run(["kb", "deprecate", oldN.id, "--reason", "结论被推翻"]).rc).toBe(0);
+    expect(names(run(["agent", "match", "鲸脊零号"]))).toEqual(["retire-probe-new"]);
+    expect(j(run(["skill", "match", "鲸脊零号", "--all"])).find((m: any) => m.name === "retire-probe-old").deprecated).toBe(true);
+    expect(run(["kb", "undeprecate", oldN.id]).rc).toBe(0);
+    expect(names(run(["agent", "match", "鲸脊零号"]))).toContain("retire-probe-old");
+  }, 240000);
+
+  it("a skill with a non-kb origin, or from a scoped note pair, is unaffected / retires within its scope", () => {
+    // a skill whose origin is not a kb note never retires
+    const f = join(home, "plain-skill.md");
+    writeFileSync(f, "---\nname: plain-probe-skill\ndescription: 鳞甲贰号 描述\n---\n鳞甲贰号正文\n");
+    expect(run(["skill", "import", f]).rc).toBe(0);
+    expect(j(run(["skill", "match", "鳞甲贰号"])).map((m: any) => m.name)).toContain("plain-probe-skill");
+    // a scoped note pair: the skill inherits the scope, retires with the note
+    const fm = (w: string) => `---\ncue: ${w}\nlesson: l\nevidence: z\n---\n${w}正文`;
+    const mk = (title: string, body: string) => {
+      const bf = join(home, `scoped-${Math.random().toString(36).slice(2)}.md`);
+      writeFileSync(bf, body);
+      return j(run(["kb", "add", "--title", title, "-f", bf, "--scope", "dept:ops"]));
+    };
+    const o = mk("范围技能旧", fm("鳍骨壹号"));
+    const n = mk("范围技能新", fm("鳍骨壹号"));
+    expect(run(["kb", "promote", o.id, "--name", "scoped-old-skill"]).rc).toBe(0);
+    expect(run(["kb", "supersede", o.id, n.id]).rc).toBe(0);
+    expect(j(run(["skill", "match", "鳍骨壹号"])).map((m: any) => m.name)).not.toContain("scoped-old-skill");
+    expect(j(run(["skill", "match", "鳍骨壹号", "--all"])).map((m: any) => m.name)).toContain("scoped-old-skill");
+  }, 240000);
+
   it("unknown notes and missing arguments fail cleanly", () => {
     const real = addNote("存在的笔记", "存在的笔记正文");
     expect(run(["kb", "supersede", "nope-id", real.id]).rc).toBe(1);
