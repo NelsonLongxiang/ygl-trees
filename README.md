@@ -335,7 +335,7 @@ db obsidian [dir]           # 导出 Obsidian markdown vault
 
 首选 `trees {action:"help"}` 查看领域，再用 `trees {domain:"kb",action:"help",params:{action:"add"}}` 查看参数；执行统一为 `{domain,action,params}`。原 read/write/verify/doctor 保留一个发布版本过渡。动作读写表由 `_meta["ygl-trees/dispatch"]` 和 help 暴露，契约 `ygl-trees/1`；宿主须按角色策略判权并拒绝未知动作；access 标副作用、legacy_tool 标原工具归属，不能将整个 trees 当作只读。doctor/check 不修复，doctor/fix 才修复。详见 [MCP trees 契约](docs/mcp-trees.md)。
 
-0.128.0 候选的两项写入兼容约定：
+自 0.128.0 起适用的两项写入兼容约定：
 
 | 动作 | `trees.params` / 旧 `write` 的参数 |
 |---|---|

@@ -1,5 +1,14 @@
 ## Unreleased
 
+## 0.129.0
+
+发布候选。基于 `v0.128.0` 之后已进入 `master` 的 #322、#325、#326 和 #329。发布仍待候选门禁、独立验收和授权。
+
+- **Windows 长路径快照可打开，打不开时清理副本**（#329，Fixes #327）：win32 上对绝对路径改用 `\\?\` 命名空间形式打开 SQLite 快照副本；`SqliteRunner` 构造抛错时，`verify` 的两条路径都先清理快照副本再返回或抛出，不再留给 tmpdir 守卫报告。非 Windows 路径与 `:memory:`、URI 不变。真实 Windows 上的实效未在本候选验证。
+
+- **补齐 `kb rm` 帮助**（#322，Refs #321）：帮助列出 `kb rm <id>` 及其 `kb.rm` 事件，删除语义和权限沿用现有契约。
+- **离线 MCP stdio 测试支持**（#326）：可用绝对 bundle 和隔离的工作目录运行真实 JSON-RPC 测试，覆盖请求配对、错误、超时和进程关闭。此项只改测试支持与文档。Windows 快照路径问题由 #327 跟踪。
+
 - **kb 笔记的取代语义**（Refs #321 第 2～4 项）：`kb supersede <旧> <新> [--reason]` 标记重复或过时的笔记，旧笔记保留；`kb search`／`kb list`／`agent brief` 默认不再出它，`--all` 才出并标「已被 <新 id> 取代」；`kb show` 显示 `superseded_by`／`supersedes`；`kb promote` 拒绝提升被取代的笔记并指向替代者。规则照断言的 #241：一条笔记只有一个替代者、不指向自己、不成环、不跨 scope；`rel add kb:<旧> kb:<新> --rel superseded-by` 走同一套校验。没有替代者的用 `kb deprecate <id> --reason`（落为自指关系 `deprecated`，不改 schema；只有这种自指形式才算作废，`rel add kb:<甲> kb:<乙> --rel deprecated` 两条不同笔记之间会被拒绝）。`--all` 下作废的笔记（以及从它提升的技能）写出作废原因（取最近一次 `kb deprecate` 的 `--reason`）。取代也不能跨已知的不同项目（笔记由 `kb ingest` 的 artifact 带出项目），有取代关系的两条笔记不能单独 `kb rescope`。从被取代或作废的笔记提升出来的技能（`origin` 为 `kb:<id>`）跟着退役：`agent match`／`skill match`／`agent brief` 的推荐默认不再出它，`--all` 才出并标「来源笔记已被 <新 id> 取代／已作废」；`--limit` 不会被隐藏的技能占掉名额；撤回笔记即自动恢复，技能不另设状态。撤回：`kb unsupersede <旧>`／`kb undeprecate <id>`。只需要写权限，不需要删除权；`kb rm` 仍在。`ygl-trees-knowledge`、`ygl-trees-lifecycle`、`ygl-trees-quickstart` 技能同步。仅 SQLite；PG 模式给出明确的不可用提示。
 - **测试临时目录隔离（0.128.0 G1 排障）**：config-layer-compat 与 workspace-graph 原来共用 `tmp/workspace-cycle-234`，各自结束时又删掉这个父目录；两个文件并行跑时，一方可能在另一方建库之前把目录删掉。现在每个文件、每个 worker 进程（按 pid）各用自己的父目录，每个用例另建 mkdtemp 目录，先关库再删。新增 `tests-scratch-parents.spec.ts`：两个会删除固定 tmp 父目录的 spec 共用同一个父目录时即红（在 ea967f3a 上红）。不改产品行为。
 
