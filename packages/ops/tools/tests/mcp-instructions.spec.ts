@@ -4,10 +4,10 @@
  * 4096 UTF-8 bytes, and nothing taken from the workspace (no project name, no title, no next step).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
+import { offlineMcpEnv, startStdio } from "./support/mcp-stdio";
 import { MCP_INSTRUCTIONS, MCP_INSTRUCTIONS_HEADER, handleMcpMessage } from "../src/mcp";
 
 const ROOT = resolve(__dirname, "../../../..");
@@ -20,7 +20,7 @@ describe("MCP instructions (#237 channel A)", () => {
   const cli = (args: string[]) =>
     spawnSync(process.execPath, [BIN, ...args, "--json"], {
       encoding: "utf8", timeout: 60000,
-      env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_SESSION: "mcp-instr", YGL_NO_UPDATE_CHECK: "1", YGL_EVAL_OFFLINE: "1" },
+      env: offlineMcpEnv(home),
     });
 
   beforeAll(() => {
@@ -49,36 +49,22 @@ describe("MCP instructions (#237 channel A)", () => {
   });
 
   it("over stdio: a workspace with a project and a 「你必须」 title leaks neither into the text", async () => {
-    const child = spawn(process.execPath, [BIN, "mcp"], {
-      cwd: ROOT,
-      env: { ...process.env, YGL_HOME: home, YGL_DB_URL: "", YGL_SESSION: "mcp-instr", YGL_NO_UPDATE_CHECK: "1" } as any,
-    });
-    const pending = new Map<number, (r: any) => void>();
-    createInterface({ input: child.stdout }).on("line", (l) => {
-      try { const m = JSON.parse(l); pending.get(m.id)?.(m); pending.delete(m.id); } catch { /* noise */ }
-    });
-    const send = (id: number, method: string, params: unknown = {}) =>
-      new Promise<any>((res, rej) => {
-        pending.set(id, res);
-        child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-        setTimeout(() => pending.has(id) && rej(new Error(`timeout: ${method}`)), 30_000);
-      });
+    const client = await startStdio({ bundle: BIN, home });
     try {
-      const init = await send(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "spec", version: "0" } });
-      const text: string = init.result.instructions;
+      const text = String(client.initialized.instructions);
       expect(text).toBe(MCP_INSTRUCTIONS);
       expect(text).not.toContain(PROJECT);
       expect(text).not.toContain("secret-title-777");
       expect(text).not.toContain("next_actions");
 
       // Every documented domain/action is present in the live trees dispatch contract.
-      const list = await send(2, "tools/list");
-      const routes = list.result.tools.find((t: any) => t.name === "trees")._meta["ygl-trees/dispatch"].routes;
+      const list = await client.request("tools/list");
+      const routes = (list.result as any).tools.find((t: any) => t.name === "trees")._meta["ygl-trees/dispatch"].routes;
       for (const m of text.matchAll(/trees \{domain:"([a-z-]+)", action:"([a-z-]+)"/g)) {
         expect(routes.some((r: any) => r.domain === m[1] && (m[2] === "help" || r.action === m[2]))).toBe(true);
       }
     } finally {
-      child.kill();
+      await client.close();
     }
   }, 60_000);
 });
