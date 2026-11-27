@@ -31,6 +31,12 @@ MCP write maps kb add to `--title` plus exactly one body/file source, rel attach
 
 HTTP MCP snapshots its startup environment and derives a separate child environment per request. `X-YGL-Session` overrides only that request; absent headers use the startup session. The handler never assigns process.env. Legitimate PG credentials remain in the controlled child environment, not argv, JSON or diagnostics; request isolation and argv safety are separate checks.
 
+## Offline stdio test support
+
+Import `startStdio({ bundle, home })` from `tests/support/mcp-stdio.ts`. Supply the absolute release bundle entry and a fresh, test-owned absolute home. The child uses that directory for its workspace, OS home, and temporary files. The environment keeps the model offline and leaves network source fetching disabled. Use `offlineMcpEnv(home)` to seed the fixture with the same settings.
+
+Use `client.request(method, params, timeoutMs)` for a raw JSON-RPC reply or pass a JSON array to `runStdioCases(client, cases)`. Each case has `name`, `tool`, and `arguments`, with optional `timeoutMs` and `expect: { isError, rc, fields }`. Field keys such as `project.name` or `items.0.id` address the decoded MCP text payload. Each result carries assertion errors and the raw receipt when the request was sent. The client retains request/reply lines, so use synthetic inputs. Await `client.close()` in a finally block before deleting the home so the shared observer can drain CLI children.
+
 ## Project copy
 
 `runProjectSync(ctx, args, createOwner)` is a CLI-only explicit SQLite-copy operation, dispatched before normal workspace boot. The injected factory supplies an application-owned ORM; planning, dry-run, verify and all-duplicate replay use detached readonly images only. Both homes must exist, be checkpointed/quiescent and match the current table_xinfo columns (including generated/hidden state), primary/unique-key and FK definitions. No init, implicit upgrade, PG fallback, selection change or network call occurs.
