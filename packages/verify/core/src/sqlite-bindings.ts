@@ -9,6 +9,7 @@
  * @module @ygl/verify-core/sqlite-bindings
  */
 import type { DatabaseSync } from "node:sqlite";
+import { isAbsolute, toNamespacedPath } from "node:path";
 
 type SqliteModule = typeof import("node:sqlite");
 
@@ -25,5 +26,10 @@ export function openDatabaseSync(path: string, opts?: { readOnly?: boolean }): D
   const { DatabaseSync: Ctor } = sqliteModule();
   // node:sqlite 对显式 undefined 的 options 报 "The options argument must be an object"，
   // 所以只在真给了 options 时才传第二个参数。
-  return opts ? new Ctor(path, opts as never) : new Ctor(path);
+  // #327: SQLite's Win32 open rejects a file whose absolute path exceeds MAX_PATH.
+  // The namespaced (\\?\) form is the documented long-path spelling; Node resolves
+  // it through the same native open, so the file on disk is unchanged. Only an
+  // absolute path on win32 needs it: ":memory:", URIs and POSIX paths pass through.
+  const open = process.platform === "win32" && isAbsolute(path) ? toNamespacedPath(path) : path;
+  return opts ? new Ctor(open, opts as never) : new Ctor(open);
 }
