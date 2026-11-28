@@ -887,7 +887,15 @@ export async function draftRun(spec: VerifySpec, dbPath: string, submissionDir: 
   } catch (e: any) {
     return { report: null, error: `cannot snapshot --db: ${e?.message || e}` };
   }
-  const runner = new SqliteRunner(snap.path);
+  // #327: the constructor can throw (e.g. a path SQLite cannot open). The copy must
+  // go on that path too — a throw here used to skip the finally below entirely.
+  let runner: SqliteRunner;
+  try {
+    runner = new SqliteRunner(snap.path);
+  } catch (e) {
+    snap.cleanup();
+    return { report: null, error: e instanceof Error ? e.message : String(e) };
+  }
   try {
     const report = await runVerify(spec, { runner, submissionDir, mode: "open", engineVersion });
     return {
@@ -1826,7 +1834,16 @@ export function run(env: Env, action: string, rest: string[], args: any): number
       } catch {
         // 快照留存失败不阻塞判定；只有 `--with snapshot` 归档会要求它
       }
-      const runner = new SqliteRunner(snap.path);
+      // #327: opening the working copy can itself throw (e.g. a path SQLite cannot
+      // open). Clean the copy up on that path too — a throw here used to skip
+      // finishRun entirely and leave the copy for the tmpdir guard to report.
+      let runner: SqliteRunner;
+      try {
+        runner = new SqliteRunner(snap.path);
+      } catch (e) {
+        snap.cleanup();
+        throw e;
+      }
       const fileScans: FileScanRecord[] = [];
       // #228: close the handle first (Windows), then drop the working copy — on
       // every outcome including the throw path.

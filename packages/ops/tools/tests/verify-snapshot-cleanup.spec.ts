@@ -152,6 +152,28 @@ describe.skipIf(!hasBundle)("verify run working-copy cleanup (#228)", () => {
     // between mkdir and copyFile); only files are the leftover contract.
     expect(existsSync(snapshotScratchDir()), "scratch dir stays for concurrent copiers").toBe(true);
   }, 180000);
+
+  it("a working copy whose path exceeds MAX_PATH runs and is still cleaned up (#327)", () => {
+    // #327: on Windows SQLite's open rejects an absolute path past MAX_PATH. Pin the
+    // scratch TEMP deep enough that the copy's real path is past 260 characters, run
+    // through the real CLI, and prove the copy is gone afterwards. Before the fix the
+    // run returned rc1 "unable to open database file" and the copy stayed behind.
+    const { specId, db } = preparedSpec();
+    const deep = join(scratchTmp, "d".repeat(200));
+    require("node:fs").mkdirSync(deep, { recursive: true });
+    const deepScratch = (): string => join(deep, "ygl-verify-snapshots");
+    const r = run(["verify", "run", specId, "--db", db, "--json"], { TEMP: deep, TMPDIR: deep, TMP: deep });
+    expect(r.rc, r.out + r.err).toBe(0);
+    expect((JSON.parse(r.out) as { overall: string }).overall).toBe("PASS");
+    expect(existsSync(join(deepScratch(), "..")), "the deep scratch root was actually used").toBe(true);
+    const left = existsSync(deepScratch()) ? readdirSync(deepScratch()) : [];
+    expect(left, "a long-path working copy must be removed like any other").toEqual([]);
+  }, 180000);
+
+  // The construction-throws cleanup contract is covered in-process by
+  // verify-draft-run-cleanup.spec.ts (#327): `verify run` probes --db several times
+  // before building the runner, so a non-database file is rejected earlier and never
+  // reaches that constructor over the CLI.
 });
 
 describe("snapshotCopy names (#228)", () => {
