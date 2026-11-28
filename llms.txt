@@ -1,4 +1,4 @@
-# ygl-trees v0.128.0 — AI Agent Research Workbench
+# ygl-trees v0.129.0 — AI Agent Research Workbench
 
 > Single SQLite source of truth. Research → Production → Knowledge Reuse + Tech Tree.
 > CLI for AI agents: every command supports --json (machine-readable, including errors).
@@ -30,7 +30,7 @@ Agent-facing views (START HERE)
 
 ```bash
 agent brief                                                  # current state + next actions
-agent match "<task>"                                         # which skill handles this task
+agent match "<task>" [--limit N] [--all]                     # which skill handles this task (--all: also skills whose source note is superseded / deprecated, #321)
 agent log [--level] [--run]                                  # recent events with filters
 ```
 
@@ -79,10 +79,14 @@ Long-term knowledge + reuse
 ```bash
 kb add --title --body|-f [--scope <k>]                       # add knowledge note (#276: scope dept:<id>|bench:<id>|*|restricted)
 kb rescope <id> --scope <k>                                  # change a note grant scope (idempotent; #276)
-kb list [--scope <k>]                                        # list notes, filtered by grant scope (#276)
+kb list [--scope <k>] [--all]                                # list notes, filtered by grant scope (#276); --all includes superseded / deprecated (#321)
 kb import <dir|file.md> [--scope <k>]                        # batch markdown import (>1MB skipped, --force to include)
-kb search "<q>" [--eval] [--scope <k>]                       # FTS5 CJK search (--eval: semantic re-rank via decision model)
-kb rm <id>                                                   # remove note
+kb search "<q>" [--eval] [--scope <k>] [--all]               # FTS5 CJK search (--eval: semantic re-rank via decision model; --all: include superseded / deprecated, #321)
+kb supersede <old> <new> [--reason]                          # mark a note as replaced by another (kept, hidden from search/list; #321)
+kb unsupersede <old>                                         # undo kb supersede
+kb deprecate <id> --reason                                   # retire a note with no replacement (#321)
+kb undeprecate <id>                                          # undo kb deprecate
+kb rm <id>                                                   # remove note (needs delete rights; prefer supersede / deprecate)
 kb ingest <artifactId> [--scope <k>]                         # sink a report into kb
 kb promote <noteId>                                          # promote note to reusable skill
 ```
@@ -102,7 +106,7 @@ Skill registry (L1/L2/L3)
 
 ```bash
 skill list                                                   # all skills with hits
-skill match "<query>"                                        # full-text match for agent
+skill match "<query>" [--limit N] [--all]                    # full-text match for agent (--all: include skills whose source note is superseded / deprecated, #321)
 skill show <name>                                            # full skill body
 skill link [--global]                                        # junction to .agents/skills/ (or ~/.agents/skills/)
 ```
